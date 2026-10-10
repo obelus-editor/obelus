@@ -1,0 +1,211 @@
+//! What the renderer may ask the application.
+
+use super::*;
+
+/// What the renderer may ask the application.
+///
+/// Every one of these forwards to the method of the same name: the trait is
+/// the list of questions, and the answers stay where they are written. The
+/// two cannot drift -- a signature that stopped matching is a compile error
+/// here -- and the alternative, moving forty-four methods out of the
+/// application's own impl blocks, would have made every one of its several
+/// hundred internal calls go through a trait that has to be in scope.
+impl Screen for App {
+    fn agent_name(&self) -> Option<&str> {
+        App::agent_name(self)
+    }
+    fn agent_settings(&self) -> &[acp::Setting] {
+        App::agent_settings(self)
+    }
+    fn agent_offering(&self) -> Option<obelus_component::settings::Offering> {
+        App::agent_offering(self)
+    }
+    fn called(&self, key: &str, word: &str) -> Option<std::borrow::Cow<'static, str>> {
+        App::called(self, key, word)
+    }
+    fn agent_usage(&self) -> Option<&acp::Usage> {
+        App::agent_usage(self)
+    }
+    fn background_tasks(&self) -> Option<(usize, usize)> {
+        App::background_tasks(self)
+    }
+    fn blame(&self) -> Option<&[Option<obelus_git::Blamed>]> {
+        App::blame(self)
+    }
+    fn replacing(&self) -> bool {
+        App::replacing(self)
+    }
+    fn names(&self) -> Option<&obelus_component::names::Names> {
+        App::names(self)
+    }
+    fn card(&self) -> Option<&Card> {
+        App::card(self)
+    }
+    fn changes(&self) -> Option<&obelus_git::Changes> {
+        App::changes(self)
+    }
+    fn beside_the_caret(&self) -> Option<obelus_ui::Beside<'_>> {
+        App::beside_the_caret(self)
+    }
+    fn config(&self) -> &obelus_config::Config {
+        App::config(self)
+    }
+    fn counts(&self) -> Option<&Counts> {
+        App::counts(self)
+    }
+    fn current_buffer(&self) -> Option<&Buffer> {
+        App::current_buffer(self)
+    }
+    fn drawn(&self) -> &[obelus_ui::Drawn] {
+        App::drawn(self)
+    }
+    fn highlights(&self) -> &Highlights {
+        App::highlights(self)
+    }
+    fn images(&self) -> &Images {
+        App::images(self)
+    }
+    fn keymap(&self) -> &Keymap {
+        App::keymap(self)
+    }
+    fn layers(&self) -> layers::Layers {
+        App::layers(self)
+    }
+    fn listed_agents(&self) -> Vec<Listed> {
+        App::listed_agents(self)
+    }
+    fn marked_runs(&self) -> &[obelus_text::coordinates::Span] {
+        App::marked_runs(self)
+    }
+    fn note(&self) -> Option<&str> {
+        App::note(self)
+    }
+    fn note_is_wrong(&self) -> bool {
+        App::note_is_wrong(self)
+    }
+    fn talked_about(&self) -> Vec<obelus_component::todo::Talked> {
+        App::talked_about(self)
+    }
+    fn shown(&self) -> obelus_ui::Shown<'_> {
+        use obelus_ui::Shown;
+
+        // The kind of document is the variant, so these cannot be two at
+        // once; and a reading is only ever of a file. Broken deliberately by
+        // never answering a reading: `tests/rendering.rs` drew the file's
+        // bytes for three readings.
+        match self.current.and_then(|id| self.document(id)) {
+            Some(Document::Chat(talk)) => Shown::Chat(&talk.chat),
+            Some(Document::Notes(notes)) => Shown::Notes(notes),
+            Some(Document::Terminal(terminal)) => Shown::Terminal(terminal),
+            Some(Document::File(buffer)) => match App::rendering(self) {
+                Some(rows) => Shown::Reading(rows),
+                None => Shown::File(buffer),
+            },
+            None => Shown::Nothing,
+        }
+    }
+    fn opened_hunks(&self) -> Vec<LineNumber> {
+        App::opened_hunks(self)
+    }
+    fn choosing(&self) -> Option<obelus_ui::Choosing> {
+        self.what_is_being_chosen()
+    }
+    fn naming_list(&self) -> Option<&Picker> {
+        self.which_project.naming_list.as_ref()
+    }
+
+    fn version(&self) -> &str {
+        App::version(self)
+    }
+    fn newer_release(&self) -> Option<&str> {
+        App::newer_release(self)
+    }
+
+    fn phase(&self) -> u32 {
+        App::phase(self)
+    }
+    fn pointer(&self) -> Option<(u16, u16)> {
+        self.pointing.pointer
+    }
+    fn picker(&self) -> Option<&Picker> {
+        App::picker(self)
+    }
+    fn pinned(&self) -> &[&'static str] {
+        App::pinned(self)
+    }
+    fn preview(&self) -> Option<Previewed<'_>> {
+        App::preview(self)
+    }
+    fn prompt(&self) -> Option<&Prompt> {
+        App::prompt(self)
+    }
+    fn making_in(&self) -> Option<String> {
+        App::making_in(self)
+    }
+    fn readers_named(&self) -> &[&'static str] {
+        App::readers_named(self)
+    }
+    fn reading_nothing(&self) -> bool {
+        App::reading_nothing(self)
+    }
+    fn registry_failure(&self) -> Option<&str> {
+        App::registry_failure(self)
+    }
+    fn rendered_rows(&self) -> Option<usize> {
+        App::rendered_rows(self)
+    }
+    fn server_state(&self) -> Option<(&'static str, obelus_lsp::ServerState)> {
+        App::server_state(self)
+    }
+
+    fn remote(&self) -> Option<(&'static str, obelus_remote::State)> {
+        App::remote_badge(self)
+    }
+
+    fn server_busy(&self) -> bool {
+        App::server_busy(self)
+    }
+    fn settings(&self) -> Option<&Settings> {
+        App::settings(self)
+    }
+    fn slash(&self) -> Option<&Picker> {
+        App::slash(self)
+    }
+    fn talking(&self) -> Talking {
+        App::talking(self)
+    }
+    fn travelled(&self) -> i64 {
+        App::travelled(self)
+    }
+
+    fn text_area(&self) -> TextArea {
+        App::text_area(self)
+    }
+    fn theme(&self) -> &Theme {
+        App::theme(self)
+    }
+    fn project_config(&self) -> Option<&Path> {
+        App::project_config(self)
+    }
+    fn troubles(&self) -> &[obelus_lsp::trouble::Trouble] {
+        App::troubles(self)
+    }
+    fn is_about_a_note(&self) -> bool {
+        App::is_about_a_note(self)
+    }
+    fn branch_this_conversation_works_on(&self) -> Option<&obelus_git::Head> {
+        App::branch_this_conversation_works_on(self)
+    }
+    fn what_this_conversation_is_called(&self) -> Option<String> {
+        App::what_this_conversation_is_called(self)
+    }
+    fn head(&self) -> Option<&obelus_git::Head> {
+        App::head(self)
+    }
+    fn tree_has_gone(&self) -> bool {
+        App::tree_has_gone(self)
+    }
+    fn working_directory(&self) -> &Path {
+        App::working_directory(self)
+    }
+}

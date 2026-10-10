@@ -293,7 +293,7 @@ pub fn claim(id: &str, root: &std::path::Path) -> Result<Claim, String> {
         .truncate(false)
         .open(&path)
         .map_err(|error| format!("{path:?}: {error}"))?;
-    if chats::held_by_somebody_else(&file) {
+    if obelus_claim::held_by_somebody_else(&file) {
         return Err(format!("another Obelus is installing {id}"));
     }
     Ok(Claim { path, file })

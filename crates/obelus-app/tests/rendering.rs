@@ -250,7 +250,7 @@ fn a_narrow_screen_gets_the_keys_without_the_wordmark() {
     app.version_for_test("1.2.3");
     let dump = support::render(&mut app, 34, 10);
 
-    let open = obelus_editing::keymap::function(1).label();
+    let open = obelus_keymap::function(1).label();
     assert!(support::text_block(&dump).contains(&open), "{dump}");
     assert!(
         !support::text_block(&dump).contains('\u{2588}'),
@@ -265,11 +265,11 @@ fn a_narrow_screen_gets_the_keys_without_the_wordmark() {
 fn the_welcome_screen_reads_the_key_table() {
     use crossterm::event::{KeyCode, KeyModifiers};
     use obelus_command::Command;
-    use obelus_editing::keymap::{Binding, Context, KeyChord, Keymap};
+    use obelus_keymap::{Binding, Context, KeyChord, Keymap};
 
     let mut app = App::new(Vec::new());
     let shown = support::render(&mut app, 64, 20);
-    let open = obelus_editing::keymap::function(1).label();
+    let open = obelus_keymap::function(1).label();
     assert!(support::text_block(&shown).contains(&open), "{shown}");
 
     app.set_keymap(Keymap::from_bindings(vec![Binding {
@@ -842,7 +842,7 @@ fn the_end_of_the_file_is_on_screen_after_control_end() {
 fn the_welcome_screen_lines_up_keys_of_different_widths() {
     use crossterm::event::{KeyCode, KeyModifiers};
     use obelus_command::Command;
-    use obelus_editing::keymap::{Binding, Context, KeyChord, Keymap};
+    use obelus_keymap::{Binding, Context, KeyChord, Keymap};
 
     let mut app = App::new(Vec::new());
     app.set_keymap(Keymap::from_bindings(vec![
@@ -2502,7 +2502,7 @@ fn what_went_wrong_has_the_keys_until_it_is_let_go() {
         "escape did not let it go:\n{text}"
     );
     assert!(
-        text.contains(&obelus_editing::keymap::function(1).label()),
+        text.contains(&obelus_keymap::function(1).label()),
         "the welcome screen's keys did not come back:\n{text}"
     );
 }

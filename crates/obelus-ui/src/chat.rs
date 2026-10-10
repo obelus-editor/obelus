@@ -35,6 +35,8 @@
 //! `esc stops it` rides on the row that says something is going, beside the
 //! thing it would stop.
 
+pub mod card;
+
 use std::path::Path;
 
 use crossterm::event::{KeyCode, KeyModifiers};
@@ -441,7 +443,7 @@ fn cap_the_keys(at: u16, y: u16, hints: &[(String, &'static str)], ground: Color
 
 /// A key as it is written.
 fn chord(code: KeyCode, modifiers: KeyModifiers) -> String {
-    obelus_editing::keymap::KeyChord::new(code, modifiers).label()
+    obelus_keymap::KeyChord::new(code, modifiers).label()
 }
 
 /// The same, for a foot of the region with a cap of its own.
@@ -662,7 +664,7 @@ pub struct ChatView<'a> {
     ///
     /// Read from the table, so the row names the key that works: it named
     /// `alt+t` in so many words, and went on naming it when the key moved.
-    back_to_the_note: Option<obelus_editing::keymap::KeyChord>,
+    back_to_the_note: Option<obelus_keymap::KeyChord>,
     /// What Obelus has to say, until the next key.
     ///
     /// A conversation has a status row of its own, so it has to carry this
@@ -692,13 +694,13 @@ impl<'a> ChatView<'a> {
     #[must_use]
     pub fn new(app: &'a impl Screen) -> Option<Self> {
         Some(Self {
-            chat: app.chat()?,
+            chat: app.shown().chat()?,
             theme: app.theme(),
             state: app.talking(),
             name: app.agent_name(),
             title: app.what_this_conversation_is_called(),
             settings: app.agent_settings(),
-            focus: app.chat()?.focus(),
+            focus: app.shown().chat()?.focus(),
             card: app.card(),
             in_front: crate::in_front(app, None),
             pointer: app.pointer(),
@@ -1112,7 +1114,6 @@ impl ChatView<'_> {
     fn transcript(&self, cells: &mut CellBuffer, area: Rect, plain: Style, dim: Style) {
         let words = area.x + MARGIN + indent();
         let rows = self.chat.rows(reading_width(area));
-        self.chat.forget_drawn_links();
         if rows.is_empty() {
             write(cells, words, area.y, self.nothing_said(), dim);
         }
@@ -1335,7 +1336,7 @@ impl ChatView<'_> {
                 let from = cell_at(row, link.characters.start, area);
                 let to = cell_at(row, link.characters.end, area).min(ended);
                 if from < to {
-                    self.chat.drew_link(y, from..to, &link.to);
+                    crate::links::said(y, from..to, &link.to);
                     crate::shapes::linked(Rect::new(from, y, to - from, 1));
                 }
             }

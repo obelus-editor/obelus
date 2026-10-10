@@ -10,8 +10,8 @@ license.workspace = true
 workspace = true
 
 [dependencies]
+obelus-claim.workspace = true
 obelus-config.workspace = true
-obelus-logging.workspace = true
 obelus-runtime.workspace = true
 obelus-sink.workspace = true
 base64.workspace = true

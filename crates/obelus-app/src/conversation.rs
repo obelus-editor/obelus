@@ -62,7 +62,7 @@
 
 use obelus_agent::acp;
 use obelus_component::{card::Card, chat::Chat, picker::Picker};
-use obelus_git::todo::NoteId;
+use obelus_todo::NoteId;
 
 /// What a conversation is about.
 ///

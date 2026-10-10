@@ -15,23 +15,21 @@ use crate::{Screen, editor};
 /// been read.
 #[must_use]
 pub fn layout(app: &impl Screen, editor: Rect) -> Option<Rect> {
-    let hover = app.hover()?;
+    let hover = app.beside_the_caret().and_then(crate::Beside::hover)?;
     let buffer = app.current_buffer()?;
     if editor.width < 8 || editor.height < 4 {
         return None;
     }
-    let offset = editor::text_offset(
-        buffer.text().line_count(),
-        editor::changed(app.changes()),
-        !buffer.folds().is_empty(),
-    );
     // Over the place the answer is *about*, which is not the caret when
     // the pointer asked: a box about the word under the mouse, drawn
     // wherever the caret happens to be, is a box about somewhere else.
-    let (line, column) = hover.at();
-    let (row, cell) = buffer.cell_of_place(line, column, app.text_area())?;
-    let anchor_y = editor.y + row;
-    let anchor_x = editor.x.saturating_add(offset).saturating_add(cell);
+    let (anchor_x, anchor_y) = editor::anchor(
+        editor,
+        buffer,
+        app.changes(),
+        app.text_area(),
+        Some(hover.at()),
+    )?;
 
     let inside = hover.wanted().max(1);
     let height = inside + 2;
@@ -95,7 +93,7 @@ pub fn room(editor: Rect) -> u16 {
 
 /// Draws it.
 pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
-    let Some(hover) = app.hover() else {
+    let Some(hover) = app.beside_the_caret().and_then(crate::Beside::hover) else {
         return;
     };
     let theme = app.theme();

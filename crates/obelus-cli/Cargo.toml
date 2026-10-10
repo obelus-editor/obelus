@@ -17,7 +17,6 @@ workspace = true
 
 [dependencies]
 obelus-app.workspace = true
-obelus-buffer.workspace = true
 obelus-logging.workspace = true
 obelus-ui.workspace = true
 anyhow.workspace = true

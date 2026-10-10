@@ -690,7 +690,7 @@ impl Buffer {
             }
             Motion::Down
                 if block.above.get() > 0
-                    && cursor.line.get() + 1 == block.above.get()
+                    && cursor.line.saturating_add(1) == block.above
                     && row + 1 == self.editing.text().row_count(cursor.line, width) =>
             {
                 LineNumber::new(0)
@@ -876,7 +876,7 @@ impl Buffer {
     /// a line below to count them; which line they belong *to* does not,
     /// and this is the question the viewport asks.
     fn rows_under(&self, line: LineNumber, width: u16) -> usize {
-        self.block_above(LineNumber::new(line.get() + 1))
+        self.block_above(line.saturating_add(1))
             .map_or(0, |block| block.rows(width))
     }
 
@@ -1047,7 +1047,7 @@ impl Buffer {
         let width = area.wrap_width();
         let (row_in_line, cell) = self.text().visual_position(line, column, width);
         let left = u16::try_from(self.viewport.left).ok()?;
-        let cell = cell.get().checked_sub(left)?;
+        let cell = cell.checked_sub(left)?.get();
         if cell >= area.width {
             return None;
         }
@@ -1086,7 +1086,7 @@ impl Buffer {
         let Ok(left) = u16::try_from(self.viewport.left) else {
             return None;
         };
-        let cell = cell.get().checked_sub(left)?;
+        let cell = cell.checked_sub(left)?.get();
         if cell >= area.width {
             return None;
         }

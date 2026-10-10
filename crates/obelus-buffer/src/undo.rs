@@ -54,7 +54,7 @@ pub struct Step {
 impl Step {
     /// Where what it put in ends.
     fn ends(&self) -> CharOffset {
-        CharOffset::new(self.at.get() + self.inserted.chars().count())
+        self.at.after(&self.inserted)
     }
 
     /// Whether `next` carries straight on from this one.
@@ -77,7 +77,7 @@ impl Step {
             // it is the one punctuation of a run of typing.
             Doing::Typing => !self.inserted.contains('\n') && next.at == self.ends(),
             Doing::Deleting => {
-                let back = next.at.get() + next.removed.chars().count() == self.at.get();
+                let back = next.at.after(&next.removed) == self.at;
                 back || next.at == self.at
             }
             Doing::Whole | Doing::Joined => false,

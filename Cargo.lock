@@ -4357,12 +4357,14 @@ dependencies = [
  "futures",
  "image",
  "libc",
+ "obelus-claim",
  "obelus-git",
  "obelus-jobs",
  "obelus-logging",
  "obelus-program",
  "obelus-runtime",
  "obelus-sink",
+ "obelus-todo",
  "reqwest",
  "serde",
  "serde_json",
@@ -4391,14 +4393,17 @@ dependencies = [
  "notify",
  "obelus-agent",
  "obelus-buffer",
+ "obelus-claim",
  "obelus-clipboard",
  "obelus-command",
  "obelus-component",
  "obelus-config",
  "obelus-editing",
  "obelus-git",
+ "obelus-github",
  "obelus-icons",
  "obelus-jobs",
+ "obelus-keymap",
  "obelus-logging",
  "obelus-lsp",
  "obelus-markdown",
@@ -4414,6 +4419,7 @@ dependencies = [
  "obelus-terminal",
  "obelus-text",
  "obelus-theme",
+ "obelus-todo",
  "obelus-ui",
  "obelus-watch",
  "ratatui",
@@ -4437,10 +4443,17 @@ dependencies = [
  "gix",
  "obelus-config",
  "obelus-editing",
- "obelus-lsp",
  "obelus-syntax",
  "obelus-text",
  "tracing",
+]
+
+[[package]]
+name = "obelus-claim"
+version = "0.12.0"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4452,7 +4465,6 @@ dependencies = [
  "crossterm",
  "image",
  "obelus-app",
- "obelus-buffer",
  "obelus-logging",
  "obelus-ui",
  "ratatui",
@@ -4486,7 +4498,6 @@ version = "0.12.0"
 dependencies = [
  "crossterm",
  "gix",
- "ignore",
  "nucleo-matcher",
  "obelus-agent",
  "obelus-buffer",
@@ -4495,6 +4506,7 @@ dependencies = [
  "obelus-editing",
  "obelus-git",
  "obelus-icons",
+ "obelus-keymap",
  "obelus-lsp",
  "obelus-markdown",
  "obelus-reading",
@@ -4502,6 +4514,7 @@ dependencies = [
  "obelus-row",
  "obelus-search",
  "obelus-text",
+ "obelus-todo",
  "tracing",
 ]
 
@@ -4521,10 +4534,21 @@ name = "obelus-editing"
 version = "0.12.0"
 dependencies = [
  "crossterm",
- "obelus-command",
- "obelus-icons",
  "obelus-text",
+]
+
+[[package]]
+name = "obelus-font"
+version = "0.12.0"
+dependencies = [
+ "cosmic-text",
+ "obelus-text",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-core-text",
+ "sys-locale",
  "tracing",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4534,13 +4558,18 @@ dependencies = [
  "dunce",
  "gix",
  "imara-diff",
- "obelus-logging",
  "obelus-runtime",
  "obelus-sink",
  "obelus-text",
- "open",
- "toml 1.1.5+spec-1.1.0",
- "tracing",
+]
+
+[[package]]
+name = "obelus-github"
+version = "0.12.0"
+dependencies = [
+ "jiff",
+ "obelus-program",
+ "serde_json",
 ]
 
 [[package]]
@@ -4558,6 +4587,7 @@ dependencies = [
  "obelus-clipboard",
  "obelus-component",
  "obelus-config",
+ "obelus-font",
  "obelus-icons",
  "obelus-logging",
  "obelus-program",
@@ -4566,12 +4596,8 @@ dependencies = [
  "obelus-ui",
  "objc2 0.6.4",
  "objc2-app-kit 0.3.2",
- "objc2-core-foundation",
- "objc2-core-graphics",
- "objc2-core-text",
  "pollster",
  "ratatui",
- "sys-locale",
  "tokio",
  "tracing",
  "wayland-client",
@@ -4603,6 +4629,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "obelus-keymap"
+version = "0.12.0"
+dependencies = [
+ "crossterm",
+ "obelus-command",
+ "obelus-editing",
+ "obelus-icons",
+ "tracing",
+]
+
+[[package]]
 name = "obelus-logging"
 version = "0.12.0"
 dependencies = [
@@ -4620,15 +4657,12 @@ dependencies = [
  "globset",
  "libc",
  "lsp-types",
- "obelus-command",
- "obelus-icons",
  "obelus-jobs",
  "obelus-program",
  "obelus-runtime",
  "obelus-sink",
  "obelus-syntax",
  "obelus-text",
- "ratatui",
  "serde",
  "serde_json",
  "tokio",
@@ -4653,9 +4687,9 @@ version = "0.12.0"
 dependencies = [
  "axum",
  "futures",
- "obelus-git",
  "obelus-runtime",
  "obelus-sink",
+ "obelus-todo",
  "rmcp",
  "schemars 1.2.2",
  "serde",
@@ -4691,8 +4725,8 @@ dependencies = [
  "futures",
  "keyring-core",
  "lark-websocket-protobuf",
+ "obelus-claim",
  "obelus-config",
- "obelus-logging",
  "obelus-runtime",
  "obelus-sink",
  "prost",
@@ -4808,6 +4842,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "obelus-todo"
+version = "0.12.0"
+dependencies = [
+ "gix",
+ "obelus-git",
+ "obelus-logging",
+ "obelus-text",
+ "toml 1.1.5+spec-1.1.0",
+ "tracing",
+]
+
+[[package]]
 name = "obelus-ui"
 version = "0.12.0"
 dependencies = [
@@ -4818,9 +4864,9 @@ dependencies = [
  "obelus-command",
  "obelus-component",
  "obelus-config",
- "obelus-editing",
  "obelus-git",
  "obelus-icons",
+ "obelus-keymap",
  "obelus-lsp",
  "obelus-reading",
  "obelus-remote",
@@ -4830,6 +4876,7 @@ dependencies = [
  "obelus-terminal",
  "obelus-text",
  "obelus-theme",
+ "obelus-todo",
  "ratatui",
  "ratatui-image",
  "resvg",

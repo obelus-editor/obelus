@@ -121,19 +121,13 @@ fn plan(signature: &Signature, room: u16, rows: usize) -> Plan {
 /// Where the box goes, if there is one to draw.
 #[must_use]
 pub fn layout(app: &impl Screen, editor: Rect) -> Option<Rect> {
-    let signature = app.signature()?;
+    let signature = app.beside_the_caret().and_then(crate::Beside::signature)?;
     let buffer = app.current_buffer()?;
     if editor.width < 4 || editor.height < 3 {
         return None;
     }
-    let offset = editor::text_offset(
-        buffer.text().line_count(),
-        editor::changed(app.changes()),
-        !buffer.folds().is_empty(),
-    );
-    let (row, cell) = buffer.cursor_screen_cell(app.text_area())?;
-    let cursor_y = editor.y + row;
-    let cursor_x = editor.x.saturating_add(offset).saturating_add(cell);
+    let (cursor_x, cursor_y) =
+        editor::anchor(editor, buffer, app.changes(), app.text_area(), None)?;
 
     let width = width_of(signature, editor);
     let room = room_of(signature, editor);
@@ -233,7 +227,7 @@ fn shown(
 
 /// Draws it.
 pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
-    let Some(signature) = app.signature() else {
+    let Some(signature) = app.beside_the_caret().and_then(crate::Beside::signature) else {
         return;
     };
     let theme = app.theme();

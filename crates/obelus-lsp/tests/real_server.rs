@@ -161,7 +161,7 @@ fn a_real_server_declares_the_questions_the_menu_offers() {
         assert!(
             action.supported(capabilities),
             "rust-analyzer no longer declares {}",
-            action.title()
+            action.method()
         );
     }
     client.shutdown();

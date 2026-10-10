@@ -55,6 +55,7 @@ use obelus_app::{
     app::{self, App},
     event::{Event, Pointer},
 };
+use obelus_font::Fonts;
 use obelus_ui::shapes::{Bar, Joined};
 use ratatui::{layout::Rect, style::Color};
 use winit::{
@@ -68,7 +69,6 @@ use winit::{
 
 use crate::{
     blink::Blink,
-    font::Fonts,
     grid::{
         Barred, Behind, Capped, Cells, Going, Marked, Marking, Measured, Page, Parted, Rolled,
         Ruled, Said, Sheened, Spelling, Spun, Stroked, Ticked, Update,

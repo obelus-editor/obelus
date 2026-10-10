@@ -39,7 +39,7 @@ ignores them, and mixing the two makes the formatting oscillate. **Always
 Clippy must be silent. The lints are the workspace's, in the root
 `Cargo.toml` -- `missing_docs`, `unreachable_pub`, `private_interfaces` --
 because a `#![deny(..)]` in one crate root would silently stop applying to
-the other twenty-nine. Every member opts in with a `[lints] workspace = true`
+the other thirty-four. Every member opts in with a `[lints] workspace = true`
 of its own, which Cargo does not inherit for it, and every public item needs
 a doc comment.
 
@@ -257,7 +257,7 @@ list. What Obelus writes for itself and a reader never opens stays a line in
 the log, and what went wrong on the way up -- the marks on files nobody has
 opened yet, and what has no line to mark -- is a list put up over the first
 screen of a start, read there and let go with escape
-(`app/preferences`, `obelus_lsp::trouble`, `App::tell_what_went_wrong`).
+(`app/project/preferences`, `obelus_lsp::trouble`, `App::tell_what_went_wrong`).
 
 **A setting the reader turned on is not a reason to refuse them.** Saving
 with formatting on and no server to ask writes the file unformatted. The
@@ -545,63 +545,68 @@ project is three rust-analyzers.
 ```
 crates/
   obelus-app/       state, the loop's handler, and every picker's item
-                    source, by aspect: documents, moving, searching,
-                    choosing, agents -- plus what one conversation is
-                    (conversation), what the loop reacts to (event), and
-                    everything done before there is a screen (startup)
+                    source, by feature: the file being read (app/editor), the
+                    language server (app/lsp), the agent and the chat
+                    (app/chat), git and GitHub (app/git), and the project and
+                    what is kept about it (app/project) -- beside the state
+                    and the loop (app/mod) and what every feature goes
+                    through: the frame, the events, the pointer, the layers
+                    -- plus what one conversation is (conversation), what the
+                    loop reacts to (event), and everything done before there
+                    is a screen (startup)
                     · a commit's message hangs above its file, and the branch
-                      is read where Obelus is told where it is (app/history); a
+                      is read where Obelus is told where it is (app/git/history); a
                       view is split by the errand, not by the shape of the
                       answer, and an answer on screen is an answer about a
-                      moment (app/history_view); a preview is of a subject, not
+                      moment (app/git/history_view); a preview is of a subject, not
                       of a path, and the paging keys belong to whatever is
-                      being read (app/previewing); a project may carry
+                      being read (app/editor/previewing); a project may carry
                       settings, and it is not the reader, and the reader's is
                       the layer it is laid over; anything read once at startup
                       must be re-read when somebody else changes it; what
                       Obelus cannot make of a file it reads is a mark on that
-                      file (app/preferences); what Obelus says before the
+                      file (app/project/preferences); what Obelus says before the
                       reader's first words is one piece that is always said and
                       one the topic adds, and the reader's own words go into a
-                      template last (app/opening); opening a conversation opens
+                      template last (app/chat/opening); opening a conversation opens
                       its session, and saying something makes it the reader's
-                      (app/talking); what a reader said outlives the window,
+                      (app/chat/talking); what a reader said outlives the window,
                       newest first, a conversation belongs to the agent that
                       had it and to the checkout it was had in, and a watch
                       is settled from what is open
-                      (app/conversations); where Obelus has been is
+                      (app/chat/conversations); where Obelus has been is
                       remembered however the project was named, and only a
                       worktree, and what a start with nothing to go on asks
-                      (app/projects); what was open is kept by the tree,
-                      and the last window to change it wins (app/reopening);
+                      (app/project/projects); what was open is kept by the tree,
+                      and the last window to change it wins (app/project/reopening);
                       what an agent offers is asked of it,
-                      not remembered (app/agents); a note that has gone takes
-                      no conversation off the screen (app/noting); a key that
+                      not remembered (app/chat/agents); a note that has gone takes
+                      no conversation off the screen (app/project/noting); a key that
                       names another whole view swaps rather than stacks, and a
                       view that bound the key beats the swap (app/switching);
                       what is in front has the key, and nothing behind it is
                       asked (app/hearing); what is typed in a terminal is the
                       program's (app/terminals); a
                       newer Obelus is asked about once a day, not once a start
-                      (app/releases); pull requests and issues are two tabs of
+                      (app/project/releases); pull requests and issues are two tabs of
                       one errand, asked of `gh` and not of GitHub, a page
                       when the reader gets to the end of the last one,
                       choosing one opens the review or the answer and says
                       nothing yet, and what goes to GitHub goes on the
-                      reader's word (app/pulls); one window talks to the
+                      reader's word (app/git/pulls); one window talks to the
                       chat and every
                       window is heard in it, which project a thread begun
                       there is for is the reader's to say, a window joined
                       to the chat is quiet about it, and a chat nobody let
-                      go of is taken up (app/relaying); in a window,
+                      go of is taken up (app/chat/relaying); in a window,
                       enter is another window
                       and `ctrl+enter` is this one going, in a terminal, enter
                       is this one going because it is all a terminal can do, a
                       window on a tree is a claim held the way a
                       conversation's is, a claim appears already held, and a
-                      tree that has gone is nowhere to go (app/worktrees); a
+                      tree that has gone is nowhere to go (app/git/worktrees); a
                       window whose project went starts again without starting
-                      again (app/mod); a
+                      again (app/lifecycle); a
                       conversation takes one prompt turn at a time, what is
                       waiting waits where the reader's words live, and it goes
                       as one prompt (conversation); nothing but the animation
@@ -610,13 +615,15 @@ crates/
   obelus-text/      the Rope wrapper: the only place coordinates convert
   obelus-editing/   a text with a caret in it -- the file being read and the
                     box a note is written in differ in what they are *about*
-                    and not in what down does
-                    · chords, contexts, the default table, modifiers_of;
-                      `why_not` is the one judgement of what may be bound, and
-                      `shift+Insert` is the desktop's name for paste and not
-                      Obelus's; a dialog gets a context, not a fall-through;
-                      keys are rebound on the keys page; modifiers are judged
-                      exactly, in one place (keymap)
+                    and not in what down does -- and `modifiers_of`, the one
+                    judge of which modifiers a key may carry
+  obelus-keymap/    which chord runs which command
+                    · chords, contexts, the default table; `why_not` is the
+                      one judgement of what may be bound, and `shift+Insert` is
+                      the desktop's name for paste and not Obelus's; a dialog
+                      gets a context, not a fall-through; keys are rebound on
+                      the keys page; modifiers are judged exactly, in one
+                      place (lib)
   obelus-buffer/    one open file: text, syntax, cursor, viewport
                     · an edit knows where it happened; do not read over an
                       edit; two modes, and two is enough (lib); a folded line
@@ -649,8 +656,7 @@ crates/
                       ranks is settled per tab, a list still arriving sits
                       still, say "still reading" where it moves nothing, which
                       tabs a view has must be cheap, a row of a list says what
-                      is true now, in one answer (picker); a list Obelus offers
-                      is the reader's own project (picker/files); a question is
+                      is true now, in one answer (picker); a question is
                       a card, not a picker, enter acts on the row the reader is
                       on, and a question the reader did not start says what it
                       is about (card); a tool call is somewhere to go, the
@@ -677,9 +683,10 @@ crates/
                       what Obelus writes, Obelus has to be able to read (log)
   obelus-markdown/  markdown, laid out into rows, from the tree Obelus
                     already parses
-  obelus-search/    one question at three scopes, and how much code is here:
-                    tokei's walk, in the two orderings the view reads it in
-                    (counts)
+  obelus-search/    one question at three scopes, the project as a tree a
+                    level at a time (tree), and how much code is here: tokei's
+                    walk, in the two orderings the view reads it in (counts)
+                    · a list Obelus offers is the reader's own project (tree)
   obelus-syntax/    the language registry (two dozen grammars), parsing,
                     highlights, tags
   obelus-lsp/       transport, client, actions, positions, outline, the call
@@ -690,7 +697,7 @@ crates/
                       running is (client); a server is not the only thing that
                       can make a diagnostic (trouble)
   obelus-git/       gix, reading only: head text, statuses, hunks, blame,
-                    history -- and the notes beside a project (todo)
+                    history
                     · nothing here writes, and what was measured before
                       deciding so; the diff base is the blob a checkout would
                       write, and reading it must not run anything; ask the
@@ -699,27 +706,51 @@ crates/
                       is about a version, and the margin knew which commit
                       (blame); what the remote has not seen is marked, and a
                       list worth searching is worth threading (history)
+  obelus-todo/      the notes beside a project, written where git does not
+                    look, and the line each one was about found again
+                    through git's history
+  obelus-github/    a repository's open pull requests and issues, asked of `gh`
+                    and not of GitHub, a page at a time
   obelus-agent/     the ACP registry, installing an agent, its marks, and
                     the protocol through its own crate with the thread that
                     joins it to the loop (acp/)
                     · an agent is installed when the install says so, in
                       writing (install); an install is claimed with the same
                       lock a conversation is (lib); a conversation is claimed
-                      by what names it, and one Obelus at a time has it, a
-                      claim is held by a writer and looked at through a read,
+                      by what names it, and one Obelus at a time has it,
                       says which checkout holds it, and a refused claim is
                       drawn, never said (chats); why the
                       two directions are not symmetrical, the one ordering the
                       protocol does not promise, what waits on the reader
                       does not wait in the handler, what an agent asking
-                      something may ask for, a sign-in holds what was asked
-                      and does not end the connection, and a command is the
-                      agent's namespace while a setting is Obelus's to draw
-                      (acp/link);
+                      something may ask for, and a sign-in holds what was
+                      asked and does not end the connection (acp/link); a
+                      command is the agent's namespace while a setting is
+                      Obelus's to draw (acp/said);
                       an agent that stopped is started again by talking to it,
                       every word says which connection it came from, and Obelus
                       numbers its own turns (acp/mod); almost every picture
                       goes as it came (acp/picture)
+  obelus-claim/     holding something against the other Obelus processes on
+                    the machine -- a lock the kernel gives up with the
+                    process -- and the key a knock at another's door says
+                    · a claim is held by a writer and looked at through a
+                      read, and the other platform's lock is a byte past the
+                      end (lib)
+  obelus-remote/    working on notes from a chat: what a platform declares
+                    (platform), where its secrets are kept (secrets), a
+                    connection to each (slack/, feishu/), the words between
+                    them and the loop (model), what waits while one is down
+                    (waiting), and one window relaying for every other (relay)
+                    · words, and a card for a question; a platform declares,
+                      Obelus keeps (lib); words, and a question (model); a
+                      platform declares and does not keep (platform); three
+                      places, one question, and every one of these waits
+                      (secrets); kept, and only so much of it (waiting); one
+                      window talks to the chat and every window is heard in
+                      it, a number is the relay's, the door is the one a
+                      window is brought forward through, and a relay that goes
+                      says why (relay)
   obelus-mcp/       the tools Obelus offers an agent -- and why none of them
                     asks the reader anything itself
                     · a server is about one tree, and stops listening when
@@ -808,14 +839,6 @@ crates/
                       that has gone leaves out of a picture of the screen it
                       went from, and every pane and every box is glass over
                       everything said before it (paint); a
-                      mark is one cell here and two in a terminal, so a column
-                      asks which front end it is for, and a key's cap is the
-                      one place the grid is not what a cell is measured in
-                      (font); a face Obelus cannot draw is not a face it has
-                      (faces); a face only CoreText can draw is drawn by
-                      CoreText, in the face CoreText itself would choose
-                      (coretext); what comes after the monospaced face is the
-                      machine's own answer, asked of the machine (cascade); a
                       window owns the selection and hands the words
                       over on the way out (clipboard); a thread that borrows
                       somebody else's connection stops before the owner takes
@@ -823,6 +846,17 @@ crates/
                       there too (clipboard/wayland); a window may not put itself
                       in front of the reader, so whatever comes forward comes
                       on the permission of the window they are in (elsewhere)
+  obelus-font/      the faces a window draws Obelus in, the size of a cell,
+                    and where a glyph's pixels come from -- the half of `obg`
+                    that knows nothing of the window
+                    · a mark is one cell here and two in a terminal, so a
+                      column asks which front end it is for, and a key's cap is
+                      the one place the grid is not what a cell is measured in
+                      (lib); a face Obelus cannot draw is not a face it has
+                      (faces); a face only CoreText can draw is drawn by
+                      CoreText, in the face CoreText itself would choose
+                      (coretext); what comes after the monospaced face is the
+                      machine's own answer, asked of the machine (cascade)
   */tests/          integration tests, most of them `obelus-app`'s, plus
                     obelus-app/tests/fixtures/*.txt golden grids
                     · why the fake agent is `sh`, and what it checks back

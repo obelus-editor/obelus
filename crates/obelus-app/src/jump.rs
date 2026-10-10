@@ -119,7 +119,7 @@ impl JumpList {
                 continue;
             }
             entry.at = Some((
-                LineNumber::new(line.get().saturating_add_signed(moved)),
+                line.saturating_add_signed(moved),
                 entry
                     .at
                     .map_or_else(|| CharColumn::new(0), |(_, column)| column),

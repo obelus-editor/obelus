@@ -49,7 +49,7 @@
 //! from a chat, and a project that could name a person there could hand a
 //! stranger the agent.
 //!
-//! The configuration file holds preferences, not state. `config.rs` is the
+//! The configuration file holds preferences, not state. This file is the
 //! whole of it — one table, `dirs` for where it lives, written the moment
 //! anything changes. Rebindable keys are still guaranteed by the key table
 //! being *data* rather than by the file. What is not a preference does not go
@@ -680,7 +680,7 @@ const WORKFLOWS: &[&str] = &["none", "in-place", "feature-branch"];
 
 /// The tables of keys a reader's own can be laid over, the default first.
 ///
-/// `obelus_editing::keymap::Layout` is what each one binds, and a test in
+/// `obelus_keymap::Layout` is what each one binds, and a test in
 /// `obelus-app` holds the two lists to each other.
 pub const KEY_LAYOUTS: &[&str] = &["classic", "mnemonic"];
 /// How many build jobs at once, as a share of the machine.

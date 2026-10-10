@@ -2,58 +2,51 @@
 //!
 //! `App` holds everything Obelus knows and everything it can be asked to
 //! do, so its methods are as many as the things Obelus does. They are split
-//! across this directory by *what they are about* -- the file being read,
-//! the language server, the repository, the search, the settings -- rather
-//! than by size, and each file is one `impl App` block. Nothing moved
-//! between types to do it: an application's state is one thing, and cutting
-//! it into several would mean deciding, for every pair of them, which one
-//! owns the answer.
+//! across this directory by *what they are about* -- a directory for each
+//! feature: the file being read (`editor`), the language server (`lsp`), the
+//! agent and the chat (`chat`), git and GitHub (`git`), the project and what
+//! is kept about it (`project`) -- rather than by size, and each file is one
+//! `impl App` block. What a feature keeps is gathered into a struct of its
+//! own beside its files (`lsp::State`, `editor::Search`, `chat::Agent` and
+//! the rest), which is filing and not owning: `App` holds every one of them,
+//! and the methods that change them are still `App`'s. An application's
+//! state is one thing, and cutting it into several would mean deciding, for
+//! every pair of them, which one owns the answer.
+//!
+//! That was tried and measured rather than assumed. A feature's methods as
+//! its own struct's, handed the rest of `App` in pieces, need a way to ask
+//! `App` for whatever they cannot do themselves -- and the three features
+//! that lean on the rest the least (the pull requests, the trees, the
+//! projects) call 29 other methods between them that change something,
+//! from `work_in` and `let_go_of_the_project` to `show_list`. A list of
+//! requests that long is `App`'s own surface under another name.
 //!
 //! The files are named for the *aspect*, not for the module they talk to:
 //! `obelus_git` is the reading of a repository and `history` here is what
 //! Obelus does with what it reads. What is left in this file is the state
-//! itself, the keys, the frame, and the loop.
-pub mod agents;
-mod asking;
-mod changing;
-mod choosing;
-mod completing;
-mod conversations;
-mod counting;
+//! itself and the loop; working in a project (`lifecycle`), what a frame is
+//! drawn from (`frame`), where an event and a key go (`handling`), the
+//! pointer, what moves (`animation`), what is open over the file
+//! (`layering`) and what the renderer may ask (`screen`) are files beside
+//! it.
+mod animation;
+mod chat;
 pub mod dispatch;
 pub mod document;
-mod documents;
-mod fixing;
-mod headless;
+mod editor;
+mod frame;
+mod git;
+mod handling;
 mod hearing;
-mod hierarchy;
-mod history;
-mod history_view;
-mod hovering;
-mod noting;
-mod opening;
-pub use history_view::About;
-mod keys;
-mod mirroring;
-mod moving;
-mod naming;
-mod preferences;
-mod previewing;
-mod projects;
-pub mod pulls;
-mod relaying;
-mod releases;
-mod remote;
-mod renaming;
-mod renaming_files;
-mod reopening;
+mod layering;
+mod lifecycle;
+mod lsp;
+mod pointer;
+mod project;
 mod saying;
-mod searching;
-mod semantics;
+mod screen;
 mod switching;
-pub mod talking;
 mod terminals;
-mod worktrees;
 
 use std::{
     collections::{HashMap, HashSet},
@@ -61,34 +54,37 @@ use std::{
 };
 
 use anyhow::Result;
+pub use chat::{agents, talking};
+use chat::{conversations, headless, mirroring, opening, relaying, remote};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use document::Document;
 use documents::Rendered;
+use editor::{documents, keys, previewing};
+pub use git::pulls;
+use git::{history, history_view, worktrees};
 pub use headless::run_headless;
 use history::Changed;
+pub use history_view::About;
+use lsp::semantics;
 use obelus_agent::{Listed, Talking, acp};
 use obelus_buffer::{Buffer, Cursor, DocumentId, Mode, Motion, TextArea};
 use obelus_command::{Command, Requires};
 use obelus_component::{
     card::Card,
-    chat::{Chat, ChatOutcome, Room as ChatRoom},
+    chat::{ChatOutcome, Room as ChatRoom},
     completion::Completion,
     counts::Counts,
     hover::Hover,
     layers::{self, Layer, Room},
     picker::{
         Colouring, Listing, Marking, Picker, PickerItem, PickerLayout, PickerOutcome, PickerValue,
-        Remark, files,
+        Remark,
     },
     prompt::{Prompt, PromptKind, PromptOutcome},
     settings::{Settings, SettingsOutcome},
-    todo::TodoView,
 };
-use obelus_editing::{
-    keymap,
-    keymap::{Context, KeyChord, Keymap},
-    motion_for,
-};
+use obelus_editing::motion_for;
+use obelus_keymap::{Context, KeyChord, Keymap};
 use obelus_lsp::{
     action,
     action::{Outcome, SymbolAction},
@@ -103,6 +99,7 @@ use obelus_theme::{Theme, builtin};
 use obelus_ui::{Previewed, Screen, image::Images};
 use obelus_watch::Watcher;
 use previewing::Preview;
+use project::{preferences, projects, releases, reopening};
 use ratatui::{
     Terminal,
     backend::Backend,
@@ -177,6 +174,30 @@ struct Dragging {
 /// Everything Obelus is currently showing or remembering.
 #[derive(Debug)]
 pub struct App {
+    /// What is moving on screen, and the clock that moves it.
+    clock: animation::Clock,
+    /// The notes, as last read, and the wait for a burst of writes to settle.
+    notes: project::Notes,
+    /// Which conversations other windows have had and hold, as last read.
+    kept: chat::Kept,
+    /// The agent this window talks to, and what is running on its behalf.
+    agent: chat::Agent,
+    /// What the pointer is doing and what the last frame left for it to land
+    /// on.
+    pointing: pointer::Pointing,
+    /// What git has said about the files being read, kept until it moves.
+    git: git::Said,
+    /// The terminals Obelus has started, and the one it signs an agent in on.
+    terminal: terminals::Terminals,
+    /// The page that asks which project, while it is up.
+    which_project: project::Asking,
+    /// The project's files, as the lists of them have walked them.
+    files: editor::Files,
+    /// What is being searched for, and where.
+    search: editor::Search,
+    /// What the language server has said about the file being read, and what
+    /// is waiting on it.
+    lsp: lsp::State,
     keymap: Keymap,
     /// Everything opened this session, with a hole where one has been
     /// closed.
@@ -209,20 +230,6 @@ pub struct App {
     ///
     /// One field for all four, because they differ only in what they list.
     picker: Option<Picker>,
-    /// Which file walk the picker is currently expecting batches from.
-    ///
-    /// Bumped every time a file picker opens, so batches from a walk whose
-    /// picker has already closed are recognizable and dropped.
-    walk_generation: obelus_runtime::cancel::Latest,
-    /// Which walk of the history the list is expecting batches from.
-    ///
-    /// Bumped every time a history starts being read -- a key, a tab, a
-    /// different file -- so the batches of the walk before it are
-    /// recognizable as stale. Shared with the walking thread, which reads it
-    /// to find out that nobody is waiting for it any more: a whole history
-    /// is a walk of the whole project, and there is nothing else to stop it
-    /// with.
-    history_generation: obelus_runtime::cancel::Latest,
     /// Sender for the background walk, once the loop has started.
     events: Option<std::sync::mpsc::Sender<Event>>,
     /// One language server per language, started when a file of that language
@@ -271,110 +278,7 @@ pub struct App {
     /// above is the same news, placed, for the things that have to line up
     /// with characters on screen: the underline, the count, the complaint.
     reported: HashMap<PathBuf, Vec<obelus_lsp::trouble::Reported>>,
-    /// Where the pointer was last put down, and how many times in a row.
-    ///
-    /// A terminal reports button presses and nothing about double clicks,
-    /// so the count is Obelus's own: the same cell, pressed again inside
-    /// the time below, is the second press of one gesture.
-    clicked: Option<(u16, u16, std::time::Instant, u8)>,
-    /// The tool call the last press in the transcript was on, where it
-    /// names a file, and what that press folded.
-    ///
-    /// What the second press of a double click is about, wherever it
-    /// lands: the first can open a call, and a transcript at its end moves
-    /// up under the pointer by what opened -- so the same cell is another
-    /// row by the second press, and often another call.
-    pressed_call: Option<(
-        obelus_agent::acp::Place,
-        Option<obelus_component::chat::Folds>,
-    )>,
-    /// Whether the press the button is still down from was in the file.
-    ///
-    /// A drag is the far end of a selection that press began, and one
-    /// begun anywhere else has nothing in the file to extend: a double
-    /// click that opened a file, and a hand that moved before letting go,
-    /// selected from wherever the file opened at.
-    pressed_in_the_file: bool,
-    /// What could be typed next, while a server's answer is on screen.
-    ///
-    /// Beside the cursor rather than in a region of its own, and its own
-    /// field rather than a picker, because the reader is typing into the
-    /// document the whole time it is up: it takes six keys and the rest go
-    /// where they were going.
-    completion: Option<Completion>,
-    /// What the call the cursor is inside takes, while it is showing.
-    signature: Option<obelus_component::signature::Signature>,
-    /// The caret has moved under the panel, and this is the wait for it to
-    /// stop -- with the column it is waiting on, so that moving again
-    /// starts it again rather than letting a stale one fire.
-    signature_pause: Option<(crate::event::Pause, CharColumn)>,
-    /// What the server says the place under the caret is, while it is up.
-    hover: Option<Hover>,
-    /// What the server offered to do here, while a list of it is open.
-    ///
-    /// Code actions, which are the server's offers to change the file --
-    /// not [`App::symbol_actions`], which is the menu of questions about
-    /// the name under the caret. Two different things were called actions
-    /// here, and this is the half that edits.
-    code_actions: Vec<obelus_lsp::actions::Action>,
-    /// Every use of the name the pointer is resting on, in this file.
-    ///
-    /// Marked in the text rather than listed: the answer is "these, here",
-    /// and a list would take a region of screen to say what a background
-    /// says in place.
-    uses: Vec<Span>,
 
-    /// The document being changed, and when it last was.
-    ///
-    /// The same shape as [`Resting`] and for the same reason: there is a
-    /// question worth asking once the reader stops, and none worth asking
-    /// while they are still going.
-    settling: Option<Settling>,
-    /// Where the pointer is resting, since when, and whether that rest
-    /// has already asked its question.
-    ///
-    /// A hover on a rest is the one thing in Obelus that happens because a
-    /// reader did *nothing*, so the doing-nothing has to be measured: the
-    /// same cell, still under the pointer when the next tick lands. The
-    /// asking is remembered because a pointer left on a word that has no
-    /// answer must ask about it once rather than twelve times a second.
-    resting: Option<Resting>,
-    /// The cell the pointer was last reported over, wherever it was and
-    /// whatever it did there.
-    ///
-    /// Not `resting`, which is the file's alone and is about how long it
-    /// has been still: this is for what is raised under the pointer, which
-    /// has to follow it everywhere and at once. Never forgotten, because a
-    /// terminal says nothing when the pointer leaves it.
-    pointer: Option<(u16, u16)>,
-    /// The holes left by a snippet, while the reader is filling them in.
-    ///
-    /// Character offsets into the document, moved by every edit. A snippet
-    /// is over once the reader has tabbed past the last of them, which is
-    /// what gives `tab` back to indenting.
-    filling: Option<obelus_lsp::snippet::Filling>,
-    /// What each open file's tokens are, as its server last described them.
-    ///
-    /// Keyed by path rather than by buffer, because a buffer is a slot that
-    /// is reused: a closed file's classification would otherwise answer
-    /// about whatever is opened into its place. Each carries the document
-    /// version it describes and is ignored once the document has moved past
-    /// it, so a stale entry is inert rather than wrong.
-    tokens: HashMap<PathBuf, obelus_lsp::tokens::Tokens>,
-    /// Where the colours are, per file, as a server last said.
-    ///
-    /// Beside the tokens because it is the same kind of answer: about a
-    /// whole file, kept until the file changes, and thrown away rather
-    /// than shown stale.
-    colours: HashMap<PathBuf, Vec<obelus_lsp::colour::Coloured>>,
-    /// What a server would have the reader know, per file, as it last
-    /// said.
-    hints: HashMap<PathBuf, Vec<obelus_lsp::hint::Hinted>>,
-    /// What is drawn in each file that the file does not contain.
-    ///
-    /// Both answers in one list, because a cell of a line points at one
-    /// entry of it and cannot say which of two lists it meant.
-    drawn: HashMap<PathBuf, Vec<obelus_ui::Drawn>>,
     /// Where the reader has been.
     jumps: JumpList,
     /// The file the picker's selection names, opened so it can be shown.
@@ -382,27 +286,12 @@ pub struct App {
     /// Keyed by path: moving through a list reads each file once as it is
     /// passed, and moving back to one that is still selected reads nothing.
     preview: Option<Preview>,
-    /// How far along the welcome screen's colours have travelled.
-    ///
-    /// One number, advanced by a tick. The wordmark is the only thing that
-    /// reads it, and it reads it as an offset into a repeating ramp, so it
-    /// can grow forever and wrap on its own.
-    phase: u32,
     /// A question on the status bar, while one is being asked.
     ///
     /// Not a picker: a prompt has nothing to list, and going through a
     /// picker to ask for a line number puts a region of screen over the code
     /// to hold one row that says "type a line number".
     prompt: Option<Prompt>,
-    /// What has changed in the current file since the last commit.
-    ///
-    /// Kept here rather than in the buffer for the same reason the
-    /// highlights are: it is a function of the file's text and nothing else,
-    /// and re-deriving it when the text changes is simpler than keeping a
-    /// buffer's copy of it right. Re-derived means asking git again, so it
-    /// happens when a file is opened or reloaded -- which is exactly when
-    /// what changed can have changed -- and not per frame.
-    changes: Option<Changed>,
     /// The current file laid out as whatever reading it has, if it is being
     /// shown that way.
     ///
@@ -425,35 +314,6 @@ pub struct App {
     /// routes out of one -- a key pressed by accident may not leave the
     /// reader somewhere they did not ask to be.
     taken_from: Option<DocumentId>,
-    /// The thread sending ticks, while anything wants them.
-    ///
-    /// Held so that dropping it stops the animation. There is nothing to
-    /// animate once a file is open, and nothing over a network at all.
-    ticker: Option<Ticker>,
-    /// Whether the last frame asked to be woken again.
-    ///
-    /// Beside the ticker rather than read off it: the ticker needs the
-    /// loop's channel, and the decision is the thing worth seeing -- an
-    /// application with no loop behind it still makes it.
-    waking: bool,
-    /// A drag being held against the edge of what it is selecting in.
-    ///
-    /// The one thing on this screen that moves because of the reader's
-    /// hand rather than because something is happening on its own -- and
-    /// it has to, because a terminal says nothing at all while a held
-    /// pointer is still. Without a tick behind it a reader who dragged to
-    /// the edge and waited would wait for ever: the selection they are
-    /// making stops where the screen does.
-    dragging: Option<Dragging>,
-    /// The bars the last frame left on the page, which is where a press on
-    /// one lands: see `obelus_ui::bars`.
-    bars: Vec<obelus_ui::bars::Drawn>,
-    /// Which bar the pointer has hold of, and where on its mark.
-    ///
-    /// Whose rather than the bar itself: the frames go on being drawn while
-    /// it is held, and what the next move is measured against is the bar
-    /// as the latest of them drew it.
-    holding: Option<(obelus_ui::bars::Whose, u16)>,
     /// What this machine's faces are called, as whatever is drawing
     /// Obelus reported them.
     ///
@@ -481,23 +341,6 @@ pub struct App {
     ///
     /// `None` in a terminal, which is told nothing: see [`App::drawn_by`].
     drawing: Option<std::sync::Arc<dyn Drawing>>,
-    /// What git says about the files in the tree, while a list of them is
-    /// open.
-    ///
-    /// Gathered when a list opens and kept until the next one, because it is
-    /// a walk of the whole tree and the rows arrive in batches afterwards.
-    statuses: std::collections::HashMap<PathBuf, obelus_git::Standing>,
-    /// Where an agent reaches what Obelus offers it, if it could listen.
-    ///
-    /// Taken once per project and kept: every conversation is told an
-    /// address under this one, so a second agent started later reaches the
-    /// same tools rather than a second server nobody asked for. Taken again
-    /// only when the project is, because the tools are about one tree.
-    tools_url: Option<String>,
-    /// The server at that address, which stops listening when this goes.
-    listening: Option<obelus_mcp::Listening>,
-    /// The agent Obelus is talking to, once something has needed it.
-    talker: Option<obelus_agent::acp::Talk>,
     /// Whether `ctrl+enter` arrives as itself rather than as enter.
     ///
     /// A window's keys always do; a terminal's only where it speaks the
@@ -505,35 +348,9 @@ pub struct App {
     /// screen. What it decides is whether the box offers to send now: an
     /// offer of a key that arrives as enter is an offer that queues.
     ctrl_enter_arrives: bool,
-    /// The commands an agent asked to run, while they run.
-    ///
-    /// On the loop rather than on the connection's thread, because a
-    /// command is a thing on the page: the row that says what is happening
-    /// reads its output, and a key stops it.
-    runs: obelus_agent::running::Runs,
     /// This Obelus's place in the machine's pool of build jobs, while the
     /// settings ask for one.
     jobs: Option<obelus_jobs::Pool>,
-    /// The last number handed to a terminal, which is how what its program
-    /// writes finds it again.
-    terminals: obelus_terminal::Id,
-    /// A sign-in running in a terminal of its own, while it runs.
-    signing_in: Option<terminals::SigningIn>,
-    /// Whether shift is held, where a window has said so.
-    shifted: bool,
-    /// Which shell `open-terminal` starts, where a test has said: the
-    /// reader's own is whatever their environment says, and a test about
-    /// keys is not a test about their prompt.
-    shell: Option<PathBuf>,
-    /// Who is waiting to be told a command has ended.
-    ///
-    /// The agent's `terminal/wait_for_exit`, held until the command does.
-    /// Answered from the frame check rather than by blocking: the loop
-    /// that draws must not wait on a compile.
-    waiting_on: Vec<(
-        String,
-        obelus_agent::acp::Answer<Option<obelus_agent::running::Ended>>,
-    )>,
     /// What Obelus knows about the agents it could run.
     agents: agents::Agents,
     /// Where the agents page's marks were on the frame just drawn.
@@ -556,38 +373,6 @@ pub struct App {
     /// the keys that move about their list have to be told the height that
     /// is actually drawn.
     screen_area: Rect,
-    /// What a test said git would say, instead of asking it.
-    given_statuses: Option<HashMap<PathBuf, obelus_git::Standing>>,
-    /// Which listings the open file list is showing, in tab order.
-    ///
-    /// The changed listing has a tab only when something has changed, so
-    /// which tab is which listing is not fixed.
-    listing: Vec<Listing>,
-    /// Every path the walk behind the open file list has found, and
-    /// whether the tree said to ignore it.
-    ///
-    /// Put away so the flat listing can be shown again without walking
-    /// again: the reader types, the tree is put down and these are picked
-    /// up, and clearing the query puts them back down. With the flag,
-    /// because it is the walk that knows which files are only there
-    /// because the reader asked for them.
-    found: Vec<(PathBuf, bool)>,
-    /// The row the tree was on when the reader started typing.
-    ///
-    /// Typing turns the file list from a tree into the flat list of
-    /// everything, and clearing the query turns it back. The tree either
-    /// side of that is the same tree, so this is what puts the reader back
-    /// on the row they were reading rather than on the file they happen to
-    /// have open.
-    stood_on: Option<PathBuf>,
-    /// What will come back for the notes, to write down what was typed.
-    ///
-    /// Structural changes -- a note added, finished, moved -- are written
-    /// the moment they happen and never wait: they are one act each, and
-    /// there is nothing to wait for. Typing is not one act, and it used to
-    /// be written when the reader left the page. There is no leaving a
-    /// document, so a pause is the moment instead.
-    notes_pause: Option<crate::event::Pause>,
     /// What will come back for a tree that is behind its text.
     ///
     /// One for all the open documents, because catching up asks every one
@@ -596,36 +381,8 @@ pub struct App {
     syntax_pause: Option<crate::event::Pause>,
     /// What will come back for a document the reader has stopped changing.
     changes_pause: Option<crate::event::Pause>,
-    /// What will come back for a pointer that has stopped moving.
-    hover_pause: Option<crate::event::Pause>,
-    /// A rename of a file, from the question to the act.
-    ///
-    /// The gap between the two is a round trip: a server that knows the
-    /// language knows which other files name this one by where it is, and
-    /// Obelus asks before renaming it rather than leaving the reader to
-    /// find out from the next build.
-    renaming: Option<renaming_files::Renaming>,
-    /// Which directories of the file tree are open, relative to the root.
-    ///
-    /// Beside the list rather than in it, the way a history's opened commit
-    /// and a tree of calls are: the list is rows, and which of them exist
-    /// is worked out from this.
-    opened: std::collections::HashSet<PathBuf>,
     /// The commits an open history view is showing, and what is open in it.
     history: history_view::Showing,
-    /// The tree of calls an open list of them is showing.
-    calls: Option<hierarchy::Calls>,
-    /// Which scopes the open search is showing, in tab order.
-    ///
-    /// The tabs are only the scopes that can answer, so which tab is which
-    /// scope is not a fixed mapping and has to be remembered.
-    searching: Vec<Scope>,
-    /// Which radii the open list of problems is showing, in tab order.
-    ///
-    /// The same remembering for the same reason: a tab is only there when
-    /// it has something to answer with, so its position is not fixed.
-    /// Empty when the list showing is not that one.
-    troubling: Vec<semantics::Wrong>,
     /// Which agents the open list of conversations is showing, and what
     /// each of its rows stands for.
     ///
@@ -643,101 +400,6 @@ pub struct App {
     /// door a view opens by and given up at each door it closes by, which
     /// is how one of these came to be watched twice.
     watching: [conversations::Watched; conversations::WATCHED],
-    /// The project's table of conversations, as Obelus last read it.
-    ///
-    /// `None` until there has been a reason to read it. What the reasons
-    /// are is `App::sessions`; what they are *for* is that the notes page
-    /// asks which of them has a conversation on every frame it draws, and
-    /// parsing that table there cost more than everything else the page
-    /// does put together.
-    sessions_kept: Option<obelus_agent::acp::sessions::Remembered>,
-    /// The project's notes, as Obelus last read them.
-    ///
-    /// Not the page's copy, which is the reader's and is ahead of the file
-    /// while they are typing in it. This one is the file, for the two
-    /// things outside that page which have to know what a note says: the
-    /// box of the conversation about it, which offers to ask about the
-    /// note again once it has been rewritten, and the conversation's
-    /// header, which goes by the note until the agent has named it.
-    notes_kept: Option<obelus_git::todo::Todo>,
-    /// Which conversations somebody has open, as Obelus last looked.
-    ///
-    /// Asked when there is a reason and kept until there is another, like
-    /// everything else here. What makes that honest for a *lock* -- which
-    /// nothing writes and nothing removes when the process holding it dies
-    /// -- is that the kernel closes a dead process's files and a watcher
-    /// reports that close. See `obelus_watch` for the one Access event it
-    /// lets through, and `obelus_agent::chats` for why Obelus's own looking
-    /// is a read.
-    ///
-    /// And which checkout holds each, where its claim says.
-    held_kept: std::collections::BTreeMap<obelus_agent::chats::ChatId, Option<PathBuf>>,
-    /// Who last changed each line, per file that has been asked about.
-    ///
-    /// Kept rather than replaced, because a reader goes back and forth
-    /// between two files and a blame is a walk of history: asking again for
-    /// one they left a moment ago would spend that walk twice. Bounded by
-    /// the files opened in a session, which is tens of them.
-    blames: std::collections::HashMap<
-        (PathBuf, Option<gix::ObjectId>),
-        Vec<Option<obelus_git::Blamed>>,
-    >,
-    /// The committed text the margin's diff is against.
-    ///
-    /// One file's, because one file's diff is drawn: switching to another
-    /// reads that one's. Kept because reading it is opening the repository,
-    /// finding the commit, walking its tree and unpacking the blob -- and
-    /// what it answers changes only when the repository moves, where the
-    /// document it is compared with changes on every keystroke.
-    ///
-    /// `None` inside the answer is a file with nothing committed, which has
-    /// to be remembered too: otherwise every keystroke goes and finds out
-    /// again that there is nothing to find.
-    committed: Option<Committed>,
-    /// Which files have been asked about and have not answered yet, so a
-    /// frame does not start a second walk of the same history.
-    asking_blame: std::collections::HashSet<(PathBuf, Option<gix::ObjectId>)>,
-    /// Files parsed only to colour a search's rows.
-    ///
-    /// A search of a project answers with lines from files that are not
-    /// open, and a line reads like code only if something has parsed the
-    /// file it is a line of. Filled for the rows on screen and dropped when
-    /// the list closes: this is a cache for one list's lifetime, not a
-    /// second set of buffers.
-    row_syntax: std::collections::HashMap<PathBuf, Buffer>,
-    /// Which file and version the search's rows were gathered from.
-    ///
-    /// The file scope's rows are its lines, so they are only right for the
-    /// version they were read from: an agent rewriting the file while the
-    /// search is open has to change what the list says.
-    searched: Option<(PathBuf, i32)>,
-    /// Whether the symbols search offers names from outside the project.
-    ///
-    /// Off, because a server that has indexed a project has indexed what it
-    /// was built on too: a search for `new` answered from the whole index is
-    /// the registry's answer with the reader's own names somewhere in it.
-    /// The switch is for the times they meant the dependency.
-    outside: bool,
-    /// How the search is looking: the three switches at its foot.
-    ///
-    /// The reader's, kept for as long as Obelus is running and not written
-    /// to their settings: a pattern answers *this* question, and one turned
-    /// on to find one thing should not still be on next week.
-    looking: obelus_search::Looking,
-    /// Which search the answers arriving belong to.
-    ///
-    /// Bumped on every keystroke that changes what is being asked, so the
-    /// batches for the query before it are recognizable as stale. Shared
-    /// with the scanning threads, which read it to find out that they are
-    /// answering a question nobody is asking any more.
-    search_generation: obelus_runtime::cancel::Latest,
-    /// What is wrong with the line the reader is on, where anything is.
-    ///
-    /// Worked out every frame from the troubles and the caret rather than
-    /// remembered -- the same rule the row that says what is happening
-    /// follows, so there is no way for a complaint to be left on a line
-    /// that no longer has one.
-    complaining: Option<Complaint>,
     /// Something to tell the reader, until the next key.
     ///
     /// Half of what a language server does is answer with nothing, and
@@ -798,48 +460,6 @@ pub struct App {
     /// A number to be *compared* rather than read -- see
     /// `note_where_the_view_has_got_to`.
     travelled: i64,
-    /// The question "which project", while nobody has answered it.
-    ///
-    /// `Some` on a start with nothing to go on: no argument, and a
-    /// directory git has never heard of -- a desktop launcher, which
-    /// begins the process in the home directory. And once more after the
-    /// project has gone and the reader has said so, which leaves the window
-    /// where such a start began. It is the whole screen until it is
-    /// answered, and `None` otherwise: a reader on a project does not go
-    /// back to being asked, and the way to another one is a second Obelus,
-    /// which is how Obelus is used anyway.
-    chooser: Option<obelus_component::chooser::Chooser>,
-    /// What could finish the path being named, while one is.
-    ///
-    /// Here rather than inside the chooser for the reason the agent's own
-    /// commands are here: a list is built out of what the application
-    /// knows -- a directory it read -- and `obelus-component` draws and
-    /// walks lists rather than looking at disks.
-    naming_list: Option<Picker>,
-    /// What the last directory read found, and which directory that was.
-    ///
-    /// Kept apart from the list above, because the list *goes* for two
-    /// ordinary reasons -- the reader shut it, or what they have typed
-    /// since matches none of it -- and both of those have to be
-    /// undoable by typing another letter. Held together they were not:
-    /// once the list was gone there was nothing left to make it from, so
-    /// escape shut it for good and a letter too many could not be rubbed
-    /// out. The disk is read when the *directory* moves and never again.
-    naming_read: Option<(PathBuf, Vec<obelus_component::picker::PickerItem>)>,
-    /// Whether the reader shut the list on what is in the box now.
-    ///
-    /// Cleared the moment the box moves, which is the rule
-    /// `component::completion` follows: escape takes the panel away, and
-    /// typing is a new question rather than the same one asked twice.
-    naming_shut: bool,
-    /// Whether what is in the path box names something that is there.
-    ///
-    /// Kept rather than asked for: the row is drawn on every frame and
-    /// the answer moves only when the box does, so it is worked out on
-    /// the key that moved it. What it is for is the ink -- a reader has
-    /// to see that enter will refuse before they press it, which is the
-    /// rule the palette follows for a command it will not run.
-    named_is_there: bool,
     working_directory: PathBuf,
     /// What this window knows about its tree's record of what was open.
     reopening: reopening::Reopening,
@@ -930,6 +550,17 @@ impl App {
         let documents: Vec<Option<Document>> =
             open.into_iter().map(Document::from).map(Some).collect();
         Self {
+            clock: animation::Clock::default(),
+            notes: project::Notes::default(),
+            kept: chat::Kept::default(),
+            agent: chat::Agent::default(),
+            pointing: pointer::Pointing::default(),
+            git: git::Said::default(),
+            terminal: terminals::Terminals::default(),
+            which_project: project::Asking::default(),
+            files: editor::Files::default(),
+            search: editor::Search::default(),
+            lsp: lsp::State::default(),
             viewport_was: None,
             travelled: 0,
             looked_from: None,
@@ -942,93 +573,34 @@ impl App {
             servers: HashMap::new(),
             stopped: HashSet::new(),
             asked: HashMap::new(),
-            clicked: None,
-            pressed_call: None,
-            pressed_in_the_file: false,
-            signature: None,
-            signature_pause: None,
-            hover: None,
-            code_actions: Vec::new(),
-            uses: Vec::new(),
-            resting: None,
-            pointer: None,
-            settling: None,
             troubles: HashMap::new(),
             reported: HashMap::new(),
-            completion: None,
-            filling: None,
-            tokens: HashMap::new(),
-            colours: HashMap::new(),
-            hints: HashMap::new(),
-            drawn: HashMap::new(),
             jumps: JumpList::default(),
             preview: None,
-            phase: 0,
-            ticker: None,
-            waking: false,
-            dragging: None,
-            bars: Vec::new(),
-            holding: None,
             fonts_here: Vec::new(),
             monospace_here: None,
             names: None,
             replacing: false,
             drawing: None,
             prompt: None,
-            changes: None,
-            statuses: std::collections::HashMap::new(),
 
-            tools_url: None,
-            listening: None,
-            talker: None,
             ctrl_enter_arrives: true,
-            runs: obelus_agent::running::Runs::default(),
             jobs: None,
-            terminals: 0,
-            signing_in: None,
-            shell: None,
-            shifted: false,
-            waiting_on: Vec::new(),
             settled: preferences::Settled::default(),
             agents: agents::Agents::default(),
             picture_layout: None,
             settings: None,
             counts: None,
             screen_area: Rect::ZERO,
-            given_statuses: None,
-            listing: Vec::new(),
-            found: Vec::new(),
-            stood_on: None,
-            notes_pause: None,
             syntax_pause: None,
             changes_pause: None,
-            hover_pause: None,
-            renaming: None,
-            opened: std::collections::HashSet::new(),
             history: history_view::Showing::default(),
-            calls: None,
-            searching: Vec::new(),
-            troubling: Vec::new(),
             conversing: conversations::Conversing::default(),
             watching: [const { conversations::Watched::new() }; conversations::WATCHED],
-            sessions_kept: None,
-            notes_kept: None,
-            held_kept: std::collections::BTreeMap::new(),
-            blames: std::collections::HashMap::new(),
-            committed: None,
-            asking_blame: std::collections::HashSet::new(),
-            row_syntax: std::collections::HashMap::new(),
-            searched: None,
-            looking: obelus_search::Looking::default(),
-            outside: false,
-            search_generation: obelus_runtime::cancel::Latest::default(),
-            history_generation: obelus_runtime::cancel::Latest::default(),
             rendered: None,
             theme_before: None,
             taken_from: None,
-            complaining: None,
             note: None,
-            walk_generation: obelus_runtime::cancel::Latest::default(),
             events: None,
             amiss: Vec::new(),
             releases: releases::Releases::default(),
@@ -1045,11 +617,6 @@ impl App {
             // that builds an `App` without going through it -- every test
             // -- has a directory already and is not a reader standing in
             // front of a launcher.
-            chooser: None,
-            naming_list: None,
-            naming_read: None,
-            naming_shut: false,
-            named_is_there: false,
             working_directory: std::env::current_dir().unwrap_or_default(),
             reopening: reopening::Reopening::default(),
             // Not read here. Which branch the tree is on is a fact about
@@ -1144,7 +711,9 @@ impl App {
             self.ask_before_stopping_them(
                 running,
                 "leave",
-                obelus_buffer::question::Answer::Leaving(obelus_buffer::question::Leaving::Discard),
+                obelus_component::question::Answer::Leaving(
+                    obelus_component::question::Leaving::Discard,
+                ),
             );
             return;
         }
@@ -1263,179 +832,6 @@ impl App {
         &self.working_directory
     }
 
-    /// Puts the application on a project.
-    ///
-    /// Before the settings are read, always: a project has settings of its
-    /// own and a theme beside them, and finding those means knowing which
-    /// project first. [`App::load_config`] lays the project's answers over the
-    /// reader's at the end, so this only has to have happened by then.
-    pub fn work_in(&mut self, root: PathBuf) {
-        self.working_directory = root;
-        // Now, rather than on the first frame: the row draws the branch
-        // and a watch says what happens next rather than what already
-        // has.
-        self.head = obelus_git::head_of_the_tree(&self.working_directory);
-        // The one door every way of settling on a project goes through --
-        // an argument, the directory Obelus was started in, a row on the
-        // page that asks which -- which is why the remembering is here
-        // and at none of the three. `remember` declines anything that is
-        // not a worktree, so a process that began in the home directory
-        // writes nothing.
-        projects::remember(&self.working_directory, jiff::Timestamp::now().as_second());
-        let root = self.working_directory.clone();
-        self.keep_what_is_open_for(&root);
-    }
-
-    /// Which branch the tree Obelus was put on has checked out.
-    #[must_use]
-    pub fn head(&self) -> Option<&obelus_git::Head> {
-        self.head.as_ref()
-    }
-
-    /// Whether there is a project to do anything in.
-    ///
-    /// Not while Obelus is still asking which one, and not once
-    /// the one it was has gone. Both are known without doing any work,
-    /// which is what a requirement has to be.
-    #[must_use]
-    pub fn has_a_project(&self) -> bool {
-        self.chooser.is_none() && !self.gone
-    }
-
-    /// Whether the tree Obelus was put on has gone from disk.
-    #[must_use]
-    pub const fn tree_has_gone(&self) -> bool {
-        self.gone
-    }
-
-    /// The tree has gone from under this window.
-    ///
-    /// Heard from the watcher rather than looked for: the tree going is
-    /// its contents going, which are changes like any other, and every
-    /// change is asked first whether the tree is still there. Nothing is
-    /// polled, which leaves the platforms
-    /// whose watcher does not report a watched directory going with the
-    /// half that does not depend on it -- what keeps the project's things
-    /// from being written into a project that has gone is asked of the disk
-    /// at the moment of writing (`obelus_git::project`).
-    ///
-    /// Said over the whole screen, on top of whatever the reader was in
-    /// (`ui::gone`), and answered with one of two keys: enter asks which
-    /// project next, and the key that leaves leaves. Everything else that
-    /// was over the page goes first, because the page covers the screen
-    /// and a page covers what shares its room.
-    pub(super) fn the_tree_has_gone(&mut self) {
-        tracing::warn!(tree = %self.working_directory.display(), "the tree Obelus is on has gone");
-        if self.give_up_unseen(format!(
-            "The tree Obelus was on has gone: {}",
-            self.working_directory.display()
-        )) {
-            return;
-        }
-        self.make_room(layers::Room::Screen);
-        self.gone = true;
-        self.head = None;
-        self.worktrees.left_the_tree();
-    }
-
-    /// The page saying the tree has gone, answered -- or not, and then
-    /// nothing else hears the key either: what is under the page is about
-    /// a project that is not there.
-    pub(super) fn the_page_saying_it_has_gone(&mut self, key: &KeyEvent) -> bool {
-        if key.code == KeyCode::Enter && key.modifiers == KeyModifiers::NONE {
-            self.let_go_of_the_project();
-            self.ask_which_project();
-        } else if self.keymap.lookup(key, Context::Dialog) == Some(Command::Quit) {
-            self.request_quit();
-        }
-        true
-    }
-
-    /// Lets go of everything the project that went was.
-    ///
-    /// What was open is closed without asking, unsaved work and all -- a
-    /// file in a tree that has gone has nowhere to be written, and Obelus
-    /// does not make the tree again to write it. Going to another worktree
-    /// lets go the same way, and asks about what is unwritten before it
-    /// gets here (`App::go_to_worktree`).
-    ///
-    /// **A window that starts again, without starting again.** What is
-    /// kept is what belongs to the process and not to the project -- the
-    /// loop's channel, the reader's settings, what the front end can do --
-    /// and everything else is a new [`App`]'s. Kept by name rather than
-    /// cleared by name, so that a field nobody thought of here is one that
-    /// starts empty, and not one still holding the last project's answer.
-    pub(super) fn let_go_of_the_project(&mut self) {
-        // The sessions nothing was said in, as on the way out: an agent
-        // keeps what it is not told to let go of.
-        self.let_go_of_what_nothing_was_said_in(None);
-        // Moved on rather than made again, because a walk still running
-        // holds the old count: a new one would start where the old one's
-        // answers are numbered, and they would arrive as current.
-        self.walk_generation.next();
-        self.history_generation.next();
-        self.search_generation.next();
-        self.worktrees.not_showing();
-
-        let was = std::mem::replace(self, Self::new(Vec::new()));
-        self.events = was.events;
-        self.drawing = was.drawing;
-        self.fonts_here = was.fonts_here;
-        self.monospace_here = was.monospace_here;
-        self.screen_area = was.screen_area;
-        self.editor_area = was.editor_area;
-        self.settled = was.settled;
-        self.keymap = was.keymap;
-        self.theme = was.theme;
-        self.theme_name = was.theme_name;
-        self.walk_generation = was.walk_generation;
-        self.history_generation = was.history_generation;
-        self.search_generation = was.search_generation;
-        // The door other windows reach this one by is the process's, and
-        // listens for as long as it runs.
-        self.worktrees = was.worktrees;
-        self.agents = was.agents;
-        self.releases = was.releases;
-        self.looking = was.looking;
-        self.outside = was.outside;
-        // What Obelus could not make of its own files, which are not the
-        // project's: the reader's settings, which nothing reads again here.
-        // Obelus's own marks and none of a server's -- the server that said
-        // those has gone with the project, and nothing would ever take what
-        // it said away.
-        let root = was.working_directory;
-        self.troubles = was
-            .troubles
-            .into_iter()
-            .filter(|(path, _)| !path.starts_with(&root))
-            .filter_map(|(path, troubles)| {
-                let ours: Vec<_> = troubles
-                    .into_iter()
-                    .filter(|trouble| trouble.source.as_deref() == Some(semantics::OBELUS))
-                    .collect();
-                (!ours.is_empty()).then_some((path, ours))
-            })
-            .collect();
-        self.working_directory = root;
-        // A watcher of its own as well, on what is left -- the settings and
-        // the theme. Started again rather than kept and given things back
-        // one at a time: a watch is a count on the watcher it was taken on,
-        // and what this one held for the project and its files is a list
-        // nothing here has.
-        if was.watcher.is_some()
-            && let Some(events) = self.events.clone()
-        {
-            self.start_watching(events);
-        }
-        // And the rest of `was` goes at the end of this: the servers, the
-        // agent, what it was running and the tools it was offered, all of
-        // which stop as they are dropped.
-        //
-        // The reader's settings without the project's over them, which
-        // are in a file that is not there.
-        self.apply_project();
-    }
-
     /// Says to open on the file list rather than on a file.
     pub fn list_at_start(&mut self) {
         self.list_at_start = true;
@@ -1525,97 +921,6 @@ impl App {
         self.file_mut(self.current?)
     }
 
-    /// Starts everything that needs the loop's channel.
-    ///
-    /// Best effort throughout: a watcher that will not start, or a language
-    /// server that is not installed, is logged and then done without.
-    /// Refusing to run because a convenience is missing would trade it for a
-    /// missing program.
-    ///
-    /// Public because it is the whole of what starting means, and a test
-    /// about what Obelus does on the way up has nothing else to call.
-    pub fn start(&mut self, sender: std::sync::mpsc::Sender<Event>) {
-        self.events = Some(sender.clone());
-        // First, before anything is started that compiles: an agent, a
-        // server or a terminal is told where the pool is when it starts,
-        // and not after -- the servers below are started a few lines down.
-        self.settle_the_pool();
-        // Before anything else is started: the reader is looking at an empty
-        // screen until it arrives.
-        self.send_the_reopening();
-        self.start_watching(sender);
-        // Both of these are about the project, and on a start with
-        // nothing to go on there is not one yet: they would be rooted at
-        // the directory the process happened to begin in, which from a
-        // desktop launcher is the home directory, and nothing would move
-        // them when the reader answered. `settle_on` does them then.
-        if self.chooser.is_none() {
-            self.offer_the_tools();
-            self.watch_the_project();
-            self.say_where_this_window_is();
-        }
-        for index in 0..self.documents.len() {
-            self.serve(index);
-        }
-        // Not about the project: whether a newer Obelus is out is the
-        // same question wherever this one was started, so it is asked
-        // whether or not the reader has said where they work.
-        self.ask_about_releases();
-        // Before what went wrong, which a chat that is not there to
-        // connect to is one of. And not before there is a project, like
-        // the tools above: a conversation begun from the chat would be
-        // rooted at wherever the process began. `settle_on` connects.
-        if self.remote_at_start && self.chooser.is_none() {
-            self.connect_remote_at_start(self.reading_nothing());
-        }
-        // What went wrong on the way up, over whatever the first screen is,
-        // and last of all so that everything that could go wrong has.
-        let told = self.tell_what_went_wrong();
-        // Last, and here rather than at the command line: the rows come
-        // from a walk that sends on this channel, so a list opened before
-        // there was one would be a list nothing ever fills. Not over what
-        // went wrong, though: a list opened over a list would put the one
-        // the reader is owed under the one they asked for, and the files
-        // are one key away once it has been read.
-        //
-        // Nor where nobody is at the screen to choose from it: the walk
-        // that fills it is the whole project.
-        if self.list_at_start && !told && !self.headless {
-            self.open_file_picker();
-        }
-    }
-
-    /// Offers an agent Obelus's own tools, rooted at this project.
-    ///
-    /// Started with the loop rather than with the first agent, because
-    /// the address is what an agent is told and telling two of them two
-    /// addresses would be two servers -- but not before there is a
-    /// project, because the root is the whole of what the tools are
-    /// about.
-    pub(super) fn offer_the_tools(&mut self) {
-        let Some(sender) = self.events.clone() else {
-            return;
-        };
-        match obelus_mcp::serve(&self.working_directory, std::sync::Arc::new(sender)) {
-            // Said, because the silent half of this is the half nobody can
-            // ask about: whether an agent was offered anything, and whether
-            // it took it, were both questions Obelus had no answer to.
-            Ok((url, listening)) => {
-                tracing::info!(url, "Obelus is offering an agent its tools");
-                self.tools_url = Some(url);
-                self.listening = Some(listening);
-            }
-            Err(error) => {
-                // Not a reason to stop: an Obelus that cannot listen is an
-                // Obelus an agent cannot ask anything of, which is what it
-                // was until now.
-                tracing::warn!(%error, "Obelus is offering an agent nothing");
-                self.amiss
-                    .push("An agent asking Obelus for its tools reaches nothing".to_string());
-            }
-        }
-    }
-
     /// Gives the application the loop's channel and nothing else.
     ///
     /// Separate from [`App::start`] so that a test can have the parts that
@@ -1655,7 +960,7 @@ impl App {
     /// test that waited for one would be a test that sometimes did not.
     #[must_use]
     pub fn history_walk_for_test(&self) -> u64 {
-        self.history_generation.now()
+        self.git.history_generation.now()
     }
 
     /// Which document is being read, for a test that wants to know whether
@@ -1692,7 +997,7 @@ impl App {
     /// server is not started before the reader has said which.
     #[must_use]
     pub fn tools_url(&self) -> Option<&str> {
-        self.tools_url.as_deref()
+        self.agent.tools_url.as_deref()
     }
 
     /// Says where Obelus's own tools are, without listening anywhere.
@@ -1701,7 +1006,7 @@ impl App {
     /// address handed to an agent without a port being opened for it, which
     /// is what an agent is told rather than what it finds at the other end.
     pub fn tools_url_for_test(&mut self, url: &str) {
-        self.tools_url = Some(url.to_string());
+        self.agent.tools_url = Some(url.to_string());
     }
 
     /// Puts the application on a project of the test's choosing.
@@ -1719,170 +1024,6 @@ impl App {
         // together, and a test that moved one without the other would be
         // testing an application no reader can have.
         self.apply_project();
-    }
-
-    /// Takes the watch on the project's own settings, where there is now
-    /// somewhere to take it.
-    ///
-    /// Asked twice: once while the watches are being set up, and again if
-    /// the directory turns up later. Idempotent, because the watcher counts
-    /// watches by directory and a second ask for one it already holds is
-    /// the count going up -- which is also what makes the project's root
-    /// and a file of the reader's that happens to live in it one watch
-    /// rather than two.
-    fn watch_the_projects_settings(&mut self) {
-        let project = obelus_config::project_path_for(&self.working_directory);
-        let Some(watcher) = self.watcher.as_mut() else {
-            return;
-        };
-        if let Err(error) = watcher.watch(&project) {
-            tracing::debug!(%error, path = %project.display(), "still nothing to watch");
-        }
-    }
-
-    /// Takes the watches that are about the project, and nothing else.
-    ///
-    /// Its own piece because the project is not always known when Obelus
-    /// starts: a start with nothing to go on asks which one, and these
-    /// would otherwise all be taken against the directory the process
-    /// happened to begin in -- the home directory, from a desktop
-    /// launcher. Taken when the reader answers instead, which is
-    /// `App::settle_on`.
-    ///
-    /// The one that cost most by being wrong is git's: with `HEAD` and
-    /// `index` unwatched, `forget_what_git_said` never fires, so the
-    /// branch on the status row and the marks in the margin are whatever
-    /// they were when the project opened for the rest of the session.
-    pub(super) fn watch_the_project(&mut self) {
-        let root = self.working_directory.clone();
-        let project = obelus_config::project_path_for(&root);
-        let Some(watcher) = self.watcher.as_mut() else {
-            return;
-        };
-        // What git keeps its state in, because Obelus is not the only
-        // thing in the repository: a commit in another window, or in a
-        // shell, changes what has changed in every file on screen. The
-        // margin would otherwise go on showing a diff against a commit
-        // that is no longer the one the file is against.
-        for path in obelus_git::state_of(&root) {
-            if let Err(error) = watcher.watch(&path) {
-                tracing::warn!(%error, path = %path.display(), "not watching the repository");
-            }
-        }
-        // And the project's own settings, for the same reason twice over:
-        // another Obelus on this project may be looking at them, and a `git
-        // pull` rewrites them under everybody.
-        // The file the project *would* have, not the one it has: watching only
-        // what was there at startup is the "read once" mistake with a longer
-        // fuse, because it looks right until somebody creates the file --
-        // the window next door writing the project's first setting, or a
-        // pull bringing one.
-        // The project itself, for the directory its settings live in
-        // coming or going. Always, not only where it is missing now: a
-        // reader who deletes `.obelus` and makes it again is the same
-        // question as one who never had it, and a watch taken only in the
-        // second case left the first unheard for the rest of the session.
-        //
-        // Not recursive -- what is wanted is one directory appearing
-        // directly in the project, and a recursive watch on a repository is
-        // `target` and `.git` reported a thousand times over. Where the
-        // reader has a file of the project's root open, this is that same
-        // watch counted twice rather than a second one.
-        if let Err(error) = watcher.watch_directory(&root) {
-            tracing::warn!(
-                %error,
-                path = %root.display(),
-                "not watching the project for settings appearing"
-            );
-        }
-        if let Err(error) = watcher.watch(&project) {
-            // A project with no settings of its own has no directory to
-            // watch, and that is the ordinary case: a quarter of the starts
-            // in this machine's own log said so, every one of them about a
-            // project that was working perfectly. A warning on every start
-            // is how a log stops being read -- the same argument the list of
-            // what went wrong on the way up is built on, and the level
-            // `settle_a_watch` already uses for the same failure.
-            //
-            // A directory that *is* there and will not be watched is a real
-            // failure and keeps its warning: settings changed in another
-            // window will not arrive, and that is worth a word.
-            match project.parent().is_some_and(std::path::Path::is_dir) {
-                true => tracing::warn!(
-                    %error,
-                    path = %project.display(),
-                    "not watching the project's settings"
-                ),
-                // The directory is not there either, which is the ordinary
-                // case and not a failure worth a word. But the intent above
-                // -- hearing the file *appear* -- is the whole reason this
-                // watch is on the file the project would have, and it
-                // cannot be served by watching a directory that is not
-                // there. So the project itself is watched instead, which is
-                // where `.obelus` will turn up.
-                //
-                // Not recursive: what is wanted is one directory appearing
-                // directly in the project, and a recursive watch on a
-                // repository is `target` and `.git` reported a thousand
-                // times over. It is given up by nothing, because the
-                // directory can go again as easily as it came -- and where
-                // the reader has a file of the project's root open, this is
-                // the same watch counted twice rather than a second one.
-                false => tracing::debug!(
-                    %error,
-                    path = %project.display(),
-                    "no settings of the project's own yet"
-                ),
-            }
-        }
-    }
-
-    /// Starts watching every open file for changes on disk.
-    fn start_watching(&mut self, sender: std::sync::mpsc::Sender<Event>) {
-        let mut watcher = match Watcher::new(sender) {
-            Ok(watcher) => watcher,
-            Err(error) => {
-                tracing::warn!(%error, "auto-reload is off");
-                // The one watcher failure worth saying: without it nothing
-                // Obelus reads is read again for the rest of the session,
-                // so a file changed in another window, a commit, and the
-                // settings all go unheard.
-                self.amiss.push(
-                    "Nothing is being watched, so changes made elsewhere will not arrive"
-                        .to_string(),
-                );
-                return;
-            }
-        };
-        for buffer in self.documents.iter().flatten().filter_map(Document::file) {
-            if let Err(error) = watcher.watch(buffer.path()) {
-                tracing::warn!(%error, path = %buffer.path().display(), "not watching");
-            }
-        }
-        // And the settings, because Obelus is not the only Obelus. Several
-        // of them on one project is the ordinary way to work -- the
-        // terminal splits the window, Obelus does not -- so a setting
-        // changed in one of them is a setting changed for all of them, and
-        // a file read once at startup would leave every other window
-        // holding what the reader has already moved on from.
-        if let Some(path) = self.settled.path.clone() {
-            // And whatever it really names, which for a reader who keeps
-            // their settings in a dotfiles repository is a file in there:
-            // what a `git pull` rewrites is that one, and a watch on the
-            // link's own directory would never hear about it. Both, because
-            // the link itself can be replaced too -- by the thing that made
-            // it -- and that is a change to these settings as well.
-            for path in [obelus_config::resolved(&path), path] {
-                if let Err(error) = watcher.watch(&path) {
-                    tracing::warn!(%error, path = %path.display(), "not watching the settings");
-                }
-            }
-        }
-        self.watcher = Some(watcher);
-        // And wherever the colours come from, which is its own question:
-        // a theme is a file Obelus never writes and something else may
-        // replace under it.
-        self.watch_theme();
     }
 
     /// The open picker, for the renderer.
@@ -2046,415 +1187,48 @@ impl App {
             .filter(|trouble| trouble.severity != obelus_lsp::trouble::Severity::Hint)
     }
 
-    /// What the call the cursor is inside takes, while it is showing.
-    ///
-    /// Not while the completion panel is up: the two would be drawn in the
-    /// same place, and what could be typed next is the nearer question.
+    /// The one panel beside the caret: see [`obelus_ui::Beside`] for which
+    /// wins, which is decided here and nowhere else.
     #[must_use]
-    pub const fn signature(&self) -> Option<&obelus_component::signature::Signature> {
-        match self.completion.is_some() {
-            true => None,
-            false => self.signature.as_ref(),
+    pub fn beside_the_caret(&self) -> Option<obelus_ui::Beside<'_>> {
+        use obelus_ui::Beside;
+
+        if let Some(completion) = &self.lsp.completion {
+            return Some(Beside::Completion(completion));
         }
+        if let Some(signature) = &self.lsp.signature {
+            return Some(Beside::Signature(signature));
+        }
+        if let Some(hover) = &self.lsp.hover {
+            return Some(Beside::Hover(hover));
+        }
+        let complaint = self.lsp.complaining.as_ref()?;
+        Some(Beside::Complaint(obelus_ui::Complained {
+            line: complaint.line,
+            column: complaint.column,
+            said: &complaint.said,
+            severity: complaint.severity,
+            others: complaint.others,
+        }))
     }
 
-    /// What the server says the place under the caret is, while it is up.
-    ///
-    /// Not while either of the other two panels is: all three want the
-    /// cells beside the cursor, and of the three this is the question
-    /// asked longest ago.
+    /// What the call the cursor is inside takes, while it is the panel.
     #[must_use]
-    pub const fn hover(&self) -> Option<&Hover> {
-        match self.completion.is_some() || self.signature.is_some() {
-            true => None,
-            false => self.hover.as_ref(),
-        }
+    pub fn signature(&self) -> Option<&obelus_component::signature::Signature> {
+        self.beside_the_caret()?.signature()
+    }
+
+    /// What the server says the place under the caret is, while it is the
+    /// panel.
+    #[must_use]
+    pub fn hover(&self) -> Option<&Hover> {
+        self.beside_the_caret()?.hover()
     }
 
     /// What could be typed next, while a server's answer is on screen.
     #[must_use]
     pub const fn completion(&self) -> Option<&Completion> {
-        self.completion.as_ref()
-    }
-
-    /// The area a list is drawn in.
-    ///
-    /// The whole of the region, a question the agent is waiting on
-    /// included: the drawing's own answer, which this has to be the same as
-    /// or the rows a key moves through are not the rows on screen.
-    ///
-    /// An area and not a [`layers::Room`]: a room is how much of the screen
-    /// a view declares it takes, and this is the rectangle that comes out of
-    /// laying one out.
-    fn picker_area(&self) -> Rect {
-        self.drawn_in()
-    }
-
-    /// The region a view drawn over the file is drawn in.
-    ///
-    /// Worked out from the screen, the way the drawing works it out, rather
-    /// than read from [`Self::editor_area`] -- which is what the *document*
-    /// has, and a compact list takes room off it. Asked against that, a
-    /// press in the command palette was measured from a rect ten rows above
-    /// the one the palette had drawn itself in: its tabs answered nothing,
-    /// and its rows answered about the wrong ones.
-    fn drawn_in(&self) -> Rect {
-        obelus_ui::regions(self.screen_area).editor
-    }
-
-    /// Whether anything on screen is moving.
-    ///
-    /// Several reasons, each said out loud. It was one question with a
-    /// `match` on whether the conversation was showing, and that stopped
-    /// being true the moment a list of open documents could say an agent is
-    /// working in one the reader is not looking at -- a mark that only
-    /// turns while you are watching it is a mark that never turns. The
-    /// notes say it too, about the conversation a note has.
-    ///
-    /// Asked every frame from what is true, rather than switched on and off
-    /// from the half-dozen places that change any of it, which is how a
-    /// ticker outlives its reason.
-    fn wants_animating(&self, working: bool) -> bool {
-        if self.headless {
-            return false;
-        }
-        // Nothing open and no page taking its place: the welcome screen's
-        // sheen. A settings page over the welcome is not a welcome screen,
-        // so keeping its clock running would redraw a motionless page.
-        //
-        // And not where a window is drawing, because there the sheen is
-        // the window's own and runs on the window's own clock. What this
-        // ticker moves is the ramp written into the cells, which is the
-        // sheen a terminal can draw and the one thing a window does not
-        // read -- so it would be twelve pages a second pushed at a front
-        // end that draws the light itself, on the one screen a reader
-        // leaves up while they decide what to open. The cells keep the
-        // ramp they were last drawn with, which is that sheen at one
-        // moment and as true as any other frame of it.
-        //
-        // Nor while Obelus is asking which project: that screen is not the
-        // welcome screen and has no mark to run a sheen across.
-        let sheen = self.current.is_none()
-            && self.chooser.is_none()
-            && !self.layers().filling()
-            && !obelus_config::in_a_window();
-        // And a drag held against an edge, which is the one of these that
-        // is waiting on the reader's hand rather than on something
-        // happening by itself. It is here for the same reason as the
-        // rest: without a tick it stops, and a selection that stops at the
-        // edge of the screen is a selection of what fits on it.
-        //
-        // The rest are all a mark that turns, which a window turns itself
-        // on its own clock -- the same reason the sheen is not ticked
-        // there. Except where the reader turned animation off: then the
-        // window turns it a frame a tick, the frame this clock writes.
-        let window_turns = obelus_config::in_a_window() && self.settled.config.animation;
-        sheen || self.dragging.is_some() || (!window_turns && self.turning(working))
-    }
-
-    /// Whether a mark that turns is on the screen -- see `wants_animating`.
-    fn turning(&self, working: bool) -> bool {
-        // An agent at work in the conversation being read.
-        working
-            // Or in one that is not, while the list that says so is open.
-            || (self.selected_document().is_some() && self.anything_working())
-            // Or while the notes are, which say the same thing about the
-            // conversation a note has: the mark beside a note turns for
-            // exactly as long as its agent is at work, and without this
-            // it would be woken only by the reader typing -- a mark that
-            // moves when you touch it and stands still while the work
-            // happens.
-            || (self.notes().is_some() && self.anything_working())
-            // A row of a tree of calls waiting on a server. The same rule
-            // as a conversation's: a mark that turns has to be woken, and
-            // a mark that does not turn is a mark saying nothing is
-            // happening.
-            || self.calls_turning()
-            // And the badge on the status row, for as long as this file's
-            // server is reading the project. The same rule again, and the
-            // reason the badge turns at all: an empty answer while it
-            // reads and an empty answer about a symbol with no definition
-            // are the same message, and a mark standing still says the
-            // second.
-            || self.server_busy()
-            // And the chat's mark, while the window it talks to connects.
-            || self.remote_turning()
-            // And a list being matched somewhere else, or still being
-            // filled. The same rule once more: the row that says so turns,
-            // and a mark drawn once and never again is a mark saying
-            // nothing is happening -- which is the one thing this row
-            // exists to contradict. Filled as well as matched, because a
-            // list waiting on one answer from somewhere else -- the pull
-            // requests, from `gh` -- has no batches arriving to redraw it.
-            || self
-                .picker
-                .as_ref()
-                .is_some_and(|picker| picker.is_filling().is_some())
-            // And a preview whose last part is still being asked for: what
-            // has happened on a pull request, which is one answer with
-            // nothing arriving before it.
-            || self.preview_turns()
-            // And an install, while the page of agents is open: a card
-            // whose package manager says nothing until it is done has only
-            // its mark to say the install is still going.
-            || (self.settings().is_some_and(Settings::on_agents)
-                && !self.agents.installing.is_empty())
-    }
-
-    /// Whether an agent is at work in any conversation at all.
-    fn anything_working(&self) -> bool {
-        let Some(talker) = self.talker.as_ref() else {
-            return false;
-        };
-        self.documents
-            .iter()
-            .flatten()
-            .filter_map(Document::chat)
-            .any(|talk| talker.is_thinking(talk.session.as_ref(), talk.requested))
-    }
-
-    /// Whether the last frame asked to be woken again.
-    ///
-    /// Which is the difference between a tree that catches up on its own
-    /// and one that waits for the reader to press something else.
-    #[must_use]
-    pub const fn is_waking(&self) -> bool {
-        self.waking
-    }
-
-    /// Whether any open document's tree is older than its text.
-    fn anything_behind(&self) -> bool {
-        self.documents
-            .iter()
-            .flatten()
-            .filter_map(Document::file)
-            .any(Buffer::syntax_is_behind)
-    }
-
-    /// How long a tree may be behind its text before it is caught up.
-    ///
-    /// What the animation's tick used to give this by accident, kept at the
-    /// same length so that the colours arrive when they always have: long
-    /// enough that a burst of keys is one parse, short enough that the
-    /// reader is still looking at what they typed.
-    const CATCHES_UP_AFTER: std::time::Duration = std::time::Duration::from_millis(80);
-
-    /// Comes back for the trees that owe an answer, unless something
-    /// already is.
-    ///
-    /// Set by the first frame that notices and not put back by the ones
-    /// after it -- the same rule the watcher's debouncing follows, and for
-    /// the same reason: a deadline that slid would never arrive while the
-    /// reader kept typing, which is exactly when a tree is behind.
-    ///
-    /// Asked from what is true rather than started where a document
-    /// changes, which is how the ticker was asked and is what stops a clock
-    /// outliving its reason.
-    fn catch_up_soon(&mut self) {
-        if !self.anything_behind() {
-            self.syntax_pause = None;
-            return;
-        }
-        if self.syntax_pause.is_some() {
-            return;
-        }
-        self.syntax_pause = self.come_back_in(Self::CATCHES_UP_AFTER, Event::SyntaxSettled);
-    }
-
-    /// Works out what every document that owes it means now.
-    ///
-    /// Everything open rather than what is on screen: a tree left behind on
-    /// a document nobody is looking at would keep the ticker awake for the
-    /// rest of the session.
-    pub(crate) fn settle_syntax(&mut self) {
-        // Nothing else has to be told: the text did not move, only what
-        // Obelus knows about it, so everything keyed on the version stays
-        // keyed on the version it already had.
-        for buffer in self
-            .documents
-            .iter_mut()
-            .flatten()
-            .filter_map(Document::file_mut)
-        {
-            buffer.settle_syntax();
-        }
-    }
-
-    /// A clock to come back with, where there is a loop to come back to.
-    ///
-    /// The one place that knows a timer needs the loop's channel. `None`
-    /// without one, which is a test driving its own events: whether
-    /// something is waiting is decided either way, and what a test drives
-    /// by hand is the event the clock would have sent.
-    ///
-    /// Every wait Obelus keeps goes through here -- the notes, a tree
-    /// behind its text, a rename's server, a document's standing questions
-    /// and the pointer's rest -- so that the answer to "is there anything
-    /// to come back from" is written once.
-    fn come_back_in(
-        &self,
-        after: std::time::Duration,
-        event: Event,
-    ) -> Option<crate::event::Pause> {
-        self.events
-            .clone()
-            .map(|events| crate::event::Pause::start(events, after, event))
-    }
-
-    /// Starts or stops the ticker, and does nothing where it is already
-    /// what it should be.
-    ///
-    /// A thread waking twelve times a second to redraw a screen with
-    /// nothing moving on it is the one cost an animation must not have.
-    fn animate(&mut self, wanted: bool) {
-        self.waking = wanted;
-        match (wanted, self.ticker.is_some()) {
-            (true, false) => self.ticker = self.events.clone().and_then(Ticker::start),
-            (false, true) => self.ticker = None,
-            _ => {}
-        }
-    }
-
-    /// Which set of key bindings a key is looked up in.
-    ///
-    /// What the reader is in, rather than what they are doing: a dialog
-    /// takes the keys bound in it and no others, so Obelus's own commands
-    /// cannot open a second dialog over the first -- `f1` in a
-    /// conversation used to put a file list on top of it, which then took
-    /// two escapes to leave and gave no way to tell which of the two a key
-    /// would reach.
-    pub(crate) fn context(&self) -> Context {
-        // Being asked which project is a dialog like any other, and takes
-        // what `Context::Dialog` binds: leaving, and the four keys that
-        // act on what the reader has hold of -- a box they can select in
-        // and not paste into is half a box. Everything else in Obelus is
-        // about a project, and `Requires::AProject` is what refuses it.
-        if self.chooser.is_some() {
-            return Context::Dialog;
-        }
-        // A list whose rows are open files is the list of open files, and
-        // that one has a command of its own.
-        if self.selected_document().is_some() {
-            return Context::Documents;
-        }
-        if self.is_showing_dialog() {
-            return Context::Dialog;
-        }
-        if self.conversation().is_some() {
-            return Context::Chat;
-        }
-        if self.typing_to_a_program() {
-            return Context::Terminal;
-        }
-        Context::Normal
-    }
-
-    /// What is on screen over the file, worked out from what is open.
-    ///
-    /// The one answer. Everything that used to ask "is a dialog showing" or
-    /// "which of these is nearest" asks this instead, and the `match` below
-    /// is the single place where which field means which layer is written
-    /// down. It is exhaustive, so a view added without an answer here is a
-    /// view that does not compile.
-    #[must_use]
-    pub fn layers(&self) -> layers::Layers {
-        layers::Layers::showing(|layer| match layer {
-            layers::Layer::Counts => self.counts.is_some(),
-            layers::Layer::Settings => self.settings.is_some(),
-            layers::Layer::Names => self.names.is_some(),
-            layers::Layer::Picker => self.picker.is_some(),
-            layers::Layer::Prompt => self.prompt.is_some(),
-            layers::Layer::Gone => self.gone,
-        })
-    }
-
-    /// Clears the room a view is about to take.
-    ///
-    /// The one thing every opener does, in one place. There were six of
-    /// them, each with its own idea: two cleared a list and a question, one
-    /// cleared a list and the settings, and three cleared nothing at all --
-    /// including the two added most recently, which is the shape of the
-    /// problem. Nothing made anybody think about it, so nobody did.
-    ///
-    /// The rule is not "opening covers": that is false for a question on the
-    /// status bar, which is about the thing now behind it, and it would
-    /// allow two pages at once. The rule is that a view covers what shares
-    /// its room, which is [`Room::covers`] and is declared beside the view
-    /// rather than here.
-    pub(crate) fn make_room(&mut self, room: layers::Room) {
-        for layer in self.layers().nearest_first() {
-            if room.covers(layer.room()) {
-                self.leave(layer);
-            }
-        }
-    }
-
-    /// Takes one layer down, doing whatever leaving it means.
-    ///
-    /// The same door escape goes through, so a view cannot be left one way
-    /// and not the other: the notes are written down however the reader
-    /// leaves them.
-    pub(crate) fn leave(&mut self, layer: Layer) {
-        match layer {
-            // Not left: answered. Escape gives up on the nearest thing,
-            // and here there is nothing nearer to give up on and nothing
-            // behind it to give up to -- what is behind it is the project
-            // that went.
-            Layer::Gone => {}
-            Layer::Picker => {
-                self.picker = None;
-                // Back to where they were looking from. The other way out
-                // of a list is choosing a row, and that goes somewhere on
-                // purpose -- see `App::accept`.
-                self.look_back();
-                self.history = history_view::Showing::default();
-                self.troubling.clear();
-                self.conversing = conversations::Conversing::default();
-                self.close_calls();
-                // What a server offered to do here, which the rows were
-                // indexes into. A row is chosen by its position, so offers
-                // outliving their list are offers pointing at nothing.
-                self.code_actions.clear();
-                // Nothing about the agent's question: that is a card in the
-                // conversation, not a list, and a list opened over it and
-                // closed again -- or one that took the reader to another
-                // conversation -- was never the question. Refusing it here
-                // answered "no" for a reader who had only looked at F2.
-                // A theme previewed but not chosen, and the file a
-                // question about leaving took the reader to. The two
-                // things a picker changes about the application while it
-                // is open, and so the two that have to be put back.
-                self.go_back_from_asking();
-                if let Some((name, before)) = self.theme_before.take() {
-                    self.set_theme(&name, before);
-                }
-            }
-            Layer::Names => self.names = None,
-            Layer::Settings => self.settings = None,
-            Layer::Counts => self.counts = None,
-            Layer::Prompt => self.prompt = None,
-        }
-    }
-
-    /// Whether something is showing that the reader is *in*.
-    ///
-    /// A list, the settings, or the counts: each takes the keys itself, each
-    /// is left with escape, and each is over whatever is being read rather
-    /// than being it. Obelus's own commands do not run from inside one, so
-    /// the only way to a second one is to leave the first.
-    ///
-    /// A conversation is not one of these, and stopped being one when it
-    /// became a document: it is *what* is being read, not something over it,
-    /// which is why Obelus's own keys work inside one.
-    ///
-    /// The question on the status bar is not one of these. It is a row
-    /// rather than a screen, what it is asking about is still visible
-    /// behind it, and it says its own answer to escape.
-    #[must_use]
-    pub fn is_showing_dialog(&self) -> bool {
-        self.layers()
-            .furthest_first()
-            .any(|layer| matches!(layer.context(), obelus_editing::keymap::Context::Dialog))
+        self.lsp.completion.as_ref()
     }
 
     /// How far along the welcome screen's colours have travelled, in ticks.
@@ -2463,7 +1237,7 @@ impl App {
     /// ticker -- a test, a remote session -- is the same screen every time.
     #[must_use]
     pub const fn phase(&self) -> u32 {
-        self.phase
+        self.clock.phase
     }
 
     /// Puts the animation back where it starts, for a test.
@@ -2475,7 +1249,7 @@ impl App {
     /// golden screen that passes on the machine it was made on -- which is
     /// what `⠋` against `⠼` means, and it says nothing about Obelus.
     pub const fn phase_for_test(&mut self, phase: u32) {
-        self.phase = phase;
+        self.clock.phase = phase;
     }
 
     /// What Obelus has to say, until the next key.
@@ -2581,1977 +1355,6 @@ impl App {
         if let Some(rows) = moved {
             self.travelled = self.travelled.saturating_add(rows as i64);
         }
-    }
-
-    /// How far the file's view has travelled altogether, in screen rows.
-    #[must_use]
-    pub const fn travelled(&self) -> i64 {
-        self.travelled
-    }
-
-    /// The room the text has, once the gutter has taken its columns.
-    ///
-    /// Public because a test of what the view does when the cursor reaches
-    /// the right-hand edge has to know where that edge is, and working it
-    /// out again in the test would be the same arithmetic twice.
-    pub fn text_area(&self) -> TextArea {
-        let width = match self.current_buffer() {
-            Some(buffer) => {
-                // The margin on the left and the change map on the right
-                // both appear only for a file in a repository, and they
-                // appear together: they are the same answer at two scales.
-                // The fold column is its own condition, and it is asked
-                // through `text_offset` so that this and the view cannot
-                // disagree about what comes before the text -- a width one
-                // cell wider than the view draws wraps a line here and not
-                // there, and the caret then sits a row below the character
-                // it is on.
-                let before = obelus_ui::editor::text_offset(
-                    buffer.text().line_count(),
-                    obelus_ui::editor::changed(self.changes()),
-                    !buffer.folds().is_empty(),
-                );
-                let after = obelus_ui::editor::map_width(self.changes());
-                self.editor_area
-                    .width
-                    .saturating_sub(before)
-                    .saturating_sub(after)
-                    .saturating_sub(obelus_ui::editor::SCROLLBAR_WIDTH)
-            }
-            None => self.editor_area.width,
-        };
-        TextArea {
-            width,
-            height: self.editor_area.height,
-            wrap: self.settled.config.wrap,
-        }
-    }
-
-    /// Records the geometry, scrolls the cursor on screen, and highlights what
-    /// that leaves visible.
-    ///
-    /// In this order: the highlight range depends on where the viewport ended
-    /// up, so scrolling has to have happened.
-    ///
-    /// Private: it has to run before the frame is drawn, and the only thing
-    /// that knows that is [`App::draw_into`], which is the one caller.
-    fn prepare(&mut self, editor_area: Rect) {
-        // What this frame has, before anything is laid out against it.
-        // Everything below asks for the room through `editor_area`, so
-        // setting it afterwards laid the notes out at the width the *last*
-        // frame had -- right on a screen that is not changing, and wrong on
-        // every frame that changed it: the view opening, a terminal
-        // resized, a region growing as something over it closes. The next
-        // redraw put it right, so what a reader saw was their words go and
-        // come back.
-        self.editor_area = editor_area;
-        // A terminal is told the size it is drawn at before anything else
-        // looks at it, for the reason the notes are laid out against this
-        // frame's room: a program told a size a frame late draws its screen
-        // once at the old one.
-        self.size_the_terminal(editor_area);
-        self.note_where_the_view_has_got_to();
-        // What the views showing are drawn from, and what Obelus has to be
-        // told about it. First, because everything below this reads one of
-        // those kept answers -- the notes' marks are worked out a dozen
-        // lines down -- and a watch taken at the end of the frame is a view
-        // that draws its first frame from whatever was there last time.
-        self.settle_the_watches();
-        // And what the settings page says about the chat, which can move
-        // under it the way the settings can.
-        self.settle_the_remote_page();
-        // And the connection to that chat, from the same answer: which one
-        // is set.
-        self.settle_the_connection();
-        // Or the window this one is heard in it through, where another has
-        // it.
-        self.settle_the_relay();
-        // And a thread for every conversation there that can be named.
-        self.settle_the_threads();
-        // And the sessions, from the same question: which conversation is
-        // on screen.
-        self.settle_the_sessions();
-        // And what is open, written down where it has changed, for the
-        // same reason: there are a dozen ways a document opens or closes.
-        self.write_down_what_is_open();
-        // And what this window is reading, for the others' lists of the
-        // worktrees, for the same reason.
-        self.say_what_this_window_is_reading();
-        // The notes are laid out against the room they have: a terminal is
-        // resized and a setting is changed while they are open, and the rows
-        // they are made of depend on both.
-        let laid = self.notes_laid_out();
-        // And which of them another Obelus has the conversation of, which
-        // decides what the keys will change and so which of them the foot
-        // offers. Beside the room for the same reason: both are the page's
-        // answer to something outside it that moves while it is open.
-        let elsewhere = self.which_notes_are_elsewhere();
-        if let Some(notes) = self.notes_mut() {
-            notes.lay_out(laid.0, laid.1);
-            notes.these_are_elsewhere(elsewhere);
-        }
-        // And the window against the rows that room leaves, which is the
-        // other half of the same question: the width says what the rows
-        // are and this says how many of them the reader can see. Asked
-        // after the laying out, because the rows have to exist before the
-        // window can be put over them, and from the region the list is
-        // really drawn in -- the foot under it is part of what decides how
-        // many rows there are, and it grows and shrinks with what the note
-        // under the caret can do.
-        let seen = self.notes().map(|notes| {
-            obelus_ui::todo::list_region(self.editor_area, &obelus_ui::todo::hints(notes)).height
-        });
-        if let (Some(seen), Some(notes)) = (seen, self.notes_mut()) {
-            notes.settle_window(seen);
-        }
-        self.check_servers();
-        self.check_runs();
-        self.show_what_is_wrong();
-        // The marks on a list of open documents, which say what an agent is
-        // doing in a conversation nobody is watching. Here rather than
-        // where the list is built, because that is the whole point: the
-        // rows are a snapshot and this is the part of them that is about
-        // now.
-        self.freshen_the_document_marks();
-        // And what a row of the list of conversations says about itself,
-        // which is the same rule one level along: another Obelus opening
-        // or closing one is not this reader's keystroke, and the row has
-        // to say so before they press.
-        self.freshen_the_conversation_rows();
-        // And the list of pull requests, whose rows carry the same lock.
-        self.freshen_the_pull_request_rows();
-        // What the conversation says is happening, read off the state
-        // rather than remembered: a row that is worked out every frame
-        // cannot be left saying something that stopped being true.
-        let doing = match self.talking() {
-            Talking::Starting => Some("Starting\u{2026}"),
-            Talking::Thinking => Some("Thinking\u{2026}"),
-            Talking::Nobody | Talking::Idle | Talking::Ready | Talking::Gone => None,
-        };
-        let can = self.talking() == Talking::Thinking && self.ctrl_enter_arrives;
-        self.in_transcript(|chat| {
-            chat.doing(doing);
-            chat.can_send_now(can);
-        });
-        self.show_what_is_running();
-        // Only the animation, which is what the ticker is for. Everything
-        // else that once rode this question waits on a clock of its own:
-        // work that is owed is owed on a machine with nothing moving on it.
-        self.animate(self.wants_animating(doing.is_some()));
-        // Which for a tree behind its text is asked from what is true
-        // rather than started where a document changes -- the same way the
-        // ticker was asked, and what stops a clock outliving its reason.
-        self.catch_up_soon();
-
-        // Which rows the list will draw is what decides which rows need
-        // their matched characters worked out, and only the geometry knows
-        // how many rows there are. The room is the room it is *drawn* in,
-        // which over a conversation is everything above the box.
-        let width = self.picker_area().width;
-        let rows = self
-            .picker
-            .as_ref()
-            .map(|picker| obelus_ui::picker::rows_drawn(picker, self.picker_area()));
-        if let (Some(rows), Some(picker)) = (rows, self.picker.as_mut()) {
-            picker.refresh_indices(rows, width);
-        }
-        // And whether its last row is on screen, which is what asks for a
-        // list fetched a page at a time to go on -- here, with the window
-        // settled, for the same reason.
-        if let Some(rows) = rows {
-            self.reach_further(rows);
-        }
-        // And a scoring the list wants done somewhere that is not here.
-        // Taken on the frame rather than where the query changed, for the
-        // reason the indices above are: one place asks, so a path that
-        // changes a query cannot forget to.
-        self.send_the_scan();
-        // The same question for the list a setting's names are built in,
-        // and the same reason: its window moves when the rows about to be
-        // drawn say where it goes.
-        let building = self
-            .names
-            .as_ref()
-            .map(|(_, names)| obelus_ui::names::rows_drawn(names, self.picker_area()));
-        if let (Some(rows), Some((_, names))) = (building, self.names.as_mut()) {
-            names.settle_window(rows);
-        }
-        // The window over the projects, while Obelus is asking which: the
-        // rule every window follows, on the page's own count of the rows it
-        // has.
-        if self.chooser.is_some() {
-            let rows = self.chooser_rows();
-            if let Some(chooser) = self.chooser.as_mut() {
-                chooser.settle(rows);
-            }
-        }
-        // Unconditionally, because with no list open the geometry is `None`
-        // and the trees parsed for the last one are what has to be let go.
-        self.colour_visible_rows(rows.unwrap_or(0));
-
-        // Before anything is drawn or measured: the theme decides colours
-        // only, but the preview is the application wearing it, and a frame
-        // drawn half in one theme is a frame nobody should see.
-        self.preview_theme();
-
-        // A file the search is listing can be rewritten under it -- by an
-        // agent, which is the ordinary case here -- and the rows are the
-        // lines of one version of it. Checked per frame rather than per
-        // keystroke because nothing the reader does is what changed it.
-        if self
-            .picker
-            .as_ref()
-            .is_some_and(|picker| picker.is_searching() && picker.row_count() > 0)
-            && self.searching() == Some(Scope::File)
-            && self.searched
-                != self
-                    .current_buffer()
-                    .map(|buffer| (buffer.path().to_path_buf(), buffer.version()))
-        {
-            self.search_this_file();
-        }
-
-        self.settle_agents(editor_area);
-        self.prepare_icons();
-        self.settle_chat(editor_area);
-        self.refresh_slash();
-        // The same thing for the list of what could finish a path: the
-        // window follows the selection only once it knows how many rows
-        // are on screen, and the matched characters are worked out for
-        // the rows about to be drawn. No disk is touched -- the rows are
-        // whatever the last directory read found.
-        self.settle_the_naming_list();
-
-        // Less the scrollbar's column, which the drawing keeps for itself:
-        // a reading laid out for the whole width would have its last cell
-        // clipped, and a box drawn round a block of code would lose the
-        // side that closes it.
-        // The panel is checked against the document rather than told about
-        // every way the document can move: a cursor that has left the word
-        // is a panel about somewhere else.
-        self.settle_completion();
-        // And the answer about a place, which the pointer resting is what
-        // asks for: this is where the resting is noticed.
-        self.settle_hover();
-        // And what the call under the caret takes, which is the third of the
-        // panels that belong to a place in the file and the last of them to
-        // be asked this. It went only when a view opened over it, so a
-        // reader who arrowed off the line kept a panel about a call that was
-        // no longer under them.
-        self.settle_signature();
-        if let Some(hover) = self.hover.as_mut() {
-            // What it is drawn in, so that paging it moves what is on
-            // screen rather than a number nothing reads.
-            hover.settle(
-                obelus_ui::hover::room(editor_area),
-                obelus_component::hover::MOST_ROWS,
-            );
-        }
-        // How much room the panel's two halves have, which the keys need
-        // as much as the drawing does: a page of documentation is the rows
-        // of it that are on screen, and only the geometry knows how many
-        // that is.
-        if let Some(panel) = obelus_ui::complete::layout(self, editor_area)
-            && let Some(completion) = self.completion.as_mut()
-        {
-            // The width inside the box, less the column the reading keeps
-            // for its scrollbar: laid out for cells it does not get, the
-            // last of every row would be clipped.
-            completion.settle_documentation(
-                panel
-                    .area
-                    .width
-                    .saturating_sub(2)
-                    .saturating_sub(obelus_ui::editor::SCROLLBAR_WIDTH),
-            );
-            completion.settle(panel.list, panel.documentation);
-        }
-
-        self.refresh_rendering(
-            editor_area
-                .width
-                .saturating_sub(obelus_ui::editor::SCROLLBAR_WIDTH),
-        );
-        self.refresh_changes();
-        self.refresh_blame();
-        // After the changes, because the room the text has includes the
-        // rows an opened hunk draws: the arithmetic counts them, so nothing
-        // here has to make up for them.
-        let area = self.text_area();
-        // Only where the viewport is a place in the *text*. While a reading
-        // is showing, the viewport's top is a row of that reading -- and a
-        // reading has more rows than the file has lines, because it wraps
-        // -- so the text's own arithmetic would clamp the top to the line
-        // count and put the last rows out of reach. The reading's own
-        // scrolling is what keeps it in bounds there.
-        if let Some(buffer) = self
-            .current_buffer_mut()
-            .filter(|buffer| buffer.mode() == obelus_buffer::Mode::Edit)
-        {
-            buffer.scroll_into_view(area);
-        }
-
-        self.refresh_preview(editor_area);
-        self.look_at_the_selection();
-
-        let painted = obelus_ui::editor_canvas(self.screen_area).height;
-        let Self {
-            documents,
-            current,
-            highlights,
-            ..
-        } = self;
-        let Some(buffer) = current
-            .and_then(|id| documents.get(id.get()))
-            .and_then(Option::as_ref)
-            .and_then(Document::file)
-        else {
-            highlights.clear();
-            return;
-        };
-        let Some(state) = buffer.syntax() else {
-            highlights.clear();
-            return;
-        };
-        // Over the rows that are *painted*, not the rows the reader has.
-        // A compact list covers the foot of the document rather than
-        // shortening it -- see `obelus_ui::editor_canvas` -- and what is
-        // highlighted has to be what is drawn, or the rows under the list
-        // come out in the plain foreground and a window shows them that
-        // way through the glass.
-        let range = buffer.visible_bytes(painted);
-        highlights.refresh(state, buffer.text(), range);
-    }
-
-    /// Lays the screen out, scrolls the cursor into view, draws, and says
-    /// where the terminal should put its cursor.
-    ///
-    /// The one path to a rendered frame, shared by the loop and the golden
-    /// tests. Laying out here means it happens inside `Terminal::draw`, which
-    /// is allowed: it is arithmetic over sizes, not work.
-    pub fn draw_into(&mut self, cells: &mut CellBuffer, area: Rect) -> Option<Position> {
-        self.screen_area = area;
-        self.prepare(obelus_ui::editor_room(area, self));
-        self.bars = obelus_ui::draw(cells, area, self);
-        // With the frame rather than with the key that changed it: what
-        // the caret is doing depends on where it ended up, which is not
-        // known until the frame has been laid out.
-        if let Some(drawing) = self.drawing.as_ref() {
-            drawing.caret_is(self.caret(), self.layers().nearest(), self.takes_text());
-        }
-        obelus_ui::cursor_position(area, self)
-    }
-
-    /// Reacts to one event.
-    ///
-    /// The order keys are offered in is fixed here rather than encoded in the
-    /// key table, because it is about which component owns the state a key
-    /// moves, not about which key it is. Navigation belongs to whatever holds
-    /// the position it moves; commands are the named actions left over.
-    pub fn handle(&mut self, event: Event) {
-        match event {
-            Event::Key(key) => self.handle_key(key),
-            // Redrawing is unconditional after every event, so a resize needs
-            // no handling of its own beyond waking the loop.
-            Event::Resize => {}
-            Event::Closed => self.request_quit(),
-            // Nothing asked: whoever sent the signal is not at the screen
-            // to answer, and is ending the process either way.
-            Event::Stopped => {
-                tracing::info!("told to stop");
-                self.should_quit = true;
-            }
-            Event::Terminal(heard) => self.heard_from_a_terminal(heard),
-            Event::Summoned(token) => self.summoned(token),
-            Event::Remote(event) => self.remote_event(event),
-            Event::Reached(number, event) => self.reached_event(number, event),
-            Event::Held(number, lock) => self.held_the_remote(number, lock),
-            Event::NotLetGo(number) => self.not_let_go(number),
-            Event::NotHeld(number) => self.not_held(number),
-            Event::Fonts { here, otherwise } => {
-                tracing::info!(
-                    faces = here.len(),
-                    ?otherwise,
-                    "the window says what it can draw with"
-                );
-                self.fonts_here = here;
-                self.monospace_here = otherwise;
-                // A list already open takes them now: the reader opened it
-                // before the window had finished asking, which is the
-                // ordinary case on a machine with a thousand fonts.
-                let (here, otherwise) = (self.fonts_here.clone(), self.monospace_here.clone());
-                if let Some((_, names)) = self.names.as_mut() {
-                    names.offered(here, otherwise);
-                }
-            }
-            Event::Watched(obelus_watch::Changed { path }) => {
-                // Whether the tree has gone, asked of every change and
-                // before anything else is made of it. A tree going is a
-                // change to everything in it, in whatever order the kernel
-                // and the debouncing leave them -- and the tree's own going
-                // is not reliably among them: measured on Linux, an
-                // `rm -rf` arrived as the files and directories inside it
-                // and nothing for the root. Taken one at a time, the
-                // project's settings file going is the reader taking the
-                // project's settings away, and git's `HEAD` going is a
-                // branch moving. One `stat` per change, which is a change
-                // somebody made.
-                if self.has_a_project() && obelus_git::is_gone(&self.working_directory) {
-                    self.the_tree_has_gone();
-                }
-                // And from here, nothing that changed is news about the
-                // project when there is no project for it to be about.
-                let ours = self.has_a_project();
-                // The settings, by either of their names: the watcher
-                // reports whichever path the change arrived on, and a
-                // change that came from a repository arrives on the file
-                // the link points at rather than on the link.
-                let readers = self.settled.path.as_deref().is_some_and(|config| {
-                    path == config || path == obelus_config::resolved(config)
-                });
-                // Or the project's own, which is a change to the settings just
-                // as much -- it is the layer over them. Against the file the
-                // project *would* have rather than the one it has, so that the
-                // file appearing is a change like any other: the ordinary
-                // case is a project with no settings yet, and the moment
-                // worth hearing about is the one where it gets some.
-                let project = obelus_config::project_path_for(&self.working_directory);
-                // Or the directory that file lives in, turning up in a
-                // project that had none: the watch on the file could not be
-                // taken while there was nowhere to take it, so this is
-                // where it is taken. Read as well as watched, and in that
-                // order -- whoever made the directory may have written the
-                // file into it before the watch was attached, and a watch
-                // says what happens next rather than what already has.
-                let appeared = ours
-                    && path.parent() == Some(self.working_directory.as_path())
-                    && project.parent() == Some(path.as_path());
-                if appeared {
-                    self.watch_the_projects_settings();
-                }
-                // The directory appearing counts as the settings changing,
-                // and not only because the file may be in it already: that
-                // is the race this is about. Whoever made the directory
-                // writes the file into it, and the two arrive together --
-                // so by the time the watch is attached the file is there
-                // and its own event has been and gone.
-                let project = ours && (path == project || appeared);
-                if readers || project {
-                    self.reread_config();
-                } else if self.is_a_theme(&path) {
-                    // The colours the reader is already wearing, read again:
-                    // the name in the settings has not moved, and what it
-                    // stands for has.
-                    self.reread_theme();
-                } else if ours && self.is_a_window(&path) {
-                    // Another window on the repository opened, closed, or
-                    // moved to another tree -- which the list of worktrees
-                    // draws while it is up.
-                    self.reread_the_windows();
-                } else if self.is_the_remote_wanted(&path) {
-                    // Another window asking for the chat this one has.
-                    self.somebody_wants_the_remote();
-                } else if self.is_the_relays_door(&path) {
-                    // A window that has the chat saying where it is.
-                    self.the_door_moved();
-                } else if ours && self.is_a_claim(&path) {
-                    // A conversation taken up or let go in another window
-                    // -- including one let go by that window dying, which
-                    // is a file closed by a writer and nothing else.
-                    self.reread_who_holds_what();
-                } else if ours && self.is_the_sessions_file(&path) {
-                    // Which of the project's notes has a conversation,
-                    // written by another Obelus -- or by this one, which
-                    // hears its own writes like anybody else's and has
-                    // already kept what it wrote. Reading it again costs
-                    // one parse and keeps the two windows in step. And the
-                    // list of conversations reads it too, for the name each
-                    // goes by.
-                    self.reread_the_sessions();
-                    self.say_the_new_name();
-                } else if ours && self.is_the_notes_file(&path) {
-                    // What the project means to come back to, written by
-                    // another Obelus, the reader's own editor -- or by this
-                    // Obelus, which hears its own writes like anybody
-                    // else's. Not told apart, because there is nothing to
-                    // gain by it: a reread keeps the box the reader is
-                    // typing in and puts the caret back by name, so reading
-                    // back what Obelus itself just wrote changes nothing on
-                    // the page.
-                    self.reread_notes();
-                    // And the copy the conversation's box is offered
-                    // from, which is wanted whether or not that page is
-                    // open: a reader talking about a note has usually
-                    // walked away from the list of them.
-                    self.reread_the_notes_kept();
-                } else if ours && obelus_git::state_moved(&path) {
-                    self.forget_what_git_said();
-                } else {
-                    self.reload_path(&path);
-                }
-                // And the servers, whatever it was: a file changing on
-                // disk is news to them as much as to Obelus -- a branch
-                // checked out, a build script's output, an editor
-                // somewhere else. Some of them watch for themselves and
-                // will have heard already; the protocol's own answer is
-                // that the client says so, and a server that relies on it
-                // is otherwise answering about a file nobody has.
-                self.told_servers_about(&path);
-            }
-            Event::Lsp(obelus_lsp::Message { language, message }) => {
-                let Some(client) = self.servers.get_mut(&language) else {
-                    return;
-                };
-                // Whether it had finished its handshake before this
-                // message, because finishing one is a moment Obelus has to
-                // act on: every standing question about an open file is
-                // refused while a server cannot say what it answers, and
-                // opening a file is the moment they are all asked.
-                let handshaken = client.capabilities().is_some();
-                // And whether it was busy, because stopping is the other
-                // moment worth acting on: a server that has not finished
-                // reading the project answers what it can, which for the
-                // questions below is nothing at all -- measured against
-                // rust-analyzer, an empty list a second after the
-                // handshake, and nothing asking again for as long as the
-                // reader sits still.
-                let working = client.working_on().is_some();
-                // Everything the protocol needs rather than Obelus — the
-                // handshake, progress, the server's own log lines — is dealt
-                // with in there.
-                let reply = client.on_message(&message);
-                // Unasked-for news about a file, which arrives on the same
-                // pipe as the answers and belongs to nobody's question.
-                let published = client.take_published();
-                // And what it says went wrong, which is the one thing it
-                // says that belongs on the reader's row rather than in the
-                // log: the rest of its talk is progress, and the badge
-                // says that by turning.
-                let complaints = client.take_complaints();
-                // And the edits it wants made, which arrive the same way
-                // and are answered by making them.
-                let asked = client.take_asked_edits();
-                for params in published {
-                    self.on_published(language, &params);
-                }
-                // Named, because the row says nothing else about who is
-                // complaining -- and left in the words it arrived in,
-                // which are the server's and not Obelus's to rewrite.
-                if let Some(said) = complaints.last() {
-                    let name = obelus_lsp::command_for(language).unwrap_or(language.name());
-                    tracing::warn!(language = language.name(), "{said}");
-                    self.wrong(format!("{name}: {said}"));
-                }
-                for edit in &asked {
-                    self.on_asked_edit(language, edit);
-                }
-                if let Some(reply) = reply {
-                    self.on_reply(language, reply);
-                }
-                // And now it can say what it answers. Without this a file
-                // opened before its server was ready is a file nothing is
-                // ever asked about: the questions were all refused, and the
-                // next thing that asks them is the reader saving.
-                let now = self.servers.get(&language);
-                let ready = now.is_some_and(|client| client.capabilities().is_some());
-                let busy = now.is_some_and(|client| client.working_on().is_some());
-                if ready && (!handshaken || (working && !busy)) {
-                    self.ask_about_open_files(language);
-                }
-            }
-            Event::Counted(counted) => self.on_counted(*counted),
-            Event::Shifted(held) => self.shifted = held,
-            Event::Scroll(rows) => self.scroll(rows),
-            Event::Pointer { kind, x, y } => self.on_pointer(kind, x, y),
-            // One change for the whole of it, so undoing a paste is one
-            // step rather than however many lines it happened to be.
-            Event::Paste(text) => self.paste_text(&text),
-            Event::Dropped(path) => self.dropped(&path),
-            // A frame of the one thing moving, and nothing else: what is
-            // owed at a moment is owed on a machine with nothing animated
-            // on it, and each of the three below says when it wants asking.
-            Event::Tick => {
-                self.phase = self.phase.wrapping_add(1);
-                self.drag_on();
-            }
-            // The notes, once the reader has stopped typing into them.
-            Event::NotesSettled => self.settle_notes(),
-            Event::SyntaxSettled => {
-                // Let go of first: `catch_up_soon` starts another only when
-                // there is none, and one held after it has fired is a tree
-                // that never gets a second chance.
-                self.syntax_pause = None;
-                self.settle_syntax();
-            }
-            // The rename's own clock is inside the wait it belongs to, so
-            // there is nothing to let go of here: the wait ending drops it.
-            Event::ChangesSettled => self.settle_changes(),
-            Event::SignatureSettled => self.ask_signature_again(),
-            // The rest asking what is under it. `settle_hover` is still
-            // asked every frame, because the rest of what it does is
-            // letting go of an answer the pointer has moved off -- that is
-            // about where the pointer is now, not about a moment passing.
-            Event::PointerRested => self.settle_hover(),
-            Event::RenameOverdue => self.rename_without_them(),
-            Event::Search(obelus_search::Event::Matches {
-                generation,
-                hits,
-                done,
-            }) => self.on_matches(generation, hits, done),
-            Event::Agent(obelus_agent::Event::Acp(message)) => self.on_acp(message),
-            // Only the running connection's. A word from one that has been
-            // stopped -- what it had said before and nobody had read yet,
-            // and that it has gone -- is about a process that is not the
-            // one running, and read as the running one's it matched an old
-            // answer to a new request and had a live agent taken for dead.
-            Event::Agent(obelus_agent::Event::Heard { from, incoming }) => {
-                match self
-                    .talker
-                    .as_ref()
-                    .map(obelus_agent::acp::Talk::connection)
-                {
-                    Some(running) if running == from => self.on_acp(incoming),
-                    _ => tracing::debug!(
-                        from,
-                        "a word from a connection that is not the one running"
-                    ),
-                }
-            }
-            // Only what was asked of this tree: the server about another
-            // went with the project that was on it.
-            Event::Tools(obelus_mcp::Asked { root, .. }) if root != self.working_directory => {
-                tracing::info!(root = %root.display(), "a tool asked of a tree this window has left");
-            }
-            Event::Tools(obelus_mcp::Asked { wanted, answer, .. }) => {
-                let _ = answer.send(match wanted {
-                    obelus_mcp::Wanted::Notes(doing) => self.change_the_notes(doing),
-                    obelus_mcp::Wanted::Open { path, line } => self.open_for_an_agent(&path, line),
-                    obelus_mcp::Wanted::Workflow => self.workflow_for_an_agent(),
-                    obelus_mcp::Wanted::Close { conversation } => {
-                        self.close_for_an_agent(conversation)
-                    }
-                });
-            }
-            Event::Released(tag) => self.on_released(&tag),
-            Event::PullRequests(answer) => self.on_pull_requests(answer),
-            Event::Issues(answer) => self.on_issues(answer),
-            Event::PullRequestQuerySettled => self.on_the_query_settled(),
-            Event::PullRequestDiscussion { number, answer } => {
-                self.on_pull_request_discussion(number, answer);
-            }
-            Event::Agent(obelus_agent::Event::Registry { agents, failure }) => {
-                self.on_registry(agents, failure)
-            }
-            Event::Agent(obelus_agent::Event::Icon { id, svg }) => self.on_icon(id, svg),
-            Event::Agent(obelus_agent::Event::Installing { id, progress }) => {
-                self.on_installing(id, progress)
-            }
-            Event::Agent(obelus_agent::Event::Installed { id, failure }) => {
-                self.on_installed(id, failure)
-            }
-            Event::Git(obelus_git::Event::Blamed { path, at, lines }) => {
-                // Kept whether or not the reader is still looking at that
-                // file: they walked away from it while a walk of its history
-                // was running, and they will walk back.
-                self.asking_blame.remove(&(path.clone(), at));
-                self.blames.insert((path, at), lines);
-            }
-            Event::Git(obelus_git::Event::Logged {
-                generation,
-                commits,
-                walked,
-                done,
-            }) => {
-                // A batch from a walk whose list is gone, or from one
-                // superseded by another tab, another file, another key.
-                if self.history_generation.is_current(generation) {
-                    self.on_logged(commits, walked, done);
-                }
-            }
-            Event::Scanned(scanned) => {
-                if let Some(picker) = self.picker.as_mut() {
-                    picker.scan_arrived(*scanned);
-                }
-            }
-            Event::Reopened { tree, files } => self.take_up_what_was_open(&tree, files),
-            Event::Search(obelus_search::Event::FilesFound {
-                generation,
-                paths,
-                ignored,
-            }) => {
-                // A batch from a walk whose picker is gone, or from one
-                // superseded by a later open.
-                if !self.walk_generation.is_current(generation) {
-                    return;
-                }
-                // Kept as well as shown. A file list is a tree while
-                // nothing is typed and these rows the moment something is,
-                // and a reader who types, clears and types again would
-                // otherwise wait for a fresh walk each time -- which is a
-                // walk per first keystroke rather than one per opening.
-                self.found
-                    .extend(paths.iter().map(|path| (path.clone(), ignored)));
-                // Drawn only where the flat listing is what is showing: on
-                // the tab these rows are about, with something typed. A
-                // batch arriving while the tree is up would mix a walk of
-                // the whole project into the branch the reader has open,
-                // and one arriving on the changed tab is the other tab's
-                // answer.
-                if !self.showing_found() {
-                    return;
-                }
-                if let Some(picker) = self.picker.as_mut() {
-                    let statuses = &self.statuses;
-                    let root = &self.working_directory;
-                    picker.extend(paths.into_iter().map(|path| {
-                        PickerItem {
-                            prose: false,
-                            marker: None,
-                            icon: Some(obelus_icons::for_path(&path)),
-                            label: path.display().to_string(),
-                            version: None,
-                            detail: None,
-                            trailing: None,
-                            changed: None,
-                            value: PickerValue::File(path.clone()),
-                            enabled: true,
-                            colours: None,
-                            // Git says nothing about a file it was told to
-                            // ignore -- `git status` leaves them out -- so the
-                            // walk that went looking is what says it.
-                            status: match ignored {
-                                true => Some(obelus_git::FileStatus::Ignored),
-                                false => statuses
-                                    .get(&root.join(&path))
-                                    .map(|standing| standing.status),
-                            },
-                            depth: 0,
-                            opens: None,
-                            kind: None,
-                            tab: None,
-                            section: None,
-                        }
-                    }));
-                }
-            }
-        }
-    }
-
-    fn handle_key(&mut self, key: KeyEvent) {
-        // Discards releases once, here, so nothing further down has to
-        // remember to.
-        if KeyChord::from_event(&key).is_none() {
-            return;
-        }
-        // Whatever Obelus had to say has been read by now, or was not going to
-        // be.
-        self.quiet();
-        // And a drag is over. Mostly it ended with the button coming up,
-        // but a pointer that leaves the terminal takes its release with
-        // it, and a drag nothing ever ended would go on scrolling under
-        // whatever the reader did next.
-        self.dragging = None;
-
-        // Whatever is in front, and on down only as far as each thing lets
-        // a key through -- which for anything the reader is *in* is not at
-        // all (`app/hearing`). What nobody took goes to the key table.
-        if self.hand_over(&key) {
-            return;
-        }
-
-        // A key whose command cannot do its job here does nothing at all.
-        // The palette draws such a row dim and refuses to run it; a key is
-        // the same row reached another way, and one judgement -- `offers`
-        // -- has to answer for both, or a command is off in one place and
-        // live in the other. Silence is the answer because the reader has
-        // the palette to find out why: `f3` on a tree with nothing changed
-        // used to open a list of nothing and say so on the status row,
-        // which is a sentence nobody asked for.
-        //
-        // Except for a key that opens a view or a list over the file, from
-        // inside a view or from a list the reader opened: that goes to what
-        // it opens, in place of this one, rather than being refused because a
-        // dialog is showing (`app/switching`). What a key means in
-        // a file is what it means here -- the table is asked as though the
-        // file were what is showing -- and only those keys are let through,
-        // so nothing opens over anything.
-        //
-        // Not enter, however it is held. Every list and page takes enter
-        // itself, which is why it is never bound (`keymap::why_not`), and
-        // with a modifier it is still that list's key: `alt+enter` is "go
-        // there" in a history, and in the search, which has no use for it,
-        // it was the menu about the name under the caret in the file behind
-        // -- the search thrown away for a key nobody meant to leave it by.
-        //
-        // Unless the view showing has bound that key itself, which is a
-        // view saying what the key means *here* -- and that beats what it
-        // means one level out, the same way `Keymap::lookup` asks a
-        // context's own table before the file's and the file's before
-        // everywhere. `f4` was the case while it opened a conversation and
-        // meant "which one" inside one, and it swapped the conversation for
-        // itself; it is the list everywhere now, and this stays for the
-        // next view that takes a key of its own.
-        if self.gives_way_to_a_view()
-            && key.code != KeyCode::Enter
-            && self.keymap.bound_here(&key, self.context()).is_none()
-            && let Some(command) = self.keymap.lookup(&key, Context::Normal)
-            && command.takes_a_view_s_place()
-        {
-            self.switch_view(command);
-            return;
-        }
-        if let Some(command) = self.keymap.lookup(&key, self.context())
-            && self.offers(command)
-        {
-            dispatch::dispatch(self, command);
-        }
-    }
-}
-
-impl App {
-    /// What the pointer did to a box on the status row, and whether it was
-    /// one of those.
-    ///
-    /// The nearest thing on screen, so it is asked first -- and it answers
-    /// for every click on that row, including one that lands past the end
-    /// of what was typed: the row is the box, and a click on it is a click
-    /// in the box.
-    fn pointer_on_status(&mut self, kind: crate::event::Pointer, x: u16, y: u16) -> bool {
-        use crate::event::Pointer;
-
-        let status = obelus_ui::regions(self.screen_area).status;
-        if status.height == 0 || y != status.y || x < status.x || x >= status.right() {
-            return false;
-        }
-        // The agent's settings, which are what this row carries while a
-        // conversation is what the screen is showing. Each is a word saying
-        // what the session is set to, and each is one key away -- so a
-        // press on one goes to it and does what that key does: a switch
-        // flips, and one with a list behind it opens the list.
-        if kind == Pointer::Pressed
-            && !self.layers().any()
-            && let Some(view) = obelus_ui::chat::ChatView::new(self)
-            && let Some(at) = view.setting_at(status, x, y)
-        {
-            if let Some(talk) = self.conversation_mut() {
-                talk.chat.stand_on_setting(at);
-            }
-            self.chat_key(&enter());
-            return true;
-        }
-        // Which box is showing, and how far in its text starts. The same
-        // order the keys go in by, and the same insets the renderer draws
-        // them at.
-        //
-        // The list of names before the settings, because it is opened from
-        // them and drawn over them; and the page asking which project
-        // last, because every one of the others is drawn over it.
-        let inset = if self.prompt.is_some() {
-            self.prompt.as_ref().map(obelus_ui::status::answer_inset)
-        } else if self.names.is_some() || self.settings.is_some() {
-            Some(obelus_ui::status::typed_inset(None))
-        } else if self.picker.is_some() {
-            self.picker
-                .as_ref()
-                .map(|picker| obelus_ui::status::typed_inset(picker.question()))
-        } else {
-            self.chooser.as_ref().map(|chooser| {
-                obelus_ui::status::typed_inset(Some(obelus_ui::status::choosing_question(
-                    chooser.is_naming(),
-                )))
-            })
-        };
-        let Some(inset) = inset else {
-            return false;
-        };
-        let cell = (x - status.x).saturating_sub(inset);
-        let clicks = match kind {
-            Pointer::Pressed => self.clicks_at(x, y),
-            _ => 0,
-        };
-        match kind {
-            // Nothing to do, but the row is still the box's: a move over it
-            // must not reach the file underneath.
-            Pointer::Moved | Pointer::Released => {}
-            Pointer::Dragged => self.place_on_status(cell, true),
-            Pointer::Pressed => {
-                self.place_on_status(cell, false);
-                // Twice is the word and three times is the whole of it,
-                // which is what a line has instead of a line.
-                match clicks {
-                    2 => self.hold_on_status(false),
-                    3 => self.hold_on_status(true),
-                    _ => {}
-                }
-            }
-        }
-        true
-    }
-
-    /// What the pointer did to the box a note is written in.
-    ///
-    /// Where the box is on screen is the view's to say, so it says it --
-    /// the same function that puts the caret there, read backwards.
-    fn pointer_in_notes(&mut self, kind: crate::event::Pointer, x: u16, y: u16) {
-        use crate::event::Pointer;
-
-        let area = self.editor_area;
-        // The mark and the box first, which are the two things a row of the
-        // list draws that the reader can *do* something to: the box says
-        // whether the note is done, and the mark says somebody has talked
-        // about it. Both are one key away and both are a picture of that
-        // key, so a press on one does what the key does.
-        if kind == Pointer::Pressed && self.press_in_a_note(x, y) {
-            return;
-        }
-        let Some(at) = self
-            .notes()
-            .and_then(|notes| obelus_ui::todo::place_at(area, notes, x, y))
-        else {
-            return;
-        };
-        let clicks = match kind {
-            Pointer::Pressed => self.clicks_at(x, y),
-            _ => 0,
-        };
-        let Some(notes) = self.notes_mut() else {
-            return;
-        };
-        let width = notes.caret_width();
-        let Some(composer) = notes.writing_mut() else {
-            return;
-        };
-        match kind {
-            Pointer::Moved | Pointer::Released => {}
-            Pointer::Dragged => composer.place_at_cell(at.0, at.1, width, true),
-            Pointer::Pressed => {
-                composer.place_at_cell(at.0, at.1, width, false);
-                match clicks {
-                    2 => composer.hold_word(width),
-                    3 => composer.hold_line(width),
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    /// What the pointer did to the box a message is written in.
-    fn pointer_in_chat(&mut self, kind: crate::event::Pointer, x: u16, y: u16) {
-        use crate::event::Pointer;
-
-        let area = self.editor_area;
-        // Worked out before the conversation is borrowed to change: the
-        // card is the application's and the box is the conversation's.
-        let carded = self.card().is_some();
-        // The way back to the end, on the rule over the box: a press on it
-        // is the key it names, through the same door the key goes through,
-        // so the two cannot come to mean different things -- with the
-        // cursor in the transcript, `ctrl+end` takes the cursor along.
-        if kind == Pointer::Pressed
-            && self
-                .conversation()
-                .and_then(|talk| obelus_ui::chat::way_back_at(area, &talk.chat, talk.card.as_ref()))
-                .is_some_and(|at| at.contains(ratatui::layout::Position { x, y }))
-        {
-            self.chat_key(&crossterm::event::KeyEvent::new(
-                crossterm::event::KeyCode::End,
-                crossterm::event::KeyModifiers::CONTROL,
-            ));
-            return;
-        }
-        // The agent's commands, which are drawn over the transcript above
-        // the box while one is being typed.
-        if kind == Pointer::Pressed && self.press_in_the_commands(x, y) {
-            return;
-        }
-        // The card first, where one is up: it is what covers the box, and
-        // every row of it is a thing the reader answers with. What lands
-        // above it is still the transcript, so a question on screen does
-        // not stop the reader taking a copy of what led to it.
-        if carded && self.press_in_card(kind, x, y) {
-            return;
-        }
-        let Some(at) = self
-            .conversation()
-            .and_then(|talk| obelus_ui::chat::ChatView::place_at(area, &talk.chat, carded, x, y))
-        else {
-            self.pointer_in_transcript(kind, x, y);
-            return;
-        };
-        let clicks = match kind {
-            Pointer::Pressed => self.clicks_at(x, y),
-            _ => 0,
-        };
-        let width = obelus_ui::chat::writing_width(area);
-        let mut held = false;
-        self.in_transcript(|chat| {
-            match kind {
-                Pointer::Moved | Pointer::Released => {}
-                Pointer::Dragged => chat.writing_mut().place_at_cell(at.0, at.1, width, true),
-                Pointer::Pressed => {
-                    // One selection between the two halves, and this is
-                    // the other half taking hold -- and the keys with it,
-                    // or the caret is put where nothing typed would go.
-                    held = true;
-                    chat.stand_in_the_box();
-                    let writing = chat.writing_mut();
-                    writing.place_at_cell(at.0, at.1, width, false);
-                    match clicks {
-                        2 => writing.hold_word(width),
-                        3 => writing.hold_line(width),
-                        _ => {}
-                    }
-                }
-            }
-        });
-        if held {
-            self.in_transcript(obelus_component::chat::Chat::let_go);
-        }
-    }
-
-    /// What the pointer did to a view drawn over the file.
-    ///
-    /// Which for a long time was nothing at all: the wheel reached these --
-    /// it is its own event and goes to whichever layer is nearest -- and a
-    /// press did not, so a reader could scroll a list of files and not
-    /// point at one. The query box was the exception, and a telling one:
-    /// it is on the status row, which is asked before this, so the box was
-    /// clickable and the list under it was not.
-    ///
-    /// A press moves the selection and nothing else. What *chooses* a row
-    /// is a second press on it, because these lists are opened over a file
-    /// and drawn where a mis-aimed press would otherwise take the reader
-    /// somewhere they did not ask to go -- and nobody aims a double click
-    /// badly twice in the same cell. The one exception is a row's own
-    /// arrow, which says the row opens: pressing that does what pressing
-    /// the arrow means everywhere, and cannot take the reader anywhere,
-    /// because the arrow is declared on the rows that open and on no
-    /// others.
-    fn pointer_in_a_layer(&mut self, kind: crate::event::Pointer, x: u16, y: u16) {
-        use crate::event::Pointer;
-
-        if kind != Pointer::Pressed {
-            return;
-        }
-        let twice = self.clicks_at(x, y) == 2;
-        // Spent by the second press, so that a third -- on the file the
-        // second may have opened -- is a first press there, and not a line
-        // taken hold of.
-        if twice {
-            self.clicked = None;
-        }
-        // Whichever is nearest the reader, which is the one drawn over the
-        // others: the same order a key is offered in.
-        let Some(layer) = self.layers().nearest_first().next() else {
-            return;
-        };
-        match layer {
-            // The status row, which was asked before this.
-            obelus_component::layers::Layer::Prompt => {}
-            obelus_component::layers::Layer::Picker => self.press_in_picker(x, y, twice),
-            // Nothing yet: what a press would have to land on is a row of
-            // two sections and a boundary between them, and a press that
-            // guessed wrong would add a font the reader did not point at.
-            // The keys do all of it, and a list nobody can click is not a
-            // list that lies about what it does.
-            obelus_component::layers::Layer::Names => {}
-            obelus_component::layers::Layer::Counts => self.press_in_counts(x, y, twice),
-            obelus_component::layers::Layer::Settings => self.press_in_settings(x, y, twice),
-            // Two keys, and nothing to point at.
-            obelus_component::layers::Layer::Gone => {}
-        }
-    }
-
-    /// Walks to one of a view's tabs, by the shorter way round.
-    ///
-    /// The tabs wrap, so from where the reader is to where they pressed is
-    /// at most half the tabs away -- which for every list Obelus has is one
-    /// step. Walked rather than jumped because what a tab *costs* is the
-    /// application's: a scope asks the search again, a radius walks the
-    /// history again, a direction turns the calls round. Going the short
-    /// way is what keeps a tab in between from being asked its question on
-    /// the way past.
-    fn walk_to_tab(
-        &mut self,
-        now: usize,
-        wanted: usize,
-        count: usize,
-        key: impl Fn(&mut Self, bool),
-    ) {
-        if count == 0 || wanted == now {
-            return;
-        }
-        let forward = (wanted + count - now) % count;
-        let backward = (now + count - wanted) % count;
-        let (steps, onwards) = match forward <= backward {
-            true => (forward, true),
-            false => (backward, false),
-        };
-        for _ in 0..steps {
-            key(self, onwards);
-        }
-    }
-
-    /// A press in a list of rows to choose from, and whether it is the
-    /// second of a double click.
-    fn press_in_picker(&mut self, x: u16, y: u16, twice: bool) {
-        // Where the list drew itself, not the room it was given: a compact
-        // one takes as many rows as it needs against the foot of that room,
-        // so the two are ten rows apart for a palette on a tall screen.
-        let room = self.picker_area();
-        let area = self
-            .picker
-            .as_ref()
-            .map_or(room, |picker| obelus_ui::picker::region(picker, room));
-        // The tabs, which are above the rows: pressing one is the only
-        // thing a tab is for, so there is nothing else a press there could
-        // have meant.
-        let tab = self.picker.as_ref().and_then(|picker| {
-            let row = obelus_ui::picker::tab_row(picker, area)?;
-            let at = obelus_ui::tab_at(row, picker.tabs(), picker.tab(), x, y)?;
-            Some((picker.tab(), at, picker.tabs().len()))
-        });
-        if let Some((now, wanted, count)) = tab {
-            self.walk_to_tab(now, wanted, count, |app, onwards| {
-                app.picker_key(&stepping(onwards));
-            });
-            return;
-        }
-        let Some((at, arrow)) = self
-            .picker
-            .as_ref()
-            .and_then(|picker| obelus_ui::picker::row_at(picker, area, x, y))
-        else {
-            return;
-        };
-        if let Some(picker) = self.picker.as_mut() {
-            picker.select_row(at);
-        }
-        if arrow || twice {
-            // Down the same path the key goes down, rather than a second
-            // opener of its own: what enter does to the row under the
-            // arrow is what the arrow is a picture of, and two of them
-            // would be two answers to keep alike.
-            self.picker_key(&enter());
-        }
-    }
-
-    /// A press in the table of what this project is made of.
-    fn press_in_counts(&mut self, x: u16, y: u16, twice: bool) {
-        let area = self.drawn_in();
-        // The tabs are the table's first row.
-        let tab = self.counts.as_ref().and_then(|counts| {
-            let names = counts.tabs();
-            let at = obelus_ui::tab_at(Rect { height: 1, ..area }, &names, counts.tab(), x, y)?;
-            Some((counts.tab(), at, names.len()))
-        });
-        if let Some((now, wanted, count)) = tab {
-            self.walk_to_tab(now, wanted, count, |app, onwards| {
-                app.counts_key(&stepping(onwards));
-            });
-            return;
-        }
-        let Some((at, mark)) = self
-            .counts
-            .as_ref()
-            .and_then(|counts| obelus_ui::counts::row_at(area, counts, x, y))
-        else {
-            return;
-        };
-        if let Some(counts) = self.counts.as_mut() {
-            counts.select_row(at);
-        }
-        if mark || twice {
-            self.counts_key(&enter());
-        }
-    }
-
-    /// A press on the page that asks which project.
-    ///
-    /// The way every list goes: one press stands on a row and a second
-    /// chooses it. Nothing here is drawn over anything, but choosing a
-    /// project starts everything a project starts, and a press meant to
-    /// look at a path should not.
-    ///
-    /// Nothing while a path is being named: the rows are still drawn, but
-    /// enter is the box's then, and a press on a project is not an answer
-    /// to it.
-    fn press_in_projects(&mut self, x: u16, y: u16) {
-        if self
-            .chooser
-            .as_ref()
-            .is_some_and(obelus_component::chooser::Chooser::is_naming)
-        {
-            return;
-        }
-        let Some(at) = self.what_is_being_chosen().and_then(|choosing| {
-            obelus_ui::projects::row_at(self.drawn_in(), &choosing, &self.keymap, x, y)
-        }) else {
-            return;
-        };
-        let twice = self.clicks_at(x, y) == 2;
-        if let Some(chooser) = self.chooser.as_mut() {
-            chooser.select_row(at);
-        }
-        if twice {
-            self.clicked = None;
-            self.choosing_a_project(&enter());
-        }
-    }
-
-    /// A press on what could finish the path being named.
-    ///
-    /// The way every list goes, one press to stand and a second to choose,
-    /// and choosing here is what enter does: the row goes into the box.
-    ///
-    /// Answers whether the press was the list's, so that one beside it
-    /// goes on to the page.
-    fn press_in_the_naming_list(&mut self, x: u16, y: u16) -> bool {
-        let Some(at) = self.naming_list.as_ref().and_then(|list| {
-            let region = obelus_ui::picker::region(list, self.drawn_in());
-            obelus_ui::picker::row_at(list, region, x, y)
-        }) else {
-            return false;
-        };
-        let twice = self.clicks_at(x, y) == 2;
-        if let Some(list) = self.naming_list.as_mut() {
-            list.select_row(at.0);
-        }
-        if twice {
-            self.clicked = None;
-            self.choosing_a_project(&enter());
-        }
-        true
-    }
-
-    /// A press on the agent's commands, while a name is being typed.
-    ///
-    /// One press stands on a row and a second chooses it, which is what
-    /// enter does: the name goes into the box.
-    ///
-    /// Answers whether the press was the list's, so that one beside it
-    /// goes on to the conversation.
-    fn press_in_the_commands(&mut self, x: u16, y: u16) -> bool {
-        let Some(at) = self.slash().zip(self.chat()).and_then(|(list, chat)| {
-            let room = obelus_ui::chat::above_writing(self.editor_area, chat, self.card());
-            let region = obelus_ui::picker::region(list, room);
-            obelus_ui::picker::row_at(list, region, x, y)
-        }) else {
-            return false;
-        };
-        let twice = self.clicks_at(x, y) == 2;
-        if let Some(list) = self.conversation_mut().and_then(|talk| talk.slash.as_mut()) {
-            list.select_row(at.0);
-        }
-        if twice {
-            self.clicked = None;
-            self.slash_key(&enter());
-        }
-        true
-    }
-
-    /// What the pointer did to the page of settings.
-    ///
-    /// Nothing folds there, so there is no arrow. What a press reaches is
-    /// the switch: a box with a tick in it or without, which is the one
-    /// thing on the page that says by its shape that pressing it changes
-    /// it.
-    fn press_in_settings(&mut self, x: u16, y: u16, twice: bool) {
-        let area = self.drawn_in();
-        // The tabs are the page's first row.
-        let tab = self.settings.as_ref().and_then(|settings| {
-            let names = settings.tabs();
-            let at = obelus_ui::tab_at(Rect { height: 1, ..area }, &names, settings.tab(), x, y)?;
-            Some((settings.tab(), at, names.len()))
-        });
-        if let Some((now, wanted, count)) = tab {
-            self.walk_to_tab(now, wanted, count, |app, onwards| {
-                app.settings_key(&stepping(onwards));
-            });
-            return;
-        }
-        let Some((at, switch)) =
-            obelus_ui::settings::SettingsView::new(self).and_then(|view| view.row_at(area, x, y))
-        else {
-            return;
-        };
-        let offering = self.agent_offering();
-        if let Some(settings) = self.settings.as_mut() {
-            settings.select_row(at, offering.as_ref());
-        }
-        if switch || twice {
-            self.settings_key(&enter());
-        }
-    }
-
-    /// A press on one of the candidates a server offered.
-    ///
-    /// Choosing it outright, because that is what the list is for: it is
-    /// up only while the reader is in the middle of typing a word, it
-    /// covers the word it is about, and there is nothing in it to browse
-    /// past -- a press anywhere else puts it away.
-    ///
-    /// Answers whether the press was the list's, so that one beside it goes
-    /// on to the file.
-    fn press_in_completion(&mut self, x: u16, y: u16) -> bool {
-        let Some(panel) = obelus_ui::complete::layout(self, self.editor_area) else {
-            return false;
-        };
-        let Some(at) = self
-            .completion()
-            .and_then(|completion| obelus_ui::complete::row_at(panel, completion, x, y))
-        else {
-            return false;
-        };
-        if let Some(completion) = self.completion.as_mut() {
-            completion.choose_row(at);
-        }
-        // Down the key's own path, which is what takes the word and puts
-        // the list away.
-        self.completion_key(&enter());
-        true
-    }
-
-    /// A press on one of the two marks a note wears.
-    ///
-    /// Answers whether it was one of them, so that a press on the words
-    /// goes on to put the caret there.
-    fn press_in_a_note(&mut self, x: u16, y: u16) -> bool {
-        use obelus_ui::todo::Column;
-
-        let area = self.editor_area;
-        let Some((row, column)) = self
-            .notes()
-            .and_then(|notes| obelus_ui::todo::row_at(area, notes, x, y))
-        else {
-            return false;
-        };
-        if column == Column::Words {
-            return false;
-        }
-        // On to the note first: both keys ask about the note the caret is
-        // in, so the note under the pointer is the note they are about.
-        let note = self
-            .notes()
-            .and_then(|notes| notes.rows().get(row))
-            .map(|row| row.note);
-        if let (Some(note), Some(notes)) = (note, self.notes_mut()) {
-            notes.stand_on(note);
-        }
-        // Down the keys' own paths, rather than a second way to tick a
-        // note off and a second way to open its conversation.
-        match column {
-            // The arrow, which the key reaches through the command rather
-            // than through the notes' own keys -- so this goes the same
-            // way, which is the point of going down a key's path at all.
-            Column::Folds => {
-                self.toggle_fold();
-                return true;
-            }
-            Column::Tick => self.notes_key(&crossterm::event::KeyEvent::new(
-                crossterm::event::KeyCode::Char(' '),
-                crossterm::event::KeyModifiers::ALT,
-            )),
-            _ => self.notes_key(&crossterm::event::KeyEvent::new(
-                crossterm::event::KeyCode::Char('a'),
-                crossterm::event::KeyModifiers::ALT,
-            )),
-        };
-        true
-    }
-
-    /// What the pointer did to a question on a card.
-    ///
-    /// A card is a question that has taken part of the screen and is
-    /// waiting, and every row of it is a thing the reader answers with --
-    /// so unlike a list drawn over a file there is nothing here to browse
-    /// past, and a press does what the key does on the row it landed on.
-    /// The words are the exception: they are a box, and a press in a box
-    /// puts the caret where it landed.
-    ///
-    /// Answers whether the press was the card's, so that one landing above
-    /// it falls through to the transcript.
-    fn press_in_card(&mut self, kind: crate::event::Pointer, x: u16, y: u16) -> bool {
-        use obelus_component::card::On;
-
-        let Some(card) = self.card() else {
-            return false;
-        };
-        let band = obelus_ui::chat::bands_for(self.editor_area, card).writing;
-        let Some(on) = obelus_ui::card::row_at(card, band, x, y) else {
-            return false;
-        };
-        let width = obelus_ui::card::width_of(band);
-        // A drag over the words holds what it crosses, the way it does in
-        // every other box. Anywhere else on the card there is nothing for
-        // one to do: said so rather than let through, or a drag begun on
-        // the card would take hold of the transcript behind it.
-        if kind == crate::event::Pointer::Dragged && on == On::Words {
-            let place = obelus_ui::card::place_at(card, band, x, y);
-            if let Some(card) = self.conversation_mut().and_then(|talk| talk.card.as_mut())
-                && let Some((row, cell)) = place
-            {
-                card.place_in_words(row, cell, width, true);
-            }
-            return true;
-        }
-        if kind != crate::event::Pointer::Pressed {
-            return true;
-        }
-        let clicks = self.clicks_at(x, y);
-        let area = self.editor_area;
-
-        let Some(card) = self.conversation_mut().and_then(|talk| talk.card.as_mut()) else {
-            return true;
-        };
-        card.stand_on(on);
-        if on == On::Words {
-            // Asked once the reader is standing in the words, because where
-            // in them a point is depends on how they scroll under the
-            // caret -- and a card says nothing about a caret it has not got.
-            let band = obelus_ui::chat::bands_for(area, card).writing;
-            let place = obelus_ui::card::place_at(card, band, x, y);
-            if let Some((row, cell)) = place {
-                card.place_in_words(row, cell, width, false);
-                match clicks {
-                    2 => card.hold_in_words(false, width),
-                    3 => card.hold_in_words(true, width),
-                    _ => {}
-                }
-            }
-            return true;
-        }
-        // Down the key's own path: what enter does to the row under the
-        // pointer is what that row is for, and a second answer about it
-        // would be a second answer to keep alike.
-        self.card_key(&enter());
-        true
-    }
-
-    /// What the pointer did to what has been said.
-    ///
-    /// Which is the half of a conversation with no caret in it: there is
-    /// nothing to type there, and the only thing a pointer does is take
-    /// hold of some of it.
-    ///
-    /// One selection between the two halves, so taking hold here lets the
-    /// box go. A reader dragging across an answer means that answer, and a
-    /// second selection still lit in the box would leave `ctrl+c` with two
-    /// things to copy and no way to say which.
-    ///
-    /// A double click on a tool call that names a file goes to the file.
-    /// Not enter's answer on a call with something behind it, which is to
-    /// fold -- a single press already folds, so going is the one thing
-    /// left for the pair of them to mean, and the call is folded back the
-    /// way it was before the first.
-    fn pointer_in_transcript(&mut self, kind: crate::event::Pointer, x: u16, y: u16) {
-        use crate::event::Pointer;
-
-        let twice = kind == Pointer::Pressed && self.clicks_at(x, y) == 2;
-        if twice && let Some((place, folded)) = self.pressed_call.take() {
-            if let (Some(begins), Some(talk)) = (folded, self.conversation_mut()) {
-                talk.chat.fold(begins);
-            }
-            self.clicked = None;
-            self.go_to_where_the_agent_was(&place);
-            return;
-        }
-        let area = self.editor_area;
-        let width = obelus_ui::chat::reading_width(area);
-        // Laid out once, and every question below asked of the one place.
-        let found = self.conversation().and_then(|talk| {
-            let rows = talk.chat.rows(width);
-            let place = obelus_ui::chat::ChatView::place_in_transcript(
-                area,
-                &talk.chat,
-                talk.card.as_ref(),
-                &rows,
-                x,
-                y,
-            )?;
-            let spot = obelus_ui::chat::ChatView::spot_in_transcript(&rows, place);
-            let row = rows.get(place.row);
-            // Whether it landed on a heading that opens, which is a thing to
-            // do to the row rather than to the words in it.
-            //
-            // Free of the selection, and not by luck: every row that folds is
-            // one Obelus drew itself -- the heading over a run of tool calls,
-            // the one over a piece of thinking, the one over the agent's plan
-            // -- and none of them is anybody's words. A press on one already
-            // meant nothing but "let go", so opening it costs the reader
-            // nothing they had.
-            let folds = row.and_then(|row| row.folds);
-            // What the frame drew under the pointer, which is the one
-            // answer the underline and a window's hand are also made of.
-            let link = talk.chat.link_drawn_at(x, y);
-            // A cursor stands on a row, and the band under the last of them
-            // is not one; nor while a card is up, which has the keys -- a
-            // cursor moved under it would be found there afterwards.
-            let cursor = (row.is_some() && talk.card.is_none()).then_some(place);
-            // The file the call this row is part of names, which is on the
-            // call's first row whichever row of its title was pressed.
-            let goes = obelus_component::chat::Row::acting(&rows, place.row)
-                .and_then(|acting| rows.get(acting.start))
-                .and_then(|first| first.place.as_ref())
-                .map(|(place, _)| place.clone());
-            Some((spot, folds, cursor, link, goes))
-        });
-        let (spot, folds, cursor, link, goes) = found.unwrap_or((None, None, None, None, None));
-        // A link is its own thing to press, and opens on the letting go.
-        if kind == Pointer::Pressed {
-            self.pressed_call = goes.filter(|_| link.is_none()).map(|place| (place, folds));
-        }
-        // Where the cursor goes, for a press or a drag: the keys follow
-        // the pointer, or the arrows after a press walk something the
-        // reader had not pointed at.
-        //
-        // And a drag only carries a cursor the press put here. The box is
-        // under the transcript's band, so a drag in the box is one held
-        // past its edge, and every tick hands it on as a drag on the
-        // transcript's last row: one that moved the cursor took the keys
-        // out of the box while the reader was selecting in it.
-        let carried = kind == Pointer::Pressed
-            || self.chat().is_some_and(|chat| {
-                matches!(chat.focus(), obelus_component::chat::Focus::Transcript(_))
-            });
-        let Some(talk) = self.conversation_mut() else {
-            return;
-        };
-        if matches!(kind, Pointer::Pressed | Pointer::Dragged)
-            && carried
-            && let Some(cursor) = cursor
-        {
-            talk.chat.stand_in_transcript(cursor);
-        }
-        match kind {
-            Pointer::Moved => {}
-            // A link opens on the letting go of a press that never moved:
-            // on the press it would be a selection that could not be begun
-            // on a link's words, and a drag across one is taking hold of
-            // them, not following it.
-            Pointer::Released => {
-                let clicked = spot.is_some_and(|spot| talk.chat.clicked(spot));
-                talk.chat.let_go_of_nothing();
-                if clicked && let Some(link) = link {
-                    self.open_link(&link);
-                }
-            }
-            // A link on a row that folds is its own thing to press: the
-            // title of a call that fetched a page is often the page's
-            // address, and the rest of the row still folds.
-            Pointer::Pressed if folds.is_some() && link.is_none() => {
-                if let Some(begins) = folds {
-                    talk.chat.fold(begins);
-                }
-            }
-            Pointer::Pressed => {
-                talk.chat.writing_mut().let_go();
-                match spot {
-                    Some(spot) => talk.chat.hold_from(spot),
-                    // A press on nothing lets go, the way a press on the
-                    // page does everywhere else.
-                    None => talk.chat.let_go(),
-                }
-            }
-            Pointer::Dragged => {
-                if let Some(spot) = spot {
-                    talk.chat.hold_to(spot);
-                }
-            }
-        }
-    }
-
-    /// How far past the edge of what a drag is selecting in a row is, if
-    /// it is past it at all.
-    ///
-    /// The band it asks about is the one the reader is dragging in: the
-    /// transcript of a conversation, which has the box under it, and
-    /// otherwise the whole region a file is read in.
-    fn past_the_edge(&self, y: u16) -> Option<i16> {
-        let area = self.editor_area;
-        let band = match self.chat() {
-            Some(chat) => obelus_ui::chat::bands(area, chat, self.card()).transcript,
-            None => area,
-        };
-        let row = i32::from(y);
-        let past = match (row < i32::from(band.y), row >= i32::from(band.bottom())) {
-            (true, _) => row - i32::from(band.y),
-            (_, true) => row - i32::from(band.bottom()) + 1,
-            _ => return None,
-        };
-        i16::try_from(past).ok().filter(|past| *past != 0)
-    }
-
-    /// Keeps a drag held against an edge moving.
-    ///
-    /// Through the same one function a notch of the wheel goes through, so
-    /// it reaches whatever the reader is dragging in -- and then the far
-    /// end of the selection is put where the pointer is again, against the
-    /// edge, because the rows under it have moved.
-    fn drag_on(&mut self) {
-        let Some(drag) = self.dragging else {
-            return;
-        };
-        let past = i32::from(drag.past);
-        // The further past the edge, the faster: a pointer held still has
-        // no other way to ask for more, and one row a tick is a minute to
-        // cross a morning's conversation.
-        let rows = past.signum() * (1 + past.abs().min(4));
-        self.scroll(isize::try_from(rows).unwrap_or(0));
-        // Against the edge rather than where the pointer really is, which
-        // is off the band: what is being asked is "carry on to here", and
-        // here is as far as the band goes.
-        let area = self.editor_area;
-        let band = match self.chat() {
-            Some(chat) => obelus_ui::chat::bands(area, chat, self.card()).transcript,
-            None => area,
-        };
-        let y = drag.y.clamp(band.y, band.bottom().saturating_sub(1));
-        self.on_pointer(crate::event::Pointer::Dragged, drag.x, y);
-        // Which said the drag had come back inside the band, it having
-        // been handed a row that is. It has not: the reader is still
-        // holding it out there.
-        self.dragging = Some(drag);
-    }
-
-    /// Puts the caret of whichever box is on the status row.
-    fn place_on_status(&mut self, cell: u16, extend: bool) {
-        if let Some(prompt) = self.prompt.as_mut() {
-            prompt.place_at_cell(cell, extend);
-        } else if let Some((_, names)) = self.names.as_mut() {
-            names.place_in_query(cell, extend);
-        } else if let Some(settings) = self.settings.as_mut() {
-            settings.place_in_query(cell, extend);
-        } else if let Some(picker) = self.picker.as_mut() {
-            picker.place_in_query(cell, extend);
-        } else if let Some(chooser) = self.chooser.as_mut() {
-            chooser.place_in_typing(cell, extend);
-        }
-    }
-
-    /// Takes hold of a word of it, or of all of it.
-    fn hold_on_status(&mut self, all: bool) {
-        if let Some(prompt) = self.prompt.as_mut() {
-            prompt.hold(all);
-        } else if let Some((_, names)) = self.names.as_mut() {
-            names.hold_in_query(all);
-        } else if let Some(settings) = self.settings.as_mut() {
-            settings.hold_in_query(all);
-        } else if let Some(picker) = self.picker.as_mut() {
-            picker.hold_in_query(all);
-        } else if let Some(chooser) = self.chooser.as_mut() {
-            chooser.hold_in_typing(all);
-        }
-    }
-
-    /// Whether a press may take hold of this bar, with what is showing.
-    ///
-    /// What is showing owns the pointer as it owns the keys: with a list or
-    /// a page over the document, a bar of the document's left in sight above
-    /// it is still the document's, and the list puts the document back where
-    /// its selection is on the next frame -- so the drag would be undone as
-    /// it was made.
-    fn reaches(&self, whose: obelus_ui::bars::Whose) -> bool {
-        use obelus_ui::bars::Whose;
-
-        match whose {
-            // And the two lists that are not layers, which are drawn under
-            // every layer with the page they belong to: under a short list
-            // their bars are in plain sight and the keys are the list's.
-            Whose::Document
-            | Whose::Conversation
-            | Whose::Notes
-            | Whose::Projects
-            | Whose::Naming
-            | Whose::Commands => !self.layers().covering(),
-            Whose::Picker
-            | Whose::Preview
-            | Whose::Settings
-            | Whose::Counts
-            | Whose::Names
-            | Whose::Completion
-            | Whose::Documentation
-            | Whose::Hover => true,
-        }
-    }
-
-    /// What the pointer did to a scrollbar, if it did anything to one.
-    ///
-    /// The bars are the ones the last frame left on the page, nearest the
-    /// reader last -- so the last one under the pointer is the one they can
-    /// see. A press off the mark brings the mark to it and goes on holding,
-    /// which is one gesture wherever on the track it started.
-    fn pointer_on_a_bar(&mut self, kind: crate::event::Pointer, x: u16, y: u16) -> bool {
-        use crate::event::Pointer;
-
-        match kind {
-            Pointer::Moved => false,
-            Pointer::Released => self.holding.take().is_some(),
-            Pointer::Pressed => {
-                // A release can go missing -- let go outside the window --
-                // and a press is a fresh start whatever it lands on.
-                self.holding = None;
-                let Some(bar) = self
-                    .bars
-                    .iter()
-                    .rev()
-                    .find(|bar| bar.under(x, y) && self.reaches(bar.whose))
-                else {
-                    return false;
-                };
-                let grip = bar.grip(y);
-                let (whose, top) = (bar.whose, bar.top_for(y, grip));
-                self.holding = Some((whose, grip));
-                if let Some(top) = top {
-                    self.drag_bar(whose, top);
-                }
-                true
-            }
-            Pointer::Dragged => {
-                let Some((whose, grip)) = self.holding else {
-                    return false;
-                };
-                // The bar as the latest frame drew it, which may be none:
-                // the list it was beside has closed under the pointer.
-                let Some(bar) = self.bars.iter().rev().find(|bar| bar.whose == whose) else {
-                    self.holding = None;
-                    return true;
-                };
-                if let Some(top) = bar.top_for(y, grip) {
-                    self.drag_bar(whose, top);
-                }
-                true
-            }
-        }
-    }
-
-    /// What the pointer did to the file being read.
-    ///
-    /// Only over the text, and only with nothing else open: a list, the
-    /// settings or the conversation is what the screen is showing while it
-    /// is up, and a click landing on the code behind one would move a caret
-    /// nobody can see.
-    fn on_pointer(&mut self, kind: crate::event::Pointer, x: u16, y: u16) {
-        use crate::event::Pointer;
-
-        self.pointer = Some((x, y));
-        if kind == Pointer::Pressed {
-            self.pressed_in_the_file = false;
-        }
-        // A bar first, and whatever it is beside: a press on one is about
-        // the bar and nothing under it, and while it is held every move is
-        // the bar's -- wherever the pointer has wandered, the way a bar
-        // held anywhere else behaves.
-        if self.pointer_on_a_bar(kind, x, y) {
-            self.dragging = None;
-            return;
-        }
-
-        // Whether the pointer is being held past the edge of what it is
-        // selecting in, which nothing else will say again until it moves:
-        // a terminal reports a drag when it happens and says nothing at
-        // all while a held pointer is still.
-        match kind {
-            Pointer::Dragged => {
-                self.dragging = self.past_the_edge(y).map(|past| Dragging { past, x, y });
-            }
-            Pointer::Pressed | Pointer::Released => self.dragging = None,
-            Pointer::Moved => {}
-        }
-
-        // The list of what could be typed next, where one is up: it is
-        // drawn over the file at the caret, so it covers the very place a
-        // press would otherwise land -- and a press that went through it to
-        // the text would move the caret out from under the question the
-        // list is answering.
-        if kind == Pointer::Pressed && self.press_in_completion(x, y) {
-            return;
-        }
-        // The boxes on the status row first: a question, a list's query, a
-        // page's filter. All three are one row, so one piece of arithmetic
-        // serves them -- and a reader who can select in a box with the
-        // keyboard but not with the pointer has half a selection.
-        if self.pointer_on_status(kind, x, y) {
-            return;
-        }
-        // Covering rather than merely open: a question on the status bar
-        // leaves every line of the file where the reader can see it, and a
-        // line they can see is a line they can point at. Before the notes,
-        // which are a document like the file: a page over them took the
-        // press here, and it ticked off a note nobody could see.
-        if self.layers().covering() {
-            self.pointer_in_a_layer(kind, x, y);
-            return;
-        }
-        // A terminal, whose program may have asked for the pointer itself.
-        if self.terminal().is_some() {
-            self.pointer_in_terminal(kind, x, y);
-            return;
-        }
-        // The notes, which are a page with a box on it: the box takes the
-        // pointer the way the file does, and the rest of the page takes
-        // nothing rather than letting it through to the code behind.
-        if self.notes().is_some() {
-            self.pointer_in_notes(kind, x, y);
-            return;
-        }
-        // A conversation is what is being read rather than something over
-        // it, so it is asked here, where a file would be. The box is the
-        // half of it with a caret in it; the transcript has none.
-        if self.conversation().is_some() {
-            self.pointer_in_chat(kind, x, y);
-            return;
-        }
-        // The page that asks which project, which is drawn where the
-        // welcome screen would be.
-        if kind == Pointer::Pressed && self.reading_nothing() && self.chooser.is_some() {
-            if !self.press_in_the_naming_list(x, y) {
-                self.press_in_projects(x, y);
-            }
-            return;
-        }
-        // The welcome screen's website, the one thing on it a press opens.
-        // Not on the page that asks which project, which is drawn where
-        // the welcome screen would be and has no address on it.
-        if kind == Pointer::Pressed
-            && self.reading_nothing()
-            && self.what_is_being_chosen().is_none()
-            && obelus_ui::welcome::site_at(self.editor_area, &*self)
-                .is_some_and(|at| at.contains(ratatui::layout::Position { x, y }))
-        {
-            if let Err(error) = obelus_clipboard::links::open(obelus_ui::welcome::SITE) {
-                tracing::warn!(%error, "the website was not opened");
-                self.say("Nothing here opens links");
-            }
-            return;
-        }
-        let Some(buffer) = self.current_buffer() else {
-            return;
-        };
-        // A reading has no places in it for a caret: its rows are not the
-        // file's lines.
-        if buffer.mode() != Mode::Edit {
-            return;
-        }
-        let area = self.editor_area;
-        if x < area.x || x >= area.right() || y < area.y || y >= area.bottom() {
-            return;
-        }
-        // Everything the view draws in front of the text. The numbers are a
-        // click at the start of that row rather than nothing: the reader
-        // pointed at a line, and pointing left of the words is how a whole
-        // line is reached.
-        //
-        // The two columns beside them say something about the line that the
-        // reader can *do*: the fold mark says it has more behind it, and
-        // the change margin says what it replaced. Both are one key away
-        // and the mark is the picture of the key -- so a click on the mark
-        // does what the mark is about, which is what a mark like that means
-        // everywhere a reader has met one.
-        let lines = buffer.text().line_count();
-        let changed = obelus_ui::editor::changed(self.changes());
-        let folds = !buffer.folds().is_empty();
-        let offset = obelus_ui::editor::text_offset(lines, changed, folds);
-        let column = obelus_ui::editor::margin_at(x - area.x, lines, changed, folds);
-        let row = y - area.y;
-        let cell = (x - area.x).saturating_sub(offset);
-        let text = self.text_area();
-
-        // Where it is, whatever it is doing: the rest that asks a question
-        // is measured from the last place it was seen.
-        self.pointer_rested(x, y);
-        let count = match kind {
-            Pointer::Pressed => {
-                self.pressed_in_the_file = true;
-                self.clicks_at(x, y)
-            }
-            _ => 0,
-        };
-        match kind {
-            // Nothing but where it is, which was noted above.
-            Pointer::Moved => return,
-            Pointer::Dragged if !self.pressed_in_the_file => return,
-            // Dragging is what a reader does to select, so the place they
-            // put the button down stays put.
-            Pointer::Dragged => {
-                if let Some(buffer) = self.current_buffer_mut() {
-                    buffer.place_at_cell(row, cell, text, true);
-                }
-            }
-            Pointer::Released => return,
-            // A mark in the margin, pressed: the caret goes to that line --
-            // both keys ask about the line the caret is on -- and then the
-            // key's own work is done. Not a selection as well: the reader
-            // asked for one thing.
-            Pointer::Pressed
-                if matches!(
-                    column,
-                    obelus_ui::editor::Margin::Folds | obelus_ui::editor::Margin::Changes
-                ) =>
-            {
-                if let Some(buffer) = self.current_buffer_mut() {
-                    buffer.place_at_cell(row, 0, text, false);
-                }
-                match column {
-                    obelus_ui::editor::Margin::Folds => self.toggle_fold(),
-                    _ => self.toggle_hunk(),
-                }
-                // The same as every other way out of here: wherever the
-                // caret ended up is somewhere the reader is working from.
-                if let Some(buffer) = self.current_buffer_mut() {
-                    buffer.settle_undo();
-                }
-                return;
-            }
-            Pointer::Pressed => {
-                if let Some(buffer) = self.current_buffer_mut() {
-                    buffer.place_at_cell(row, cell, text, false);
-                }
-                match count {
-                    // Twice is the word, three times is the line: what
-                    // every editor with a pointer has taught.
-                    2 => self.widen_selection(),
-                    3 => {
-                        let line = self.current_buffer().map(|buffer| buffer.cursor().line);
-                        if let Some(line) = line
-                            && let Some(buffer) = self.current_buffer_mut()
-                        {
-                            buffer.select_line(line);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-        // Wherever the caret ended up is somewhere the reader is now
-        // working from, so the next edit is a step of its own to undo.
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.settle_undo();
-        }
-    }
-
-    /// How many times in a row the pointer has been put down here.
-    ///
-    /// The same cell and inside the gap below, or the count starts again.
-    /// Three is as far as it goes: a fourth press is a first press, which
-    /// is what selecting a line and then clicking in it has to be.
-    fn clicks_at(&mut self, x: u16, y: u16) -> u8 {
-        /// Long enough for a deliberate double click and short enough that
-        /// two separate clicks are not taken for one. The figure every
-        /// desktop uses.
-        const GAP: std::time::Duration = std::time::Duration::from_millis(400);
-
-        let now = std::time::Instant::now();
-        let count = match self.clicked {
-            Some((was_x, was_y, when, count))
-                if (was_x, was_y) == (x, y) && now.duration_since(when) < GAP && count < 3 =>
-            {
-                count + 1
-            }
-            _ => 1,
-        };
-        self.clicked = Some((x, y, now, count));
-        count
     }
 }
 
@@ -4994,226 +1797,65 @@ fn handle(app: &mut App, event: Event) {
     }
 }
 
-/// What the renderer may ask the application.
-///
-/// Every one of these forwards to the method of the same name: the trait is
-/// the list of questions, and the answers stay where they are written. The
-/// two cannot drift -- a signature that stopped matching is a compile error
-/// here -- and the alternative, moving forty-four methods out of the
-/// application's own impl blocks, would have made every one of its several
-/// hundred internal calls go through a trait that has to be in scope.
-impl Screen for App {
-    fn agent_name(&self) -> Option<&str> {
-        App::agent_name(self)
-    }
-    fn agent_settings(&self) -> &[acp::Setting] {
-        App::agent_settings(self)
-    }
-    fn agent_offering(&self) -> Option<obelus_component::settings::Offering> {
-        App::agent_offering(self)
-    }
-    fn called(&self, key: &str, word: &str) -> Option<std::borrow::Cow<'static, str>> {
-        App::called(self, key, word)
-    }
-    fn agent_usage(&self) -> Option<&acp::Usage> {
-        App::agent_usage(self)
-    }
-    fn background_tasks(&self) -> Option<(usize, usize)> {
-        App::background_tasks(self)
-    }
-    fn blame(&self) -> Option<&[Option<obelus_git::Blamed>]> {
-        App::blame(self)
-    }
-    fn replacing(&self) -> bool {
-        App::replacing(self)
-    }
-    fn names(&self) -> Option<&obelus_component::names::Names> {
-        App::names(self)
-    }
-    fn card(&self) -> Option<&Card> {
-        App::card(self)
-    }
-    fn changes(&self) -> Option<&obelus_git::Changes> {
-        App::changes(self)
-    }
-    fn chat(&self) -> Option<&Chat> {
-        App::chat(self)
-    }
-    fn completion(&self) -> Option<&Completion> {
-        App::completion(self)
-    }
-    fn config(&self) -> &obelus_config::Config {
-        App::config(self)
-    }
-    fn counts(&self) -> Option<&Counts> {
-        App::counts(self)
-    }
-    fn current_buffer(&self) -> Option<&Buffer> {
-        App::current_buffer(self)
-    }
-    fn drawn(&self) -> &[obelus_ui::Drawn] {
-        App::drawn(self)
-    }
-    fn highlights(&self) -> &Highlights {
-        App::highlights(self)
-    }
-    fn hover(&self) -> Option<&Hover> {
-        App::hover(self)
-    }
-    fn images(&self) -> &Images {
-        App::images(self)
-    }
-    fn keymap(&self) -> &Keymap {
-        App::keymap(self)
-    }
-    fn offers(&self, command: Command) -> bool {
-        App::offers(self, command)
-    }
-    fn layers(&self) -> layers::Layers {
-        App::layers(self)
-    }
-    fn listed_agents(&self) -> Vec<Listed> {
-        App::listed_agents(self)
-    }
-    fn marked_runs(&self) -> &[obelus_text::coordinates::Span] {
-        App::marked_runs(self)
-    }
-    fn note(&self) -> Option<&str> {
-        App::note(self)
-    }
-    fn note_is_wrong(&self) -> bool {
-        App::note_is_wrong(self)
-    }
-    fn talked_about(&self) -> Vec<obelus_component::todo::Talked> {
-        App::talked_about(self)
-    }
-    fn notes(&self) -> Option<&TodoView> {
-        App::notes(self)
-    }
-    fn terminal(&self) -> Option<&obelus_terminal::Terminal> {
-        App::terminal(self)
-    }
-    fn opened_hunks(&self) -> Vec<LineNumber> {
-        App::opened_hunks(self)
-    }
-    fn choosing(&self) -> Option<obelus_ui::Choosing> {
-        self.what_is_being_chosen()
-    }
-    fn naming_list(&self) -> Option<&Picker> {
-        self.naming_list.as_ref()
+#[cfg(test)]
+mod beside {
+    use super::*;
+
+    fn signature() -> obelus_component::signature::Signature {
+        obelus_component::signature::Signature::new(
+            obelus_lsp::signature::Answer {
+                signatures: Vec::new(),
+                documentation: None,
+                said: serde_json::Value::Null,
+            },
+            DocumentId::new(0),
+            LineNumber::new(0),
+            CharColumn::new(0),
+            None,
+        )
     }
 
-    fn version(&self) -> &str {
-        App::version(self)
-    }
-    fn newer_release(&self) -> Option<&str> {
-        App::newer_release(self)
-    }
-
-    fn phase(&self) -> u32 {
-        App::phase(self)
-    }
-    fn pointer(&self) -> Option<(u16, u16)> {
-        self.pointer
-    }
-    fn picker(&self) -> Option<&Picker> {
-        App::picker(self)
-    }
-    fn pinned(&self) -> &[&'static str] {
-        App::pinned(self)
-    }
-    fn preview(&self) -> Option<Previewed<'_>> {
-        App::preview(self)
-    }
-    fn complaint(&self) -> Option<obelus_ui::Complained<'_>> {
-        let complaint = self.complaining.as_ref()?;
-        Some(obelus_ui::Complained {
-            line: complaint.line,
-            column: complaint.column,
-            said: &complaint.said,
-            severity: complaint.severity,
-            others: complaint.others,
-        })
-    }
-    fn prompt(&self) -> Option<&Prompt> {
-        App::prompt(self)
-    }
-    fn making_in(&self) -> Option<String> {
-        App::making_in(self)
-    }
-    fn readers_named(&self) -> &[&'static str] {
-        App::readers_named(self)
-    }
-    fn reading_nothing(&self) -> bool {
-        App::reading_nothing(self)
-    }
-    fn registry_failure(&self) -> Option<&str> {
-        App::registry_failure(self)
-    }
-    fn rendered_rows(&self) -> Option<usize> {
-        App::rendered_rows(self)
-    }
-    fn rendering(&self) -> Option<&[obelus_row::Row]> {
-        App::rendering(self)
-    }
-    fn server_state(&self) -> Option<(&'static str, obelus_lsp::ServerState)> {
-        App::server_state(self)
-    }
-    fn server_working_on(&self) -> Option<&str> {
-        App::server_working_on(self)
+    fn hover() -> Hover {
+        Hover::new(
+            obelus_lsp::hover::Hovered {
+                markdown: "what it is".to_string(),
+                range: None,
+            },
+            (LineNumber::new(0), CharColumn::new(0)),
+            false,
+        )
     }
 
-    fn remote(&self) -> Option<(&'static str, obelus_remote::State)> {
-        App::remote_badge(self)
-    }
-
-    fn server_busy(&self) -> bool {
-        App::server_busy(self)
-    }
-    fn settings(&self) -> Option<&Settings> {
-        App::settings(self)
-    }
-    fn signature(&self) -> Option<&obelus_component::signature::Signature> {
-        App::signature(self)
-    }
-    fn slash(&self) -> Option<&Picker> {
-        App::slash(self)
-    }
-    fn talking(&self) -> Talking {
-        App::talking(self)
-    }
-    fn travelled(&self) -> i64 {
-        App::travelled(self)
-    }
-
-    fn text_area(&self) -> TextArea {
-        App::text_area(self)
-    }
-    fn theme(&self) -> &Theme {
-        App::theme(self)
-    }
-    fn project_config(&self) -> Option<&Path> {
-        App::project_config(self)
-    }
-    fn troubles(&self) -> &[obelus_lsp::trouble::Trouble] {
-        App::troubles(self)
-    }
-    fn is_about_a_note(&self) -> bool {
-        App::is_about_a_note(self)
-    }
-    fn branch_this_conversation_works_on(&self) -> Option<&obelus_git::Head> {
-        App::branch_this_conversation_works_on(self)
-    }
-    fn what_this_conversation_is_called(&self) -> Option<String> {
-        App::what_this_conversation_is_called(self)
-    }
-    fn head(&self) -> Option<&obelus_git::Head> {
-        App::head(self)
-    }
-    fn tree_has_gone(&self) -> bool {
-        App::tree_has_gone(self)
-    }
-    fn working_directory(&self) -> &Path {
-        App::working_directory(self)
+    /// One panel beside the caret, and which: what the call takes before
+    /// what the place is, and what the place is before what is wrong with
+    /// the line.
+    ///
+    /// Broken deliberately by asking about the hover before the signature:
+    /// the hover was the panel while both were up.
+    #[test]
+    fn the_nearer_question_is_the_panel() {
+        let mut app = App::new(Vec::new());
+        app.lsp.complaining = Some(Complaint {
+            line: LineNumber::new(0),
+            column: CharColumn::new(0),
+            said: "wrong".to_string(),
+            severity: obelus_lsp::trouble::Severity::Error,
+            others: 0,
+        });
+        assert!(matches!(
+            app.beside_the_caret(),
+            Some(obelus_ui::Beside::Complaint(_))
+        ));
+        app.lsp.hover = Some(hover());
+        assert!(matches!(
+            app.beside_the_caret(),
+            Some(obelus_ui::Beside::Hover(_))
+        ));
+        app.lsp.signature = Some(signature());
+        assert!(matches!(
+            app.beside_the_caret(),
+            Some(obelus_ui::Beside::Signature(_))
+        ));
+        assert!(app.hover().is_none(), "the hover is behind the signature");
     }
 }

@@ -117,7 +117,7 @@ pub fn row_at(area: Rect, counts: &Counts, x: u16, y: u16) -> Option<(usize, boo
 #[must_use]
 pub fn hints(counts: &Counts) -> Vec<Hint> {
     use crossterm::event::{KeyCode, KeyModifiers};
-    let chord = obelus_editing::keymap::KeyChord::new;
+    let chord = obelus_keymap::KeyChord::new;
     let bare = |code| chord(code, KeyModifiers::NONE);
     let on = counts.rows().get(counts.window().focus());
     let folds = on.and_then(|row| row.open);

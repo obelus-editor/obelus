@@ -81,8 +81,8 @@
 
 use std::sync::Arc;
 
-use obelus_git::todo;
 use obelus_sink::Sink;
+use obelus_todo as todo;
 use rmcp::{
     ErrorData, ServerHandler,
     handler::server::{router::tool::ToolRouter, tool::Extension, wrapper::Parameters},
@@ -125,7 +125,7 @@ pub struct Asked {
 #[derive(Debug)]
 pub enum Wanted {
     /// A change to the notes.
-    Notes(obelus_git::todo::Doing),
+    Notes(obelus_todo::Doing),
     /// A file, in front of the reader.
     Open {
         /// Where it is: against the project, or a path of its own.
@@ -557,7 +557,7 @@ fn listed(notes: &[todo::Note]) -> String {
                 format!(" ({}:{})", at.path.display(), at.line.get() + 1)
             });
             let under = " ".repeat(usize::from(
-                note.depth.saturating_sub(from) * obelus_git::todo::INDENT,
+                note.depth.saturating_sub(from) * obelus_todo::INDENT,
             ));
             // The first line beside the name and the rest under it. A
             // note is allowed to be a paragraph, and printing the whole

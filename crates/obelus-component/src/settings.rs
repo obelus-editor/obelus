@@ -49,7 +49,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use obelus_agent::{Listed as Agent, Status, acp::Setting as Offer};
 use obelus_command::Command;
 use obelus_config::{Config, Group, Kind, Setting, Value, Whose};
-use obelus_editing::keymap::{KeyChord, Keymap};
+use obelus_keymap::{KeyChord, Keymap};
 use obelus_remote::platform::{Description, Field as Told, Setup};
 
 use crate::{
@@ -1274,7 +1274,7 @@ impl Settings {
             // the terminal sends another key for some chords, and some work
             // on this machine and not the next. The row says which of those
             // it is and goes on waiting.
-            if let Some(why) = obelus_editing::keymap::why_not(chord) {
+            if let Some(why) = obelus_keymap::why_not(chord) {
                 self.refused = Some((chord, Refused::Never(why)));
                 return SettingsOutcome::Consumed;
             }
@@ -1296,14 +1296,14 @@ impl Settings {
 
         // The card's key before the modifiers are judged, because it has
         // one: control is what every key below this refuses.
-        if obelus_editing::keymap::is_keys_card(key) {
+        if obelus_keymap::is_keys_card(key) {
             self.keys_showing = !self.keys_showing;
             return SettingsOutcome::Consumed;
         }
 
         // The same rule every other view follows: a modifier Obelus has no
         // meaning for disqualifies the key rather than being ignored.
-        let Some(modifiers) = obelus_editing::keymap::modifiers_of(key) else {
+        let Some(modifiers) = obelus_keymap::modifiers_of(key) else {
             return SettingsOutcome::Ignored;
         };
         // Except holding a word, or all the way to an end, which is the

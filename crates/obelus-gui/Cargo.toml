@@ -24,6 +24,8 @@ obelus-component.workspace = true
 # offering several shapes of one copy takes; see `clipboard/`.
 obelus-clipboard.workspace = true
 obelus-config.workspace = true
+# The faces, the size of a cell, and where a glyph's pixels come from.
+obelus-font.workspace = true
 obelus-icons.workspace = true
 obelus-logging.workspace = true
 # Asking the reader's shell what is on the path, for a window the desktop
@@ -67,16 +69,10 @@ wayland-client.workspace = true
 wayland-protocols.workspace = true
 x11rb.workspace = true
 
-# How tall the title bar is, which only AppKit can say. See `title.rs`. And
-# the fonts the machine has, draws code in and falls back to, which only
-# CoreText can say: see `faces.rs`, `monospace.rs` and `cascade.rs` -- and
-# the glyphs only CoreText can draw, in `coretext.rs`.
+# How tall the title bar is, which only AppKit can say. See `title.rs`.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2.workspace = true
 objc2-app-kit.workspace = true
-objc2-core-foundation.workspace = true
-objc2-core-graphics.workspace = true
-objc2-core-text.workspace = true
 
 # For `GetCaretBlinkTime`: how fast a caret blinks is the one thing of the
 # three platforms that has an API rather than a setting to read -- see
@@ -84,8 +80,6 @@ objc2-core-text.workspace = true
 # `title.rs`.
 [target.'cfg(windows)'.dependencies]
 windows-sys.workspace = true
-# Which language the reader reads: see `cascade.rs`.
-sys-locale.workspace = true
 
 # A build-dependency's `cfg` is the *host's*, which is the right question
 # here: this drives a program that only exists on Windows. See `build.rs`.

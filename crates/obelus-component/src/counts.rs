@@ -551,7 +551,7 @@ impl Counts {
                 self.keys = false;
                 CountsOutcome::Consumed
             }
-            _ if obelus_editing::keymap::is_keys_card(key) => {
+            _ if obelus_keymap::is_keys_card(key) => {
                 self.keys = !self.keys;
                 CountsOutcome::Consumed
             }

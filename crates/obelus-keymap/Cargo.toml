@@ -1,0 +1,17 @@
+[package]
+name = "obelus-keymap"
+description = "The key table: which chord runs which command"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Cargo inherits nothing here on its own; every member says it.
+[lints]
+workspace = true
+
+[dependencies]
+obelus-command.workspace = true
+obelus-editing.workspace = true
+obelus-icons.workspace = true
+crossterm.workspace = true
+tracing.workspace = true

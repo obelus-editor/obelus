@@ -54,7 +54,6 @@
 //! because a list that could refresh one without the other is a list that
 //! draws a lock on a row and lets the reader into it anyway.
 
-pub mod files;
 pub mod wrapped;
 
 /// How many rows of an agent's own words a list will carry.
@@ -69,12 +68,13 @@ use nucleo_matcher::{
     Matcher, Utf32Str,
     pattern::{CaseMatching, Normalization, Pattern},
 };
-use obelus_buffer::{DocumentId, question::Question};
+use obelus_buffer::DocumentId;
 use obelus_command::Command;
 
 use self::wrapped::{Above, Body, Columns};
 use crate::{
     field::Field,
+    question::Question,
     window::{Move, Window, Wrap},
 };
 
@@ -221,7 +221,7 @@ pub enum PickerValue {
         stoppable: bool,
     },
     /// One of the ways out of a question Obelus stopped to ask.
-    Answer(obelus_buffer::question::Answer),
+    Answer(crate::question::Answer),
     /// Nothing. A row that is there to say why the list is short.
     Nothing,
 }
@@ -1088,7 +1088,7 @@ impl Picker {
             .chain(std::iter::once(row(
                 "cancel".to_string(),
                 None,
-                obelus_buffer::question::Answer::Cancel,
+                crate::question::Answer::Cancel,
             )))
             .collect();
         let rows = u16::try_from(items.len()).unwrap_or(u16::MAX);
@@ -2402,7 +2402,7 @@ impl Picker {
         // the same rule the key table and the editor's motions follow.
         // Without it `ctrl+pageup` pages the list, which is a different thing
         // from what it should do.
-        let Some(modifiers) = obelus_editing::keymap::modifiers_of(key) else {
+        let Some(modifiers) = obelus_keymap::modifiers_of(key) else {
             return PickerOutcome::Ignored;
         };
         let control = modifiers == KeyModifiers::CONTROL;
@@ -2470,7 +2470,7 @@ impl Picker {
             // list it is part of.
             KeyCode::Esc if bare && self.query.let_go() => PickerOutcome::Consumed,
             KeyCode::Esc if bare => PickerOutcome::Cancelled,
-            _ if self.footed && obelus_editing::keymap::is_keys_card(key) => {
+            _ if self.footed && obelus_keymap::is_keys_card(key) => {
                 self.keys = !self.keys;
                 PickerOutcome::Consumed
             }

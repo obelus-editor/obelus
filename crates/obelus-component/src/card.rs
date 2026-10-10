@@ -744,7 +744,7 @@ impl Card {
     /// `width` is the cells a row of the card has, which the caret's
     /// arithmetic needs and nothing else here does.
     pub fn handle_key(&mut self, key: &crossterm::event::KeyEvent, width: u16) -> CardOutcome {
-        let Some(modifiers) = obelus_editing::keymap::modifiers_of(key) else {
+        let Some(modifiers) = obelus_keymap::modifiers_of(key) else {
             return CardOutcome::Ignored;
         };
         // A line in the box, asked for either of the two ways the box takes

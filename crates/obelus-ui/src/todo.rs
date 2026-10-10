@@ -48,7 +48,7 @@ pub fn hints(notes: &Notes) -> Vec<Hint> {
     // read and copied out of and not changed.
     let elsewhere = notes.selected_is_elsewhere();
     use crossterm::event::{KeyCode, KeyModifiers};
-    let chord = obelus_editing::keymap::KeyChord::new;
+    let chord = obelus_keymap::KeyChord::new;
     let bare = |code| chord(code, KeyModifiers::NONE);
     let alt = |code| chord(code, KeyModifiers::ALT);
     let on = notes.selected_note();
@@ -145,7 +145,7 @@ pub fn caret(area: Rect, notes: &Notes) -> Option<ratatui::layout::Position> {
     let step = notes
         .rows()
         .get(at)
-        .map_or(0, |row| row.depth * obelus_git::todo::INDENT);
+        .map_or(0, |row| row.depth * obelus_todo::INDENT);
     (y < list.bottom()).then(|| ratatui::layout::Position {
         x: (list.x + MARGIN + step + cell.get()).min(list.right().saturating_sub(1)),
         y,
@@ -218,7 +218,7 @@ pub fn row_at(area: Rect, notes: &Notes, x: u16, y: u16) -> Option<(usize, Colum
     }
     let at = notes.window().top() + usize::from(y - list.y);
     let row = notes.rows().get(at)?;
-    let step = row.depth * obelus_git::todo::INDENT;
+    let step = row.depth * obelus_todo::INDENT;
     let column = match row.head {
         // A row that is not the head of its note has neither, whatever the
         // press landed on.
@@ -400,7 +400,7 @@ impl<'a> TodoUi<'a> {
     #[must_use]
     pub fn new(app: &'a impl Screen) -> Option<Self> {
         Some(Self {
-            notes: app.notes()?,
+            notes: app.shown().notes()?,
             theme: app.theme(),
             talked: app.talked_about(),
             phase: app.phase(),
@@ -638,7 +638,7 @@ impl TodoUi<'_> {
                 );
             }
         }
-        let step = row.depth * obelus_git::todo::INDENT;
+        let step = row.depth * obelus_todo::INDENT;
         if row.head {
             // What is under it, where anything is: the mark every other
             // folding thing in Obelus wears, because it is the same act.

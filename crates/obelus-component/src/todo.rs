@@ -10,7 +10,7 @@
 //! view whose keys can only be found by reading the source is a view nobody
 //! uses twice.
 //!
-//! The notes themselves, and the file they live in, are [`obelus_git::todo`].
+//! The notes themselves, and the file they live in, are [`obelus_todo`].
 //! Nothing here reads or writes that file -- the application does, because
 //! it is the one that knows which tree this is.
 //!
@@ -53,8 +53,8 @@ use std::{
 };
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use obelus_git::todo::{Change, INDENT, Note, NoteId, Todo};
 use obelus_text::coordinates::LineNumber;
+use obelus_todo::{Change, INDENT, Note, NoteId, Todo};
 
 use crate::{
     composer::{Composer, Laid},
@@ -195,7 +195,7 @@ pub enum TodoOutcome {
     /// Go to this place.
     Go(PathBuf, LineNumber),
     /// Talk to an agent about this note.
-    Talk(obelus_git::todo::NoteId),
+    Talk(obelus_todo::NoteId),
     /// The reader gave up.
     Cancelled,
     /// Put this on the clipboard.
@@ -266,7 +266,7 @@ pub struct TodoView {
     /// written from that copy: another Obelus has this tree open too, and a
     /// file written whole from a copy is that one's last minute taken back
     /// out. What reaches the disk is these, done to the file as it is at the
-    /// moment of writing -- see [`obelus_git::todo::Change`].
+    /// moment of writing -- see [`obelus_todo::Change`].
     pending: Vec<Change>,
     /// The notes whose children the reader has folded away.
     ///
@@ -415,7 +415,7 @@ impl TodoView {
                 // The same question the branch below asks about a note that
                 // has gone, asked about one that is still here.
                 let said = self.todo.notes[at].said.clone();
-                if obelus_git::todo::trimmed(&composer.text()) == note.said && said != note.said {
+                if obelus_todo::trimmed(&composer.text()) == note.said && said != note.said {
                     let mut fresh = Composer::new();
                     fresh.replace(&said);
                     return Some((at, fresh));
@@ -433,7 +433,7 @@ impl TodoView {
                 note.depth = note
                     .depth
                     .min(self.todo.room_at(at))
-                    .min(obelus_git::todo::DEEPEST);
+                    .min(obelus_todo::DEEPEST);
                 self.unwritten.insert(note.id.clone());
                 self.todo.notes.insert(at, note);
                 return Some((at, composer));
@@ -443,8 +443,7 @@ impl TodoView {
             // of theirs were lost on the way to the file. They walked into
             // it and no further, so it goes like every other note the other
             // window took away.
-            if obelus_git::todo::trimmed(&composer.text()) == note.said
-                && !unwritten.contains(&note.id)
+            if obelus_todo::trimmed(&composer.text()) == note.said && !unwritten.contains(&note.id)
             {
                 let_go_at = Some(was);
                 return None;
@@ -462,7 +461,7 @@ impl TodoView {
             // read back a level shallower, which is the note moving on its
             // own between one open and the next.
             let room = self.todo.room_at(self.todo.notes.len());
-            note.depth = note.depth.min(room).min(obelus_git::todo::DEEPEST);
+            note.depth = note.depth.min(room).min(obelus_todo::DEEPEST);
             self.unwritten.insert(note.id.clone());
             self.todo.notes.push(note);
             Some((self.todo.notes.len() - 1, composer))
@@ -562,7 +561,7 @@ impl TodoView {
         if let Some((at, said)) = self
             .writing
             .as_ref()
-            .map(|(at, composer)| (*at, obelus_git::todo::trimmed(&composer.text())))
+            .map(|(at, composer)| (*at, obelus_todo::trimmed(&composer.text())))
             && !said.trim().is_empty()
             && let Some(change) = self.written_down(at, &said)
         {
@@ -635,7 +634,7 @@ impl TodoView {
     /// By name rather than by position, which is the whole reason a note has
     /// one: the list is read from the file every time it opens, and a note
     /// inserted above moves every position below it.
-    fn focus(&mut self, to: &obelus_git::todo::NoteId) {
+    fn focus(&mut self, to: &obelus_todo::NoteId) {
         let Some(at) = self.todo.notes.iter().position(|note| note.id == *to) else {
             return;
         };
@@ -654,7 +653,7 @@ impl TodoView {
     /// in whatever note it was in: a view just opened has its caret in the
     /// first note, and the next time the rows are laid out the selection
     /// follows the caret back there.
-    pub fn put_caret_in(&mut self, to: &obelus_git::todo::NoteId) {
+    pub fn put_caret_in(&mut self, to: &obelus_todo::NoteId) {
         if let Some(at) = self.todo.notes.iter().position(|note| note.id == *to) {
             self.enter_note(at, false);
         }
@@ -842,10 +841,10 @@ impl TodoView {
     /// Nothing is written down until it says something. An empty note taken
     /// away again on escape never existed, which is why it is put in here
     /// and only saved when it is kept.
-    pub fn write_new(&mut self, at: Option<obelus_git::todo::At>) {
+    pub fn write_new(&mut self, at: Option<obelus_todo::At>) {
         self.keep();
         let note = Note {
-            id: obelus_git::todo::NoteId::mint(),
+            id: obelus_todo::NoteId::mint(),
             said: String::new(),
             done: false,
             at,
@@ -1006,7 +1005,7 @@ impl TodoView {
         let Some((at, composer)) = self.writing.as_ref() else {
             return false;
         };
-        let (at, said) = (*at, obelus_git::todo::trimmed(&composer.text()));
+        let (at, said) = (*at, obelus_todo::trimmed(&composer.text()));
         if said.trim().is_empty() {
             self.writing = None;
             let did = self.let_the_note_go(at);
@@ -1120,7 +1119,7 @@ impl TodoView {
         // The same shape it would come back in from the file: a note that
         // changed when it was read again would be a note whose rows moved
         // under a reader who had not touched it.
-        let said = obelus_git::todo::trimmed(&composer.text());
+        let said = obelus_todo::trimmed(&composer.text());
         if said.trim().is_empty() {
             return self.let_the_note_go(at);
         }
@@ -1460,7 +1459,7 @@ impl TodoView {
                 // The note may have gone with the keep, if it said nothing.
                 let after = after.min(self.todo.notes.len());
                 let note = Note {
-                    id: obelus_git::todo::NoteId::mint(),
+                    id: obelus_todo::NoteId::mint(),
                     said: String::new(),
                     done: false,
                     at: None,

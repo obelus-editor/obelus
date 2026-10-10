@@ -446,8 +446,8 @@ pub fn listen(sink: Arc<dyn Sink<Event>>) -> std::io::Result<Listening> {
     let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
     let address = listener.local_addr()?;
     listener.set_nonblocking(true)?;
-    let key = a_key();
-    let answer = a_key();
+    let key = obelus_claim::a_key();
+    let answer = obelus_claim::a_key();
     let expected = key.clone();
     let says = answer.clone();
     let accepting = obelus_runtime::handle().spawn(async move {
@@ -626,19 +626,6 @@ pub fn join(door: Door, sink: Arc<dyn Sink<Event>>) -> tokio::sync::mpsc::Unboun
         let _ = sink.send(Event::Left(over));
     });
     up
-}
-
-/// A key nobody else has, for the door: the hasher std seeds with
-/// randomness for every map, twice -- the same as a window's own door.
-fn a_key() -> String {
-    use std::hash::{BuildHasher as _, Hasher as _};
-
-    let half = || {
-        let mut hasher = std::hash::RandomState::new().build_hasher();
-        hasher.write_u32(std::process::id());
-        hasher.finish()
-    };
-    format!("{:016x}{:016x}", half(), half())
 }
 
 #[cfg(test)]

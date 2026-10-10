@@ -22,7 +22,7 @@
 //! one more than a way in should have.
 
 use obelus_command::Command;
-use obelus_editing::keymap::Keymap;
+use obelus_keymap::Keymap;
 use obelus_theme::Theme;
 use ratatui::{
     buffer::Buffer as CellBuffer,

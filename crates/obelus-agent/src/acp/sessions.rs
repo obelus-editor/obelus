@@ -32,7 +32,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use obelus_git::todo::NoteId;
+use obelus_todo::NoteId;
 
 use crate::chats::ChatId;
 

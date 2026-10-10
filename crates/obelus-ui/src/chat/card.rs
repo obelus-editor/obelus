@@ -1,0 +1,484 @@
+//! The card an agent's question is answered on.
+//!
+//! It sits at the foot of the conversation, where the box a message is
+//! written in sits: the two never show at once, because while the agent is
+//! waiting on an answer there is no message to send.
+//!
+//! The parts are laid out by one function, which is what keeps the caret in
+//! the row the reader is typing in. Everything below the named answers has
+//! a size of its own -- what is written grows, the row that sends it does
+//! not -- so the answers take what is left, and scroll inside it.
+
+use obelus_component::card::{Card, On, UNDER};
+use obelus_theme::Theme;
+use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style};
+
+use crate::{Marked, chat, fill, put, rule, write, write_marked};
+
+/// The margin every row of the conversation is drawn in.
+const MARGIN: u16 = 1;
+
+/// The row that sends the card.
+const SUBMIT: &str = "Submit";
+
+/// The cells a row of the card has to write in.
+///
+/// One function for it, because a card measured against one width and drawn
+/// against another lays out a row it then does not draw -- which on screen
+/// is a blank row nobody put there.
+#[must_use]
+pub const fn width_of(area: Rect) -> u16 {
+    let width = area.width.saturating_sub(MARGIN * 2);
+    if width == 0 { 1 } else { width }
+}
+
+/// Where the card's parts go inside the band it was given.
+///
+/// One function for it, because the caret's row and the row the words are
+/// drawn on have to be the same row -- and they are worked out at different
+/// times, from different sides of the application.
+#[derive(Clone, Copy, Debug)]
+pub struct Layout {
+    /// The prose, with the rule under it.
+    pub about: Rect,
+    /// The named answers that fit.
+    pub choices: Rect,
+    /// The row saying whether the reader is writing one of their own.
+    pub tick: Option<Rect>,
+    /// What they have written.
+    pub words: Option<Rect>,
+    /// The row that sends it, with the rule over it.
+    pub submit: Option<Rect>,
+    /// The row saying what is missing, where there is no row that sends it.
+    pub complaint: Option<Rect>,
+}
+
+/// Which row and cell of the card's box a point on screen is.
+///
+/// The inverse of [`caret`], beside it for the reason that one gives
+/// itself: the row the caret is on and the row the words are drawn on have
+/// to be the same row.
+///
+/// `None` for a point that is not in the box.
+#[must_use]
+pub fn place_at(card: &Card, area: Rect, x: u16, y: u16) -> Option<(usize, u16)> {
+    let words = layout(card, area).words?;
+    if y < words.y || y >= words.y + words.height || x < words.x || x >= words.right() {
+        return None;
+    }
+    // The same scrolling the caret is placed under: what is written scrolls
+    // under the caret rather than the caret leaving the card.
+    let (row, _) = card.caret(width_of(words))?;
+    let height = usize::from(words.height).max(1);
+    let first = row.saturating_sub(height - 1);
+    // From where the words start, which is a margin in from the band's
+    // edge: counted from the edge, every press landed a character late.
+    Some((
+        first + usize::from(y - words.y),
+        (x - words.x).saturating_sub(MARGIN),
+    ))
+}
+
+/// Which of the card's rows a point on screen is on.
+///
+/// The card is a question that has taken part of the screen and is waiting,
+/// and every row of it is a thing the reader answers with -- so unlike the
+/// lists drawn over a file, there is nothing here to browse past. A press
+/// names a row and the caller does to it what the key does.
+///
+/// The answers are walked rather than divided: an answer is as tall as its
+/// name and what it says about itself, and which of them are on screen is
+/// the card's own answer. Read here from the same two functions the drawing
+/// reads it from.
+///
+/// `None` for a point outside the card, or on its prose, or on the row that
+/// says what is missing -- none of which is anything to press.
+#[must_use]
+pub fn row_at(card: &Card, area: Rect, x: u16, y: u16) -> Option<On> {
+    let layout = layout(card, area);
+    if x < area.x || x >= area.right() {
+        return None;
+    }
+    let inside = |band: Rect| y >= band.y && y < band.y + band.height;
+    if inside(layout.choices) {
+        let width = width_of(area);
+        let mut top = layout.choices.y;
+        for at in card.visible(layout.choices.height, width) {
+            let tall = u16::try_from(card.choice_rows(at, width)).unwrap_or(1);
+            if y >= top && y < top + tall {
+                return Some(On::Choice(at));
+            }
+            top += tall;
+        }
+        return None;
+    }
+    if layout.tick.is_some_and(inside) {
+        return Some(On::Tick);
+    }
+    if layout.words.is_some_and(inside) {
+        return Some(On::Words);
+    }
+    if layout.submit.is_some_and(inside) {
+        return Some(On::Submit);
+    }
+    None
+}
+
+/// Lays the card out in the band it was given.
+#[must_use]
+pub fn layout(card: &Card, area: Rect) -> Layout {
+    let width = width_of(area);
+    let band = |y: u16, height: u16| Rect {
+        x: area.x,
+        y,
+        width: area.width,
+        height,
+    };
+    // From the ends inwards: the prose at the top and the row that sends
+    // the card at the bottom are what they are, what is written takes what
+    // it needs, and the answers have the rest. A card given less than it
+    // asked for scrolls its answers, because they are the part there can
+    // be many of.
+    let about = u16::try_from(card.about_rows(width))
+        .unwrap_or(0)
+        .min(area.height);
+    let mut left = area.height - about;
+    let submit = match card.has_submit() {
+        true => 2.min(left),
+        false => 0,
+    };
+    left -= submit;
+    let complaint = match card.has_submit() || card.complaint().is_none() {
+        true => 0,
+        false => 1.min(left),
+    };
+    left -= complaint;
+    let written = u16::try_from(card.written_rows(width))
+        .unwrap_or(0)
+        .min(left);
+    left -= written;
+    let tick = match card.has_tick() {
+        true => 1.min(left),
+        false => 0,
+    };
+    left -= tick;
+    let top = area.y + about;
+    Layout {
+        about: band(area.y, about),
+        choices: band(top, left),
+        tick: (tick > 0).then(|| band(top + left, tick)),
+        words: (written > 0).then(|| band(top + left + tick, written)),
+        complaint: (complaint > 0).then(|| band(top + left + tick + written, complaint)),
+        submit: (submit > 0).then(|| band(top + left + tick + written + complaint, submit)),
+    }
+}
+
+/// Where the terminal should put its caret: in what is being written, when
+/// that is where the keys are going.
+#[must_use]
+pub fn caret(area: Rect, card: &Card) -> Option<ratatui::layout::Position> {
+    let regions = chat::bands_for(area, card);
+    let parts = layout(card, regions.writing);
+    let words = parts.words?;
+    let (row, cell) = card.caret(width_of(words))?;
+    // The rows the caret can be on are the rows the box has: what is
+    // written scrolls under the caret rather than the caret leaving the
+    // card.
+    let height = usize::from(words.height).max(1);
+    let first = row.saturating_sub(height - 1);
+    let y = words.y + u16::try_from(row - first).unwrap_or(0);
+    (y < words.bottom()).then(|| ratatui::layout::Position {
+        x: (words.x + MARGIN + cell.get()).min(words.right().saturating_sub(1)),
+        y,
+    })
+}
+
+/// Draws the card into the band it was given.
+///
+/// `on` is the row the keys are on, and `None` while something is over the
+/// conversation and has them: the card is still on screen behind a list,
+/// and a row lit on it as well as the list's would be two places saying
+/// the keys are here.
+pub fn draw(cells: &mut CellBuffer, area: Rect, card: &Card, on: Option<On>, theme: &Theme) {
+    let plain = Style::new().fg(theme.foreground).bg(theme.background);
+    let dim = plain.fg(theme.gutter);
+    fill(cells, area, plain);
+    let parts = layout(card, area);
+
+    // What the agent asked, above its answers, with a rule under it: a list
+    // of answers with nothing saying what they answer is not a question.
+    if let Some(about) = card.what_about()
+        && parts.about.height > 0
+    {
+        let rows = obelus_text::wrapped(about, width_of(area));
+        for (offset, words) in rows
+            .iter()
+            .enumerate()
+            .take(usize::from(parts.about.height).saturating_sub(1))
+        {
+            let Ok(offset) = u16::try_from(offset) else {
+                break;
+            };
+            write(cells, area.x + MARGIN, parts.about.y + offset, words, plain);
+        }
+        rule(
+            cells,
+            Rect {
+                y: parts.about.bottom() - 1,
+                height: 1,
+                ..area
+            },
+            theme,
+        );
+    }
+
+    // The named answers, with the one the reader is on marked the way
+    // every list in Obelus marks it.
+    //
+    // Two rows and not one: the name, and under it what the agent said
+    // choosing it would do, wrapped to the card rather than cut. Those
+    // sentences are what tell one answer from another -- they are the
+    // reason the agent wrote them -- and an ellipsis through the middle of
+    // every one of them is a question that has hidden its own answers.
+    let width = width_of(area);
+    let mut y = parts.choices.y;
+    for index in card.visible(parts.choices.height, width) {
+        let Some(choice) = card.choices().get(index) else {
+            break;
+        };
+        if y >= parts.choices.bottom() {
+            break;
+        }
+        let focused = on == Some(On::Choice(index));
+        let background = match focused {
+            true => theme.selected_row_background,
+            false => theme.background,
+        };
+        let style = plain.bg(background);
+        // The whole answer wears the mark, not its first row: what is lit
+        // is what enter takes, and half an answer lit is half an answer
+        // that looks like it belongs to the one below.
+        let tall = u16::try_from(card.choice_rows(index, width)).unwrap_or(1);
+        let block = Rect {
+            y,
+            height: tall.min(parts.choices.bottom() - y),
+            ..parts.choices
+        };
+        fill(cells, block, style);
+        let mut x = area.x + MARGIN;
+        if card.several() {
+            x = crate::ticked(cells, x, y, choice.chosen, style);
+        } else if let Some(icon) = choice.icon {
+            // A private-use codepoint measures one cell and a Nerd Font's
+            // own glyphs are drawn two wide, so the one after it is left
+            // blank for the half that bleeds -- the same allowance every
+            // list in Obelus makes for the same glyphs.
+            x += put(cells, x, y, icon, style) + 1;
+        }
+        write(cells, x, y, &choice.name, style);
+        if let Some(about) = choice.about.as_deref() {
+            // Under the name, at the column the name starts in, so the
+            // sentence reads as belonging to it rather than as another
+            // answer. The same step the rows were measured against.
+            let room = width.saturating_sub(UNDER).max(1);
+            for words in obelus_text::wrapped(about, room) {
+                y += 1;
+                if y >= block.bottom() {
+                    break;
+                }
+                write(
+                    cells,
+                    area.x + MARGIN + UNDER,
+                    y,
+                    &words,
+                    style.fg(theme.gutter),
+                );
+            }
+        }
+        y = block.bottom();
+    }
+
+    // The row that says whether the reader is writing an answer of their
+    // own, where answers are ticked: there it is one of the ticks, because
+    // a card where one row means something else is a card with two ways of
+    // saying yes on it.
+    if let Some(row) = parts.tick {
+        let focused = on == Some(On::Tick);
+        let style = match focused {
+            true => plain.bg(theme.selected_row_background),
+            false => plain,
+        };
+        fill(cells, row, style);
+        let x = crate::ticked(cells, area.x + MARGIN, row.y, card.writing_wanted(), style);
+        write(
+            cells,
+            x,
+            row.y,
+            card.placeholder().unwrap_or_default(),
+            style,
+        );
+    }
+
+    // What they have written, or what the row is for while it is empty.
+    if let Some(row) = parts.words {
+        let width = width_of(row);
+        let written = card.written(width);
+        let height = usize::from(row.height).max(1);
+        let (at, _) = card
+            .caret(width)
+            .unwrap_or((0, obelus_text::coordinates::DisplayColumn::new(0)));
+        let first = at.saturating_sub(height - 1);
+        if card.blank() {
+            // The placeholder, which says what the row is for. Dim, because
+            // it is not an answer until somebody writes one.
+            write(
+                cells,
+                row.x + MARGIN,
+                row.y,
+                card.placeholder().unwrap_or_default(),
+                dim,
+            );
+        } else {
+            for (offset, words) in written.iter().skip(first).take(height).enumerate() {
+                let Ok(offset) = u16::try_from(offset) else {
+                    break;
+                };
+                let held = match words.held.clone() {
+                    Some(held) => Marked::run(held, theme.selection_background),
+                    None => Marked::plain(),
+                };
+                write_marked(
+                    cells,
+                    row,
+                    row.x + MARGIN,
+                    row.y + offset,
+                    &words.said,
+                    plain,
+                    &held,
+                );
+            }
+        }
+    }
+
+    // What the card cannot do yet, where there is no row that sends it to
+    // write it on: said in answer to the enter that asked for it.
+    if let Some(row) = parts.complaint
+        && let Some(complaint) = card.complaint()
+    {
+        write(cells, area.x + MARGIN, row.y, &complaint, dim);
+    }
+
+    // The row that sends the card, where every row above it is a tick
+    // rather than an answer. What is missing is written on it rather than
+    // said after the fact: Obelus draws what cannot be done dim and says
+    // why, everywhere else too.
+    if let Some(row) = parts.submit {
+        rule(cells, Rect { height: 1, ..row }, theme);
+        let wanting = card.wanting();
+        // Two things, said in two ways, the way every list in Obelus says
+        // them: the background is where the keys are, and the ink is
+        // whether the row can be used. A row that lost its background for
+        // being unusable would leave the reader with no way to see where
+        // they are -- pressing enter, getting nothing, and nothing on
+        // screen saying which row refused.
+        let ground = match on == Some(On::Submit) {
+            true => theme.selected_row_background,
+            false => theme.background,
+        };
+        let ink = match wanting.is_some() {
+            true => theme.gutter,
+            false => theme.foreground,
+        };
+        let style = plain.fg(ink).bg(ground);
+        let y = row.y + 1;
+        if y < row.bottom() {
+            fill(
+                cells,
+                Rect {
+                    y,
+                    height: 1,
+                    ..row
+                },
+                style,
+            );
+            let ended = write(cells, area.x + MARGIN, y, SUBMIT, style);
+            if let Some(wanting) = wanting {
+                write(
+                    cells,
+                    ended + 1,
+                    y,
+                    &format!("\u{b7} {wanting}"),
+                    style.fg(theme.gutter),
+                );
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use obelus_component::card::{Card, Choice};
+    use ratatui::layout::Rect;
+
+    use super::{Layout, layout, width_of};
+    use crate::chat;
+
+    /// A card measured against one width and drawn against another lays out
+    /// a row it then does not draw.
+    ///
+    /// Which on screen is a blank row between the answers and the box --
+    /// nothing put it there, and nothing would say where it came from. The
+    /// two widths are easy to mix up because the conversation has both: the
+    /// box a message is written in is indented under an icon, and a card is
+    /// a region of its own with a margin.
+    #[test]
+    fn a_card_is_measured_against_the_width_it_is_drawn_in() {
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width: 76,
+            height: 22,
+        };
+        let choices = ["one", "two", "three"]
+            .into_iter()
+            .map(|name| Choice {
+                id: name.to_string(),
+                name: name.to_string(),
+                about: None,
+                icon: None,
+                chosen: false,
+            })
+            .collect();
+        let mut card = Card::new(choices, false);
+        card.about("which parts should I look at");
+        // Long enough to fill a row the card's own width and to spill over
+        // one the box's width: the whole point is that the two differ.
+        card.writing(
+            "Other",
+            false,
+            Some(&"x".repeat(usize::from(width_of(area)))),
+        );
+
+        let band = chat::bands_for(area, &card).writing;
+        let Layout {
+            about,
+            choices: rows,
+            tick,
+            words,
+            complaint,
+            submit,
+        } = layout(&card, band);
+        assert_eq!(
+            usize::from(rows.height),
+            card.choices().len(),
+            "the answers were given room for a row that is not there"
+        );
+        let laid = about.height
+            + rows.height
+            + tick.map_or(0, |row| row.height)
+            + words.map_or(0, |row| row.height)
+            + complaint.map_or(0, |row| row.height)
+            + submit.map_or(0, |row| row.height);
+        assert_eq!(laid, band.height, "the parts do not fill the card");
+    }
+}

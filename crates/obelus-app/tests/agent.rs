@@ -231,9 +231,7 @@ fn remember_a_note_conversation(scratch: &support::Scratch, note: &str, session:
 fn remember_telling(scratch: &support::Scratch, note: &str, session: &str, told: Option<&str>) {
     obelus_agent::acp::sessions::change(scratch.path(), 0, None, |remembered| {
         remembered.put(
-            &obelus_agent::chats::ChatId::Note(
-                obelus_git::todo::NoteId::read(note).expect("a name"),
-            ),
+            &obelus_agent::chats::ChatId::Note(obelus_todo::NoteId::read(note).expect("a name")),
             "fake",
             scratch.path(),
             obelus_agent::acp::sessions::Kept {
@@ -1475,7 +1473,9 @@ fn something_already_said_answers_enter_from_every_row_of_it() {
 /// character under the pointer, as the cursor is found: the cells in
 /// front of the row open its first link. By letting the fold take every
 /// press on a row that folds: the call's address folds the call. And by
-/// leaving the links out of `Drawn::linked`: nothing is underlined.
+/// leaving the links out of `Drawn::linked`: nothing is underlined. And
+/// once more by drawing a link without saying so (`obelus_ui::links::said`):
+/// a click on it opens nothing.
 #[test]
 fn a_click_on_a_link_opens_it() {
     use obelus_app::event::Pointer;
@@ -3677,7 +3677,7 @@ fn a_question_asked_while_the_reader_is_away_waits_in_its_conversation() {
     let scratch = support::Scratch::new("agent-form-away");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456P\"\nsaid = \"wire the counts tree up to the search\"\n\
          done = false\ndepth = 0\n",
     )
@@ -4702,7 +4702,7 @@ fn a_conversation_about_a_note_says_so_in_its_first_message() {
     let scratch = support::Scratch::new("agent-note-opening");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456J\"\nsaid = \"wire the counts tree up to the search\"\n\
          done = false\ndepth = 0\n",
     )
@@ -4780,7 +4780,7 @@ fn a_conversation_about_a_note_offers_something_to_say() {
     let scratch = support::Scratch::new("agent-note-suggestion");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456K\"\nsaid = \"wire the counts tree up to the search\"\n\
          done = false\ndepth = 0\n",
     )
@@ -4858,7 +4858,7 @@ fn a_question_that_arrives_while_the_reader_is_away_waits_in_its_own_conversatio
     let scratch = support::Scratch::new("agent-question-away");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456M\"\nsaid = \"wire the counts tree up to the search\"\n\
          done = false\ndepth = 0\n",
     )
@@ -4940,7 +4940,7 @@ fn an_agent_that_stops_takes_the_questions_in_every_conversation_with_it() {
     let scratch = support::Scratch::new("agent-question-stopped");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456N\"\nsaid = \"wire the counts tree up to the search\"\n\
          done = false\ndepth = 0\n",
     )
@@ -5391,7 +5391,7 @@ fn a_question_about_a_notes_conversation_is_asked_in_it() {
     let scratch = support::Scratch::new("agent-note-question");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456L\"\nsaid = \"wire the counts tree up to the search\"\n\
          done = false\ndepth = 0\n",
     )
@@ -5778,7 +5778,7 @@ fn a_conversation_an_agent_closes_is_named_and_leaves_the_list() {
     let scratch = support::Scratch::new("agent-closed-named");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456S\"\nsaid = \"wire the counts up\"\ndone = false\ndepth = 0\n",
     )
     .expect("the notes");
@@ -6261,7 +6261,7 @@ fn notes_that_will_not_read_do_not_forget_the_conversations() {
     let scratch = support::Scratch::new("agent-notes-unreadable");
     support::make_room_for_notes(scratch.path());
     let note = "0123456N";
-    let notes = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
+    let notes = obelus_todo::path(scratch.path()).expect("a tree that is there");
     std::fs::write(
         &notes,
         format!("[[todo]]\nid = \"{note}\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n"),
@@ -6289,7 +6289,7 @@ fn notes_that_will_not_read_do_not_forget_the_conversations() {
     pump(&mut app, &events, "the answer", |app| {
         app.talking() == obelus_agent::Talking::Ready
     });
-    let id = obelus_git::todo::NoteId::read(note).expect("a name");
+    let id = obelus_todo::NoteId::read(note).expect("a name");
     assert!(
         obelus_agent::acp::sessions::read(scratch.path(), 0)
             .remembered()
@@ -6350,7 +6350,7 @@ fn a_note_taken_away_elsewhere_leaves_the_conversation_standing() {
     let scratch = support::Scratch::new("agent-note-taken-away");
     support::make_room_for_notes(scratch.path());
     let note = "0123456P";
-    let notes = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
+    let notes = obelus_todo::path(scratch.path()).expect("a tree that is there");
     std::fs::write(
         &notes,
         format!("[[todo]]\nid = \"{note}\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n"),
@@ -6437,7 +6437,7 @@ fn a_conversation_the_agent_has_forgotten_is_started_again() {
     support::make_room_for_notes(scratch.path());
     let note = "0123456J";
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         format!("[[todo]]\nid = \"{note}\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n"),
     )
     .expect("the notes");
@@ -6445,7 +6445,7 @@ fn a_conversation_the_agent_has_forgotten_is_started_again() {
     // note said when the agent was told about it: a conversation held
     // yesterday is one the agent was told, which is the state the clearing
     // below has to undo.
-    let id = obelus_git::todo::NoteId::read(note).expect("a name");
+    let id = obelus_todo::NoteId::read(note).expect("a name");
     obelus_agent::acp::sessions::change(
         scratch.path(),
         0,
@@ -7315,11 +7315,11 @@ fn remembering_how(
     let scratch = support::Scratch::new(name);
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         format!("[[todo]]\nid = \"{note}\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n"),
     )
     .expect("the notes");
-    let id = obelus_git::todo::NoteId::read(note).expect("a name");
+    let id = obelus_todo::NoteId::read(note).expect("a name");
     obelus_agent::acp::sessions::change(
         scratch.path(),
         0,
@@ -7388,11 +7388,11 @@ fn a_note_says_whether_anybody_has_talked_about_it() {
     let scratch = support::Scratch::new("agent-note-marks");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456Q\"\nsaid = \"talked about\"\ndone = false\ndepth = 0\n\n         [[todo]]\nid = \"0123456R\"\nsaid = \"never mentioned\"\ndone = false\ndepth = 0\n",
     )
     .expect("the notes");
-    let id = obelus_git::todo::NoteId::read("0123456Q").expect("a name");
+    let id = obelus_todo::NoteId::read("0123456Q").expect("a name");
     obelus_agent::acp::sessions::change(
         scratch.path(),
         0,
@@ -7851,11 +7851,11 @@ fn the_first_conversation_opened_after_a_restart_is_taken_up() {
     let scratch = support::Scratch::new("agent-note-first");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456P\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n",
     )
     .expect("the notes");
-    let id = obelus_git::todo::NoteId::read("0123456P").expect("a name");
+    let id = obelus_todo::NoteId::read("0123456P").expect("a name");
     obelus_agent::acp::sessions::change(
         scratch.path(),
         0,
@@ -7921,11 +7921,11 @@ fn a_conversation_taken_up_again_keeps_its_name() {
     let scratch = support::Scratch::new("agent-note-named");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456T\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n",
     )
     .expect("the notes");
-    let id = obelus_git::todo::NoteId::read("0123456T").expect("a name");
+    let id = obelus_todo::NoteId::read("0123456T").expect("a name");
     let which = obelus_agent::chats::ChatId::Note(id.clone());
     obelus_agent::acp::sessions::change(
         scratch.path(),
@@ -8034,7 +8034,7 @@ fn a_conversation_the_agent_has_not_got_is_forgotten_rather_than_replaced() {
     // Nothing is written down against the note: the name that was there
     // is gone, because the agent said it has no such thing, and the one
     // opened in its place has nothing said in it to come back to.
-    let id = obelus_git::todo::NoteId::read("0123456S").expect("a name");
+    let id = obelus_todo::NoteId::read("0123456S").expect("a name");
     let kept = obelus_agent::acp::sessions::read(scratch.path(), 0)
         .remembered()
         .expect("the table");
@@ -9084,7 +9084,7 @@ fn an_agent_is_told_what_the_note_says_only_when_it_does_not_know_it() {
     // messages. Now the agent is out of date, and the next thing said
     // carries the difference.
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456S\"\nsaid = \"a note, thought better of\"\n\
          done = false\ndepth = 0\n",
     )
@@ -9159,7 +9159,7 @@ fn the_key_from_a_conversation_to_the_notes_lands_the_caret_in_them() {
     let scratch = support::Scratch::new("agent-alt-t");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456Y\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n",
     )
     .expect("the notes");
@@ -10003,11 +10003,11 @@ fn a_conversation_another_obelus_has_open_is_not_opened_again() {
     let scratch = support::Scratch::new("agent-note-elsewhere");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456T\"\nsaid = \"somebody else has this\"\ndone = false\ndepth = 0\n",
     )
     .expect("the notes");
-    let id = obelus_git::todo::NoteId::read("0123456T").expect("a name");
+    let id = obelus_todo::NoteId::read("0123456T").expect("a name");
 
     // The other Obelus, holding it for as long as this is held.
     let theirs = obelus_agent::chats::claim(
@@ -10130,13 +10130,13 @@ fn a_note_another_obelus_is_talking_about_is_not_changed_here() {
     // above it or moved past it whoever holds it, and a test standing there
     // would pass with the lock taken out.
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456V\"\nsaid = \"mine\"\ndone = false\ndepth = 0\n\
          \n[[todo]]\nid = \"0123456T\"\nsaid = \"theirs\"\ndone = false\ndepth = 0\n",
     )
     .expect("the notes");
-    let theirs = obelus_git::todo::NoteId::read("0123456T").expect("a name");
-    let mine = obelus_git::todo::NoteId::read("0123456V").expect("a name");
+    let theirs = obelus_todo::NoteId::read("0123456T").expect("a name");
+    let mine = obelus_todo::NoteId::read("0123456V").expect("a name");
 
     let held = obelus_agent::chats::claim(
         scratch.path(),
@@ -10189,7 +10189,7 @@ fn a_note_another_obelus_is_talking_about_is_not_changed_here() {
     // if they are pressed together, so a key let through would put the note
     // back before anything looked -- and a failure reported against the
     // wrong key is a failure that sends the next reader to the wrong guard.
-    let order = |app: &App| -> Vec<obelus_git::todo::NoteId> {
+    let order = |app: &App| -> Vec<obelus_todo::NoteId> {
         app.notes()
             .expect("the notes")
             .todo()
@@ -10310,13 +10310,13 @@ fn a_locked_note_holds_back_the_keys_of_what_it_hangs_under() {
     let scratch = support::Scratch::new("agent-note-elsewhere-run");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456W\"\nsaid = \"the parent\"\ndone = false\ndepth = 0\n\
          \n[[todo]]\nid = \"0123456X\"\nsaid = \"theirs\"\ndone = false\ndepth = 1\n",
     )
     .expect("the notes");
-    let parent = obelus_git::todo::NoteId::read("0123456W").expect("a name");
-    let child = obelus_git::todo::NoteId::read("0123456X").expect("a name");
+    let parent = obelus_todo::NoteId::read("0123456W").expect("a name");
+    let child = obelus_todo::NoteId::read("0123456X").expect("a name");
 
     let held = obelus_agent::chats::claim(
         scratch.path(),
@@ -10336,7 +10336,7 @@ fn a_locked_note_holds_back_the_keys_of_what_it_hangs_under() {
 
     // The caret opens on the parent, which nobody has claimed.
     support::press_alt_key(&mut app, KeyCode::Backspace);
-    let left: Vec<obelus_git::todo::NoteId> = app
+    let left: Vec<obelus_todo::NoteId> = app
         .notes()
         .expect("the notes")
         .todo()
@@ -10381,11 +10381,11 @@ fn an_agents_tool_is_refused_a_note_another_obelus_is_talking_about() {
     let scratch = support::Scratch::new("agent-note-elsewhere-tool");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456Y\"\nsaid = \"theirs\"\ndone = false\ndepth = 0\n",
     )
     .expect("the notes");
-    let theirs = obelus_git::todo::NoteId::read("0123456Y").expect("a name");
+    let theirs = obelus_todo::NoteId::read("0123456Y").expect("a name");
 
     let held = obelus_agent::chats::claim(
         scratch.path(),
@@ -10403,14 +10403,14 @@ fn an_agents_tool_is_refused_a_note_another_obelus_is_talking_about() {
         "the note is not locked, so this proves nothing:\n{dump}"
     );
 
-    let said = what_the_tool_said(&mut app, obelus_git::todo::Doing::Finish(theirs.clone()));
+    let said = what_the_tool_said(&mut app, obelus_todo::Doing::Finish(theirs.clone()));
     assert!(
         said.contains("another Obelus"),
         "the tool was not told why it was refused: {said:?}"
     );
     let reworded = what_the_tool_said(
         &mut app,
-        obelus_git::todo::Doing::Reword {
+        obelus_todo::Doing::Reword {
             note: theirs.clone(),
             said: "the agent's words".to_string(),
         },
@@ -10419,7 +10419,7 @@ fn an_agents_tool_is_refused_a_note_another_obelus_is_talking_about() {
         reworded.contains("another Obelus"),
         "rewording was not refused: {reworded:?}"
     );
-    let now = obelus_git::todo::read(scratch.path())
+    let now = obelus_todo::read(scratch.path())
         .notes()
         .expect("the notes");
     assert_eq!(now.notes[0].said, "theirs", "the agent reworded it anyway");
@@ -10428,7 +10428,7 @@ fn an_agents_tool_is_refused_a_note_another_obelus_is_talking_about() {
     // A note of its own is still the agent's to write down.
     let added = what_the_tool_said(
         &mut app,
-        obelus_git::todo::Doing::Add {
+        obelus_todo::Doing::Add {
             notes: vec![("a new one".to_string(), 0)],
             under: Some(theirs.clone()),
         },
@@ -10441,7 +10441,7 @@ fn an_agents_tool_is_refused_a_note_another_obelus_is_talking_about() {
 }
 
 /// What one of the agent's tools answered, through the door it comes in by.
-fn what_the_tool_said(app: &mut App, doing: obelus_git::todo::Doing) -> String {
+fn what_the_tool_said(app: &mut App, doing: obelus_todo::Doing) -> String {
     let (answer, mut said) = futures::channel::oneshot::channel();
     app.handle(Event::Tools(obelus_mcp::Asked {
         root: app.working_directory().to_path_buf(),
@@ -10515,7 +10515,7 @@ fn a_note_s_conversation_left_without_a_word_keeps_nothing() {
     let scratch = support::Scratch::new("agent-note-left");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456P\"\nsaid = \"wire the counts tree up to the search\"\n\
          done = false\ndepth = 0\n",
     )
@@ -10544,7 +10544,7 @@ fn a_note_s_conversation_left_without_a_word_keeps_nothing() {
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
     support::lay_out(&mut app, WIDTH, HEIGHT);
     asked(&mut app, &events, &log, "session/delete s-1");
-    let id = obelus_git::todo::NoteId::read("0123456P").expect("a name");
+    let id = obelus_todo::NoteId::read("0123456P").expect("a name");
     let kept = obelus_agent::acp::sessions::read(scratch.path(), 0)
         .remembered()
         .and_then(|remembered| {
@@ -10584,7 +10584,7 @@ fn a_conversation_taken_up_again_is_not_let_go_for_being_quiet() {
     let scratch = support::Scratch::new("agent-note-quiet");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456Q\"\nsaid = \"wire the counts tree up to the search\"\n\
          done = false\ndepth = 0\n",
     )
@@ -11373,13 +11373,13 @@ fn a_notes_conversation_from_another_checkout_is_not_asked_for() {
     let scratch = support::Scratch::new("agent-note-other-checkout");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456W\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n",
     )
     .expect("the notes");
     let there = scratch.path().join("worktree-two");
     std::fs::create_dir_all(&there).expect("the other checkout");
-    let id = obelus_git::todo::NoteId::read("0123456W").expect("a name");
+    let id = obelus_todo::NoteId::read("0123456W").expect("a name");
     obelus_agent::acp::sessions::change(
         scratch.path(),
         0,
@@ -11484,13 +11484,12 @@ fn a_note_locked_from_another_checkout_says_which() {
 
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456T\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n",
     )
     .expect("the notes");
-    let which = obelus_agent::chats::ChatId::Note(
-        obelus_git::todo::NoteId::read("0123456T").expect("a name"),
-    );
+    let which =
+        obelus_agent::chats::ChatId::Note(obelus_todo::NoteId::read("0123456T").expect("a name"));
     let _held = obelus_agent::chats::claim(&there, &which).expect("the other checkout's claim");
 
     let (mut app, _events) = wired();
@@ -11802,7 +11801,7 @@ fn the_notes_hear_a_conversation_written_down_by_another_window() {
     let scratch = support::Scratch::new("agent-notes-hear-the-table");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456V\"\nsaid = \"somebody else will talk about this\"\ndone = false\ndepth = 0\n",
     )
     .expect("the notes");
@@ -11837,7 +11836,7 @@ fn the_notes_hear_a_conversation_written_down_by_another_window() {
     obelus_agent::acp::sessions::change(scratch.path(), 0, None, |kept| {
         kept.put(
             &obelus_agent::chats::ChatId::Note(
-                obelus_git::todo::NoteId::read("0123456V").expect("a name"),
+                obelus_todo::NoteId::read("0123456V").expect("a name"),
             ),
             "fake",
             scratch.path(),
@@ -11881,7 +11880,7 @@ fn the_notes_hear_a_conversation_written_down_by_another_window() {
 fn a_note_rewritten_elsewhere_is_offered_again() {
     let scratch = support::Scratch::new("agent-note-header-follows");
     support::make_room_for_notes(scratch.path());
-    let notes = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
+    let notes = obelus_todo::path(scratch.path()).expect("a tree that is there");
     std::fs::write(
         &notes,
         "[[todo]]\nid = \"0123456W\"\nsaid = \"what it said on Monday\"\ndone = false\ndepth = 0\n",
@@ -12151,7 +12150,7 @@ fn the_notes_hear_a_claim_through_a_watch_they_took_themselves() {
     let scratch = support::Scratch::new("agent-notes-real-watch");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456X\"\nsaid = \"somebody will take this up\"\ndone = false\ndepth = 0\n",
     )
     .expect("the notes");
@@ -12183,9 +12182,7 @@ fn the_notes_hear_a_claim_through_a_watch_they_took_themselves() {
     // happen is that the claim's file appearing reaches this application.
     let theirs = obelus_agent::chats::claim(
         scratch.path(),
-        &obelus_agent::chats::ChatId::Note(
-            obelus_git::todo::NoteId::read("0123456X").expect("a name"),
-        ),
+        &obelus_agent::chats::ChatId::Note(obelus_todo::NoteId::read("0123456X").expect("a name")),
     )
     .expect("their claim");
     pump(&mut app, &events, "the claim to be heard", |app| {
@@ -12217,7 +12214,7 @@ fn the_notes_hear_the_table_through_a_watch_they_took_themselves() {
     let scratch = support::Scratch::new("agent-notes-real-table-watch");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456Y\"\nsaid = \"somebody will talk about this\"\ndone = false\ndepth = 0\n",
     )
     .expect("the notes");
@@ -12246,7 +12243,7 @@ fn the_notes_hear_the_table_through_a_watch_they_took_themselves() {
     obelus_agent::acp::sessions::change(scratch.path(), 0, None, |kept| {
         kept.put(
             &obelus_agent::chats::ChatId::Note(
-                obelus_git::todo::NoteId::read("0123456Y").expect("a name"),
+                obelus_todo::NoteId::read("0123456Y").expect("a name"),
             ),
             "fake",
             scratch.path(),
@@ -12281,7 +12278,7 @@ fn the_notes_hear_the_table_through_a_watch_they_took_themselves() {
 fn a_conversation_about_a_note_watches_the_notes_without_the_page() {
     let scratch = support::Scratch::new("agent-header-real-watch");
     support::make_room_for_notes(scratch.path());
-    let notes = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
+    let notes = obelus_todo::path(scratch.path()).expect("a tree that is there");
     std::fs::write(
         &notes,
         "[[todo]]\nid = \"0123456Z\"\nsaid = \"what it said on Monday\"\ndone = false\ndepth = 0\n",
@@ -12375,13 +12372,12 @@ fn an_obelus_that_is_killed_gives_its_conversation_back() {
     let scratch = support::Scratch::new("agent-killed-gives-back");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"01234560\"\nsaid = \"they will die holding this\"\ndone = false\ndepth = 0\n",
     )
     .expect("the notes");
-    let which = obelus_agent::chats::ChatId::Note(
-        obelus_git::todo::NoteId::read("01234560").expect("a name"),
-    );
+    let which =
+        obelus_agent::chats::ChatId::Note(obelus_todo::NoteId::read("01234560").expect("a name"));
     let claims = obelus_agent::chats::directory(scratch.path()).expect("somewhere");
     std::fs::create_dir_all(&claims).expect("the claims directory");
     let claim = claims.join(which.file_name());
@@ -12443,7 +12439,7 @@ fn a_conversation_the_agent_died_under_asks_for_another() {
     let scratch = support::Scratch::new("agent-died");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456R\"\nsaid = \"wire the counts tree up to the search\"\n\
          done = false\ndepth = 0\n",
     )
@@ -12529,7 +12525,7 @@ fn an_answer_nobody_is_waiting_for_goes_to_nobody() {
     let scratch = support::Scratch::new("agent-closed-opening");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456S\"\nsaid = \"wire the counts tree up to the search\"\n\
          done = false\ndepth = 0\n",
     )
@@ -13545,7 +13541,7 @@ fn a_conversation_that_comes_back_takes_up_the_one_it_was() {
     let scratch = support::Scratch::new("agent-reopened-note");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456W\"\nsaid = \"wire the counts tree up to the search\"\n\
          done = false\ndepth = 0\n",
     )
@@ -13741,11 +13737,11 @@ fn the_first_note_conversation_of_a_window_is_not_introduced_again() {
     let scratch = support::Scratch::new("agent-note-introduced");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456Q\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n",
     )
     .expect("the notes");
-    let id = obelus_git::todo::NoteId::read("0123456Q").expect("a name");
+    let id = obelus_todo::NoteId::read("0123456Q").expect("a name");
     obelus_agent::acp::sessions::change(
         scratch.path(),
         0,

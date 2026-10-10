@@ -158,12 +158,7 @@ impl Filling {
         Some(Self {
             stops: stops
                 .iter()
-                .map(|(at, end)| {
-                    (
-                        CharOffset::new(offset.get() + at),
-                        CharOffset::new(offset.get() + end),
-                    )
-                })
+                .map(|(at, end)| (offset.saturating_add(*at), offset.saturating_add(*end)))
                 .collect(),
             at: None,
         })

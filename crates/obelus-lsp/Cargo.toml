@@ -10,8 +10,6 @@ license.workspace = true
 workspace = true
 
 [dependencies]
-obelus-command.workspace = true
-obelus-icons.workspace = true
 obelus-jobs.workspace = true
 obelus-program.workspace = true
 obelus-runtime.workspace = true
@@ -21,13 +19,16 @@ obelus-text.workspace = true
 anyhow.workspace = true
 globset.workspace = true
 lsp-types.workspace = true
-ratatui.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-unicode-width.workspace = true
 url.workspace = true
+
+[dev-dependencies]
+# For `tests/real_server.rs`, which measures what it reads the way the screen
+# would.
+unicode-width.workspace = true
 
 # Only for `tests/real_server.rs`, which asks the system whether a server
 # process is still there. One question, two ways of putting it, and neither

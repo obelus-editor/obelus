@@ -64,6 +64,41 @@ macro_rules! usize_coordinate {
             pub const fn get(self) -> usize {
                 self.0
             }
+
+            /// This many further on, saturating at the top of `usize`.
+            #[must_use]
+            pub const fn saturating_add(self, by: usize) -> Self {
+                Self(self.0.saturating_add(by))
+            }
+
+            /// This many further back, saturating at zero.
+            #[must_use]
+            pub const fn saturating_sub(self, by: usize) -> Self {
+                Self(self.0.saturating_sub(by))
+            }
+
+            /// This many further back, or nothing where that is before zero.
+            #[must_use]
+            pub const fn checked_sub(self, by: usize) -> Option<Self> {
+                match self.0.checked_sub(by) {
+                    Some(value) => Some(Self(value)),
+                    None => None,
+                }
+            }
+
+            /// Moved by a count that may go either way, saturating at both
+            /// ends.
+            #[must_use]
+            pub const fn saturating_add_signed(self, by: isize) -> Self {
+                Self(self.0.saturating_add_signed(by))
+            }
+
+            /// How many lie between `earlier` and this, or none where `earlier`
+            /// is not earlier.
+            #[must_use]
+            pub const fn since(self, earlier: Self) -> usize {
+                self.0.saturating_sub(earlier.0)
+            }
         }
     };
 }
@@ -97,34 +132,26 @@ impl DisplayColumn {
     pub fn saturating_from_usize(value: usize) -> Self {
         Self(u16::try_from(value).unwrap_or(u16::MAX))
     }
-}
 
-impl LineNumber {
-    /// The line this many lines further down, saturating at the top of `usize`.
+    /// This many cells further left, or nothing where that is off the left
+    /// edge.
     #[must_use]
-    pub const fn saturating_add(self, lines: usize) -> Self {
-        Self(self.0.saturating_add(lines))
-    }
-
-    /// The line this many lines further up, saturating at line zero.
-    #[must_use]
-    pub const fn saturating_sub(self, lines: usize) -> Self {
-        Self(self.0.saturating_sub(lines))
+    pub const fn checked_sub(self, cells: u16) -> Option<Self> {
+        match self.0.checked_sub(cells) {
+            Some(value) => Some(Self(value)),
+            None => None,
+        }
     }
 }
 
-impl CharColumn {
-    /// The column this many characters to the right, saturating at the top of
-    /// `usize`.
+impl CharOffset {
+    /// Where `inserted`, put in here, ends.
+    ///
+    /// Counted in characters, which is what this offset is in and what a
+    /// `str` is not: its length is bytes.
     #[must_use]
-    pub const fn saturating_add(self, characters: usize) -> Self {
-        Self(self.0.saturating_add(characters))
-    }
-
-    /// The column this many characters to the left, saturating at column zero.
-    #[must_use]
-    pub const fn saturating_sub(self, characters: usize) -> Self {
-        Self(self.0.saturating_sub(characters))
+    pub fn after(self, inserted: &str) -> Self {
+        self.saturating_add(inserted.chars().count())
     }
 }
 

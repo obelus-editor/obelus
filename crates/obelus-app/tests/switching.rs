@@ -243,10 +243,10 @@ fn typed_in_the_files(app: &App) -> Option<String> {
 #[test]
 fn a_list_with_nothing_in_it_leaves_the_view_where_it_was() {
     let mut app = reading();
-    let mut keymap = obelus_editing::keymap::Keymap::new();
+    let mut keymap = obelus_keymap::Keymap::new();
     keymap.rebind(
         Command::SymbolMenu,
-        Some(obelus_editing::keymap::KeyChord::new(
+        Some(obelus_keymap::KeyChord::new(
             KeyCode::Char('y'),
             crossterm::event::KeyModifiers::ALT,
         )),

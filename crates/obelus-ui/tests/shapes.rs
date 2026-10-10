@@ -14,7 +14,7 @@
 
 use std::sync::{Arc, Mutex, OnceLock};
 
-use obelus_editing::keymap::KeyChord;
+use obelus_keymap::KeyChord;
 use obelus_theme::builtin::DARK;
 use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Color};
 

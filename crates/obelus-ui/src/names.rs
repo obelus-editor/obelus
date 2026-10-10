@@ -44,7 +44,7 @@ const ELSEWHERE: &str = "Not on this machine";
 #[must_use]
 pub fn hints(names: &Names) -> Vec<Hint> {
     use crossterm::event::{KeyCode, KeyModifiers};
-    let chord = obelus_editing::keymap::KeyChord::new;
+    let chord = obelus_keymap::KeyChord::new;
     let bare = |code| chord(code, KeyModifiers::NONE);
     let on = names.rows().get(names.window().focus());
     vec![

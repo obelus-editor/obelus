@@ -15,8 +15,7 @@
 //! somebody has edited that is losing their work. Mark it and stop at the save,
 //! which is where the two versions meet.
 
-pub mod question;
-
+pub mod changes;
 pub mod folds;
 mod moving;
 pub mod undo;
@@ -345,7 +344,7 @@ pub struct Block {
     /// because which line that is depends on which side it opened on --
     /// and a bar drawn in the colour of the wrong line's trouble is a bar
     /// that is quietly the wrong colour at the bottom of a file.
-    pub severity: Option<obelus_lsp::trouble::Severity>,
+    pub severity: Option<obelus_text::severity::Severity>,
     /// What the commit did to the file the block hangs over, where that is
     /// known: lines added, lines taken away.
     ///
@@ -887,7 +886,7 @@ impl Buffer {
         above: LineNumber,
         lines: &[String],
         kind: Held,
-        severity: Option<obelus_lsp::trouble::Severity>,
+        severity: Option<obelus_text::severity::Severity>,
     ) {
         let block = Block {
             severity,
@@ -1401,7 +1400,7 @@ impl Buffer {
     fn spanning(&self, at: CharOffset, characters: usize) -> Span {
         let text = self.editing.text();
         let (line, column) = text.position(at);
-        let (end_line, end_column) = text.position(CharOffset::new(at.get() + characters));
+        let (end_line, end_column) = text.position(at.saturating_add(characters));
         Span {
             line,
             column,
@@ -1487,10 +1486,7 @@ impl Buffer {
         // where every editor leaves them and saves the caller doing this
         // arithmetic a second time. `place_cursor` clears the selection,
         // which an edit has just consumed.
-        let (line, column) = self
-            .editing
-            .text()
-            .position(CharOffset::new(at.get() + with.chars().count()));
+        let (line, column) = self.editing.text().position(at.after(with));
         self.place_cursor(line, column);
         self.viewport.top = self.editing.text().clamp_line(self.viewport.top);
         Some(undo::Step {

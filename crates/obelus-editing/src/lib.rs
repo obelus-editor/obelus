@@ -17,13 +17,43 @@
 //! two vocabularies -- a [`Motion`] to move it and a [`Typing`] to change
 //! what it is in.
 
-pub mod keymap;
-
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use obelus_text::{
     Text,
-    coordinates::{CharColumn, CharOffset, DisplayColumn, LineNumber, Span},
+    coordinates::{CharColumn, DisplayColumn, LineNumber, Span},
 };
+
+/// The modifiers a binding can name.
+///
+/// `SUPER`, `HYPER` and `META` are not among them. They do arrive -- Obelus
+/// asks for the kitty keyboard protocol, and under it a key is reported with
+/// every modifier held -- but only from the terminals that speak it, and the
+/// desktop takes them first anyway: super is the window manager's modifier
+/// on every system Obelus runs on. A binding there would be eaten before the
+/// terminal saw it, which looks to a reader like a broken program. The same
+/// reason the key table refuses `ctrl+alt+arrow` (`obelus_keymap::why_not`).
+///
+/// A key arriving with one of them is therefore not a key Obelus understands,
+/// and `obelus_keymap::KeyChord::from_event` gives no chord for it. That is
+/// deliberately different from ignoring the modifier: `ctrl+super+q` is not
+/// `ctrl+q`, and quitting because of the half of the chord we recognize is a
+/// wrong answer rather than a missing one.
+pub const BINDABLE_MODIFIERS: KeyModifiers = KeyModifiers::CONTROL
+    .union(KeyModifiers::ALT)
+    .union(KeyModifiers::SHIFT);
+
+/// The modifiers held down, or `None` if any of them is not [bindable].
+///
+/// Every path that reads a key goes through this — the key table, the editor's
+/// motions, the picker — so all of them draw the line in the same place.
+///
+/// [bindable]: BINDABLE_MODIFIERS
+#[must_use]
+pub fn modifiers_of(event: &KeyEvent) -> Option<KeyModifiers> {
+    (event.modifiers - BINDABLE_MODIFIERS)
+        .is_empty()
+        .then_some(event.modifiers)
+}
 
 /// Which lines a motion steps over without ever stopping on one.
 ///
@@ -373,8 +403,42 @@ fn first_written(text: &Text, line: LineNumber, first: CharColumn, end: CharColu
 }
 
 /// Whether a character is part of a word rather than between words.
+///
+/// Deliberately not a language's own idea of an identifier: Obelus asks
+/// servers about twenty-five languages and has no table of what each calls a
+/// word, and every one of them agrees about letters, digits and an
+/// underscore.
+#[must_use]
 pub fn wordish(character: char) -> bool {
     character.is_alphanumeric() || character == '_'
+}
+
+/// The word a column is in or just after, as the column it starts at and
+/// the one after its end.
+///
+/// Just after as well, because a caret at the end of a name is on that name
+/// as far as a reader is concerned: they have just typed it.
+#[must_use]
+pub fn word_around(
+    text: &Text,
+    line: LineNumber,
+    column: CharColumn,
+) -> Option<(CharColumn, CharColumn)> {
+    let characters: Vec<char> = text.line(line).chars().collect();
+    let word = |at: usize| characters.get(at).copied().is_some_and(wordish);
+    let at = column.get().min(characters.len());
+    if !word(at) && !(at > 0 && word(at - 1)) {
+        return None;
+    }
+    let mut from = at;
+    while from > 0 && word(from - 1) {
+        from -= 1;
+    }
+    let mut to = at;
+    while word(to) {
+        to += 1;
+    }
+    (from < to).then(|| (CharColumn::new(from), CharColumn::new(to)))
 }
 
 /// Which end of a selection a motion collapses it to, if it collapses it.
@@ -480,21 +544,21 @@ pub fn word_right(
 
 /// The line above, skipping whatever a fold has hidden.
 fn previous_line(folds: &dyn Hides, line: LineNumber) -> Option<LineNumber> {
-    let mut above = line.get().checked_sub(1)?;
-    while folds.hides(LineNumber::new(above)) {
+    let mut above = line.checked_sub(1)?;
+    while folds.hides(above) {
         above = above.checked_sub(1)?;
     }
-    Some(LineNumber::new(above))
+    Some(above)
 }
 
 /// The line below, likewise.
 fn next_line(text: &Text, folds: &dyn Hides, line: LineNumber) -> Option<LineNumber> {
-    let last = text.last_line().get();
-    let mut below = line.get() + 1;
-    while below <= last && folds.hides(LineNumber::new(below)) {
-        below += 1;
+    let last = text.last_line();
+    let mut below = line.saturating_add(1);
+    while below <= last && folds.hides(below) {
+        below = below.saturating_add(1);
     }
-    (below <= last).then(|| LineNumber::new(below))
+    (below <= last).then_some(below)
 }
 
 /// Records the cell a cursor is at, as the column to aim for later.
@@ -511,7 +575,7 @@ fn remember(text: &Text, cursor: &mut Cursor, width: u16) {
 pub fn motion_for(key: &KeyEvent) -> Option<(Motion, bool)> {
     // Judged the same way the key table judges, so a key means the same thing
     // in both places or nothing in both places.
-    let modifiers = crate::keymap::modifiers_of(key)?;
+    let modifiers = modifiers_of(key)?;
 
     match (modifiers, key.code) {
         // Not `ctrl+PageUp`/`ctrl+PageDown`: those mean previous and next tab
@@ -568,7 +632,7 @@ pub fn motion_for(key: &KeyEvent) -> Option<(Motion, bool)> {
 /// somebody else's -- a `ctrl` chord is a command, and typing one would put
 /// a character in where the reader asked for an action.
 pub fn typing_for(key: &KeyEvent) -> Option<Typing> {
-    let modifiers = crate::keymap::modifiers_of(key)?;
+    let modifiers = modifiers_of(key)?;
     // The one pair of `ctrl` chords that type rather than command: they
     // take out a word, which is the pair of `ctrl` with the arrows moving
     // over one. Before the rule below, which is what refuses the rest.
@@ -906,9 +970,7 @@ impl Editing {
     fn put(&mut self, what: &str, width: u16) {
         let at = self.text.char_offset(self.cursor.line, self.cursor.column);
         self.text.insert(at, what);
-        let (line, column) = self
-            .text
-            .position(CharOffset::new(at.get() + what.chars().count()));
+        let (line, column) = self.text.position(at.after(what));
         self.anchor = None;
         self.place(line, column, width);
     }
@@ -931,5 +993,29 @@ impl Editing {
             },
             width,
         );
+    }
+}
+
+#[cfg(test)]
+mod words {
+    use super::*;
+
+    /// A caret in a name, at its start, or just after its end is on that
+    /// name; one with nothing of a word on either side is on none.
+    ///
+    /// Broken deliberately by asking only about the character under the
+    /// caret: the caret just after `name` found nothing.
+    #[test]
+    fn a_caret_just_after_a_word_is_on_it() {
+        let text = Text::from_string("let name = 1;");
+        let around = |column| {
+            word_around(&text, LineNumber::new(0), CharColumn::new(column))
+                .map(|(from, to)| (from.get(), to.get()))
+        };
+        assert_eq!(around(4), Some((4, 8)), "at its start");
+        assert_eq!(around(6), Some((4, 8)), "inside it");
+        assert_eq!(around(8), Some((4, 8)), "just after it");
+        assert_eq!(around(10), None, "between a space and an `=`");
+        assert_eq!(around(99), None, "past the end of the line");
     }
 }

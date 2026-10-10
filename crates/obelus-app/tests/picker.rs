@@ -1202,9 +1202,9 @@ fn the_palette_shows_the_key_each_command_is_bound_to() {
     };
 
     let label = |command| {
-        obelus_editing::keymap::Keymap::new()
+        obelus_keymap::Keymap::new()
             .chord_for(command)
-            .map(obelus_editing::keymap::KeyChord::label)
+            .map(obelus_keymap::KeyChord::label)
             .expect("the command is bound")
     };
 
@@ -1300,7 +1300,7 @@ fn a_long_trailing_does_not_eat_the_label() {
 #[test]
 fn the_keys_line_up_in_a_column() {
     use obelus_command::Command;
-    use obelus_editing::keymap::{KeyChord, Keymap};
+    use obelus_keymap::{KeyChord, Keymap};
 
     let mut app = app();
     press_control(&mut app, 'p');
@@ -1343,7 +1343,7 @@ fn the_keys_line_up_in_a_column() {
 fn the_palette_reads_the_key_table() {
     use crossterm::event::KeyModifiers;
     use obelus_command::Command;
-    use obelus_editing::keymap::{Binding, Context, KeyChord, Keymap};
+    use obelus_keymap::{Binding, Context, KeyChord, Keymap};
 
     let mut app = app();
     app.set_keymap(Keymap::from_bindings(vec![Binding {
@@ -1464,7 +1464,7 @@ fn the_theme_picker_leaves_the_code_visible() {
 fn a_question_with_no_server_is_dim_and_keeps_its_key() {
     use crossterm::event::KeyModifiers;
     use obelus_command::Command;
-    use obelus_editing::keymap::{Binding, Context, KeyChord, Keymap};
+    use obelus_keymap::{Binding, Context, KeyChord, Keymap};
 
     let mut app = app();
     app.set_keymap(Keymap::from_bindings(vec![
@@ -1500,7 +1500,7 @@ fn a_question_with_no_server_is_dim_and_keeps_its_key() {
     assert_eq!(
         row.trailing.as_deref(),
         Some(
-            obelus_editing::keymap::KeyChord::new(KeyCode::Char('d'), KeyModifiers::ALT)
+            obelus_keymap::KeyChord::new(KeyCode::Char('d'), KeyModifiers::ALT)
                 .label()
                 .as_str()
         ),
@@ -4072,7 +4072,7 @@ fn going_to_a_definition_has_a_key_and_the_palette_says_which() {
         .expect("the row is listed whether or not it can run");
     assert_eq!(
         jump.trailing.as_deref(),
-        Some(obelus_editing::keymap::function(11).label().as_str()),
+        Some(obelus_keymap::function(11).label().as_str()),
         "the one key the symbol questions have is not on its row:\n{palette}"
     );
 

@@ -37,15 +37,10 @@
 #![cfg_attr(not(test), windows_subsystem = "windows")]
 
 mod blink;
-mod cascade;
 mod clipboard;
-mod coretext;
 mod elsewhere;
-mod faces;
-mod font;
 mod grid;
 mod keys;
-mod monospace;
 mod motion;
 mod paint;
 mod title;

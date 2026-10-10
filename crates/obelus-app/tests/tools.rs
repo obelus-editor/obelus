@@ -29,7 +29,7 @@ fn listening(name: &str) -> (support::Scratch, String) {
     let scratch = support::Scratch::new(name);
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"ABCDEFGH\"\nsaid = \"wire the counts tree up\"\ndone = false\n",
     )
     .expect("the notes");
@@ -179,7 +179,7 @@ fn what_an_agent_writes_down_is_in_the_file() {
     let scratch = support::Scratch::new("tools-written");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"ABCDEFGH\"\nsaid = \"the one that was there\"\ndone = false\n",
     )
     .expect("the notes");
@@ -229,7 +229,7 @@ fn what_an_agent_writes_down_is_in_the_file() {
     assert!(ticked.contains("ticked off"), "it did not say so: {ticked}");
 
     // And the file has them, which is the whole of what the tools are for.
-    let todo = obelus_git::todo::read(scratch.path())
+    let todo = obelus_todo::read(scratch.path())
         .notes()
         .expect("the notes");
     let said: Vec<&str> = todo.notes.iter().map(|note| note.said.as_str()).collect();
@@ -263,7 +263,7 @@ fn a_note_of_several_lines_is_one_entry() {
     let scratch = support::Scratch::new("tools-paragraph");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"ABCDEFGH\"\nsaid = \"\"\"\nthe title\nand a body\nof two lines\n\"\"\"\ndone = false\n",
     )
     .expect("the notes");
@@ -344,7 +344,7 @@ fn a_note_read_by_its_name_is_that_note_and_what_is_under_it() {
     let scratch = support::Scratch::new("tools-one");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"AAAAAAAA\"\nsaid = \"the one at the top\"\ndone = false\n\
          [[todo]]\nid = \"ABCDEFGH\"\nsaid = \"the one asked for\"\ndone = false\ndepth = 1\n\
          [[todo]]\nid = \"BBBBBBBB\"\nsaid = \"the one under it\"\ndone = true\ndepth = 2\n\
@@ -415,7 +415,7 @@ fn a_depth_nothing_could_hang_at_is_brought_up_before_it_is_written() {
 
     let scratch = support::Scratch::new("tools-too-deep");
     support::make_room_for_notes(scratch.path());
-    let file = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
+    let file = obelus_todo::path(scratch.path()).expect("a tree that is there");
     std::fs::write(
         &file,
         "[[todo]]\nid = \"ABCDEFGH\"\nsaid = \"the one\"\ndone = false\n",
@@ -478,7 +478,7 @@ fn a_reworded_note_is_the_same_note() {
 
     let scratch = support::Scratch::new("tools-reworded");
     support::make_room_for_notes(scratch.path());
-    let file = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
+    let file = obelus_todo::path(scratch.path()).expect("a tree that is there");
     std::fs::write(
         &file,
         "[[todo]]\nid = \"ABCDEFGH\"\nsaid = \"what it was written for\"\n\
@@ -516,7 +516,7 @@ fn a_reworded_note_is_the_same_note() {
         "it did not say so: {answered}"
     );
 
-    let todo = obelus_git::todo::read(scratch.path())
+    let todo = obelus_todo::read(scratch.path())
         .notes()
         .expect("the notes");
     let said: Vec<&str> = todo.notes.iter().map(|note| note.said.as_str()).collect();
@@ -564,7 +564,7 @@ fn a_note_cannot_be_reworded_into_nothing() {
     let scratch = support::Scratch::new("tools-reworded-empty");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"ABCDEFGH\"\nsaid = \"the one that was there\"\ndone = false\ndepth = 0\n",
     )
     .expect("the notes");
@@ -597,7 +597,7 @@ fn a_note_cannot_be_reworded_into_nothing() {
         "it did not say why it would not: {answered}"
     );
 
-    let todo = obelus_git::todo::read(scratch.path())
+    let todo = obelus_todo::read(scratch.path())
         .notes()
         .expect("the notes");
     assert_eq!(todo.notes.len(), 1, "the note went away");
@@ -717,7 +717,7 @@ fn a_file_an_agent_offers_is_on_the_readers_screen() {
 /// half of this that no tool listing can say.
 #[test]
 fn the_opening_names_the_tool_it_offers() {
-    let always = include_str!("../src/app/always.txt");
+    let always = include_str!("../src/app/chat/always.txt");
     assert!(
         always.contains("open_file"),
         "the opening does not tell an agent it can open a file:\n{always}"

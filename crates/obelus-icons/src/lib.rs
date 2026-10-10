@@ -15,9 +15,8 @@
 //! `vim.g.have_nerd_font`.
 //!
 //! So Obelus has one switch, [`NERD_FONT`], and everything that draws a glyph
-//! has a fallback that reads correctly without one. There is nowhere to
-//! configure it yet, which makes it the fourth thing wanting a configuration
-//! file.
+//! has a fallback that reads correctly without one. The reader sets it, as
+//! `icons` in the settings, and nothing here guesses.
 //!
 //! Every codepoint here was checked against a patched font's own tables
 //! rather than taken from a chart, because a wrong one is indistinguishable

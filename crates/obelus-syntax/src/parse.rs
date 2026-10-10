@@ -510,8 +510,8 @@ pub fn edit_between(old: &Text, new: &Text) -> Option<Edit> {
     let prefix = old.common_prefix(new);
     let suffix = old.common_suffix(new, prefix);
 
-    let old_end = ByteOffset::new(old.byte_length().get() - suffix);
-    let new_end = ByteOffset::new(new.byte_length().get() - suffix);
+    let old_end = old.byte_length().saturating_sub(suffix);
+    let new_end = new.byte_length().saturating_sub(suffix);
     if prefix == old_end && prefix == new_end {
         return None;
     }

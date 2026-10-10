@@ -150,7 +150,7 @@ impl App {
                 Command::FileChanged => Listing::Changed,
                 _ => return None,
             };
-            return self.listing.iter().position(|shown| *shown == wanted);
+            return self.files.listing.iter().position(|shown| *shown == wanted);
         }
         if picker.is_searching() {
             let wanted = match command {
@@ -159,7 +159,11 @@ impl App {
                 Command::SearchSymbols => Scope::Symbols,
                 _ => return None,
             };
-            return self.searching.iter().position(|shown| *shown == wanted);
+            return self
+                .search
+                .searching
+                .iter()
+                .position(|shown| *shown == wanted);
         }
         let wanted = match command {
             Command::HistoryFile => history_view::About::File,

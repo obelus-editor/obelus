@@ -10,7 +10,7 @@ license.workspace = true
 workspace = true
 
 [dependencies]
-obelus-git.workspace = true
+obelus-todo.workspace = true
 obelus-runtime.workspace = true
 obelus-sink.workspace = true
 axum.workspace = true

@@ -487,7 +487,7 @@ impl Folds {
     /// nothing says are foldable is a fold about a file that has gone.
     pub fn keep_across(&mut self, offered: Vec<Fold>, after: LineNumber, moved: isize) {
         let shift = |line: LineNumber| match line > after {
-            true => LineNumber::new(line.get().saturating_add_signed(moved)),
+            true => line.saturating_add_signed(moved),
             false => line,
         };
         self.offered = offered;

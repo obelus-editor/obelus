@@ -1945,7 +1945,7 @@ fn an_agent_that_is_not_installed_is_not_in_use() {
 fn a_command_can_be_put_on_another_key() {
     use crossterm::event::KeyModifiers;
     use obelus_command::Command;
-    use obelus_editing::keymap::KeyChord;
+    use obelus_keymap::KeyChord;
 
     let _taken = SETTINGS.lock().expect("the lock");
     let scratch = temporary("bind");
@@ -2025,7 +2025,7 @@ fn a_key_that_is_taken_says_so_on_the_row() {
     assert_eq!(app.keymap().chord_for(Command::ThemeSelect), None);
     assert_eq!(
         app.keymap().chord_for(Command::CommandPalette),
-        Some(obelus_editing::keymap::KeyChord::new(
+        Some(obelus_keymap::KeyChord::new(
             KeyCode::Char('p'),
             KeyModifiers::CONTROL
         )),
@@ -4468,7 +4468,7 @@ fn notes_that_will_not_read_are_an_error_on_the_notes_file() {
     let _taken = SETTINGS.lock().expect("the lock");
     let scratch = support::Scratch::new("notes-unreadable");
     support::make_room_for_notes(scratch.path());
-    let notes = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
+    let notes = obelus_todo::path(scratch.path()).expect("a tree that is there");
     std::fs::write(&notes, "[[todo]]\nid = \"ABCDEFGH\"\nsaid \"a note\"\n").expect("the notes");
 
     let mut app = App::new(vec![
@@ -4730,7 +4730,7 @@ fn the_agents_go_where_their_bar_is_dragged() {
 #[test]
 fn the_keys_page_chooses_where_the_keys_start() {
     use crossterm::event::{KeyEvent, KeyModifiers};
-    use obelus_editing::keymap::Context;
+    use obelus_keymap::Context;
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -4820,12 +4820,9 @@ fn the_keys_page_chooses_where_the_keys_start() {
 fn every_layout_offered_is_a_table() {
     let named: Vec<_> = obelus_config::KEY_LAYOUTS
         .iter()
-        .map(|word| obelus_editing::keymap::Layout::named(word))
+        .map(|word| obelus_keymap::Layout::named(word))
         .collect();
-    let all: Vec<_> = obelus_editing::keymap::Layout::ALL
-        .into_iter()
-        .map(Some)
-        .collect();
+    let all: Vec<_> = obelus_keymap::Layout::ALL.into_iter().map(Some).collect();
     assert_eq!(named, all, "{:?}", obelus_config::KEY_LAYOUTS);
 }
 
@@ -4841,7 +4838,7 @@ fn every_layout_offered_is_a_table() {
 #[test]
 fn a_layout_nothing_answers_to_stays_in_the_file() {
     use crossterm::event::{KeyEvent, KeyModifiers};
-    use obelus_editing::keymap::Context;
+    use obelus_keymap::Context;
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
