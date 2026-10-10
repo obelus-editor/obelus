@@ -1562,6 +1562,7 @@ impl App {
             spans: Vec::new(),
             rule: true,
             code: None,
+            links: Vec::new(),
         };
         rows.push(rule.clone());
         let Some(discussion) = self.pulls.discussions.get(&number) else {

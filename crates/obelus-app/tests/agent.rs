@@ -1460,6 +1460,85 @@ fn something_already_said_answers_enter_from_every_row_of_it() {
     );
 }
 
+/// A click on a link opens it -- the link the pointer is on, of two on
+/// one row -- and a click beside it, or a drag that starts on it, opens
+/// nothing. A link's words are underlined, and the words beside them are
+/// not.
+///
+/// Broken deliberately three ways. By opening on a release whether or
+/// not the press moved, in `pointer_in_transcript`: the drag opens the
+/// link it started on. By taking the opening out of that arm: the click
+/// opens nothing. And by leaving the links out of `Drawn::linked`:
+/// nothing is underlined.
+#[test]
+fn a_click_on_a_link_opens_it() {
+    use obelus_app::event::Pointer;
+
+    let _turn = support::clipboard_turn();
+    obelus_clipboard::links::use_opener_for_test(obelus_clipboard::links::Opener::Kept);
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/links");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+
+    let text = screen(&mut app);
+    let row = text
+        .lines()
+        .find(|row| row.contains("the tool calls"))
+        .unwrap_or_else(|| panic!("no link on screen:\n{text}"));
+    let y: u16 = row
+        .split('|')
+        .next()
+        .and_then(|number| number.trim().parse().ok())
+        .expect("a row number");
+    let x = |words: &str| u16::try_from(support::column_of(row, words)).expect("a column");
+    let point = |app: &mut App, kind: Pointer, x: u16| {
+        app.handle(Event::Pointer { kind, x, y });
+        support::lay_out(app, WIDTH, HEIGHT);
+    };
+
+    let cells = support::cells_of(&mut app, WIDTH, HEIGHT);
+    let underlined = |words: &str| {
+        (x(words)..x(words) + u16::try_from(words.len()).expect("short")).all(|x| {
+            cells
+                .cell((x, y))
+                .is_some_and(|cell| cell.modifier.contains(ratatui::style::Modifier::UNDERLINED))
+        })
+    };
+    assert!(underlined("the prompt turn"), "the link is not underlined");
+    assert!(!underlined("See"), "words that go nowhere are underlined");
+
+    point(&mut app, Pointer::Pressed, x("See"));
+    point(&mut app, Pointer::Released, x("See"));
+    assert_eq!(
+        obelus_clipboard::links::opened(),
+        None,
+        "a click beside the links opened one"
+    );
+
+    point(&mut app, Pointer::Pressed, x("tool calls"));
+    point(&mut app, Pointer::Dragged, x("See"));
+    point(&mut app, Pointer::Released, x("tool calls"));
+    assert_eq!(
+        obelus_clipboard::links::opened(),
+        None,
+        "a drag from a link opened it"
+    );
+
+    point(&mut app, Pointer::Pressed, x("tool calls"));
+    point(&mut app, Pointer::Released, x("tool calls"));
+    assert_eq!(
+        obelus_clipboard::links::opened().as_deref(),
+        Some("https://a.example/tools"),
+        "a click on the second link did not open it"
+    );
+}
+
 /// What enter does to something said goes under it where its last row
 /// has no room, the way the box's offer to send now does.
 ///

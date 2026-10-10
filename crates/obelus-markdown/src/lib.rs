@@ -237,6 +237,7 @@ impl Laying<'_> {
                 spans: Vec::new(),
                 rule: true,
                 code: None,
+                links: Vec::new(),
             }),
             // The markers a block is made of rather than anything it says,
             // and the blank lines between blocks.
@@ -294,9 +295,26 @@ impl Laying<'_> {
         if shown.text.trim().is_empty() {
             return;
         }
+        let links = inside.map_or_else(Vec::new, |inside| links(inside, self.source));
         for (said, at) in obelus_text::wrapped_from(&shown.text, prefix.room(width)) {
             let spans = split(&said, at.start, &looks, &shown);
+            // A link's words may wrap, and every row of them goes where
+            // the link does.
+            let here: Vec<(Range<usize>, String)> = links
+                .iter()
+                .filter(|(words, _)| {
+                    spans.iter().any(|span| {
+                        span.from
+                            .as_ref()
+                            .is_some_and(|from| from.start < words.end && words.start < from.end)
+                    })
+                })
+                .cloned()
+                .collect();
             self.row(prefix, spans);
+            if let Some(row) = self.rows.last_mut() {
+                row.links = here;
+            }
         }
     }
 
@@ -807,6 +825,35 @@ fn marks(node: Node<'_>, gathered: &Gathered, looks: &mut [Look], gone: &mut Vec
         }
         marks(child, gathered, looks, gone);
     }
+}
+
+/// Every link under an inline node that goes somewhere on the web: where
+/// its words are in the source, and where it goes.
+///
+/// Only an address with a scheme: a link to `src/lib.rs` is a file in a
+/// repository the browser has never heard of.
+fn links(node: Node<'_>, source: &str) -> Vec<(Range<usize>, String)> {
+    let mut found = Vec::new();
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() != "inline_link" {
+            found.extend(links(child, source));
+            continue;
+        }
+        let part = |kind: &str| {
+            child
+                .children(&mut child.walk())
+                .find(|part| part.kind() == kind)
+        };
+        let to = part("link_destination")
+            .and_then(|to| source.get(to.byte_range()))
+            .map(|to| to.trim_start_matches('<').trim_end_matches('>'))
+            .filter(|to| to.starts_with("https://") || to.starts_with("http://"));
+        if let (Some(words), Some(to)) = (part("link_text"), to) {
+            found.push((words.byte_range(), to.to_string()));
+        }
+    }
+    found
 }
 
 /// Says something about every byte of a run.

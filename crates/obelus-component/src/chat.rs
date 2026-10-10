@@ -46,6 +46,15 @@
 //! the reader had walked to. The box is one escape or one arrow away, and
 //! going back there is the reader's to say.
 //!
+//! A link is opened by a click, not by enter. One markdown wrote and an
+//! address written out in the words are both underlined where they are,
+//! and a row may hold several -- and may already have enter for something
+//! of its own: taking a message back, opening a call. Enter on a link took
+//! that key away wherever the two met, and a message that was nothing but
+//! an address could not be taken back at all. The pointer says which link
+//! by landing on it, and a press that becomes a drag is taking hold of the
+//! words rather than following them.
+//!
 //! Shift extends, and control goes to the ends. Shift and a motion holds
 //! what the motion passed over, in the box as in the transcript, because
 //! shift means one thing everywhere -- and the box was where it meant
@@ -255,6 +264,15 @@ pub struct Said {
     pub afar: bool,
 }
 
+/// A link on a row of the transcript.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Link {
+    /// Which of the row's characters are its words.
+    pub characters: std::ops::Range<usize>,
+    /// The web address it goes to.
+    pub to: String,
+}
+
 /// What the mark on a row opens and closes.
 ///
 /// Three things fold in a transcript and they are three different things,
@@ -307,6 +325,18 @@ pub struct Row {
     /// and a row that said only "somewhere" would make whoever pressed the
     /// key work out which.
     pub away: Option<String>,
+    /// The links on this row.
+    ///
+    /// Beside `away` and not the same thing: that is the whole of what was
+    /// said pointing somewhere, and these are words inside it that do.
+    ///
+    /// Opened by a click and by nothing else. A row may hold several, and
+    /// it may already have a key of its own -- a message enter takes back,
+    /// a call's title enter opens -- so enter cannot be what follows one
+    /// without taking that key away wherever the two meet: a message that
+    /// was nothing but an address could not be taken back. The pointer
+    /// says which link by landing on it.
+    pub links: Vec<Link>,
     /// What this row opens and closes, by where what it begins is in the
     /// transcript.
     ///
@@ -478,6 +508,14 @@ impl Row {
             }
         }
         here.acts().then(|| row..row + 1)
+    }
+
+    /// The link the row's nth character is in, where it is in one.
+    #[must_use]
+    pub fn link_at(&self, characters: usize) -> Option<&Link> {
+        self.links
+            .iter()
+            .find(|link| link.characters.contains(&characters))
     }
 
     /// How many characters the row draws.
@@ -900,10 +938,10 @@ const fn reads_as_markdown(speaker: Speaker) -> bool {
 /// than read -- are counted past rather than held: whether they are inside
 /// is a question about the rows around them, and [`Chat::mark_held`] is
 /// where that is answered.
-fn row_held(row: &Row, from: usize, to: usize) -> Option<std::ops::Range<usize>> {
+fn row_held(spans: &[Span], from: usize, to: usize) -> Option<std::ops::Range<usize>> {
     let mut held: Option<std::ops::Range<usize>> = None;
     let mut column = 0usize;
-    for span in &row.spans {
+    for span in spans {
         let bytes = span.from.clone();
         for (offset, character) in span.text.char_indices() {
             if let Some(bytes) = bytes.as_ref() {
@@ -944,11 +982,19 @@ fn plain(text: String) -> Vec<Span> {
 /// The wrapping is markdown's own, because that is where the difficulty
 /// lives: a fenced block does not wrap like a paragraph and a bullet's
 /// second line is indented under its first.
-fn laid_out(text: &str, width: u16, markdown: bool) -> Vec<(Vec<Span>, Option<obelus_row::Code>)> {
+///
+/// Each row comes with the links on it: the ones markdown wrote as links,
+/// and the addresses written out in the words.
+fn laid_out(text: &str, width: u16, markdown: bool) -> Vec<Laid> {
+    let written = addresses(text);
     if !markdown {
         return obelus_text::wrapped_from(text, width)
             .into_iter()
-            .map(|(said, from)| (vec![Span::from_source(said, Ink::Plain, from)], None))
+            .map(|(said, from)| {
+                let spans = vec![Span::from_source(said, Ink::Plain, from)];
+                let links = links_on(&spans, &written);
+                (spans, None, links)
+            })
             .collect();
     }
     obelus_markdown::render(text, width)
@@ -963,10 +1009,90 @@ fn laid_out(text: &str, width: u16, markdown: bool) -> Vec<(Vec<Span>, Option<ob
                     Ink::Mark,
                 )],
                 None,
+                Vec::new(),
             ),
-            false => (row.spans, row.code),
+            // A block of code is copied, not followed: an address in it is
+            // a line of the code.
+            false if row.code.is_some() => (row.spans, row.code, Vec::new()),
+            false => {
+                let found: Vec<_> = row
+                    .links
+                    .into_iter()
+                    .chain(written.iter().cloned())
+                    .collect();
+                let links = links_on(&row.spans, &found);
+                (row.spans, row.code, links)
+            }
         })
         .collect()
+}
+
+/// A row of a thing said, laid out: its runs, the block of code it is part
+/// of, and the links on it.
+type Laid = (Vec<Span>, Option<obelus_row::Code>, Vec<Link>);
+
+/// The links among `found` whose words are on a row, by the row's own
+/// characters.
+fn links_on(spans: &[Span], found: &[(std::ops::Range<usize>, String)]) -> Vec<Link> {
+    let mut links: Vec<Link> = found
+        .iter()
+        .filter_map(|(words, to)| {
+            Some(Link {
+                characters: row_held(spans, words.start, words.end)?,
+                to: to.clone(),
+            })
+        })
+        .collect();
+    // An address written out as a link's own words is found twice, and is
+    // one link.
+    links.sort_by_key(|link| link.characters.start);
+    links.dedup_by(|later, earlier| later.characters.start < earlier.characters.end);
+    links
+}
+
+/// Every web address written out in a text, and where it is.
+///
+/// Written out rather than linked: an address an agent puts in a sentence
+/// is one the reader would otherwise have to hold and copy out. Where it
+/// ends is a guess, and the guess is the one a reader makes -- at a space
+/// or a character no address is written with, before the full stop of the
+/// sentence it ends, and before a bracket it did not open.
+fn addresses(text: &str) -> Vec<(std::ops::Range<usize>, String)> {
+    let mut found = Vec::new();
+    let mut from = 0;
+    while let Some(start) = ["https://", "http://"]
+        .iter()
+        .filter_map(|scheme| text.get(from..)?.find(scheme))
+        .min()
+        .map(|at| from + at)
+    {
+        let rest = &text[start..];
+        let mut end = rest
+            .find(|c: char| !c.is_ascii_graphic() || matches!(c, '<' | '>' | '"' | '`' | '|'))
+            .unwrap_or(rest.len());
+        while let Some(last) = rest[..end].chars().last() {
+            let said = &rest[..end];
+            let unopened = |open: char, close: char| {
+                last == close && said.matches(close).count() > said.matches(open).count()
+            };
+            match matches!(last, '.' | ',' | ';' | ':' | '!' | '?' | '\'' | '*' | '_')
+                || unopened('(', ')')
+                || unopened('[', ']')
+            {
+                true => end -= 1,
+                false => break,
+            }
+        }
+        let said = &rest[..end];
+        if said
+            .split_once("://")
+            .is_some_and(|(_, host)| !host.is_empty())
+        {
+            found.push((start..start + end, said.to_string()));
+        }
+        from = start + end.max(1);
+    }
+    found
 }
 
 impl Chat {
@@ -1817,6 +1943,7 @@ impl Chat {
                 kind: String::new(),
                 place: None,
                 away: None,
+                links: Vec::new(),
                 from: None,
                 held: None,
                 // Anchored one past the end of what was said, which is the
@@ -1848,6 +1975,7 @@ impl Chat {
                             state: (line == 0).then(|| step.state.clone()),
                             kind: String::new(),
                             away: None,
+                            links: Vec::new(),
                             place: None,
                             folds: None,
                             open: false,
@@ -1921,6 +2049,7 @@ impl Chat {
             kind: said.kind.clone(),
             place: None,
             away: None,
+            links: Vec::new(),
             folds: Some(Folds::Run(run.start)),
             open,
             unsent: None,
@@ -2012,14 +2141,17 @@ impl Chat {
             // there is more, which is what that arrow says about
             // everything else behind it.
             let mut title = laid_out(&said.text, room, reads_as_markdown(said.speaker)).into_iter();
+            let (spans, links) = title.next().map_or_else(
+                || (plain(String::new()), Vec::new()),
+                |(spans, _, links)| (spans, links),
+            );
             let mut rows = vec![Row {
                 changed: (!said.change.is_empty())
                     .then(|| obelus_git::change::counted(&said.change)),
+                links,
                 ..self.opening(
                     said,
-                    title
-                        .next()
-                        .map_or_else(|| plain(String::new()), |(spans, _)| spans),
+                    spans,
                     depth,
                     Some(Folds::Said(at)),
                     Some((at, Source::Text)),
@@ -2031,12 +2163,10 @@ impl Chat {
                 true => usize::MAX,
                 false => MOST_TITLE_ROWS.saturating_sub(1),
             };
-            rows.extend(
-                title
-                    .by_ref()
-                    .take(shown)
-                    .map(|(spans, _)| Self::under(said, spans, depth, Some((at, Source::Text)))),
-            );
+            rows.extend(title.by_ref().take(shown).map(|(spans, _, links)| Row {
+                links,
+                ..Self::under(said, spans, depth, Some((at, Source::Text)))
+            }));
             if open {
                 // Markdown, unless Obelus is running a command for this
                 // call: then these words are the command and what it has
@@ -2046,12 +2176,13 @@ impl Chat {
                 // soft break -- which is a call saying it ran something
                 // that it never ran.
                 rows.extend(carried.iter().flat_map(|(which, words)| {
-                    laid_out(words, inside, said.ran.is_none())
-                        .into_iter()
-                        .map(|(spans, code)| Row {
+                    laid_out(words, inside, said.ran.is_none()).into_iter().map(
+                        |(spans, code, links)| Row {
                             code,
+                            links,
                             ..Self::under(said, spans, depth + 1, Some((at, Source::Words(*which))))
-                        })
+                        },
+                    )
                 }));
                 // A diff's own markers, which words do not get: "it is
                 // changing this" and "it is saying this" are different
@@ -2059,7 +2190,7 @@ impl Chat {
                 rows.extend(said.change.iter().enumerate().flat_map(|(which, line)| {
                     laid_out(&line.text, inside, false)
                         .into_iter()
-                        .map(move |(spans, _)| Row {
+                        .map(move |(spans, ..)| Row {
                             marker: line.marker,
                             ..Self::under(said, spans, depth + 1, Some((at, Source::Change(which))))
                         })
@@ -2079,8 +2210,9 @@ impl Chat {
             return words
                 .into_iter()
                 .enumerate()
-                .map(|(row, (spans, code))| Row {
+                .map(|(row, (spans, code, links))| Row {
                     code,
+                    links,
                     ..match row {
                         0 => self.opening(said, spans, depth, None, Some((at, Source::Text))),
                         _ => Self::under(said, spans, depth, Some((at, Source::Text))),
@@ -2098,14 +2230,13 @@ impl Chat {
             None,
         )];
         if self.is_open(at) {
-            rows.extend(
-                laid_out(&said.text, inside, true)
-                    .into_iter()
-                    .map(|(spans, code)| Row {
-                        code,
-                        ..Self::under(said, spans, depth + 1, Some((at, Source::Text)))
-                    }),
-            );
+            rows.extend(laid_out(&said.text, inside, true).into_iter().map(
+                |(spans, code, links)| Row {
+                    code,
+                    links,
+                    ..Self::under(said, spans, depth + 1, Some((at, Source::Text)))
+                },
+            ));
         }
         rows
     }
@@ -2142,6 +2273,7 @@ impl Chat {
                 Speaker::Away => said.words.first().cloned(),
                 _ => None,
             },
+            links: Vec::new(),
             folds,
             open: folds.is_some_and(|what| self.is_open_now(what)),
             unsent: match said.unsent {
@@ -2171,6 +2303,7 @@ impl Chat {
             kind: said.kind.clone(),
             place: None,
             away: None,
+            links: Vec::new(),
             folds: None,
             open: false,
             unsent: None,
@@ -2195,6 +2328,7 @@ impl Chat {
             kind: String::new(),
             place: None,
             away: None,
+            links: Vec::new(),
             folds: None,
             open: false,
             unsent: None,
@@ -2383,6 +2517,13 @@ impl Chat {
         self.held = None;
     }
 
+    /// Whether what is held is a press that never became a drag, which is
+    /// what a click leaves.
+    #[must_use]
+    pub fn clicked(&self) -> bool {
+        self.held.is_some_and(|(from, to)| from == to)
+    }
+
     /// Lets go of a hold with nothing in it, which is what a press that
     /// never became a drag leaves.
     ///
@@ -2457,7 +2598,7 @@ impl Chat {
                 true => last.at,
                 false => usize::MAX,
             };
-            if let Some(held) = row_held(row, from, to) {
+            if let Some(held) = row_held(&row.spans, from, to) {
                 ends.push((index, held));
             }
         }
@@ -4221,6 +4362,97 @@ mod tests {
                 character: start + 1
             }),
             "stepping left from inside the picture"
+        );
+    }
+
+    /// The links on a row are found where their words are -- one markdown
+    /// wrote as a link, and one written out in a sentence -- each by the
+    /// characters it covers, so that two on one row are two things and a
+    /// link that wraps is a link on both rows. An address in a block of
+    /// code is a line of the code, and enter does what the row did before.
+    ///
+    /// Broken deliberately five ways. By leaving markdown's links off its
+    /// rows: the link's words are no link. By keeping the full stop on the
+    /// written-out address: it goes somewhere else. By answering from the
+    /// row rather than the character in `Row::link_at` (the first link on
+    /// the row wherever the pointer is): the second link is the first. By
+    /// looking for addresses in a block of code: the code has a link in it.
+    /// And by having enter follow the link under the caret: the reader's
+    /// own address is no longer a message they can copy back.
+    #[test]
+    fn a_link_is_the_characters_its_words_are_on() {
+        let (one, two, docs, bare, theirs) = (
+            "https://a.example/one",
+            "https://a.example/two",
+            "https://a.example/docs",
+            "https://a.example/a_(b)",
+            "https://a.example/theirs",
+        );
+        let mut chat = Chat::new();
+        chat.chunk(
+            Speaker::Agent,
+            &format!(
+                "[one]({one}) and [two]({two}) here.\n\n[the documentation for the whole of \
+                 this feature]({docs}) runs on.\n\nOr see {bare}.\n\n```\ncurl {docs}\n```\n"
+            ),
+        );
+        chat.chunk(Speaker::Reader, theirs);
+        let rows = chat.rows(ROOM.reading);
+        let on = |words: &str| {
+            rows.iter()
+                .enumerate()
+                .find_map(|(row, it)| {
+                    let at = it.text().find(words)?;
+                    Some(Place {
+                        row,
+                        character: it.text()[..at].chars().count(),
+                    })
+                })
+                .unwrap_or_else(|| panic!("no row says {words:?}: {rows:?}"))
+        };
+        let goes = |at: Place| {
+            rows[at.row]
+                .link_at(at.character)
+                .map(|link| link.to.as_str())
+        };
+        let (first, second, between) = (on("one"), on("two"), on("and two"));
+        let (link, rest) = (on("the documentation"), on("feature"));
+        let (written, code, reader) = (on("https://a.example/a_"), on("curl"), on(theirs));
+        assert_eq!(first.row, second.row, "the two links are not on one row");
+        assert!(link.row < rest.row, "the link did not wrap: {rows:?}");
+
+        for (at, to) in [
+            (first, one),
+            (second, two),
+            (link, docs),
+            (rest, docs),
+            (written, bare),
+            (reader, theirs),
+        ] {
+            assert_eq!(goes(at), Some(to), "at {at:?}");
+        }
+        assert_eq!(
+            goes(between),
+            None,
+            "the words between two links are a link"
+        );
+        let address = Place {
+            character: code.character + "curl ".len(),
+            ..code
+        };
+        assert_eq!(
+            goes(address),
+            None,
+            "an address in a block of code is a link"
+        );
+
+        chat.focus = Focus::Transcript(reader);
+        assert!(
+            matches!(
+                chat.handle_key(&key(KeyCode::Enter), false, ROOM, &[], false),
+                ChatOutcome::TakeBack(_)
+            ),
+            "enter on the reader's own address did not copy their words to the box"
         );
     }
 

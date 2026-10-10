@@ -1306,6 +1306,11 @@ impl ChatView<'_> {
             // lost anything and must not be marked as though it had.
             let wanted: usize = row.spans.iter().map(|span| text_width(&span.text)).sum();
             let clipped = wanted > usize::from(stop.saturating_sub(words));
+            let linked: Vec<std::ops::Range<usize>> = row
+                .links
+                .iter()
+                .map(|link| link.characters.clone())
+                .collect();
             let mut ended = crate::reading::write_spans(
                 cells,
                 words,
@@ -1322,6 +1327,7 @@ impl ChatView<'_> {
                         false => stop,
                     },
                     held: row.held.as_ref(),
+                    linked: &linked,
                 },
             );
             // Said where they stop, rather than simply running out: a row

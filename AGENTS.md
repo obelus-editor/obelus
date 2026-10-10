@@ -658,7 +658,8 @@ crates/
                       to what acts, a run of tool calls is one row, a change
                       that has happened is the working tree's and one that has
                       not is the agent's to show, thinking is not folded away,
-                      a call's title is three rows shut (chat); folding is one
+                      a call's title is three rows shut, a link is opened by
+                      a click and not by enter (chat); folding is one
                       act and the notes are the fourth place it happens, a note
                       somebody else is talking about is read here and not
                       changed, and a box is the reader's once they have put

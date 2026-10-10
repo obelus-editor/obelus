@@ -113,6 +113,7 @@ pub fn draw(
                 // anything is a conversation, and this draws a file's
                 // preview and a server's answer as well.
                 held: None,
+                linked: &[],
             },
         );
     }
@@ -135,6 +136,11 @@ pub struct Drawn<'a> {
     pub stop: u16,
     /// Which of the row's characters are held, if any are.
     pub held: Option<&'a std::ops::Range<usize>>,
+    /// Which of the row's characters are the words of a link, which are
+    /// underlined whether or not the cursor is on them: a reader scanning a
+    /// paragraph should not have to walk it to find out what in it goes
+    /// somewhere.
+    pub linked: &'a [std::ops::Range<usize>],
 }
 
 /// Writes a laid-out row's runs, and says the column they ended in.
@@ -162,6 +168,7 @@ pub fn write_spans(
         theme,
         stop,
         held,
+        linked,
     } = *drawn;
     // The runs as one string, because a cluster is one cell and a run is a
     // colour, and a colour can change between a heart and its selector
@@ -189,6 +196,10 @@ pub fn write_spans(
         // above is worked out first and only the ground is replaced.
         let style = match held.is_some_and(|held| held.contains(&cluster.first)) {
             true => style.bg(theme.selection_background),
+            false => style,
+        };
+        let style = match linked.iter().any(|link| link.contains(&cluster.first)) {
+            true => style.add_modifier(Modifier::UNDERLINED),
             false => style,
         };
         column = column.saturating_add(put_cluster(cells, column, y, cluster.text, style));
@@ -254,6 +265,7 @@ mod tests {
             theme,
             stop: 10,
             held: None,
+            linked: &[],
         };
         let spans = [
             obelus_row::Span::new("\u{2764}", obelus_row::Ink::Plain),

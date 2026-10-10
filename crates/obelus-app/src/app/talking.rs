@@ -2339,6 +2339,17 @@ impl App {
             .any(|talk| talk.card.is_some())
     }
 
+    /// Hands a web address to whatever on this machine opens them, and
+    /// says in the conversation when nothing does.
+    pub(super) fn open_link(&mut self, url: &str) {
+        if let Err(error) = obelus_clipboard::links::open(url) {
+            tracing::warn!(%error, "the link was not opened");
+            if let Some(talk) = self.conversation_mut() {
+                talk.chat.note("Nothing here opens links");
+            }
+        }
+    }
+
     /// Offers a key to the conversation, and says whether it took it.
     ///
     /// Two things in one, because the reader sees one: the agent's own
@@ -2414,12 +2425,7 @@ impl App {
             // asked anything -- it was told they went the first time, and
             // it is watching the far end rather than Obelus.
             ChatOutcome::Away(url) => {
-                if let Err(error) = obelus_clipboard::links::open(&url) {
-                    tracing::warn!(%error, "the link was not opened");
-                    if let Some(talk) = self.conversation_mut() {
-                        talk.chat.note("Nothing here opens links");
-                    }
-                }
+                self.open_link(&url);
                 true
             }
             // Where a row of the transcript says the agent was. Going
