@@ -167,6 +167,32 @@ pub fn list_height(area: Rect, choosing: &crate::Choosing, keymap: &Keymap) -> u
     laid(area, choosing, &hints(choosing, keymap)).list.height
 }
 
+/// Which row a point on screen is on: the projects from nought, and the
+/// row that opens another after the last of them.
+///
+/// From the same layout the drawing goes by, because a press that landed
+/// on a different row than the one it looks like it landed on is worse
+/// than a press that does nothing.
+#[must_use]
+pub fn row_at(
+    area: Rect,
+    choosing: &crate::Choosing,
+    keymap: &Keymap,
+    x: u16,
+    y: u16,
+) -> Option<usize> {
+    let laid = laid(area, choosing, &hints(choosing, keymap));
+    let point = ratatui::layout::Position { x, y };
+    if laid.opening.contains(point) {
+        return Some(choosing.known.len());
+    }
+    if !headed(choosing) || !laid.list.contains(point) {
+        return None;
+    }
+    let at = choosing.top.min(choosing.known.len()) + usize::from(y - laid.list.y);
+    (at < choosing.known.len()).then_some(at)
+}
+
 /// The page.
 pub struct ProjectsView<'a> {
     choosing: crate::Choosing,

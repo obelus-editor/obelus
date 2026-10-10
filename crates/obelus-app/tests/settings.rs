@@ -4900,3 +4900,47 @@ fn every_layout_is_offered_with_a_name_and_what_it_is() {
         assert!(item.detail.is_some(), "{name} does not say what it is");
     }
 }
+
+/// A second press on a setting's name does what enter does on it.
+///
+/// One press there only moves the selection, so that reading a setting
+/// does not change it; two in the same cell are the reader asking.
+///
+/// Broken deliberately by dropping `|| twice` from `press_in_settings`:
+/// the switch stays as it was.
+#[test]
+fn a_double_click_on_a_settings_name_is_enter() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("switch-double-click");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+    let dump = support::render(&mut app, 66, 12);
+    let y: u16 = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains("Nerd Font"))
+        .and_then(|row| row.split_once('|'))
+        .and_then(|(at, _)| at.trim().parse().ok())
+        .expect("the row with the switch on it");
+    let area = app.editor_area_for_test();
+    let press_on_the_name = |app: &mut App| {
+        app.handle(Event::Pointer {
+            kind: obelus_app::event::Pointer::Pressed,
+            x: area.x + 4,
+            y,
+        });
+    };
+
+    let was = app.config().icons;
+    press_on_the_name(&mut app);
+    assert_eq!(app.config().icons, was, "one press flipped the switch");
+    press_on_the_name(&mut app);
+    assert_ne!(
+        app.config().icons,
+        was,
+        "the second press did not flip the switch"
+    );
+
+    obelus_icons::use_glyphs(false);
+}

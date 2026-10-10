@@ -255,6 +255,18 @@ impl Chooser {
         self.window.settle(height);
     }
 
+    /// Puts the reader on one of the rows: the projects from nought, and
+    /// the opening row after them.
+    ///
+    /// For a pointer, and only while the reader is looking at the rows: a
+    /// path being named is the box's, and a press on a project above it is
+    /// not an answer to it.
+    pub fn select_row(&mut self, at: usize) {
+        if matches!(self.doing, Doing::Choosing) {
+            self.at = at.min(self.rows().len());
+        }
+    }
+
     /// Puts this row at the top, for a bar the reader has hold of.
     pub fn drag_to(&mut self, top: usize) {
         self.window.drag_to(top);

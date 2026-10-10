@@ -16230,3 +16230,190 @@ fn a_review_taken_elsewhere_greys_its_row_while_the_list_is_open() {
         "a review another window let go is still refused"
     );
 }
+
+/// A double click on a tool call that names a file goes to it, as enter
+/// on the row does.
+///
+/// Broken deliberately by taking the `go_to_where_the_agent_was` out of
+/// `pointer_in_transcript`: the conversation stays where it was.
+#[test]
+fn a_double_click_on_a_tool_call_goes_to_the_file_it_names() {
+    let (mut app, events) = talking();
+    support::type_text(&mut app, "what is this file");
+    support::press(&mut app, KeyCode::Enter);
+    pump(
+        &mut app,
+        &events,
+        "the permission request",
+        App::is_asking_permission,
+    );
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the end of the turn", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+
+    press_on(&mut app, "Read the file", 2);
+    assert!(app.chat().is_some(), "one press went to the file");
+    press_on(&mut app, "Read the file", 2);
+    assert!(app.chat().is_none(), "the conversation is still over it");
+    let buffer = app.current_buffer().expect("the file it read");
+    assert!(
+        buffer.path().ends_with("many_lines.rs"),
+        "it opened {}",
+        buffer.path().display()
+    );
+    assert_eq!(
+        buffer.cursor().line.get(),
+        6,
+        "it did not land on the line the agent named"
+    );
+}
+
+/// And on a call with something behind it, whose row a single press
+/// folds, the double click still goes -- and leaves the call folded the
+/// way it was before the first press.
+///
+/// The file it names is not there, so going is said on the status row and
+/// the conversation stays, which is what lets the fold be looked at.
+///
+/// Broken deliberately twice: by folding only on a press that is not the
+/// second of a double click, which leaves the call opened by the first;
+/// and by taking `go_to_where_the_agent_was` out of
+/// `pointer_in_transcript`, which says nothing about the file.
+#[test]
+fn a_double_click_on_a_call_that_folds_goes_and_leaves_the_fold() {
+    let (mut app, events) = talking();
+    support::type_text(&mut app, "what is this file");
+    support::press(&mut app, KeyCode::Enter);
+    pump(
+        &mut app,
+        &events,
+        "the permission request",
+        App::is_asking_permission,
+    );
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the end of the turn", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+
+    let behind = |app: &mut App| screen(app).contains("--all-features");
+    let was = behind(&mut app);
+    press_on(&mut app, "Run the tests", 2);
+    assert_ne!(behind(&mut app), was, "one press did not fold the call");
+    press_on(&mut app, "Run the tests", 2);
+    let text = screen(&mut app);
+    assert_eq!(
+        text.contains("--all-features"),
+        was,
+        "the double click left the call folded otherwise:\n{text}"
+    );
+    assert!(
+        text.contains("Could not open"),
+        "the double click did not go to the file the call named:\n{text}"
+    );
+}
+
+/// One press on the agent's commands stands on one, and a second chooses
+/// it, the way enter does.
+///
+/// The second of them, so that it is the press that says which: enter
+/// alone takes the first.
+///
+/// Broken deliberately by returning `false` at the top of
+/// `press_in_the_commands`: the press goes to the transcript and the box
+/// keeps what was typed; and by not moving the selection on a press,
+/// which settles the first name instead.
+#[test]
+fn a_double_click_on_the_list_of_commands_chooses_from_it() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the commands", |app| {
+        !app.agent_orders().is_empty()
+    });
+    support::type_text(&mut app, "/c");
+    let _ = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(app.slash().is_some(), "no list while a name is typed");
+
+    press_on(&mut app, "/cost", 2);
+    assert_eq!(
+        app.chat().expect("the chat").writing().text(),
+        "/c",
+        "one press chose from the list"
+    );
+    press_on(&mut app, "/cost", 2);
+    assert_eq!(
+        app.chat().expect("the chat").writing().text(),
+        "/cost ",
+        "the second press did not choose from the list"
+    );
+}
+
+/// The same in a transcript longer than its band, sitting at the end --
+/// the ordinary state, and where the newest call is.
+///
+/// The first press opens the call, and the next frame moves everything up
+/// by what opened, so the second press lands on another row in the same
+/// cell. It went by that row: what it found there was the call's own
+/// output, which names no file, so nothing was opened and the call was
+/// left open.
+///
+/// Broken deliberately by going by the row the second press landed on
+/// rather than by `pressed_call`.
+#[test]
+fn a_double_click_on_a_call_that_opens_goes_where_the_first_press_was() {
+    const SHORT: u16 = 12;
+    let (mut app, events) = talking();
+    support::type_text(&mut app, "what is this file");
+    support::press(&mut app, KeyCode::Enter);
+    pump(
+        &mut app,
+        &events,
+        "the permission request",
+        App::is_asking_permission,
+    );
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the end of the turn", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+
+    let rows_of = |app: &mut App| {
+        let dump = support::render(app, WIDTH, SHORT);
+        support::text_block(&dump).to_string()
+    };
+    let text = rows_of(&mut app);
+    let (x, y) = text
+        .lines()
+        .find_map(|row| {
+            let (at, cells) = row.split_once('|')?;
+            let x = cells.find("Run the tests")?;
+            Some((u16::try_from(x + 2).ok()?, at.trim().parse::<u16>().ok()?))
+        })
+        .unwrap_or_else(|| panic!("the call is not on screen:\n{text}"));
+    let was = text.contains("--all-features");
+    let press = |app: &mut App| {
+        app.handle(Event::Pointer {
+            kind: obelus_app::event::Pointer::Pressed,
+            x,
+            y,
+        });
+    };
+
+    press(&mut app);
+    let moved = rows_of(&mut app);
+    assert!(
+        !moved
+            .lines()
+            .any(|row| row.starts_with(&format!("{y:2}|")) && row.contains("Run the tests")),
+        "the call did not move from under the pointer, so this proves nothing:\n{moved}"
+    );
+    press(&mut app);
+    let text = rows_of(&mut app);
+    assert!(
+        text.contains("Could not open"),
+        "the double click did not go to the file the call named:\n{text}"
+    );
+    assert_eq!(
+        text.contains("--all-features"),
+        was,
+        "the double click left the call folded otherwise:\n{text}"
+    );
+}

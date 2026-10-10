@@ -2249,6 +2249,16 @@ impl App {
         }
     }
 
+    /// Goes to a place a tool call named.
+    pub(super) fn go_to_where_the_agent_was(&mut self, place: &obelus_agent::acp::Place) {
+        // The protocol counts a file's lines from one and the rest of
+        // Obelus counts them from zero, which is what `go_to` takes: a
+        // language server's numbering, because that is who it was written
+        // for.
+        let line = place.line.unwrap_or(1).saturating_sub(1);
+        self.go_to(&place.path, line, 0);
+    }
+
     /// Whatever a key means to that list, if it means anything.
     ///
     /// Only the keys that move about a list and the ones that choose from
@@ -2434,12 +2444,7 @@ impl App {
             // and `alt+left` comes back to it. It used to have to be hidden,
             // because hiding it was the only way to show a file.
             ChatOutcome::GoTo(place) => {
-                // The protocol counts a file's lines from one and the rest
-                // of Obelus counts them from zero, which is what `go_to`
-                // takes: a language server's numbering, because that is who
-                // it was written for.
-                let line = place.line.unwrap_or(1).saturating_sub(1);
-                self.go_to(&place.path, line, 0);
+                self.go_to_where_the_agent_was(&place);
                 true
             }
             ChatOutcome::Copy(code) => {
