@@ -1252,6 +1252,7 @@ impl App {
         self.documents.push(Some(Conversation::default().into()));
         let id = DocumentId::new(self.documents.len() - 1);
         if self
+            .agent
             .talker
             .as_ref()
             .is_none_or(obelus_agent::acp::Talk::has_exited)

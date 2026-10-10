@@ -254,8 +254,8 @@ impl App {
             // it took it, were both questions Obelus had no answer to.
             Ok((url, listening)) => {
                 tracing::info!(url, "Obelus is offering an agent its tools");
-                self.tools_url = Some(url);
-                self.listening = Some(listening);
+                self.agent.tools_url = Some(url);
+                self.agent.listening = Some(listening);
             }
             Err(error) => {
                 // Not a reason to stop: an Obelus that cannot listen is an

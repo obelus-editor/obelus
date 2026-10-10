@@ -423,6 +423,7 @@ impl App {
         };
         let whose = talking::Whose::One(signing.conversation);
         let ours = self
+            .agent
             .talker
             .as_ref()
             .is_some_and(|talker| talker.connection() == signing.connection);
@@ -435,7 +436,7 @@ impl App {
             }
             self.in_talk(whose, |chat| chat.note("Signed in"));
             self.signed_in_everywhere();
-            if let Some(talker) = self.talker.as_ref() {
+            if let Some(talker) = self.agent.talker.as_ref() {
                 talker.signed_in();
             }
             if self.document(signing.conversation).is_some() {

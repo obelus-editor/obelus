@@ -118,7 +118,7 @@ impl App {
         }
         // Worked out before the list is borrowed to change, because both
         // halves are this application's.
-        let talker = self.talker.as_ref();
+        let talker = self.agent.talker.as_ref();
         let whose = self.whose_conversation();
         let marks: Vec<(DocumentId, Option<(Marking, String)>)> = self
             .documents
@@ -160,7 +160,8 @@ impl App {
     /// the agent's own name arrives with its handshake, which can be after
     /// the list opened.
     fn whose_conversation(&self) -> Option<String> {
-        self.talker
+        self.agent
+            .talker
             .as_ref()
             .and(self.agent_name())
             .map(str::to_string)
@@ -249,7 +250,7 @@ impl App {
     /// is not taken up until it is shown -- so until then its agent has
     /// said nothing about it, not even the name Obelus already has.
     fn conversation_title(&self, talk: &crate::conversation::Conversation) -> Option<String> {
-        let talker = self.talker.as_ref();
+        let talker = self.agent.talker.as_ref();
         if let Some(title) = talker.and_then(|talker| talker.title(talk.session.as_ref())) {
             return Some(title.to_string());
         }
@@ -910,7 +911,7 @@ impl App {
             .filter_map(|(index, document)| Some((index, document.as_ref()?)));
 
         let statuses = &self.files.statuses;
-        let talker = self.talker.as_ref();
+        let talker = self.agent.talker.as_ref();
         // A row's count, so having none is an answer this can live with.
         let notes = obelus_todo::read(&self.working_directory)
             .notes()

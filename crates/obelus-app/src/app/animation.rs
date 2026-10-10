@@ -104,7 +104,7 @@ impl App {
 
     /// Whether an agent is at work in any conversation at all.
     fn anything_working(&self) -> bool {
-        let Some(talker) = self.talker.as_ref() else {
+        let Some(talker) = self.agent.talker.as_ref() else {
             return false;
         };
         self.documents

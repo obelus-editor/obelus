@@ -647,6 +647,7 @@ impl App {
     #[must_use]
     pub(in crate::app) fn agent_takes_pictures(&self) -> bool {
         match self
+            .agent
             .talker
             .as_ref()
             .and_then(obelus_agent::acp::Talk::carries)

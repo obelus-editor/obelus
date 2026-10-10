@@ -163,6 +163,8 @@ struct Dragging {
 /// Everything Obelus is currently showing or remembering.
 #[derive(Debug)]
 pub struct App {
+    /// The agent this window talks to, and what is running on its behalf.
+    agent: chat::Agent,
     /// What the pointer is doing and what the last frame left for it to land
     /// on.
     pointing: pointer::Pointing,
@@ -339,17 +341,6 @@ pub struct App {
     ///
     /// `None` in a terminal, which is told nothing: see [`App::drawn_by`].
     drawing: Option<std::sync::Arc<dyn Drawing>>,
-    /// Where an agent reaches what Obelus offers it, if it could listen.
-    ///
-    /// Taken once per project and kept: every conversation is told an
-    /// address under this one, so a second agent started later reaches the
-    /// same tools rather than a second server nobody asked for. Taken again
-    /// only when the project is, because the tools are about one tree.
-    tools_url: Option<String>,
-    /// The server at that address, which stops listening when this goes.
-    listening: Option<obelus_mcp::Listening>,
-    /// The agent Obelus is talking to, once something has needed it.
-    talker: Option<obelus_agent::acp::Talk>,
     /// Whether `ctrl+enter` arrives as itself rather than as enter.
     ///
     /// A window's keys always do; a terminal's only where it speaks the
@@ -357,24 +348,9 @@ pub struct App {
     /// screen. What it decides is whether the box offers to send now: an
     /// offer of a key that arrives as enter is an offer that queues.
     ctrl_enter_arrives: bool,
-    /// The commands an agent asked to run, while they run.
-    ///
-    /// On the loop rather than on the connection's thread, because a
-    /// command is a thing on the page: the row that says what is happening
-    /// reads its output, and a key stops it.
-    runs: obelus_agent::running::Runs,
     /// This Obelus's place in the machine's pool of build jobs, while the
     /// settings ask for one.
     jobs: Option<obelus_jobs::Pool>,
-    /// Who is waiting to be told a command has ended.
-    ///
-    /// The agent's `terminal/wait_for_exit`, held until the command does.
-    /// Answered from the frame check rather than by blocking: the loop
-    /// that draws must not wait on a compile.
-    waiting_on: Vec<(
-        String,
-        obelus_agent::acp::Answer<Option<obelus_agent::running::Ended>>,
-    )>,
     /// What Obelus knows about the agents it could run.
     agents: agents::Agents,
     /// Where the agents page's marks were on the frame just drawn.
@@ -611,6 +587,7 @@ impl App {
         let documents: Vec<Option<Document>> =
             open.into_iter().map(Document::from).map(Some).collect();
         Self {
+            agent: chat::Agent::default(),
             pointing: pointer::Pointing::default(),
             git: git::Said::default(),
             terminal: terminals::Terminals::default(),
@@ -644,13 +621,8 @@ impl App {
             drawing: None,
             prompt: None,
 
-            tools_url: None,
-            listening: None,
-            talker: None,
             ctrl_enter_arrives: true,
-            runs: obelus_agent::running::Runs::default(),
             jobs: None,
-            waiting_on: Vec::new(),
             settled: preferences::Settled::default(),
             agents: agents::Agents::default(),
             picture_layout: None,
@@ -1066,7 +1038,7 @@ impl App {
     /// server is not started before the reader has said which.
     #[must_use]
     pub fn tools_url(&self) -> Option<&str> {
-        self.tools_url.as_deref()
+        self.agent.tools_url.as_deref()
     }
 
     /// Says where Obelus's own tools are, without listening anywhere.
@@ -1075,7 +1047,7 @@ impl App {
     /// address handed to an agent without a port being opened for it, which
     /// is what an agent is told rather than what it finds at the other end.
     pub fn tools_url_for_test(&mut self, url: &str) {
-        self.tools_url = Some(url.to_string());
+        self.agent.tools_url = Some(url.to_string());
     }
 
     /// Puts the application on a project of the test's choosing.

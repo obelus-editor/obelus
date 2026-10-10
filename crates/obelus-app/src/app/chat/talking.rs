@@ -88,7 +88,7 @@ impl App {
     /// before it has drawn anything. The tests about the opening itself
     /// draw the frame instead, and do not use this.
     pub fn open_a_session_for_test(&mut self) {
-        if self.talker.is_none() {
+        if self.agent.talker.is_none() {
             self.start_agent();
         }
         // The same two lines the reader's first message runs, so that a
@@ -104,7 +104,8 @@ impl App {
     /// test about one Obelus should have let go.
     #[must_use]
     pub fn agent_holds_for_test(&self, session: &str) -> bool {
-        self.talker
+        self.agent
+            .talker
             .as_ref()
             .is_some_and(|talker| talker.holds(&acp::SessionId::new(session)))
     }
@@ -198,6 +199,7 @@ impl App {
             return;
         }
         if self
+            .agent
             .talker
             .as_ref()
             .is_none_or(obelus_agent::acp::Talk::has_exited)
@@ -205,7 +207,12 @@ impl App {
             self.stop_agent();
             self.start_agent();
         }
-        let Some(talker) = self.talker.as_mut().filter(|talker| talker.id() == id) else {
+        let Some(talker) = self
+            .agent
+            .talker
+            .as_mut()
+            .filter(|talker| talker.id() == id)
+        else {
             return;
         };
         talker.offers();
@@ -225,7 +232,7 @@ impl App {
     /// The same, of whichever agent is running, for a test that started
     /// one with `talk_to` rather than choosing and installing it.
     pub fn ask_what_the_agent_offers_for_test(&mut self) {
-        if let Some(talker) = self.talker.as_mut() {
+        if let Some(talker) = self.agent.talker.as_mut() {
             talker.offers();
             self.agents.asking = Some(talker.id().to_string());
         }
@@ -352,6 +359,7 @@ impl App {
         // something -- `say_in` does -- and is a line more on every visit
         // when all they have done is look.
         if self
+            .agent
             .talker
             .as_ref()
             .is_none_or(obelus_agent::acp::Talk::has_exited)
@@ -413,7 +421,7 @@ impl App {
             }
             going.push(session);
         }
-        let Some(talker) = self.talker.as_mut() else {
+        let Some(talker) = self.agent.talker.as_mut() else {
             return;
         };
         for session in going {
@@ -505,7 +513,7 @@ impl App {
         // By the session rather than by the note, because a conversation
         // about no note is taken up too, and it is named by nothing else.
         let title = had.as_ref().and_then(|session| {
-            let agent = self.talker.as_ref()?.id();
+            let agent = self.agent.talker.as_ref()?.id();
             self.sessions()?
                 .all()
                 .find(|(_, by, tree, kept)| {
@@ -513,7 +521,7 @@ impl App {
                 })
                 .and_then(|(_, _, _, kept)| kept.title.clone())
         });
-        let Some(talker) = self.talker.as_mut() else {
+        let Some(talker) = self.agent.talker.as_mut() else {
             return;
         };
         match had {
@@ -546,7 +554,10 @@ impl App {
             Whose::One(id) => id,
             Whose::Whoever => self.current?,
         };
-        Some(obelus_mcp::address(self.tools_url.as_deref()?, id.get()))
+        Some(obelus_mcp::address(
+            self.agent.tools_url.as_deref()?,
+            id.get(),
+        ))
     }
 
     /// The project's table of conversations, as Obelus last read it.
@@ -590,7 +601,7 @@ impl App {
     /// The conversation Obelus had about this note, or this pull request,
     /// with the agent that is running, if it wrote one down.
     fn remembered_session(&self, which: &obelus_agent::chats::ChatId) -> Option<String> {
-        let agent = self.talker.as_ref()?.id();
+        let agent = self.agent.talker.as_ref()?.id();
         // Looking one up, so remembering none is an answer this can live
         // with: the cost of it is the conversation being started again.
         Some(
@@ -618,7 +629,7 @@ impl App {
         &self,
         which: &obelus_agent::chats::ChatId,
     ) -> (Option<String>, bool) {
-        let agent = match self.talker.as_ref() {
+        let agent = match self.agent.talker.as_ref() {
             Some(talker) => Some(talker.id()),
             None => self.settled.config.agent.as_deref(),
         };
@@ -773,7 +784,7 @@ impl App {
                 // the list of open documents asks about the same
                 // conversation.
                 if open.is_some_and(|talk| {
-                    self.talker.as_ref().is_some_and(|talker| {
+                    self.agent.talker.as_ref().is_some_and(|talker| {
                         talker.is_thinking(talk.session.as_ref(), talk.requested)
                     })
                 }) {
@@ -805,7 +816,12 @@ impl App {
     /// start and refused again, and the note goes on saying there is a
     /// conversation in it.
     fn forget_the_conversation(&mut self, which: &obelus_agent::chats::ChatId) {
-        let Some(agent) = self.talker.as_ref().map(|talker| talker.id().to_string()) else {
+        let Some(agent) = self
+            .agent
+            .talker
+            .as_ref()
+            .map(|talker| talker.id().to_string())
+        else {
             return;
         };
         let here = self.working_directory.clone();
@@ -861,10 +877,15 @@ impl App {
     /// conversations is a second thing asking, whose whole subject is the
     /// ones a reader would otherwise have no way back to.
     pub(in crate::app) fn remember_the_conversations(&mut self) {
-        let Some(agent) = self.talker.as_ref().map(|talker| talker.id().to_string()) else {
+        let Some(agent) = self
+            .agent
+            .talker
+            .as_ref()
+            .map(|talker| talker.id().to_string())
+        else {
             return;
         };
-        let talker = self.talker.as_ref();
+        let talker = self.agent.talker.as_ref();
         // Now, for every one being written: what orders the list of
         // conversations and what each row of it says about itself. Taken
         // once rather than per conversation, so that two written in one
@@ -1176,7 +1197,7 @@ impl App {
     /// something.
     #[must_use]
     pub fn talking(&self) -> Talking {
-        let Some(talker) = self.talker.as_ref() else {
+        let Some(talker) = self.agent.talker.as_ref() else {
             return match self.settled.config.agent.as_deref() {
                 None | Some("") => Talking::Nobody,
                 Some(_) => Talking::Idle,
@@ -1246,7 +1267,11 @@ impl App {
                 .find(|agent| agent.id == id)
                 .map_or(id, |agent| agent.name.as_str())
         });
-        self.talker.as_ref().and_then(acp::Talk::info).or(listed)
+        self.agent
+            .talker
+            .as_ref()
+            .and_then(acp::Talk::info)
+            .or(listed)
     }
 
     /// What an agent is called, by the registry's name for it.
@@ -1281,7 +1306,8 @@ impl App {
     /// The commands it says it takes.
     #[must_use]
     pub fn agent_orders(&self) -> &[acp::Order] {
-        self.talker
+        self.agent
+            .talker
             .as_ref()
             .map_or(&[], |talker| talker.orders(self.session_now().as_ref()))
     }
@@ -1289,7 +1315,7 @@ impl App {
     /// Moves to the agent's next way of working.
     pub(in crate::app) fn step_agent_mode(&mut self) {
         let session = self.session_now();
-        let Some(talker) = self.talker.as_mut() else {
+        let Some(talker) = self.agent.talker.as_mut() else {
             return;
         };
         talker.step_mode(session.as_ref());
@@ -1299,7 +1325,10 @@ impl App {
     /// said -- and what it has cost, where it counts that too.
     #[must_use]
     pub fn agent_usage(&self) -> Option<&acp::Usage> {
-        self.talker.as_ref()?.usage(self.session_now().as_ref())
+        self.agent
+            .talker
+            .as_ref()?
+            .usage(self.session_now().as_ref())
     }
 
     /// The settings it lets the reader change.
@@ -1312,7 +1341,8 @@ impl App {
     #[must_use]
     pub fn agent_settings(&self) -> &[acp::Setting] {
         let session = self.session_now();
-        self.talker
+        self.agent
+            .talker
             .as_ref()
             .map_or(&[] as &[acp::Setting], |talker| {
                 talker.settings(session.as_ref())
@@ -1329,7 +1359,7 @@ impl App {
     #[must_use]
     pub fn background_tasks(&self) -> Option<(usize, usize)> {
         let session = self.session_now();
-        let board = self.talker.as_ref()?.tasks(session.as_ref())?;
+        let board = self.agent.talker.as_ref()?.tasks(session.as_ref())?;
         let running = board.running();
         let finished = board.listed().len() - running;
         (running + finished > 0).then_some((running, finished))
@@ -1354,7 +1384,7 @@ impl App {
     /// opens what that work has written; the list's own key stops one.
     pub(in crate::app) fn open_background_tasks(&mut self) {
         let session = self.session_now();
-        let Some(talker) = self.talker.as_ref() else {
+        let Some(talker) = self.agent.talker.as_ref() else {
             return;
         };
         let Some(board) = talker.tasks(session.as_ref()) else {
@@ -1388,6 +1418,7 @@ impl App {
     pub(in crate::app) fn open_background_output(&mut self, id: &str) {
         let session = self.session_now();
         let output = self
+            .agent
             .talker
             .as_ref()
             .and_then(|talker| talker.tasks(session.as_ref()))
@@ -1425,7 +1456,7 @@ impl App {
             return true;
         };
         let session = self.session_now();
-        if let Some(talker) = self.talker.as_mut() {
+        if let Some(talker) = self.agent.talker.as_mut() {
             talker.stop_task(session.as_ref(), &id);
         }
         self.refresh_background_tasks();
@@ -1437,7 +1468,7 @@ impl App {
     /// whenever the agent says one has moved on.
     fn refresh_background_tasks(&mut self) {
         let session = self.session_now();
-        let Some(talker) = self.talker.as_ref() else {
+        let Some(talker) = self.agent.talker.as_ref() else {
             return;
         };
         let Some(board) = talker.tasks(session.as_ref()) else {
@@ -1464,6 +1495,7 @@ impl App {
     fn hear_of_background_work(&mut self, whose: Whose, news: &obelus_agent::acp::tasks::News) {
         let session = self.talk_mut(whose).and_then(|talk| talk.session.clone());
         let call = self
+            .agent
             .talker
             .as_ref()
             .and_then(|talker| talker.tasks(session.as_ref()))
@@ -1486,6 +1518,7 @@ impl App {
     fn say_what_the_work_came_to(&mut self, whose: Whose, call: &str) {
         let session = self.talk_mut(whose).and_then(|talk| talk.session.clone());
         let said = self
+            .agent
             .talker
             .as_ref()
             .and_then(|talker| talker.tasks(session.as_ref()))
@@ -1583,6 +1616,7 @@ impl App {
     pub(in crate::app) fn flip_agent_setting(&mut self, id: &str) {
         let session = self.session_now();
         let Some(other) = self
+            .agent
             .talker
             .as_ref()
             .and_then(|talker| talker.setting(session.as_ref(), id))
@@ -1599,7 +1633,7 @@ impl App {
     /// Asks for one of them to be put on one of its values.
     pub(in crate::app) fn set_agent_setting(&mut self, setting: &str, value: &str) {
         let session = self.session_now();
-        let Some(talker) = self.talker.as_mut() else {
+        let Some(talker) = self.agent.talker.as_mut() else {
             return;
         };
         let Some(known) = talker.setting(session.as_ref(), setting) else {
@@ -1622,7 +1656,7 @@ impl App {
     /// agent offers and what the reader chose, and never reads which value
     /// some conversation was left on.
     fn hear_what_the_agent_offers(&mut self, session: &acp::SessionId) {
-        let Some(talker) = self.talker.as_ref() else {
+        let Some(talker) = self.agent.talker.as_ref() else {
             return;
         };
         let settings = talker.settings(Some(session));
@@ -1651,7 +1685,7 @@ impl App {
         // The running agent's own name again: what the reader said is
         // written down under the agent it was said about, and this
         // conversation belongs to whichever one is on the other end.
-        let (agent, settings) = match self.talker.as_ref() {
+        let (agent, settings) = match self.agent.talker.as_ref() {
             Some(talker) => (
                 talker.id().to_string(),
                 talker.settings(Some(session)).to_vec(),
@@ -1729,7 +1763,7 @@ impl App {
                 continue;
             }
             let chosen = acp::Chosen::of(setting, value);
-            if let Some(talker) = self.talker.as_mut() {
+            if let Some(talker) = self.agent.talker.as_mut() {
                 talker.set(Some(session), &setting.id, chosen);
             }
         }
@@ -1843,6 +1877,7 @@ impl App {
         // asks for another: the process may be up already, and this one
         // still has no session.
         if self
+            .agent
             .talker
             .as_ref()
             .is_none_or(obelus_agent::acp::Talk::has_exited)
@@ -1867,7 +1902,7 @@ impl App {
         self.ask_for_a_session(whose, had);
         let session = self.talk(whose).and_then(|talk| talk.session.clone());
         let asking = self.talk(whose).and_then(|talk| talk.requested);
-        let Some(talker) = self.talker.as_mut() else {
+        let Some(talker) = self.agent.talker.as_mut() else {
             // `start_agent` has already said why in the transcript.
             return;
         };
@@ -2054,7 +2089,7 @@ impl App {
             .map(|talk| talk.chat.commands())
             .unwrap_or_default();
         for command in running {
-            self.runs.stop(&command);
+            self.agent.runs.stop(&command);
             self.tell_whoever_waited(&command);
         }
         // And the calls it left open, which the agent will not close if it
@@ -2071,7 +2106,7 @@ impl App {
         };
         talk.chat.stop_the_calls();
         let session = talk.session.clone();
-        let Some(talker) = self.talker.as_mut() else {
+        let Some(talker) = self.agent.talker.as_mut() else {
             return;
         };
         talker.interrupt(session.as_ref());
@@ -2079,7 +2114,7 @@ impl App {
 
     /// Stops the agent, if one is running.
     pub(in crate::app) fn stop_agent(&mut self) {
-        if let Some(mut talker) = self.talker.take() {
+        if let Some(mut talker) = self.agent.talker.take() {
             talker.shutdown();
         }
         self.forget_the_question();
@@ -2866,7 +2901,7 @@ impl App {
             talk.sign_in_next = Some(why);
             return;
         }
-        let Some(talker) = self.talker.as_ref() else {
+        let Some(talker) = self.agent.talker.as_ref() else {
             return;
         };
         let logins = talker.logins().to_vec();
@@ -2938,7 +2973,8 @@ impl App {
             talk.signing_in = None;
         }
         let login = chosen.and_then(|id| {
-            self.talker
+            self.agent
+                .talker
                 .as_ref()?
                 .logins()
                 .iter()
@@ -2946,9 +2982,9 @@ impl App {
                 .cloned()
         });
         let (Some(login), Some(connection)) =
-            (login, self.talker.as_ref().map(acp::Talk::connection))
+            (login, self.agent.talker.as_ref().map(acp::Talk::connection))
         else {
-            if let Some(talker) = self.talker.as_ref() {
+            if let Some(talker) = self.agent.talker.as_ref() {
                 talker.give_up_signing_in();
             }
             self.in_talk(whose, |chat| chat.note("Not signed in"));
@@ -2968,6 +3004,7 @@ impl App {
                 // a proxy the agent goes through and the sign-in does not.
                 // First, so that what the agent asks for has the last word.
                 let env = self
+                    .agent
                     .talker
                     .as_ref()
                     .map(|talker| self.config().agent_environment(talker.id()))
@@ -2993,7 +3030,7 @@ impl App {
                 );
             }
             acp::How::Asked => {
-                if let Some(talker) = self.talker.as_ref() {
+                if let Some(talker) = self.agent.talker.as_ref() {
                     talker.sign_in(&login.id);
                 }
             }
@@ -3524,7 +3561,8 @@ impl App {
     /// on the page.
     pub(in crate::app) fn say_from_afar(&mut self, whose: Whose, parts: &[Part]) {
         let running = self.talk(whose).is_some_and(|talk| {
-            self.talker
+            self.agent
+                .talker
                 .as_ref()
                 .is_some_and(|talker| talker.is_thinking(talk.session.as_ref(), talk.requested))
         });
@@ -3572,7 +3610,7 @@ impl App {
     /// Whether any command Obelus was asked to run is still going.
     #[must_use]
     pub fn anything_running(&self) -> bool {
-        self.runs.anything_running()
+        self.agent.runs.anything_running()
     }
 
     /// Puts what Obelus's commands are doing on the rows that are about
@@ -3587,7 +3625,7 @@ impl App {
     /// it runs, the reader sees the command in the words it was run in and
     /// everything it printed.
     pub(in crate::app) fn show_what_is_running(&mut self) {
-        let runs = &mut self.runs;
+        let runs = &mut self.agent.runs;
         let mut said: Vec<(String, obelus_component::chat::Doing)> = Vec::new();
         for document in self.documents.iter().flatten() {
             let Some(talk) = Document::chat(document) else {
@@ -3659,12 +3697,17 @@ impl App {
     /// Once a frame, like the language servers' own check: a command ends
     /// when it ends, and nothing tells Obelus but asking.
     pub(in crate::app) fn check_runs(&mut self) {
-        if self.waiting_on.is_empty() {
+        if self.agent.waiting_on.is_empty() {
             return;
         }
-        let waited: Vec<String> = self.waiting_on.iter().map(|(id, _)| id.clone()).collect();
+        let waited: Vec<String> = self
+            .agent
+            .waiting_on
+            .iter()
+            .map(|(id, _)| id.clone())
+            .collect();
         for id in waited {
-            if self.runs.ended(&id).is_some() {
+            if self.agent.runs.ended(&id).is_some() {
                 self.tell_whoever_waited(&id);
             }
         }
@@ -3677,11 +3720,11 @@ impl App {
     /// given one for a command that finished would have to guess whether
     /// it ran at all.
     fn tell_whoever_waited(&mut self, id: &str) {
-        let ended = self.runs.ended(id);
-        let (theirs, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut self.waiting_on)
+        let ended = self.agent.runs.ended(id);
+        let (theirs, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut self.agent.waiting_on)
             .into_iter()
             .partition(|(waited, _)| waited == id);
-        self.waiting_on = rest;
+        self.agent.waiting_on = rest;
         for (_, answer) in theirs {
             let _ = answer.send(ended);
         }
@@ -3689,7 +3732,7 @@ impl App {
 
     /// Takes one message from the agent.
     pub(in crate::app) fn on_acp(&mut self, incoming: acp::Incoming) {
-        let Some(talker) = self.talker.as_mut() else {
+        let Some(talker) = self.agent.talker.as_mut() else {
             return;
         };
         // What the protocol needs of it is dealt with in there -- the
@@ -3787,7 +3830,7 @@ impl App {
                         // Asked for by a conversation that has gone, and
                         // nobody's now: let go on the agent's side as well,
                         // the way one the reader left without a word is.
-                        if let Some(talker) = self.talker.as_mut() {
+                        if let Some(talker) = self.agent.talker.as_mut() {
                             talker.let_go(&session);
                         }
                         return;
@@ -3867,7 +3910,7 @@ impl App {
             // included: the answer to `session/new` is the whole of what it
             // offers, and nothing is an answer -- not the silence of an
             // agent that would not say.
-            if let Some(talker) = self.talker.as_ref() {
+            if let Some(talker) = self.agent.talker.as_ref() {
                 self.agents.offers = Some((talker.id().to_string(), offers.clone()));
             }
             self.agents.asking = None;
@@ -4044,9 +4087,10 @@ impl App {
                 answer,
             } => {
                 let root = self.working_directory.clone();
-                let started = self
-                    .runs
-                    .start(&command, &args, &env, cwd.as_deref(), &root, limit);
+                let started =
+                    self.agent
+                        .runs
+                        .start(&command, &args, &env, cwd.as_deref(), &root, limit);
                 let id = match started {
                     Ok(id) => Some(id),
                     Err(error) => {
@@ -4057,31 +4101,33 @@ impl App {
                 let _ = answer.send(id);
             }
             acp::Incoming::Wrote { id, answer } => {
-                let _ = answer.send(self.runs.output(&id));
+                let _ = answer.send(self.agent.runs.output(&id));
             }
             // Kept rather than answered: the command has not ended, and
             // the loop that draws cannot wait for one that takes minutes.
             // `check_runs` answers it when it does.
-            acp::Incoming::Waited { id, answer } => match self.runs.ended(&id) {
+            acp::Incoming::Waited { id, answer } => match self.agent.runs.ended(&id) {
                 Some(ended) => {
                     let _ = answer.send(Some(ended));
                 }
-                None if self.runs.said(&id).is_some() => self.waiting_on.push((id, answer)),
+                None if self.agent.runs.said(&id).is_some() => {
+                    self.agent.waiting_on.push((id, answer))
+                }
                 None => {
                     let _ = answer.send(None);
                 }
             },
             acp::Incoming::Stop { id, answer } => {
-                self.runs.stop(&id);
+                self.agent.runs.stop(&id);
                 self.tell_whoever_waited(&id);
                 let _ = answer.send(());
             }
             acp::Incoming::Forget { id, answer } => {
-                self.runs.stop(&id);
+                self.agent.runs.stop(&id);
                 // Told before it is forgotten, or a waiter is left holding
                 // a channel about a command nothing knows any more.
                 self.tell_whoever_waited(&id);
-                self.runs.release(&id);
+                self.agent.runs.release(&id);
                 let _ = answer.send(());
             }
             acp::Incoming::Read {
@@ -4181,7 +4227,7 @@ impl App {
         // Nothing to fail here: the process is started on the thread, and
         // an agent that will not run says so as the conversation ending
         // with a reason -- which is the same path as one that dies later.
-        self.talker = Some(acp::Talk::start(
+        self.agent.talker = Some(acp::Talk::start(
             id,
             command,
             arguments,

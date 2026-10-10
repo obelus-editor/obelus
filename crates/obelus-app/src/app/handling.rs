@@ -267,6 +267,7 @@ impl App {
             // answer to a new request and had a live agent taken for dead.
             Event::Agent(obelus_agent::Event::Heard { from, incoming }) => {
                 match self
+                    .agent
                     .talker
                     .as_ref()
                     .map(obelus_agent::acp::Talk::connection)

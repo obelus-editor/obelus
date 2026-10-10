@@ -1025,7 +1025,7 @@ impl App {
         // one of the two moments a session is asked for -- the other is
         // their first message. The agent is started for it, because there
         // is nothing to ask until there is one.
-        if self.talker.is_none() {
+        if self.agent.talker.is_none() {
             self.start_agent();
         }
         self.ask_for_a_session(Whose::One(at), Some(listed.session.clone()));

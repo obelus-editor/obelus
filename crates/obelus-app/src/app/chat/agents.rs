@@ -621,6 +621,7 @@ impl App {
                 } else if self.settings.is_some()
                     && self.config().agent.as_deref() == Some(&id)
                     && self
+                        .agent
                         .talker
                         .as_ref()
                         .is_none_or(obelus_agent::acp::Talk::has_exited)
@@ -708,7 +709,10 @@ impl App {
 
     /// Whether an agent is running and it is not this one.
     fn talking_to_someone_else(&self, id: &str) -> bool {
-        self.talker.as_ref().is_some_and(|talker| talker.id() != id)
+        self.agent
+            .talker
+            .as_ref()
+            .is_some_and(|talker| talker.id() != id)
     }
 
     /// Stops talking to whichever agent was active.
