@@ -16316,9 +16316,13 @@ fn a_double_click_on_a_call_that_folds_goes_and_leaves_the_fold() {
 /// One press on the agent's commands stands on one, and a second chooses
 /// it, the way enter does.
 ///
+/// The second of them, so that it is the press that says which: enter
+/// alone takes the first.
+///
 /// Broken deliberately by returning `false` at the top of
 /// `press_in_the_commands`: the press goes to the transcript and the box
-/// keeps what was typed.
+/// keeps what was typed; and by not moving the selection on a press,
+/// which settles the first name instead.
 #[test]
 fn a_double_click_on_the_list_of_commands_chooses_from_it() {
     let (mut app, events) = talking();
@@ -16329,16 +16333,16 @@ fn a_double_click_on_the_list_of_commands_chooses_from_it() {
     let _ = support::render(&mut app, WIDTH, HEIGHT);
     assert!(app.slash().is_some(), "no list while a name is typed");
 
-    press_on(&mut app, "/compact", 2);
+    press_on(&mut app, "/cost", 2);
     assert_eq!(
         app.chat().expect("the chat").writing().text(),
         "/c",
         "one press chose from the list"
     );
-    press_on(&mut app, "/compact", 2);
+    press_on(&mut app, "/cost", 2);
     assert_eq!(
         app.chat().expect("the chat").writing().text(),
-        "/compact ",
+        "/cost ",
         "the second press did not choose from the list"
     );
 }

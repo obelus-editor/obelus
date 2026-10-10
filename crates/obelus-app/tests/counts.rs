@@ -571,8 +571,12 @@ fn a_press_moves_the_selection_and_the_fold_mark_opens_a_row() {
 
 /// A second press on a row does what enter does there, mark or no mark.
 ///
+/// From another row, so that it is the press that says which row: the
+/// only shut one is the first, which the table opens on.
+///
 /// Broken deliberately by dropping `|| twice` from `press_in_counts`: the
-/// row stays shut.
+/// row stays shut; and by not moving the selection on a press, which
+/// leaves enter on the file below.
 #[test]
 fn a_double_click_on_a_row_opens_it() {
     let mut app = open(76, 24);
@@ -596,6 +600,12 @@ fn a_double_click_on_a_row_opens_it() {
         });
     };
 
+    press(&mut app, KeyCode::Down);
+    assert_ne!(
+        app.counts().expect("the table").window().focus(),
+        directory,
+        "still on the row to be pressed, so this proves nothing"
+    );
     let before = app.counts().expect("the table").rows().len();
     press_on_the_words(&mut app);
     assert_eq!(
