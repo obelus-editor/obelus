@@ -232,7 +232,7 @@ impl App {
             // owed at a moment is owed on a machine with nothing animated
             // on it, and each of the three below says when it wants asking.
             Event::Tick => {
-                self.phase = self.phase.wrapping_add(1);
+                self.clock.phase = self.clock.phase.wrapping_add(1);
                 self.drag_on();
             }
             // The notes, once the reader has stopped typing into them.

@@ -120,7 +120,7 @@ impl App {
     /// and one that waits for the reader to press something else.
     #[must_use]
     pub const fn is_waking(&self) -> bool {
-        self.waking
+        self.clock.waking
     }
 
     /// Whether any open document's tree is older than its text.
@@ -208,11 +208,35 @@ impl App {
     /// A thread waking twelve times a second to redraw a screen with
     /// nothing moving on it is the one cost an animation must not have.
     pub(super) fn animate(&mut self, wanted: bool) {
-        self.waking = wanted;
-        match (wanted, self.ticker.is_some()) {
-            (true, false) => self.ticker = self.events.clone().and_then(Ticker::start),
-            (false, true) => self.ticker = None,
+        self.clock.waking = wanted;
+        match (wanted, self.clock.ticker.is_some()) {
+            (true, false) => self.clock.ticker = self.events.clone().and_then(Ticker::start),
+            (false, true) => self.clock.ticker = None,
             _ => {}
         }
     }
+}
+
+/// What is moving on screen and the clock that moves it: how far round it has
+/// got, the ticker while anything moves, and whether the loop has asked to be
+/// woken.
+#[derive(Debug, Default)]
+pub(in crate::app) struct Clock {
+    /// How far along the welcome screen's colours have travelled.
+    ///
+    /// One number, advanced by a tick. The wordmark is the only thing that
+    /// reads it, and it reads it as an offset into a repeating ramp, so it
+    /// can grow forever and wrap on its own.
+    pub(in crate::app) phase: u32,
+    /// The thread sending ticks, while anything wants them.
+    ///
+    /// Held so that dropping it stops the animation. There is nothing to
+    /// animate once a file is open, and nothing over a network at all.
+    pub(in crate::app) ticker: Option<Ticker>,
+    /// Whether the last frame asked to be woken again.
+    ///
+    /// Beside the ticker rather than read off it: the ticker needs the
+    /// loop's channel, and the decision is the thing worth seeing -- an
+    /// application with no loop behind it still makes it.
+    pub(in crate::app) waking: bool,
 }

@@ -163,6 +163,8 @@ struct Dragging {
 /// Everything Obelus is currently showing or remembering.
 #[derive(Debug)]
 pub struct App {
+    /// What is moving on screen, and the clock that moves it.
+    clock: animation::Clock,
     /// The notes, as last read, and the wait for a burst of writes to settle.
     notes: project::Notes,
     /// Which conversations other windows have had and hold, as last read.
@@ -273,12 +275,6 @@ pub struct App {
     /// Keyed by path: moving through a list reads each file once as it is
     /// passed, and moving back to one that is still selected reads nothing.
     preview: Option<Preview>,
-    /// How far along the welcome screen's colours have travelled.
-    ///
-    /// One number, advanced by a tick. The wordmark is the only thing that
-    /// reads it, and it reads it as an offset into a repeating ramp, so it
-    /// can grow forever and wrap on its own.
-    phase: u32,
     /// A question on the status bar, while one is being asked.
     ///
     /// Not a picker: a prompt has nothing to list, and going through a
@@ -307,17 +303,6 @@ pub struct App {
     /// routes out of one -- a key pressed by accident may not leave the
     /// reader somewhere they did not ask to be.
     taken_from: Option<DocumentId>,
-    /// The thread sending ticks, while anything wants them.
-    ///
-    /// Held so that dropping it stops the animation. There is nothing to
-    /// animate once a file is open, and nothing over a network at all.
-    ticker: Option<Ticker>,
-    /// Whether the last frame asked to be woken again.
-    ///
-    /// Beside the ticker rather than read off it: the ticker needs the
-    /// loop's channel, and the decision is the thing worth seeing -- an
-    /// application with no loop behind it still makes it.
-    waking: bool,
     /// What this machine's faces are called, as whatever is drawing
     /// Obelus reported them.
     ///
@@ -554,6 +539,7 @@ impl App {
         let documents: Vec<Option<Document>> =
             open.into_iter().map(Document::from).map(Some).collect();
         Self {
+            clock: animation::Clock::default(),
             notes: project::Notes::default(),
             kept: chat::Kept::default(),
             agent: chat::Agent::default(),
@@ -580,9 +566,6 @@ impl App {
             reported: HashMap::new(),
             jumps: JumpList::default(),
             preview: None,
-            phase: 0,
-            ticker: None,
-            waking: false,
             fonts_here: Vec::new(),
             monospace_here: None,
             names: None,
@@ -1230,7 +1213,7 @@ impl App {
     /// ticker -- a test, a remote session -- is the same screen every time.
     #[must_use]
     pub const fn phase(&self) -> u32 {
-        self.phase
+        self.clock.phase
     }
 
     /// Puts the animation back where it starts, for a test.
@@ -1242,7 +1225,7 @@ impl App {
     /// golden screen that passes on the machine it was made on -- which is
     /// what `⠋` against `⠼` means, and it says nothing about Obelus.
     pub const fn phase_for_test(&mut self, phase: u32) {
-        self.phase = phase;
+        self.clock.phase = phase;
     }
 
     /// What Obelus has to say, until the next key.
