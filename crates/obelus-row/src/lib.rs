@@ -135,6 +135,14 @@ pub struct Row {
     pub rule: bool,
     /// The block of code the row is part of, where it is part of one.
     pub code: Option<Code>,
+    /// The links whose words are on this row: where the words are in the
+    /// source, in bytes, and the web address they go to.
+    ///
+    /// The address is not on the page -- a link is drawn as its words --
+    /// so the row is the only thing left that can say where they go. Kept
+    /// as the source's bytes for the reason [`Span::from`] is: a row is
+    /// laid out again at every width, and the words are where they are.
+    pub links: Vec<(std::ops::Range<usize>, String)>,
 }
 
 /// A block of code, as what is inside it rather than as what is drawn.
@@ -163,6 +171,7 @@ impl Row {
             spans,
             rule: false,
             code: None,
+            links: Vec::new(),
         }
     }
 }

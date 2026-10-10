@@ -381,6 +381,13 @@ struct Showing {
     ruled: Vec<Ruled>,
     /// And on the one being laid out.
     ruling: Vec<Ruled>,
+    /// Which cells are the words of a link on the frame being shown.
+    linked: Vec<Rect>,
+    /// And on the one being laid out.
+    linking: Vec<Rect>,
+    /// Whether the pointer is a hand, so that it is changed only when
+    /// what is under it does.
+    pointing: bool,
     /// Which runs of a one-cell column are change marks on the frame being
     /// shown.
     stroked: Vec<Stroked>,
@@ -495,6 +502,9 @@ impl Showing {
             stroked: Vec::new(),
             stroking: Vec::new(),
             ruling: Vec::new(),
+            linked: Vec::new(),
+            linking: Vec::new(),
+            pointing: false,
             scrolled: Vec::new(),
             scrolling: Vec::new(),
             stack: Vec::new(),
@@ -728,6 +738,23 @@ impl Showing {
             [cell.width, cell.height],
             [self.page.columns(), self.page.rows()],
         )
+    }
+
+    /// Makes the pointer a hand over the words of a link, and only there.
+    fn point_at_links(&mut self) {
+        let over = self
+            .pointer
+            .is_some_and(|(x, y)| on_a_link(&self.linked, &self.page, x, y));
+        if over == self.pointing {
+            return;
+        }
+        self.pointing = over;
+        if let Some(window) = self.window.as_ref() {
+            window.set_cursor(match over {
+                true => winit::window::CursorIcon::Pointer,
+                false => winit::window::CursorIcon::Default,
+            });
+        }
     }
 
     /// Which cell a place in the window is in.
@@ -1051,6 +1078,7 @@ impl ApplicationHandler<Waking> for Showing {
                         }
                         Update::Barred { bar } => self.barring_up.push(bar),
                         Update::Ruled { area } => self.ruling.push(Ruled { area }),
+                        Update::Linked { area } => self.linking.push(area),
                         Update::Stroked { stroke } => {
                             self.stroking.push(Stroked { stroke });
                         }
@@ -1110,6 +1138,7 @@ impl ApplicationHandler<Waking> for Showing {
                             self.motion
                                 .bars_drawn(&self.barred, self.pointer, Instant::now());
                             self.ruled = std::mem::take(&mut self.ruling);
+                            self.linked = std::mem::take(&mut self.linking);
                             // Only where the page still holds it: the
                             // welcome screen is what every list is opened
                             // over, and a light run across a list lights
@@ -1134,6 +1163,9 @@ impl ApplicationHandler<Waking> for Showing {
                         cells => drew |= self.page.apply(cells),
                     }
                 }
+                // And the pointer asked again: what is under it changes with
+                // the page as well as with it.
+                self.point_at_links();
                 // Where the caret is is the page's; whether it walked
                 // there or simply appeared is the window's own question,
                 // and it is asked of the drain as a whole rather than of
@@ -1573,6 +1605,7 @@ impl ApplicationHandler<Waking> for Showing {
                     return;
                 }
                 self.pointer = Some(at);
+                self.point_at_links();
                 self.tell(Event::Pointer {
                     kind: match self.held {
                         true => Pointer::Dragged,
@@ -1656,6 +1689,24 @@ impl Drop for Finished {
     fn drop(&mut self) {
         let _ = self.0.send_event(Waking::Finished);
     }
+}
+
+/// Whether a cell is among the words of a link the frame said, and still
+/// is.
+///
+/// Asked of the cells as well as of what the view said, because the cells
+/// are the truth: a link a list was opened over was said and is not on the
+/// page, and a hand over the list's row would be a promise the row does not
+/// keep. A link's words are underlined, and a cell that is not is somebody
+/// else's.
+fn on_a_link(linked: &[Rect], page: &Page, x: u16, y: u16) -> bool {
+    linked
+        .iter()
+        .any(|area| area.contains(ratatui::layout::Position { x, y }))
+        && page
+            .look(x, y)
+            .modifier
+            .contains(ratatui::style::Modifier::UNDERLINED)
 }
 
 /// What this window is called by the thing that manages windows.
@@ -1765,8 +1816,46 @@ mod tests {
 
     use ratatui::layout::Rect;
 
-    use super::{MARK, Rolling, wants_a_frame};
-    use crate::motion::{Motion, Wake};
+    use super::{MARK, Rolling, on_a_link, wants_a_frame};
+    use crate::{
+        grid::{Page, Update},
+        motion::{Motion, Wake},
+    };
+
+    /// The pointer is a hand over the cells of a link the frame said, while
+    /// they are still underlined, and nowhere else -- not over a link a
+    /// list was opened over, and not over an underline that is somebody
+    /// else's, like a server's complaint.
+    ///
+    /// Deliberate breaks: leaving the cells out of `on_a_link` makes the
+    /// covered link a hand, and leaving the view's word out of it makes
+    /// the complaint one.
+    #[test]
+    fn the_pointer_is_a_hand_over_a_link_on_the_page() {
+        let mut page = Page::default();
+        page.resized(6, 1);
+        for x in 0..6 {
+            let mut cell = ratatui::buffer::Cell::default();
+            cell.set_symbol("x");
+            // A link in the first three, a covered one in the fourth, and
+            // a complaint in the last two.
+            if x != 3 {
+                cell.modifier = ratatui::style::Modifier::UNDERLINED;
+            }
+            page.apply(Update::Cell {
+                x,
+                y: 0,
+                cell: Box::new(cell),
+            });
+        }
+        let linked = [Rect::new(0, 0, 4, 1)];
+        assert!(on_a_link(&linked, &page, 1, 0), "not a hand over the link");
+        assert!(
+            !on_a_link(&linked, &page, 3, 0),
+            "a hand over a covered link"
+        );
+        assert!(!on_a_link(&linked, &page, 4, 0), "a hand over a complaint");
+    }
 
     /// A band is matched with the one it was, not with another in the same
     /// rows: a dialog's list over a page's that happens to sit where it does

@@ -204,6 +204,11 @@ pub(crate) enum Update {
         /// The run the line covers.
         area: Rect,
     },
+    /// The words of a link, on one row.
+    Linked {
+        /// Which cells they are.
+        area: Rect,
+    },
     /// The mark with the light on it, and the two colours it runs between.
     Sheened {
         /// Which cells it is.
@@ -873,6 +878,10 @@ impl obelus_ui::shapes::Shapes for Marking {
         let _ = self.updates.send(Update::Ruled { area });
     }
 
+    fn linked(&self, area: Rect) {
+        let _ = self.updates.send(Update::Linked { area });
+    }
+
     fn capped(&self, keys: &str, area: Rect, cap: Color, page: Color, edge: Color) {
         // No wake, the same as a mark's placement: this is said while a
         // frame is being laid out, and the frame's own end wakes the
@@ -1471,6 +1480,7 @@ impl Page {
             | Update::Ticked { area, .. }
             | Update::Spun { area }
             | Update::Ruled { area }
+            | Update::Linked { area }
             | Update::Sheened { area, .. }
             | Update::Parted { area }
             | Update::Behind { area, .. }

@@ -1112,6 +1112,7 @@ impl ChatView<'_> {
     fn transcript(&self, cells: &mut CellBuffer, area: Rect, plain: Style, dim: Style) {
         let words = area.x + MARGIN + indent();
         let rows = self.chat.rows(reading_width(area));
+        self.chat.forget_drawn_links();
         if rows.is_empty() {
             write(cells, words, area.y, self.nothing_said(), dim);
         }
@@ -1306,6 +1307,11 @@ impl ChatView<'_> {
             // lost anything and must not be marked as though it had.
             let wanted: usize = row.spans.iter().map(|span| text_width(&span.text)).sum();
             let clipped = wanted > usize::from(stop.saturating_sub(words));
+            let linked: Vec<std::ops::Range<usize>> = row
+                .links
+                .iter()
+                .map(|link| link.characters.clone())
+                .collect();
             let mut ended = crate::reading::write_spans(
                 cells,
                 words,
@@ -1322,8 +1328,17 @@ impl ChatView<'_> {
                         false => stop,
                     },
                     held: row.held.as_ref(),
+                    linked: &linked,
                 },
             );
+            for link in &row.links {
+                let from = cell_at(row, link.characters.start, area);
+                let to = cell_at(row, link.characters.end, area).min(ended);
+                if from < to {
+                    self.chat.drew_link(y, from..to, &link.to);
+                    crate::shapes::linked(Rect::new(from, y, to - from, 1));
+                }
+            }
             // Said where they stop, rather than simply running out: a row
             // that ends mid-word at the edge of the screen reads as the
             // terminal having cut it off, not as there being more.

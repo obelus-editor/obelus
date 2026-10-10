@@ -3948,13 +3948,16 @@ impl App {
             // meant nothing but "let go", so opening it costs the reader
             // nothing they had.
             let folds = row.and_then(|row| row.folds);
+            // What the frame drew under the pointer, which is the one
+            // answer the underline and a window's hand are also made of.
+            let link = talk.chat.link_drawn_at(x, y);
             // A cursor stands on a row, and the band under the last of them
             // is not one; nor while a card is up, which has the keys -- a
             // cursor moved under it would be found there afterwards.
             let cursor = (row.is_some() && talk.card.is_none()).then_some(place);
-            Some((spot, folds, cursor))
+            Some((spot, folds, cursor, link))
         });
-        let (spot, folds, cursor) = found.unwrap_or((None, None, None));
+        let (spot, folds, cursor, link) = found.unwrap_or((None, None, None, None));
         // Where the cursor goes, for a press or a drag: the keys follow
         // the pointer, or the arrows after a press walk something the
         // reader had not pointed at.
@@ -3979,8 +3982,21 @@ impl App {
         }
         match kind {
             Pointer::Moved => {}
-            Pointer::Released => talk.chat.let_go_of_nothing(),
-            Pointer::Pressed if folds.is_some() => {
+            // A link opens on the letting go of a press that never moved:
+            // on the press it would be a selection that could not be begun
+            // on a link's words, and a drag across one is taking hold of
+            // them, not following it.
+            Pointer::Released => {
+                let clicked = spot.is_some_and(|spot| talk.chat.clicked(spot));
+                talk.chat.let_go_of_nothing();
+                if clicked && let Some(link) = link {
+                    self.open_link(&link);
+                }
+            }
+            // A link on a row that folds is its own thing to press: the
+            // title of a call that fetched a page is often the page's
+            // address, and the rest of the row still folds.
+            Pointer::Pressed if folds.is_some() && link.is_none() => {
                 if let Some(begins) = folds {
                     talk.chat.fold(begins);
                 }

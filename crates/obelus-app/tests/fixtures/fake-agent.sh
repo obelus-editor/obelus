@@ -625,6 +625,17 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"tool_call","toolCallId":"p1","title":"Approve Plan","kind":"switch_mode","status":"pending","content":[{"type":"content","content":{"type":"text","text":"%s"}}]}}}\n' "$session" "$plan"
             printf '{"jsonrpc":"2.0","id":908,"method":"session/request_permission","params":{"sessionId":"%s","toolCall":{"toolCallId":"p1","title":"Approve Plan","kind":"switch_mode","content":[{"type":"content","content":{"type":"text","text":"%s"}}]},"options":[{"optionId":"go","name":"Yes, go ahead","kind":"allow_once"},{"optionId":"keep","name":"No, keep planning","kind":"reject_once"}]}}\n' "$session" "$plan"
             ;;
+        *'"method":"session/prompt"'*'/links'*)
+            # Two links on one row, for a click to tell apart, at the start
+            # of a row that is not the message's first, so the cells in
+            # front of it are nobody's. And a call whose title is the page
+            # it fetched, on the row that folds what it carries.
+            set_turn "$session" "$(id_of "$line")"
+            said='Two pages:\n\n[the prompt turn](https://a.example/prompt) and [the tool calls](https://a.example/tools).\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$session" "$said"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"tool_call","toolCallId":"f1","title":"Fetch https://a.example/fetched","kind":"fetch","status":"completed","content":[{"type":"content","content":{"type":"text","text":"what the page said"}}]}}}\n' "$session"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
         *'"method":"session/prompt"'*'/markdown'*)
             # What an agent actually sends: markdown. The protocol says so
             # in as many words -- "Text content. May be plain text or
