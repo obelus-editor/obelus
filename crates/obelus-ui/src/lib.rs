@@ -338,10 +338,6 @@ pub trait Screen {
     /// A number to be compared rather than read: what a change in it says
     /// is that the view scrolled, and by how much.
     fn travelled(&self) -> i64;
-    /// Whether a command can do its job right now, which is the one
-    /// judgement of it: a view that says a key is there says it only where
-    /// pressing it would do something.
-    fn offers(&self, command: obelus_command::Command) -> bool;
     /// What is on screen over the file, worked out from what is open.
     fn layers(&self) -> layers::Layers;
     /// The agents page's rows.
@@ -421,8 +417,6 @@ pub trait Screen {
     fn rendering(&self) -> Option<&[obelus_row::Row]>;
     /// The server for the file being read, and what it is doing.
     fn server_state(&self) -> Option<(&'static str, obelus_lsp::ServerState)>;
-    /// What a language server is busy with, if one is.
-    fn server_working_on(&self) -> Option<&str>;
     /// Whether the server behind the file being read is busy with something.
     fn server_busy(&self) -> bool;
     /// The chat, by name, and where this window stands with it -- `None`

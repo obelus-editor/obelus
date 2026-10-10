@@ -4,6 +4,10 @@
 //! "where is this" -- and only its radius changes. A separate view per scope
 //! would ask them to remember which key opens which, and to retype the query
 //! when the answer was not in the file after all.
+//!
+//! And how much code is here ([`counts`]), which shares no code with the
+//! searching: it is the other question asked of the whole tree, and it is
+//! here for that reason rather than for anything it borrows.
 
 pub mod counts;
 

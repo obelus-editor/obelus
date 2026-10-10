@@ -5066,9 +5066,6 @@ impl Screen for App {
     fn keymap(&self) -> &Keymap {
         App::keymap(self)
     }
-    fn offers(&self, command: Command) -> bool {
-        App::offers(self, command)
-    }
     fn layers(&self) -> layers::Layers {
         App::layers(self)
     }
@@ -5158,9 +5155,6 @@ impl Screen for App {
     }
     fn server_state(&self) -> Option<(&'static str, obelus_lsp::ServerState)> {
         App::server_state(self)
-    }
-    fn server_working_on(&self) -> Option<&str> {
-        App::server_working_on(self)
     }
 
     fn remote(&self) -> Option<(&'static str, obelus_remote::State)> {

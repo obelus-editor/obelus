@@ -4452,7 +4452,6 @@ dependencies = [
  "crossterm",
  "image",
  "obelus-app",
- "obelus-buffer",
  "obelus-logging",
  "obelus-ui",
  "ratatui",
@@ -4538,7 +4537,6 @@ dependencies = [
  "obelus-runtime",
  "obelus-sink",
  "obelus-text",
- "open",
  "toml 1.1.5+spec-1.1.0",
  "tracing",
 ]
@@ -4692,7 +4690,6 @@ dependencies = [
  "keyring-core",
  "lark-websocket-protobuf",
  "obelus-config",
- "obelus-logging",
  "obelus-runtime",
  "obelus-sink",
  "prost",

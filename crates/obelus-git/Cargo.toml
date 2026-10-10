@@ -17,6 +17,5 @@ obelus-text.workspace = true
 dunce.workspace = true
 gix.workspace = true
 imara-diff.workspace = true
-open.workspace = true
 toml.workspace = true
 tracing.workspace = true
