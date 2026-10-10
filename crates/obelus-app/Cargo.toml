@@ -19,6 +19,7 @@ obelus-component.workspace = true
 obelus-config.workspace = true
 obelus-editing.workspace = true
 obelus-git.workspace = true
+obelus-github.workspace = true
 obelus-icons.workspace = true
 obelus-jobs.workspace = true
 obelus-keymap.workspace = true

@@ -46,6 +46,7 @@ obelus-component = { path = "crates/obelus-component" }
 obelus-config = { path = "crates/obelus-config" }
 obelus-editing = { path = "crates/obelus-editing" }
 obelus-git = { path = "crates/obelus-git" }
+obelus-github = { path = "crates/obelus-github" }
 obelus-icons = { path = "crates/obelus-icons" }
 obelus-keymap = { path = "crates/obelus-keymap" }
 obelus-jobs = { path = "crates/obelus-jobs" }

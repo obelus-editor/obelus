@@ -704,6 +704,8 @@ crates/
   obelus-todo/      the notes beside a project, written where git does not
                     look, and the line each one was about found again
                     through git's history
+  obelus-github/    a repository's open pull requests and issues, asked of `gh`
+                    and not of GitHub, a page at a time
   obelus-agent/     the ACP registry, installing an agent, its marks, and
                     the protocol through its own crate with the thread that
                     joins it to the loop (acp/)

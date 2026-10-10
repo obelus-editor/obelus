@@ -4400,6 +4400,7 @@ dependencies = [
  "obelus-config",
  "obelus-editing",
  "obelus-git",
+ "obelus-github",
  "obelus-icons",
  "obelus-jobs",
  "obelus-keymap",
@@ -4546,6 +4547,15 @@ dependencies = [
  "obelus-runtime",
  "obelus-sink",
  "obelus-text",
+]
+
+[[package]]
+name = "obelus-github"
+version = "0.12.0"
+dependencies = [
+ "jiff",
+ "obelus-program",
+ "serde_json",
 ]
 
 [[package]]
