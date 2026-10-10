@@ -39,7 +39,7 @@ ignores them, and mixing the two makes the formatting oscillate. **Always
 Clippy must be silent. The lints are the workspace's, in the root
 `Cargo.toml` -- `missing_docs`, `unreachable_pub`, `private_interfaces` --
 because a `#![deny(..)]` in one crate root would silently stop applying to
-the other twenty-nine. Every member opts in with a `[lints] workspace = true`
+the other thirty-four. Every member opts in with a `[lints] workspace = true`
 of its own, which Cargo does not inherit for it, and every public item needs
 a doc comment.
 
@@ -737,6 +737,20 @@ crates/
                     · a claim is held by a writer and looked at through a
                       read, and the other platform's lock is a byte past the
                       end (lib)
+  obelus-remote/    working on notes from a chat: what a platform declares
+                    (platform), where its secrets are kept (secrets), a
+                    connection to each (slack/, feishu/), the words between
+                    them and the loop (model), what waits while one is down
+                    (waiting), and one window relaying for every other (relay)
+                    · words, and a card for a question; a platform declares,
+                      Obelus keeps (lib); words, and a question (model); a
+                      platform declares and does not keep (platform); three
+                      places, one question, and every one of these waits
+                      (secrets); kept, and only so much of it (waiting); one
+                      window talks to the chat and every window is heard in
+                      it, a number is the relay's, the door is the one a
+                      window is brought forward through, and a relay that goes
+                      says why (relay)
   obelus-mcp/       the tools Obelus offers an agent -- and why none of them
                     asks the reader anything itself
                     · a server is about one tree, and stops listening when

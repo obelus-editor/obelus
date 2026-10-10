@@ -2,12 +2,24 @@
 //!
 //! `App` holds everything Obelus knows and everything it can be asked to
 //! do, so its methods are as many as the things Obelus does. They are split
-//! across this directory by *what they are about* -- the file being read,
-//! the language server, the repository, the search, the settings -- rather
-//! than by size, and each file is one `impl App` block. Nothing moved
-//! between types to do it: an application's state is one thing, and cutting
-//! it into several would mean deciding, for every pair of them, which one
-//! owns the answer.
+//! across this directory by *what they are about* -- a directory for each
+//! feature: the file being read (`editor`), the language server (`lsp`), the
+//! agent and the chat (`chat`), git and GitHub (`git`), the project and what
+//! is kept about it (`project`) -- rather than by size, and each file is one
+//! `impl App` block. What a feature keeps is gathered into a struct of its
+//! own beside its files (`lsp::State`, `editor::Search`, `chat::Agent` and
+//! the rest), which is filing and not owning: `App` holds every one of them,
+//! and the methods that change them are still `App`'s. An application's
+//! state is one thing, and cutting it into several would mean deciding, for
+//! every pair of them, which one owns the answer.
+//!
+//! That was tried and measured rather than assumed. A feature's methods as
+//! its own struct's, handed the rest of `App` in pieces, need a way to ask
+//! `App` for whatever they cannot do themselves -- and the three features
+//! that lean on the rest the least (the pull requests, the trees, the
+//! projects) call 29 other methods between them that change something,
+//! from `work_in` and `let_go_of_the_project` to `show_list`. A list of
+//! requests that long is `App`'s own surface under another name.
 //!
 //! The files are named for the *aspect*, not for the module they talk to:
 //! `obelus_git` is the reading of a repository and `history` here is what
