@@ -345,6 +345,29 @@ impl App {
                 self.reach(reaching);
                 true
             }
+            // Each about the agent that is active now, the moment the key
+            // is pressed -- and the questions carry it from here.
+            SettingsOutcome::EditVariable(name) => {
+                if let Some(agent) = self.config().agent.clone() {
+                    self.name_a_variable(&agent, &name);
+                }
+                true
+            }
+            SettingsOutcome::AddVariable => {
+                if let Some(agent) = self.config().agent.clone() {
+                    self.ask_on_the_status_row(Prompt::new(PromptKind::VariableName {
+                        agent,
+                        again: false,
+                    }));
+                }
+                true
+            }
+            SettingsOutcome::RemoveVariable(name) => {
+                if let Some(agent) = self.config().agent.clone() {
+                    self.set_agent_variable(&agent, &name, None);
+                }
+                true
+            }
             SettingsOutcome::Ignored => false,
         }
     }
@@ -641,6 +664,67 @@ impl App {
             tracing::warn!(%error, "not saving the configuration");
             self.wrong(format!("Not saved: {error}"));
         }
+    }
+
+    /// Says what one of an agent's variables is, or with `None` takes it
+    /// away.
+    ///
+    /// For an agent named outright, for the reason `change_agent_default`
+    /// is: the value may arrive from a question asked before another Obelus
+    /// changed which agent is active.
+    ///
+    /// Nothing is started again: a variable reaches an agent once, when it
+    /// starts, and stopping one is stopping every conversation it is in.
+    /// The heading over these rows says so.
+    pub(super) fn set_agent_variable(&mut self, agent: &str, name: &str, value: Option<&str>) {
+        match value {
+            Some(value) => self.settled.readers.set_agent_variable(agent, name, value),
+            None => self.settled.readers.unset_agent_variable(agent, name),
+        }
+        self.apply_project();
+        let Some(path) = self.settled.path.clone() else {
+            return;
+        };
+        if !self.settled.readable {
+            self.wrong("Not saved: the settings will not read".to_string());
+            return;
+        }
+        if let Err(error) = obelus_config::save_to(&path, &self.settled.readers) {
+            tracing::warn!(%error, "not saving the configuration");
+            self.wrong(format!("Not saved: {error}"));
+        }
+    }
+
+    /// Hears the name of a variable the reader is adding to an agent's
+    /// environment, and asks for its value.
+    ///
+    /// One already set is asked for with what it holds, which makes adding
+    /// one that is there the same as changing it rather than a second row
+    /// of the same name.
+    pub(super) fn name_a_variable(&mut self, agent: &str, name: &str) {
+        if name.starts_with(|character: char| character.is_ascii_digit()) {
+            self.ask_on_the_status_row(Prompt::about(
+                PromptKind::VariableName {
+                    agent: agent.to_string(),
+                    again: true,
+                },
+                name.to_string(),
+            ));
+            return;
+        }
+        let now = self
+            .config()
+            .agent_environment(agent)
+            .get(name)
+            .cloned()
+            .unwrap_or_default();
+        self.ask_on_the_status_row(Prompt::about(
+            PromptKind::Variable {
+                agent: agent.to_string(),
+                name: name.to_string(),
+            },
+            now,
+        ));
     }
 
     /// Where a theme file may be, nearest first.

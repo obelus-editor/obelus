@@ -2957,6 +2957,19 @@ impl App {
                 arguments,
                 env,
             } => {
+                // What the agent itself is started with goes to the program
+                // that signs it in too, or the two see different worlds --
+                // a proxy the agent goes through and the sign-in does not.
+                // First, so that what the agent asks for has the last word.
+                let env = self
+                    .talker
+                    .as_ref()
+                    .map(|talker| self.config().agent_environment(talker.id()))
+                    .into_iter()
+                    .flatten()
+                    .map(|(name, value)| (name.clone(), value.clone()))
+                    .chain(env)
+                    .collect();
                 let Some(conversation) = (match whose {
                     Whose::One(id) => Some(id),
                     Whose::Whoever => self.current,
@@ -4139,6 +4152,18 @@ impl App {
             return;
         };
         tracing::info!(id, command = %command.display(), "starting an agent");
+        // What the reader said it is started with, by name only in the log:
+        // a value here is as likely as not a token.
+        let environment: Vec<(String, String)> = self
+            .config()
+            .agent_environment(id)
+            .iter()
+            .map(|(name, value)| (name.clone(), value.clone()))
+            .collect();
+        if !environment.is_empty() {
+            let names: Vec<&str> = environment.iter().map(|(name, _)| name.as_str()).collect();
+            tracing::info!(id, ?names, "starting it with what the reader added");
+        }
         // Nothing to fail here: the process is started on the thread, and
         // an agent that will not run says so as the conversation ending
         // with a reason -- which is the same path as one that dies later.
@@ -4146,6 +4171,7 @@ impl App {
             id,
             command,
             arguments,
+            &environment,
             &self.working_directory,
             sender,
         ));

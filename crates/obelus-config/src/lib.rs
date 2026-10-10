@@ -42,7 +42,9 @@
 //! would find it by accident; and `agents` is `ReaderOnly` for the first reason
 //! twice over -- what an agent may do without asking is the setting a
 //! downloaded project would most like to write. VS Code learned this one the
-//! same way and calls it `machine` scope. `remote` and `remotes` are the
+//! same way and calls it `machine` scope. `environment` is the reader's for the
+//! first reason as well: what an agent is started with can point it at
+//! somebody else's server. `remote` and `remotes` are the
 //! reader's for a reason of their own: they say who may talk to this machine
 //! from a chat, and a project that could name a person there could hand a
 //! stranger the agent.
@@ -262,6 +264,14 @@ pub struct Config {
     /// on the value the agent happened to be on last time, and the reason
     /// this is a map of what was said rather than a copy of a session.
     pub agents: std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>,
+    /// What each agent is started with on top of Obelus's own environment,
+    /// by the agent's id and then the variable's name.
+    ///
+    /// About the process rather than a conversation, which is why it is not
+    /// in `agents`: those are said to every conversation as it opens, and
+    /// these reach an agent once, when it starts.
+    pub environments:
+        std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>,
     /// Which chat a note can be worked on from, by the platform's own key.
     ///
     /// One, or none, the way the agent is: a question put to two chats at
@@ -382,6 +392,8 @@ impl Default for Config {
             // And nothing said about any agent: every conversation starts
             // where the agent starts it.
             agents: std::collections::BTreeMap::new(),
+            // And nothing added to what an agent is started with.
+            environments: std::collections::BTreeMap::new(),
             // No chat: a machine is not reachable from one until its
             // reader says so.
             remote: None,
@@ -1035,6 +1047,36 @@ impl Config {
         }
     }
 
+    /// What one agent is started with, on top of Obelus's own environment.
+    ///
+    /// Empty where the reader has added nothing, the same single answer
+    /// [`Config::agent_defaults`] gives.
+    #[must_use]
+    pub fn agent_environment(&self, agent: &str) -> &std::collections::BTreeMap<String, String> {
+        static NOTHING: std::sync::LazyLock<std::collections::BTreeMap<String, String>> =
+            std::sync::LazyLock::new(std::collections::BTreeMap::new);
+        self.environments.get(agent).unwrap_or(&NOTHING)
+    }
+
+    /// Says what one of an agent's variables is.
+    pub fn set_agent_variable(&mut self, agent: &str, name: &str, value: &str) {
+        self.environments
+            .entry(agent.to_string())
+            .or_default()
+            .insert(name.to_string(), value.to_string());
+    }
+
+    /// Takes one of them away, and the agent's table with the last of them.
+    pub fn unset_agent_variable(&mut self, agent: &str, name: &str) {
+        let Some(variables) = self.environments.get_mut(agent) else {
+            return;
+        };
+        variables.remove(name);
+        if variables.is_empty() {
+            self.environments.remove(agent);
+        }
+    }
+
     /// What one chat platform keeps here, or nothing.
     #[must_use]
     pub fn remote_of(&self, platform: &str) -> Option<&Remote> {
@@ -1383,7 +1425,7 @@ fn from_table(table: &toml::Table) -> (Config, Applied) {
 #[must_use]
 pub fn reach_of(key: &str) -> Reach {
     match key {
-        "agent" | "keys" | "agents" | "remote" | "remotes" => Reach::ReaderOnly,
+        "agent" | "keys" | "agents" | "environment" | "remote" | "remotes" => Reach::ReaderOnly,
         _ => Setting::named(key).map_or(Reach::ReaderOnly, |setting| setting.reach),
     }
 }
@@ -1620,6 +1662,38 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
             }
         }
     }
+    if let Some(environments) = table.get("environment").and_then(toml::Value::as_table)
+        && allowed("environment")
+    {
+        // A table per agent, of strings, read whole for the reason the
+        // agents' are: whether that agent is installed is not a question
+        // anybody here can answer.
+        for (agent, variables) in environments {
+            let Some(variables) = variables.as_table() else {
+                tracing::warn!(agent, "what this agent is started with is not a table");
+                not_a_table.push(format!("environment.{agent}"));
+                continue;
+            };
+            // A number or a switch as the words for it: an environment
+            // holds only strings, and `MAX_TOKENS = 32000` is what a reader
+            // writing one by hand would write. Dropped here, it would be a
+            // line that did nothing -- and gone from the file on the next
+            // save, because the table is written from what was read.
+            for (name, value) in variables {
+                let value = match value {
+                    toml::Value::String(value) => value.clone(),
+                    toml::Value::Integer(value) => value.to_string(),
+                    toml::Value::Float(value) => value.to_string(),
+                    toml::Value::Boolean(value) => value.to_string(),
+                    _ => {
+                        tracing::warn!(agent, name, "a variable that is not one value");
+                        continue;
+                    }
+                };
+                config.set_agent_variable(agent, name, &value);
+            }
+        }
+    }
     if let Some(word) = table.get("remote").and_then(toml::Value::as_str)
         && allowed("remote")
     {
@@ -1684,8 +1758,9 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
     // them and how a reader would say where to look.
     for agent in not_a_table {
         applied.ignored.push(Ignored {
-            // The remotes' arrive named in full; an agent's by its name.
-            key: match agent.starts_with("remotes.") {
+            // The remotes' and the environments' arrive named in full; an
+            // agent's by its name.
+            key: match agent.starts_with("remotes.") || agent.starts_with("environment.") {
                 true => agent,
                 false => format!("agents.{agent}"),
             },
@@ -1709,8 +1784,10 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
 /// writes by hand or sets somewhere else on the page, not settings Obelus
 /// has stopped having.
 fn known(key: &str) -> bool {
-    matches!(key, "agent" | "keys" | "agents" | "remote" | "remotes")
-        || Setting::named(key).is_some()
+    matches!(
+        key,
+        "agent" | "keys" | "agents" | "environment" | "remote" | "remotes"
+    ) || Setting::named(key).is_some()
 }
 
 /// The file's contents for a config, with nothing else in it.
@@ -1943,6 +2020,26 @@ fn lay(existing: &str, config: &Config, every: bool) -> String {
             table[agent] = toml_edit::Item::Table(settings);
         }
         document["agents"] = toml_edit::Item::Table(table);
+    }
+    // The same again for what each is started with.
+    let environments: Vec<(&String, &std::collections::BTreeMap<String, String>)> = config
+        .environments
+        .iter()
+        .filter(|(_, variables)| !variables.is_empty())
+        .collect();
+    if environments.is_empty() {
+        document.remove("environment");
+    } else {
+        let mut table = toml_edit::Table::new();
+        table.set_implicit(true);
+        for (agent, variables) in environments {
+            let mut written = toml_edit::Table::new();
+            for (name, value) in variables {
+                written[name] = toml_edit::value(value.clone());
+            }
+            table[agent] = toml_edit::Item::Table(written);
+        }
+        document["environment"] = toml_edit::Item::Table(table);
     }
     lay_remotes(&mut document, &config.remotes);
     document.to_string()
@@ -2216,7 +2313,16 @@ pub fn save_to(path: &Path, config: &Config) -> std::io::Result<()> {
     // two writing at once into one shared name truncate each other's
     // half-written file, and the first rename takes the other's away.
     let beside = path.with_extension(format!("toml.writing.{}", std::process::id()));
+    // And with the old file's permissions, which a new file does not have: a
+    // reader who keeps a token for an agent in here and made the file theirs
+    // alone would otherwise find it readable by everybody after the next
+    // switch they flipped.
+    let kept = std::fs::metadata(path).map(|metadata| metadata.permissions());
     let written = std::fs::write(&beside, over(&existing, config))
+        .and_then(|()| match kept {
+            Ok(permissions) => std::fs::set_permissions(&beside, permissions),
+            Err(_) => Ok(()),
+        })
         .and_then(|()| std::fs::rename(&beside, path));
     if written.is_err() {
         // And not left behind: the name is this process's own, so nobody
@@ -2264,6 +2370,40 @@ mod tests {
             "a setting was written into a project that has gone"
         );
         assert!(!root.exists(), "the project was made again");
+    }
+
+    /// Saving keeps who may read the file.
+    ///
+    /// The file is written beside itself and renamed over, and a new file
+    /// has the default permissions -- so a reader who put an agent's token
+    /// in it and made it theirs alone had that undone by the next save.
+    ///
+    /// Broken deliberately by taking the `set_permissions` out of `save_to`:
+    /// the file came back readable by everybody.
+    #[cfg(unix)]
+    #[test]
+    fn saving_keeps_who_may_read_the_file() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory =
+            std::env::temp_dir().join(format!("obelus-config-mode-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("a directory");
+        let path = directory.join("config.toml");
+        std::fs::write(&path, "theme = \"dark\"\n").expect("the file");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+            .expect("the reader's alone");
+
+        let mut config = Config::default();
+        config.set_agent_variable("claude-acp", "TOKEN", "secret");
+        save_to(&path, &config).expect("saving");
+
+        let mode = std::fs::metadata(&path)
+            .expect("the file")
+            .permissions()
+            .mode()
+            & 0o777;
+        let _ = std::fs::remove_dir_all(&directory);
+        assert_eq!(mode, 0o600, "saving let everybody read the file: {mode:o}");
     }
 
     /// A path that is a link is written *through*, not over.
@@ -2585,6 +2725,17 @@ mod tests {
             ]
             .into_iter()
             .collect(),
+            environments: [(
+                "claude-acp".to_string(),
+                [(
+                    "HTTPS_PROXY".to_string(),
+                    "http://127.0.0.1:7890".to_string(),
+                )]
+                .into_iter()
+                .collect(),
+            )]
+            .into_iter()
+            .collect(),
             remote: Some("slack".to_string()),
             // Two platforms, the one in use and one set up before it: a
             // switch to the other and back must not cost the first.
@@ -2880,6 +3031,96 @@ mod tests {
             !to_toml(&config).contains("remotes"),
             "{}",
             to_toml(&config)
+        );
+    }
+
+    /// What an agent is started with survives the file, agent by agent, and
+    /// the last variable taken away takes its table with it.
+    ///
+    /// Broken deliberately by leaving `environment` out of the writer: the
+    /// variables were gone after one round trip.
+    #[test]
+    fn what_an_agent_is_started_with_survives_the_file() {
+        let mut config = Config::default();
+        config.set_agent_variable("claude-acp", "HTTPS_PROXY", "http://127.0.0.1:7890");
+        config.set_agent_variable("codex-acp", "CODEX_HOME", "/tmp/codex");
+
+        let written = to_toml(&config);
+        assert!(
+            written.contains("[environment.claude-acp]"),
+            "the agent is not its own table: {written}"
+        );
+        let read = from_toml(&written);
+        assert_eq!(
+            read.agent_environment("claude-acp")
+                .get("HTTPS_PROXY")
+                .map(String::as_str),
+            Some("http://127.0.0.1:7890")
+        );
+        assert!(
+            !read
+                .agent_environment("claude-acp")
+                .contains_key("CODEX_HOME"),
+            "an agent was given another agent's variable"
+        );
+
+        let mut config = read;
+        config.unset_agent_variable("claude-acp", "HTTPS_PROXY");
+        let written = to_toml(&config);
+        assert!(
+            !written.contains("claude-acp"),
+            "the file kept a table with nothing in it: {written}"
+        );
+        assert!(written.contains("[environment.codex-acp]"));
+    }
+
+    /// A number or a switch written by hand is the words for it, rather
+    /// than a line that does nothing and is gone on the next save.
+    ///
+    /// Broken deliberately by reading strings alone: the number never
+    /// reached the config, and the written file no longer had it.
+    #[test]
+    fn a_number_an_agent_is_started_with_is_the_words_for_it() {
+        let read = from_toml("[environment.claude-acp]\nMAX_TOKENS = 32000\nQUIET = true\n");
+        let variables = read.agent_environment("claude-acp");
+        assert_eq!(
+            variables.get("MAX_TOKENS").map(String::as_str),
+            Some("32000")
+        );
+        assert_eq!(variables.get("QUIET").map(String::as_str), Some("true"));
+        assert!(
+            to_toml(&read).contains("MAX_TOKENS"),
+            "the number was gone from the file"
+        );
+    }
+
+    /// A project may not say what an agent is started with.
+    ///
+    /// Broken deliberately by giving "environment" `Reach::Anywhere` in
+    /// `reach_of`: the project's proxy was the one the agent would get.
+    #[test]
+    fn a_tree_may_not_say_what_an_agent_is_started_with() {
+        let table = r#"
+            [environment.claude-acp]
+            HTTPS_PROXY = "http://somebody.else"
+        "#
+        .parse::<toml::Table>()
+        .expect("a table");
+
+        let mut config = Config::default();
+        apply(&mut config, &table, Whose::Project);
+        assert!(
+            config.agent_environment("claude-acp").is_empty(),
+            "a project set what the agent is started with"
+        );
+
+        apply(&mut config, &table, Whose::Reader);
+        assert_eq!(
+            config
+                .agent_environment("claude-acp")
+                .get("HTTPS_PROXY")
+                .map(String::as_str),
+            Some("http://somebody.else")
         );
     }
 

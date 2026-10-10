@@ -57,6 +57,10 @@ fn arrow_at(x: u16, after: u16) -> u16 {
 /// each of its rows, and the rows have a column each of their own to spend.
 const WHEN: &str = "What a new conversation starts on.";
 
+/// And under its environment's, the other moment: these reach the process,
+/// once, and a running agent has already been started.
+const STARTED: &str = "What it is started with, from the next time it starts.";
+
 /// What an agent's row says where the reader has chosen nothing.
 ///
 /// A word rather than a blank: the third state of one of these rows is a
@@ -205,6 +209,12 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
         .on_remote()
         .then(|| settings.rows(offering).get(settings.focus()).copied())
         .flatten();
+    // And on the agent's environment, the row the reader is on decides
+    // both keys: enter on the last row adds rather than changes, and
+    // delete takes a variable away.
+    let on_row = settings.rows(offering).get(settings.focus()).copied();
+    let adding = matches!(on_row, Some(Shown::AddVariable { .. }));
+    let removes = matches!(on_row, Some(Shown::Variable { .. }));
     let (enter, saying) = match remote {
         Some(Shown::Remote { row, .. }) => match row {
             RemoteRow::Pair => (
@@ -221,6 +231,7 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
                 ("Change", "Change it, or open what it can be")
             }
         },
+        _ if adding => ("Add", "Add a variable to what the agent is started with"),
         _ => (
             "Change",
             match settings.key_rows().get(settings.focus()) {
@@ -263,6 +274,9 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
         Hint::common(bare(KeyCode::Delete), AGENTS_OWN)
             .saying("Stop saying what this one starts on, and leave it to the agent")
             .when(focused.is_some() && rows_delete),
+        Hint::common(bare(KeyCode::Delete), "Remove")
+            .saying("Stop starting the agent with this one")
+            .when(removes && rows_delete),
         Hint::common(bare(KeyCode::Delete), "Unset")
             .saying("Take this setting out of the project's file")
             .when(
@@ -674,6 +688,33 @@ impl SettingsView<'_> {
                 pinned: None,
                 scope: None,
             },
+            Shown::Variable { name, opens, .. } => Row {
+                opens: opens.map(|agent| Heading::Environment(agent.to_string())),
+                label: (*name).to_string(),
+                matched: self.settings.matched_in(name),
+                detail: None,
+                // What it holds -- see `Shown::about` for why it is here
+                // and not in the control.
+                body: self.settings.wrapped(shown.about(), width),
+                warning: Vec::new(),
+                entry: true,
+                aside: Aside::Does(String::new(), true),
+                // The reader's alone, like the agent's settings above it.
+                pinned: None,
+                scope: None,
+            },
+            Shown::AddVariable { opens } => Row {
+                opens: opens.map(|agent| Heading::Environment(agent.to_string())),
+                label: shown.label().to_string(),
+                matched: self.settings.matched_in(shown.label()),
+                detail: None,
+                body: self.settings.wrapped(shown.about(), width),
+                warning: Vec::new(),
+                entry: true,
+                aside: Aside::Does(String::new(), true),
+                pinned: None,
+                scope: None,
+            },
             Shown::Silent { saying, opens } => Row {
                 opens: Some(Heading::Agent((*opens).to_string())),
                 label: String::new(),
@@ -745,6 +786,8 @@ enum Heading {
     Group(obelus_config::Group),
     /// The active agent, by the name it goes by.
     Agent(String),
+    /// What the active agent is started with, by the agent's name.
+    Environment(String),
     /// The chat this machine can be reached from, or the page's own word for
     /// none -- with where it stands said at the right of the same row.
     Remote(String),
@@ -755,7 +798,7 @@ impl Heading {
     const fn rows(&self) -> u16 {
         match self {
             Self::Group(_) | Self::Remote(_) => 2,
-            Self::Agent(_) => HEADING_ROWS,
+            Self::Agent(_) | Self::Environment(_) => HEADING_ROWS,
         }
     }
 }
@@ -1221,9 +1264,14 @@ impl SettingsView<'_> {
             .fg(self.theme.foreground)
             .bg(self.theme.background);
         fill(cells, area, plain);
+        let environment;
         let name = match opens {
             Heading::Group(group) => group.label(),
             Heading::Agent(name) | Heading::Remote(name) => name.as_str(),
+            Heading::Environment(name) => {
+                environment = format!("{name} \u{b7} Environment");
+                environment.as_str()
+            }
         };
         write(
             cells,
@@ -1238,12 +1286,19 @@ impl SettingsView<'_> {
         // The group is the only one on this page whose settings are about
         // somewhere else, and a reader who changes one and goes back to a
         // conversation that has not moved has been told nothing.
-        if matches!(opens, Heading::Agent(_)) && area.height > 1 {
+        let when = match opens {
+            Heading::Agent(_) => Some(WHEN),
+            Heading::Environment(_) => Some(STARTED),
+            Heading::Group(_) | Heading::Remote(_) => None,
+        };
+        if let Some(when) = when
+            && area.height > 1
+        {
             write(
                 cells,
                 area.x + 1,
                 area.y + 1,
-                &truncate_from_right(WHEN, usize::from(area.width.saturating_sub(2))),
+                &truncate_from_right(when, usize::from(area.width.saturating_sub(2))),
                 plain.fg(self.theme.gutter),
             );
         }

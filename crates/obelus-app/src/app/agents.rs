@@ -232,6 +232,12 @@ impl App {
             offers,
             chosen: self.config().agent_defaults(id).clone(),
             silence,
+            environment: self
+                .config()
+                .agent_environment(id)
+                .iter()
+                .map(|(name, value)| (name.clone(), value.clone()))
+                .collect(),
         })
     }
 

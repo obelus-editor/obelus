@@ -1204,6 +1204,7 @@ pub struct Choice {
 pub fn start(
     command: &std::path::Path,
     arguments: &[String],
+    environment: &[(String, String)],
     root: &std::path::Path,
     events: impl Sink<Event> + Clone,
 ) -> (
@@ -1225,9 +1226,13 @@ pub fn start(
     // And where the machine's pool of build jobs is, so that everything
     // the agent runs in its own shell builds inside it -- the agent starts
     // its commands, and this is the one moment Obelus has a say in them.
+    //
+    // And what the reader said it is to be started with, after the pool so
+    // that a reader who names one of those has the last word on it.
     let config = AcpAgentConfig::new(&program)
         .args(arguments.iter().cloned())
-        .envs(obelus_jobs::lent());
+        .envs(obelus_jobs::lent())
+        .envs(environment.iter().cloned());
     let root = root.to_path_buf();
     let told = events.clone();
     // A task on the one runtime, which is what it was already: a thread

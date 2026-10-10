@@ -264,6 +264,16 @@ options() {
     printf ']'
 }
 
+# What it was started with, where a test gave it a word to look for: the
+# reader can add to an agent's environment, and the agent is the only one
+# that can say whether it arrived.
+if [ -n "$log" ] && [ -n "${OBELUS_FAKE_WORD+set}" ]; then
+    printf 'started with %s\n' "$OBELUS_FAKE_WORD" >>"$log"
+    # And where it was told the pool of build jobs is, which the reader can
+    # name too.
+    printf 'pool %s\n' "${CARGO_MAKEFLAGS-}" >>"$log"
+fi
+
 while IFS= read -r line; do
     # Which conversation this one is about. Every request after the first
     # names it, and answering about the one opened most recently would make
