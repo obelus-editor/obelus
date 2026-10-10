@@ -257,7 +257,7 @@ list. What Obelus writes for itself and a reader never opens stays a line in
 the log, and what went wrong on the way up -- the marks on files nobody has
 opened yet, and what has no line to mark -- is a list put up over the first
 screen of a start, read there and let go with escape
-(`app/preferences`, `obelus_lsp::trouble`, `App::tell_what_went_wrong`).
+(`app/project/preferences`, `obelus_lsp::trouble`, `App::tell_what_went_wrong`).
 
 **A setting the reader turned on is not a reason to refuse them.** Saving
 with formatting on and no server to ask writes the file unformatted. The
@@ -545,61 +545,66 @@ project is three rust-analyzers.
 ```
 crates/
   obelus-app/       state, the loop's handler, and every picker's item
-                    source, by aspect: documents, moving, searching,
-                    choosing, agents -- plus what one conversation is
-                    (conversation), what the loop reacts to (event), and
-                    everything done before there is a screen (startup)
+                    source, by feature: the file being read (app/editor), the
+                    language server (app/lsp), the agent and the chat
+                    (app/chat), git and GitHub (app/git), and the project and
+                    what is kept about it (app/project) -- beside the state
+                    and the loop (app/mod) and what every feature goes
+                    through: the frame, the events, the pointer, the layers
+                    -- plus what one conversation is (conversation), what the
+                    loop reacts to (event), and everything done before there
+                    is a screen (startup)
                     · a commit's message hangs above its file, and the branch
-                      is read where Obelus is told where it is (app/history); a
+                      is read where Obelus is told where it is (app/git/history); a
                       view is split by the errand, not by the shape of the
                       answer, and an answer on screen is an answer about a
-                      moment (app/history_view); a preview is of a subject, not
+                      moment (app/git/history_view); a preview is of a subject, not
                       of a path, and the paging keys belong to whatever is
-                      being read (app/previewing); a project may carry
+                      being read (app/editor/previewing); a project may carry
                       settings, and it is not the reader, and the reader's is
                       the layer it is laid over; anything read once at startup
                       must be re-read when somebody else changes it; what
                       Obelus cannot make of a file it reads is a mark on that
-                      file (app/preferences); what Obelus says before the
+                      file (app/project/preferences); what Obelus says before the
                       reader's first words is one piece that is always said and
                       one the topic adds, and the reader's own words go into a
-                      template last (app/opening); opening a conversation opens
+                      template last (app/chat/opening); opening a conversation opens
                       its session, and saying something makes it the reader's
-                      (app/talking); what a reader said outlives the window,
+                      (app/chat/talking); what a reader said outlives the window,
                       newest first, a conversation belongs to the agent that
                       had it and to the checkout it was had in, and a watch
                       is settled from what is open
-                      (app/conversations); where Obelus has been is
+                      (app/chat/conversations); where Obelus has been is
                       remembered however the project was named, and only a
                       worktree, and what a start with nothing to go on asks
-                      (app/projects); what was open is kept by the tree,
-                      and the last window to change it wins (app/reopening);
+                      (app/project/projects); what was open is kept by the tree,
+                      and the last window to change it wins (app/project/reopening);
                       what an agent offers is asked of it,
-                      not remembered (app/agents); a note that has gone takes
-                      no conversation off the screen (app/noting); a key that
+                      not remembered (app/chat/agents); a note that has gone takes
+                      no conversation off the screen (app/project/noting); a key that
                       names another whole view swaps rather than stacks, and a
                       view that bound the key beats the swap (app/switching);
                       what is in front has the key, and nothing behind it is
                       asked (app/hearing); what is typed in a terminal is the
                       program's (app/terminals); a
                       newer Obelus is asked about once a day, not once a start
-                      (app/releases); pull requests and issues are two tabs of
+                      (app/project/releases); pull requests and issues are two tabs of
                       one errand, asked of `gh` and not of GitHub, a page
                       when the reader gets to the end of the last one,
                       choosing one opens the review or the answer and says
                       nothing yet, and what goes to GitHub goes on the
-                      reader's word (app/pulls); one window talks to the
+                      reader's word (app/git/pulls); one window talks to the
                       chat and every
                       window is heard in it, which project a thread begun
                       there is for is the reader's to say, a window joined
                       to the chat is quiet about it, and a chat nobody let
-                      go of is taken up (app/relaying); in a window,
+                      go of is taken up (app/chat/relaying); in a window,
                       enter is another window
                       and `ctrl+enter` is this one going, in a terminal, enter
                       is this one going because it is all a terminal can do, a
                       window on a tree is a claim held the way a
                       conversation's is, a claim appears already held, and a
-                      tree that has gone is nowhere to go (app/worktrees); a
+                      tree that has gone is nowhere to go (app/git/worktrees); a
                       window whose project went starts again without starting
                       again (app/lifecycle); a
                       conversation takes one prompt turn at a time, what is

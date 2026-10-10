@@ -717,7 +717,7 @@ fn a_file_an_agent_offers_is_on_the_readers_screen() {
 /// half of this that no tool listing can say.
 #[test]
 fn the_opening_names_the_tool_it_offers() {
-    let always = include_str!("../src/app/always.txt");
+    let always = include_str!("../src/app/chat/always.txt");
     assert!(
         always.contains("open_file"),
         "the opening does not tell an agent it can open a file:\n{always}"

@@ -17,54 +17,24 @@
 //! pointer, what moves (`animation`), what is open over the file
 //! (`layering`) and what the renderer may ask (`screen`) are files beside
 //! it.
-pub mod agents;
 mod animation;
-mod asking;
-mod changing;
-mod choosing;
-mod completing;
-mod conversations;
-mod counting;
+mod chat;
 pub mod dispatch;
 pub mod document;
-mod documents;
-mod fixing;
+mod editor;
 mod frame;
+mod git;
 mod handling;
-mod headless;
 mod hearing;
-mod hierarchy;
-mod history;
-mod history_view;
-mod hovering;
-mod noting;
-mod opening;
-pub use history_view::About;
-mod keys;
 mod layering;
 mod lifecycle;
-mod mirroring;
-mod moving;
-mod naming;
+mod lsp;
 mod pointer;
-mod preferences;
-mod previewing;
-mod projects;
-pub mod pulls;
-mod relaying;
-mod releases;
-mod remote;
-mod renaming;
-mod renaming_files;
-mod reopening;
+mod project;
 mod saying;
 mod screen;
-mod searching;
-mod semantics;
 mod switching;
-pub mod talking;
 mod terminals;
-mod worktrees;
 
 use std::{
     collections::{HashMap, HashSet},
@@ -72,11 +42,18 @@ use std::{
 };
 
 use anyhow::Result;
+pub use chat::{agents, talking};
+use chat::{conversations, headless, mirroring, opening, relaying, remote};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use document::Document;
 use documents::Rendered;
+use editor::{documents, keys, previewing};
+pub use git::pulls;
+use git::{history, history_view, worktrees};
 pub use headless::run_headless;
 use history::Changed;
+pub use history_view::About;
+use lsp::{hierarchy, renaming_files, semantics};
 use obelus_agent::{Listed, Talking, acp};
 use obelus_buffer::{Buffer, Cursor, DocumentId, Mode, Motion, TextArea};
 use obelus_command::{Command, Requires};
@@ -111,6 +88,7 @@ use obelus_theme::{Theme, builtin};
 use obelus_ui::{Previewed, Screen, image::Images};
 use obelus_watch::Watcher;
 use previewing::Preview;
+use project::{preferences, projects, releases, reopening};
 use ratatui::{
     Terminal,
     backend::Backend,
