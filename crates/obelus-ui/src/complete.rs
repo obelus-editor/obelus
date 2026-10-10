@@ -54,19 +54,13 @@ pub struct Panel {
 /// keystroke, and a remembered rectangle would be a frame behind.
 #[must_use]
 pub fn layout(app: &impl Screen, editor: Rect) -> Option<Panel> {
-    let completion = app.completion()?;
+    let completion = app.beside_the_caret().and_then(crate::Beside::completion)?;
     let buffer = app.current_buffer()?;
     if editor.width == 0 || editor.height == 0 {
         return None;
     }
-    let offset = editor::text_offset(
-        buffer.text().line_count(),
-        editor::changed(app.changes()),
-        !buffer.folds().is_empty(),
-    );
-    let (row, cell) = buffer.cursor_screen_cell(app.text_area())?;
-    let cursor_y = editor.y + row;
-    let cursor_x = editor.x.saturating_add(offset).saturating_add(cell);
+    let (cursor_x, cursor_y) =
+        editor::anchor(editor, buffer, app.changes(), app.text_area(), None)?;
 
     // The left edge is where the word starts, so the labels line up under
     // what has been typed of them.
@@ -142,7 +136,7 @@ pub fn layout(app: &impl Screen, editor: Rect) -> Option<Panel> {
 
 /// Draws the panel.
 pub fn draw(cells: &mut CellBuffer, panel: Panel, app: &impl Screen) {
-    let Some(completion) = app.completion() else {
+    let Some(completion) = app.beside_the_caret().and_then(crate::Beside::completion) else {
         return;
     };
     let theme = app.theme();

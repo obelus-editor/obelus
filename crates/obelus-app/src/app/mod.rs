@@ -1175,29 +1175,42 @@ impl App {
             .filter(|trouble| trouble.severity != obelus_lsp::trouble::Severity::Hint)
     }
 
-    /// What the call the cursor is inside takes, while it is showing.
-    ///
-    /// Not while the completion panel is up: the two would be drawn in the
-    /// same place, and what could be typed next is the nearer question.
+    /// The one panel beside the caret: see [`obelus_ui::Beside`] for which
+    /// wins, which is decided here and nowhere else.
     #[must_use]
-    pub const fn signature(&self) -> Option<&obelus_component::signature::Signature> {
-        match self.lsp.completion.is_some() {
-            true => None,
-            false => self.lsp.signature.as_ref(),
+    pub fn beside_the_caret(&self) -> Option<obelus_ui::Beside<'_>> {
+        use obelus_ui::Beside;
+
+        if let Some(completion) = &self.lsp.completion {
+            return Some(Beside::Completion(completion));
         }
+        if let Some(signature) = &self.lsp.signature {
+            return Some(Beside::Signature(signature));
+        }
+        if let Some(hover) = &self.lsp.hover {
+            return Some(Beside::Hover(hover));
+        }
+        let complaint = self.lsp.complaining.as_ref()?;
+        Some(Beside::Complaint(obelus_ui::Complained {
+            line: complaint.line,
+            column: complaint.column,
+            said: &complaint.said,
+            severity: complaint.severity,
+            others: complaint.others,
+        }))
     }
 
-    /// What the server says the place under the caret is, while it is up.
-    ///
-    /// Not while either of the other two panels is: all three want the
-    /// cells beside the cursor, and of the three this is the question
-    /// asked longest ago.
+    /// What the call the cursor is inside takes, while it is the panel.
     #[must_use]
-    pub const fn hover(&self) -> Option<&Hover> {
-        match self.lsp.completion.is_some() || self.lsp.signature.is_some() {
-            true => None,
-            false => self.lsp.hover.as_ref(),
-        }
+    pub fn signature(&self) -> Option<&obelus_component::signature::Signature> {
+        self.beside_the_caret()?.signature()
+    }
+
+    /// What the server says the place under the caret is, while it is the
+    /// panel.
+    #[must_use]
+    pub fn hover(&self) -> Option<&Hover> {
+        self.beside_the_caret()?.hover()
     }
 
     /// What could be typed next, while a server's answer is on screen.
@@ -1769,5 +1782,68 @@ fn handle(app: &mut App, event: Event) {
     let took = started.elapsed();
     if took >= SLOW_FRAME {
         tracing::debug!(?took, event = what, ?key, "a slow event");
+    }
+}
+
+#[cfg(test)]
+mod beside {
+    use super::*;
+
+    fn signature() -> obelus_component::signature::Signature {
+        obelus_component::signature::Signature::new(
+            obelus_lsp::signature::Answer {
+                signatures: Vec::new(),
+                documentation: None,
+                said: serde_json::Value::Null,
+            },
+            DocumentId::new(0),
+            LineNumber::new(0),
+            CharColumn::new(0),
+            None,
+        )
+    }
+
+    fn hover() -> Hover {
+        Hover::new(
+            obelus_lsp::hover::Hovered {
+                markdown: "what it is".to_string(),
+                range: None,
+            },
+            (LineNumber::new(0), CharColumn::new(0)),
+            false,
+        )
+    }
+
+    /// One panel beside the caret, and which: what the call takes before
+    /// what the place is, and what the place is before what is wrong with
+    /// the line.
+    ///
+    /// Broken deliberately by asking about the hover before the signature:
+    /// the hover was the panel while both were up.
+    #[test]
+    fn the_nearer_question_is_the_panel() {
+        let mut app = App::new(Vec::new());
+        app.lsp.complaining = Some(Complaint {
+            line: LineNumber::new(0),
+            column: CharColumn::new(0),
+            said: "wrong".to_string(),
+            severity: obelus_lsp::trouble::Severity::Error,
+            others: 0,
+        });
+        assert!(matches!(
+            app.beside_the_caret(),
+            Some(obelus_ui::Beside::Complaint(_))
+        ));
+        app.lsp.hover = Some(hover());
+        assert!(matches!(
+            app.beside_the_caret(),
+            Some(obelus_ui::Beside::Hover(_))
+        ));
+        app.lsp.signature = Some(signature());
+        assert!(matches!(
+            app.beside_the_caret(),
+            Some(obelus_ui::Beside::Signature(_))
+        ));
+        assert!(app.hover().is_none(), "the hover is behind the signature");
     }
 }

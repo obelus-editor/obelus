@@ -586,32 +586,39 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
             Layer::Prompt => {}
         }
     }
-    // The three panels that belong to a place in the file. Each is empty
-    // while anything is over the file -- they are settled that way once a
-    // frame -- so nothing here has to ask a second time.
-    //
-    // What could be typed next belongs beside the cursor, and the cursor is
-    // on top of everything in the region.
-    if let Some(panel) = complete::layout(app, regions.editor) {
-        bars::of(Whose::Completion, || complete::draw(cells, panel, app));
-    }
-    // And what the call takes, which is the same kind of thing one question
-    // further back. Never both: the panel's own accessor refuses to give a
-    // signature while there is a list of candidates.
-    if let Some(panel) = signature::layout(app, regions.editor) {
-        signature::draw(cells, panel, app);
-    }
-    // And what the thing under the caret *is*, which is the question
-    // furthest back of the three -- so it is drawn last and its own
-    // accessor gives nothing while either of the others is up.
-    if let Some(panel) = hover::layout(app, regions.editor) {
-        bars::of(Whose::Hover, || hover::draw(cells, panel, app));
-    }
-    // And what is *wrong* with the line the reader is on, which is the
-    // one of the four nobody asked for -- so it is drawn last and gives
-    // nothing while any of the others is up.
-    if let Some(panel) = trouble::layout(app, regions.editor) {
-        trouble::draw(cells, panel, app);
+    // The panel that belongs to a place in the file, where there is one:
+    // which of the four it is was decided once, by `beside_the_caret`, and
+    // each is empty while anything is over the file -- they are settled
+    // that way once a frame -- so nothing here has to ask a second time.
+    match app.beside_the_caret() {
+        // What could be typed next belongs beside the cursor, and the
+        // cursor is on top of everything in the region.
+        Some(Beside::Completion(_)) => {
+            if let Some(panel) = complete::layout(app, regions.editor) {
+                bars::of(Whose::Completion, || complete::draw(cells, panel, app));
+            }
+        }
+        // What the call takes, which is the same kind of thing one question
+        // further back.
+        Some(Beside::Signature(_)) => {
+            if let Some(panel) = signature::layout(app, regions.editor) {
+                signature::draw(cells, panel, app);
+            }
+        }
+        // What the thing under the caret *is*.
+        Some(Beside::Hover(_)) => {
+            if let Some(panel) = hover::layout(app, regions.editor) {
+                bars::of(Whose::Hover, || hover::draw(cells, panel, app));
+            }
+        }
+        // What is *wrong* with the line the reader is on, which is the one
+        // of the four nobody asked for.
+        Some(Beside::Complaint(_)) => {
+            if let Some(panel) = trouble::layout(app, regions.editor) {
+                trouble::draw(cells, panel, app);
+            }
+        }
+        None => {}
     }
 
     // The status row, last, and whose it is. A conversation puts its own

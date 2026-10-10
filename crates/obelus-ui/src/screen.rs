@@ -146,6 +146,7 @@ pub struct Reading<'a> {
 /// anywhere to put them. A box floated over the page is laid out to the
 /// room it is given, like every other one, and the room is the view's to
 /// know.
+#[derive(Clone, Copy, Debug)]
 pub struct Complained<'a> {
     /// The line it is about, which is what the box is anchored under.
     pub line: obelus_text::coordinates::LineNumber,
@@ -161,6 +162,69 @@ pub struct Complained<'a> {
     /// How many others are on that line, which the box counts rather than
     /// lists: one of them is a box, and five is the screen.
     pub others: usize,
+}
+
+/// The panel beside the caret: there is room there for one, and which one
+/// is decided once, by whoever answers [`Screen::beside_the_caret`].
+///
+/// Nearest first: what could be typed next is the question the reader is in
+/// the middle of; what the call they are typing into takes is the one just
+/// before it; what the server says the place is was asked longest ago; and
+/// what is wrong with the line is behind all three of the boxes a reader
+/// asked for. That order used to be said twice -- in the application's
+/// accessors and again in the box for what is wrong -- and the two only
+/// agreed because nobody had changed one.
+#[derive(Clone, Copy, Debug)]
+pub enum Beside<'a> {
+    /// What could be typed next, while a server's answer is on screen.
+    Completion(&'a Completion),
+    /// What the call the cursor is inside takes.
+    Signature(&'a obelus_component::signature::Signature),
+    /// What the server says the place under the caret is.
+    Hover(&'a Hover),
+    /// What is wrong with the line the reader is on: only the caret's line,
+    /// or the row a list of problems has walked them to. Every other one is
+    /// said by the underline, which costs no room at all and is on all of
+    /// them.
+    Complaint(Complained<'a>),
+}
+
+impl<'a> Beside<'a> {
+    /// The completion, if that is the panel.
+    #[must_use]
+    pub const fn completion(self) -> Option<&'a Completion> {
+        match self {
+            Self::Completion(completion) => Some(completion),
+            _ => None,
+        }
+    }
+
+    /// The signature, if that is the panel.
+    #[must_use]
+    pub const fn signature(self) -> Option<&'a obelus_component::signature::Signature> {
+        match self {
+            Self::Signature(signature) => Some(signature),
+            _ => None,
+        }
+    }
+
+    /// The hover, if that is the panel.
+    #[must_use]
+    pub const fn hover(self) -> Option<&'a Hover> {
+        match self {
+            Self::Hover(hover) => Some(hover),
+            _ => None,
+        }
+    }
+
+    /// What is wrong, if that is the panel.
+    #[must_use]
+    pub const fn complaint(self) -> Option<Complained<'a>> {
+        match self {
+            Self::Complaint(complaint) => Some(complaint),
+            _ => None,
+        }
+    }
 }
 
 /// The document on screen, under whatever is open over it.
@@ -264,8 +328,8 @@ pub trait Screen {
     fn card(&self) -> Option<&Card>;
     /// What has changed in the current file, if Obelus can tell.
     fn changes(&self) -> Option<&obelus_git::Changes>;
-    /// What could be typed next, while a server's answer is on screen.
-    fn completion(&self) -> Option<&Completion>;
+    /// The one panel beside the caret, where there is one.
+    fn beside_the_caret(&self) -> Option<Beside<'_>>;
     /// What the reader has decided.
     fn config(&self) -> &obelus_config::Config;
     /// The line counts, while they are showing.
@@ -282,8 +346,6 @@ pub trait Screen {
     fn drawn(&self) -> &[crate::Drawn];
     /// The highlight kinds for what is on screen.
     fn highlights(&self) -> &Highlights;
-    /// What the server says the place under the caret is, while it is up.
-    fn hover(&self) -> Option<&Hover>;
     /// The marks, for the view to draw.
     fn images(&self) -> &Images;
     /// The bindings currently in force.
@@ -343,12 +405,6 @@ pub trait Screen {
     /// row has nothing else to tell them apart with -- which is what left
     /// a reader reading `Not saved` in the same colour as `Saved`.
     fn note_is_wrong(&self) -> bool;
-    /// What is wrong with the line the reader is on, where anything is.
-    ///
-    /// Only the caret's line, or the row a list of problems has walked
-    /// them to. Every other one is said by the underline, which costs no
-    /// room at all and is on all of them.
-    fn complaint(&self) -> Option<Complained<'_>>;
     /// The question being asked, if one is.
     fn prompt(&self) -> Option<&Prompt>;
     /// The directory the question being asked would put a file in.
@@ -375,8 +431,6 @@ pub trait Screen {
     fn remote(&self) -> Option<(&'static str, obelus_remote::State)>;
     /// The settings view, while it is open.
     fn settings(&self) -> Option<&Settings>;
-    /// What the call the cursor is inside takes, while it is showing.
-    fn signature(&self) -> Option<&obelus_component::signature::Signature>;
     /// The agent's own commands, while one is being typed.
     fn slash(&self) -> Option<&Picker>;
     /// What Obelus is doing about an agent.

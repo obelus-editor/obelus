@@ -44,8 +44,8 @@ impl Screen for App {
     fn changes(&self) -> Option<&obelus_git::Changes> {
         App::changes(self)
     }
-    fn completion(&self) -> Option<&Completion> {
-        App::completion(self)
+    fn beside_the_caret(&self) -> Option<obelus_ui::Beside<'_>> {
+        App::beside_the_caret(self)
     }
     fn config(&self) -> &obelus_config::Config {
         App::config(self)
@@ -61,9 +61,6 @@ impl Screen for App {
     }
     fn highlights(&self) -> &Highlights {
         App::highlights(self)
-    }
-    fn hover(&self) -> Option<&Hover> {
-        App::hover(self)
     }
     fn images(&self) -> &Images {
         App::images(self)
@@ -139,16 +136,6 @@ impl Screen for App {
     fn preview(&self) -> Option<Previewed<'_>> {
         App::preview(self)
     }
-    fn complaint(&self) -> Option<obelus_ui::Complained<'_>> {
-        let complaint = self.lsp.complaining.as_ref()?;
-        Some(obelus_ui::Complained {
-            line: complaint.line,
-            column: complaint.column,
-            said: &complaint.said,
-            severity: complaint.severity,
-            others: complaint.others,
-        })
-    }
     fn prompt(&self) -> Option<&Prompt> {
         App::prompt(self)
     }
@@ -180,9 +167,6 @@ impl Screen for App {
     }
     fn settings(&self) -> Option<&Settings> {
         App::settings(self)
-    }
-    fn signature(&self) -> Option<&obelus_component::signature::Signature> {
-        App::signature(self)
     }
     fn slash(&self) -> Option<&Picker> {
         App::slash(self)

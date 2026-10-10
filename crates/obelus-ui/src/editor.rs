@@ -89,7 +89,7 @@
 //! keeps the colour the highlighting gives it where it really lives. A brace
 //! that changed colour on its way up the screen would read as something else.
 
-use obelus_buffer::Buffer;
+use obelus_buffer::{Buffer, TextArea};
 use obelus_git::Changes;
 use obelus_syntax::{brackets, highlight::Highlights};
 use obelus_text::{
@@ -220,6 +220,43 @@ pub fn text_offset(lines: usize, changed: bool, folds: bool) -> u16 {
     margin
         .saturating_add(gutter_width(lines))
         .saturating_add(folding)
+}
+
+/// Where on the screen a box hangs off the file being read: the cell of
+/// `at`, or of the caret where `at` is `None`, counted from the top left of
+/// the screen.
+///
+/// The one answer for every box beside the text -- what could be typed
+/// next, what the call takes, what the place is, what is wrong with the
+/// line. It was worked out four times, each a copy of the last, and a
+/// column the gutter gained would have been a column three of the four
+/// boxes did not hear about. `None` where the place is not on screen, which
+/// is nowhere to hang anything.
+///
+/// Broken deliberately by leaving the gutter out:
+/// `a_panel_opens_beside_the_word_being_typed` opened the list left of the
+/// word.
+#[must_use]
+pub fn anchor(
+    editor: Rect,
+    buffer: &Buffer,
+    changes: Option<&Changes>,
+    area: TextArea,
+    at: Option<(LineNumber, CharColumn)>,
+) -> Option<(u16, u16)> {
+    let offset = text_offset(
+        buffer.text().line_count(),
+        changed(changes),
+        !buffer.folds().is_empty(),
+    );
+    let (row, cell) = match at {
+        Some((line, column)) => buffer.cell_of_place(line, column, area)?,
+        None => buffer.cursor_screen_cell(area)?,
+    };
+    Some((
+        editor.x.saturating_add(offset).saturating_add(cell),
+        editor.y + row,
+    ))
 }
 
 /// Which of the columns before the text a cell of a row is in.

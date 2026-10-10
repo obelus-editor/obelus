@@ -71,11 +71,8 @@ fn rows(said: &str, others: usize, room: u16) -> Vec<String> {
 /// second thing to remember at every key that opens one.
 #[must_use]
 pub fn layout(app: &impl Screen, editor: Rect) -> Option<Rect> {
-    if app.completion().is_some() || app.signature().is_some() || app.hover().is_some() {
-        return None;
-    }
     where_it_goes(
-        &app.complaint()?,
+        &app.beside_the_caret().and_then(crate::Beside::complaint)?,
         app.current_buffer()?,
         app.changes(),
         app.text_area(),
@@ -100,16 +97,15 @@ pub fn where_it_goes(
     if editor.width < 8 || editor.height < 4 {
         return None;
     }
-    let offset = editor::text_offset(
-        buffer.text().line_count(),
-        editor::changed(changes),
-        !buffer.folds().is_empty(),
-    );
     // Under the *line*, at the column the trouble starts at -- which is
     // where the underline is, so the box hangs off the word it is about.
-    let (row, cell) = buffer.cell_of_place(complaint.line, complaint.column, text_area)?;
-    let anchor_y = editor.y + row;
-    let anchor_x = editor.x.saturating_add(offset).saturating_add(cell);
+    let (anchor_x, anchor_y) = editor::anchor(
+        editor,
+        buffer,
+        changes,
+        text_area,
+        Some((complaint.line, complaint.column)),
+    )?;
 
     let wide = width(editor);
     let x = anchor_x.min(editor.right().saturating_sub(wide));
@@ -158,7 +154,7 @@ pub fn where_it_goes(
 
 /// Draws the one over the document being read.
 pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
-    let Some(complaint) = app.complaint() else {
+    let Some(complaint) = app.beside_the_caret().and_then(crate::Beside::complaint) else {
         return;
     };
     write(cells, area, &complaint, app.theme());
