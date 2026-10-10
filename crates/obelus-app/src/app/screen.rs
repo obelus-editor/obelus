@@ -131,7 +131,7 @@ impl Screen for App {
         App::preview(self)
     }
     fn complaint(&self) -> Option<obelus_ui::Complained<'_>> {
-        let complaint = self.complaining.as_ref()?;
+        let complaint = self.lsp.complaining.as_ref()?;
         Some(obelus_ui::Complained {
             line: complaint.line,
             column: complaint.column,

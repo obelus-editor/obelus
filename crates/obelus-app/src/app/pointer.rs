@@ -497,7 +497,7 @@ impl App {
         else {
             return false;
         };
-        if let Some(completion) = self.completion.as_mut() {
+        if let Some(completion) = self.lsp.completion.as_mut() {
             completion.choose_row(at);
         }
         // Down the key's own path, which is what takes the word and puts

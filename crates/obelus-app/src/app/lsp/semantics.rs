@@ -371,7 +371,7 @@ impl App {
     /// Says the document has just changed, so that it is asked about once
     /// it stops.
     pub(in crate::app) fn will_settle(&mut self, id: DocumentId) {
-        self.settling = Some(Settling { buffer: id });
+        self.lsp.settling = Some(Settling { buffer: id });
         // Started again by every change, so what it measures is the reader
         // stopping. It used to be a frame that asked whether they had, and
         // frames come from the animation: a reader over a network typed and
@@ -389,7 +389,7 @@ impl App {
     /// finishes any, and a reader who has not saved has changed the file
     /// without anything asking about it since.
     pub(in crate::app) fn settle_changes(&mut self) {
-        let Some(settling) = self.settling.take() else {
+        let Some(settling) = self.lsp.settling.take() else {
             return;
         };
         self.changes_pause = None;
@@ -513,14 +513,14 @@ impl App {
             for id in documents {
                 let asked = self
                     .file(id)
-                    .is_some_and(|buffer| self.hints.contains_key(buffer.path()));
+                    .is_some_and(|buffer| self.lsp.hints.contains_key(buffer.path()));
                 if !asked {
                     self.ask_standing(id.get(), Standing::Hints);
                 }
             }
             return;
         }
-        self.hints.clear();
+        self.lsp.hints.clear();
         for id in documents {
             self.redraw_cells(id);
         }
@@ -548,8 +548,8 @@ impl App {
         };
         let found = obelus_lsp::hint::in_reply(&reply.result, buffer.text(), &encoding);
         match found.is_empty() {
-            true => self.hints.remove(&path),
-            false => self.hints.insert(path, found),
+            true => self.lsp.hints.remove(&path),
+            false => self.lsp.hints.insert(path, found),
         };
         self.redraw_cells(id);
     }
@@ -586,7 +586,7 @@ impl App {
     /// which costs no room at all and is on all of them.
     pub(in crate::app) fn show_what_is_wrong(&mut self) {
         if !self.config().diagnostics {
-            self.complaining = None;
+            self.lsp.complaining = None;
             return;
         }
         // Whatever the reader is looking at, which is the caret's line
@@ -614,7 +614,7 @@ impl App {
         let column = self
             .current_buffer()
             .map_or_else(|| CharColumn::new(0), |buffer| buffer.cursor().column);
-        self.complaining = what_is_wrong(here, line, column, chosen.map(|(_, column)| column));
+        self.lsp.complaining = what_is_wrong(here, line, column, chosen.map(|(_, column)| column));
     }
 
     /// Where each thing a server said is wrong with this document starts
@@ -703,8 +703,12 @@ impl App {
             return;
         };
         let path = buffer.path().to_path_buf();
-        let colours = self.colours.get(&path).map_or(&[] as &[_], Vec::as_slice);
-        let hints = self.hints.get(&path).map_or(&[] as &[_], Vec::as_slice);
+        let colours = self
+            .lsp
+            .colours
+            .get(&path)
+            .map_or(&[] as &[_], Vec::as_slice);
+        let hints = self.lsp.hints.get(&path).map_or(&[] as &[_], Vec::as_slice);
 
         // Both sources through one loop, numbered where they are put
         // together: two lists built side by side with an offset between
@@ -745,8 +749,8 @@ impl App {
             buffer.show(&cells);
         }
         match drawn.is_empty() {
-            true => self.drawn.remove(&path),
-            false => self.drawn.insert(path, drawn),
+            true => self.lsp.drawn.remove(&path),
+            false => self.lsp.drawn.insert(path, drawn),
         };
     }
 
@@ -754,7 +758,7 @@ impl App {
     #[must_use]
     pub fn drawn(&self) -> &[obelus_ui::Drawn] {
         self.current_buffer()
-            .and_then(|buffer| self.drawn.get(buffer.path()))
+            .and_then(|buffer| self.lsp.drawn.get(buffer.path()))
             .map_or(&[], Vec::as_slice)
     }
 
@@ -780,8 +784,8 @@ impl App {
         };
         let found = obelus_lsp::colour::in_reply(&reply.result, buffer.text(), &encoding);
         match found.is_empty() {
-            true => self.colours.remove(&path),
-            false => self.colours.insert(path, found),
+            true => self.lsp.colours.remove(&path),
+            false => self.lsp.colours.insert(path, found),
         };
         self.redraw_cells(id);
     }
@@ -790,7 +794,7 @@ impl App {
     #[must_use]
     pub fn colours(&self) -> &[obelus_lsp::colour::Coloured] {
         self.current_buffer()
-            .and_then(|buffer| self.colours.get(buffer.path()))
+            .and_then(|buffer| self.lsp.colours.get(buffer.path()))
             .map_or(&[], Vec::as_slice)
     }
 
@@ -841,7 +845,7 @@ impl App {
     #[must_use]
     pub fn hints_for_test_count(&self) -> usize {
         self.current_buffer()
-            .and_then(|buffer| self.hints.get(buffer.path()))
+            .and_then(|buffer| self.lsp.hints.get(buffer.path()))
             .map_or(0, Vec::len)
     }
 
@@ -906,7 +910,7 @@ impl App {
         let Some(path) = self.file(id).map(|buffer| buffer.path().to_path_buf()) else {
             return;
         };
-        self.tokens.insert(path, tokens);
+        self.lsp.tokens.insert(path, tokens);
     }
 
     /// Whether the thing under the cursor is a name anybody could ask about.
@@ -918,7 +922,7 @@ impl App {
     /// what it is.
     pub(in crate::app) fn name_at(&self, buffer: &Buffer) -> bool {
         let cursor = buffer.cursor();
-        let from_server = self.tokens.get(buffer.path()).and_then(|tokens| {
+        let from_server = self.lsp.tokens.get(buffer.path()).and_then(|tokens| {
             let at = obelus_lsp::position::to_lsp(
                 buffer.text(),
                 cursor.line,
@@ -2036,7 +2040,7 @@ impl App {
         self.show_list(picker);
         // After the list is shown, not before: showing one forgets what the
         // last one was, this included.
-        self.troubling = radii;
+        self.lsp.troubling = radii;
         self.refresh_troubles();
     }
 
@@ -2060,7 +2064,7 @@ impl App {
 
     /// Whether the list showing is the list of problems.
     pub(in crate::app) fn showing_troubles(&self) -> bool {
-        self.picker.is_some() && !self.troubling.is_empty()
+        self.picker.is_some() && !self.lsp.troubling.is_empty()
     }
 
     /// Fills the open list of problems with the radius it is showing.
@@ -2072,7 +2076,7 @@ impl App {
         let Some(radius) = self
             .picker
             .as_ref()
-            .and_then(|picker| self.troubling.get(picker.tab()).copied())
+            .and_then(|picker| self.lsp.troubling.get(picker.tab()).copied())
         else {
             return;
         };

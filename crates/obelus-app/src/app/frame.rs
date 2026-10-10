@@ -284,7 +284,7 @@ impl App {
         // reader who arrowed off the line kept a panel about a call that was
         // no longer under them.
         self.settle_signature();
-        if let Some(hover) = self.hover.as_mut() {
+        if let Some(hover) = self.lsp.hover.as_mut() {
             // What it is drawn in, so that paging it moves what is on
             // screen rather than a number nothing reads.
             hover.settle(
@@ -297,7 +297,7 @@ impl App {
         // of it that are on screen, and only the geometry knows how many
         // that is.
         if let Some(panel) = obelus_ui::complete::layout(self, editor_area)
-            && let Some(completion) = self.completion.as_mut()
+            && let Some(completion) = self.lsp.completion.as_mut()
         {
             // The width inside the box, less the column the reading keeps
             // for its scrollbar: laid out for cells it does not get, the

@@ -23,7 +23,7 @@ impl App {
     pub fn marked_runs(&self) -> &[obelus_text::coordinates::Span] {
         match self.hover().is_some() {
             true => self.hovered_range(),
-            false => &self.uses,
+            false => &self.lsp.uses,
         }
     }
 
@@ -50,7 +50,7 @@ impl App {
     /// Forgets the marks, for a pointer that has moved off what they were
     /// about.
     pub(in crate::app) fn forget_uses(&mut self) {
-        self.uses.clear();
+        self.lsp.uses.clear();
     }
 
     /// Sends the question, about the place the pointer is resting on.
@@ -108,7 +108,7 @@ impl App {
             .map_or(lsp_types::PositionEncodingKind::UTF16, |client| {
                 client.encoding().clone()
             });
-        self.uses = obelus_lsp::uses::in_reply(&reply.result, buffer.text(), &encoding);
+        self.lsp.uses = obelus_lsp::uses::in_reply(&reply.result, buffer.text(), &encoding);
     }
 
     /// How many uses are marked.
@@ -118,7 +118,7 @@ impl App {
     /// marked is what *that* is about.
     #[must_use]
     pub fn uses_marked_for_test(&self) -> usize {
-        self.uses.len()
+        self.lsp.uses.len()
     }
 
     /// Hands Obelus an answer about a version of the document that has

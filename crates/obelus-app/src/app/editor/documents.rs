@@ -1125,7 +1125,7 @@ impl App {
             // What the server said this file's tokens were goes with it. The
             // entry would answer correctly for as long as the file stayed shut,
             // and then be one version behind whoever opened it next.
-            self.tokens.remove(buffer.path());
+            self.lsp.tokens.remove(buffer.path());
             // Nothing said about it. The reader closed it and is looking at
             // what is there instead; a line naming what went is news to
             // nobody, and for a file outside the project -- what background

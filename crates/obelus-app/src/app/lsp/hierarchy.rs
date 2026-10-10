@@ -609,7 +609,7 @@ impl App {
         // away -- so a tree installed first would be taken away by the very
         // list that is about to draw it.
         self.open_calls(&calls);
-        self.calls = Some(calls);
+        self.lsp.calls = Some(calls);
         self.ask_called(ROOT);
     }
 
@@ -634,7 +634,7 @@ impl App {
 
     /// Puts the rows the tree has now into the list that is already up.
     fn refresh_calls(&mut self) {
-        let Some(items) = self.calls.as_ref().map(|calls| self.rows_of(calls)) else {
+        let Some(items) = self.lsp.calls.as_ref().map(|calls| self.rows_of(calls)) else {
             return;
         };
         if let Some(picker) = self.picker.as_mut() {
@@ -713,7 +713,7 @@ impl App {
     /// each is in the air and the reader never waits on work nobody asked
     /// for.
     fn ask_hierarchy(&mut self, id: u64, wanted: bool) {
-        let Some(calls) = self.calls.as_ref() else {
+        let Some(calls) = self.lsp.calls.as_ref() else {
             return;
         };
         let Some(item) = calls.tree.item_of(id).cloned() else {
@@ -733,7 +733,7 @@ impl App {
             }
             return;
         };
-        if let Some(calls) = self.calls.as_mut()
+        if let Some(calls) = self.lsp.calls.as_mut()
             && !wanted
         {
             calls.tree.probing(id);
@@ -757,7 +757,7 @@ impl App {
         let Some(nothing) = self.file_called(direction, id, &reply) else {
             return;
         };
-        if let Some(calls) = self.calls.as_mut() {
+        if let Some(calls) = self.lsp.calls.as_mut() {
             calls.tree.open(id);
         }
         // Told apart, because they are different facts about the world and
@@ -789,7 +789,7 @@ impl App {
     ///
     /// `None` where the answer is about a tree that is no longer showing.
     fn file_called(&mut self, direction: Direction, id: u64, reply: &Reply) -> Option<bool> {
-        let calls = self.calls.as_mut()?;
+        let calls = self.lsp.calls.as_mut()?;
         // The reader turned round while it was on its way. The tree it was
         // asked about is gone, and hanging callers under a row of callees
         // would be an answer to a question nobody asked.
@@ -812,7 +812,11 @@ impl App {
     /// tenth of a second.
     fn after_an_answer(&mut self) {
         self.refresh_calls();
-        let next = self.calls.as_ref().and_then(|calls| calls.tree.unasked());
+        let next = self
+            .lsp
+            .calls
+            .as_ref()
+            .and_then(|calls| calls.tree.unasked());
         if let Some(id) = next {
             self.probe_called(id);
         }
@@ -827,7 +831,7 @@ impl App {
         let Some(row) = self.picker.as_ref().and_then(Picker::selected_row) else {
             return;
         };
-        let Some(calls) = self.calls.as_mut() else {
+        let Some(calls) = self.lsp.calls.as_mut() else {
             return;
         };
         let Some(rung) = calls.tree.rows().get(row) else {
@@ -889,7 +893,7 @@ impl App {
         let Some(direction) = Direction::ALL.get(picker.tab()).copied() else {
             return;
         };
-        let Some(calls) = self.calls.as_mut() else {
+        let Some(calls) = self.lsp.calls.as_mut() else {
             return;
         };
         if calls.tree.direction == direction {
@@ -909,7 +913,7 @@ impl App {
     /// other one is -- in [`App::on_reply`], which is why this only has to
     /// forget it here.
     pub(in crate::app) fn close_calls(&mut self) {
-        self.calls = None;
+        self.lsp.calls = None;
         let stale: Vec<(LanguageId, i64)> = self
             .asked
             .iter()
@@ -932,14 +936,15 @@ impl App {
     /// these, and a mark drawn once and never again is a mark that says
     /// Obelus has stopped rather than that it is waiting.
     pub(in crate::app) fn calls_turning(&self) -> bool {
-        self.calls
+        self.lsp
+            .calls
             .as_ref()
             .is_some_and(|calls| calls.tree.wanted().is_some())
     }
 
     /// Whether a tree of calls is what the list is showing.
     pub(in crate::app) const fn showing_calls(&self) -> bool {
-        self.calls.is_some()
+        self.lsp.calls.is_some()
     }
 
     /// Hands Obelus an item, as a server that prepared one would.
@@ -963,7 +968,7 @@ impl App {
     /// Opened where the reader is waiting on that row and filed where they
     /// are not, which is what the two kinds of question mean.
     pub fn called_for_test(&mut self, row: usize, answer: serde_json::Value) {
-        let Some((direction, id, wanted)) = self.calls.as_ref().and_then(|calls| {
+        let Some((direction, id, wanted)) = self.lsp.calls.as_ref().and_then(|calls| {
             let id = calls.tree.id_at(row)?;
             Some((calls.tree.direction, id, calls.tree.wanted() == Some(id)))
         }) else {
@@ -982,6 +987,7 @@ impl App {
     /// Hands Obelus a server's refusal to answer about a row.
     pub fn refused_call_for_test(&mut self, row: usize, why: &str) {
         let Some((direction, id)) = self
+            .lsp
             .calls
             .as_ref()
             .and_then(|calls| Some((calls.tree.direction, calls.tree.id_at(row)?)))
@@ -1002,6 +1008,7 @@ impl App {
     /// reader turned the tree round.
     pub fn late_call_for_test(&mut self, row: usize, answer: serde_json::Value) {
         let Some((direction, id)) = self
+            .lsp
             .calls
             .as_ref()
             .and_then(|calls| Some((calls.tree.direction, calls.tree.id_at(row)?)))
@@ -1030,7 +1037,7 @@ impl App {
     #[must_use]
     pub fn selected_call_for_test(&self) -> Option<(usize, String)> {
         let row = self.picker.as_ref().and_then(Picker::selected_row)?;
-        let calls = self.calls.as_ref()?;
+        let calls = self.lsp.calls.as_ref()?;
         let rung = calls.tree.rows().get(row)?;
         Some((rung.depth, rung.called.name.clone()))
     }
@@ -1038,7 +1045,8 @@ impl App {
     /// Which way round the tree on screen is being read.
     #[must_use]
     pub fn calls_direction_for_test(&self) -> Option<&'static str> {
-        self.calls
+        self.lsp
+            .calls
             .as_ref()
             .map(|calls| calls.tree.direction.label())
     }
@@ -1049,7 +1057,7 @@ impl App {
     /// terminal.
     #[must_use]
     pub fn call_tree_for_test(&self) -> Vec<(usize, String)> {
-        self.calls.as_ref().map_or_else(Vec::new, |calls| {
+        self.lsp.calls.as_ref().map_or_else(Vec::new, |calls| {
             calls
                 .tree
                 .rows()

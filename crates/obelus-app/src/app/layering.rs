@@ -96,13 +96,13 @@ impl App {
                 // purpose -- see `App::accept`.
                 self.look_back();
                 self.history = history_view::Showing::default();
-                self.troubling.clear();
+                self.lsp.troubling.clear();
                 self.conversing = conversations::Conversing::default();
                 self.close_calls();
                 // What a server offered to do here, which the rows were
                 // indexes into. A row is chosen by its position, so offers
                 // outliving their list are offers pointing at nothing.
-                self.code_actions.clear();
+                self.lsp.code_actions.clear();
                 // Nothing about the agent's question: that is a card in the
                 // conversation, not a list, and a list opened over it and
                 // closed again -- or one that took the reader to another

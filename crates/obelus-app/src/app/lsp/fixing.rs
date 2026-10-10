@@ -182,7 +182,7 @@ impl App {
         if self.gives_way_to_a_view() {
             self.put_away_the_views();
         }
-        self.code_actions = offered;
+        self.lsp.code_actions = offered;
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
         picker.keeps_order(true);
         picker.about("What the language server offers to do here");
@@ -194,7 +194,7 @@ impl App {
 
     /// Does the one the reader chose.
     pub(in crate::app) fn do_action(&mut self, at: usize) {
-        let Some(action) = self.code_actions.get(at).cloned() else {
+        let Some(action) = self.lsp.code_actions.get(at).cloned() else {
             return;
         };
         // An action that arrived without its edit is one the server said
@@ -212,7 +212,12 @@ impl App {
         let Some(language) = self.file(id).and_then(Buffer::language) else {
             return;
         };
-        let Some(item) = self.code_actions.get(at).map(|action| action.item.clone()) else {
+        let Some(item) = self
+            .lsp
+            .code_actions
+            .get(at)
+            .map(|action| action.item.clone())
+        else {
             return;
         };
         let version = self.file(id).map_or(0, Buffer::version);
@@ -257,7 +262,7 @@ impl App {
             self.wrong("The server could not work that out".to_string());
             return;
         };
-        let Some(action) = self.code_actions.get_mut(at) else {
+        let Some(action) = self.lsp.code_actions.get_mut(at) else {
             return;
         };
         action.item = result;

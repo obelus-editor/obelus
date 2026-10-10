@@ -354,7 +354,7 @@ impl App {
         // behind would have the *new* list's tabs refilled with problems.
         // Which is why `open_troubles` declares its radii after this call
         // and not before.
-        self.troubling.clear();
+        self.lsp.troubling.clear();
         self.conversing = crate::app::conversations::Conversing::default();
         self.worktrees.not_showing();
         // Where the reader is looking, before the list takes any of it.
@@ -409,7 +409,7 @@ impl App {
         // question: the commits of a file and of a project are two
         // answers, not two views of one.
         let historic = !self.history.radii.is_empty();
-        let troubling = !self.troubling.is_empty();
+        let troubling = !self.lsp.troubling.is_empty();
         // And a list of conversations is one answer per agent: the rows of
         // a tab are that agent's, fetched when the reader walks onto it.
         let conversing = !self.conversing.agents.is_empty();

@@ -121,7 +121,7 @@ impl App {
     /// and how a reader says one.
     fn ask_what_to_call_it(&mut self, path: &Path) {
         let shown = relative(path, &self.working_directory);
-        self.renaming = Some(Renaming::Asked(path.to_path_buf()));
+        self.lsp.renaming = Some(Renaming::Asked(path.to_path_buf()));
         self.ask_on_the_status_row(obelus_component::prompt::Prompt::about(
             obelus_component::prompt::PromptKind::Path,
             shown,
@@ -134,7 +134,7 @@ impl App {
     /// file already there, a directory that cannot be made -- so that a
     /// server is only ever asked about a rename that is going to happen.
     pub(in crate::app) fn rename_file_to(&mut self, answer: &Path) {
-        let Some(Renaming::Asked(from)) = self.renaming.take() else {
+        let Some(Renaming::Asked(from)) = self.lsp.renaming.take() else {
             return;
         };
         let to = match answer.is_absolute() {
@@ -173,7 +173,7 @@ impl App {
             "Asking what renaming {} changes\u{2026}",
             relative(&from, &self.working_directory)
         ));
-        self.renaming = Some(Renaming::Waiting(Waiting {
+        self.lsp.renaming = Some(Renaming::Waiting(Waiting {
             from,
             to,
             waiting,
@@ -265,7 +265,7 @@ impl App {
 
     /// Takes one server's answer about the rename that is waiting.
     pub(in crate::app) fn on_will_rename(&mut self, language: LanguageId, reply: Reply) {
-        let Some(Renaming::Waiting(waiting)) = self.renaming.as_mut() else {
+        let Some(Renaming::Waiting(waiting)) = self.lsp.renaming.as_mut() else {
             return;
         };
         waiting.waiting.retain(|waited| *waited != language);
@@ -313,12 +313,12 @@ impl App {
     /// else.
     #[must_use]
     pub fn renaming_has_a_clock_for_test(&self) -> bool {
-        matches!(&self.renaming, Some(Renaming::Waiting(waiting)) if waiting.pause.is_some())
+        matches!(&self.lsp.renaming, Some(Renaming::Waiting(waiting)) if waiting.pause.is_some())
     }
 
     /// Does what the answers said, and then the rename itself.
     fn finish_the_rename(&mut self, instead: Option<&'static str>) {
-        let Some(Renaming::Waiting(waiting)) = self.renaming.take() else {
+        let Some(Renaming::Waiting(waiting)) = self.lsp.renaming.take() else {
             return;
         };
         let aside = match instead {

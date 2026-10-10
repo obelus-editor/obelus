@@ -200,7 +200,7 @@ impl App {
             "position": at,
             "context": obelus_lsp::signature::context(
                 asked,
-                self.signature.as_ref().map(obelus_component::signature::Signature::answer),
+                self.lsp.signature.as_ref().map(obelus_component::signature::Signature::answer),
             ),
         });
         if let Ok(request) = client.request("textDocument/signatureHelp", &params) {
@@ -237,7 +237,7 @@ impl App {
             .current_buffer()
             .map_or(CharColumn::new(0), |buffer| buffer.cursor().column);
         let opened = self.call_around_the_cursor();
-        self.signature = obelus_lsp::signature::in_reply(&reply.result).map(|answer| {
+        self.lsp.signature = obelus_lsp::signature::in_reply(&reply.result).map(|answer| {
             obelus_component::signature::Signature::new(answer, id, line, column, opened)
         });
     }
@@ -269,10 +269,11 @@ impl App {
         // A list or a dialog is what the screen is showing, and the panel
         // belongs to the file underneath it.
         if self.layers().any() {
-            self.signature = None;
+            self.lsp.signature = None;
             return;
         }
         let Some((buffer, line, column)) = self
+            .lsp
             .signature
             .as_ref()
             .map(obelus_component::signature::Signature::at)
@@ -280,11 +281,12 @@ impl App {
             return;
         };
         let opened = self
+            .lsp
             .signature
             .as_ref()
             .and_then(obelus_component::signature::Signature::opened);
         let Some(cursor) = self.current_buffer().map(Buffer::cursor) else {
-            self.signature = None;
+            self.lsp.signature = None;
             return;
         };
         // Which call they are in, where that can be asked, and which line
@@ -299,8 +301,8 @@ impl App {
             None => cursor.line != line,
         };
         if self.current != Some(buffer) || left {
-            self.signature = None;
-            self.signature_pause = None;
+            self.lsp.signature = None;
+            self.lsp.signature_pause = None;
             return;
         }
 
@@ -316,13 +318,14 @@ impl App {
         // already waiting for, which is what makes this measure stopping
         // rather than fire every three hundred milliseconds of it.
         if cursor.column == column {
-            self.signature_pause = None;
+            self.lsp.signature_pause = None;
         } else if self
+            .lsp
             .signature_pause
             .as_ref()
             .is_none_or(|(_, waiting)| *waiting != cursor.column)
         {
-            self.signature_pause = self
+            self.lsp.signature_pause = self
                 .come_back_in(Self::SETTLES_AFTER, crate::event::Event::SignatureSettled)
                 .map(|pause| (pause, cursor.column));
         }
@@ -331,8 +334,8 @@ impl App {
     /// Asks about the call again, the caret having stopped somewhere else
     /// in it.
     pub(in crate::app) fn ask_signature_again(&mut self) {
-        self.signature_pause = None;
-        if self.signature.is_some() {
+        self.lsp.signature_pause = None;
+        if self.lsp.signature.is_some() {
             self.ask_signature(obelus_lsp::signature::Asked::Changed);
         }
     }
@@ -353,7 +356,7 @@ impl App {
         };
         match (modifiers, key.code) {
             (KeyModifiers::NONE, KeyCode::Esc) => {
-                self.signature = None;
+                self.lsp.signature = None;
                 true
             }
             _ => false,
@@ -456,7 +459,7 @@ impl App {
     /// Whether a snippet is still being filled in.
     #[must_use]
     pub const fn filling_for_test(&self) -> bool {
-        self.filling.is_some()
+        self.lsp.filling.is_some()
     }
 
     /// What has been typed since a word started, if the reader is still in
@@ -511,7 +514,7 @@ impl App {
                 client.encoding().clone()
             });
         let offer = complete::offer_in(&reply.result, buffer.text(), &encoding);
-        self.completion = Completion::new(
+        self.lsp.completion = Completion::new(
             id,
             from,
             language.map(obelus_syntax::LanguageId::name),
@@ -536,7 +539,7 @@ impl App {
             return;
         };
         let text = obelus_text::Text::from_string(&text);
-        if let Some(completion) = self.completion.as_mut()
+        if let Some(completion) = self.lsp.completion.as_mut()
             && let Some(candidate) = completion.candidate_mut(index)
         {
             complete::resolved_into(candidate, &reply.result, &text, &encoding);
@@ -550,18 +553,18 @@ impl App {
     /// file re-read under it -- so the panel is checked against the
     /// document rather than told by each of them.
     pub(in crate::app) fn settle_completion(&mut self) {
-        let Some(completion) = self.completion.as_ref() else {
+        let Some(completion) = self.lsp.completion.as_ref() else {
             return;
         };
         // A list, a dialog or the conversation opened over the file takes
         // every key: a panel under one of those is a panel nothing can
         // reach, drawn over something the reader is using.
         if self.layers().any() {
-            self.completion = None;
+            self.lsp.completion = None;
             return;
         }
         let Some(query) = self.typed_since(completion.buffer(), completion.from()) else {
-            self.completion = None;
+            self.lsp.completion = None;
             return;
         };
 
@@ -569,10 +572,10 @@ impl App {
         // sent was the best thousand for the query it was asked about, and
         // this is a different query.
         let asking = completion.incomplete() && completion.query() != query;
-        if let Some(completion) = self.completion.as_mut()
+        if let Some(completion) = self.lsp.completion.as_mut()
             && !completion.narrow(&query)
         {
-            self.completion = None;
+            self.lsp.completion = None;
         }
         if asking {
             self.offer_completion();
@@ -582,7 +585,7 @@ impl App {
 
     /// Asks for the documentation of the candidate the reader is looking at.
     fn resolve_chosen(&mut self) {
-        let Some(completion) = self.completion.as_ref() else {
+        let Some(completion) = self.lsp.completion.as_ref() else {
             return;
         };
         let Some(index) = completion.unresolved() else {
@@ -623,7 +626,7 @@ impl App {
         // Counted as resolved now rather than when the answer lands: the
         // question is asked once per candidate, and a server that never
         // answers it would otherwise be asked again on every frame.
-        if let Some(completion) = self.completion.as_mut()
+        if let Some(completion) = self.lsp.completion.as_mut()
             && let Some(candidate) = completion.candidate_mut(index)
         {
             candidate.resolved = true;
@@ -632,14 +635,14 @@ impl App {
 
     /// The panel's six keys, while it is open.
     pub(in crate::app) fn completion_key(&mut self, key: &KeyEvent) -> bool {
-        let Some(completion) = self.completion.as_mut() else {
+        let Some(completion) = self.lsp.completion.as_mut() else {
             return false;
         };
         match completion.handle_key(key) {
             CompletionOutcome::Ignored => false,
             CompletionOutcome::Consumed => true,
             CompletionOutcome::Cancelled => {
-                self.completion = None;
+                self.lsp.completion = None;
                 true
             }
             CompletionOutcome::Accepted => {
@@ -651,7 +654,7 @@ impl App {
 
     /// Puts the chosen candidate in.
     fn accept_completion(&mut self) {
-        let Some(completion) = self.completion.take() else {
+        let Some(completion) = self.lsp.completion.take() else {
             return;
         };
         let Some(candidate) = completion.chosen().cloned() else {
@@ -691,7 +694,7 @@ impl App {
 
         // Where the reader is left: filling in the first hole, or after
         // what went in.
-        self.filling = snippet::Filling::new(at, &filled.stops);
+        self.lsp.filling = snippet::Filling::new(at, &filled.stops);
         if !self.step_snippet(true)
             && let Some(buffer) = self.current_buffer_mut()
         {
@@ -708,7 +711,7 @@ impl App {
         // start of one, and a reader who chose it means to go on. Not while
         // a snippet is being filled in -- there the cursor is in a hole, and
         // what ends the text is not where the reader is.
-        if self.filling.is_none()
+        if self.lsp.filling.is_none()
             && let Some(last) = filled.text.chars().next_back()
             && self.triggers_completion(last)
         {
@@ -806,7 +809,7 @@ impl App {
         &mut self,
         edit: obelus_text::coordinates::Replacement,
     ) {
-        if let Some(filling) = self.filling.as_mut() {
+        if let Some(filling) = self.lsp.filling.as_mut() {
             filling.keep_across(edit);
         }
     }
@@ -817,7 +820,7 @@ impl App {
     /// candidate is what put the snippet there, and a reader who has
     /// another panel up is choosing again rather than moving on.
     pub(in crate::app) fn snippet_key(&mut self, key: &KeyEvent) -> bool {
-        if self.filling.is_none() || self.completion.is_some() {
+        if self.lsp.filling.is_none() || self.lsp.completion.is_some() {
             return false;
         }
         let Some(modifiers) = obelus_keymap::modifiers_of(key) else {
@@ -831,7 +834,7 @@ impl App {
             // Out of the snippet, leaving the text where it is. The next
             // escape is the ordinary one, which clears a selection.
             (KeyModifiers::NONE, KeyCode::Esc) => {
-                self.filling = None;
+                self.lsp.filling = None;
                 true
             }
             _ => false,
@@ -844,7 +847,7 @@ impl App {
     /// the reader has filled the thing in, and a key that stayed captured
     /// for ever would be a key that never indents again.
     fn step_snippet(&mut self, forward: bool) -> bool {
-        let Some(filling) = self.filling.as_mut() else {
+        let Some(filling) = self.lsp.filling.as_mut() else {
             return false;
         };
         let stop = match forward {
@@ -854,7 +857,7 @@ impl App {
         let finished = filling.finished();
         let Some((from, to)) = stop else {
             if finished {
-                self.filling = None;
+                self.lsp.filling = None;
             }
             return false;
         };
@@ -902,7 +905,7 @@ impl App {
                 // Nothing left that matches, or nothing was open: either
                 // way the server is the only one who can say what a longer
                 // word could be.
-                if self.completion.is_none() {
+                if self.lsp.completion.is_none() {
                     self.offer_completion();
                 }
             }
@@ -926,14 +929,14 @@ impl App {
             {
                 // Whatever was showing was about the word before the
                 // punctuation, which has just ended.
-                self.completion = None;
+                self.lsp.completion = None;
                 self.offer_completion();
             }
             // Backspace inside the word widens what is showing, and back
             // past the word's start closes it. Both are the settling.
             keys::Typing::Backward => self.settle_completion(),
             // A newline, a bracket, a delete: the reader has moved on.
-            _ => self.completion = None,
+            _ => self.lsp.completion = None,
         }
 
         // And the same keystroke asked about the call it is in, which is a
@@ -949,18 +952,18 @@ impl App {
             // is asked again -- and an answer about nothing leaves it gone,
             // which is the server saying the reader is in no call at all.
             keys::Typing::Character(character)
-                if self.signature.is_some() && self.retriggers_signature(character) =>
+                if self.lsp.signature.is_some() && self.retriggers_signature(character) =>
             {
                 // Asked before the panel goes, in that order: the question
                 // hands back what was showing, and a panel cleared first is
                 // a question that says nothing was.
                 self.ask_signature(obelus_lsp::signature::Asked::Typed(character));
-                self.signature = None;
+                self.lsp.signature = None;
             }
             // A call closing where the server did not name `)` as one of
             // those, or the line ending: either way what is showing is
             // about somewhere the reader has left.
-            keys::Typing::Character(')') => self.signature = None,
+            keys::Typing::Character(')') => self.lsp.signature = None,
             _ => {}
         }
     }

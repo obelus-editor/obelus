@@ -550,7 +550,7 @@ impl App {
         }
         // What could be typed next, which is a list beside the cursor: a
         // notch walks it a row, the way a notch walks any list in Obelus.
-        if let Some(completion) = self.completion.as_mut() {
+        if let Some(completion) = self.lsp.completion.as_mut() {
             completion.scroll(rows.signum());
             return;
         }
@@ -696,17 +696,17 @@ impl App {
                 }
             }
             Whose::Completion => {
-                if let Some(completion) = self.completion.as_mut() {
+                if let Some(completion) = self.lsp.completion.as_mut() {
                     completion.drag_to(top);
                 }
             }
             Whose::Documentation => {
-                if let Some(completion) = self.completion.as_mut() {
+                if let Some(completion) = self.lsp.completion.as_mut() {
                     completion.drag_documentation_to(top);
                 }
             }
             Whose::Hover => {
-                if let Some(hover) = self.hover.as_mut() {
+                if let Some(hover) = self.lsp.hover.as_mut() {
                     hover.drag_to(top);
                 }
             }

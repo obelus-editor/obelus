@@ -133,7 +133,7 @@ impl App {
         let Some(hovered) = hover::in_reply(&reply.result, buffer.text(), &encoding) else {
             return;
         };
-        self.hover = Some(Hover::new(hovered, at, pointed));
+        self.lsp.hover = Some(Hover::new(hovered, at, pointed));
     }
 
     /// Whether the pointer is inside the answer's own box.
@@ -142,7 +142,8 @@ impl App {
     /// mouse -- to read the rest of it, to scroll it -- would dismiss it
     /// on the way: every cell crossed is a pointer that has left the word.
     pub(in crate::app) fn pointer_in_hover(&self) -> bool {
-        self.resting
+        self.lsp
+            .resting
             .is_some_and(|resting| self.inside_hover(resting.x, resting.y))
     }
 
@@ -158,7 +159,7 @@ impl App {
     /// what the reader is looking at, which is the rule the list of
     /// candidates follows too.
     pub(in crate::app) fn scroll_hover(&mut self, rows: isize) {
-        if let Some(hover) = self.hover.as_mut() {
+        if let Some(hover) = self.lsp.hover.as_mut() {
             hover.scroll(rows);
         }
     }
@@ -176,6 +177,7 @@ impl App {
             true => {
                 self.pointer_in_hover()
                     || self
+                        .lsp
                         .resting
                         .and_then(|resting| self.place_under(resting.x, resting.y))
                         .is_some_and(|under| under == at)
@@ -202,25 +204,25 @@ impl App {
         // A list or a dialog is what the screen is showing; the other two
         // panels want the same cells and are nearer questions.
         if self.layers().any() {
-            self.hover = None;
-            self.resting = None;
+            self.lsp.hover = None;
+            self.lsp.resting = None;
             return;
         }
-        if let Some(hover) = self.hover.as_ref()
+        if let Some(hover) = self.lsp.hover.as_ref()
             && !self.still_at(hover.at(), hover.pointed())
         {
-            self.hover = None;
+            self.lsp.hover = None;
         }
 
         // The pointer, having been still for long enough to be asking.
         if let Some(dwell) = self.dwell()
-            && let Some(resting) = self.resting
+            && let Some(resting) = self.lsp.resting
             && !resting.asked
             && resting.since.elapsed() >= dwell
-            && self.hover.is_none()
+            && self.lsp.hover.is_none()
             && let Some(at) = self.place_under(resting.x, resting.y)
         {
-            self.resting = Some(Resting {
+            self.lsp.resting = Some(Resting {
                 asked: true,
                 ..resting
             });
@@ -260,6 +262,7 @@ impl App {
     /// Notes where the pointer is, for the rest that asks a question.
     pub(in crate::app) fn pointer_rested(&mut self, x: u16, y: u16) {
         let moved = self
+            .lsp
             .resting
             .is_none_or(|resting| (resting.x, resting.y) != (x, y));
         if !moved {
@@ -270,7 +273,7 @@ impl App {
         // now is, not where it was -- the box it was in a moment ago is
         // the box it may have just left.
         let reading = self.inside_hover(x, y);
-        self.resting = Some(Resting {
+        self.lsp.resting = Some(Resting {
             x,
             y,
             since: std::time::Instant::now(),
@@ -282,14 +285,14 @@ impl App {
         // the pointer asks nothing. It used to be a frame that noticed, and
         // frames come from the animation -- so over a network the pointer
         // could rest for ever and never ask.
-        self.hover_pause = match (reading, self.dwell()) {
+        self.lsp.hover_pause = match (reading, self.dwell()) {
             (false, Some(dwell)) => self.come_back_in(dwell, crate::event::Event::PointerRested),
             _ => None,
         };
         // The answers on screen were about wherever the pointer was.
         if !reading {
-            if self.hover.as_ref().is_some_and(Hover::pointed) {
-                self.hover = None;
+            if self.lsp.hover.as_ref().is_some_and(Hover::pointed) {
+                self.lsp.hover = None;
             }
             self.forget_uses();
         }
@@ -306,25 +309,25 @@ impl App {
             return false;
         }
         let Some(modifiers) = obelus_keymap::modifiers_of(key) else {
-            self.hover = None;
+            self.lsp.hover = None;
             return false;
         };
         let room = obelus_ui::hover::layout(self, self.editor_area)
             .map_or(1, |area| area.height.saturating_sub(2));
         match (modifiers, key.code) {
             (KeyModifiers::NONE, KeyCode::Esc) => {
-                self.hover = None;
+                self.lsp.hover = None;
                 true
             }
             (KeyModifiers::NONE, KeyCode::PageDown | KeyCode::PageUp) => {
                 let down = key.code == KeyCode::PageDown;
-                if let Some(hover) = self.hover.as_mut() {
+                if let Some(hover) = self.lsp.hover.as_mut() {
                     hover.page(down, room);
                 }
                 true
             }
             _ => {
-                self.hover = None;
+                self.lsp.hover = None;
                 false
             }
         }
@@ -336,7 +339,7 @@ impl App {
     /// question produces is a panel, and a panel needs a server to answer.
     #[must_use]
     pub fn rest_has_asked_for_test(&self) -> bool {
-        self.resting.is_some_and(|resting| resting.asked)
+        self.lsp.resting.is_some_and(|resting| resting.asked)
     }
 
     /// Whether the rest the pointer is on is being timed.
@@ -347,7 +350,7 @@ impl App {
     /// knows nothing about it.
     #[must_use]
     pub fn rest_has_a_clock_for_test(&self) -> bool {
-        self.hover_pause.is_some()
+        self.lsp.hover_pause.is_some()
     }
 
     /// Hands the panel an answer to a question the pointer asked, about
@@ -359,6 +362,7 @@ impl App {
     pub fn hover_pointed_for_test(&mut self, answer: serde_json::Value) {
         let Some(id) = self.current else { return };
         let Some(at) = self
+            .lsp
             .resting
             .and_then(|resting| self.place_under(resting.x, resting.y))
         else {
