@@ -4357,6 +4357,7 @@ dependencies = [
  "futures",
  "image",
  "libc",
+ "obelus-claim",
  "obelus-git",
  "obelus-jobs",
  "obelus-logging",
@@ -4392,6 +4393,7 @@ dependencies = [
  "notify",
  "obelus-agent",
  "obelus-buffer",
+ "obelus-claim",
  "obelus-clipboard",
  "obelus-command",
  "obelus-component",
@@ -4443,6 +4445,14 @@ dependencies = [
  "obelus-syntax",
  "obelus-text",
  "tracing",
+]
+
+[[package]]
+name = "obelus-claim"
+version = "0.12.0"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4695,6 +4705,7 @@ dependencies = [
  "futures",
  "keyring-core",
  "lark-websocket-protobuf",
+ "obelus-claim",
  "obelus-config",
  "obelus-runtime",
  "obelus-sink",

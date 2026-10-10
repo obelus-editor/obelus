@@ -710,8 +710,7 @@ crates/
                     · an agent is installed when the install says so, in
                       writing (install); an install is claimed with the same
                       lock a conversation is (lib); a conversation is claimed
-                      by what names it, and one Obelus at a time has it, a
-                      claim is held by a writer and looked at through a read,
+                      by what names it, and one Obelus at a time has it,
                       says which checkout holds it, and a refused claim is
                       drawn, never said (chats); why the
                       two directions are not symmetrical, the one ordering the
@@ -725,6 +724,12 @@ crates/
                       every word says which connection it came from, and Obelus
                       numbers its own turns (acp/mod); almost every picture
                       goes as it came (acp/picture)
+  obelus-claim/     holding something against the other Obelus processes on
+                    the machine -- a lock the kernel gives up with the
+                    process -- and the key a knock at another's door says
+                    · a claim is held by a writer and looked at through a
+                      read, and the other platform's lock is a byte past the
+                      end (lib)
   obelus-mcp/       the tools Obelus offers an agent -- and why none of them
                     asks the reader anything itself
                     · a server is about one tree, and stops listening when

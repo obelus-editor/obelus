@@ -1,0 +1,19 @@
+[package]
+name = "obelus-claim"
+description = "Holding something against the other Obelus processes on the machine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Cargo inherits nothing here on its own; every member says it.
+[lints]
+workspace = true
+
+# A claim is a lock the system holds, so that an Obelus that is killed gives
+# it up without having to be asked. One question, two ways of putting it, and
+# neither platform is made to carry the other's.
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true

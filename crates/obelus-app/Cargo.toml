@@ -12,6 +12,7 @@ workspace = true
 [dependencies]
 obelus-agent.workspace = true
 obelus-buffer.workspace = true
+obelus-claim.workspace = true
 obelus-clipboard.workspace = true
 obelus-command.workspace = true
 obelus-component.workspace = true

@@ -290,7 +290,7 @@ fn hold_the_table(platform: &str) -> Option<std::fs::File> {
         .truncate(false)
         .open(path)
         .ok()?;
-    obelus_agent::chats::wait_to_hold(&file).then_some(file)
+    obelus_claim::wait_to_hold(&file).then_some(file)
 }
 
 /// And written, beside and renamed over, the way every file Obelus keeps

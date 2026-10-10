@@ -84,6 +84,7 @@ pub const OURS: &[&str] = &[
     "obelus_agent",
     "obelus_app",
     "obelus_buffer",
+    "obelus_claim",
     "obelus_clipboard",
     "obelus_command",
     "obelus_component",

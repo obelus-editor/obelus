@@ -996,7 +996,7 @@ fn present(root: &Path, tree: &Path, door: Option<&Door>, reading: &str) -> Opti
     let directory = directory(root)?;
     std::fs::create_dir_all(&directory).ok()?;
     let count = COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let key = door.map_or_else(a_key, |door| door.key.clone());
+    let key = door.map_or_else(obelus_claim::a_key, |door| door.key.clone());
     let word = key.get(..8).unwrap_or_default();
     let name = format!("{}-{word}-{count}", std::process::id());
     let (making, path) = (directory.join(format!(".{name}")), directory.join(&name));
@@ -1009,7 +1009,7 @@ fn present(root: &Path, tree: &Path, door: Option<&Door>, reading: &str) -> Opti
         .truncate(true)
         .open(&making)
         .ok()?;
-    if obelus_agent::chats::held_by_somebody_else(&file) {
+    if obelus_claim::held_by_somebody_else(&file) {
         return None;
     }
     let tree = tree.canonicalize().unwrap_or_else(|_| tree.to_path_buf());
@@ -1056,11 +1056,11 @@ fn windows_on(root: &Path) -> Vec<Seen> {
         .filter(|entry| !entry.file_name().to_string_lossy().starts_with('.'))
         .filter_map(|entry| {
             // For reading, so that looking cannot wake anybody: see
-            // `obelus_agent::chats::held_by_somebody_else`.
+            // `obelus_claim::held_by_somebody_else`.
             let mut file = File::options().read(true).open(entry.path()).ok()?;
             let mut said = String::new();
             file.read_to_string(&mut said).ok()?;
-            if !obelus_agent::chats::held_by_somebody_else(&file) {
+            if !obelus_claim::held_by_somebody_else(&file) {
                 // Left by a window that died, and nobody's: a claim only
                 // ever appears held, so nobody is about to take it either.
                 // Taken away, which wakes the others once and is the last
@@ -1099,7 +1099,7 @@ fn listen(events: std::sync::mpsc::Sender<Event>) -> std::io::Result<Door> {
     let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
     let address = listener.local_addr()?;
     listener.set_nonblocking(true)?;
-    let key = a_key();
+    let key = obelus_claim::a_key();
     let expected = key.clone();
     obelus_runtime::handle().spawn(async move {
         use tokio::io::AsyncBufReadExt as _;
@@ -1157,21 +1157,6 @@ pub fn knock(door: &Door, token: Option<&str>) {
             tracing::warn!(%error, %address, "the other window could not be reached");
         }
     });
-}
-
-/// A key nobody else has, for the door.
-///
-/// From the hasher std seeds with randomness for every map, which is
-/// enough for a word only this reader's files say.
-fn a_key() -> String {
-    use std::hash::{BuildHasher as _, Hasher as _};
-
-    let half = || {
-        let mut hasher = std::hash::RandomState::new().build_hasher();
-        hasher.write_u32(std::process::id());
-        hasher.finish()
-    };
-    format!("{:016x}{:016x}", half(), half())
 }
 
 #[cfg(test)]

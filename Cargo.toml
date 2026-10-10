@@ -38,6 +38,7 @@ private_interfaces = "deny"
 obelus-agent = { path = "crates/obelus-agent" }
 obelus-app = { path = "crates/obelus-app" }
 obelus-buffer = { path = "crates/obelus-buffer" }
+obelus-claim = { path = "crates/obelus-claim" }
 obelus-cli = { path = "crates/obelus-cli" }
 obelus-clipboard = { path = "crates/obelus-clipboard" }
 obelus-command = { path = "crates/obelus-command" }

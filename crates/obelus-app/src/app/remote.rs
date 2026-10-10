@@ -1072,7 +1072,7 @@ impl App {
             }
             return;
         };
-        if !obelus_agent::chats::held_by_somebody_else(&lock) {
+        if !obelus_claim::held_by_somebody_else(&lock) {
             self.take_the_remote(lock);
             return;
         }
@@ -1110,7 +1110,7 @@ impl App {
             obelus_runtime::handle().spawn_blocking(move || {
                 // Said either way: a thread that ended in silence would be
                 // waited on for ever, by every asking after it.
-                let _ = match obelus_agent::chats::wait_to_hold(&lock) {
+                let _ = match obelus_claim::wait_to_hold(&lock) {
                     true => events.send(Event::Held(number, lock)),
                     false => events.send(Event::NotHeld(number)),
                 };
@@ -1279,7 +1279,7 @@ impl App {
         let Some(lock) = the_lock() else {
             return;
         };
-        if !obelus_agent::chats::held_by_somebody_else(&lock) {
+        if !obelus_claim::held_by_somebody_else(&lock) {
             self.take_the_remote(lock);
             return;
         }
@@ -1298,7 +1298,7 @@ impl App {
         self.remote.waiters += 1;
         self.remote.succeeding = Some(number);
         obelus_runtime::handle().spawn_blocking(move || {
-            let _ = match obelus_agent::chats::wait_to_hold(&lock) {
+            let _ = match obelus_claim::wait_to_hold(&lock) {
                 true => events.send(Event::Held(number, lock)),
                 false => events.send(Event::NotHeld(number)),
             };
