@@ -241,7 +241,7 @@ impl App {
     /// not about the agent -- it is this window saying the note's
     /// conversation is its own, and it has to be said before another window
     /// says it.
-    pub(super) fn talk_about(&mut self, note: &obelus_git::todo::NoteId) {
+    pub(super) fn talk_about(&mut self, note: &obelus_todo::NoteId) {
         self.make_room(Room::Region);
         let wanted = Topic::Note(note.clone());
         let at = self.documents.iter().position(|document| {
@@ -636,7 +636,7 @@ impl App {
     /// lock and taking a letter all the same is the same shape as the card
     /// whose `submit` row stopped saying the keys were on it.
     #[must_use]
-    pub(super) fn the_conversation_is_elsewhere(&self, note: &obelus_git::todo::NoteId) -> bool {
+    pub(super) fn the_conversation_is_elsewhere(&self, note: &obelus_todo::NoteId) -> bool {
         // This Obelus's own claim is a lock like anybody's, so the
         // conversations it is holding are what tell the two apart.
         let mine = self
@@ -673,7 +673,7 @@ impl App {
     /// this same checkout, or one whose claim has not said yet.
     pub(super) fn which_notes_are_elsewhere(
         &self,
-    ) -> std::collections::HashMap<obelus_git::todo::NoteId, obelus_component::todo::Holder> {
+    ) -> std::collections::HashMap<obelus_todo::NoteId, obelus_component::todo::Holder> {
         use obelus_component::todo::Holder;
 
         let Some(notes) = self.notes() else {
@@ -829,10 +829,9 @@ impl App {
         // against a list Obelus does not have: what is remembered here is
         // keyed to notes, and an empty list of names would forget every
         // conversation this project has.
-        let notes: Option<Vec<obelus_git::todo::NoteId>> =
-            obelus_git::todo::read(&self.working_directory)
-                .notes()
-                .map(|todo| todo.notes.into_iter().map(|note| note.id).collect());
+        let notes: Option<Vec<obelus_todo::NoteId>> = obelus_todo::read(&self.working_directory)
+            .notes()
+            .map(|todo| todo.notes.into_iter().map(|note| note.id).collect());
         // Kept, rather than read back: what `change` hands over is the
         // table it has just written, and reading the file again for it
         // would be paying the dear half of this twice.
@@ -951,7 +950,7 @@ impl App {
     /// twenty -- and a conversation builds its view twice a frame, for the
     /// editor and for the status row, so that was the bill twice on every
     /// keystroke of every conversation about a note.
-    pub(super) fn the_note_this_is_about(&self) -> Option<&obelus_git::todo::Note> {
+    pub(super) fn the_note_this_is_about(&self) -> Option<&obelus_todo::Note> {
         let Topic::Note(id) = &self.conversation()?.topic else {
             return None;
         };
@@ -969,7 +968,7 @@ impl App {
     /// the notes that is kept, because this is asked on every frame.
     #[must_use]
     pub fn what_this_conversation_is_called(&self) -> Option<String> {
-        let none = obelus_git::todo::Todo::default();
+        let none = obelus_todo::Todo::default();
         let notes = self.notes_kept.as_ref().unwrap_or(&none);
         self.conversation_name(self.conversation()?, notes)
     }
@@ -1044,7 +1043,7 @@ impl App {
     /// is the reader's, edits and all, and is ahead of the file rather than
     /// behind it.
     pub(super) fn reread_the_notes_kept(&mut self) {
-        self.notes_kept = obelus_git::todo::read(&self.working_directory).notes();
+        self.notes_kept = obelus_todo::read(&self.working_directory).notes();
     }
 
     /// Puts pasted text into the box a message is written in.
@@ -1972,7 +1971,7 @@ impl App {
         // goes: the reader may have been somewhere else, and "the
         // conversation" is then one of several.
         let named = self.document(id).and_then(Document::chat).and_then(|talk| {
-            let notes = obelus_git::todo::read(&self.working_directory)
+            let notes = obelus_todo::read(&self.working_directory)
                 .notes()
                 .unwrap_or_default();
             self.conversation_name(talk, &notes)

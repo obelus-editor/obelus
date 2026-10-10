@@ -47,8 +47,8 @@
 use std::path::{Path, PathBuf};
 
 use obelus_agent::chats::ChatId;
-use obelus_git::todo::NoteId;
 use obelus_text::coordinates::{CharColumn, LineNumber};
+use obelus_todo::NoteId;
 
 use super::{App, DocumentId, document::Document};
 use crate::conversation::Topic;

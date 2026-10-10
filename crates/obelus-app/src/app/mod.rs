@@ -656,7 +656,7 @@ pub struct App {
     /// box of the conversation about it, which offers to ask about the
     /// note again once it has been rewritten, and the conversation's
     /// header, which goes by the note until the agent has named it.
-    notes_kept: Option<obelus_git::todo::Todo>,
+    notes_kept: Option<obelus_todo::Todo>,
     /// Which conversations somebody has open, as Obelus last looked.
     ///
     /// Asked when there is a reason and kept until there is another, like

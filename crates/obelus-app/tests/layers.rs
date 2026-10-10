@@ -649,7 +649,7 @@ fn on_the_notes(name: &str) -> (support::Scratch, App) {
     let scratch = support::Scratch::new(&format!("layers-notes-{name}"));
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456A\"\nsaid = \"the first\"\ndone = false\n\n\
          [[todo]]\nid = \"0123456B\"\nsaid = \"the second\"\ndone = false\n\n\
          [[todo]]\nid = \"0123456C\"\nsaid = \"the third\"\ndone = false\n",
@@ -707,7 +707,7 @@ fn nothing_pressed_over_a_layer_reaches_the_notes() {
     obelus_clipboard::use_provider_for_test(obelus_clipboard::Provider::Kept);
     for layer in obelus_component::layers::STACK {
         let (scratch, mut app) = on_the_notes(&format!("{layer:?}"));
-        let file = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
+        let file = obelus_todo::path(scratch.path()).expect("a tree that is there");
         let standing = |app: &App| {
             let notes = app.notes().expect("the notes are what is being read");
             (

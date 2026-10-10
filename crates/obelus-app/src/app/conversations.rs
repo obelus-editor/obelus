@@ -521,7 +521,7 @@ impl App {
         // which is when something told it to look. See
         // `App::reread_who_holds_what`.
         let held = self.held_kept.clone();
-        let todo = obelus_git::todo::read(&self.working_directory)
+        let todo = obelus_todo::read(&self.working_directory)
             .notes()
             .unwrap_or_default();
         let notes = &todo.notes;
@@ -820,12 +820,7 @@ impl App {
         // And the notes themselves: the page reads them, and so does the
         // box of a conversation about one -- which is usually open with
         // that page shut.
-        self.settle_a_watch(
-            NOTES,
-            notes || about_a_note,
-            How::File,
-            obelus_git::todo::path,
-        );
+        self.settle_a_watch(NOTES, notes || about_a_note, How::File, obelus_todo::path);
         // And the other windows, which the list of worktrees marks. A
         // directory, for the reason the claims are one: a window is a file
         // appearing and going again.

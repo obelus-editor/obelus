@@ -194,7 +194,7 @@ fn the_notes_come_back_on_the_note_the_reader_was_on() {
     let root = scratch.path();
     support::make_room_for_notes(root);
     std::fs::write(
-        obelus_git::todo::path(root).expect("a tree that is there"),
+        obelus_todo::path(root).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456R\"\nsaid = \"the first\"\ndone = false\ndepth = 0\n\n\
          [[todo]]\nid = \"0123456S\"\nsaid = \"the second\"\ndone = false\ndepth = 0\n\n\
          [[todo]]\nid = \"0123456T\"\nsaid = \"the third\"\ndone = false\ndepth = 0\n",
@@ -213,7 +213,7 @@ fn the_notes_come_back_on_the_note_the_reader_was_on() {
     let mut second = start_again(&[root.to_path_buf()]);
     frame(&mut second);
     second.handle(obelus_app::event::Event::Watched(obelus_watch::Changed {
-        path: obelus_git::todo::path(root).expect("a tree that is there"),
+        path: obelus_todo::path(root).expect("a tree that is there"),
     }));
     frame(&mut second);
     let on = documents(&second)
@@ -394,10 +394,10 @@ fn the_last_window_to_change_wins() {
 fn a_conversation_comes_back_unless_another_window_has_it() {
     let scratch = tree("reopening-conversation", true);
     let root = scratch.path();
-    let note = obelus_git::todo::NoteId::read("0123456R").expect("a name");
+    let note = obelus_todo::NoteId::read("0123456R").expect("a name");
     support::make_room_for_notes(root);
     std::fs::write(
-        obelus_git::todo::path(root).expect("a tree that is there"),
+        obelus_todo::path(root).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456R\"\nsaid = \"reopen what was open\"\n\
          done = false\ndepth = 0\n",
     )
@@ -489,10 +489,10 @@ fn a_conversation_comes_back_unless_another_window_has_it() {
 fn a_conversation_that_comes_back_keeps_its_name() {
     let scratch = tree("reopening-conversation-name", true);
     let root = scratch.path();
-    let note = obelus_git::todo::NoteId::read("0123456R").expect("a name");
+    let note = obelus_todo::NoteId::read("0123456R").expect("a name");
     support::make_room_for_notes(root);
     std::fs::write(
-        obelus_git::todo::path(root).expect("a tree that is there"),
+        obelus_todo::path(root).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456R\"\nsaid = \"reopen what was open\"\n\
          done = false\ndepth = 0\n",
     )

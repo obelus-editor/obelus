@@ -1,6 +1,6 @@
 [package]
-name = "obelus-git"
-description = "Reading a repository"
+name = "obelus-todo"
+description = "The notes beside a project, and finding their lines again"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,9 +10,9 @@ license.workspace = true
 workspace = true
 
 [dependencies]
-obelus-runtime.workspace = true
-obelus-sink.workspace = true
+obelus-git.workspace = true
+obelus-logging.workspace = true
 obelus-text.workspace = true
-dunce.workspace = true
 gix.workspace = true
-imara-diff.workspace = true
+toml.workspace = true
+tracing.workspace = true

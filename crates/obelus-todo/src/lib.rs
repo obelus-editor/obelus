@@ -40,8 +40,8 @@ use obelus_text::coordinates::LineNumber;
 /// *checkout's*, which is the half of it that was actually wrong.
 ///
 /// `None` for a tree that has gone, which names no project -- see
-/// [`crate::project`]. Beside a checkout as well: a file there is a file in
-/// a directory that is not there, and making it would make the checkout
+/// [`obelus_git::project`]. Beside a checkout as well: a file there is a file
+/// in a directory that is not there, and making it would make the checkout
 /// again around it.
 #[must_use]
 pub fn path(root: &Path) -> Option<PathBuf> {
@@ -55,7 +55,7 @@ pub fn path(root: &Path) -> Option<PathBuf> {
     Some(
         state
             .join("todo")
-            .join(format!("{}.toml", crate::project(root)?)),
+            .join(format!("{}.toml", obelus_git::project(root)?)),
     )
 }
 
@@ -64,7 +64,7 @@ pub fn path(root: &Path) -> Option<PathBuf> {
 /// A checkout's rather than a project's, because a checkout is the only
 /// thing there is to name them after here.
 fn beside_a_checkout(root: &Path) -> Option<PathBuf> {
-    (!crate::is_gone(root)).then(|| root.join(".obelus").join("todo.toml"))
+    (!obelus_git::is_gone(root)).then(|| root.join(".obelus").join("todo.toml"))
 }
 
 /// [`GONE`], as the error a write fails with.
@@ -1064,7 +1064,7 @@ pub fn where_now(root: &Path, at: &At) -> Option<LineNumber> {
         return Some(at.line);
     };
     let full = root.join(&at.path);
-    let Some(then) = crate::history::text_at(root, commit, &full) else {
+    let Some(then) = obelus_git::history::text_at(root, commit, &full) else {
         // The commit does not have the file -- a note older than a rename,
         // or a repository that has been rewritten. The number is all there
         // is left of where it pointed.
@@ -1073,13 +1073,13 @@ pub fn where_now(root: &Path, at: &At) -> Option<LineNumber> {
     let Ok(now) = std::fs::read_to_string(&full) else {
         return Some(at.line);
     };
-    crate::Changes::between(&then, &now).working_line(at.line)
+    obelus_git::Changes::between(&then, &now).working_line(at.line)
 }
 
 /// The commit a note made now should carry, where the project has one.
 #[must_use]
 pub fn at_commit(root: &Path) -> Option<gix::ObjectId> {
-    crate::history::head_of(root)
+    obelus_git::history::head_of(root)
 }
 
 #[cfg(test)]

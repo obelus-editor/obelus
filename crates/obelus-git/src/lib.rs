@@ -67,8 +67,6 @@
 //! carries the line ending git would rewrite the reader's lines to, and the
 //! margin, the preview and the count of a list all compare through it.
 
-pub mod todo;
-
 pub mod blame;
 pub mod change;
 pub mod history;

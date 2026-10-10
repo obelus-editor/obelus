@@ -145,7 +145,7 @@ pub fn caret(area: Rect, notes: &Notes) -> Option<ratatui::layout::Position> {
     let step = notes
         .rows()
         .get(at)
-        .map_or(0, |row| row.depth * obelus_git::todo::INDENT);
+        .map_or(0, |row| row.depth * obelus_todo::INDENT);
     (y < list.bottom()).then(|| ratatui::layout::Position {
         x: (list.x + MARGIN + step + cell.get()).min(list.right().saturating_sub(1)),
         y,
@@ -218,7 +218,7 @@ pub fn row_at(area: Rect, notes: &Notes, x: u16, y: u16) -> Option<(usize, Colum
     }
     let at = notes.window().top() + usize::from(y - list.y);
     let row = notes.rows().get(at)?;
-    let step = row.depth * obelus_git::todo::INDENT;
+    let step = row.depth * obelus_todo::INDENT;
     let column = match row.head {
         // A row that is not the head of its note has neither, whatever the
         // press landed on.
@@ -638,7 +638,7 @@ impl TodoUi<'_> {
                 );
             }
         }
-        let step = row.depth * obelus_git::todo::INDENT;
+        let step = row.depth * obelus_todo::INDENT;
         if row.head {
             // What is under it, where anything is: the mark every other
             // folding thing in Obelus wears, because it is the same act.

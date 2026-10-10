@@ -193,7 +193,7 @@ pub(super) struct Worktrees {
     going: Option<PathBuf>,
     /// The notes, as read to name the conversation in front, and which
     /// document they were read for.
-    notes: Option<obelus_git::todo::Todo>,
+    notes: Option<obelus_todo::Todo>,
     named_for: Option<DocumentId>,
     /// Whether there is another worktree, where a test says so.
     given: Option<bool>,
@@ -336,12 +336,12 @@ impl App {
         });
         if needs_the_notes && self.worktrees.notes.is_none() {
             self.worktrees.notes = Some(
-                obelus_git::todo::read(&self.working_directory)
+                obelus_todo::read(&self.working_directory)
                     .notes()
                     .unwrap_or_default(),
             );
         }
-        let none = obelus_git::todo::Todo::default();
+        let none = obelus_todo::Todo::default();
         let notes = self.worktrees.notes.as_ref().unwrap_or(&none);
         let said = match self.current.and_then(|id| self.document(id)) {
             Some(Document::File(buffer)) => relative(buffer.path(), &self.working_directory),

@@ -62,6 +62,7 @@ obelus-sink = { path = "crates/obelus-sink" }
 obelus-syntax = { path = "crates/obelus-syntax" }
 obelus-terminal = { path = "crates/obelus-terminal" }
 obelus-text = { path = "crates/obelus-text" }
+obelus-todo = { path = "crates/obelus-todo" }
 obelus-ui = { path = "crates/obelus-ui" }
 obelus-theme = { path = "crates/obelus-theme" }
 obelus-watch = { path = "crates/obelus-watch" }

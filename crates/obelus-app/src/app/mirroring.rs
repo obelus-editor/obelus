@@ -420,7 +420,7 @@ impl App {
         if wanting.is_empty() {
             return;
         }
-        let notes = obelus_git::todo::read(&self.working_directory)
+        let notes = obelus_todo::read(&self.working_directory)
             .notes()
             .unwrap_or_default();
         for chat in wanting {
@@ -456,7 +456,7 @@ impl App {
     fn head_of(
         &self,
         talk: &Conversation,
-        notes: &obelus_git::todo::Todo,
+        notes: &obelus_todo::Todo,
         state: Option<Turning>,
     ) -> Head {
         let title = self
@@ -498,7 +498,7 @@ impl App {
         let Some(talk) = self.talk_of(whose) else {
             return;
         };
-        let notes = obelus_git::todo::read(&self.working_directory)
+        let notes = obelus_todo::read(&self.working_directory)
             .notes()
             .unwrap_or_default();
         let kept = self.mirror.heads.get(&chat).and_then(|head| head.state);

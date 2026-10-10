@@ -1654,11 +1654,11 @@ fn a_conversation_taken_up_again_is_not_said_again() {
     let scratch = support::Scratch::new("remote-taken-up");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456T\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n",
     )
     .expect("the notes");
-    let id = obelus_git::todo::NoteId::read("0123456T").expect("a name");
+    let id = obelus_todo::NoteId::read("0123456T").expect("a name");
     let which = obelus_agent::chats::ChatId::Note(id.clone());
     obelus_agent::acp::sessions::change(
         scratch.path(),

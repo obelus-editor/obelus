@@ -50,7 +50,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use obelus_git::todo::NoteId;
+use obelus_todo::NoteId;
 
 /// Which conversation, for the two things Obelus keeps beside one: the
 /// claim here and the name written down in [`crate::acp::sessions`].

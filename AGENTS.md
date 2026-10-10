@@ -692,7 +692,7 @@ crates/
                       running is (client); a server is not the only thing that
                       can make a diagnostic (trouble)
   obelus-git/       gix, reading only: head text, statuses, hunks, blame,
-                    history -- and the notes beside a project (todo)
+                    history
                     · nothing here writes, and what was measured before
                       deciding so; the diff base is the blob a checkout would
                       write, and reading it must not run anything; ask the
@@ -701,6 +701,9 @@ crates/
                       is about a version, and the margin knew which commit
                       (blame); what the remote has not seen is marked, and a
                       list worth searching is worth threading (history)
+  obelus-todo/      the notes beside a project, written where git does not
+                    look, and the line each one was about found again
+                    through git's history
   obelus-agent/     the ACP registry, installing an agent, its marks, and
                     the protocol through its own crate with the thread that
                     joins it to the loop (acp/)

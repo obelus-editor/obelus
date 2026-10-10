@@ -390,7 +390,7 @@ fn interrupting_one_conversation_does_not_swallow_the_others_answer() {
 #[test]
 fn what_is_remembered_is_the_name_and_nothing_that_was_said() {
     use obelus_agent::{acp::sessions, chats::ChatId};
-    use obelus_git::todo::NoteId;
+    use obelus_todo::NoteId;
 
     // The table lives in Obelus's state directory, and a test that wrote to
     // the reader's would be a test that left something on their machine.

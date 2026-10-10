@@ -182,7 +182,7 @@ impl App {
         index: usize,
         talk: &crate::conversation::Conversation,
         talker: Option<&obelus_agent::acp::Talk>,
-        notes: &obelus_git::todo::Todo,
+        notes: &obelus_todo::Todo,
     ) -> PickerItem {
         let about = self.conversation_about(talk, notes);
         let titled = self.conversation_title(talk);
@@ -229,7 +229,7 @@ impl App {
     pub(super) fn conversation_name(
         &self,
         talk: &crate::conversation::Conversation,
-        notes: &obelus_git::todo::Todo,
+        notes: &obelus_todo::Todo,
     ) -> Option<String> {
         self.conversation_title(talk)
             .or_else(|| self.conversation_about(talk, notes))
@@ -269,7 +269,7 @@ impl App {
     fn conversation_about(
         &self,
         talk: &crate::conversation::Conversation,
-        notes: &obelus_git::todo::Todo,
+        notes: &obelus_todo::Todo,
     ) -> Option<String> {
         match &talk.topic {
             crate::conversation::Topic::Note(id) => notes
@@ -901,7 +901,7 @@ impl App {
         let statuses = &self.statuses;
         let talker = self.talker.as_ref();
         // A row's count, so having none is an answer this can live with.
-        let notes = obelus_git::todo::read(&self.working_directory)
+        let notes = obelus_todo::read(&self.working_directory)
             .notes()
             .unwrap_or_default();
         open.map(|(index, document)| match document {

@@ -787,11 +787,11 @@ fn a_conversation_taken_up_again_asks_for_the_sign_in_too() {
     let scratch = support::Scratch::new("terminal-sign-in-again");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456Q\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n",
     )
     .expect("the notes");
-    let id = obelus_git::todo::NoteId::read("0123456Q").expect("a name");
+    let id = obelus_todo::NoteId::read("0123456Q").expect("a name");
     obelus_agent::acp::sessions::change(
         scratch.path(),
         0,
@@ -850,7 +850,7 @@ fn two_waiting(name: &str) -> (App, Receiver<Event>) {
     let scratch = support::Scratch::new(&format!("terminal-sign-in-{name}"));
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456R\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n",
     )
     .expect("the notes");

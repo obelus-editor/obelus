@@ -20,7 +20,7 @@
 //! and Obelus compares rather than checks a flag. Rewording the `.txt`
 //! around it is not the note being rewritten and does not send it again.
 
-use obelus_git::todo::NoteId;
+use obelus_todo::NoteId;
 
 use super::*;
 use crate::conversation::Topic;
@@ -417,7 +417,7 @@ impl App {
         note: &NoteId,
         told: Option<&str>,
     ) -> Option<(String, &'static str, String)> {
-        let about = obelus_git::todo::read(&self.working_directory)
+        let about = obelus_todo::read(&self.working_directory)
             .notes()
             .unwrap_or_default()
             .notes
@@ -445,7 +445,7 @@ impl App {
 /// What is written down as told, and so what the next message is compared
 /// against -- by the opening, and by the box deciding whether to offer
 /// [`LOOK`].
-pub(super) fn what_the_note_says(about: &obelus_git::todo::Note) -> String {
+pub(super) fn what_the_note_says(about: &obelus_todo::Note) -> String {
     match &about.at {
         Some(at) => format!(
             "{}\n{}:{}",
@@ -500,7 +500,7 @@ fn filled(template: &str, name: &NoteId, at: &str, said: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use obelus_git::todo::NoteId;
+    use obelus_todo::NoteId;
 
     /// A note that happens to look like a template is left alone.
     ///

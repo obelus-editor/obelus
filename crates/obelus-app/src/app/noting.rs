@@ -1,6 +1,6 @@
 //! What a project means to come back to.
 //!
-//! The application's half of [`obelus_git::todo`]: which project the notes
+//! The application's half of [`obelus_todo`]: which project the notes
 //! belong to, when they are read and written, and what a key that reaches one
 //! of them does. The notes themselves, and the file, are that module's; how
 //! they are walked and drawn are [`obelus_component::todo`] and
@@ -14,8 +14,8 @@
 use std::path::PathBuf;
 
 use obelus_component::todo::{TodoOutcome, TodoView};
-use obelus_git::todo::{At, Todo};
 use obelus_text::coordinates::LineNumber;
+use obelus_todo::{At, Todo};
 
 use super::*;
 
@@ -85,7 +85,7 @@ impl App {
     /// where it names one, and says where they landed.
     pub(super) fn put_the_notes_up(
         &mut self,
-        about: Option<obelus_git::todo::NoteId>,
+        about: Option<obelus_todo::NoteId>,
     ) -> Option<DocumentId> {
         // Not opened at all where the file will not read: a page that
         // cannot be written is a page that lies, and this one would invite
@@ -185,7 +185,7 @@ impl App {
     /// means the other window took that note away while this page still
     /// showed it, and the honest thing is neither to let the key look
     /// broken nor to put the note back behind the reader's back.
-    pub(super) fn do_to_the_notes(&mut self, changes: Vec<obelus_git::todo::Change>) {
+    pub(super) fn do_to_the_notes(&mut self, changes: Vec<obelus_todo::Change>) {
         if !self.write_them_down(changes) {
             return;
         }
@@ -206,17 +206,17 @@ impl App {
     }
 
     /// Does them, and says whether any was about a note that had gone.
-    fn write_them_down(&mut self, changes: Vec<obelus_git::todo::Change>) -> bool {
+    fn write_them_down(&mut self, changes: Vec<obelus_todo::Change>) -> bool {
         self.notes_pause = None;
         if changes.is_empty() {
             return false;
         }
-        match obelus_git::todo::change(&self.working_directory, |todo| {
+        match obelus_todo::change(&self.working_directory, |todo| {
             changes
                 .iter()
                 .filter(|change| !todo.apply(change))
                 .cloned()
-                .collect::<Vec<obelus_git::todo::Change>>()
+                .collect::<Vec<obelus_todo::Change>>()
         }) {
             Ok((todo, missed)) => {
                 if !missed.is_empty() {
@@ -224,9 +224,9 @@ impl App {
                 }
                 // The names whose words were in that, so the page knows
                 // which of what it is holding is the only copy there is.
-                let unwritten: Vec<obelus_git::todo::NoteId> = missed
+                let unwritten: Vec<obelus_todo::NoteId> = missed
                     .iter()
-                    .filter_map(obelus_git::todo::Change::words)
+                    .filter_map(obelus_todo::Change::words)
                     .cloned()
                     .collect();
                 let where_now = self.where_the_notes_point_again(&todo);
@@ -269,17 +269,15 @@ impl App {
     /// file is there and says something Obelus cannot read, and writing over
     /// it would be trading what they wrote for whatever this session happens
     /// to be holding. The other is a disk, and nothing they type will help.
-    fn the_notes_will_not(&mut self, why: &obelus_git::todo::NotChanged) {
+    fn the_notes_will_not(&mut self, why: &obelus_todo::NotChanged) {
         tracing::warn!(%why, "the notes were not written");
         // Short, because the status row is one row: which file and what went
         // wrong are in the log, where there is room for them.
         self.wrong(match why {
-            obelus_git::todo::NotChanged::Unreadable(_) => {
+            obelus_todo::NotChanged::Unreadable(_) => {
                 "The notes will not read, so none are written".to_string()
             }
-            obelus_git::todo::NotChanged::Unwritable(_) => {
-                "The notes could not be written".to_string()
-            }
+            obelus_todo::NotChanged::Unwritable(_) => "The notes could not be written".to_string(),
         });
     }
 
@@ -291,10 +289,10 @@ impl App {
     /// reads the file again inside the lock, so what comes back is the file
     /// rather than this Obelus's guess at it.
     fn the_notes_now(&mut self) -> Option<Todo> {
-        let todo = match obelus_git::todo::read(&self.working_directory) {
-            obelus_git::todo::Reading::Nothing => return Some(Todo::default()),
-            obelus_git::todo::Reading::Notes(todo) => {
-                if let Some(path) = obelus_git::todo::path(&self.working_directory) {
+        let todo = match obelus_todo::read(&self.working_directory) {
+            obelus_todo::Reading::Nothing => return Some(Todo::default()),
+            obelus_todo::Reading::Notes(todo) => {
+                if let Some(path) = obelus_todo::path(&self.working_directory) {
                     self.nothing_wrong_with(&path);
                 }
                 todo
@@ -303,7 +301,7 @@ impl App {
             // what this file says -- it is what Obelus can make of a file it
             // cannot read -- and a reader who starts writing notes into it
             // has begun replacing their own list one note at a time.
-            obelus_git::todo::Reading::Unreadable(why, at) => {
+            obelus_todo::Reading::Unreadable(why, at) => {
                 tracing::warn!(why, "the notes will not read");
                 self.wrong("The notes will not read".to_string());
                 // And on the file itself. It is a file a reader opens --
@@ -311,7 +309,7 @@ impl App {
                 // hand -- so being told the whole list will not read
                 // without being told which line is a reader reading it
                 // all.
-                if let Some(path) = obelus_git::todo::path(&self.working_directory) {
+                if let Some(path) = obelus_todo::path(&self.working_directory) {
                     self.nothing_wrong_with(&path);
                     self.obelus_says(
                         &path,
@@ -326,7 +324,7 @@ impl App {
         if !todo.minted {
             return Some(todo);
         }
-        match obelus_git::todo::change(&self.working_directory, |_| ()) {
+        match obelus_todo::change(&self.working_directory, |_| ()) {
             Ok((todo, ())) => Some(todo),
             Err(why) => {
                 self.the_notes_will_not(&why);
@@ -342,7 +340,7 @@ impl App {
             .map(|note| {
                 note.at
                     .as_ref()
-                    .and_then(|at| obelus_git::todo::where_now(&self.working_directory, at))
+                    .and_then(|at| obelus_todo::where_now(&self.working_directory, at))
             })
             .collect()
     }
@@ -369,7 +367,7 @@ impl App {
                 None => note
                     .at
                     .as_ref()
-                    .and_then(|at| obelus_git::todo::where_now(&self.working_directory, at)),
+                    .and_then(|at| obelus_todo::where_now(&self.working_directory, at)),
             })
             .collect()
     }
@@ -377,7 +375,7 @@ impl App {
     /// Whether a path that changed is the file the notes are kept in.
     #[must_use]
     pub(super) fn is_the_notes_file(&self, path: &std::path::Path) -> bool {
-        obelus_git::todo::path(&self.working_directory).is_some_and(|notes| path == notes)
+        obelus_todo::path(&self.working_directory).is_some_and(|notes| path == notes)
     }
 
     /// Takes the file again, because somebody else wrote it.
@@ -445,7 +443,7 @@ impl App {
         &mut self,
         todo: Todo,
         where_now: Vec<Option<LineNumber>>,
-        unwritten: &[obelus_git::todo::NoteId],
+        unwritten: &[obelus_todo::NoteId],
     ) {
         if let Some(notes) = self
             .notes_document()
@@ -500,7 +498,7 @@ impl App {
         Some(At {
             path,
             line: buffer.cursor().line,
-            commit: obelus_git::todo::at_commit(&self.working_directory),
+            commit: obelus_todo::at_commit(&self.working_directory),
         })
     }
 
@@ -539,7 +537,7 @@ impl App {
     /// Said in words because the words go back to the agent, which has no
     /// use for a code and every use for "there is no note by that name any
     /// more".
-    pub(super) fn change_the_notes(&mut self, doing: obelus_git::todo::Doing) -> String {
+    pub(super) fn change_the_notes(&mut self, doing: obelus_todo::Doing) -> String {
         // A note another Obelus has the conversation of is not this one's
         // to change, and the tool is told rather than quietly obeyed: the
         // agent says why in the transcript, which is where a reader who
@@ -551,20 +549,20 @@ impl App {
         // all -- the same reason `alt+up` is allowed to carry a locked
         // child past a neighbour.
         let about = match &doing {
-            obelus_git::todo::Doing::Finish(id) => Some(id),
-            obelus_git::todo::Doing::Reword { note, .. } => Some(note),
-            obelus_git::todo::Doing::Add { .. } => None,
+            obelus_todo::Doing::Finish(id) => Some(id),
+            obelus_todo::Doing::Reword { note, .. } => Some(note),
+            obelus_todo::Doing::Add { .. } => None,
         };
         if about.is_some_and(|id| self.the_conversation_is_elsewhere(id)) {
             return "another Obelus has the conversation about that note open, \
                     so it is not this one's to change"
                 .to_string();
         }
-        let done = obelus_git::todo::change(&self.working_directory, |todo| match doing {
-            obelus_git::todo::Doing::Add { notes, under } => {
+        let done = obelus_todo::change(&self.working_directory, |todo| match doing {
+            obelus_todo::Doing::Add { notes, under } => {
                 let written: Vec<(String, u16)> = notes
                     .into_iter()
-                    .map(|(said, depth)| (obelus_git::todo::trimmed(&said), depth))
+                    .map(|(said, depth)| (obelus_todo::trimmed(&said), depth))
                     .filter(|(said, _)| !said.trim().is_empty())
                     .collect();
                 if written.is_empty() {
@@ -597,11 +595,11 @@ impl App {
                     let depth = depth
                         .saturating_add(beneath)
                         .min(above)
-                        .min(obelus_git::todo::DEEPEST);
+                        .min(obelus_todo::DEEPEST);
                     todo.notes.insert(
                         at + offset,
-                        obelus_git::todo::Note {
-                            id: obelus_git::todo::NoteId::mint(),
+                        obelus_todo::Note {
+                            id: obelus_todo::NoteId::mint(),
                             said,
                             done: false,
                             at: None,
@@ -611,18 +609,18 @@ impl App {
                 }
                 format!("written down: {how_many}")
             }
-            obelus_git::todo::Doing::Finish(id) => {
+            obelus_todo::Doing::Finish(id) => {
                 let Some(note) = todo.notes.iter_mut().find(|note| note.id == id) else {
                     return "there is no note by that name any more".to_string();
                 };
                 note.done = true;
                 "ticked off".to_string()
             }
-            obelus_git::todo::Doing::Reword { note: id, said } => {
+            obelus_todo::Doing::Reword { note: id, said } => {
                 let Some(note) = todo.notes.iter_mut().find(|note| note.id == id) else {
                     return "there is no note by that name any more".to_string();
                 };
-                let said = obelus_git::todo::trimmed(&said);
+                let said = obelus_todo::trimmed(&said);
                 // A note that says nothing is one reading the file drops, so
                 // rewording to nothing is taking a note away through another
                 // door -- the one act that is the reader's.
@@ -660,12 +658,12 @@ impl App {
                 // told only that it did not work will try again, and try
                 // again against the same unparseable file.
                 match why {
-                    obelus_git::todo::NotChanged::Unreadable(_) => {
+                    obelus_todo::NotChanged::Unreadable(_) => {
                         "the notes file will not read, so nothing was written down -- \
                          it is the reader's to fix"
                             .to_string()
                     }
-                    obelus_git::todo::NotChanged::Unwritable(_) => {
+                    obelus_todo::NotChanged::Unwritable(_) => {
                         "the notes could not be written".to_string()
                     }
                 }

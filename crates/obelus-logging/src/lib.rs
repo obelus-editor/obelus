@@ -103,6 +103,7 @@ pub const OURS: &[&str] = &[
     "obelus_syntax",
     "obelus_text",
     "obelus_theme",
+    "obelus_todo",
     "obelus_watch",
 ];
 
