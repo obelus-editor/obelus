@@ -13,7 +13,7 @@ use obelus_component::card::{Card, On, UNDER};
 use obelus_theme::Theme;
 use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style};
 
-use super::{Marked, chat, fill, put, rule, write, write_marked};
+use crate::{Marked, chat, fill, put, rule, write, write_marked};
 
 /// The margin every row of the conversation is drawn in.
 const MARGIN: u16 = 1;

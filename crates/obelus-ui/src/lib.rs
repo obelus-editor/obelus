@@ -113,8 +113,10 @@ pub use screen::*;
 pub use tabs::*;
 
 pub mod bars;
-pub mod card;
 pub mod chat;
+/// Where it always was: a card is drawn in a conversation, and is filed
+/// with it.
+pub use chat::card;
 pub mod complete;
 pub mod counts;
 pub mod editor;

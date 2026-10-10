@@ -35,6 +35,8 @@
 //! `esc stops it` rides on the row that says something is going, beside the
 //! thing it would stop.
 
+pub mod card;
+
 use std::path::Path;
 
 use crossterm::event::{KeyCode, KeyModifiers};
