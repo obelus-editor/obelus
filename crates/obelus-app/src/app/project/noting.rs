@@ -141,7 +141,7 @@ impl App {
     /// reader walks out of it is not something a reader should have to have
     /// a local terminal for.
     fn the_notes_will_settle(&mut self) {
-        self.notes_pause =
+        self.notes.notes_pause =
             self.come_back_in(Self::SETTLES_AFTER, crate::event::Event::NotesSettled);
     }
 
@@ -151,7 +151,7 @@ impl App {
     /// moment to check it against. Nothing else reaches here, and one that
     /// arrives with nothing waiting finds nothing to write.
     pub(in crate::app) fn settle_notes(&mut self) {
-        self.notes_pause = None;
+        self.notes.notes_pause = None;
         self.write_the_notes();
     }
 
@@ -207,7 +207,7 @@ impl App {
 
     /// Does them, and says whether any was about a note that had gone.
     fn write_them_down(&mut self, changes: Vec<obelus_todo::Change>) -> bool {
-        self.notes_pause = None;
+        self.notes.notes_pause = None;
         if changes.is_empty() {
             return false;
         }

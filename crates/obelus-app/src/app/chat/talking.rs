@@ -576,12 +576,12 @@ impl App {
     /// to get rid of, in smaller print.
     #[must_use]
     pub fn sessions(&self) -> Option<&obelus_agent::acp::sessions::Remembered> {
-        self.sessions_kept.as_ref()
+        self.kept.sessions_kept.as_ref()
     }
 
     /// Reads that table again, because there is a reason to.
     pub(in crate::app) fn reread_the_sessions(&mut self) {
-        self.sessions_kept = obelus_agent::acp::sessions::read(
+        self.kept.sessions_kept = obelus_agent::acp::sessions::read(
             &self.working_directory,
             self.config().conversation_days,
         )
@@ -860,7 +860,7 @@ impl App {
             what,
         );
         if written.is_some() {
-            self.sessions_kept = written;
+            self.kept.sessions_kept = written;
         }
     }
 
@@ -977,7 +977,8 @@ impl App {
         let Topic::Note(id) = &self.conversation()?.topic else {
             return None;
         };
-        self.notes_kept
+        self.notes
+            .notes_kept
             .as_ref()?
             .notes
             .iter()
@@ -992,7 +993,7 @@ impl App {
     #[must_use]
     pub fn what_this_conversation_is_called(&self) -> Option<String> {
         let none = obelus_todo::Todo::default();
-        let notes = self.notes_kept.as_ref().unwrap_or(&none);
+        let notes = self.notes.notes_kept.as_ref().unwrap_or(&none);
         self.conversation_name(self.conversation()?, notes)
     }
 
@@ -1066,7 +1067,7 @@ impl App {
     /// is the reader's, edits and all, and is ahead of the file rather than
     /// behind it.
     pub(in crate::app) fn reread_the_notes_kept(&mut self) {
-        self.notes_kept = obelus_todo::read(&self.working_directory).notes();
+        self.notes.notes_kept = obelus_todo::read(&self.working_directory).notes();
     }
 
     /// Puts pasted text into the box a message is written in.

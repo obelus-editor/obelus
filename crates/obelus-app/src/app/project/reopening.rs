@@ -533,7 +533,7 @@ impl App {
         // shown, and what the note says. Kept as read rather than read again
         // -- the table is in hand.
         if talked {
-            self.sessions_kept = sessions;
+            self.kept.sessions_kept = sessions;
             self.reread_the_notes_kept();
             self.reread_who_holds_what();
         }

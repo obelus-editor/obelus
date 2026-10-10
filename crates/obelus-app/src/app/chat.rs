@@ -1,6 +1,8 @@
 //! Talking to an agent, the conversations that outlive the window, and
 //! the chat they can be reached from.
 
+use super::*;
+
 pub mod agents;
 pub(super) mod conversations;
 pub(super) mod headless;
@@ -40,4 +42,32 @@ pub(in crate::app) struct Agent {
         String,
         obelus_agent::acp::Answer<Option<obelus_agent::running::Ended>>,
     )>,
+}
+
+/// Which conversations were had in this checkout and which of them some window
+/// holds, as last read: tables every window writes, read again when the watcher
+/// says one was written.
+#[derive(Debug, Default)]
+pub(in crate::app) struct Kept {
+    /// The project's table of conversations, as Obelus last read it.
+    ///
+    /// `None` until there has been a reason to read it. What the reasons
+    /// are is `App::sessions`; what they are *for* is that the notes page
+    /// asks which of them has a conversation on every frame it draws, and
+    /// parsing that table there cost more than everything else the page
+    /// does put together.
+    pub(in crate::app) sessions_kept: Option<obelus_agent::acp::sessions::Remembered>,
+    /// Which conversations somebody has open, as Obelus last looked.
+    ///
+    /// Asked when there is a reason and kept until there is another, like
+    /// everything else here. What makes that honest for a *lock* -- which
+    /// nothing writes and nothing removes when the process holding it dies
+    /// -- is that the kernel closes a dead process's files and a watcher
+    /// reports that close. See `obelus_watch` for the one Access event it
+    /// lets through, and `obelus_agent::chats` for why Obelus's own looking
+    /// is a read.
+    ///
+    /// And which checkout holds each, where its claim says.
+    pub(in crate::app) held_kept:
+        std::collections::BTreeMap<obelus_agent::chats::ChatId, Option<PathBuf>>,
 }

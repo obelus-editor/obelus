@@ -287,7 +287,7 @@ impl App {
         // conversation taken up from here would be told about its note
         // again, because what the agent was already told is looked up in
         // that copy.
-        self.sessions_kept = Some(remembered.clone());
+        self.kept.sessions_kept = Some(remembered.clone());
         // Which agents have said anything here, most recently talked to
         // first -- and the one in use ahead of all of them, because that is
         // the tab the reader lands on and the only one whose rows they can
@@ -522,7 +522,7 @@ impl App {
         // Every conversation somebody has open, as Obelus last looked --
         // which is when something told it to look. See
         // `App::reread_who_holds_what`.
-        let held = self.held_kept.clone();
+        let held = self.kept.held_kept.clone();
         let todo = obelus_todo::read(&self.working_directory)
             .notes()
             .unwrap_or_default();
@@ -936,7 +936,7 @@ impl App {
     /// the way; which of them are its own it knows from the conversations
     /// it is holding.
     pub(in crate::app) fn reread_who_holds_what(&mut self) {
-        self.held_kept = obelus_agent::chats::held(&self.working_directory);
+        self.kept.held_kept = obelus_agent::chats::held(&self.working_directory);
     }
 
     /// Whether a path that changed is one of this project's claims.
@@ -952,7 +952,7 @@ impl App {
     pub fn held_now(
         &self,
     ) -> &std::collections::BTreeMap<obelus_agent::chats::ChatId, Option<std::path::PathBuf>> {
-        &self.held_kept
+        &self.kept.held_kept
     }
 
     /// Where this conversation is open in this Obelus, if it is.

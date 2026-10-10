@@ -57,3 +57,26 @@ pub(in crate::app) struct Asking {
     /// rule the palette follows for a command it will not run.
     pub(in crate::app) named_is_there: bool,
 }
+
+/// The notes, as last read -- every window and an agent's tools write them --
+/// and the wait for a burst of writes to settle before they are read again.
+#[derive(Debug, Default)]
+pub(in crate::app) struct Notes {
+    /// The project's notes, as Obelus last read them.
+    ///
+    /// Not the page's copy, which is the reader's and is ahead of the file
+    /// while they are typing in it. This one is the file, for the two
+    /// things outside that page which have to know what a note says: the
+    /// box of the conversation about it, which offers to ask about the
+    /// note again once it has been rewritten, and the conversation's
+    /// header, which goes by the note until the agent has named it.
+    pub(in crate::app) notes_kept: Option<obelus_todo::Todo>,
+    /// What will come back for the notes, to write down what was typed.
+    ///
+    /// Structural changes -- a note added, finished, moved -- are written
+    /// the moment they happen and never wait: they are one act each, and
+    /// there is nothing to wait for. Typing is not one act, and it used to
+    /// be written when the reader left the page. There is no leaving a
+    /// document, so a pause is the moment instead.
+    pub(in crate::app) notes_pause: Option<crate::event::Pause>,
+}

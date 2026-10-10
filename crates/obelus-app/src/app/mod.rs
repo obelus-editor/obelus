@@ -163,6 +163,10 @@ struct Dragging {
 /// Everything Obelus is currently showing or remembering.
 #[derive(Debug)]
 pub struct App {
+    /// The notes, as last read, and the wait for a burst of writes to settle.
+    notes: project::Notes,
+    /// Which conversations other windows have had and hold, as last read.
+    kept: chat::Kept,
     /// The agent this window talks to, and what is running on its behalf.
     agent: chat::Agent,
     /// What the pointer is doing and what the last frame left for it to land
@@ -373,14 +377,6 @@ pub struct App {
     /// the keys that move about their list have to be told the height that
     /// is actually drawn.
     screen_area: Rect,
-    /// What will come back for the notes, to write down what was typed.
-    ///
-    /// Structural changes -- a note added, finished, moved -- are written
-    /// the moment they happen and never wait: they are one act each, and
-    /// there is nothing to wait for. Typing is not one act, and it used to
-    /// be written when the reader left the page. There is no leaving a
-    /// document, so a pause is the moment instead.
-    notes_pause: Option<crate::event::Pause>,
     /// What will come back for a tree that is behind its text.
     ///
     /// One for all the open documents, because catching up asks every one
@@ -408,35 +404,6 @@ pub struct App {
     /// door a view opens by and given up at each door it closes by, which
     /// is how one of these came to be watched twice.
     watching: [conversations::Watched; conversations::WATCHED],
-    /// The project's table of conversations, as Obelus last read it.
-    ///
-    /// `None` until there has been a reason to read it. What the reasons
-    /// are is `App::sessions`; what they are *for* is that the notes page
-    /// asks which of them has a conversation on every frame it draws, and
-    /// parsing that table there cost more than everything else the page
-    /// does put together.
-    sessions_kept: Option<obelus_agent::acp::sessions::Remembered>,
-    /// The project's notes, as Obelus last read them.
-    ///
-    /// Not the page's copy, which is the reader's and is ahead of the file
-    /// while they are typing in it. This one is the file, for the two
-    /// things outside that page which have to know what a note says: the
-    /// box of the conversation about it, which offers to ask about the
-    /// note again once it has been rewritten, and the conversation's
-    /// header, which goes by the note until the agent has named it.
-    notes_kept: Option<obelus_todo::Todo>,
-    /// Which conversations somebody has open, as Obelus last looked.
-    ///
-    /// Asked when there is a reason and kept until there is another, like
-    /// everything else here. What makes that honest for a *lock* -- which
-    /// nothing writes and nothing removes when the process holding it dies
-    /// -- is that the kernel closes a dead process's files and a watcher
-    /// reports that close. See `obelus_watch` for the one Access event it
-    /// lets through, and `obelus_agent::chats` for why Obelus's own looking
-    /// is a read.
-    ///
-    /// And which checkout holds each, where its claim says.
-    held_kept: std::collections::BTreeMap<obelus_agent::chats::ChatId, Option<PathBuf>>,
     /// Something to tell the reader, until the next key.
     ///
     /// Half of what a language server does is answer with nothing, and
@@ -587,6 +554,8 @@ impl App {
         let documents: Vec<Option<Document>> =
             open.into_iter().map(Document::from).map(Some).collect();
         Self {
+            notes: project::Notes::default(),
+            kept: chat::Kept::default(),
             agent: chat::Agent::default(),
             pointing: pointer::Pointing::default(),
             git: git::Said::default(),
@@ -629,15 +598,11 @@ impl App {
             settings: None,
             counts: None,
             screen_area: Rect::ZERO,
-            notes_pause: None,
             syntax_pause: None,
             changes_pause: None,
             history: history_view::Showing::default(),
             conversing: conversations::Conversing::default(),
             watching: [const { conversations::Watched::new() }; conversations::WATCHED],
-            sessions_kept: None,
-            notes_kept: None,
-            held_kept: std::collections::BTreeMap::new(),
             rendered: None,
             theme_before: None,
             taken_from: None,
