@@ -605,6 +605,71 @@ pub fn prompt_row(
             theme,
         );
     }
+    if let Some(tally) = picker.how_much() {
+        how_much(
+            cells,
+            area,
+            picker.question(),
+            &said,
+            picker.invitation(),
+            tally,
+            theme,
+        );
+    }
+}
+
+/// What a list says about how much of it there is, at the far end of the
+/// row it is typed into, and the key that does something about it after
+/// the words.
+///
+/// Dropped whole where it would reach what was typed, the mark after it,
+/// or the words that stand in for nothing typed: half a count is a wrong
+/// count, and what the reader typed is the one thing on the row that is
+/// theirs. Except the words before a key, which lose their end instead --
+/// they are why the key is there, and the key is what the reader can do.
+fn how_much(
+    cells: &mut CellBuffer,
+    area: Rect,
+    question: Option<&str>,
+    words: &str,
+    standing_in: Option<&str>,
+    tally: &obelus_component::picker::Tally,
+    theme: &Theme,
+) {
+    let said = match words.is_empty() {
+        true => standing_in.unwrap_or(words),
+        false => words,
+    };
+    // What is already on the row: the typing, then the blank, the mark and
+    // the blank after it, then two more so the two never read as one.
+    let taken = 1usize
+        .saturating_add(text_width(&typed(question, said)))
+        .saturating_add(5);
+    let key = tally.key.as_ref().map_or(0, |(key, does)| {
+        3 + crate::cap_width(key) + 1 + text_width(does)
+    });
+    let room = usize::from(area.width)
+        .saturating_sub(1)
+        .saturating_sub(taken);
+    let words = match (text_width(&tally.words).saturating_add(key) <= room, key) {
+        (true, _) => tally.words.clone(),
+        // Room for the key and a few words of why, or for nothing.
+        (false, key) if key > 0 && room >= key + 8 => {
+            crate::truncate_from_right(&tally.words, room - key)
+        }
+        (false, _) => return,
+    };
+    let Ok(wanted) = u16::try_from(text_width(&words).saturating_add(key)) else {
+        return;
+    };
+    let quiet = Style::new().fg(theme.gutter).bg(theme.background);
+    let x = area.right().saturating_sub(1).saturating_sub(wanted);
+    let after = write(cells, x, area.y, &words, quiet);
+    if let Some((key, does)) = &tally.key {
+        let after = write(cells, after, area.y, " \u{b7} ", quiet);
+        let after = crate::capped(cells, after, area.y, key, theme);
+        write(cells, after + 1, area.y, does, quiet);
+    }
 }
 
 /// The row under a list that is only read: what it is, and how to let it

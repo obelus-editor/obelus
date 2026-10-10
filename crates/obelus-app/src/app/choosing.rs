@@ -416,6 +416,17 @@ impl App {
         // And the pull requests, whose second tab is the issues.
         let pulling = picker.opener() == Some(obelus_command::Command::PullRequestReview);
         let before = (picker.tab(), picker.query().to_string());
+        // Down on the last row of a list whose next page did not come,
+        // which is the key that says to ask again -- read before the key,
+        // because a list with more to come does not wrap and the key moves
+        // nothing a test after it could see.
+        let again = pulling
+            && key.code == crossterm::event::KeyCode::Down
+            && key.modifiers.is_empty()
+            && self.stuck_at_the_end();
+        let Some(picker) = self.picker.as_mut() else {
+            return false;
+        };
         // Where the tree is standing, read before the key can move it: a
         // typed letter filters the rows the list already has, so by the
         // time the query has changed the row the reader was on is not
@@ -468,6 +479,12 @@ impl App {
                 }
                 if pulling && after.0 != before.0 {
                     self.show_pull_requests();
+                }
+                if pulling && after != before {
+                    self.the_query_has_moved();
+                }
+                if again {
+                    self.try_the_next_page_again();
                 }
                 true
             }

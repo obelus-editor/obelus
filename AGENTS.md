@@ -584,10 +584,12 @@ crates/
                       program's (app/terminals); a
                       newer Obelus is asked about once a day, not once a start
                       (app/releases); pull requests and issues are two tabs of
-                      one errand, asked of `gh` and not of GitHub, choosing
-                      one opens the review or the answer and says nothing
-                      yet, and what goes to GitHub goes on the reader's word
-                      (app/pulls); one window talks to the chat and every
+                      one errand, asked of `gh` and not of GitHub, a page
+                      when the reader gets to the end of the last one,
+                      choosing one opens the review or the answer and says
+                      nothing yet, and what goes to GitHub goes on the
+                      reader's word (app/pulls); one window talks to the
+                      chat and every
                       window is heard in it, which project a thread begun
                       there is for is the reader's to say, a window joined
                       to the chat is quiet about it, and a chat nobody let

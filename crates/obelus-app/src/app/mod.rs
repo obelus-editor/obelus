@@ -2735,6 +2735,12 @@ impl App {
         if let (Some(rows), Some(picker)) = (rows, self.picker.as_mut()) {
             picker.refresh_indices(rows, width);
         }
+        // And whether its last row is on screen, which is what asks for a
+        // list fetched a page at a time to go on -- here, with the window
+        // settled, for the same reason.
+        if let Some(rows) = rows {
+            self.reach_further(rows);
+        }
         // And a scoring the list wants done somewhere that is not here.
         // Taken on the frame rather than where the query changed, for the
         // reason the indices above are: one place asks, so a path that
@@ -3209,6 +3215,7 @@ impl App {
             Event::Released(tag) => self.on_released(&tag),
             Event::PullRequests(answer) => self.on_pull_requests(answer),
             Event::Issues(answer) => self.on_issues(answer),
+            Event::PullRequestQuerySettled => self.on_the_query_settled(),
             Event::PullRequestDiscussion { number, answer } => {
                 self.on_pull_request_discussion(number, answer);
             }
