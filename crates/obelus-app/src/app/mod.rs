@@ -3539,6 +3539,11 @@ impl App {
             ));
             return;
         }
+        // The agent's commands, which are drawn over the transcript above
+        // the box while one is being typed.
+        if kind == Pointer::Pressed && self.press_in_the_commands(x, y) {
+            return;
+        }
         // The card first, where one is up: it is what covers the box, and
         // every row of it is a thing the reader answers with. What lands
         // above it is still the transcript, so a question on screen does
@@ -3763,6 +3768,57 @@ impl App {
         }
     }
 
+    /// A press on what could finish the path being named.
+    ///
+    /// The way every list goes, one press to stand and a second to choose,
+    /// and choosing here is what enter does: the row goes into the box.
+    ///
+    /// Answers whether the press was the list's, so that one beside it
+    /// goes on to the page.
+    fn press_in_the_naming_list(&mut self, x: u16, y: u16) -> bool {
+        let Some(at) = self.naming_list.as_ref().and_then(|list| {
+            let region = obelus_ui::picker::region(list, self.drawn_in());
+            obelus_ui::picker::row_at(list, region, x, y)
+        }) else {
+            return false;
+        };
+        let twice = self.clicks_at(x, y) == 2;
+        if let Some(list) = self.naming_list.as_mut() {
+            list.select_row(at.0);
+        }
+        if twice {
+            self.clicked = None;
+            self.choosing_a_project(&enter());
+        }
+        true
+    }
+
+    /// A press on the agent's commands, while a name is being typed.
+    ///
+    /// One press stands on a row and a second chooses it, which is what
+    /// enter does: the name goes into the box.
+    ///
+    /// Answers whether the press was the list's, so that one beside it
+    /// goes on to the conversation.
+    fn press_in_the_commands(&mut self, x: u16, y: u16) -> bool {
+        let Some(at) = self.slash().zip(self.chat()).and_then(|(list, chat)| {
+            let room = obelus_ui::chat::above_writing(self.editor_area, chat, self.card());
+            let region = obelus_ui::picker::region(list, room);
+            obelus_ui::picker::row_at(list, region, x, y)
+        }) else {
+            return false;
+        };
+        let twice = self.clicks_at(x, y) == 2;
+        if let Some(list) = self.conversation_mut().and_then(|talk| talk.slash.as_mut()) {
+            list.select_row(at.0);
+        }
+        if twice {
+            self.clicked = None;
+            self.slash_key(&enter());
+        }
+        true
+    }
+
     /// What the pointer did to the page of settings.
     ///
     /// Nothing folds there, so there is no arrow. What a press reaches is
@@ -3951,9 +4007,16 @@ impl App {
     /// box go. A reader dragging across an answer means that answer, and a
     /// second selection still lit in the box would leave `ctrl+c` with two
     /// things to copy and no way to say which.
+    ///
+    /// A double click on a tool call that names a file goes to the file.
+    /// Not enter's answer on a call with something behind it, which is to
+    /// fold -- a single press already folds, and the second press of a
+    /// double click folds it back, so going is the one thing left for the
+    /// pair of them to mean.
     fn pointer_in_transcript(&mut self, kind: crate::event::Pointer, x: u16, y: u16) {
         use crate::event::Pointer;
 
+        let twice = kind == Pointer::Pressed && self.clicks_at(x, y) == 2;
         let area = self.editor_area;
         let width = obelus_ui::chat::reading_width(area);
         // Laid out once, and every question below asked of the one place.
@@ -3986,9 +4049,17 @@ impl App {
             // is not one; nor while a card is up, which has the keys -- a
             // cursor moved under it would be found there afterwards.
             let cursor = (row.is_some() && talk.card.is_none()).then_some(place);
-            Some((spot, folds, cursor, link))
+            // The file the call this row is part of names, which is on the
+            // call's first row whichever row of its title was pressed.
+            let goes = obelus_component::chat::Row::acting(&rows, place.row)
+                .and_then(|acting| rows.get(acting.start))
+                .and_then(|first| first.place.as_ref())
+                .map(|(place, _)| place.clone());
+            Some((spot, folds, cursor, link, goes))
         });
-        let (spot, folds, cursor, link) = found.unwrap_or((None, None, None, None));
+        let (spot, folds, cursor, link, goes) = found.unwrap_or((None, None, None, None, None));
+        // A link is its own thing to press, and opens on the letting go.
+        let goes = goes.filter(|_| link.is_none());
         // Where the cursor goes, for a press or a drag: the keys follow
         // the pointer, or the arrows after a press walk something the
         // reader had not pointed at.
@@ -4046,6 +4117,10 @@ impl App {
                     talk.chat.hold_to(spot);
                 }
             }
+        }
+        if twice && let Some(place) = goes {
+            self.clicked = None;
+            self.go_to_where_the_agent_was(&place);
         }
     }
 
@@ -4290,7 +4365,9 @@ impl App {
         // The page that asks which project, which is drawn where the
         // welcome screen would be.
         if kind == Pointer::Pressed && self.reading_nothing() && self.chooser.is_some() {
-            self.press_in_projects(x, y);
+            if !self.press_in_the_naming_list(x, y) {
+                self.press_in_projects(x, y);
+            }
             return;
         }
         // The welcome screen's website, the one thing on it a press opens.

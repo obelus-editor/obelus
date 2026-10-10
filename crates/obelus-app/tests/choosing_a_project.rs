@@ -1108,3 +1108,52 @@ fn a_press_stands_on_a_project_and_a_second_opens_it() {
         "the second press did not open the project it was on"
     );
 }
+
+/// What could finish a path is a list like any other: one press stands on
+/// a row and a second does what enter does, which puts it in the box.
+///
+/// Broken deliberately by returning `false` at the top of
+/// `press_in_the_naming_list`: the press goes to the page under it and the
+/// box keeps what was typed.
+#[test]
+fn a_double_click_on_what_could_finish_a_path_puts_it_in_the_box() {
+    let scratch = support::Scratch::new("choosing-double-click-path");
+    std::fs::create_dir_all(scratch.path().join("alpha")).expect("directories");
+    std::fs::create_dir_all(scratch.path().join("beta")).expect("directories");
+    let mut app = asking();
+    open_another(&mut app);
+    for character in format!("{}/", scratch.path().display()).chars() {
+        press(&mut app, KeyCode::Char(character));
+    }
+    assert!(app.naming_list().is_some(), "the directory offered nothing");
+
+    // The second row, so that a press which only reached the first --
+    // which enter alone would have taken -- is not mistaken for this.
+    let dump = support::render(&mut app, 60, 20);
+    let y: u16 = support::text_block(&dump)
+        .lines()
+        .rfind(|row| row.contains("beta"))
+        .and_then(|row| row.split_once('|'))
+        .and_then(|(at, _)| at.trim().parse().ok())
+        .unwrap_or_else(|| panic!("beta is not offered:\n{dump}"));
+    let press_on_it = |app: &mut App| {
+        app.handle(obelus_app::event::Event::Pointer {
+            kind: obelus_app::event::Pointer::Pressed,
+            x: 4,
+            y,
+        });
+    };
+    let before = app.choosing().expect("asking").typed;
+    press_on_it(&mut app);
+    assert_eq!(
+        app.choosing().expect("asking").typed,
+        before,
+        "one press put the row in the box"
+    );
+    press_on_it(&mut app);
+    let typed = app.choosing().expect("asking").typed;
+    assert!(
+        typed.ends_with(&format!("beta{}", std::path::MAIN_SEPARATOR)),
+        "the second press did not put the row in the box: {typed:?}\n{dump}"
+    );
+}
