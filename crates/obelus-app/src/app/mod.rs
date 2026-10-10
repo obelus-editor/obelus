@@ -1141,7 +1141,9 @@ impl App {
             self.ask_before_stopping_them(
                 running,
                 "leave",
-                obelus_buffer::question::Answer::Leaving(obelus_buffer::question::Leaving::Discard),
+                obelus_component::question::Answer::Leaving(
+                    obelus_component::question::Leaving::Discard,
+                ),
             );
             return;
         }

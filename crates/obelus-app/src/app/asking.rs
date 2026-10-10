@@ -1,15 +1,15 @@
 //! The questions Obelus stops to ask, and what answering one does.
 //!
-//! What a question *is* lives in [`obelus_buffer::question`], and the list it
-//! turns into is [`Picker::asking`]. What is here is which questions get asked,
-//! in what words, and what each answer does.
+//! What a question *is* lives in [`obelus_component::question`], and the list
+//! it turns into is [`Picker::asking`]. What is here is which questions get
+//! asked, in what words, and what each answer does.
 //!
 //! They are together in one file on purpose. A question is a sentence the
 //! reader has to understand in one pass under a key they pressed by
 //! accident, and three of them written next to each other read as three of
 //! a kind; three of them written where each is asked would drift apart.
 
-use obelus_buffer::question::{Answer, Closing, Leaving, Question, Saving, Writing};
+use obelus_component::question::{Answer, Closing, Leaving, Question, Saving, Writing};
 
 use super::*;
 

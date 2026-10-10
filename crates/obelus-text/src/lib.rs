@@ -8,6 +8,7 @@
 pub mod coordinates;
 pub mod kind;
 pub mod marker;
+pub mod severity;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 

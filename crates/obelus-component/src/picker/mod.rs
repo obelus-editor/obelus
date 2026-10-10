@@ -69,12 +69,13 @@ use nucleo_matcher::{
     Matcher, Utf32Str,
     pattern::{CaseMatching, Normalization, Pattern},
 };
-use obelus_buffer::{DocumentId, question::Question};
+use obelus_buffer::DocumentId;
 use obelus_command::Command;
 
 use self::wrapped::{Above, Body, Columns};
 use crate::{
     field::Field,
+    question::Question,
     window::{Move, Window, Wrap},
 };
 
@@ -221,7 +222,7 @@ pub enum PickerValue {
         stoppable: bool,
     },
     /// One of the ways out of a question Obelus stopped to ask.
-    Answer(obelus_buffer::question::Answer),
+    Answer(crate::question::Answer),
     /// Nothing. A row that is there to say why the list is short.
     Nothing,
 }
@@ -1088,7 +1089,7 @@ impl Picker {
             .chain(std::iter::once(row(
                 "cancel".to_string(),
                 None,
-                obelus_buffer::question::Answer::Cancel,
+                crate::question::Answer::Cancel,
             )))
             .collect();
         let rows = u16::try_from(items.len()).unwrap_or(u16::MAX);

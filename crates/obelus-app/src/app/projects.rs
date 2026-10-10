@@ -414,8 +414,8 @@ impl super::App {
             self.ask_before_stopping_them(
                 running,
                 "close the project",
-                obelus_buffer::question::Answer::ClosingTheProject(
-                    obelus_buffer::question::Leaving::Discard,
+                obelus_component::question::Answer::ClosingTheProject(
+                    obelus_component::question::Leaving::Discard,
                 ),
             );
             return;

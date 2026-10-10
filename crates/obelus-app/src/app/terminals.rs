@@ -29,7 +29,7 @@
 //! that ends badly stays open with what it said on it, because a failed
 //! sign-in is something the reader has to read.
 
-use obelus_buffer::question::{Answer, Closing, Question};
+use obelus_component::question::{Answer, Closing, Question};
 use obelus_terminal::{Ended, Heard, Mouse, Program, Terminal};
 
 use super::*;

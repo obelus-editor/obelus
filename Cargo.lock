@@ -4440,7 +4440,6 @@ dependencies = [
  "gix",
  "obelus-config",
  "obelus-editing",
- "obelus-lsp",
  "obelus-syntax",
  "obelus-text",
  "tracing",

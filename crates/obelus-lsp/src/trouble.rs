@@ -23,76 +23,20 @@
 //! the fault. The application's half is `App::obelus_says`.
 
 use lsp_types::{DiagnosticSeverity, PositionEncodingKind, PublishDiagnosticsParams};
-use obelus_text::{Text, coordinates::Span, kind::SyntaxKind};
+pub use obelus_text::severity::Severity;
+use obelus_text::{Text, coordinates::Span};
 use serde_json::Value;
 
-/// How bad a server says something is.
-///
-/// Four, because the protocol has four and a reader can tell them apart:
-/// what stops the build, what is worth reading, and two kinds of remark.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Severity {
-    /// Something that will not compile.
-    Error,
-    /// Something that will, and should not.
-    Warning,
-    /// A remark.
-    Information,
-    /// A suggestion, usually about style.
-    Hint,
-}
-
-impl Severity {
-    /// The colour it is drawn in.
-    ///
-    /// The file's own colours, as everything in Obelus is: an error is
-    /// what an error in a log is, a warning what a warning is. The two
-    /// quieter ones take the colour of a comment, which is what they read
-    /// as -- something written beside the code rather than about it.
-    #[must_use]
-    pub const fn kind(self) -> SyntaxKind {
-        match self {
-            Self::Error => SyntaxKind::Error,
-            Self::Warning => SyntaxKind::Warning,
-            Self::Information | Self::Hint => SyntaxKind::Comment,
-        }
-    }
-
-    /// The mark that stands for it where there is no room for a word.
-    ///
-    /// Ordinary Unicode rather than a Nerd Font glyph: this goes on the
-    /// status row, which is on screen the whole time, so it cannot depend
-    /// on a font Obelus has not been told about.
-    #[must_use]
-    pub const fn mark(self) -> char {
-        match self {
-            Self::Error => '\u{00d7}',
-            Self::Warning => '\u{0021}',
-            Self::Information | Self::Hint => '\u{00b7}',
-        }
-    }
-
-    /// What to call it.
-    #[must_use]
-    pub const fn title(self) -> &'static str {
-        match self {
-            Self::Error => "Error",
-            Self::Warning => "Warning",
-            Self::Information => "Information",
-            Self::Hint => "Hint",
-        }
-    }
-
-    fn of(severity: Option<DiagnosticSeverity>) -> Self {
-        match severity {
-            Some(DiagnosticSeverity::WARNING) => Self::Warning,
-            Some(DiagnosticSeverity::INFORMATION) => Self::Information,
-            Some(DiagnosticSeverity::HINT) => Self::Hint,
-            // Unset means the server did not say, and the protocol leaves
-            // it to the client. An error is the reading that gets looked
-            // at, which is the right way round to be wrong.
-            _ => Self::Error,
-        }
+/// How bad the protocol's word for it is.
+fn severity_of(severity: Option<DiagnosticSeverity>) -> Severity {
+    match severity {
+        Some(DiagnosticSeverity::WARNING) => Severity::Warning,
+        Some(DiagnosticSeverity::INFORMATION) => Severity::Information,
+        Some(DiagnosticSeverity::HINT) => Severity::Hint,
+        // Unset means the server did not say, and the protocol leaves
+        // it to the client. An error is the reading that gets looked
+        // at, which is the right way round to be wrong.
+        _ => Severity::Error,
     }
 }
 
@@ -244,7 +188,7 @@ pub fn reported(params: &Value) -> Vec<Reported> {
             character: diagnostic.range.start.character,
             end_line: diagnostic.range.end.line,
             end_character: diagnostic.range.end.character,
-            severity: Severity::of(diagnostic.severity),
+            severity: severity_of(diagnostic.severity),
             message: diagnostic.message,
             source: diagnostic.source,
         })

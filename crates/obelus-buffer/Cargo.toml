@@ -12,7 +12,6 @@ workspace = true
 [dependencies]
 obelus-config.workspace = true
 obelus-editing.workspace = true
-obelus-lsp.workspace = true
 obelus-syntax.workspace = true
 obelus-text.workspace = true
 anyhow.workspace = true

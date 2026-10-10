@@ -12,7 +12,7 @@
 //! escape key, the drawing and the preview all already know what a question
 //! is.
 
-use crate::DocumentId;
+use obelus_buffer::DocumentId;
 
 /// A question, and the ways out of it in the order they are offered.
 ///
