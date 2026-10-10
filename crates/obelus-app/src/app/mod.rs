@@ -288,6 +288,13 @@ pub struct App {
         obelus_agent::acp::Place,
         Option<obelus_component::chat::Folds>,
     )>,
+    /// Whether the press the button is still down from was in the file.
+    ///
+    /// A drag is the far end of a selection that press began, and one
+    /// begun anywhere else has nothing in the file to extend: a double
+    /// click that opened a file, and a hand that moved before letting go,
+    /// selected from wherever the file opened at.
+    pressed_in_the_file: bool,
     /// What could be typed next, while a server's answer is on screen.
     ///
     /// Beside the cursor rather than in a region of its own, and its own
@@ -937,6 +944,7 @@ impl App {
             asked: HashMap::new(),
             clicked: None,
             pressed_call: None,
+            pressed_in_the_file: false,
             signature: None,
             signature_pause: None,
             hover: None,
@@ -3626,7 +3634,7 @@ impl App {
             return;
         }
         let twice = self.clicks_at(x, y) == 2;
-        // Spent on what it chose, so that a third press -- on the file the
+        // Spent by the second press, so that a third -- on the file the
         // second may have opened -- is a first press there, and not a line
         // taken hold of.
         if twice {
@@ -4327,6 +4335,9 @@ impl App {
         use crate::event::Pointer;
 
         self.pointer = Some((x, y));
+        if kind == Pointer::Pressed {
+            self.pressed_in_the_file = false;
+        }
         // A bar first, and whatever it is beside: a press on one is about
         // the bar and nothing under it, and while it is held every move is
         // the bar's -- wherever the pointer has wandered, the way a bar
@@ -4450,12 +4461,16 @@ impl App {
         // is measured from the last place it was seen.
         self.pointer_rested(x, y);
         let count = match kind {
-            Pointer::Pressed => self.clicks_at(x, y),
+            Pointer::Pressed => {
+                self.pressed_in_the_file = true;
+                self.clicks_at(x, y)
+            }
             _ => 0,
         };
         match kind {
             // Nothing but where it is, which was noted above.
             Pointer::Moved => return,
+            Pointer::Dragged if !self.pressed_in_the_file => return,
             // Dragging is what a reader does to select, so the place they
             // put the button down stays put.
             Pointer::Dragged => {

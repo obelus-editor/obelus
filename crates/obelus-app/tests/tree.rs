@@ -477,6 +477,24 @@ fn a_double_click_on_a_row_chooses_it() {
         "the second press did not open the file"
     );
 
+    // A hand that moves before letting go is a drag in the file the
+    // second press opened, and selects nothing there: the press it would
+    // extend was in the list.
+    //
+    // Broken deliberately by taking the `pressed_in_the_file` arm out of
+    // `on_pointer`: the drag selects from where the file opened.
+    app.handle(obelus_app::event::Event::Pointer {
+        kind: obelus_app::event::Pointer::Dragged,
+        x: area.x + 30,
+        y: top + u16::try_from(file).expect("a row") + 1,
+    });
+    assert!(
+        app.current_buffer()
+            .and_then(obelus_buffer::Buffer::selection)
+            .is_none(),
+        "a drag after a double click selected in the file it opened"
+    );
+
     // And a third, landing on the file the second one opened, is a first
     // press there: not the third of a click that would take a whole line.
     //
