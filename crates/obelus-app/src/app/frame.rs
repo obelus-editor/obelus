@@ -248,7 +248,7 @@ impl App {
             .as_ref()
             .is_some_and(|picker| picker.is_searching() && picker.row_count() > 0)
             && self.searching() == Some(Scope::File)
-            && self.searched
+            && self.search.searched
                 != self
                     .current_buffer()
                     .map(|buffer| (buffer.path().to_path_buf(), buffer.version()))

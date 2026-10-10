@@ -36,7 +36,7 @@ impl App {
         // is set: a switch a reader has to flip to find out is not one.
         picker.says_its_keys();
         picker.go_to_tab(tab);
-        self.searching = scopes;
+        self.search.searching = scopes;
         self.show_list(picker);
         self.refresh_search();
     }
@@ -70,7 +70,7 @@ impl App {
         if !picker.is_searching() {
             return None;
         }
-        self.searching.get(picker.tab()).copied()
+        self.search.searching.get(picker.tab()).copied()
     }
 
     /// Whether a row of the list on screen *is* the line it names.
@@ -100,7 +100,7 @@ impl App {
     /// reading the project.
     #[must_use]
     pub fn files_parsed_for_rows(&self) -> usize {
-        self.row_syntax.len()
+        self.search.row_syntax.len()
     }
 
     /// Which search the rows arriving belong to.
@@ -111,14 +111,14 @@ impl App {
     /// tests, which have to say which search they are answering.
     #[must_use]
     pub fn search_generation(&self) -> u64 {
-        self.search_generation.now()
+        self.search.search_generation.now()
     }
 
     /// Says that what is being asked has changed, and returns the generation
     /// the answers must now carry. Every earlier scan learns from this that
     /// it can stop.
     fn ask_again(&mut self) -> u64 {
-        self.search_generation.next()
+        self.search.search_generation.next()
     }
 
     /// Works out what the characters of the rows on screen *are*.
@@ -131,7 +131,7 @@ impl App {
         if self.picker.is_none() {
             // Nothing is listing files any more, so nothing needs the trees
             // that were parsed to colour them.
-            self.row_syntax.clear();
+            self.search.row_syntax.clear();
             return;
         }
         let Some(picker) = self.picker.as_ref() else {
@@ -185,13 +185,13 @@ impl App {
         let buffer = match open {
             Some(buffer) => buffer,
             None => {
-                if !self.row_syntax.contains_key(path) {
+                if !self.search.row_syntax.contains_key(path) {
                     // Only as many as the rows that have been on screen, and
                     // dropped with the list. A file that will not open is
                     // not retried, because the row remembers the answer.
                     match Buffer::open(path) {
                         Ok(buffer) => {
-                            self.row_syntax.insert(path.to_path_buf(), buffer);
+                            self.search.row_syntax.insert(path.to_path_buf(), buffer);
                         }
                         Err(error) => {
                             tracing::debug!(%error, "no colours for a row");
@@ -199,7 +199,7 @@ impl App {
                         }
                     }
                 }
-                match self.row_syntax.get(path) {
+                match self.search.row_syntax.get(path) {
                     Some(buffer) => buffer,
                     None => return Vec::new(),
                 }
@@ -251,16 +251,16 @@ impl App {
     /// between the reader and their answer.
     pub(in crate::app) fn refresh_search(&mut self) {
         let tab = self.picker.as_ref().map(Picker::tab);
-        let Some(scope) = tab.and_then(|tab| self.searching.get(tab).copied()) else {
+        let Some(scope) = tab.and_then(|tab| self.search.searching.get(tab).copied()) else {
             return;
         };
         // What the foot says the switches are set to. Nothing on the symbols
         // tab: those rows come from a language server that did its own
         // matching and has never heard of our pattern.
-        let how = (scope != Scope::Symbols).then_some(self.looking);
+        let how = (scope != Scope::Symbols).then_some(self.search.looking);
         // And the other way round: reaching past the project is a question
         // only an index that reaches past it can answer.
-        let outside = (scope == Scope::Symbols).then_some(self.outside);
+        let outside = (scope == Scope::Symbols).then_some(self.search.outside);
         if let Some(picker) = self.picker.as_mut() {
             picker.looking_how(how);
             picker.reaching_outside(outside);
@@ -284,7 +284,7 @@ impl App {
                         true => "Type to search this file",
                         false => "No file open",
                     };
-                    self.searched = None;
+                    self.search.searched = None;
                     if let Some(picker) = self.picker.as_mut() {
                         picker.replace(Vec::new());
                         picker.while_empty(reason);
@@ -320,10 +320,10 @@ impl App {
             return false;
         };
         match letter {
-            'r' if reading => self.looking.regex = !self.looking.regex,
-            'w' if reading => self.looking.word = !self.looking.word,
-            'c' if reading => self.looking.sensitive = !self.looking.sensitive,
-            'o' if beyond => self.outside = !self.outside,
+            'r' if reading => self.search.looking.regex = !self.search.looking.regex,
+            'w' if reading => self.search.looking.word = !self.search.looking.word,
+            'c' if reading => self.search.looking.sensitive = !self.search.looking.sensitive,
+            'o' if beyond => self.search.outside = !self.search.outside,
             _ => return false,
         }
         self.refresh_search();
@@ -336,7 +336,7 @@ impl App {
             .picker
             .as_ref()
             .map_or_else(String::new, |picker| picker.query().to_string());
-        obelus_search::Needle::new(&query, self.looking)
+        obelus_search::Needle::new(&query, self.search.looking)
     }
 
     /// The lines of the file being read that have the query in them.
@@ -420,7 +420,7 @@ impl App {
             })
             .collect();
 
-        self.searched = Some((path, version));
+        self.search.searched = Some((path, version));
         if let Some(picker) = self.picker.as_mut() {
             picker.replace(items);
             picker.while_empty("No match in this file");
@@ -469,7 +469,7 @@ impl App {
             obelus_search::spawn_scan(
                 &self.working_directory,
                 &needle,
-                self.search_generation.claim(generation),
+                self.search.search_generation.claim(generation),
                 self.config().ignored_files,
                 self.config().hidden_files,
                 sender,
@@ -484,7 +484,7 @@ impl App {
         hits: Vec<obelus_search::Hit>,
         done: bool,
     ) {
-        if !self.search_generation.is_current(generation) {
+        if !self.search.search_generation.is_current(generation) {
             tracing::debug!(
                 generation,
                 "dropping matches for a query already typed past"
@@ -495,7 +495,7 @@ impl App {
         let Some(picker) = self.picker.as_mut() else {
             return;
         };
-        if self.searching.get(picker.tab()) != Some(&Scope::Project) {
+        if self.search.searching.get(picker.tab()) != Some(&Scope::Project) {
             return;
         }
         picker.extend(hits.into_iter().map(|hit| PickerItem {

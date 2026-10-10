@@ -163,6 +163,8 @@ struct Dragging {
 /// Everything Obelus is currently showing or remembering.
 #[derive(Debug)]
 pub struct App {
+    /// What is being searched for, and where.
+    search: editor::Search,
     /// What the language server has said about the file being read, and what
     /// is waiting on it.
     lsp: lsp::State,
@@ -525,11 +527,6 @@ pub struct App {
     opened: std::collections::HashSet<PathBuf>,
     /// The commits an open history view is showing, and what is open in it.
     history: history_view::Showing,
-    /// Which scopes the open search is showing, in tab order.
-    ///
-    /// The tabs are only the scopes that can answer, so which tab is which
-    /// scope is not a fixed mapping and has to be remembered.
-    searching: Vec<Scope>,
     /// Which agents the open list of conversations is showing, and what
     /// each of its rows stands for.
     ///
@@ -601,40 +598,6 @@ pub struct App {
     /// Which files have been asked about and have not answered yet, so a
     /// frame does not start a second walk of the same history.
     asking_blame: std::collections::HashSet<(PathBuf, Option<gix::ObjectId>)>,
-    /// Files parsed only to colour a search's rows.
-    ///
-    /// A search of a project answers with lines from files that are not
-    /// open, and a line reads like code only if something has parsed the
-    /// file it is a line of. Filled for the rows on screen and dropped when
-    /// the list closes: this is a cache for one list's lifetime, not a
-    /// second set of buffers.
-    row_syntax: std::collections::HashMap<PathBuf, Buffer>,
-    /// Which file and version the search's rows were gathered from.
-    ///
-    /// The file scope's rows are its lines, so they are only right for the
-    /// version they were read from: an agent rewriting the file while the
-    /// search is open has to change what the list says.
-    searched: Option<(PathBuf, i32)>,
-    /// Whether the symbols search offers names from outside the project.
-    ///
-    /// Off, because a server that has indexed a project has indexed what it
-    /// was built on too: a search for `new` answered from the whole index is
-    /// the registry's answer with the reader's own names somewhere in it.
-    /// The switch is for the times they meant the dependency.
-    outside: bool,
-    /// How the search is looking: the three switches at its foot.
-    ///
-    /// The reader's, kept for as long as Obelus is running and not written
-    /// to their settings: a pattern answers *this* question, and one turned
-    /// on to find one thing should not still be on next week.
-    looking: obelus_search::Looking,
-    /// Which search the answers arriving belong to.
-    ///
-    /// Bumped on every keystroke that changes what is being asked, so the
-    /// batches for the query before it are recognizable as stale. Shared
-    /// with the scanning threads, which read it to find out that they are
-    /// answering a question nobody is asking any more.
-    search_generation: obelus_runtime::cancel::Latest,
     /// Something to tell the reader, until the next key.
     ///
     /// Half of what a language server does is answer with nothing, and
@@ -827,6 +790,7 @@ impl App {
         let documents: Vec<Option<Document>> =
             open.into_iter().map(Document::from).map(Some).collect();
         Self {
+            search: editor::Search::default(),
             lsp: lsp::State::default(),
             viewport_was: None,
             travelled: 0,
@@ -890,7 +854,6 @@ impl App {
             changes_pause: None,
             opened: std::collections::HashSet::new(),
             history: history_view::Showing::default(),
-            searching: Vec::new(),
             conversing: conversations::Conversing::default(),
             watching: [const { conversations::Watched::new() }; conversations::WATCHED],
             sessions_kept: None,
@@ -899,11 +862,6 @@ impl App {
             blames: std::collections::HashMap::new(),
             committed: None,
             asking_blame: std::collections::HashSet::new(),
-            row_syntax: std::collections::HashMap::new(),
-            searched: None,
-            looking: obelus_search::Looking::default(),
-            outside: false,
-            search_generation: obelus_runtime::cancel::Latest::default(),
             history_generation: obelus_runtime::cancel::Latest::default(),
             rendered: None,
             theme_before: None,

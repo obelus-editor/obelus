@@ -1753,12 +1753,12 @@ impl App {
         // This project unless the reader has asked to see past it: a list of
         // every name a server knows is mostly the registry's, and the one
         // they meant is somewhere among them.
-        let within = (!self.outside).then_some(root.as_path());
+        let within = (!self.search.outside).then_some(root.as_path());
         let symbols = obelus_lsp::outline::found_in(reply.result, within);
         let Some(picker) = self.picker.as_mut() else {
             return;
         };
-        if self.searching.get(picker.tab()) != Some(&Scope::Symbols) {
+        if self.search.searching.get(picker.tab()) != Some(&Scope::Symbols) {
             tracing::debug!("symbols with nothing waiting for them");
             return;
         }

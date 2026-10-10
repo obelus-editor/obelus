@@ -159,7 +159,11 @@ impl App {
                 Command::SearchSymbols => Scope::Symbols,
                 _ => return None,
             };
-            return self.searching.iter().position(|shown| *shown == wanted);
+            return self
+                .search
+                .searching
+                .iter()
+                .position(|shown| *shown == wanted);
         }
         let wanted = match command {
             Command::HistoryFile => history_view::About::File,

@@ -115,7 +115,7 @@ impl App {
         // answers are numbered, and they would arrive as current.
         self.walk_generation.next();
         self.history_generation.next();
-        self.search_generation.next();
+        self.search.search_generation.next();
         self.worktrees.not_showing();
 
         let was = std::mem::replace(self, Self::new(Vec::new()));
@@ -131,14 +131,14 @@ impl App {
         self.theme_name = was.theme_name;
         self.walk_generation = was.walk_generation;
         self.history_generation = was.history_generation;
-        self.search_generation = was.search_generation;
+        self.search.search_generation = was.search.search_generation;
         // The door other windows reach this one by is the process's, and
         // listens for as long as it runs.
         self.worktrees = was.worktrees;
         self.agents = was.agents;
         self.releases = was.releases;
-        self.looking = was.looking;
-        self.outside = was.outside;
+        self.search.looking = was.search.looking;
+        self.search.outside = was.search.outside;
         // What Obelus could not make of its own files, which are not the
         // project's: the reader's settings, which nothing reads again here.
         // Obelus's own marks and none of a server's -- the server that said
