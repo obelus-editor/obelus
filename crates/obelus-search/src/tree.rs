@@ -1,4 +1,4 @@
-//! Gathering the files the picker can offer.
+//! The project as a tree, a level at a time.
 //!
 //! A list Obelus offers is a list of the reader's own project. A language
 //! server answers `workspace/symbol` with everything it has indexed, which for
@@ -16,8 +16,6 @@ use std::{
     collections::HashSet,
     path::{Path, PathBuf},
 };
-
-use ignore::WalkBuilder;
 
 /// One thing directly inside a directory, as a row of a tree.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -91,17 +89,8 @@ pub fn inside(root: &Path, directory: &Path, ignored: bool, hidden: bool) -> Vec
 /// obey it: "ignored" then keeps meaning exactly "the walk that obeys the
 /// rules did not offer it" whichever way the other one is set.
 fn looking(root: &Path, directory: &Path, obeying: bool, hidden: bool) -> Vec<Entry> {
-    let mut walk = WalkBuilder::new(directory);
-    walk.max_depth(Some(2))
-        .git_ignore(obeying)
-        .git_global(obeying)
-        .git_exclude(obeying)
-        .ignore(obeying)
-        .parents(obeying)
-        // The other way round from every switch above it: `hidden(true)`
-        // is what skips them, so what the reader turned on is what this
-        // turns off.
-        .hidden(!hidden);
+    let mut walk = crate::walker(directory, obeying, hidden);
+    walk.max_depth(Some(2));
 
     let mut found: Vec<Entry> = Vec::new();
     let mut holding: HashSet<PathBuf> = HashSet::new();

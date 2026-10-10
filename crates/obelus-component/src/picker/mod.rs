@@ -54,7 +54,6 @@
 //! because a list that could refresh one without the other is a list that
 //! draws a lock on a row and lets the reader into it anyway.
 
-pub mod files;
 pub mod wrapped;
 
 /// How many rows of an agent's own words a list will carry.

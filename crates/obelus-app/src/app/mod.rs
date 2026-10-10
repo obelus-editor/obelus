@@ -78,7 +78,7 @@ use obelus_component::{
     layers::{self, Layer, Room},
     picker::{
         Colouring, Listing, Marking, Picker, PickerItem, PickerLayout, PickerOutcome, PickerValue,
-        Remark, files,
+        Remark,
     },
     prompt::{Prompt, PromptKind, PromptOutcome},
     settings::{Settings, SettingsOutcome},

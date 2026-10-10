@@ -4497,7 +4497,6 @@ version = "0.12.0"
 dependencies = [
  "crossterm",
  "gix",
- "ignore",
  "nucleo-matcher",
  "obelus-agent",
  "obelus-buffer",

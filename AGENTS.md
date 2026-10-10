@@ -651,8 +651,7 @@ crates/
                       ranks is settled per tab, a list still arriving sits
                       still, say "still reading" where it moves nothing, which
                       tabs a view has must be cheap, a row of a list says what
-                      is true now, in one answer (picker); a list Obelus offers
-                      is the reader's own project (picker/files); a question is
+                      is true now, in one answer (picker); a question is
                       a card, not a picker, enter acts on the row the reader is
                       on, and a question the reader did not start says what it
                       is about (card); a tool call is somewhere to go, the
@@ -679,9 +678,10 @@ crates/
                       what Obelus writes, Obelus has to be able to read (log)
   obelus-markdown/  markdown, laid out into rows, from the tree Obelus
                     already parses
-  obelus-search/    one question at three scopes, and how much code is here:
-                    tokei's walk, in the two orderings the view reads it in
-                    (counts)
+  obelus-search/    one question at three scopes, the project as a tree a
+                    level at a time (tree), and how much code is here: tokei's
+                    walk, in the two orderings the view reads it in (counts)
+                    · a list Obelus offers is the reader's own project (tree)
   obelus-syntax/    the language registry (two dozen grammars), parsing,
                     highlights, tags
   obelus-lsp/       transport, client, actions, positions, outline, the call

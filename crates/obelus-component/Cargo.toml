@@ -28,6 +28,5 @@ obelus-text.workspace = true
 obelus-todo.workspace = true
 crossterm.workspace = true
 gix.workspace = true
-ignore.workspace = true
 nucleo-matcher.workspace = true
 tracing.workspace = true

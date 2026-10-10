@@ -10,6 +10,7 @@
 //! here for that reason rather than for anything it borrows.
 
 pub mod counts;
+pub mod tree;
 
 use std::{
     collections::HashSet,
@@ -382,6 +383,33 @@ pub fn spawn_walk(
     });
 }
 
+/// A walk from `from`, obeying the ignore rules or not, and showing what a
+/// system hides or not.
+///
+/// One, for the flat list and for the tree, so what counts as a file worth
+/// showing has one answer at both depths and in both shapes of the list.
+fn walker(from: &Path, obeying: bool, hidden: bool) -> WalkBuilder {
+    let mut walk = WalkBuilder::new(from);
+    walk.git_ignore(obeying)
+        .git_global(obeying)
+        .git_exclude(obeying)
+        .ignore(obeying)
+        .parents(obeying)
+        // The other way round from every switch above it: `hidden(true)`
+        // is what skips them, so what the reader turned on is what this
+        // turns off.
+        //
+        // What counts as hidden is `ignore`'s answer and not one written
+        // here, which is why the setting says it in its own words: a name
+        // beginning with a dot everywhere, and on Windows a file the
+        // system has marked as well. A rule of Obelus's own would be a
+        // second answer to a question the walk is already answering, and
+        // the two would differ on exactly the platform nobody tests on by
+        // hand.
+        .hidden(!hidden);
+    walk
+}
+
 /// One walk over the tree, sending what it finds in batches.
 ///
 /// `obeying` says whether the ignore rules apply. The walk that obeys them
@@ -403,24 +431,7 @@ fn walk(
     sent: &mut HashSet<PathBuf>,
 ) -> bool {
     let mut batch: Vec<PathBuf> = Vec::with_capacity(WALK_BATCH);
-    let mut walk = WalkBuilder::new(root);
-    walk.git_ignore(obeying)
-        .git_global(obeying)
-        .git_exclude(obeying)
-        .ignore(obeying)
-        .parents(obeying)
-        // The other way round from every switch above it: `hidden(true)`
-        // is what skips them, so what the reader turned on is what this
-        // turns off.
-        //
-        // What counts as hidden is `ignore`'s answer and not one written
-        // here, which is why the setting says it in its own words: a name
-        // beginning with a dot everywhere, and on Windows a file the
-        // system has marked as well. A rule of Obelus's own would be a
-        // second answer to a question the walk is already answering, and
-        // the two would differ on exactly the platform nobody tests on by
-        // hand.
-        .hidden(!hidden);
+    let walk = walker(root, obeying, hidden);
 
     for entry in walk.build() {
         let entry = match entry {

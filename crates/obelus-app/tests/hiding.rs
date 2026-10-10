@@ -159,17 +159,17 @@ fn the_key_turns_it_on_and_the_foot_says_so() {
 /// the flat listing would have the two tabs of one list disagreeing about
 /// which files there are.
 ///
-/// Deliberate break: drop the `hidden` from `files::inside` and leave the
+/// Deliberate break: drop the `hidden` from `tree::inside` and leave the
 /// walk there at its default. `f1`'s flat tab offers `.env` and its tree
 /// tab does not, which is one list with two answers.
 #[test]
 fn the_tree_obeys_it_as_well() {
-    use obelus_component::picker::files;
+    use obelus_search::tree;
 
     let scratch = scratch("hiding-tree");
     let root = scratch.path();
     let named = |hidden: bool| -> Vec<String> {
-        let mut names: Vec<String> = files::inside(root, root, false, hidden)
+        let mut names: Vec<String> = tree::inside(root, root, false, hidden)
             .into_iter()
             .map(|entry| entry.path.display().to_string())
             .collect();

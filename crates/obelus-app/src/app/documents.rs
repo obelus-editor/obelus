@@ -619,7 +619,9 @@ impl App {
         hidden: bool,
         rows: &mut Vec<PickerItem>,
     ) {
-        for entry in files::inside(&self.working_directory, directory, ignored, hidden) {
+        for entry in
+            obelus_search::tree::inside(&self.working_directory, directory, ignored, hidden)
+        {
             let open = self.opened.contains(&entry.path);
             let full = self.working_directory.join(&entry.path);
             let name = entry.path.file_name().map_or_else(
