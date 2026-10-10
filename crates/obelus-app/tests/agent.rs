@@ -15690,11 +15690,11 @@ fn opened_again_the_list_asks_only_what_has_changed() {
 /// a number -- and what that finds is matched here too: a row it found
 /// that the query does not match here stays out of the list's matches.
 ///
-/// Broken deliberately four ways. Asking GitHub from `the_query_has_moved`
+/// Broken deliberately five ways. Asking GitHub from `the_query_has_moved`
 /// rather than once the typing has settled asks once a keystroke. Leaving
 /// `in:title` off the words, and putting it on the number, each fail the
-/// line asked. And not putting what was found in with the list leaves #130
-/// out of it.
+/// line asked. Not putting what was found in with the list leaves #130
+/// out of it. And counting by GitHub's number says five over two rows.
 #[test]
 fn a_query_is_asked_of_github_once_the_typing_stops() {
     let scratch = support::Scratch::new("agent-pull-request-search");
@@ -15706,6 +15706,8 @@ fn a_query_is_asked_of_github_once_the_typing_stops() {
             {"number":130,"title":"Fold the hunks of a file nobody opened","author":{"login":"erin"},"headRefName":"y","baseRefName":"master","headRefOid":"y","isDraft":false,"reviewDecision":"","updatedAt":"2026-10-01T00:00:00Z"}]"#,
     )
     .expect("what the search finds");
+    // More than it sends, as GitHub counts the bodies and the comments too.
+    std::fs::write(answer.with_extension("json.found.total"), "5").expect("how many");
     let (mut app, events) = with_a_fake_gh(&scratch, &answer);
 
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
@@ -15721,7 +15723,9 @@ fn a_query_is_asked_of_github_once_the_typing_stops() {
     });
     let _ = screen(&mut app);
     assert_eq!(shown(&app), [123, 130]);
-    assert_eq!(tally(&app), "2 match on GitHub");
+    // Counted by the rows above it, not by GitHub's five: what it found
+    // that does not match here is not a match here.
+    assert_eq!(tally(&app), "2 match");
     assert_eq!(
         asked_saying(&answer, "search("),
         1,

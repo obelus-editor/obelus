@@ -60,6 +60,10 @@ const PULL_FIELDS: &str = "number title author{login} headRefName baseRefName he
 /// And about each issue.
 const ISSUE_FIELDS: &str = "number title author{login} labels(first:100){nodes{name}} updatedAt";
 
+/// How many rows GitHub's search gives for one query, however many it
+/// counts: past this there is no next page to ask for.
+const SEARCH_GIVES: usize = 1000;
+
 /// How long the reader's typing has to stop for before GitHub is asked
 /// about it: a question a keystroke would be a question about half a word,
 /// and GitHub matches whole ones.
@@ -479,10 +483,16 @@ impl<T: Listable> Listing<T> {
             .map(|older| Toward::Found(query.to_string(), Some(older)))
     }
 
-    /// What the tab says about itself, with `query` in the box and the
-    /// reader's typing `settling` before GitHub is asked about it; `none`
-    /// is what it says when nothing is open.
-    fn says(&self, query: &str, settling: bool, none: &str) -> Saying {
+    /// What the tab says about itself, with `query` in the box, the
+    /// reader's typing `settling` before GitHub is asked about it, and
+    /// `matched` rows of the list matching it; `none` is what it says when
+    /// nothing is open.
+    ///
+    /// What a search found is counted by the rows it left in the list, not
+    /// by GitHub's count: GitHub matches the body and the comments as well,
+    /// and a number at the foot that is not the number of rows above it is
+    /// a number the reader cannot check.
+    fn says(&self, query: &str, settling: bool, matched: usize, none: &str) -> Saying {
         use obelus_component::picker::Tally;
 
         let words = |words: String| Some(Tally { words, key: None });
@@ -495,20 +505,22 @@ impl<T: Listable> Listing<T> {
         let search = self.search.as_ref().filter(|search| search.query == query);
         let searching =
             !query.is_empty() && (settling || search.is_some_and(|search| search.asking));
+        let matching = match matched {
+            1 => "1 matches".to_string(),
+            matched => format!("{matched} match"),
+        };
         let tally = match (query.is_empty(), search) {
             (false, _) if searching => words(format!("Asking GitHub about \"{query}\"")),
             (false, Some(search)) => match (&search.stalled, &search.older) {
                 (Some(why), _) => stuck(why),
-                (None, Some(_)) => words(format!(
-                    "{} of {} match on GitHub",
-                    search.found, search.total
-                )),
+                (None, Some(_)) => words(format!("{matching} so far")),
                 // GitHub's search stops at a thousand, whatever it counts.
-                (None, None) if search.total > search.found as u64 => words(format!(
-                    "{} of {} match \u{b7} GitHub gives no more",
-                    search.found, search.total
-                )),
-                (None, None) => words(format!("{} match on GitHub", search.total)),
+                (None, None)
+                    if search.found >= SEARCH_GIVES && search.total > search.found as u64 =>
+                {
+                    words(format!("{matching} \u{b7} GitHub gives no more"))
+                }
+                (None, None) => words(matching),
             },
             (false, None) => None,
             (true, _) => match (&self.asking, &self.stalled) {
@@ -1061,12 +1073,19 @@ impl App {
             return;
         };
         let settling = self.pulls.settling.is_some();
+        let matched = self
+            .picker
+            .as_ref()
+            .map_or(0, obelus_component::picker::Picker::match_count);
         let said = match self.showing_issues() {
-            true => self.pulls.issues.says(&query, settling, "No issue is open"),
+            true => self
+                .pulls
+                .issues
+                .says(&query, settling, matched, "No issue is open"),
             false => self
                 .pulls
                 .pulls
-                .says(&query, settling, "No pull request is open"),
+                .says(&query, settling, matched, "No pull request is open"),
         };
         if let Some(picker) = self.picker.as_mut() {
             let (empty, whatever_is_typed) = &said.empty;
@@ -2182,25 +2201,28 @@ mod tests {
     }
 
     /// What the foot says: how many of how many while there are more, how
-    /// many once there are not, what GitHub's search found and where it
-    /// stopped, and why a page did not come with the key that tries again.
+    /// many once there are not, how many rows a search left in the list --
+    /// and whether GitHub has more, or stopped at its thousand -- and why a
+    /// page did not come with the key that tries again.
     ///
-    /// Broken deliberately by dropping the `older` test from the count,
-    /// which says "of 70" about a list that has every row; and by letting
-    /// the thousand GitHub stops at read as every match.
+    /// Broken deliberately three ways. Dropping the `older` test from the
+    /// count says "of 70" about a list that has every row. Letting the
+    /// thousand GitHub stops at read as every match says nothing about the
+    /// rest. And counting by GitHub's number, as this first did, says 438
+    /// over 97 rows.
     #[test]
     fn the_foot_says_how_much_there_is() {
-        let words = |listing: &super::Listing<super::PullRequest>, query: &str| {
+        let words = |listing: &super::Listing<super::PullRequest>, query: &str, matched| {
             listing
-                .says(query, false, "None")
+                .says(query, false, matched, "None")
                 .tally
                 .map(|tally| tally.words)
                 .unwrap_or_default()
         };
         let mut tab = listing(&[3, 2]);
-        assert_eq!(words(&tab, ""), "2 of 70 open");
+        assert_eq!(words(&tab, "", 2), "2 of 70 open");
         tab.older = None;
-        assert_eq!(words(&tab, ""), "2 open");
+        assert_eq!(words(&tab, "", 2), "2 open");
 
         tab.search = Some(super::Search {
             query: "fold".to_string(),
@@ -2211,25 +2233,30 @@ mod tests {
             older: Some("next".to_string()),
             stalled: None,
         });
-        assert_eq!(words(&tab, "fold"), "100 of 438 match on GitHub");
+        assert_eq!(words(&tab, "fold", 97), "97 match so far");
         if let Some(search) = tab.search.as_mut() {
             search.found = 1000;
             search.total = 4210;
             search.older = None;
         }
         assert_eq!(
-            words(&tab, "fold"),
-            "1000 of 4210 match \u{b7} GitHub gives no more"
+            words(&tab, "fold", 97),
+            "97 match \u{b7} GitHub gives no more"
         );
+        if let Some(search) = tab.search.as_mut() {
+            search.total = 1000;
+        }
+        assert_eq!(words(&tab, "fold", 97), "97 match");
+        assert_eq!(words(&tab, "fold", 1), "1 matches");
         assert_eq!(
-            tab.says("fold", true, "None")
+            tab.says("fold", true, 97, "None")
                 .tally
                 .map(|tally| tally.words),
             Some("Asking GitHub about \"fold\"".to_string())
         );
 
         tab.stalled = Some(super::Unlisted::Failed("EOF".to_string()));
-        let stuck = tab.says("", false, "None").tally.expect("a tally");
+        let stuck = tab.says("", false, 0, "None").tally.expect("a tally");
         assert_eq!(stuck.words, "GitHub would not answer: EOF");
         assert_eq!(
             stuck.key,
