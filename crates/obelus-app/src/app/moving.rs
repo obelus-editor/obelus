@@ -592,14 +592,15 @@ impl App {
             return;
         }
         let Some(what) = obelus_clipboard::paste() else {
-            // A picture and nowhere for it is not nothing. Which of the
-            // three reasons it is has to be said, because they are fixed in
-            // three different places: the reader is not in a conversation,
-            // or a card is covering the box, or the agent said a prompt to
-            // it cannot carry one. "Nothing to paste" sent a reader to look
-            // at their clipboard, which is the one place the answer is not.
+            // A picture and nowhere for it is not nothing, and what is
+            // said is which of the two ways to fix it this is: the agent
+            // said a prompt to it cannot carry one, or the box is not what
+            // is in front -- no conversation, or a card or a list over it,
+            // each of which the reader fixes by getting to the box. "Nothing
+            // to paste" sent a reader to look at their clipboard, which is
+            // the one place the answer is not.
             if obelus_clipboard::picture().is_some() {
-                self.wrong(match self.conversation_takes_text() {
+                self.wrong(match self.box_takes_a_picture() {
                     // Only reachable once the agent has said so: while
                     // nobody has asked it, a picture is taken.
                     true => "This agent does not take pictures".to_string(),
@@ -616,13 +617,30 @@ impl App {
     /// Whether a picture pasted now would have somewhere to go and somebody
     /// to read it.
     ///
-    /// Two questions that are one: the box has to be taking text -- a card
-    /// over it means the reader is answering something else -- and the
-    /// agent has to have said in the handshake that a prompt may carry a
-    /// picture. The second is what `Carries::image` was put there for.
+    /// Two questions that are one: the box has to be in front of the
+    /// reader, and the agent has to have said in the handshake that a
+    /// prompt may carry a picture. The second is what `Carries::image` was
+    /// put there for.
     #[must_use]
     fn can_take_a_picture(&self) -> bool {
-        self.conversation_takes_text() && self.agent_takes_pictures()
+        self.box_takes_a_picture() && self.agent_takes_pictures()
+    }
+
+    /// Whether the box a message is written in is where the keys are, with
+    /// nothing over it.
+    ///
+    /// Not [`App::conversation_takes_text`], which says yes to a card with
+    /// room for the reader's own words, and does not ask about a list open
+    /// over the conversation at all: an answer to a question carries words
+    /// and nothing else, and a list's query carries less, so a picture
+    /// pasted on either went into the box behind it, where nobody could see
+    /// it arrive. The layers are asked the way [`App::dropped`] asks them.
+    #[must_use]
+    fn box_takes_a_picture(&self) -> bool {
+        self.layers().nearest().is_none()
+            && self.chooser.is_none()
+            && self.conversation().is_some_and(|talk| talk.card.is_none())
+            && self.conversation_takes_text()
     }
 
     /// Whether the agent has not said a prompt to it cannot carry a picture.
