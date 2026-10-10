@@ -464,6 +464,7 @@ pub mod editor;
 pub mod gone;
 pub mod hover;
 pub mod image;
+pub mod links;
 pub mod names;
 pub mod picker;
 pub mod projects;
@@ -787,10 +788,21 @@ pub fn cursor_position(area: Rect, app: &impl Screen) -> Option<Position> {
 /// columns for it, but the record left behind cannot be told apart from a cell
 /// nothing painted.
 ///
-/// Hands back the bars it left on the page, which is what a press on one is
-/// asked against: see [`bars`].
-pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) -> Vec<bars::Drawn> {
-    bars::collect(cells, |cells| draw_the_frame(cells, area, app))
+/// Hands back the bars it left on the page and the links it drew, which is
+/// what a press is asked against: see [`bars`] and [`links`].
+pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) -> Left {
+    let (bars, links) =
+        links::collect(|| bars::collect(cells, |cells| draw_the_frame(cells, area, app)));
+    Left { bars, links }
+}
+
+/// What a frame left that a press is asked against.
+#[derive(Debug, Default)]
+pub struct Left {
+    /// The bars it left on the page.
+    pub bars: Vec<bars::Drawn>,
+    /// The links it drew.
+    pub links: Vec<links::Drawn>,
 }
 
 /// Whether what is drawn for `layer` -- or for the document, where that is

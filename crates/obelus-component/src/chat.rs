@@ -804,15 +804,6 @@ pub struct Chat {
     /// is to drop it wherever there is a doubt: laying out again costs
     /// milliseconds and being wrong costs the reader their conversation.
     laid: std::cell::RefCell<Option<(LaidAt, Vec<Row>)>>,
-    /// The links the last frame drew, as the row of the screen, the cells
-    /// across it and where each goes.
-    ///
-    /// Kept by whoever draws them, because what a click follows has to be
-    /// what was on the screen under it: a link's words can be cut short by
-    /// what a row says at its end, and the cells in front of a row's words
-    /// are nobody's. Worked out a second time from the characters, the
-    /// click opened a link from the margin beside it.
-    drawn_links: std::cell::RefCell<Vec<(u16, std::ops::Range<u16>, String)>>,
     /// What is happening now, if anything is.
     ///
     /// One slot rather than a line of the transcript: a state has no
@@ -1103,7 +1094,6 @@ impl Chat {
         Self {
             said: Vec::new(),
             laid: std::cell::RefCell::new(None),
-            drawn_links: std::cell::RefCell::new(Vec::new()),
             doing: None,
             can_send_now: false,
             plan: Vec::new(),
@@ -2528,31 +2518,6 @@ impl Chat {
     #[must_use]
     pub fn clicked(&self, at: Spot) -> bool {
         self.held.is_some_and(|(from, to)| from == to && from == at)
-    }
-
-    /// Forgets the links the last frame drew, before a frame draws them
-    /// again.
-    pub fn forget_drawn_links(&self) {
-        self.drawn_links.borrow_mut().clear();
-    }
-
-    /// Says a frame drew the words of a link across these cells of a row
-    /// of the screen.
-    pub fn drew_link(&self, y: u16, cells: std::ops::Range<u16>, to: &str) {
-        self.drawn_links
-            .borrow_mut()
-            .push((y, cells, to.to_string()));
-    }
-
-    /// Where the link the last frame drew at this cell goes, if it drew one
-    /// there.
-    #[must_use]
-    pub fn link_drawn_at(&self, x: u16, y: u16) -> Option<String> {
-        self.drawn_links
-            .borrow()
-            .iter()
-            .find(|(row, cells, _)| *row == y && cells.contains(&x))
-            .map(|(.., to)| to.clone())
     }
 
     /// Lets go of a hold with nothing in it, which is what a press that

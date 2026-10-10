@@ -1112,7 +1112,6 @@ impl ChatView<'_> {
     fn transcript(&self, cells: &mut CellBuffer, area: Rect, plain: Style, dim: Style) {
         let words = area.x + MARGIN + indent();
         let rows = self.chat.rows(reading_width(area));
-        self.chat.forget_drawn_links();
         if rows.is_empty() {
             write(cells, words, area.y, self.nothing_said(), dim);
         }
@@ -1335,7 +1334,7 @@ impl ChatView<'_> {
                 let from = cell_at(row, link.characters.start, area);
                 let to = cell_at(row, link.characters.end, area).min(ended);
                 if from < to {
-                    self.chat.drew_link(y, from..to, &link.to);
+                    crate::links::said(y, from..to, &link.to);
                     crate::shapes::linked(Rect::new(from, y, to - from, 1));
                 }
             }

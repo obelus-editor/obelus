@@ -445,6 +445,9 @@ pub struct App {
     /// The bars the last frame left on the page, which is where a press on
     /// one lands: see `obelus_ui::bars`.
     bars: Vec<obelus_ui::bars::Drawn>,
+    /// The links the last frame drew, which is what a click follows: see
+    /// `obelus_ui::links`.
+    links: Vec<obelus_ui::links::Drawn>,
     /// Which bar the pointer has hold of, and where on its mark.
     ///
     /// Whose rather than the bar itself: the frames go on being drawn while
@@ -965,6 +968,7 @@ impl App {
             waking: false,
             dragging: None,
             bars: Vec::new(),
+            links: Vec::new(),
             holding: None,
             fonts_here: Vec::new(),
             monospace_here: None,
@@ -2931,7 +2935,9 @@ impl App {
     pub fn draw_into(&mut self, cells: &mut CellBuffer, area: Rect) -> Option<Position> {
         self.screen_area = area;
         self.prepare(obelus_ui::editor_room(area, self));
-        self.bars = obelus_ui::draw(cells, area, self);
+        let left = obelus_ui::draw(cells, area, self);
+        self.bars = left.bars;
+        self.links = left.links;
         // With the frame rather than with the key that changed it: what
         // the caret is doing depends on where it ended up, which is not
         // known until the frame has been laid out.
@@ -4082,7 +4088,7 @@ impl App {
             let folds = row.and_then(|row| row.folds);
             // What the frame drew under the pointer, which is the one
             // answer the underline and a window's hand are also made of.
-            let link = talk.chat.link_drawn_at(x, y);
+            let link = obelus_ui::links::at(&self.links, x, y).map(str::to_string);
             // A cursor stands on a row, and the band under the last of them
             // is not one; nor while a card is up, which has the keys -- a
             // cursor moved under it would be found there afterwards.

@@ -1473,7 +1473,9 @@ fn something_already_said_answers_enter_from_every_row_of_it() {
 /// character under the pointer, as the cursor is found: the cells in
 /// front of the row open its first link. By letting the fold take every
 /// press on a row that folds: the call's address folds the call. And by
-/// leaving the links out of `Drawn::linked`: nothing is underlined.
+/// leaving the links out of `Drawn::linked`: nothing is underlined. And
+/// once more by drawing a link without saying so (`obelus_ui::links::said`):
+/// a click on it opens nothing.
 #[test]
 fn a_click_on_a_link_opens_it() {
     use obelus_app::event::Pointer;
