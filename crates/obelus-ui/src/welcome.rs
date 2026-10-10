@@ -390,6 +390,14 @@ impl WelcomeView<'_> {
                 .bg(ground)
                 .add_modifier(Modifier::UNDERLINED),
         );
+        // The underlined words and not the blanks: those are the cells a
+        // window makes the pointer a hand over, and it asks for the
+        // underline as well.
+        crate::shapes::linked(Rect {
+            x: at.x + inset,
+            width: u16::try_from(said.width()).unwrap_or(0),
+            ..at
+        });
     }
 
     /// The wordmark, with the version set into its foot.
