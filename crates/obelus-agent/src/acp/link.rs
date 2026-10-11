@@ -179,12 +179,21 @@ pub enum Again {
     Not,
 }
 
-/// Which of the three this agent offers, most to least.
-fn taking_up(agent: &agent_client_protocol::schema::v1::AgentCapabilities) -> Again {
+/// Which of the three to ask this agent for.
+///
+/// The fullest it offers where the words are wanted. Where they are not --
+/// Obelus kept the page itself -- a resume first, because it takes the
+/// context up and sends nothing back, where a replay is the whole of a
+/// long conversation sent to be thrown away.
+fn taking_up(agent: &agent_client_protocol::schema::v1::AgentCapabilities, words: bool) -> Again {
+    let resumes = agent.session_capabilities.resume.is_some();
+    if resumes && !words {
+        return Again::Remembered;
+    }
     if agent.load_session {
         return Again::Replayed;
     }
-    if agent.session_capabilities.resume.is_some() {
+    if resumes {
         return Again::Remembered;
     }
     Again::Not
@@ -874,9 +883,10 @@ async fn talk(
                 // Where they are handed over to is each conversation's own,
                 // and comes with the ask.
                 let can = ready.agent_capabilities.mcp_capabilities.clone();
-                // And how a conversation from a previous sitting is taken
-                // up, decided once for the same reason.
-                let again = taking_up(&ready.agent_capabilities);
+                // And what it offers for taking up a conversation from a
+                // previous sitting, kept for the same reason: which of
+                // those is asked for depends on the ask.
+                let capabilities = ready.agent_capabilities.clone();
 
                 // Nothing is opened here. One was, on the grounds that the
                 // reader opening the view is a request to talk -- which
@@ -1031,9 +1041,9 @@ async fn talk(
                                     .await;
                             }
                         }
-                        // What the reader had before, taken up again. The
-                        // agent replays it, so nothing here has to hold a
-                        // transcript between sittings.
+                        // What the reader had before, taken up again: its
+                        // context always, and its words only where Obelus
+                        // kept no page of its own (`Ask::Reopen::words`).
                         //
                         // Every way this can fail ends in a conversation the
                         // reader can talk in: an agent that will not load
@@ -1041,7 +1051,12 @@ async fn talk(
                         // asked for a new one instead, and the reader is
                         // told what happened rather than left looking at an
                         // empty screen that used to have something in it.
-                        Ask::Reopen { session, tools } => {
+                        Ask::Reopen {
+                            session,
+                            tools,
+                            words,
+                        } => {
+                            let again = taking_up(&capabilities, words);
                             let offered = offering(tools.as_deref(), &can);
                             // The fullest way this agent offers, and only
                             // that one: the two answers carry the same two
@@ -1095,7 +1110,11 @@ async fn talk(
                                 && wants_signing_in(error)
                             {
                                 let why = why_signing_in(error);
-                                held.push_back(Ask::Reopen { session, tools });
+                                held.push_back(Ask::Reopen {
+                                    session,
+                                    tools,
+                                    words,
+                                });
                                 let _ = events.send(Event::Acp(Incoming::SignIn {
                                     session: None,
                                     asking: None,
@@ -1112,9 +1131,10 @@ async fn talk(
                                         mode,
                                         asking: None,
                                     }));
-                                    // And, where the words did not come
-                                    // with it, that they did not.
-                                    if again == Again::Remembered {
+                                    // And, where the words were wanted
+                                    // and did not come with it, that they
+                                    // did not.
+                                    if again == Again::Remembered && words {
                                         let _ = events.send(Event::Acp(Incoming::Remembered {
                                             session: session.clone(),
                                         }));
@@ -1740,6 +1760,31 @@ fn content_of(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A conversation whose page Obelus kept is resumed where the agent
+    /// can, and replayed only where it cannot.
+    ///
+    /// Broken deliberately by putting the load first again whatever the
+    /// words: an agent offering both was asked to replay a conversation
+    /// nobody would draw, and the first assertion goes red.
+    #[test]
+    fn a_kept_page_asks_for_the_context_and_not_the_words() {
+        use agent_client_protocol::schema::v1::{
+            AgentCapabilities, SessionCapabilities, SessionResumeCapabilities,
+        };
+        let resumes = SessionCapabilities::new().resume(Some(SessionResumeCapabilities::new()));
+        let both = AgentCapabilities::new()
+            .load_session(true)
+            .session_capabilities(resumes.clone());
+        let loads = AgentCapabilities::new().load_session(true);
+        let only_resumes = AgentCapabilities::new().session_capabilities(resumes);
+
+        assert_eq!(taking_up(&both, false), Again::Remembered);
+        assert_eq!(taking_up(&both, true), Again::Replayed);
+        assert_eq!(taking_up(&loads, false), Again::Replayed);
+        assert_eq!(taking_up(&only_resumes, true), Again::Remembered);
+        assert_eq!(taking_up(&AgentCapabilities::new(), false), Again::Not);
+    }
 
     /// What is written down about a call is cut by characters.
     ///

@@ -220,6 +220,9 @@ for word in "$@"; do
         nothing-to-change) bare='yes' ;;
         asks-at-once) at_once='yes' ;;
         only-resumes) again='resume' ;;
+        # Both, the way Claude's adapter offers them: a client can choose,
+        # and which it chose is in the log.
+        loads-and-resumes) again='both' ;;
         forgets) again='none' ;;
         tells-settings) tells='yes' ;;
         options-later) later='yes' ;;
@@ -335,6 +338,7 @@ while IFS= read -r line; do
             esac
             case "$again" in
                 load) able='"loadSession":true,' ;;
+                both) able='"loadSession":true,"sessionCapabilities":{"resume":{}},' ;;
                 resume) able='"sessionCapabilities":{"resume":{}},' ;;
                 *) able='' ;;
             esac
@@ -1218,7 +1222,7 @@ while IFS= read -r line; do
             # client reading what was declared never sends this, and one
             # that sends it anyway has to be told -- which is how a test
             # tells the two apart.
-            if [ "$again" != load ]; then
+            if [ "$again" != load ] && [ "$again" != both ]; then
                 printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32601,"message":"this agent cannot replay a conversation"}}\n' "$(id_of "$line")"
                 continue
             fi

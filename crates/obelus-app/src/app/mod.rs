@@ -1770,6 +1770,10 @@ where
     // arrives in that moment is let go; what does not stays with the
     // agent, which is where it would have been anyway.
     app.let_go_of_what_nothing_was_said_in(None);
+    // And every conversation's page as it is now, for the same reason the
+    // carets are written below: whatever happened after its turn ended
+    // happened since it was last kept.
+    app.keep_every_page();
     // And what was open, with the carets where they are now: the frames
     // wrote it down as it changed, and the way out is the last chance to
     // say where in each file the reader was.

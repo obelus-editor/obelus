@@ -1,10 +1,16 @@
-//! Which conversation belongs to which note, across sittings.
+//! Which conversation belongs to which note, across sittings, and the page
+//! each one was drawn on.
 //!
-//! An agent keeps what was said -- `session/load` replays it -- so Obelus
-//! does not have to keep a word of it. Both halves come back: the agent's
-//! own, and the reader's as `user_message_chunk`, which is the only way a
-//! client that was not running when they were typed can have them. What
-//! Obelus has to keep is the one thing the agent cannot: which of its
+//! An agent keeps what was said, and `session/load` replays it -- but as
+//! the agent has it, which is not as the reader saw it. Obelus's words to
+//! the agent come back run into the reader's as if they had typed them,
+//! Obelus's own remarks do not come back at all, and an agent that can
+//! only resume sends back nothing. So the page is kept here as it was
+//! drawn ([`keep_page`]), and the agent is asked for its context rather
+//! than its words; what it replays is only drawn for a conversation with
+//! no page, which is one from before pages were kept.
+//!
+//! The other thing Obelus keeps is the one the agent cannot: which of its
 //! conversations is about which of this project's notes. Nothing on the
 //! agent's side knows that a note exists.
 //!
@@ -248,6 +254,97 @@ pub fn path(root: &Path) -> Option<PathBuf> {
     )
 }
 
+/// Where one conversation's page is kept.
+///
+/// Beside the project's table, in a directory named the way the table is,
+/// so that a page goes when its row does: [`change`] clears every page no
+/// row names any more, whichever way the row went.
+///
+/// By the session's name made into a file name. Many-to-one, but a
+/// session's name is the agent's own and is made to be unique -- a UUID,
+/// for every agent Obelus has met.
+#[must_use]
+pub fn page(root: &Path, session: &str) -> Option<PathBuf> {
+    Some(pages(root)?.join(page_name(session)))
+}
+
+/// The directory a project's pages are kept in.
+fn pages(root: &Path) -> Option<PathBuf> {
+    Some(path(root)?.with_extension(""))
+}
+
+/// One session's page, as a file name.
+fn page_name(session: &str) -> String {
+    format!("{}.json", obelus_git::file_name_of(Path::new(session)))
+}
+
+/// Writes one conversation's page, over whatever was there.
+///
+/// Beside it and renamed over it, the way the table is: a page half
+/// written is a conversation that comes back shorter than it was. Only one
+/// Obelus writes a given page -- the conversation is claimed -- so there
+/// is nothing to read and merge first.
+pub fn keep_page(root: &Path, session: &str, page: &str) {
+    let Some(path) = self::page(root, session) else {
+        return;
+    };
+    if let Some(directory) = path.parent()
+        && let Err(error) = std::fs::create_dir_all(directory)
+    {
+        tracing::warn!(%error, path = %path.display(), "no directory to keep a conversation in");
+        return;
+    }
+    let beside = path.with_extension(format!("json.writing.{}", std::process::id()));
+    if let Err(error) = std::fs::write(&beside, page).and_then(|()| std::fs::rename(&beside, &path))
+    {
+        tracing::warn!(%error, path = %path.display(), "the conversation was not kept");
+        let _ = std::fs::remove_file(&beside);
+    }
+}
+
+/// One conversation's page, where one was kept.
+///
+/// `None` for one that never was -- from before pages were kept, or on a
+/// system with nowhere to keep them -- and for one that will not read,
+/// which is said to the log: the agent's own account is still there to be
+/// asked for instead.
+#[must_use]
+pub fn kept_page(root: &Path, session: &str) -> Option<String> {
+    let path = page(root, session)?;
+    match std::fs::read_to_string(&path) {
+        Ok(page) => Some(page),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => {
+            tracing::warn!(%error, path = %path.display(), "the conversation's page will not read");
+            None
+        }
+    }
+}
+
+/// Clears every page the table no longer names.
+///
+/// After the table is written, so a page goes only once its row has: a
+/// note deleted, a tree removed, a conversation forgotten or one the agent
+/// no longer has. Nothing else would -- the rows go in four places and
+/// each would have to remember the page.
+fn forget_pages_nobody_names(root: &Path, remembered: &Remembered) {
+    let Some(directory) = pages(root) else {
+        return;
+    };
+    let Ok(entries) = std::fs::read_dir(&directory) else {
+        return;
+    };
+    let named: std::collections::HashSet<String> = remembered.sessions().map(page_name).collect();
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        // Only pages: a name with `.writing.` in it is a page another
+        // Obelus is half-way through writing, and is its to rename.
+        if name.ends_with(".json") && !named.contains(&name) {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
 /// What reading a project's table found.
 ///
 /// Three answers and not two, for the reason the notes beside it give three
@@ -441,6 +538,7 @@ pub fn change(
         let _ = std::fs::remove_file(&beside);
         return None;
     }
+    forget_pages_nobody_names(root, &remembered);
     Some(remembered)
 }
 

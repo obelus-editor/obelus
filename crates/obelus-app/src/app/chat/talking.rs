@@ -521,18 +521,26 @@ impl App {
                 })
                 .and_then(|(_, _, _, kept)| kept.title.clone())
         });
-        let Some(talker) = self.agent.talker.as_mut() else {
+        if self.agent.talker.is_none() {
             return;
-        };
+        }
         match had {
             Some(session) => {
-                let asking = talker.reopen(&session, title, tools);
+                let own_page = self.bring_back_the_page(whose, &session);
+                let Some(talker) = self.agent.talker.as_mut() else {
+                    return;
+                };
+                let asking = talker.reopen(&session, title, tools, !own_page);
                 if let Some(talk) = self.talk_mut(whose) {
                     talk.asked_for = Some(obelus_agent::acp::SessionId::new(session));
                     talk.requested = Some(asking);
+                    talk.own_page = own_page;
                 }
             }
             None => {
+                let Some(talker) = self.agent.talker.as_mut() else {
+                    return;
+                };
                 let asking = talker.open(tools);
                 if let Some(talk) = self.talk_mut(whose) {
                     talk.opening = true;
@@ -540,6 +548,85 @@ impl App {
                 }
             }
         }
+    }
+
+    /// Puts the page of a conversation being taken up back as it was, from
+    /// what Obelus kept of it, and says whether the page is Obelus's own.
+    ///
+    /// A page that already has something said on it is its own already --
+    /// the agent died under it and it is being taken up in the same
+    /// sitting -- and is left as it is. One with nothing kept is the
+    /// agent's to fill, by replaying it.
+    fn bring_back_the_page(&mut self, whose: Whose, session: &str) -> bool {
+        if self
+            .talk(whose)
+            .is_some_and(|talk| talk.chat.anything_said())
+        {
+            return true;
+        }
+        let Some(page) = obelus_agent::acp::sessions::kept_page(&self.working_directory, session)
+        else {
+            return false;
+        };
+        let Some(talk) = self.talk_mut(whose) else {
+            return false;
+        };
+        match talk.chat.bring_back(&page) {
+            Ok(()) => {
+                // And which checkout it was working in, which a replay
+                // would have said through the calls it sent again.
+                if let Some(call) = talk.chat.last_to_write() {
+                    self.hear_where_it_wrote(whose, &call);
+                }
+                true
+            }
+            Err(error) => {
+                tracing::warn!(%error, session, "the conversation's page will not read");
+                false
+            }
+        }
+    }
+
+    /// Writes down the page of the conversation `whose` names, as it is
+    /// now.
+    ///
+    /// Only one there is something to come back to: one with a session,
+    /// and something said in it -- the same test that decides whether its
+    /// name is written down (`remember_the_conversations`).
+    pub(in crate::app) fn keep_the_page(&self, whose: Whose) {
+        let Some(talk) = self.talk(whose) else {
+            return;
+        };
+        Self::keep_the_page_of(&self.working_directory, talk);
+    }
+
+    /// The same, for a conversation already in hand -- one on its way out
+    /// of the list of documents.
+    pub(in crate::app) fn keep_the_page_of(
+        root: &std::path::Path,
+        talk: &crate::conversation::Conversation,
+    ) {
+        let Some(session) = talk.session.as_ref() else {
+            return;
+        };
+        if !talk.chat.anything_said() {
+            return;
+        }
+        obelus_agent::acp::sessions::keep_page(root, &session.0, &talk.chat.to_keep());
+    }
+
+    /// Writes down the page of every conversation open here, for the way
+    /// out.
+    pub fn keep_every_page(&self) {
+        for talk in self.documents.iter().flatten().filter_map(Document::chat) {
+            Self::keep_the_page_of(&self.working_directory, talk);
+        }
+    }
+
+    /// Whether what the agent sent `whose` is the replay of a conversation
+    /// whose page Obelus put back itself, and so is not to be drawn.
+    fn is_a_replay_nobody_wants(&self, whose: Whose) -> bool {
+        self.replaying(whose) && self.talk(whose).is_some_and(|talk| talk.own_page)
     }
 
     /// Where the conversation `whose` names reaches Obelus's own tools.
@@ -3948,6 +4035,23 @@ impl App {
         let Some(whose) = self.whose(&incoming) else {
             return;
         };
+        // What was said, replayed to a conversation that has its page
+        // already. What the agent calls it and what it can be set to still
+        // count: those are about the session, which is the part asked for.
+        if let acp::Incoming::Update { update, .. } = &incoming
+            && matches!(
+                update,
+                acp::Update::Said(_)
+                    | acp::Update::Thought(_)
+                    | acp::Update::Heard(_)
+                    | acp::Update::Tool { .. }
+                    | acp::Update::Plan(_)
+                    | acp::Update::Task(_)
+            )
+            && self.is_a_replay_nobody_wants(whose)
+        {
+            return;
+        }
         match incoming {
             acp::Incoming::Update { update, .. } => match update {
                 acp::Update::Said(text) => {
@@ -3959,9 +4063,9 @@ impl App {
                     self.in_talk(whose, |chat| chat.chunk(Speaker::Thought, &text));
                 }
                 // The reader's own words, as the agent has them. What this
-                // is for is a conversation taken up again after Obelus was
-                // shut: the transcript is the agent's, and this is the half
-                // of it Obelus cannot write itself.
+                // is for is a conversation taken up again that Obelus kept
+                // no page of: the transcript is then the agent's, and this
+                // is the half of it Obelus cannot write itself.
                 acp::Update::Heard(text) => self.in_talk(whose, |chat| chat.heard(&text)),
                 acp::Update::Tool { call, status } => {
                     self.mirror_paused(whose);
@@ -4037,6 +4141,11 @@ impl App {
                 // After the line above and not before it, so that the
                 // transcript reads in the order the things happened.
                 self.say_what_was_waiting(whose);
+                // And the page as the turn left it, which is the moment it
+                // stops changing on its own. After what was waiting has
+                // gone, so that it is kept as said rather than left out as
+                // not yet sent.
+                self.keep_the_page(whose);
             }
             acp::Incoming::Failed(what, why) => {
                 tracing::warn!(what, why, "the agent");

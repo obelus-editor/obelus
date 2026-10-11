@@ -154,6 +154,15 @@ pub struct Conversation {
     /// from "no session yet" because two conversations opening at once would
     /// otherwise be told apart by nothing, and could take each other's.
     pub asked_for: Option<acp::SessionId>,
+    /// Whether the page was put back from Obelus's own record of it when
+    /// the session was asked for.
+    ///
+    /// Then what the agent replays while it takes the conversation up is
+    /// the same conversation a second time, in its own words, and is not
+    /// drawn (`App::is_a_replay_nobody_wants`). Asked again each time a
+    /// session is: a conversation taken up after the agent died under it
+    /// has its page already, whether or not one was ever kept.
+    pub own_page: bool,
     /// Whether it has asked for a fresh one and not been answered.
     ///
     /// The other half of [`Self::asked_for`], which says the same thing
@@ -232,8 +241,9 @@ pub struct Conversation {
     /// says: an agent told to work in a worktree of its own may not, and
     /// one that changes the reader's own checkout is the one most worth
     /// seeing. `None` until it has changed something, which is when there
-    /// starts to be a branch to speak of. A session taken up again replays
-    /// its calls, so this comes back with them and is written down nowhere.
+    /// starts to be a branch to speak of. A session taken up again brings
+    /// its calls back -- on the page Obelus kept, or in what the agent
+    /// replays -- so this comes back with them and is written down nowhere.
     ///
     /// The tree is kept beside the branch so that the branch can be asked
     /// again when the repository moves, the way the status row's is. What

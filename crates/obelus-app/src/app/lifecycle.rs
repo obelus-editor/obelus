@@ -110,6 +110,9 @@ impl App {
         // The sessions nothing was said in, as on the way out: an agent
         // keeps what it is not told to let go of.
         self.let_go_of_what_nothing_was_said_in(None);
+        // And every conversation's page, as on the way out: the window is
+        // about to be a new one, and these go with the old.
+        self.keep_every_page();
         // Moved on rather than made again, because a walk still running
         // holds the old count: a new one would start where the old one's
         // answers are numbered, and they would arrive as current.

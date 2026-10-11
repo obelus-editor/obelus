@@ -553,12 +553,14 @@ impl Talk {
     /// to this request.
     ///
     /// `title` is what it was called when it was written down, which the
-    /// agent's own word about it replaces whenever that arrives.
+    /// agent's own word about it replaces whenever that arrives. `words`
+    /// is whether what was said is wanted back -- see [`Ask::Reopen`].
     pub fn reopen(
         &mut self,
         session: &str,
         title: Option<String>,
         tools: Option<String>,
+        words: bool,
     ) -> Asking {
         let asking = self.waiting_for_one();
         if let Some(title) = title {
@@ -567,6 +569,7 @@ impl Talk {
         let _ = self.asks.unbounded_send(Ask::Reopen {
             session: SessionId::new(session),
             tools,
+            words,
         });
         asking
     }
@@ -1267,7 +1270,7 @@ mod tests {
     fn a_name_the_agent_gives_while_replaying_beats_the_one_written_down() {
         let mut talk = detached();
         let session = SessionId::new("s-1");
-        talk.reopen("s-1", Some("old".to_string()), None);
+        talk.reopen("s-1", Some("old".to_string()), None, true);
         talk.on(Incoming::Update {
             session: session.clone(),
             update: Update::Titled("new".to_string()),

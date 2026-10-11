@@ -870,7 +870,7 @@ impl App {
 
     /// Whether what the agent sends this conversation is the replay of one
     /// taken up again: said in its thread when it was said, and not news.
-    fn replaying(&self, whose: talking::Whose) -> bool {
+    pub(in crate::app) fn replaying(&self, whose: talking::Whose) -> bool {
         self.talk_of(whose)
             .is_some_and(|talk| talk.session.is_none() && talk.asked_for.is_some())
     }

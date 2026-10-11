@@ -85,14 +85,17 @@ pub enum Ask {
         session: SessionId,
     },
     /// Take up one the agent already has, from a previous sitting.
-    ///
-    /// The agent kept every word of it, so Obelus keeps none: what it keeps
-    /// is the name, because the agent has no idea a note exists.
     Reopen {
         /// The name Obelus wrote down last time.
         session: SessionId,
         /// Where it reaches Obelus's own tools, as [`Ask::Open`] has it.
         tools: Option<String>,
+        /// Whether what was said is wanted back.
+        ///
+        /// Not where Obelus kept the page itself: then what is wanted of
+        /// the agent is its context, and an agent that can resume is asked
+        /// to rather than to replay a conversation nobody will draw.
+        words: bool,
     },
     /// Say this, in that conversation.
     Say {

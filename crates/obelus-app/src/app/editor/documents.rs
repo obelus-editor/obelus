@@ -1151,6 +1151,10 @@ impl App {
         // there is not left talking to something nobody is listening for.
         if let Some(talk) = document.chat() {
             self.mirror_closed(talk);
+            // And its page, with whatever has happened on it since the
+            // turn ended: a command that went on printing, a fold the
+            // reader opened.
+            Self::keep_the_page_of(&self.working_directory, talk);
         }
         drop(document);
 

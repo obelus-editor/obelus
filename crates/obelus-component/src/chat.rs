@@ -119,6 +119,7 @@ use obelus_row::{Ink, Span};
 
 use crate::{composer::Composer, window::Window};
 
+mod kept;
 mod keys;
 mod layout;
 
@@ -1688,6 +1689,19 @@ impl Chat {
             .then(|| said.places.first())
             .flatten()
             .map(|place| place.path.as_path())
+    }
+
+    /// The id of the last call that changed a file, for a page put back
+    /// rather than heard: where the agent last wrote is learnt from its
+    /// calls as they arrive, and on a page brought back none arrive.
+    #[must_use]
+    pub fn last_to_write(&self) -> Option<String> {
+        self.said
+            .iter()
+            .rev()
+            .filter_map(|said| said.tag.as_deref())
+            .find(|id| self.wrote(id).is_some())
+            .map(str::to_string)
     }
 
     /// Opens what is closed and closes what is open.
