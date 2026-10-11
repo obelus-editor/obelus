@@ -509,6 +509,9 @@ pub struct App {
     headless: bool,
     /// Why a headless Obelus gave up, where it did.
     stopped_because: Option<String>,
+    /// Whether the key being handled was pressed with command
+    /// (`Event::Command`), which only a terminal asks.
+    by_command: bool,
     should_quit: bool,
 }
 
@@ -636,6 +639,7 @@ impl App {
             remote_at_start: false,
             headless: false,
             stopped_because: None,
+            by_command: false,
             should_quit: false,
         }
     }
@@ -1786,7 +1790,7 @@ fn handle(app: &mut App, event: Event) {
     // query would answer with the question again. `KeyCode` is `Copy`, so
     // taking it costs nothing on the events that are not slow.
     let key = match &event {
-        Event::Key(pressed) => Some(pressed.code),
+        Event::Key(pressed) | Event::Command(pressed) => Some(pressed.code),
         _ => None,
     };
     let started = std::time::Instant::now();

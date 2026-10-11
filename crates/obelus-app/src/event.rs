@@ -39,6 +39,15 @@ use crossterm::event::{Event as TerminalEvent, KeyEvent};
 pub enum Event {
     /// A key was pressed.
     Key(KeyEvent),
+    /// A key was pressed with command, where the window reports command as
+    /// control -- `obg` on macOS.
+    ///
+    /// The key carries control and is control's everywhere but one: a
+    /// program in a terminal, which on a Mac never hears command, because
+    /// every terminal there keeps it for itself. Sent down the pty as
+    /// control, `cmd+c` would interrupt, `cmd+z` suspend and `cmd+d` end
+    /// the shell (`App::terminal_key`).
+    Command(KeyEvent),
     /// The terminal was resized.
     Resize,
     /// What the faces on this machine are called.
@@ -246,6 +255,7 @@ impl Event {
     pub const fn what(&self) -> &'static str {
         match self {
             Self::Key(_) => "Key",
+            Self::Command(_) => "Command",
             Self::Resize => "Resize",
             Self::Fonts { .. } => "Fonts",
             Self::Closed => "Closed",

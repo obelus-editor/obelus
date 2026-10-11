@@ -1621,7 +1621,10 @@ impl ApplicationHandler<Waking> for Showing {
                 if self.composing && plain {
                     return;
                 }
-                self.tell(Event::Key(key));
+                self.tell(match keys::by_command(self.modifiers) {
+                    true => Event::Command(key),
+                    false => Event::Key(key),
+                });
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let Some(at) = self.cell_at(position) else {

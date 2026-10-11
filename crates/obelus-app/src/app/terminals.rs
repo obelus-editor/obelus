@@ -9,7 +9,9 @@
 //! anybody's. So the mnemonic layout's keys for the views go to the program
 //! here, where the function keys they stand in for do not: every one of
 //! them is a chord a shell already has. Once the program has ended there is
-//! nothing to type to, and the keys go back to Obelus.
+//! nothing to type to, and the keys go back to Obelus. Command, in `obg` on
+//! a Mac, is kept the same way and nothing of it is the program's: it
+//! arrives as control, and down the pty `cmd+d` would end the shell.
 //!
 //! **The pointer is the program's where it asked for it, and the reader's
 //! otherwise.** A program that asked to hear the pointer -- an editor, a
@@ -153,6 +155,12 @@ impl App {
         // context and finds it.
         if self.keymap.lookup(key, Context::Terminal).is_some() {
             return false;
+        }
+        // Command is the terminal's own on a Mac, never the program's: what
+        // Obelus has not kept of it goes nowhere, as it would in any
+        // terminal there (`Event::Command`).
+        if self.by_command {
+            return true;
         }
         if let Some(terminal) = self.terminal_mut() {
             terminal.key(key);

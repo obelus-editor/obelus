@@ -201,6 +201,54 @@ fn escape_and_control_keys_go_to_the_program() {
     });
 }
 
+/// Command, where `obg` on a Mac reports it as control, is not the
+/// program's: what Obelus keeps of it still works, and the rest goes
+/// nowhere rather than down the pty as a control byte -- `cmd+d` there
+/// would end the shell.
+///
+/// The pty raw again, and two bytes read off it whole: if either control
+/// letter got through, it is one of the two. Broken deliberately by
+/// dropping the `by_command` refusal from `App::terminal_key`: `od` prints
+/// `005 003` and the wait for `x   y` runs out.
+#[test]
+fn command_in_a_terminal_is_not_the_programs() {
+    let (mut app, events) = a_shell();
+    support::type_text(
+        &mut app,
+        "stty raw -echo; echo go-$((2 + 2)); dd bs=1 count=2 2>/dev/null | od -An -c; stty sane; \
+         echo sane-$((4 + 4))",
+    );
+    press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    pump(&mut app, &events, "the pty to be raw", |app| {
+        on_the_terminal(app).contains("go-4")
+    });
+    for letter in ['e', 'c'] {
+        app.handle(Event::Command(KeyEvent::new(
+            KeyCode::Char(letter),
+            KeyModifiers::CONTROL,
+        )));
+    }
+    support::type_text(&mut app, "xy");
+    pump(&mut app, &events, "the bytes to be read back", |app| {
+        on_the_terminal(app).contains("x   y")
+    });
+    pump(&mut app, &events, "the pty to be cooked again", |app| {
+        on_the_terminal(app).contains("sane-8")
+    });
+
+    // And what the terminal keeps is kept whichever key it came on.
+    app.handle(Event::Command(KeyEvent::new(
+        KeyCode::Char('q'),
+        KeyModifiers::CONTROL,
+    )));
+    assert!(
+        support::ways(&app)
+            .iter()
+            .any(|way| way == "Stop it and leave"),
+        "cmd+q did not ask to leave"
+    );
+}
+
 /// The key that leaves Obelus leaves it from inside a terminal too, though
 /// every other control letter there is the program's -- asking first,
 /// because the program would go with it.

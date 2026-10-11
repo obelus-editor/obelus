@@ -12,6 +12,13 @@ impl App {
     pub fn handle(&mut self, event: Event) {
         match event {
             Event::Key(key) => self.handle_key(key),
+            // The same key, said once more for the one hearer that tells
+            // the two apart.
+            Event::Command(key) => {
+                self.by_command = true;
+                self.handle_key(key);
+                self.by_command = false;
+            }
             // Redrawing is unconditional after every event, so a resize needs
             // no handling of its own beyond waking the loop.
             Event::Resize => {}

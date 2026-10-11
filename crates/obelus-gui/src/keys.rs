@@ -82,9 +82,21 @@ pub(crate) fn asked_of_the_window(
     }
 }
 
+/// Whether a press is reported as control because command was held --
+/// which a terminal in Obelus has to know (`Event::Command`).
+pub(crate) fn by_command(modifiers: ModifiersState) -> bool {
+    command_stands_for_control(modifiers, COMMAND_IS_CONTROL)
+}
+
+/// Whether command is held and stands for control: not with control as
+/// well, which is a chord Obelus does not understand.
+fn command_stands_for_control(modifiers: ModifiersState, command_is_control: bool) -> bool {
+    command_is_control && modifiers.super_key() && !modifiers.control_key()
+}
+
 /// The modifiers held, as the rest of Obelus names them.
 fn modifiers_of(modifiers: ModifiersState, command_is_control: bool) -> KeyModifiers {
-    let command = command_is_control && modifiers.super_key() && !modifiers.control_key();
+    let command = command_stands_for_control(modifiers, command_is_control);
     let mut bits = KeyModifiers::empty();
     bits.set(KeyModifiers::SHIFT, modifiers.shift_key());
     bits.set(KeyModifiers::CONTROL, modifiers.control_key() || command);
@@ -269,7 +281,8 @@ mod tests {
     ///
     /// Deliberate break: dropping `command` from the control bit fails the
     /// first assertion, and dropping `!modifiers.control_key()` from
-    /// `command` fails the last -- `ctrl+cmd+q` would leave.
+    /// `command_stands_for_control` fails the last -- `ctrl+cmd+q` would
+    /// leave.
     #[test]
     fn command_is_control_where_it_is_told_to_be() {
         let command = ModifiersState::SUPER;
