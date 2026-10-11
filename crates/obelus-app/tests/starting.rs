@@ -97,9 +97,11 @@ fn a_tree_opens_on_the_list() {
 /// prevents is silent.
 ///
 /// [`obelus_app::app::App::pinned`] is what this asserts on rather than the
-/// theme itself, because the reader's own file has a theme too and a
+/// width itself, because the reader's own file may have a width too and a
 /// machine whose reader had already chosen this one would pass a broken
-/// start. What the tree *named* cannot be arrived at any other way.
+/// start. What the tree *named* cannot be arrived at any other way. The
+/// tab width rather than the theme it was once, which a tree may no longer
+/// name.
 ///
 /// Broken deliberately by moving `app.load_config()` above the
 /// `app.work_in(root)` call: `pinned` comes back empty.
@@ -109,14 +111,14 @@ fn the_tree_is_settled_before_its_settings_are_read() {
     std::fs::create_dir_all(scratch.path().join(".obelus")).expect("making it");
     std::fs::write(
         scratch.path().join(".obelus").join("config.toml"),
-        "theme = \"light\"\n",
+        "tab_width = 8\n",
     )
     .expect("writing it");
 
     let app = startup::start(&[scratch.path().to_path_buf()], BUILT).expect("starting");
 
     assert!(
-        app.pinned().contains(&"theme"),
+        app.pinned().contains(&"tab_width"),
         "the tree's settings were not read, so its file did nothing: {:?}",
         app.pinned()
     );
@@ -126,8 +128,8 @@ fn the_tree_is_settled_before_its_settings_are_read() {
         "Obelus looked for the tree's settings somewhere else"
     );
     assert_eq!(
-        app.theme_name(),
-        "light",
-        "the tree named a theme and Obelus is not wearing it"
+        app.config().tab_width,
+        8,
+        "the tree named a width and Obelus is not using it"
     );
 }

@@ -646,3 +646,25 @@ pub fn by_name(name: &str) -> Option<&'static Theme> {
         .find(|(called, _)| *called == name)
         .map(|(_, theme)| *theme)
 }
+
+/// The theme omarchy renders for Obelus, which Obelus knows by name and
+/// does not carry.
+///
+/// omarchy themes every program on a desktop at once, and writes Obelus's
+/// colours from the template in `contrib/omarchy` into a file of its own
+/// every time a theme is set. So this is built in the way a name is built
+/// in: Obelus knows where to look, and offers it where the file is there --
+/// on a machine without omarchy there is no such theme, rather than one
+/// that answers with somebody else's colours. A theme of the reader's by
+/// the same name is theirs, and comes first.
+pub const OMARCHY: &str = "omarchy";
+
+/// Where omarchy writes that file, under a home directory.
+///
+/// The state directory omarchy keeps whatever theme is set in, which it
+/// replaces whole when another is set -- so what is watched is the
+/// directory the file is in, and a new one there is the theme changing.
+#[must_use]
+pub fn omarchy_in(home: &std::path::Path) -> std::path::PathBuf {
+    home.join(".local/state/omarchy/current/theme/obelus.toml")
+}

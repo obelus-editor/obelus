@@ -250,7 +250,7 @@
       <p class="quiet small">It also tells you <em>which line</em>. A settings file that won't parse, a key binding that doesn't work, a setting the project isn't allowed to set, a theme with no file: each is marked on its own line, in the same list as the language server's errors, so <kbd>Alt+e</kbd> and <kbd>Alt+[</kbd> <kbd>Alt+]</kbd> find them like any other problem.</p>
 
       <div class="aside">
-        <p><strong>Six settings a project can't set:</strong> <code>agent</code>, <code>keys</code>, <code>agents</code>, <code>new_versions</code>, <code>conversation_days</code> and <code>read_only</code>. All six are yours, not a downloaded repository's: which program gets started on your machine, where your keys are (a project could move <code>quit</code> somewhere you'd hit by accident), what an agent may do without asking (exactly what a hostile project would want to set), whether Obelus goes online to check for updates, how long your conversations are kept (a project could empty your list), and whether your own keys may edit files.</p>
+        <p><strong>Seven settings a project can't set:</strong> <code>agent</code>, <code>keys</code>, <code>agents</code>, <code>new_versions</code>, <code>conversation_days</code>, <code>read_only</code> and <code>theme</code>. All seven are yours, not a downloaded repository's: which program gets started on your machine, where your keys are (a project could move <code>quit</code> somewhere you'd hit by accident), what an agent may do without asking (exactly what a hostile project would want to set), whether Obelus goes online to check for updates, how long your conversations are kept (a project could empty your list), whether your own keys may edit files, and which of your themes you wear.</p>
       </div>
 
       <h3>The settings</h3>
@@ -298,8 +298,16 @@ show-change = "Alt+g"
 quit = ""            # taken away</code></pre>
 
       <h3>Themes</h3>
-      <p><code>dark</code> and <code>light</code> are built in; <code>choose-theme</code> switches between themes instantly. Any <code>.toml</code> file in <code>~/.config/obelus/themes/</code> is also a theme, named after the file (<code>omarchy.toml</code> → <code>omarchy</code>). Every colour is optional: anything you leave out comes from the built-in theme yours is based on, so an old theme file keeps working when Obelus adds a colour.</p>
-      <p class="quiet small"><code>contrib/omarchy/</code> in the repository is a template for <a href="https://omarchy.org">omarchy</a>: when you change your desktop theme, Obelus's colours follow. Obelus itself knows nothing about omarchy; the template just writes the theme file for you.</p>
+      <p><code>dark</code>, <code>light</code> and a shelf of well-known palettes are built in; <code>choose-theme</code> switches between themes instantly. Any <code>.toml</code> file in <code>~/.config/obelus/themes/</code> is also a theme, named after the file (<code>mine.toml</code> → <code>mine</code>), and so is a directory there holding a <code>theme.toml</code>, named after the directory — which is how a theme keeps a picture beside its colours. A theme of yours by a built-in name comes first. Every colour is optional: anything you leave out comes from the built-in theme yours is based on, so an old theme file keeps working when Obelus adds a colour.</p>
+      <p>In a window, a theme may carry a wallpaper under the page. The file names it in a table of its own; everything but <code>file</code> may be left out:</p>
+      <pre><code>[wallpaper]
+file = "rain.jpg"     # beside theme.toml
+opacity = 85          # how much of the page covers it, 0 to 100
+fit = "cover"         # cover, contain, stretch, center or tile
+anchor = "center"     # what stays put: top-left, top, top-right, left,
+                      # center, right, bottom-left, bottom or bottom-right</code></pre>
+      <p class="quiet small">A terminal has no pixels to put one in, so <code>ob</code> wears the colours alone. A line Obelus can't use is marked and left at its default, and a picture that isn't there is marked too.</p>
+      <p class="quiet small"><code>omarchy</code> is offered wherever <a href="https://omarchy.org">omarchy</a> has written a theme for Obelus; <code>contrib/omarchy/</code> in the repository is the template that makes it, so that changing your desktop theme changes Obelus's colours with it.</p>
     </section>
     <section id="windows">
       <h2><span class="num">04</span><span>Several windows</span></h2>

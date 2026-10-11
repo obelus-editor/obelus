@@ -28,7 +28,7 @@ tag=
 directory=${OBELUS_INSTALL_DIR:-$HOME/.local/bin}
 # Whether to hand omarchy Obelus's theme template, where this is running on
 # omarchy. Done unasked because a desktop that themes every program is a
-# reader who meant Obelus too, and refusable because it writes two files
+# reader who meant Obelus too, and refusable because it writes a file
 # outside `--dir`.
 omarchy=yes
 # Whether to put what was installed in the desktop's launcher, which on
@@ -41,13 +41,14 @@ desktop=yes
 # Whether this is the taking-away rather than the putting-there.
 removing=no
 
-# The two files the omarchy half writes. They and the desktop half's are
-# the only things this puts outside `--dir`, and so the ones `--uninstall`
-# has to know the names of -- which is why they are named here rather than
-# where they are written.
-# `rendered` is where omarchy renders the theme: the link points *into*
-# that directory rather than at a copy, because the whole of it is replaced
-# when a theme is set.
+# The file the omarchy half writes. It and the desktop half's are the only
+# things this puts outside `--dir`, and so the ones `--uninstall` has to
+# know the names of -- which is why they are named here rather than where
+# they are written.
+# `rendered` is where omarchy renders the theme, which Obelus reads by
+# itself: `omarchy` is a theme it knows by name. `link` is what an earlier
+# install made instead, a theme file of the reader's pointing *into* that
+# directory -- named so that it can be taken away, both ways in.
 templates=$HOME/.config/omarchy/themed
 template_file=$templates/obelus.toml.tpl
 themes=$HOME/.config/obelus/themes
@@ -100,8 +101,7 @@ Usage: install.sh [options]
                       --uninstall, leave it there.
   --uninstall         Take it away again: `ob` and `obg` out of --dir,
                       their entries in the launcher, and the omarchy theme
-                      template and its link. Nothing else -- your settings
-                      are yours.
+                      template. Nothing else -- your settings are yours.
   --help              This.
 USAGE
 }
@@ -118,6 +118,29 @@ while [ $# -gt 0 ]; do
         *) die "$1 is not an option this understands. --help says what is." ;;
     esac
 done
+
+# The link an earlier install made at what omarchy renders, taken away:
+# Obelus reads that file by itself now, and the link is a theme of the
+# reader's by the same name standing in front of it -- the same file, today,
+# and one that answers for it after this one is gone. Here, above both
+# halves, because both take it away.
+#
+# Only where it is this Obelus's. Anything else of that name is the reader's
+# own theme file -- which this would not write over either -- and a dangling
+# link is still one of ours, since that is the ordinary state of it between
+# a theme being set and the next (`-L` is true where `-e` is false).
+unlinked() {
+    if [ -L "$link" ]; then
+        points=$(readlink "$link" 2> /dev/null || true)
+        if [ "$points" != "$rendered" ]; then
+            say "  left $link alone: it points at $points"
+        elif rm -f "$link"; then
+            say "  removed $link, which Obelus no longer needs"
+        else
+            say "  $link could not be removed"
+        fi
+    fi
+}
 
 # Taking it away again, which fetches nothing and checks nothing: what is on
 # the machine is the whole of what this is about. So it happens before the
@@ -177,25 +200,8 @@ take_it_away() {
     fi
 
     if [ "$omarchy" = yes ]; then
-        # The link, and only where it is this Obelus's. Anything else of
-        # that name is the reader's own theme file -- which the install
-        # would not write over either -- and a dangling link is still one
-        # of ours, since that is the ordinary state of it between a theme
-        # being set and the next.
-        if [ -L "$link" ]; then
-            points=$(readlink "$link" 2> /dev/null || true)
-            if [ "$points" != "$rendered" ]; then
-                say "  left $link alone: it points at $points"
-            elif rm -f "$link"; then
-                say "  removed $link"
-                removed=$((removed + 1))
-                theme_went=yes
-            else
-                say "  $link could not be removed"
-            fi
-        elif [ -e "$link" ]; then
-            say "  left $link alone: it is a file this did not write"
-        fi
+        # The link an earlier install made, where there still is one.
+        unlinked
 
         # The template, which is Obelus's own file at a name Obelus chose --
         # the install writes over whatever wears that name for the same
@@ -204,6 +210,7 @@ take_it_away() {
             if rm -f "$template_file"; then
                 say "  removed $template_file"
                 removed=$((removed + 1))
+                theme_went=yes
             else
                 say "  $template_file could not be removed"
             fi
@@ -215,16 +222,16 @@ take_it_away() {
         # behind it is worth a word, because Obelus's own answer to one is a
         # mark on that line and nothing on the screen changing colour.
         #
-        # Only where the link went just now. It is the link that answers
-        # to the name `omarchy`, not the template -- one left behind
-        # because it is the reader's own file is a theme that still reads.
-        # And a reader who has uninstalled already would otherwise be told
-        # about a line they were told about last time.
+        # Only where the template went just now: without it omarchy stops
+        # writing the theme the name answers to. And a reader who has
+        # uninstalled already would otherwise be told about a line they
+        # were told about last time.
         if [ "$theme_went" = yes ] && grep -q '^[[:space:]]*theme[[:space:]]*=[[:space:]]*"omarchy"' \
             "$HOME/.config/obelus/config.toml" 2> /dev/null; then
             say '
-~/.config/obelus/config.toml still says theme = "omarchy", which now names a
-theme that is not there. Obelus marks that line and keeps the colours it has.'
+~/.config/obelus/config.toml still says theme = "omarchy", which names a
+theme omarchy stops writing the next time a theme is set. Obelus marks that
+line then and keeps the colours it has.'
         fi
     fi
 
@@ -475,8 +482,8 @@ fi
 
 # omarchy themes every program on the desktop at once -- one palette, a
 # template per program, a directory swapped into place -- and Obelus's part
-# of that is a template in the directory omarchy reads templates from and a
-# link at what it renders. The same three steps as
+# of that is a template in the directory omarchy reads templates from. What
+# it renders Obelus reads by itself. The same steps as
 # `contrib/omarchy/README.md`, which is where the rest of this is explained.
 #
 # Nothing fails the install: the binary is in by now, and a desktop's
@@ -489,7 +496,7 @@ omarchy is here, so Obelus can be themed with the rest of the desktop:'
     template=$work/obelus.toml.tpl
     fetch_checked obelus.toml.tpl contrib/omarchy/ || return
 
-    mkdir -p "$templates" "$themes" || { say "  $templates could not be made"; return; }
+    mkdir -p "$templates" || { say "  $templates could not be made"; return; }
     # Written over where it is already there. The template is Obelus's own
     # file at a name Obelus chose, and an install is asking for this
     # version's mapping of it.
@@ -497,21 +504,11 @@ omarchy is here, so Obelus can be themed with the rest of the desktop:'
         || { say "  $template_file could not be written"; return; }
     say "  $template_file"
 
-    # A dangling link is a link (`-L` is true where `-e` is false), and it is
-    # the ordinary state of this one between a theme being set and the next.
-    # Anything else wearing that name is somebody's own theme file and is not
-    # this script's to replace.
-    if [ -L "$link" ] || [ ! -e "$link" ]; then
-        ln -sfn "$rendered" "$link" || { say "  $link could not be made"; return; }
-        say "  $link -> what omarchy renders"
-    else
-        say "  $link is a file this did not write, so it is left as it is"
-        return
-    fi
+    unlinked
 
-    # Rendered once, so that the link points at something now rather than
-    # after the reader next changes theme. Setting the theme they are already
-    # on, so the screen keeps the colours it has.
+    # Rendered once, so that the theme is there now rather than after the
+    # reader next changes theme. Setting the theme they are already on, so
+    # the screen keeps the colours it has.
     current=$(omarchy-theme-current 2>/dev/null || true)
     if [ -n "$current" ] && omarchy-theme-set "$current" > /dev/null 2>&1; then
         say "  rendered for $current"

@@ -7,18 +7,22 @@
 //! A project may carry settings, and a project is not the reader.
 //! `.obelus/config.toml` in the working directory, laid *over* the reader's own
 //! file key by key: the project says what this project needs -- wrapped lines,
-//! a theme -- and says nothing about everything else, which stays theirs. Read
-//! into a fresh config instead of over theirs and a project with one line in it
-//! would turn off a reader's wrapping, which is what every "project settings"
-//! feature that replaces rather than layers actually does.
+//! a tab width -- and says nothing about everything else, which stays theirs.
+//! Read into a fresh config instead of over theirs and a project with one line
+//! in it would turn off a reader's wrapping, which is what every "project
+//! settings" feature that replaces rather than layers actually does.
 //!
-//! A directory rather than a dotfile, because settings are not the only thing a
-//! project will keep for Obelus -- a theme of its own, whatever comes after it
-//! -- and one directory is one thing to find, to copy between machines and to
-//! name in a `.gitignore`, where a dotfile per kind of thing is a row of them
-//! at the top of every listing. Only the working directory itself, never
-//! walking up: Obelus has one answer to which project it is on -- the file list
-//! walks it, the counts count it, git is read from it.
+//! Not a theme: the themes are the reader's, built in or in their own
+//! directory, and a project names none of them and keeps none of its own --
+//! see `obelus_config`, where `theme` is `ReaderOnly`.
+//!
+//! A directory rather than a dotfile, because settings may not stay the only
+//! thing a project keeps for Obelus, and one directory is one thing to find,
+//! to copy between machines and to name in a `.gitignore`, where a dotfile per
+//! kind of thing is a row of them at the top of every listing. Only the
+//! working directory itself, never walking up: Obelus has one answer to which
+//! project it is on -- the file list walks it, the counts count it, git is
+//! read from it.
 //!
 //! The project's settings have a page of their own, `open-project-settings`, a
 //! command rather than a fifth tab: the tabs there are *groups* of settings and
@@ -174,6 +178,15 @@ pub(in crate::app) struct Settled {
     /// The settings that file set, which are the ones the reader cannot
     /// change here.
     pub pinned: Vec<&'static str>,
+    /// Where omarchy writes the theme it renders for Obelus, on a machine
+    /// that could have one -- see `obelus_theme::builtin::OMARCHY`.
+    ///
+    /// Beside the path of the reader's settings and set where that is,
+    /// because it is the same kind of fact: where this machine keeps
+    /// something of the reader's. Nothing in a test that has not said, so
+    /// a test run on a machine with omarchy on it sees what it sees
+    /// everywhere else.
+    pub omarchy: Option<PathBuf>,
 }
 
 impl Default for Settled {
@@ -190,6 +203,7 @@ impl Default for Settled {
             no_theme: None,
             project: None,
             pinned: Vec::new(),
+            omarchy: None,
         }
     }
 }
@@ -756,26 +770,21 @@ impl App {
         ));
     }
 
-    /// Where a theme file may be, nearest first.
+    /// Where a theme file may be: beside the reader's settings, and nowhere
+    /// else.
     ///
-    /// The project's own `.obelus/themes` and then the reader's, which is the
-    /// order the settings themselves are laid: what a project says about
-    /// itself goes over what the reader says about everything. A theme is
-    /// only colours -- there is no code in one, and nothing in a file here
-    /// can be run -- so a project may hand one over on the same terms it hands
-    /// over a wrapped line.
+    /// Not a project's `.obelus/themes`, which there was: the themes are
+    /// the reader's, and a project's file may not name one (`theme` is
+    /// `ReaderOnly`), so a theme a project carried could only ever be one
+    /// the reader went looking for -- and the reader's own directory is
+    /// where they keep those.
     fn theme_directories(&self) -> Vec<PathBuf> {
-        let project = self
-            .settled
-            .project
-            .as_deref()
-            .and_then(obelus_theme::written::beside);
-        let readers = self
-            .settled
+        self.settled
             .path
             .as_deref()
-            .and_then(obelus_theme::written::beside);
-        project.into_iter().chain(readers).collect()
+            .and_then(obelus_theme::written::beside)
+            .into_iter()
+            .collect()
     }
 
     /// What one of a setting's words is called on screen, where it is
@@ -848,7 +857,17 @@ impl App {
             .flat_map(|directory| obelus_theme::written::found_in(directory))
             .map(|(name, _)| name)
             .collect();
-        names.extend(builtin::ALL.iter().map(|(name, _)| (*name).to_string()));
+        // Obelus's own two, then omarchy's where it has written one -- the
+        // theme of the desktop the reader is on, which is the next thing
+        // they would look for -- then the rest of the shelf.
+        let mut built_in: Vec<String> = builtin::ALL
+            .iter()
+            .map(|(name, _)| (*name).to_string())
+            .collect();
+        if self.omarchy().is_some() {
+            built_in.insert(2.min(built_in.len()), builtin::OMARCHY.to_string());
+        }
+        names.extend(built_in);
         let mut seen = std::collections::HashSet::new();
         names.retain(|name| seen.insert(name.clone()));
         names
@@ -904,12 +923,27 @@ impl App {
     /// The file a name is written in, where one is.
     #[must_use]
     fn theme_file(&self, name: &str) -> Option<PathBuf> {
-        self.theme_directories().into_iter().find_map(|directory| {
-            obelus_theme::written::found_in(&directory)
-                .into_iter()
-                .find(|(called, _)| called == name)
-                .map(|(_, path)| path)
-        })
+        self.theme_directories()
+            .into_iter()
+            .find_map(|directory| {
+                obelus_theme::written::found_in(&directory)
+                    .into_iter()
+                    .find(|(called, _)| called == name)
+                    .map(|(_, path)| path)
+            })
+            .or_else(|| (name == builtin::OMARCHY).then(|| self.omarchy()).flatten())
+    }
+
+    /// The theme omarchy has written for Obelus, where it has -- see
+    /// `obelus_theme::builtin::OMARCHY`.
+    fn omarchy(&self) -> Option<PathBuf> {
+        self.settled.omarchy.clone().filter(|file| file.is_file())
+    }
+
+    /// Says where omarchy's theme would be, for a test: the real one is
+    /// under the reader's home, which a test must not read.
+    pub fn omarchy_for_test(&mut self, file: PathBuf) {
+        self.settled.omarchy = Some(file);
     }
 
     /// The directories a change to the theme in force could arrive in.
@@ -1223,6 +1257,8 @@ impl App {
     /// than whatever the machine it runs on has in `~/.config`.
     pub fn load_config(&mut self) {
         self.settled.path = obelus_config::path();
+        self.settled.omarchy =
+            dirs::home_dir().map(|home| obelus_theme::builtin::omarchy_in(&home));
         if self.settled.path.is_none() {
             tracing::info!("nowhere to keep settings, so the defaults");
             return;

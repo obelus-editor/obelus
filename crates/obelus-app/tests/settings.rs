@@ -4102,7 +4102,7 @@ fn a_line_that_did_nothing_is_a_warning_on_that_line() {
 #[test]
 fn what_a_project_may_not_set_is_marked_on_the_projects_file() {
     let _taken = SETTINGS.lock().expect("the lock");
-    let scratch = project("not-allowed", "theme = \"dark\"\nagent = \"copilot\"\n");
+    let scratch = project("not-allowed", "wrap = true\nagent = \"copilot\"\n");
     let theirs = scratch.path().join(".obelus").join("config.toml");
 
     let mut app = App::new(vec![

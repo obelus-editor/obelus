@@ -121,39 +121,98 @@ fn a_file_theme_previews_and_is_kept() {
     );
 }
 
-/// A project may hand one over too, and its own goes over the reader's.
+/// A tree carries no theme of its own, and its settings may not name one:
+/// the themes are the reader's.
 ///
-/// The same order the settings themselves are laid in: what a project says
-/// about itself goes over what the reader says about everything. A theme is
-/// only colours -- there is no code in one -- so it is handed over on the
-/// same terms as a wrapped line.
+/// A theme in `.obelus/themes` is not offered and does not answer to its
+/// name, and a `theme` line in the tree's settings does nothing and is
+/// marked as a line a project may not write -- so the reader's theme is
+/// still the one on screen.
+///
+/// Deliberate breaks: `theme_directories` keeping the tree's directory
+/// (`mine` is then offered and worn), and `theme` left `Anywhere` (the
+/// tree's line then takes, and nothing is marked).
 #[test]
-fn a_tree_can_carry_a_theme_of_its_own() {
+fn a_tree_carries_no_theme_of_its_own() {
     let scratch = reader("tree-readers");
-    std::fs::write(
-        scratch.join("themes/shared.toml"),
-        "base = \"dark\"\nbackground = \"#010101\"\n",
-    )
-    .expect("the reader's");
-
     let tree = support::Scratch::new("theme-tree");
     std::fs::create_dir_all(tree.join(".obelus/themes")).expect("the directory");
-    std::fs::write(tree.join(".obelus/config.toml"), "wrap = true\n").expect("the settings");
+    let theirs = tree.join(".obelus/config.toml");
+    std::fs::write(&theirs, "theme = \"mine\"\n").expect("the settings");
     std::fs::write(
-        tree.join(".obelus/themes/shared.toml"),
+        tree.join(".obelus/themes/mine.toml"),
         "base = \"dark\"\nbackground = \"#020202\"\n",
     )
     .expect("the tree's");
 
     let mut app = open(&scratch);
     app.working_directory_for_test(tree.path().to_path_buf());
+    assert!(
+        !app.themes().contains(&"mine".to_string()),
+        "the tree's theme was offered: {:?}",
+        app.themes()
+    );
+    assert!(
+        app.theme_called("mine").is_none(),
+        "the tree's theme answered"
+    );
+    assert_eq!(app.theme_name(), obelus_config::DEFAULT_THEME);
+    // What the mark says is the settings' own test's; this is that it is
+    // there, on the tree's file.
     assert_eq!(
-        app.theme_called("shared")
+        app.marks_on_for_test(&theirs).0,
+        1,
+        "the tree's line was not marked"
+    );
+}
+
+/// omarchy's theme is offered by name where omarchy has written one, after
+/// Obelus's own two, and read from where omarchy keeps it -- and where it
+/// has not, there is no such theme; and a reader's own theme by that name
+/// is theirs.
+///
+/// Deliberate breaks: offering the name whether or not the file is there
+/// (the list then has an `omarchy` that answers nothing), and the reader's
+/// directory asked after omarchy's file (the reader's own then loses).
+#[test]
+fn omarchys_theme_is_offered_where_omarchy_wrote_one() {
+    let scratch = reader("omarchy-built-in");
+    let state = support::Scratch::new("omarchy-state");
+    let rendered = state.join("current/theme/obelus.toml");
+
+    let mut app = open(&scratch);
+    app.omarchy_for_test(rendered.clone());
+    assert!(
+        !app.themes().contains(&"omarchy".to_string()),
+        "offered with nothing written: {:?}",
+        app.themes()
+    );
+    assert!(app.theme_called("omarchy").is_none());
+
+    std::fs::create_dir_all(state.join("current/theme")).expect("the directory");
+    std::fs::write(&rendered, "base = \"dark\"\nbackground = \"#1a1b26\"\n").expect("the theme");
+    let themes = app.themes();
+    assert_eq!(&themes[..3], ["dark", "light", "omarchy"], "{themes:?}");
+    assert_eq!(
+        app.theme_called("omarchy")
+            .expect("the theme")
+            .colours
+            .background,
+        written::hex("#1a1b26").expect("a colour")
+    );
+
+    std::fs::write(
+        scratch.join("themes/omarchy.toml"),
+        "base = \"dark\"\nbackground = \"#020202\"\n",
+    )
+    .expect("the reader's");
+    assert_eq!(
+        app.theme_called("omarchy")
             .expect("the theme")
             .colours
             .background,
         written::hex("#020202").expect("a colour"),
-        "the reader's file won over the tree's own"
+        "omarchy's file won over the reader's own"
     );
 }
 

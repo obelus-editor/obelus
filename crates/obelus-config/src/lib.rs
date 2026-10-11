@@ -47,7 +47,10 @@
 //! somebody else's server. `remote` and `remotes` are the
 //! reader's for a reason of their own: they say who may talk to this machine
 //! from a chat, and a project that could name a person there could hand a
-//! stranger the agent.
+//! stranger the agent. And `theme` is the reader's because what it names is
+//! the reader's: the themes are the ones built in and the ones in the
+//! reader's own directory, a project has nowhere to keep one, and a name a
+//! project wrote would be a name it chose among somebody else's.
 //!
 //! The configuration file holds preferences, not state. This file is the
 //! whole of it — one table, `dirs` for where it lives, written the moment
@@ -698,7 +701,7 @@ pub const ALL: &[Setting] = &[
         // is about not having.
         about: "",
         group: Group::Appearance,
-        reach: Reach::Anywhere,
+        reach: Reach::ReaderOnly,
         kind: Kind::Choice(THEMES),
         drawn: Drawn::Anywhere,
     },
@@ -1145,11 +1148,11 @@ pub fn path() -> Option<PathBuf> {
 
 /// Where a project keeps settings of its own, if it keeps any.
 ///
-/// `.obelus/config.toml`, and only that. A project keeps more than settings for
-/// Obelus -- a theme of its own, whatever comes after it -- and one
-/// directory holding all of it is one thing to find, to copy between
-/// machines and to name in a `.gitignore`, where a dotfile per kind of thing
-/// is a row of them at the top of every listing of the project.
+/// `.obelus/config.toml`, and only that. A project may come to keep more
+/// than settings for Obelus, and one directory holding all of it is one
+/// thing to find, to copy between machines and to name in a `.gitignore`,
+/// where a dotfile per kind of thing is a row of them at the top of every
+/// listing of the project.
 ///
 /// The working directory itself, without walking up: Obelus has one answer
 /// to which project it is on -- the file list walks it, the counts count it,
@@ -2265,11 +2268,10 @@ pub fn write_project(path: &Path, key: &str, value: Option<&Value>) -> std::io::
 
 /// Where a project's settings *would* go, for a project that has none yet.
 ///
-/// The directory, always. A project keeps more than settings for Obelus -- a
-/// theme of its own, whatever comes after it -- and one directory holding
-/// all of it is one thing to find, to copy between machines and to put in a
-/// `.gitignore`, where a dotfile per kind of thing is a row of them at the
-/// top of every listing of the project.
+/// The directory, always. A project may come to keep more than settings for
+/// Obelus, and one directory holding all of it is one thing to find, to copy
+/// between machines and to put in a `.gitignore`, where a dotfile per kind
+/// of thing is a row of them at the top of every listing of the project.
 #[must_use]
 pub fn project_path_for(root: &Path) -> PathBuf {
     root.join(".obelus").join("config.toml")
