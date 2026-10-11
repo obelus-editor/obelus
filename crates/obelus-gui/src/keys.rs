@@ -17,7 +17,7 @@
 //! they are one byte each -- and most terminals send nothing at all for
 //! `ctrl+shift+X`. Here they arrive as themselves, because a window is told
 //! which key went down rather than which bytes to read.
-
+//!
 //! And where a platform names a modifier differently from the rest. On macOS
 //! command is what a reader presses a program with -- `cmd+s`, `cmd+w`,
 //! `cmd+q` -- and control is the text fields' own, for the line motions

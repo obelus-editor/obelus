@@ -126,11 +126,15 @@ impl KeyChord {
     /// a chord repeats, so they are where the columns are saved.
     ///
     /// A key that is a word is written the way keys are written everywhere
-    /// -- `Ctrl`, `F1`, `PageDown` -- and this is the *only* spelling: it
-    /// is what the screen shows and what `[keys]` in the settings file is
-    /// written in, because two spellings of one name is somewhere for them
-    /// to differ. An older file in the other case still reads: `parse`
-    /// never minded, and that is what makes the change safe.
+    /// -- `Ctrl`, `F1`, `PageDown` -- and this is the spelling: it is what
+    /// the screen shows and what `[keys]` in the settings file is written
+    /// in, because two spellings of one name is somewhere for them to
+    /// differ. The one exception is control in `obg` on macOS, which the
+    /// screen calls `Cmd` ([`KeyChord::label_as`]) because that is the key
+    /// pressed there; the file is shared with a terminal, where it is not,
+    /// and `parse` reads `Cmd` back as well, so what the screen says is
+    /// still something the file can say. An older file in the other case still
+    /// reads: `parse` never minded, and that is what makes the change safe.
     ///
     /// A letter is left exactly as it is, and that is not tidiness. **A
     /// shifted letter is the capital** -- it is how a chord with shift on a
@@ -226,7 +230,9 @@ impl KeyChord {
     /// The chord some text names, or `None` if it names none.
     ///
     /// The other direction of [`KeyChord::label_in`] with the glyphs off, so
-    /// a chord written into the config file reads back as itself. Spelled
+    /// a chord written into the config file reads back as itself -- and of
+    /// [`KeyChord::label_as`] with command, so one copied off the screen of
+    /// a Mac does too. Spelled
     /// rather than drawn: a file is typed into by hand, and `ctrl+p` is
     /// something a reader can type where a private-use codepoint is not.
     #[must_use]
