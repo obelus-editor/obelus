@@ -593,9 +593,9 @@ impl Painter {
         page: &Page,
         card: &Behind,
         lower: &[&Behind],
-        cell: CellSize,
+        fonts: &mut Fonts,
     ) -> (usize, [f32; 4]) {
-        let (inside, radius) = self.frame(page, card, lower, cell);
+        let (inside, radius) = self.frame(page, card, lower, fonts);
         // Over a pane where it is over one at all: the card of every key
         // always is, a hover over the code never.
         let on_glass = lower.iter().any(|lower| lower.area.intersects(card.area));

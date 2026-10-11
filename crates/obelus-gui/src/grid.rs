@@ -403,6 +403,21 @@ impl Behind {
                 .next()
                 .is_some_and(|glyph| ('\u{2500}'..='\u{257f}').contains(&glyph))
     }
+
+    /// The cells of the ring with a letter under them, which a window puts
+    /// back outside the line -- see `Painter::frame`.
+    pub(crate) fn lettered_ring(&self, page: &Page) -> Vec<(u16, u16)> {
+        let area = self.area;
+        (area.top()..area.bottom())
+            .flat_map(|y| (area.left()..area.right()).map(move |x| (x, y)))
+            .filter(|&(x, y)| {
+                self.ring_holds(page, x, y)
+                    && self
+                        .look(x, y)
+                        .is_some_and(|under| !under.text.trim().is_empty())
+            })
+            .collect()
+    }
 }
 
 /// Where a switch is in the frame being drawn, and how it stands.
@@ -1972,6 +1987,40 @@ mod tests {
         assert!(frame.ring_holds(&page, 1, 0), "a line of the ring");
         assert!(!frame.ring_holds(&page, 0, 1), "written over");
         assert!(!frame.ring_holds(&page, 1, 1), "inside the box");
+    }
+
+    /// What a box was put over keeps its letters under the ring, and only
+    /// under the ring.
+    ///
+    /// Deliberate break: answer an empty list from `Behind::lettered_ring`,
+    /// which is what `frame` did before -- the ground put back and no
+    /// letter, a blank half cell all round a hover. Or drop `ring_holds`
+    /// from it, and the letters under the inside of the box are put back
+    /// under its glass, and the one a list drew over is drawn twice.
+    #[test]
+    fn a_frame_puts_back_the_letters_under_its_ring() {
+        let page = written(&[
+            "\u{256d}\u{2500}\u{2500}\u{256e}",
+            "x a\u{2502}",
+            "\u{2570}\u{2500}\u{2500}\u{256f}",
+        ]);
+        let frame = Behind {
+            cells: "fn main(    "
+                .chars()
+                .map(|character| {
+                    let mut cell = Cell::default();
+                    cell.set_symbol(&character.to_string());
+                    cell
+                })
+                .collect(),
+            ..a_box(4, 3)
+        };
+        assert_eq!(
+            frame.lettered_ring(&page),
+            [(0, 0), (1, 0), (3, 0), (3, 1)],
+            "the space in `fn m`, the row of spaces, the inside of the box \
+             and the cell written over are not"
+        );
     }
 
     /// A frame with a corner drawn over is not drawn at all.

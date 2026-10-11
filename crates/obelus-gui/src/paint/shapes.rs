@@ -156,11 +156,16 @@ impl Painter {
     /// and outside it what the box was put over, where a terminal has its
     /// square corners.
     ///
-    /// What was put over is the ground of the cells under the ring, and
-    /// not their letters: a letter a line cuts in half is not something
-    /// anybody put there. Nor that ground where it is glass, which is
-    /// already under it -- an opaque strip of it would be the one square
-    /// edge left on a round box.
+    /// What was put over is the cells under the ring, their letters as
+    /// well as their ground, and the line goes over the half of each that
+    /// is inside it. Which is what a compact list does with the row its
+    /// rule takes. A terminal gives the ring the whole of its cells, because
+    /// a glyph takes a cell; a line here takes a few pixels, and with only
+    /// the ground put back a hover over the code had a blank half cell all
+    /// round it, a letter gone from each row it crossed.
+    ///
+    /// Not that ground where it is glass, which is already under it -- an
+    /// opaque strip of it would be the one square edge left on a round box.
     ///
     /// What goes inside the line is the caller's, the box's own ground or
     /// glass, so what this answers is where that is: the rectangle inside
@@ -170,8 +175,9 @@ impl Painter {
         page: &Page,
         card: &Behind,
         panes: &[&Behind],
-        cell: CellSize,
+        fonts: &mut Fonts,
     ) -> ([f32; 4], f32) {
+        let cell = fonts.cell();
         let area = card.area;
         for y in area.top()..area.bottom() {
             for x in area.left()..area.right() {
@@ -190,6 +196,24 @@ impl Painter {
                     );
                 }
             }
+        }
+        // Under the line, which is drawn next and covers what of each
+        // letter is inside it. And after every ground of the ring, for the
+        // reason `behind_row` gives: a full-width character along the top
+        // runs into the next cell, whose ground would cover half of it.
+        for (x, y) in card.lettered_ring(page) {
+            let Some(under) = card.look(x, y) else {
+                continue;
+            };
+            let ink = rgba(under.foreground, Ink::Foreground);
+            self.glyphs_at(
+                (f32::from(x) * cell.width, f32::from(y) * cell.height),
+                under,
+                ink,
+                0,
+                fonts,
+                Size::Cell,
+            );
         }
         let line = thickness(cell.height);
         let [left, top, right, bottom] = outline(area, cell, line);

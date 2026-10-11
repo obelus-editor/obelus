@@ -90,7 +90,7 @@ impl Painter {
             }
             let under = start..self.quads.len();
             let (glass, rect) = match over.is_a_box() {
-                true => self.box_glass(page, over, lower, cell),
+                true => self.box_glass(page, over, lower, fonts),
                 false => self.pane_glass(page, over, lower, said.ruled, cell),
             };
             let lowered = self.glass_kept_still(glass, at, &stack, catching_up, cell);
