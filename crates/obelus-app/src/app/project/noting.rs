@@ -92,9 +92,9 @@ impl App {
         // the reader to type into a list that is not their list.
         let todo = self.the_notes_now()?;
         let where_now = self.where_the_notes_point(&todo);
-        // How wide a note's text is here, and whether it wraps: the rows
-        // depend on both, and the view has to be laid out before anything
-        // asks it how many rows it has.
+        // How wide a note's text is here: the rows depend on it, and the
+        // view has to be laid out before anything asks it how many rows it
+        // has.
         let laid = self.notes_laid_out();
         let mut view = TodoView::new(todo, where_now, laid);
         // Opened from a conversation: standing on the note it came out of,
@@ -521,7 +521,7 @@ impl App {
         let Some(notes) = self.notes_mut() else {
             return;
         };
-        notes.lay_out(laid.0, laid.1);
+        notes.lay_out(laid);
         notes.paste(what);
     }
 
@@ -671,10 +671,12 @@ impl App {
         }
     }
 
-    /// How wide a note's own text is, and whether it wraps there.
-    pub(in crate::app) fn notes_laid_out(&self) -> (u16, bool) {
-        let room = obelus_ui::todo::text_width_in(self.editor_area);
-        (room, self.config().wrap)
+    /// How wide a note's own text is, which is where it wraps.
+    ///
+    /// Not the reader's wrapping setting: that is about a file
+    /// (`NotesView::laid`).
+    pub(in crate::app) fn notes_laid_out(&self) -> u16 {
+        obelus_ui::todo::text_width_in(self.editor_area)
     }
 
     /// Whatever a key means to the notes, if they are showing.
@@ -694,7 +696,7 @@ impl App {
         let Some(notes) = self.notes_mut() else {
             return false;
         };
-        notes.lay_out(laid.0, laid.1);
+        notes.lay_out(laid);
         notes.these_are_elsewhere(elsewhere);
         let hints = obelus_ui::todo::hints(notes);
         let list = obelus_ui::todo::list_region(area, &hints);

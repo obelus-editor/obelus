@@ -1102,13 +1102,16 @@ fn dropping_a_note_is_at_the_foot() {
     assert!(text.contains("Drop"), "the foot does not say how:\n{text}");
 }
 
-/// A note too long for the row wraps, where the reader asked for wrapping.
+/// A note too long for the row wraps, whatever the reader's wrapping says.
 ///
-/// The same answer the file behind this view gives, because it is the same
-/// question -- and this page is prose being written, where a line running
-/// off the edge takes the caret with it.
+/// That setting is about a file, where a line is code. This page is prose
+/// being written, where a line running off the edge takes the caret with it
+/// and leaves the rest of the note unread behind a mark.
+///
+/// Broken deliberately by laying the notes out at no limit where the
+/// setting is off, which is what they did: the second half fails.
 #[test]
-fn a_long_note_wraps_when_the_reader_wraps() {
+fn a_long_note_wraps_whatever_the_setting_says() {
     let long = "a note long enough that it will not sit on one row of a narrow \
                 terminal, and so has to go somewhere";
     let scratch = support::Scratch::new("todo-wrap");
@@ -1145,6 +1148,8 @@ fn a_long_note_wraps_when_the_reader_wraps() {
         "it did not wrap:\n{}",
         wrapped.join("\n")
     );
+    // And the same rows with the reader's wrapping off.
+    assert_eq!(showing(false), wrapped, "the setting reached the notes");
     // The continuation starts under the first row's words rather than under
     // the box, so a note reads as one thing.
     //
@@ -1160,20 +1165,6 @@ fn a_long_note_wraps_when_the_reader_wraps() {
         words_at(&wrapped[1]),
         words_at(&wrapped[0]),
         "the second row is not under the first"
-    );
-
-    // And where the reader does not wrap, one row and the mark that says
-    // there is more of it.
-    let cut = showing(false);
-    assert!(
-        !cut[1].contains("of a narrow"),
-        "it wrapped anyway:\n{}",
-        cut.join("\n")
-    );
-    assert!(
-        cut[0].contains('\u{2026}'),
-        "nothing says it was cut:\n{}",
-        cut[0]
     );
 }
 

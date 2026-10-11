@@ -123,8 +123,8 @@ impl App {
         // worktrees, for the same reason.
         self.say_what_this_window_is_reading();
         // The notes are laid out against the room they have: a terminal is
-        // resized and a setting is changed while they are open, and the rows
-        // they are made of depend on both.
+        // resized while they are open, and the rows they are made of depend
+        // on it.
         let laid = self.notes_laid_out();
         // And which of them another Obelus has the conversation of, which
         // decides what the keys will change and so which of them the foot
@@ -132,7 +132,7 @@ impl App {
         // answer to something outside it that moves while it is open.
         let elsewhere = self.which_notes_are_elsewhere();
         if let Some(notes) = self.notes_mut() {
-            notes.lay_out(laid.0, laid.1);
+            notes.lay_out(laid);
             notes.these_are_elsewhere(elsewhere);
         }
         // And the window against the rows that room leaves, which is the

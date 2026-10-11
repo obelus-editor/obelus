@@ -241,13 +241,19 @@ pub struct TodoView {
     rows: Vec<Row>,
     /// Which row is selected and which is on top.
     window: Window,
-    /// How wide a note's own text is, and whether it wraps there.
+    /// How wide a note's own text is, which is where it wraps.
     ///
     /// Kept because the rows depend on it: a note of one long line is one
     /// row or four, and the window, the caret and the drawing have to be
     /// counting the same rows. Set from the frame, which is the only place
     /// that knows.
-    laid: (u16, bool),
+    ///
+    /// Always wrapped, whatever the reader's wrapping says. That setting
+    /// is about a file, where a line is code and its length means
+    /// something; a note is a paragraph, and a paragraph cut at the edge
+    /// is a note the reader cannot read without putting the caret in it
+    /// and walking along.
+    laid: u16,
     /// The note the caret is in, and what is in it.
     ///
     /// Always, where there is a note to be in. There is no editing *mode*
@@ -662,7 +668,7 @@ impl TodoView {
     /// Opens the view over what a tree has, with where each note points
     /// worked out.
     #[must_use]
-    pub fn new(todo: Todo, where_now: Vec<Option<LineNumber>>, laid: (u16, bool)) -> Self {
+    pub fn new(todo: Todo, where_now: Vec<Option<LineNumber>>, laid: u16) -> Self {
         let mut view = Self {
             todo,
             where_now,
@@ -679,16 +685,15 @@ impl TodoView {
         view
     }
 
-    /// Says how wide a note's text is and whether it wraps, and lays the
-    /// rows out again if that has moved.
+    /// Says how wide a note's text is, and lays the rows out again if that
+    /// has moved.
     ///
-    /// Asked every frame, because a terminal is resized and a setting is
-    /// changed while this is open.
-    pub fn lay_out(&mut self, room: u16, wrap: bool) {
-        if self.laid == (room, wrap) {
+    /// Asked every frame, because a terminal is resized while this is open.
+    pub fn lay_out(&mut self, room: u16) {
+        if self.laid == room {
             return;
         }
-        self.laid = (room, wrap);
+        self.laid = room;
         self.rebuild();
         self.follow_caret();
     }
@@ -776,9 +781,9 @@ impl TodoView {
         self.window.settle(rows);
     }
 
-    /// How a note's text is laid out: its width, and whether it wraps.
+    /// How wide a note's text is laid out.
     #[must_use]
-    pub const fn laid(&self) -> (u16, bool) {
+    pub const fn laid(&self) -> u16 {
         self.laid
     }
 
@@ -889,11 +894,8 @@ impl TodoView {
                 *below = true;
             }
         }
-        // Wrapped where the reader asked for wrapping, and one row per line
-        // where they did not -- the same answer the file behind this view
-        // gives, because it is the same question, and the same width the
-        // caret is measured against, because the two have to be counting
-        // the same rows.
+        // Wrapped at the same width the caret is measured against, because
+        // the two have to be counting the same rows.
         let room = self.caret_width().max(1);
         for (index, note) in self.todo.notes.iter().enumerate() {
             if hidden[index] {
@@ -1809,8 +1811,8 @@ impl TodoView {
         self.follow_caret();
     }
 
-    /// The width the caret is measured against: the row's, where the text
-    /// wraps there, and no limit where it does not.
+    /// The width the caret is measured against, which is the width the
+    /// text wraps at.
     ///
     /// The same for every note, because where a note points is a row of its
     /// own: what a note says is laid out the same whether it points anywhere
@@ -1825,10 +1827,7 @@ impl TodoView {
     /// once, for every note, which is what happens when a column appears.
     #[must_use]
     pub fn caret_width(&self) -> u16 {
-        match self.laid.1 {
-            true => self.laid.0.saturating_sub(self.deepest() * INDENT).max(1),
-            false => u16::MAX,
-        }
+        self.laid.saturating_sub(self.deepest() * INDENT).max(1)
     }
 
     /// How deep the deepest note in the list sits.
