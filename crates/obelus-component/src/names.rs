@@ -330,16 +330,21 @@ impl Names {
         self.window.settle(height);
     }
 
-    /// Walks the selection by this many rows, for a wheel.
-    ///
-    /// A notch steps the selection rather than the view, because a list's
-    /// view *is* its selection and there is nothing else in it to scroll.
-    pub fn step(&mut self, by: isize) {
-        let at = self.window.focus();
-        let to = at.saturating_add_signed(by);
-        self.window
-            .set_focus(to.min(self.rows.len().saturating_sub(1)));
-        self.stand(by >= 0);
+    /// Whether this key does something to the row with the focus, rather
+    /// than to the query: the same tests the arms below make.
+    fn acts_on_the_row(&self, code: KeyCode) -> bool {
+        match code {
+            KeyCode::Enter => true,
+            KeyCode::Delete => !self.query.takes_a_delete(),
+            KeyCode::Backspace => self.query.said().is_empty(),
+            _ => false,
+        }
+    }
+
+    /// Scrolls the rows by a wheel's notch, leaving the selection where it
+    /// is: the wheel moves the view and the keys move the choice.
+    pub fn scroll(&mut self, rows: isize) {
+        self.window.scroll(rows);
     }
 
     /// Puts pasted text in the query.
@@ -416,6 +421,15 @@ impl Names {
             // list.
             KeyCode::Esc if self.query.let_go() => Outcome::Consumed,
             KeyCode::Esc => Outcome::Leave,
+            // A row the wheel left off the screen is brought back rather
+            // than acted on: see `Window::reach_for_the_focus`.
+            KeyCode::Enter | KeyCode::Delete | KeyCode::Backspace
+                if self.acts_on_the_row(key.code)
+                    && !self.rows.is_empty()
+                    && self.window.reach_for_the_focus() =>
+            {
+                Outcome::Consumed
+            }
             // On one of the reader's own: take it out. On one that is
             // offered: put it in. Which is the same key doing the same
             // thing -- what this row says about the list, said the other
@@ -641,6 +655,21 @@ mod tests {
         for character in word.chars() {
             press(names, KeyCode::Char(character));
         }
+    }
+
+    /// A notch scrolls the rows and leaves the selection where it was.
+    ///
+    /// Deliberate break: `scroll` stepping the selection as it used to
+    /// (`set_focus` a notch along), and the first assertion fails.
+    #[test]
+    fn the_wheel_moves_the_rows_and_not_the_choice() {
+        let mut names = names();
+        names.settle_window(2);
+        let chosen = names.window().focus();
+        names.scroll(3);
+        names.settle_window(2);
+        assert_eq!(names.window().focus(), chosen, "the wheel moved the choice");
+        assert!(names.window().top() > 0, "the wheel did not move the rows");
     }
 
     /// What is already chosen is not offered again.

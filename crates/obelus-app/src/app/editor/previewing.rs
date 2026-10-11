@@ -490,27 +490,24 @@ impl App {
     fn scroll_layer(&mut self, layer: obelus_component::layers::Layer, rows: isize) -> bool {
         use obelus_component::layers::Layer;
         match layer {
-            // One row a notch in a list. Three is right for text, where a
-            // notch is a gesture at a paragraph; a list is chosen through
-            // one row at a time.
+            // A list under a wheel scrolls its rows by what a notch is in
+            // text, and leaves the selection where it is: the wheel moves
+            // the view and the keys move the choice, in a list as in a
+            // file.
             Layer::Picker => {
                 let Some(picker) = self.picker.as_mut() else {
                     return false;
                 };
-                picker.move_selection_by(rows.signum());
+                picker.scroll(rows);
                 true
             }
-            // A list is a list: a notch steps the selection, because the
-            // selection is what a list has to scroll.
             Layer::Names => {
                 let Some((_, names)) = self.names.as_mut() else {
                     return false;
                 };
-                names.step(rows.signum());
+                names.scroll(rows);
                 true
             }
-            // The counts, which are a list as well: the notch steps the row
-            // rather than the view, for the same reason it does in a picker.
             Layer::Counts => {
                 let Some(counts) = self.counts.as_ref() else {
                     return false;
@@ -521,11 +518,13 @@ impl App {
                 }
                 true
             }
-            // A question is one row and has nothing to scroll; the notes
-            // and the settings scroll with the keys and have never taken
-            // the wheel. Saying so is the point: the next view added has to
-            // answer here rather than being quietly left out.
-            Layer::Prompt | Layer::Settings => false,
+            // The settings are a list too, and a notch over them scrolled
+            // the file behind when this said `false`.
+            Layer::Settings => self.scroll_settings(rows),
+            // A question is one row and has nothing to scroll. Saying so is
+            // the point: the next view added has to answer here rather than
+            // being quietly left out.
+            Layer::Prompt => false,
             // Taken and spent: what is under the page is what the reader
             // was looking at when the project went, and it stays as it was.
             Layer::Gone => true,
@@ -537,9 +536,9 @@ impl App {
     /// Whatever the reader is looking at: the list when one is open -- a list
     /// under a wheel scrolls, and with the mouse reported the wheel no longer
     /// arrives as arrow keys, so a picker that ignored it would have lost
-    /// something -- and otherwise the document, by rows, with the cursor left
-    /// where it was put. A conversation is a document like the file is, and
-    /// the two say that the same way.
+    /// something -- and otherwise the document. By rows either way, with the
+    /// cursor or the selection left where it was put. A conversation is a
+    /// document like the file is, and the two say that the same way.
     pub(in crate::app) fn scroll(&mut self, rows: isize) {
         // What a server said about a place, while it is up: it is what the
         // reader is looking at, and the file behind it is not going
@@ -549,16 +548,17 @@ impl App {
             return;
         }
         // What could be typed next, which is a list beside the cursor: a
-        // notch walks it a row, the way a notch walks any list in Obelus.
+        // notch scrolls it, the way a notch scrolls any list in Obelus.
         if let Some(completion) = self.lsp.completion.as_mut() {
-            completion.scroll(rows.signum());
+            completion.scroll(rows);
             return;
         }
         // And then whatever is over the file, nearest first -- the same
-        // order a key is offered in, because a notch is a key by another
-        // name. The two that answer `false` do so on purpose: this used to
-        // be a chain that simply did not mention them, so a notch over the
-        // notes scrolled the file behind them.
+        // order a key is offered in, because a notch goes to what is in
+        // front the way a key does. The one that answers `false` does so on
+        // purpose: this used to be a chain that simply did not mention the
+        // views it left out, so a notch over the settings scrolled the file
+        // behind them.
         for layer in self.layers().nearest_first() {
             if self.scroll_layer(layer, rows) {
                 return;
@@ -573,6 +573,13 @@ impl App {
         // nothing at all in here.
         if let Some(talk) = self.conversation_mut() {
             talk.chat.scroll(rows);
+            return;
+        }
+        // The notes, which are a document too and not a file, so the
+        // buffer's scrolling below never reached them and a notch did
+        // nothing at all.
+        if let Some(notes) = self.notes_mut() {
+            notes.scroll(rows);
             return;
         }
         // A terminal: to its program where it asked for the pointer, and

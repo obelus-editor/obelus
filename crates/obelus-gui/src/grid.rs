@@ -512,10 +512,17 @@ impl Spun {
 /// The bar is the application's and the two numbers are not: what Obelus
 /// said is that a bar is here and this much of it is the mark, and how
 /// loudly to draw that is the window's own, the same as a caret's blink.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct Barred {
     /// What was said about it.
     pub(crate) bar: Bar,
+    /// The bars said after it, which are over it.
+    ///
+    /// A list opened over a file puts its own bar in the file's column, in
+    /// the same block, so the cells cannot say whose a row is -- and the
+    /// file's mark was drawn on the list's rows at the file's place, a
+    /// second thumb beside the list's that never moved with it.
+    pub(crate) over: Vec<Rect>,
     /// From nothing at all to all of it: full while it is moving and for
     /// a moment after, and settled back down once the reader has stopped.
     pub(crate) shown: f32,
@@ -540,6 +547,10 @@ impl Barred {
     /// `\u{2502}` into the cell and the bar is gone.
     fn holds(&self, page: &Page, y: u16) -> bool {
         page.look(self.bar.area.x, y).text == "\u{2588}"
+            && !self.over.iter().any(|over| {
+                (over.left()..over.right()).contains(&self.bar.area.x)
+                    && (over.top()..over.bottom()).contains(&y)
+            })
     }
 
     /// The rows of it that are still its own, as runs: where each starts
@@ -1955,46 +1966,62 @@ mod tests {
         page
     }
 
-    /// And a bar is a bar only where its cells still say so.
+    /// And a bar is a bar only where its cells still say so, and where no
+    /// bar said after it is.
     ///
     /// Row by row, which is what a column needs and a cell does not: the
     /// thing drawn over a bar may take the middle of it, so what is left
     /// is runs rather than an answer about the whole. The file's own bar
-    /// under a list keeps only the rows the list wrote its own bar into,
-    /// which is where the list's bar already is.
+    /// under a list keeps none of the rows the list wrote its own bar
+    /// into: the block there is the list's, and the file's mark drawn on
+    /// it was a second thumb that stayed where the file was.
     ///
     /// Deliberate break: have `holds` answer `true`. The file's own bar is
     /// then drawn down the side of the list opened over it -- past the
     /// list, the preview and the foot, widening under the pointer -- on a
-    /// list of nine rows with nothing to scroll.
+    /// list of nine rows with nothing to scroll. And take the `over`
+    /// clause out of it: the file's bar keeps the list's two rows.
     #[test]
     fn a_bar_is_a_bar_only_where_its_cells_still_say_so() {
         // A column the list drew two rows of and the file drew all four:
         // the blank and the rule are the list's foot, over the file's bar.
         let page = written(&["\u{2588}", "\u{2588}", " ", "\u{2500}"]);
-        let showing = |y: u16, height: u16| Barred {
+        let area = |y: u16, height: u16| Rect {
+            x: 0,
+            y,
+            width: 1,
+            height,
+        };
+        let showing = |y: u16, height: u16, over: Vec<Rect>| Barred {
             bar: Bar {
-                area: Rect {
-                    x: 0,
-                    y,
-                    width: 1,
-                    height,
-                },
+                area: area(y, height),
                 mark: 0,
                 thumb: 1,
             },
+            over,
             shown: 1.0,
             under: 0.0,
         };
         assert_eq!(
-            showing(0, 2).runs(&page),
+            showing(0, 2, Vec::new()).runs(&page),
             vec![(0, 2)],
             "the list's own, drawn last"
         );
         assert_eq!(
-            showing(0, 4).runs(&page),
+            showing(0, 4, Vec::new()).runs(&page),
             vec![(0, 2)],
-            "and the file's, which reaches past what is still its own"
+            "the file's alone, which reaches past what is still its own"
+        );
+        assert_eq!(
+            showing(0, 4, vec![area(0, 2)]).runs(&page),
+            Vec::new(),
+            "and the file's under the list's, whose rows those are"
+        );
+        // A bar said later somewhere else takes nothing from it.
+        assert_eq!(
+            showing(0, 4, vec![Rect { x: 1, ..area(0, 2) }]).runs(&page),
+            vec![(0, 2)],
+            "a bar in another column took rows from this one"
         );
     }
 

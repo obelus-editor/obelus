@@ -1840,6 +1840,7 @@ mod tests {
                 mark: 0,
                 thumb: 1,
             },
+            over: Vec::new(),
             shown: 1.0,
             under: 0.0,
         };
@@ -1879,10 +1880,11 @@ mod tests {
                 mark: 0,
                 thumb: 1,
             },
+            over: Vec::new(),
             shown: 1.0,
             under: 0.0,
         };
-        let covered = [wider];
+        let covered = [wider.clone()];
         let said = Said {
             barred: &covered,
             ..said
@@ -1920,6 +1922,7 @@ mod tests {
                 mark: 0,
                 thumb: 1,
             },
+            over: Vec::new(),
             shown: 1.0,
             under: 0.0,
         }];

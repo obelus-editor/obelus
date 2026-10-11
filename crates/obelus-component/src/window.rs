@@ -87,12 +87,12 @@ pub enum Wrap {
     Yes,
     /// It stops. Paging is how a reader gets to the end of a long list, and
     /// a page that wrapped past it would overshoot what they were reaching
-    /// for -- and a wheel is rolled without looking.
+    /// for.
     No,
 }
 
 /// A list's place: how many rows, which has the focus, which is on top.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub struct Window {
     /// How many rows there are to be in.
     count: usize,
@@ -109,14 +109,29 @@ pub struct Window {
     /// Only meaningful with `follow`: it is what keeps a streaming answer
     /// from dragging the view out from under somebody reading it.
     left_the_end: bool,
-    /// Whether the reader has dragged the window away from the focus.
+    /// Whether the reader has moved the window away from the focus.
     ///
-    /// The one way the window leaves the focus behind on a list that is
-    /// chosen from: a bar taken hold of moves what is on screen and not
-    /// what is chosen. Without this the next frame's settling would put
-    /// the window straight back where the focus is, and the drag would
-    /// have moved nothing. Anything that moves the focus puts it back.
+    /// The two ways the window leaves the focus behind on a list that is
+    /// chosen from: a bar taken hold of and the wheel move what is on
+    /// screen and not what is chosen. Without this the next frame's
+    /// settling would put the window straight back where the focus is, and
+    /// either would have moved nothing. Anything that moves the focus puts
+    /// it back.
     left_the_focus: bool,
+    /// Whether the last frame had the focus on screen.
+    ///
+    /// Worked out where the window is settled, which is once a frame and
+    /// the one place that knows how many rows fit -- so it is what the
+    /// reader saw when they pressed the next key.
+    focus_shown: bool,
+}
+
+impl Default for Window {
+    /// A window on a list that is chosen from, which has its focus on
+    /// screen until a frame says otherwise.
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Window {
@@ -130,6 +145,7 @@ impl Window {
             follow: false,
             left_the_end: false,
             left_the_focus: false,
+            focus_shown: true,
         }
     }
 
@@ -143,6 +159,7 @@ impl Window {
             follow: true,
             left_the_end: false,
             left_the_focus: false,
+            focus_shown: true,
         }
     }
 
@@ -181,6 +198,26 @@ impl Window {
     /// the rows are and leaves the choice where it was.
     pub const fn back_to_the_focus(&mut self) {
         self.left_the_focus = false;
+    }
+
+    /// Brings a window scrolled away from the focus back to it, where the
+    /// last frame did not show it, and says whether it had to.
+    ///
+    /// For a key that acts on the focus. The wheel leaves the choice where
+    /// it was, so the row enter would act on can be off the screen -- and
+    /// a setting flipped, or one taken away, where the reader cannot see
+    /// it is a change they did not see themselves make. So that press
+    /// shows them the row instead, and the next one acts.
+    ///
+    /// Only where the window was moved away from the focus: a key that
+    /// moved the focus has chosen a row since the last frame, and the
+    /// window settles on it, so what that frame showed is not the question.
+    pub const fn reach_for_the_focus(&mut self) -> bool {
+        if !self.left_the_focus || self.focus_shown {
+            return false;
+        }
+        self.left_the_focus = false;
+        true
     }
 
     /// Which row is drawn first.
@@ -264,6 +301,10 @@ impl Window {
 
     /// Scrolls the window without moving the focus, for the wheel and for a
     /// transcript's arrows.
+    ///
+    /// On a list that is chosen from as well as on a transcript: the wheel
+    /// moves the view and the keys move the choice, so a notch is the bar's
+    /// kind of move and leaves the focus behind until a key moves it.
     pub fn scroll(&mut self, rows: isize) {
         if rows < 0 {
             self.top = self.top.saturating_sub(usize::try_from(-rows).unwrap_or(1));
@@ -274,6 +315,43 @@ impl Window {
         } else {
             self.top = self.top.saturating_add(usize::try_from(rows).unwrap_or(1));
         }
+        if !self.follow {
+            self.left_the_focus = true;
+        }
+    }
+
+    /// The same, by rows of the screen, for items that are not all one row
+    /// tall.
+    ///
+    /// The top is always an item's first row, so this moves as many whole
+    /// items as the rows reach -- the first of them however tall it is, or
+    /// an item taller than a notch could never be scrolled past. Three
+    /// items a notch on a page of settings each three rows tall was nine
+    /// rows, and on a short screen whole settings went by unseen.
+    pub fn scroll_rows(&mut self, rows: isize, heights: &[u16]) {
+        let wanted = rows.unsigned_abs();
+        let top = self.top.min(heights.len());
+        let mut reached = 0;
+        let items = match rows < 0 {
+            true => heights[..top]
+                .iter()
+                .rev()
+                .take_while(|height| {
+                    let short = reached < wanted;
+                    reached += usize::from(**height);
+                    short
+                })
+                .count(),
+            false => heights[top..]
+                .iter()
+                .take_while(|height| {
+                    let short = reached < wanted;
+                    reached += usize::from(**height);
+                    short
+                })
+                .count(),
+        };
+        self.scroll(rows.signum() * isize::try_from(items).unwrap_or(isize::MAX));
     }
 
     /// Puts this row at the top, for a bar the reader has hold of.
@@ -317,14 +395,14 @@ impl Window {
         // a query narrowing the list -- would otherwise leave it showing
         // the last row and a screen of nothing.
         self.top = self.top.min(last);
-        if self.left_the_focus {
-            return;
+        if !self.left_the_focus {
+            if self.focus < self.top {
+                self.top = self.focus;
+            } else if self.focus >= self.top + height {
+                self.top = self.focus + 1 - height;
+            }
         }
-        if self.focus < self.top {
-            self.top = self.focus;
-        } else if self.focus >= self.top + height {
-            self.top = self.focus + 1 - height;
-        }
+        self.focus_shown = self.count == 0 || (self.top..self.top + height).contains(&self.focus);
     }
 
     /// The same, for rows that are not all one row tall.
@@ -338,6 +416,7 @@ impl Window {
         self.set_count(heights.len());
         if heights.is_empty() {
             self.top = 0;
+            self.focus_shown = true;
             return;
         }
         let room = room.max(1);
@@ -352,16 +431,17 @@ impl Window {
         }
         if self.left_the_focus {
             self.top = self.top.min(filled);
-            return;
-        }
-        self.top = self.top.min(self.focus).min(filled);
-        while self.top < self.focus {
-            let taken: u16 = heights[self.top..=self.focus].iter().sum();
-            if taken <= room {
-                break;
+        } else {
+            self.top = self.top.min(self.focus).min(filled);
+            while self.top < self.focus {
+                let taken: u16 = heights[self.top..=self.focus].iter().sum();
+                if taken <= room {
+                    break;
+                }
+                self.top += 1;
             }
-            self.top += 1;
         }
+        self.focus_shown = self.visible_by_height(heights, room).contains(&self.focus);
     }
 
     /// Which items are on screen, for items that are not all one row tall.
@@ -606,6 +686,79 @@ mod tests {
 
     /// A transcript is read from its end, and stays where the reader put it
     /// once they have scrolled away from that end.
+    /// A notch of three rows over items of different heights moves as many
+    /// whole items as three rows reach, either way, and never none.
+    ///
+    /// Deliberate break: `scroll(rows)` in place of the counting, which
+    /// moves three items whatever their height (the first assertion). And
+    /// checking `reached < wanted` after adding the item rather than
+    /// before, which leaves a notch over an item taller than it moving
+    /// nothing (the first again: the three-row item is never left).
+    #[test]
+    fn a_wheel_over_tall_items_moves_by_rows() {
+        let heights = [3, 1, 1, 1, 5, 2];
+        let mut window = Window::new();
+        window.set_count(heights.len());
+
+        window.scroll_rows(3, &heights);
+        assert_eq!(
+            window.top(),
+            1,
+            "three rows of a three-row item is one item"
+        );
+        window.scroll_rows(3, &heights);
+        assert_eq!(window.top(), 4, "three one-row items");
+        window.scroll_rows(3, &heights);
+        assert_eq!(window.top(), 5, "an item taller than the notch still goes");
+        window.scroll_rows(-3, &heights);
+        assert_eq!(window.top(), 4, "and back up, by what is above");
+        window.scroll_rows(-3, &heights);
+        assert_eq!(window.top(), 1);
+    }
+
+    /// A key that acts on the focus, where the last frame did not show it,
+    /// brings it back and says so -- and says nothing where it was shown.
+    ///
+    /// Deliberate breaks: `focus_shown` left `true` in `settle` (the second
+    /// assertion), `reach_for_the_focus` not clearing `left_the_focus` (the
+    /// third: the window stays where the wheel put it), and it not asking
+    /// `left_the_focus` (the last: a key moved the focus off the screen of
+    /// the frame before, and enter on the row it chose was refused).
+    #[test]
+    fn a_key_that_acts_brings_back_a_focus_scrolled_away() {
+        let mut window = Window::new();
+        window.set_count(30);
+        window.set_focus(5);
+        window.settle(10);
+        window.scroll(3);
+        window.settle(10);
+        assert!(
+            !window.reach_for_the_focus(),
+            "the focus was still on screen"
+        );
+
+        window.scroll(6);
+        window.settle(10);
+        assert!(window.reach_for_the_focus(), "the focus was off the screen");
+        window.settle(10);
+        assert!(
+            window.visible(10).contains(&5),
+            "the view did not come back"
+        );
+        assert!(!window.reach_for_the_focus(), "it asked a second time");
+
+        // A frame that did not show the focus, and then a key that moved
+        // it: the row it lands on is one the reader chose, and the window
+        // goes to it, so what that frame showed is not the question.
+        window.scroll(9);
+        window.settle(10);
+        window.step(1, Wrap::No);
+        assert!(
+            !window.reach_for_the_focus(),
+            "a row a key chose was refused"
+        );
+    }
+
     #[test]
     fn a_following_window_keeps_the_readers_place() {
         let mut window = Window::following();

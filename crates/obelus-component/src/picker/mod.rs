@@ -1749,7 +1749,12 @@ impl Picker {
                     .is_some_and(|item| same(&item.value, &standing))
             })
         });
-        if let Some(at) = at {
+        // Only where the new rows moved it, as in `relist`: choosing the
+        // same row again would put a window the reader scrolled back on it
+        // -- every time a page of pull requests landed.
+        if let Some(at) = at
+            && at != self.window.focus()
+        {
             self.window.set_focus(at);
         }
     }
@@ -1813,25 +1818,27 @@ impl Picker {
 
     /// Moves the selection by rows, stopping at the ends.
     ///
-    /// For the wheel, which is not the arrow keys: rolling past the end of a
-    /// list and reappearing at the top is a jump nobody asked for, and a
-    /// wheel is rolled without looking.
+    /// For the arrows of a list whose keys a box holds, which walk it
+    /// without wrapping round.
     pub fn move_selection_by(&mut self, rows: isize) {
-        // The wheel over a list that is only read moves the rows, since
-        // there is no selection for a notch to step. A page of one, which
-        // lets the top go as far as the last row: the next frame's settle
-        // is what holds it to a page from the end.
-        if self.reads {
-            let movement = match rows < 0 {
-                true => Move::Up,
-                false => Move::Down,
-            };
-            for _ in 0..rows.unsigned_abs() {
-                self.scroll_reading(movement, 1);
-            }
-            return;
-        }
         self.move_selection(rows, Wrap::No);
+    }
+
+    /// Scrolls the rows by a wheel's notch, leaving the selection where it
+    /// is: the wheel moves the view and the keys move the choice.
+    ///
+    /// A list that is only read the same way: its keys move its rows too,
+    /// from wherever the wheel left them, since they count from the top.
+    pub fn scroll(&mut self, rows: isize) {
+        // A list whose rows wrap counts the notch in rows of the screen, at
+        // the width it was last laid out at.
+        match self.measured.as_ref().filter(|_| self.is_wrapping()) {
+            Some(measured) => {
+                let heights = self.heights(measured.width);
+                self.window.scroll_rows(rows, &heights);
+            }
+            None => self.window.scroll(rows),
+        }
     }
 
     /// Makes this a list that is waiting on the reader: see `gives_way`.
@@ -2474,6 +2481,11 @@ impl Picker {
                 self.keys = !self.keys;
                 PickerOutcome::Consumed
             }
+            // A row the wheel left off the screen is brought back rather
+            // than chosen: see `Window::reach_for_the_focus`.
+            KeyCode::Enter if !self.matched.is_empty() && self.window.reach_for_the_focus() => {
+                PickerOutcome::Consumed
+            }
             // Enter opens the row where the rows open, and `alt+enter`
             // goes there -- the pair a list of places that hold places
             // needs, since one key cannot mean both.
@@ -2910,6 +2922,55 @@ mod tests {
         assert_eq!(picker.selected(), 0, "the batch chose something");
     }
 
+    /// And so do new rows handed to a list the reader has scrolled, where
+    /// the row they chose is still among them.
+    ///
+    /// Deliberate break: set the focus in `renew` whether or not the new
+    /// rows moved it. The window goes back to the selection, which is what
+    /// a page of pull requests arriving did to a reader wheeling down to it.
+    #[test]
+    fn new_rows_leave_a_scrolled_list_where_it_was() {
+        let rows = |count: usize| (0..count).map(|n| named(&n.to_string())).collect();
+        let mut picker = Picker::new(rows(30), PickerLayout::Compact { rows: 10 });
+        picker.refresh_indices(10, 40);
+        picker.scroll(15);
+        picker.refresh_indices(10, 40);
+        assert_eq!(picker.window().top(), 15, "the wheel did not move the list");
+
+        // Every row is the same value, so the one chosen is found first.
+        picker.renew(rows(40), |_, _| true);
+        picker.refresh_indices(10, 40);
+        assert_eq!(picker.window().top(), 15, "the new rows undid the wheel");
+        assert_eq!(picker.selected(), 0, "the new rows chose something");
+    }
+
+    /// Enter on a row the wheel left off the screen brings it back rather
+    /// than choosing it, and the next enter chooses.
+    ///
+    /// Deliberate break: the arm that asks `reach_for_the_focus` taken
+    /// out, and enter chose a row the reader could not see.
+    #[test]
+    fn enter_on_a_row_scrolled_away_shows_it_first() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let rows = (0..30).map(|n| named(&n.to_string())).collect();
+        let mut picker = Picker::new(rows, PickerLayout::Compact { rows: 10 });
+        let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        picker.refresh_indices(10, 40);
+        picker.scroll(15);
+        picker.refresh_indices(10, 40);
+
+        assert!(
+            matches!(picker.handle_key(&enter, 10), PickerOutcome::Consumed),
+            "enter chose a row that was off the screen"
+        );
+        picker.refresh_indices(10, 40);
+        assert_eq!(picker.window().top(), 0, "the row was not brought back");
+        assert!(
+            matches!(picker.handle_key(&enter, 10), PickerOutcome::Accepted(_)),
+            "enter on the row brought back did not choose it"
+        );
+    }
+
     /// A list that is only read is moved, not chosen in.
     ///
     /// The keys that walk a selection move the rows, enter does nothing, a
@@ -2920,8 +2981,8 @@ mod tests {
     /// Deliberate break: taking the `self.reads` arms out of `handle_key`
     /// (the first two assertions: the arrow moves a selection inside the
     /// window, which does not move, and enter accepts the row); taking the
-    /// early return out of `select_row` (the third); and out of
-    /// `move_selection_by` (the fourth).
+    /// early return out of `select_row` (the third); and having `scroll`
+    /// do nothing (the fourth).
     #[test]
     fn a_list_that_is_only_read_moves_its_rows_and_chooses_nothing() {
         use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -2945,7 +3006,7 @@ mod tests {
         picker.select_row(7);
         assert_eq!(picker.selected(), 1, "a click put the reader on a row");
 
-        picker.move_selection_by(3);
+        picker.scroll(3);
         picker.refresh_indices(10, 40);
         assert_eq!(picker.window().top(), 4, "the wheel did not move the rows");
     }
@@ -3193,6 +3254,29 @@ mod tests {
             4,
             "a page did not move by the rows shown"
         );
+    }
+
+    /// A notch over rows that wrap is three rows of the screen, not three
+    /// rows of the list, and leaves the selection where it was.
+    ///
+    /// Broken by scrolling the window by `rows` whatever the list is: the
+    /// first notch went three rows of the list down, past six of the
+    /// screen's.
+    #[test]
+    fn a_wheel_over_rows_that_wrap_moves_by_rows_of_the_screen() {
+        let names: Vec<String> = (0..20).map(|n| format!("row {n}")).collect();
+        let rows: Vec<(&str, &str)> = names.iter().map(|name| (name.as_str(), "Today")).collect();
+        let mut picker = wrapping(&rows);
+        // The first row is three tall with its heading, the rest two with
+        // the blank before them.
+        picker.refresh_indices(10, 40);
+        picker.scroll(3);
+        picker.refresh_indices(10, 40);
+        assert_eq!(picker.window().top(), 1, "a notch went past three rows");
+        picker.scroll(3);
+        picker.refresh_indices(10, 40);
+        assert_eq!(picker.window().top(), 3, "two rows of two is past three");
+        assert_eq!(picker.selected(), 0, "the wheel moved the selection");
     }
 
     /// One row, for the tests above.

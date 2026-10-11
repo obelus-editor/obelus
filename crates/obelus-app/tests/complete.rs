@@ -101,6 +101,47 @@ fn the_first_candidate_is_selected_from_the_start() {
     );
 }
 
+/// A notch scrolls the candidates and leaves the choice where it was, and
+/// enter on a choice the wheel took off the screen shows it before taking
+/// it.
+///
+/// Deliberate breaks: `Completion::scroll` stepping the choice as it used
+/// to (the first enter takes the candidate the wheel stepped to); and the
+/// `reach_for_the_focus` arm taken out of its keys (the first enter takes
+/// a candidate the reader could not see).
+#[test]
+fn the_wheel_moves_the_candidates_and_not_the_choice() {
+    let (_scratch, mut app) = editing("complete-wheel", "fn main() {\n    p\n}\n");
+    support::press(&mut app, crossterm::event::KeyCode::Down);
+    support::press(&mut app, crossterm::event::KeyCode::End);
+    let names: Vec<String> = (0..30).map(|n| format!("p{n:02}")).collect();
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+    app.complete_for_test(labels(&names));
+    support::render(&mut app, 60, 16);
+    for _ in 0..4 {
+        app.handle(obelus_app::event::Event::Scroll(3));
+    }
+    let dump = support::render(&mut app, 60, 16);
+    assert!(
+        !dump.contains("p00"),
+        "the wheel did not take the first candidate away:\n{dump}"
+    );
+
+    support::press(&mut app, crossterm::event::KeyCode::Enter);
+    assert_eq!(
+        text(&app),
+        "fn main() {\n    p\n}\n",
+        "enter took a candidate that was off the screen"
+    );
+    support::render(&mut app, 60, 16);
+    support::press(&mut app, crossterm::event::KeyCode::Enter);
+    assert_eq!(
+        text(&app),
+        "fn main() {\n    p00\n}\n",
+        "the wheel moved the choice"
+    );
+}
+
 #[test]
 fn a_candidate_replaces_the_word_it_was_offered_for() {
     let (_scratch, mut app) = editing("complete-accept", "fn main() {\n    pu\n}\n");

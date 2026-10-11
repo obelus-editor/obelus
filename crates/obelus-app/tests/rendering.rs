@@ -1384,39 +1384,55 @@ fn the_wheel_scrolls_without_moving_the_cursor() {
     );
 }
 
-/// A list under a wheel scrolls, one row a notch. With the mouse reported the
-/// wheel no longer arrives as arrow keys, so a picker that ignored it would
-/// have lost something it used to do.
+/// A list under a wheel scrolls its rows and leaves the selection where it
+/// was: the wheel moves the view and the keys move the choice, in a list as
+/// in a file. With the mouse reported the wheel no longer arrives as arrow
+/// keys, so a picker that ignored it would have lost something.
+///
+/// Deliberate break: `Window::scroll` no longer leaving the focus on a list
+/// that is chosen from (the window settled straight back to the selection,
+/// so nothing moved), and `Picker::scroll` stepping the selection as it
+/// used to (the selection moved).
 #[test]
-fn the_wheel_moves_a_list_by_one_row() {
+fn the_wheel_scrolls_a_list_and_leaves_the_selection() {
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     support::lay_out(&mut app, 60, 20);
     support::press_control(&mut app, 'p');
+    support::render(&mut app, 60, 20);
 
-    let first = app
-        .picker()
-        .and_then(|picker| picker.selected_item())
-        .map(|item| item.label.clone())
-        .expect("a row");
+    let chosen = |app: &App| {
+        app.picker()
+            .and_then(|picker| picker.selected_item())
+            .map(|item| item.label.clone())
+            .expect("a row")
+    };
+    let top = |app: &App| app.picker().expect("the palette").window().top();
+    let first = chosen(&app);
+
     app.handle(obelus_app::event::Event::Scroll(3));
-    let second = app
-        .picker()
-        .and_then(|picker| picker.selected_item())
-        .map(|item| item.label.clone())
-        .expect("a row");
-    assert_ne!(first, second, "the wheel did not move the list");
+    support::render(&mut app, 60, 20);
+    assert_eq!(chosen(&app), first, "the wheel moved the selection");
+    assert_eq!(top(&app), 3, "the wheel did not move the rows");
 
-    // And it stops at the top rather than wrapping round: a wheel is rolled
-    // without looking.
+    // And it stops at the top: a wheel is rolled without looking.
     for _ in 0..10 {
         app.handle(obelus_app::event::Event::Scroll(-3));
     }
+    support::render(&mut app, 60, 20);
+    assert_eq!(top(&app), 0, "the wheel went past the top of the list");
+
+    // A key moves the choice, and the view goes back to it.
+    app.handle(obelus_app::event::Event::Scroll(9));
+    support::render(&mut app, 60, 20);
+    support::press(&mut app, KeyCode::Down);
+    support::render(&mut app, 60, 20);
+    assert_ne!(chosen(&app), first, "the key did not move the selection");
+    // By the least that puts it on screen, which is with it at the top.
+    let selected = app.picker().expect("the palette").selected();
     assert_eq!(
-        app.picker()
-            .and_then(|picker| picker.selected_item())
-            .map(|item| item.label.clone()),
-        Some(first),
-        "the wheel wrapped past the top of the list"
+        top(&app),
+        selected,
+        "the view did not go back to the selection"
     );
 }
 

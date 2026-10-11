@@ -423,29 +423,38 @@ impl Completion {
             // to do what enter does: it steps a snippet's holes, and it
             // walks the tabs of a list, neither of which has another key
             // that reads as well.
+            // Except where the wheel left the chosen one off the screen:
+            // see `Window::reach_for_the_focus`.
+            KeyCode::Enter if self.window.reach_for_the_focus() => {
+                self.settle_focus();
+                CompletionOutcome::Consumed
+            }
             KeyCode::Enter => CompletionOutcome::Accepted,
             KeyCode::Esc => CompletionOutcome::Cancelled,
             _ => CompletionOutcome::Ignored,
         }
     }
 
-    /// Walks the list by a notch of the wheel.
+    /// Scrolls the list by a notch of the wheel, leaving the choice where
+    /// it is: the wheel moves the view and the keys move the choice.
     ///
     /// The list rather than the documentation: Obelus is told that a notch
     /// happened and not where the pointer was, and the half a reader is
-    /// choosing from is the one worth moving blind.
+    /// choosing from is the one worth moving. The documentation stays
+    /// where it was scrolled, because what it documents has not changed.
     pub fn scroll(&mut self, by: isize) {
         if by == 0 {
             return;
         }
-        self.window.step(by, Wrap::No);
-        self.settle_focus();
+        self.window.scroll(by);
+        self.window.settle(self.room.0);
+        self.refresh_indices(self.room.0);
     }
 
     /// Puts this candidate at the top, for a bar the reader has hold of.
     ///
-    /// The window and not the choice, unlike the wheel: what the reader
-    /// took hold of is a picture of where the window is.
+    /// The window and not the choice, as the wheel moves it: what the
+    /// reader took hold of is a picture of where the window is.
     pub fn drag_to(&mut self, top: usize) {
         self.window.drag_to(top);
     }

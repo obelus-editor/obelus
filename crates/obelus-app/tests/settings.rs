@@ -1362,6 +1362,96 @@ fn the_ends_and_the_pages_are_reachable() {
     assert_eq!(focus(&app), 0, "PageUp did not come back");
 }
 
+/// A notch over the settings scrolls the page and leaves its focus where it
+/// was, and the file behind stays where it was: the page is what is in
+/// front, and the wheel moves the view while the keys move the choice.
+///
+/// Deliberate break: `Layer::Settings` answering `false` in `scroll_layer`
+/// again, which is what it did -- the page stayed put and the file
+/// underneath scrolled, and with the first two assertions taken out the
+/// third still fails on its own. And `Settings::scroll` stepping the focus
+/// instead of scrolling the window, or scrolling it by items rather than
+/// by rows (`window.scroll(rows)`), which goes three settings down.
+#[test]
+fn the_wheel_scrolls_the_settings_and_not_the_file_behind() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("wheel");
+    // A file longer than the screen behind it, so a notch that reached it
+    // would show: `open`'s is four lines, which no notch can scroll.
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    app.config_file_for_test(settings_file(&scratch));
+    support::lay_out(&mut app, 66, 12);
+    dispatch::dispatch(&mut app, Command::ConfigOpen);
+    support::render(&mut app, 66, 12);
+    let page = |app: &App| app.settings().expect("the settings").window().top();
+    let focus = |app: &App| app.settings().expect("the settings").focus();
+    let behind = |app: &App| {
+        app.current_buffer()
+            .expect("the file behind")
+            .viewport()
+            .top
+            .get()
+    };
+    let top = behind(&app);
+
+    app.handle(Event::Scroll(3));
+    support::render(&mut app, 66, 12);
+    // One entry: the first is a heading, a name, what it does and a
+    // blank, which is more than the three rows a notch is.
+    assert_eq!(page(&app), 1, "a notch did not scroll the settings a row");
+    assert_eq!(focus(&app), 0, "a notch moved the focus");
+    assert_eq!(behind(&app), top, "a notch scrolled the file behind");
+
+    for _ in 0..3 {
+        app.handle(Event::Scroll(-3));
+    }
+    support::render(&mut app, 66, 12);
+    assert_eq!(page(&app), 0, "the wheel did not come back to the top");
+    assert_eq!(behind(&app), top, "a notch scrolled the file behind");
+}
+
+/// Enter on a setting the wheel took off the screen brings it back, and
+/// does nothing to it: a change made where the reader cannot see it is not
+/// one they saw themselves make. The next enter acts.
+///
+/// Deliberate break: the `reach_for_the_focus` check taken out of
+/// `Settings::handle_key`. The first enter opened the theme's list, over
+/// a page that showed no theme.
+#[test]
+fn enter_on_a_setting_scrolled_away_shows_it_first() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("enter-off-screen");
+    let mut app = open(&settings_file(&scratch));
+    support::render(&mut app, 66, 12);
+    let page = |app: &App| app.settings().expect("the settings").window().top();
+    for _ in 0..4 {
+        app.handle(Event::Scroll(3));
+    }
+    support::render(&mut app, 66, 12);
+    assert!(
+        page(&app) > 1,
+        "the wheel did not take the first setting away"
+    );
+
+    support::press(&mut app, KeyCode::Enter);
+    support::render(&mut app, 66, 12);
+    assert!(
+        app.picker().is_none(),
+        "enter acted on a setting off the screen"
+    );
+    assert_eq!(page(&app), 0, "enter did not bring the setting back");
+
+    support::press(&mut app, KeyCode::Enter);
+    assert!(
+        app.picker().is_some(),
+        "enter on the setting brought back did nothing"
+    );
+}
+
 /// The row the focus is on is a row that is drawn.
 ///
 /// The page is drawn into what the tabs and their rule leave off the top

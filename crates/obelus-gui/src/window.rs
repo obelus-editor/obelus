@@ -1466,11 +1466,18 @@ impl ApplicationHandler<Waking> for Showing {
                 // between frames, so neither is a thing to keep.
                 let now = Instant::now();
                 self.showing.clear();
-                self.showing.extend(self.barred.iter().map(|bar| Barred {
-                    bar: *bar,
-                    shown: self.motion.bar_shown(bar.area, now),
-                    under: self.motion.bar_under(bar.area, now),
-                }));
+                self.showing
+                    .extend(self.barred.iter().enumerate().map(|(at, bar)| {
+                        Barred {
+                            bar: *bar,
+                            over: self.barred[at + 1..]
+                                .iter()
+                                .map(|later| later.area)
+                                .collect(),
+                            shown: self.motion.bar_shown(bar.area, now),
+                            under: self.motion.bar_under(bar.area, now),
+                        }
+                    }));
 
                 // How each band is being shown, worked out for this
                 // frame the way the bars are: where a band has got to is

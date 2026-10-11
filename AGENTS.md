@@ -424,11 +424,12 @@ is on screen and leaves the cursor where it was -- `scroll_by` on a buffer
 moves the viewport and nothing else -- and the paging keys move the cursor by
 a screenful, with the view following it. Two gestures, two jobs: a reader
 spinning a wheel is looking around, and one pressing a key is going
-somewhere. A list is the exception that proves it: there a notch steps the
-selection, because a list's view *is* its selection and there is nothing
-else in it to scroll. A bar taken hold of is not the exception: it is a
-picture of where the view is, so dragging one moves the window and leaves
-the selection chosen until a key moves it (`component::window`).
+somewhere. A list is no exception: a notch scrolls its rows and leaves the
+selection chosen until a key moves it, and the view goes back to it then --
+which is what a bar taken hold of does too, because both are pictures of
+where the view is (`Window::scroll`, `component::window`). A list used to
+be the exception, a notch stepping its selection; that made the wheel two
+gestures depending on what was under it.
 
 **Wherever enter means something else, a line is `shift+enter` *and*
 `alt+enter`.** Both, every time: `shift+enter` arrives only from a terminal

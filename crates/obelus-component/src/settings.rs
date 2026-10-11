@@ -876,6 +876,29 @@ impl Settings {
         }
     }
 
+    /// Scrolls the page by a wheel's rows of the screen, leaving the focus
+    /// where it is.
+    ///
+    /// Not while a row waits for its key: every key is that row's then, and
+    /// a notch that carried it off the screen would leave the reader
+    /// binding a row they could no longer see.
+    pub fn scroll(
+        &mut self,
+        rows: isize,
+        agents: &[Agent],
+        offering: Option<&Offering>,
+        room: (u16, u16),
+    ) {
+        if self.binding.is_some() {
+            return;
+        }
+        let heights = match self.on_agents() {
+            true => self.card_heights(agents, room),
+            false => self.entry_heights(room, offering),
+        };
+        self.window.scroll_rows(rows, &heights);
+    }
+
     /// Which command's key is being pressed, if one is.
     #[must_use]
     pub const fn binding(&self) -> Option<Command> {
@@ -1346,6 +1369,16 @@ impl Settings {
         // because a key can arrive before the first one is drawn.
         self.window.set_count(count);
 
+        // Enter and delete act on the row with the focus, which the wheel
+        // may have left off the screen: there the press brings it back
+        // into view, and does nothing to it.
+        let acts = bare
+            && (key.code == KeyCode::Enter
+                || (key.code == KeyCode::Delete && !self.query.takes_a_delete()));
+        if acts && count > 0 && self.window.reach_for_the_focus() {
+            return SettingsOutcome::Consumed;
+        }
+
         match key.code {
             // The card first: a key that opens a thing closes that thing.
             KeyCode::Esc if bare && self.keys_showing => {
@@ -1624,19 +1657,29 @@ impl Settings {
     /// makes a resize move the window rather than leave the focus off the
     /// screen.
     pub fn settle_cards(&mut self, agents: &[Agent], room: (u16, u16)) {
-        let listed = self.agents(agents);
+        let heights = self.card_heights(agents, room);
+        self.window.settle_by_height(&heights, room.1);
+    }
+
+    /// How tall each card is, with the blank after it.
+    fn card_heights(&self, agents: &[Agent], room: (u16, u16)) -> Vec<u16> {
         let width = Self::card_width(room.0);
-        let heights: Vec<u16> = listed
+        self.agents(agents)
             .iter()
             .map(|agent| self.card_rows(agent, width) + 1)
-            .collect();
-        self.window.settle_by_height(&heights, room.1);
+            .collect()
     }
 
     /// And the same for a page of settings, whose entries are as tall as
     /// what they have to say.
     pub fn settle_rows(&mut self, room: (u16, u16), offering: Option<&Offering>) {
-        let heights: Vec<u16> = match self.on_keys() {
+        let heights = self.entry_heights(room, offering);
+        self.window.settle_by_height(&heights, room.1);
+    }
+
+    /// How tall each entry of a page of settings or of keys is.
+    fn entry_heights(&self, room: (u16, u16), offering: Option<&Offering>) -> Vec<u16> {
+        match self.on_keys() {
             // A key is a name and a chord: one row, the way it always was.
             // The layout above them is a setting, and as tall as one.
             true => self
@@ -1658,8 +1701,7 @@ impl Settings {
                 .iter()
                 .map(|shown| self.setting_rows(shown, description_width(room.0)))
                 .collect(),
-        };
-        self.window.settle_by_height(&heights, room.1);
+        }
     }
 
     /// How many rows one setting takes: the heading it opens where it opens

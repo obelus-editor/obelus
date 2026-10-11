@@ -3535,3 +3535,43 @@ fn the_input_method_is_on_in_a_note_and_off_in_one_somebody_else_has() {
         "the locked note was typed into"
     );
 }
+
+/// A notch scrolls the notes and leaves the caret in the note it was in,
+/// and a key brings the page back to that note before it does anything.
+///
+/// Deliberate breaks: the notes left out of `App::scroll`, as they were
+/// (the first assertion: a notch moved nothing); and `follow_caret` not
+/// putting the focus back on the caret's row (the last: a letter went into
+/// a note that stayed off the screen).
+#[test]
+fn the_wheel_scrolls_the_notes_and_a_key_comes_back() {
+    let notes: String = (0..20)
+        .map(|n| format!("[[todo]]\nsaid = \"note {n}\"\ndone = false\n\n"))
+        .collect();
+    let scratch = tree("wheel", &notes);
+    let mut app = open(&scratch, 60, 12);
+    support::render(&mut app, 60, 12);
+    let top = |app: &App| app.notes().expect("the notes").window().top();
+    let focus = |app: &App| app.notes().expect("the notes").window().focus();
+    let chosen = focus(&app);
+
+    app.handle(Event::Scroll(3));
+    let dump = support::render(&mut app, 60, 12);
+    assert_eq!(top(&app), 3, "a notch did not scroll the notes:\n{dump}");
+    assert_eq!(focus(&app), chosen, "a notch moved the caret's note");
+    for _ in 0..3 {
+        app.handle(Event::Scroll(3));
+    }
+    support::render(&mut app, 60, 12);
+    assert!(
+        top(&app) > chosen,
+        "the caret's note is still on the screen"
+    );
+
+    press(&mut app, KeyCode::Char('x'));
+    support::render(&mut app, 60, 12);
+    assert!(
+        top(&app) <= focus(&app),
+        "a letter went into a note that stayed off the screen"
+    );
+}

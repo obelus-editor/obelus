@@ -260,6 +260,25 @@ impl App {
         (region.width, region.height)
     }
 
+    /// Gives the settings page a notch of the wheel. Taken whenever the
+    /// page is open, so a notch over it never reaches the file behind.
+    pub(in crate::app) fn scroll_settings(&mut self, rows: isize) -> bool {
+        if self.settings.is_none() {
+            return false;
+        }
+        // What the page is measured with, asked for the reasons a key asks
+        // for them: the rows a notch counts are the rows the page shows now.
+        self.settle_the_remote_page();
+        let listed = self.listed_agents();
+        let offering = self.agent_offering();
+        let room = self.settings_room(self.editor_area, offering.as_ref());
+        let Some(settings) = self.settings.as_mut() else {
+            return false;
+        };
+        settings.scroll(rows, &listed, offering.as_ref(), room);
+        true
+    }
+
     pub(in crate::app) fn settings_key(&mut self, key: &KeyEvent) -> bool {
         if self.settings.is_none() {
             return false;

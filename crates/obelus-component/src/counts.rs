@@ -576,6 +576,13 @@ impl Counts {
                 self.step_page();
                 CountsOutcome::Consumed
             }
+            // A row the wheel left off the screen is brought back rather
+            // than opened: see `Window::reach_for_the_focus`.
+            KeyCode::Enter
+                if bare && !self.rows.is_empty() && self.window.reach_for_the_focus() =>
+            {
+                CountsOutcome::Consumed
+            }
             KeyCode::Enter if bare => {
                 match self
                     .rows
@@ -649,14 +656,12 @@ impl Counts {
         self.window.settle(height);
     }
 
-    /// What a wheel's notch does here.
-    ///
-    /// Steps the selection, which is the exception a list is: a list's view
-    /// *is* its selection, and there is nothing else in it to scroll. One
-    /// row a notch, not three -- three is right for text, where a notch is a
-    /// gesture at a paragraph.
+    /// What a wheel's notch does here: scrolls the rows and leaves the
+    /// selection where it is, because the wheel moves the view and the keys
+    /// move the choice.
     pub fn scroll(&mut self, rows: isize, height: u16) {
-        self.move_selection(rows.signum(), height, Wrap::No);
+        self.window.scroll(rows);
+        self.window.settle(height);
     }
 }
 
@@ -723,6 +728,20 @@ mod tests {
 
     fn press(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    /// A notch scrolls the rows and leaves the selection where it was --
+    /// as far as the last screenful and no further.
+    ///
+    /// Deliberate break: `scroll` stepping the selection as it used to
+    /// (`move_selection`), and the first assertion fails.
+    #[test]
+    fn the_wheel_moves_the_rows_and_not_the_choice() {
+        let mut counts = Counts::new();
+        counts.show(counted());
+        counts.scroll(3, 2);
+        assert_eq!(counts.window().focus(), 0, "the wheel moved the choice");
+        assert_eq!(counts.window().top(), 2, "the wheel did not move the rows");
     }
 
     /// The selection never stops on a row enter does nothing to.

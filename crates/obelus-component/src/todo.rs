@@ -820,6 +820,14 @@ impl TodoView {
         self.window.drag_to(top);
     }
 
+    /// Scrolls the page by a wheel's rows, leaving the caret in the note it
+    /// was in: the wheel moves the view and the keys move the caret -- and
+    /// a key that writes brings the view back to it, because following the
+    /// caret puts the focus on its row again (`follow_caret`).
+    pub fn scroll(&mut self, rows: isize) {
+        self.window.scroll(rows);
+    }
+
     /// The note being written, if one is.
     #[must_use]
     pub fn writing(&self) -> Option<&Composer> {
