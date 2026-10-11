@@ -487,6 +487,70 @@ fn a_line_of_a_wallpaper_that_does_nothing_is_marked() {
     );
 }
 
+/// A picture's table that names no file is marked, on the table's own
+/// name, and there is no picture.
+///
+/// The mark is made where toml_edit says the key `wallpaper` is, and a
+/// mark with nowhere to go is dropped without a word -- so this is what
+/// says there is somewhere.
+///
+/// Deliberate break: the span looked for on the table's value, which a
+/// table has none of, rather than its key -- nothing is then marked.
+#[test]
+fn a_wallpaper_that_names_no_file_is_marked() {
+    let scratch = reader("wallpaper-no-file");
+    let file = rain(&scratch, "opacity = 50\n");
+
+    let mut app = open(&scratch);
+    let worn = app.theme_called("rain").expect("the theme");
+    assert!(worn.wallpaper.is_none(), "a picture with no file was hung");
+    assert_eq!(
+        app.marks_on_for_test(&file).0,
+        1,
+        "nothing said it names no file"
+    );
+}
+
+/// Where a file and a directory answer to one name, the directory is the
+/// theme, whatever order the disk lists them in -- and the name is offered
+/// once.
+///
+/// Asked of `found_in` itself, because the list a reader is shown drops a
+/// name it has seen already: it said "once" with the clash still there,
+/// and which of the two was worn was whatever the disk listed first --
+/// the directory, on the machine this was written on, so the theme the
+/// reader gets passed too.
+///
+/// Deliberate break: the sort by name alone, as it was, which leaves both
+/// in the list in the order `read_dir` gave them.
+#[test]
+fn a_directory_and_a_file_of_one_name_are_the_directory() {
+    let scratch = reader("wallpaper-clash");
+    rain(&scratch, "file = \"rain.jpg\"\n");
+    std::fs::write(
+        scratch.join("themes/rain.toml"),
+        "base = \"dark\"\nbackground = \"#ffffff\"\n",
+    )
+    .expect("the file");
+
+    let found = written::found_in(&scratch.join("themes"));
+    let rains: Vec<_> = found.iter().filter(|(name, _)| name == "rain").collect();
+    assert_eq!(rains.len(), 1, "one name found {} times", rains.len());
+    assert!(
+        rains[0].1.ends_with("rain/theme.toml"),
+        "the file was taken over the directory: {}",
+        rains[0].1.display()
+    );
+
+    let mut app = open(&scratch);
+    let worn = app.theme_called("rain").expect("the theme");
+    assert_eq!(
+        worn.colours.background,
+        written::hex("#101820").expect("a colour"),
+        "the file was taken over the directory"
+    );
+}
+
 /// Letting go of a project keeps the picture under the page with the rest
 /// of the theme, which belongs to the reader and not to the project -- and
 /// says nothing to the window, which already has it.

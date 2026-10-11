@@ -83,17 +83,6 @@ impl Fit {
             .find(|(name, _)| *name == word)
             .map(|(_, fit)| *fit)
     }
-
-    /// Whether the picture is drawn at its own size rather than the
-    /// window's.
-    ///
-    /// Which decides whether it may be made smaller on the way in: a
-    /// picture fitted to the window is never drawn larger than the screen,
-    /// and one drawn at its own size is drawn at exactly that.
-    #[must_use]
-    pub const fn at_its_own_size(self) -> bool {
-        matches!(self, Self::Center | Self::Tile)
-    }
 }
 
 /// One side of a picture, or its middle, along one way.

@@ -42,27 +42,35 @@ pub fn found_in(directory: &Path) -> Vec<(String, PathBuf)> {
     let Ok(entries) = std::fs::read_dir(directory) else {
         return Vec::new();
     };
-    let mut found: Vec<(String, PathBuf)> = entries
+    // With whether each is a file, which decides a name both answer to.
+    let mut found: Vec<(String, bool, PathBuf)> = entries
         .filter_map(std::result::Result::ok)
         .map(|entry| entry.path())
         .filter_map(|path| {
             if path.extension().is_some_and(|kind| kind == "toml") {
                 let name = path.file_stem()?.to_str()?.to_string();
-                return Some((name, path));
+                return Some((name, true, path));
             }
             let inside = path.join(FILE);
             if !inside.is_file() {
                 return None;
             }
             let name = path.file_name()?.to_str()?.to_string();
-            Some((name, inside))
+            Some((name, false, inside))
         })
         .collect();
     // By name, because a directory hands them over in whatever order it
     // holds them and a list that reorders itself between openings cannot be
-    // learned.
-    found.sort_by(|left, right| left.0.cmp(&right.0));
+    // learned. And one theme to a name: where `rain.toml` and `rain/` are
+    // both there, the directory, which is the form that can carry a picture
+    // -- the order the directory listed them in was the answer before,
+    // which is no answer at all.
+    found.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
+    found.dedup_by(|later, earlier| later.0 == earlier.0);
     found
+        .into_iter()
+        .map(|(name, _, path)| (name, path))
+        .collect()
 }
 
 /// Reads one, over whichever built-in theme it says to build on, saying
