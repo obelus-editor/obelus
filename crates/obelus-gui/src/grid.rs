@@ -1013,11 +1013,8 @@ impl obelus_ui::image::Marks for Marking {
 pub(crate) struct Telling {
     updates: Sender<Update>,
     wake: Arc<dyn Fn() + Send + Sync>,
-    /// Which picture under the page was asked for last -- see `wallpaper`.
-    asked: Arc<crate::wallpaper::Asked>,
-    /// The screen the window opened on, in pixels: as large as a picture
-    /// fitted to the window is ever drawn.
-    screen: [u32; 2],
+    /// What decodes the picture under the page -- see `wallpaper`.
+    decoder: Arc<crate::wallpaper::Decoder>,
 }
 
 impl std::fmt::Debug for Telling {
@@ -1028,17 +1025,25 @@ impl std::fmt::Debug for Telling {
 
 impl Telling {
     /// Says where to send what the application works out about the window,
-    /// and how large the screen it opened on is.
+    /// and how large the screen it opened on is: as large as a picture
+    /// fitted to the window is ever drawn.
     pub(crate) fn new(
         updates: Sender<Update>,
         wake: Arc<dyn Fn() + Send + Sync>,
         screen: [u32; 2],
     ) -> Self {
+        let decoder = {
+            let (updates, wake) = (updates.clone(), Arc::clone(&wake));
+            crate::wallpaper::Decoder::new(screen, move |number, hung| {
+                if updates.send(Update::Wallpaper { number, hung }).is_ok() {
+                    wake();
+                }
+            })
+        };
         Self {
             updates,
             wake,
-            asked: Arc::default(),
-            screen,
+            decoder,
         }
     }
 }
@@ -1076,27 +1081,14 @@ impl obelus_app::app::Drawing for Telling {
     }
 
     fn hang(&self, wallpaper: Option<&obelus_theme::Wallpaper>) {
-        let number = self.asked.next();
-        let Some(wallpaper) = wallpaper else {
-            // Nothing to read, so said at once -- and numbered like any
-            // picture, so one still decoding cannot arrive after it.
-            if (self.updates.send(Update::Wallpaper { number, hung: None })).is_ok() {
-                (self.wake)();
-            }
-            return;
-        };
-        let (updates, wake) = (self.updates.clone(), Arc::clone(&self.wake));
-        crate::wallpaper::decode_apart(
-            wallpaper.clone(),
-            self.screen,
-            Arc::clone(&self.asked),
-            number,
-            move |hung| {
-                if updates.send(Update::Wallpaper { number, hung }).is_ok() {
-                    wake();
-                }
-            },
-        );
+        let number = self.decoder.ask(wallpaper.cloned());
+        // Nothing to read, so said at once -- and numbered like any
+        // picture, so one still decoding cannot arrive after it.
+        if wallpaper.is_none()
+            && (self.updates.send(Update::Wallpaper { number, hung: None })).is_ok()
+        {
+            (self.wake)();
+        }
     }
 
     fn caret_is(&self, caret: Caret, whose: Option<Layer>, typing: bool) {

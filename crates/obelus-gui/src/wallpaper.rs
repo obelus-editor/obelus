@@ -8,10 +8,11 @@
 //! drawn.** A photograph takes tens of milliseconds to decode, which is not
 //! work for the thread a key is waiting on nor for the one that draws --
 //! and a reader walking the list of themes asks for one picture after
-//! another faster than they decode. So each is numbered when it is asked
-//! for, a picture whose number has been overtaken is not decoded or not
-//! sent, and the window keeps the highest number it has been given: two
-//! threads finishing in the wrong order cannot put the older picture back.
+//! another faster than they decode. So there is one thread and one picture
+//! waiting for it, each ask taking the place of the last (`Decoder`); each
+//! is numbered, a picture whose number has been overtaken is not decoded
+//! or not sent, and the window keeps the highest number it has been given,
+//! so a picture cannot arrive after the "none" that replaced it.
 //!
 //! **A picture is never drawn larger than it has to be.** One fitted to the
 //! window is made no larger than it takes to cover the screen the window
@@ -24,7 +25,7 @@
 use std::{
     path::Path,
     sync::{
-        Arc,
+        Arc, Condvar, Mutex, PoisonError,
         atomic::{AtomicU64, Ordering},
     },
 };
@@ -65,45 +66,131 @@ impl std::fmt::Debug for Hung {
 /// is one drawn at its own size, which no screen shows whole anyway.
 pub(crate) const LARGEST: u32 = 8192;
 
-/// Numbers each picture asked for, so the window can tell the newest.
-#[derive(Debug, Default)]
-pub(crate) struct Asked(AtomicU64);
+/// What a decoded picture is handed to, with the number it was asked by.
+type Send = Box<dyn Fn(u64, Option<Arc<Hung>>) + std::marker::Send>;
 
-impl Asked {
-    /// A new number, higher than every one before it.
-    pub(crate) fn next(&self) -> u64 {
-        self.0.fetch_add(1, Ordering::Relaxed) + 1
+/// One thread that decodes, and the one picture it is to decode next.
+///
+/// One thread, and one picture waiting: a reader walking the list of
+/// themes asks for a picture at every step, and a thread for each was a
+/// photograph decoding at full size for every theme walked past --
+/// hundreds of megabytes at once, for pictures nobody would see. Now an ask
+/// takes the place of whatever was waiting, and the thread decodes only
+/// what is still the newest when it gets to it.
+///
+/// Made with the window and started at the first picture. It lives as long
+/// as the process does, parked while there is nothing to decode -- which is
+/// one thread, asleep, and nothing that wakes it but an ask.
+pub(crate) struct Decoder {
+    /// The number of the newest ask.
+    newest: AtomicU64,
+    /// What is to be decoded next.
+    waiting: Mutex<Waiting>,
+    /// What wakes the thread when something is.
+    woken: Condvar,
+    /// The screen the window opened on -- see `smaller`.
+    screen: [u32; 2],
+    /// Where a decoded picture goes, until there is a thread to hold it.
+    send: Mutex<Option<Send>>,
+}
+
+impl Decoder {
+    /// A decoder for a window that opened on `screen`, handing what it
+    /// decodes to `send`.
+    pub(crate) fn new(
+        screen: [u32; 2],
+        send: impl Fn(u64, Option<Arc<Hung>>) + std::marker::Send + 'static,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            newest: AtomicU64::new(0),
+            waiting: Mutex::new(Waiting::default()),
+            woken: Condvar::new(),
+            screen,
+            send: Mutex::new(Some(Box::new(send))),
+        })
     }
 
-    /// Whether `number` is still the newest, which is whether its picture
-    /// is still worth decoding.
-    pub(crate) fn newest(&self, number: u64) -> bool {
-        self.0.load(Ordering::Relaxed) == number
+    /// Asks for a picture, or for none, and says the number it was asked
+    /// by: higher than every one before it, and the one the window keeps.
+    ///
+    /// For none there is nothing to decode, so the caller says so itself;
+    /// what this does is take back a picture still waiting.
+    pub(crate) fn ask(self: &Arc<Self>, wallpaper: Option<Wallpaper>) -> u64 {
+        let number = self.newest.fetch_add(1, Ordering::Relaxed) + 1;
+        let mut waiting = self.waiting.lock().unwrap_or_else(PoisonError::into_inner);
+        waiting.ask(number, wallpaper.clone());
+        drop(waiting);
+        if wallpaper.is_some() {
+            self.woken.notify_one();
+            self.start();
+        }
+        number
+    }
+
+    /// Whether `number` is still the newest ask.
+    fn newest(&self, number: u64) -> bool {
+        self.newest.load(Ordering::Relaxed) == number
+    }
+
+    /// The thread, the first time there is something for it.
+    fn start(self: &Arc<Self>) {
+        let Some(send) = self
+            .send
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+        else {
+            return;
+        };
+        let decoder = Arc::clone(self);
+        let started = std::thread::Builder::new()
+            .name("obelus wallpaper".to_string())
+            .spawn(move || {
+                loop {
+                    let (number, wallpaper) = decoder.next();
+                    if !decoder.newest(number) {
+                        continue;
+                    }
+                    let hung = decoded(&wallpaper, decoder.screen);
+                    if decoder.newest(number) {
+                        send(number, hung.map(Arc::new));
+                    }
+                }
+            });
+        if let Err(error) = started {
+            tracing::warn!(%error, "no thread to read the wallpaper on, so there is none");
+        }
+    }
+
+    /// The next picture to decode, waiting for one.
+    fn next(&self) -> (u64, Wallpaper) {
+        let mut waiting = self.waiting.lock().unwrap_or_else(PoisonError::into_inner);
+        loop {
+            if let Some(next) = waiting.take() {
+                return next;
+            }
+            waiting = self
+                .woken
+                .wait(waiting)
+                .unwrap_or_else(PoisonError::into_inner);
+        }
     }
 }
 
-/// Decodes `wallpaper` off the thread that asked, and hands it to `send`
-/// numbered `number` -- unless something newer was asked for meanwhile.
-pub(crate) fn decode_apart(
-    wallpaper: Wallpaper,
-    screen: [u32; 2],
-    asked: Arc<Asked>,
-    number: u64,
-    send: impl FnOnce(Option<Arc<Hung>>) + Send + 'static,
-) {
-    let started = std::thread::Builder::new()
-        .name("obelus wallpaper".to_string())
-        .spawn(move || {
-            if !asked.newest(number) {
-                return;
-            }
-            let hung = decoded(&wallpaper, screen);
-            if asked.newest(number) {
-                send(hung.map(Arc::new));
-            }
-        });
-    if let Err(error) = started {
-        tracing::warn!(%error, "no thread to read the wallpaper on, so there is none");
+/// The one picture waiting to be decoded, if any.
+#[derive(Debug, Default)]
+struct Waiting(Option<(u64, Wallpaper)>);
+
+impl Waiting {
+    /// An ask, which takes the place of whatever was waiting -- and an ask
+    /// for none leaves nothing waiting.
+    fn ask(&mut self, number: u64, wallpaper: Option<Wallpaper>) {
+        self.0 = wallpaper.map(|wallpaper| (number, wallpaper));
+    }
+
+    /// What is waiting, which is then no longer.
+    const fn take(&mut self) -> Option<(u64, Wallpaper)> {
+        self.0.take()
     }
 }
 
@@ -295,6 +382,67 @@ mod tests {
     use obelus_theme::wallpaper::{Anchor, Edge, Fit};
 
     use super::{LARGEST, laid, wanted};
+
+    fn somewhere(name: &str) -> obelus_theme::Wallpaper {
+        obelus_theme::Wallpaper {
+            file: std::env::temp_dir().join(format!("obelus-no-such-picture-{name}.jpg")),
+            opacity: 80,
+            fit: Fit::Cover,
+            anchor: Anchor::default(),
+            modified: None,
+        }
+    }
+
+    /// What waits to be decoded is the newest ask and nothing older, and
+    /// an ask for none leaves nothing waiting.
+    ///
+    /// Deliberate break: `Waiting::ask` keeping what was there when it is
+    /// asked for none, which fails the last assertion.
+    #[test]
+    fn only_the_newest_ask_waits() {
+        let mut waiting = super::Waiting::default();
+        waiting.ask(1, Some(somewhere("one")));
+        waiting.ask(2, Some(somewhere("two")));
+        assert_eq!(waiting.take().map(|(number, _)| number), Some(2));
+        assert!(waiting.take().is_none(), "taken twice");
+        waiting.ask(3, Some(somewhere("three")));
+        waiting.ask(4, None);
+        assert!(
+            waiting.take().is_none(),
+            "a picture outlived the ask for none"
+        );
+    }
+
+    /// An ask is answered with its own number, and one overtaken by an ask
+    /// for none is never answered -- so a picture cannot arrive after the
+    /// page was told it has none.
+    ///
+    /// A picture that is not there, which decodes to nothing at once: what
+    /// is under test is which answers are sent, not the decoding.
+    ///
+    /// Deliberate break: `newest` always true and an ask for none leaving
+    /// what was waiting, which sends the overtaken one's answer.
+    #[test]
+    fn the_decoder_answers_only_the_newest() {
+        let (sent, heard) = std::sync::mpsc::channel();
+        let decoder = super::Decoder::new([1920, 1080], move |number, hung| {
+            let _ = sent.send((number, hung.is_some()));
+        });
+        let first = decoder.ask(Some(somewhere("first")));
+        assert_eq!(
+            heard.recv_timeout(std::time::Duration::from_secs(10)),
+            Ok((first, false)),
+            "an ask went unanswered"
+        );
+        let _ = decoder.ask(Some(somewhere("second")));
+        let _ = decoder.ask(None);
+        assert!(
+            heard
+                .recv_timeout(std::time::Duration::from_millis(300))
+                .is_err(),
+            "an ask overtaken by none was answered"
+        );
+    }
 
     const MIDDLE: Anchor = Anchor {
         across: Edge::Middle,
