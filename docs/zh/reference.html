@@ -250,7 +250,7 @@
       <p class="quiet small">它还会告诉你是<em>哪一行</em>的问题。配置文件解析不了、某个键绑不上、项目设了无权设的项、主题名字找不到对应的文件——都会标在出问题的那一行上，和语言服务器报的错放在同一个列表里，所以 <kbd>Alt+e</kbd> 和 <kbd>Alt+[</kbd> <kbd>Alt+]</kbd> 照样能找到它们。</p>
 
       <div class="aside">
-        <p><strong>项目不能设的六项：</strong><code>agent</code>、<code>keys</code>、<code>agents</code>、<code>new_versions</code>、<code>conversation_days</code>、<code>read_only</code>。这六项都该你说了算，不该由一个下载来的仓库定：你的机器上启动哪个程序；按键放在哪（能改键的项目就能把 <code>quit</code> 挪到你会误按的地方）；agent 不问你就能做什么（这正是不怀好意的项目最想改的）；Obelus 要不要联网检查新版本；对话保留多久（项目能借此清空你的对话列表）；以及你自己的键能不能改文件。</p>
+        <p><strong>项目不能设的十二项：</strong><code>agent</code>、<code>agents</code>、<code>environment</code>、<code>keys</code>、<code>keys_from</code>、<code>remote</code>、<code>remotes</code>、<code>new_versions</code>、<code>conversation_days</code>、<code>read_only</code>、<code>build_jobs</code>、<code>theme</code>。这十二项都该你说了算，不该由一个下载来的仓库定：你的机器上启动哪个程序；agent 不问你就能做什么（这正是不怀好意的项目最想改的）；agent 带着什么环境变量启动（能借此把它指向别人的服务器）；按键放在哪（能改键的项目就能把 <code>quit</code> 挪到你会误按的地方）；谁能从聊天里找到这台机器；Obelus 要不要联网检查新版本；对话保留多久（项目能借此清空你的对话列表）；你自己的键能不能改文件；一次构建能占你机器多少；以及你用哪套主题。</p>
       </div>
 
       <h3>能设的项</h3>
@@ -298,8 +298,16 @@ show-change = "Alt+g"
 quit = ""            # 把这个绑定拿掉</code></pre>
 
       <h3>主题</h3>
-      <p>内置 <code>dark</code> 和 <code>light</code> 两套，<code>choose-theme</code> 切换，马上生效。另外，<code>~/.config/obelus/themes/</code> 下的每个 <code>.toml</code> 文件都是一个主题，名字就是文件名（<code>omarchy.toml</code> → <code>omarchy</code>）。每个颜色都可以不写，没写的沿用它所基于的内置主题——所以以后 Obelus 多了新颜色，你的旧主题文件不用改也能用。</p>
-      <p class="quiet small">仓库里的 <code>contrib/omarchy/</code> 是给 <a href="https://omarchy.org">omarchy</a> 的模板：桌面换主题时，Obelus 的颜色跟着换。Obelus 本身不知道 omarchy 的存在，模板只是替你把主题文件写好。</p>
+      <p>内置 <code>dark</code>、<code>light</code> 和一排常见配色，<code>choose-theme</code> 切换，马上生效。另外，<code>~/.config/obelus/themes/</code> 下的每个 <code>.toml</code> 文件都是一个主题，名字就是文件名（<code>mine.toml</code> → <code>mine</code>）；那里的一个目录只要放了 <code>theme.toml</code>，也是一个主题，名字就是目录名——主题就是这样把一张图片和配色放在一起的。你自己的主题和内置的同名时，用你的。每个颜色都可以不写，没写的沿用它所基于的内置主题——所以以后 Obelus 多了新颜色，你的旧主题文件不用改也能用。</p>
+      <p>在窗口里，主题可以带一张铺在页面下面的壁纸。主题文件里单独写一节，除了 <code>file</code> 都可以不写：</p>
+      <pre><code>[wallpaper]
+file = "rain.jpg"     # 和 theme.toml 放在一起
+opacity = 85          # 页面底色盖在图上的程度，0 到 100
+fit = "cover"         # cover、contain、stretch、center 或 tile
+anchor = "center"     # 哪一处不动：top-left、top、top-right、left、
+                      # center、right、bottom-left、bottom 或 bottom-right</code></pre>
+      <p class="quiet small">终端里没有像素可画，所以 <code>ob</code> 只用配色。Obelus 用不了的那一行会标出来并退回默认值，图片不在也会标出来。</p>
+      <p class="quiet small">只要 <a href="https://omarchy.org">omarchy</a> 为 Obelus 写出了主题，列表里就会有 <code>omarchy</code>；仓库里的 <code>contrib/omarchy/</code> 就是让它写出主题的模板，这样桌面换主题时，Obelus 的颜色跟着换。</p>
     </section>
     <section id="windows">
       <h2><span class="num">04</span><span>多个窗口</span></h2>
