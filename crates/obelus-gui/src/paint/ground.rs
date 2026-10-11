@@ -19,12 +19,15 @@ impl Painter {
         capped: &[&Capped],
     ) {
         let (width, height) = (cell.width, cell.height);
+        let spilt: Vec<(u16, u16)> = framed.iter().flat_map(|card| card.spilt(page)).collect();
         for row in 0..page.rows() {
             // A frame's own cells, which `frame` has drawn already: what
             // the cells hold there is a terminal's square corner under a
-            // round one.
+            // round one. And beside them what a letter put back on the
+            // ring runs into, which it has drawn as well.
             let ring: Vec<u16> = (0..page.columns())
                 .filter(|&x| framed.iter().any(|card| card.ring_holds(page, x, row)))
+                .chain(spilt.iter().filter(|&&(_, y)| y == row).map(|&(x, _)| x))
                 .collect();
             for (start, end, colour) in runs(page, row) {
                 // The pane's own colour inside the pane is where the glass

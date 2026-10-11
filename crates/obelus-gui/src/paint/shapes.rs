@@ -197,6 +197,22 @@ impl Painter {
                 }
             }
         }
+        // And the cells a full-width letter on the right-hand edge runs
+        // into, which `backgrounds` leaves to this -- see `Behind::spilt`.
+        for (x, y) in card.spilt(page) {
+            let look = page.look(x, y);
+            if !seen_through(panes, x, y, look.background) {
+                let ground = self.under(panes, &[], x, y);
+                self.block(
+                    f32::from(x) * cell.width,
+                    f32::from(y) * cell.height,
+                    cell.width,
+                    cell.height,
+                    as_held(look.background, self.holding, ground)
+                        .unwrap_or_else(|| rgba(look.background, Ink::Background)),
+                );
+            }
+        }
         // Under the line, which is drawn next and covers what of each
         // letter is inside it. And after every ground of the ring, for the
         // reason `behind_row` gives: a full-width character along the top

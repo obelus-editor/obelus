@@ -432,6 +432,28 @@ impl Behind {
             })
             .collect()
     }
+
+    /// The cells past the box's right-hand edge that a full-width letter
+    /// put back on that edge runs into.
+    ///
+    /// They are the character's own, and the page holds them blank in its
+    /// colours -- see `Page::covered` -- so `backgrounds` would paint them
+    /// after `frame` had drawn the letter, over its right half. Left to
+    /// `frame` instead, which paints their ground before the letter the
+    /// way it does the ring's. Only while they are still blank: one with
+    /// anything in it is somebody else's by now.
+    pub(crate) fn spilt(&self, page: &Page) -> Vec<(u16, u16)> {
+        let past = self.area.right();
+        self.lettered_ring(page)
+            .into_iter()
+            .flat_map(|(x, y, under)| {
+                (past.max(x + 1)..x.saturating_add(under.columns()))
+                    .filter(move |&x| x < page.columns())
+                    .map(move |x| (x, y))
+            })
+            .filter(|&(x, y)| page.look(x, y).text.trim().is_empty())
+            .collect()
+    }
 }
 
 /// Whether a cell holds one of the box-drawing lines, which is what a
@@ -2063,6 +2085,47 @@ mod tests {
             "the space in `fn m`, the cell written over, the rule under the \
              right-hand side, the inside of the box and the row of spaces are \
              not"
+        );
+    }
+
+    /// A full-width letter put back on a box's right-hand edge keeps the
+    /// cell it runs into past the edge, while that cell is still blank.
+    ///
+    /// Deliberate breaks: answer an empty list from `Behind::spilt`, and
+    /// `backgrounds` paints that cell after the letter is drawn -- what was
+    /// left of the character was the sliver between the line and the edge
+    /// of its cell. Drop `past.max`, and one down the left-hand edge claims
+    /// the blank cell inside the box beside it, a square of ground on the
+    /// glass. Drop the blank check, and the cell a list drew a letter in
+    /// loses its ground.
+    #[test]
+    fn a_wide_letter_on_a_box_s_edge_keeps_the_cell_past_it() {
+        let page = written(&[
+            "\u{256d}\u{2500}\u{2500}\u{256e} ",
+            "\u{2502}  \u{2502} ",
+            "\u{2570}\u{2500}\u{2500}\u{256f}x",
+        ]);
+        // What ratatui leaves after a full-width character is a blank
+        // cell, which is what the box's own picture holds there too.
+        let frame = Behind {
+            cells: [
+                "\u{4e2d}", "", "\u{6587}", "", "\u{5b57}", "", "", "\u{5b57}", "", "", "",
+                "\u{5b57}",
+            ]
+            .into_iter()
+            .map(|symbol| {
+                let mut cell = Cell::default();
+                cell.set_symbol(if symbol.is_empty() { " " } else { symbol });
+                cell
+            })
+            .collect(),
+            ..a_box(4, 3)
+        };
+        assert_eq!(
+            frame.spilt(&page),
+            [(4, 1)],
+            "the runs into the ring along the top, into the box from the \
+             left and into a cell with a letter in it are not"
         );
     }
 
