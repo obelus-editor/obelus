@@ -69,12 +69,11 @@ pub(crate) fn asked_of_the_window(
         return None;
     }
     let alt = modifiers.alt_key();
-    // With alt the layout composes `cmd+alt+h` into another letter, which
-    // `code_of` takes back to the key -- the same as for a binding.
-    let bits = match alt {
-        true => KeyModifiers::ALT,
-        false => KeyModifiers::empty(),
-    };
+    // Asked as the control it is about to become, so a layout that is not
+    // Latin -- where `cmd+h` arrives as `р` -- is taken back to the key the
+    // way a binding is (`code_of`).
+    let mut bits = KeyModifiers::CONTROL;
+    bits.set(KeyModifiers::ALT, alt);
     match (code_of(logical, physical, bits)?, alt) {
         (KeyCode::Char('h'), false) => Some(Asked::Hide),
         (KeyCode::Char('h'), true) => Some(Asked::HideOthers),
@@ -295,7 +294,8 @@ mod tests {
     /// command is Obelus's.
     ///
     /// Deliberate break: answering `h` whether alt is held or not fails the
-    /// second assertion; dropping the `control_key` refusal fails the last.
+    /// second assertion; asking `code_of` without control fails the one on
+    /// a Russian layout; dropping the `control_key` refusal fails the last.
     #[test]
     fn the_window_keeps_three_keys_of_command() {
         let h = PhysicalKey::Code(Physical::KeyH);
@@ -304,10 +304,17 @@ mod tests {
             asked_of_the_window(&character("h"), h, command),
             Some(Asked::Hide)
         );
-        // What a US layout composes `alt+h` into.
+        // With command held winit names the key without alt, so this is
+        // `h` rather than the `˙` alt alone would compose.
         assert_eq!(
-            asked_of_the_window(&character("\u{2d9}"), h, command | ModifiersState::ALT),
+            asked_of_the_window(&character("h"), h, command | ModifiersState::ALT),
             Some(Asked::HideOthers)
+        );
+        // And on a layout that is not Latin it names the layout's letter.
+        assert_eq!(
+            asked_of_the_window(&character("\u{440}"), h, command),
+            Some(Asked::Hide),
+            "cmd+h on a Russian layout is still cmd+h"
         );
         assert_eq!(
             asked_of_the_window(&character("m"), PhysicalKey::Code(Physical::KeyM), command),
