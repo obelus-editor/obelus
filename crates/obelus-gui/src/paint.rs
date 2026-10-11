@@ -508,10 +508,11 @@ struct Quad {
 const SOLID: u32 = 1;
 /// The picture under the page, read where `uv` says -- see `wallpaper`.
 const WALLPAPER: u32 = 1_073_741_824;
-/// Drawn only outside the rows from `radius` down to `lower`, in the grid's
-/// pixels: the rows a band slides in, where the page it scrolled off is
-/// already showing -- see `catching_up`. Beside whatever else the quad is.
-const OUTSIDE: u32 = 2_147_483_648;
+/// Drawn only in the rows from `radius` down to `lower`, in the grid's
+/// pixels: the rows of a band its slide has scrolled past, which nothing
+/// else is showing -- see `catching_up` and `scrolled_past`. Beside
+/// whatever else the quad is.
+const ONLY_ROWS: u32 = 2_147_483_648;
 /// A picture with colours of its own, which is an emoji.
 const COLOURFUL: u32 = 2;
 /// A solid whose corners are taken off, which is a key's cap.
@@ -1134,6 +1135,25 @@ mod tests {
         Validator::new(ValidationFlags::all(), Capabilities::default())
             .validate(&module)
             .expect("the shader would not validate");
+    }
+
+    /// The page a band scrolled off is kept to the strip of the band the
+    /// slide has nothing to show in -- at the top when the rows come from
+    /// above, at the bottom when they come from below -- and never past the
+    /// band's edges, where it stood on the file over a picture until the
+    /// slide arrived.
+    ///
+    /// Deliberate break: dropping the `min(bottom)`, which lets a slide of
+    /// more than the band is tall keep rows past its foot -- the third
+    /// assertion.
+    #[test]
+    fn the_page_scrolled_off_stays_inside_the_band() {
+        use super::glass::scrolled_past;
+        assert_eq!(scrolled_past(100.0, 300.0, 40.0), (100.0, 140.0));
+        assert_eq!(scrolled_past(100.0, 300.0, -40.0), (260.0, 300.0));
+        // More than the band is tall is the whole of it, and no further.
+        assert_eq!(scrolled_past(100.0, 300.0, 500.0), (100.0, 300.0));
+        assert_eq!(scrolled_past(100.0, 300.0, 0.0), (100.0, 100.0));
     }
 
     /// The frame cut into moving pieces leaves out the picture under the

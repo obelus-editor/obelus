@@ -78,19 +78,20 @@ impl Painter {
                     }
                 }
             }
-            // Over a picture, the rows the band slides in are not opaque:
-            // where they are the page, what shows through them is the
-            // picture, and these rows would show through with it -- the
-            // same line twice, drawn by the old page and by the new one.
-            // So these are kept to where the slid rows have nothing to
-            // show, which is what they are for: the rows scrolled past.
+            // Over a picture, what covers these is not opaque: the frame
+            // is put back clear where it is the page, so these rows would
+            // show through it -- the same line twice inside the band, drawn
+            // by the old page and the new, and outside it rows the slide
+            // carried past the band's edge, standing on the file above or
+            // below the list until it arrived. So they are kept to what
+            // they are for: the rows scrolled past, inside the band.
             if self.laid.is_some() {
                 let [_, top, _, bottom] = box_of(room, cell);
-                let shift = band.behind * cell.height;
+                let (from, to) = scrolled_past(top, bottom, band.behind * cell.height);
                 for quad in &mut self.quads[rows..] {
-                    quad.flags |= OUTSIDE;
-                    quad.radius = top + shift;
-                    quad.lower = bottom + shift;
+                    quad.flags |= ONLY_ROWS;
+                    quad.radius = from;
+                    quad.lower = to;
                 }
             }
         }
@@ -763,6 +764,22 @@ pub(super) fn mark_behind(to_come: f32, behind: f32, since: f32) -> f32 {
         return 0.0;
     }
     to_come * (behind / since).clamp(0.0, 1.0)
+}
+
+/// The rows of a band from `top` to `bottom` that its slide has scrolled
+/// past, as the top and bottom of them, in pixels.
+///
+/// The band is taken from `shift` further up the frame -- see `slid_piece`
+/// -- so it has nothing to show in the first `shift` of its rows, or the
+/// last where it slides the other way. That strip is what the page it
+/// scrolled off is drawn for, and nothing outside it is: the rest of the
+/// band is the band, and beyond its edges is somebody else's.
+pub(super) fn scrolled_past(top: f32, bottom: f32, shift: f32) -> (f32, f32) {
+    if shift >= 0.0 {
+        (top, (top + shift).min(bottom))
+    } else {
+        ((bottom + shift).max(top), bottom)
+    }
 }
 
 /// What of a band's room moves while it catches up, given the pane over

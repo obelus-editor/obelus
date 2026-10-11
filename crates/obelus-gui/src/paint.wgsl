@@ -68,7 +68,7 @@ struct Quad {
     // deletion left. 16777216: the mark that turns while something is
     // happening. 536870912: the light round a run the reader has hold of.
     // 1073741824: the picture under the page. 2147483648, beside any of
-    // the others: drawn only outside the rows from `radius` to `lower`.
+    // the others: drawn only in the rows from `radius` to `lower`.
     @location(3) flags: u32,
     // How far those corners are taken off, in pixels -- and for the
     // quads that carry no corners, the one number each of them needs
@@ -308,14 +308,15 @@ fn whole(texel: vec4<f32>, fade: f32) -> vec4<f32> {
 
 @fragment
 fn fragment(in: Fragment) -> @location(0) vec4<f32> {
-    // The rows a band slides in, where the page it scrolled off is not to
-    // be drawn: they are showing the page it scrolled to, and over a
-    // picture that page is clear, so this one would show through it -- see
-    // `catching_up`. Before everything, because it is beside whatever the
-    // quad otherwise is; neither a letter nor a block reads these two.
+    // The page a band scrolled off, kept to the rows of the band its slide
+    // has scrolled past: everywhere else something is showing, and over a
+    // picture what is showing is clear where it is the page, so this would
+    // show through it -- see `catching_up`. Before everything, because it
+    // is beside whatever the quad otherwise is; neither a letter nor a
+    // block reads these two.
     if ((in.flags & 2147483648u) != 0u) {
         let y = in.position.y - screen.origin.y;
-        if (y >= in.radius && y < in.lower) {
+        if (y < in.radius || y >= in.lower) {
             discard;
         }
     }
