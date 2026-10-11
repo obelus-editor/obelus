@@ -337,13 +337,27 @@ fn forget_pages_nobody_names(root: &Path, remembered: &Remembered) {
     let named: std::collections::HashSet<String> = remembered.sessions().map(page_name).collect();
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
-        // Only pages: a name with `.writing.` in it is a page another
-        // Obelus is half-way through writing, and is its to rename.
-        if name.ends_with(".json") && !named.contains(&name) {
+        // A name with `.writing.` in it is a page another Obelus is half-way
+        // through writing, and is its to rename -- unless it is old enough
+        // that nobody is: a page is written in milliseconds, so one that has
+        // stood this long was left by an Obelus that went in the middle,
+        // and nothing else would ever take it away.
+        let abandoned = name.contains(".json.writing.")
+            && entry
+                .metadata()
+                .and_then(|metadata| metadata.modified())
+                .ok()
+                .and_then(|modified| modified.elapsed().ok())
+                .is_some_and(|age| age > ABANDONED);
+        if abandoned || (name.ends_with(".json") && !named.contains(&name)) {
             let _ = std::fs::remove_file(entry.path());
         }
     }
 }
+
+/// How long a page half-written has to have stood before nobody is
+/// writing it any more.
+const ABANDONED: std::time::Duration = std::time::Duration::from_secs(60 * 60);
 
 /// What reading a project's table found.
 ///

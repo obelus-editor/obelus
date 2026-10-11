@@ -514,3 +514,42 @@ fn a_page_goes_when_its_conversation_does() {
         "the page of a conversation still remembered went with the other"
     );
 }
+
+/// A page half-written by an Obelus that went in the middle is cleared
+/// once it is old enough that nobody is still writing it -- and one being
+/// written now is left alone.
+///
+/// Broken deliberately by leaving every `.writing.` name alone, as the
+/// sweep first did: the abandoned one stayed for ever.
+#[test]
+fn a_page_left_half_written_is_cleared() {
+    use obelus_agent::acp::sessions;
+
+    let scratch = support::Scratch::new("sessions-half-written");
+    let root = scratch.path();
+    sessions::change(root, 0, Some(&[]), |_| {});
+    let page = sessions::page(root, "s-1").expect("somewhere to keep it");
+    let directory = page.parent().expect("a directory");
+    std::fs::create_dir_all(directory).expect("the directory");
+    let abandoned = directory.join("s-1.json.writing.1");
+    let underway = directory.join("s-2.json.writing.2");
+    std::fs::write(&abandoned, "{").expect("the abandoned one");
+    std::fs::write(&underway, "{").expect("the one underway");
+    std::fs::File::options()
+        .write(true)
+        .open(&abandoned)
+        .and_then(|file| {
+            file.set_modified(
+                std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 60 * 60),
+            )
+        })
+        .expect("making it old");
+
+    sessions::change(root, 0, Some(&[]), |_| {});
+
+    assert!(
+        !abandoned.exists(),
+        "a page left half-written two hours ago is still there"
+    );
+    assert!(underway.exists(), "a page being written now was taken away");
+}
