@@ -633,14 +633,11 @@ impl Painter {
         let lip = (cell.height * LIP).round().max(1.0);
         let height = (cell.height - inset * 2.0).max(1.0);
         let radius = (height * ROUNDING).min(cell.width);
+        // As the page looks there, which over a picture is the picture with
+        // the page laid on it: a block of the page's own colour was a dark
+        // square behind every cap at the foot.
         if put_back {
-            self.block(
-                left,
-                top,
-                width,
-                cell.height,
-                rgba(cap.page, Ink::Background),
-            );
+            self.ground_back([left, top, width, cell.height], cap.page, None);
         }
         // Held off the cells either side, which the ground above is
         // not: what was put back is every cell the cap was said
