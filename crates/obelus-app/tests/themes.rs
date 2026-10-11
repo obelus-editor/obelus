@@ -487,6 +487,38 @@ fn a_line_of_a_wallpaper_that_does_nothing_is_marked() {
     );
 }
 
+/// Letting go of a project keeps the picture under the page with the rest
+/// of the theme, which belongs to the reader and not to the project -- and
+/// says nothing to the window, which already has it.
+///
+/// Deliberate break: `let_go_of_the_project` keeping the colours and not
+/// the picture, which leaves the application believing there is none (and
+/// tells the window the same picture again when the settings are applied).
+#[test]
+fn letting_go_of_the_project_keeps_the_picture() {
+    let scratch = reader("wallpaper-kept");
+    rain(&scratch, "file = \"rain.jpg\"\n");
+    std::fs::write(scratch.join("config.toml"), "theme = \"rain\"\n").expect("the settings");
+
+    let mut app = open(&scratch);
+    let told = std::sync::Arc::new(Hangs::default());
+    app.drawn_by(told.clone());
+    assert!(app.wallpaper().is_some(), "no picture to begin with");
+
+    dispatch::dispatch(&mut app, Command::ProjectClose);
+    assert_eq!(app.theme_name(), "rain");
+    assert!(
+        app.wallpaper().is_some(),
+        "the picture went with the project"
+    );
+    assert_eq!(
+        told.said().len(),
+        1,
+        "the window was told again: {:?}",
+        told.said()
+    );
+}
+
 /// What a window is told about the picture under the page.
 #[derive(Debug, Default)]
 struct Hangs(std::sync::Mutex<Vec<Option<std::path::PathBuf>>>);

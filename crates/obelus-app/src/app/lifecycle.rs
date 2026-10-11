@@ -129,6 +129,9 @@ impl App {
         self.keymap = was.keymap;
         self.theme = was.theme;
         self.theme_name = was.theme_name;
+        // With the colours it came with, or the window -- which still has
+        // it -- is told it again, and decodes it again.
+        self.wallpaper = was.wallpaper;
         self.files.walk_generation = was.files.walk_generation;
         self.git.history_generation = was.git.history_generation;
         self.search.search_generation = was.search.search_generation;
