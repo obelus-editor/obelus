@@ -289,6 +289,14 @@ struct Showing {
     /// reports it in pixels.
     pointer: Option<(u16, u16)>,
     held: bool,
+    /// Whether the pointer is over the title bar, where the page runs up
+    /// under it -- see `title::under`. The page's cells stop below it, so a
+    /// press there is not a press on the row underneath.
+    over_the_title: bool,
+    /// Whether the left button went down on the title bar, so that letting
+    /// it go is the bar's too and not a release Obelus never saw pressed.
+    pressed_on_the_title: bool,
+    title_presses: crate::title::Presses,
     /// Wheels that report pixels rather than lines, added up until they
     /// amount to a row.
     rolled: f32,
@@ -473,6 +481,9 @@ impl Showing {
             modifiers: ModifiersState::empty(),
             pointer: None,
             held: false,
+            over_the_title: false,
+            pressed_on_the_title: false,
+            title_presses: crate::title::Presses::default(),
             rolled: 0.0,
             composing: false,
             spelling: None,
@@ -1598,6 +1609,7 @@ impl ApplicationHandler<Waking> for Showing {
                 self.tell(Event::Key(key));
             }
             WindowEvent::CursorMoved { position, .. } => {
+                self.over_the_title = crate::title::under(position.y, self.titled);
                 let Some(at) = self.cell_at(position) else {
                     return;
                 };
@@ -1623,6 +1635,20 @@ impl ApplicationHandler<Waking> for Showing {
                     return;
                 }
                 self.stir();
+                // Asked again at every press rather than cleared at the
+                // release: a press that drags the window by its bar may
+                // never be let go of in the window at all.
+                if state == ElementState::Pressed {
+                    self.pressed_on_the_title = self.over_the_title;
+                }
+                if self.pressed_on_the_title {
+                    if state == ElementState::Pressed
+                        && let Some(window) = self.window.as_ref()
+                    {
+                        self.title_presses.pressed(window, Instant::now());
+                    }
+                    return;
+                }
                 self.held = state == ElementState::Pressed;
                 let Some((x, y)) = self.pointer else {
                     return;
