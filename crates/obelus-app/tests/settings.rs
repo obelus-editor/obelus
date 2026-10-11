@@ -513,6 +513,37 @@ fn a_setting_with_no_gloss_keeps_the_blank_under_it() {
     );
 }
 
+/// The theme's choices open as a compact list over the settings, and the
+/// file behind the settings keeps the whole of its room: the list is over
+/// the page, not over the file, so there is no caret to keep clear of it.
+///
+/// Deliberate break: `editor_room` without its question about a page in
+/// between, which hands the file only the rows above the list -- and the
+/// file scrolled behind the glass while the reader chose a theme.
+#[test]
+fn a_list_over_the_settings_leaves_the_file_its_room() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("room-behind");
+    let mut app = open(&settings_file(&scratch));
+    let screen = ratatui::layout::Rect::new(0, 0, 66, 12);
+
+    // The theme is the first row, and enter opens its choices.
+    support::press(&mut app, KeyCode::Enter);
+    let _ = support::render(&mut app, screen.width, screen.height);
+    assert!(
+        app.picker()
+            .is_some_and(|list| list.layout() != obelus_component::picker::PickerLayout::FullArea),
+        "the theme's choices are not a compact list"
+    );
+    assert_eq!(
+        obelus_ui::editor_room(screen, &app),
+        obelus_ui::regions(screen).editor,
+        "the file behind the settings gave its room to a list over the settings"
+    );
+}
+
 /// Typing narrows the rows, and the count on the status bar says how many
 /// are left. Plainly by substring, because a reader typing "the" means the
 /// word.

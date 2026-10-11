@@ -75,6 +75,14 @@ pub fn editor_room(area: Rect, app: &impl Screen) -> Rect {
     else {
         return editor;
     };
+    // Nor where a page is between the file and the list -- the settings,
+    // whose theme's choices open as a compact list over them. The list is
+    // over the page, and the file behind the page is covered whole: moved
+    // up to keep its caret clear of a list that is nowhere near it, it
+    // scrolled behind the glass for nothing.
+    if app.layers().filling() {
+        return editor;
+    }
     // Nor a terminal: a list over it is over it, and its program is not
     // told it is smaller for as long as the palette is open -- which would
     // make a shell draw its prompt again under a list the reader is about
