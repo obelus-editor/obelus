@@ -23,6 +23,13 @@ impl Chat {
         let Some(modifiers) = obelus_keymap::modifiers_of(key) else {
             return ChatOutcome::Ignored;
         };
+        // A key can arrive between something the agent said and the frame
+        // that would have put the cursor back where it was standing.
+        if self.waiting_at.is_some() {
+            // For what it leaves behind: the rows the cursor is found in.
+            let _ = self.rows(room.reading);
+            self.find_the_cursor_in_the_waiting();
+        }
         // The line break that every terminal can report. `shift+enter` is
         // the one a reader reaches for and it needs the kitty keyboard
         // protocol to arrive at all -- alt is the escape prefix, which is

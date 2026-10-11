@@ -887,6 +887,30 @@ pub struct Chat {
     /// of the page, for anybody reading down a long answer who stepped one
     /// row too far and pressed up again.
     stood: Option<usize>,
+    /// Which of the reader's waiting words the cursor was on, while the
+    /// rows it was counted in are being laid out again.
+    ///
+    /// The cursor is a row, and what the agent says arrives in front of
+    /// what is waiting: every row of an answer streaming in pushes the
+    /// waiting words down one, and a cursor left on the number would end
+    /// up on the answer -- standing on a row to take it back is exactly
+    /// what a reader does while the turn runs. So it is kept as a place
+    /// among the waiting until there are rows again ([`Chat::settle`],
+    /// and the keys).
+    waiting_at: Option<Waiting>,
+}
+
+/// Where among the reader's waiting words the cursor stood.
+#[derive(Clone, Copy, Debug)]
+struct Waiting {
+    /// Where it was, which it still has to be for this to apply: a key
+    /// or a press that moved it since has said where it is.
+    place: Place,
+    /// Which of the things waiting, counting from the first of them --
+    /// which is what does not move when something arrives in front.
+    which: usize,
+    /// How many rows into that one.
+    row: usize,
 }
 
 impl Default for Chat {
@@ -925,6 +949,7 @@ impl Chat {
             held: None,
             left_at: None,
             stood: None,
+            waiting_at: None,
         }
     }
 
@@ -1285,8 +1310,7 @@ impl Chat {
     /// thing they said.
     pub fn heard(&mut self, text: &str) {
         self.forget_the_layout();
-        let echoed = self
-            .said
+        let echoed = self.said[..self.before_the_waiting()]
             .last()
             .is_some_and(|last| last.speaker == Speaker::Reader && last.text.contains(text));
         if !echoed {
@@ -1296,7 +1320,7 @@ impl Chat {
 
     /// Adds one of Obelus's own remarks.
     pub fn note(&mut self, text: &str) {
-        self.push(Speaker::Note, text, None);
+        self.arrive(Said::plainly(Speaker::Note, text, None));
     }
 
     /// The one row a folded plan is: which step it is on, and what it is.
@@ -1366,8 +1390,13 @@ impl Chat {
     /// Chunks arrive a few words at a time, so a chunk that continues what
     /// the same speaker was saying is appended rather than started: one
     /// paragraph per thing said, not one per packet.
+    ///
+    /// What it continues is the last thing said in front of what the reader
+    /// has waiting, which is where it goes: a turn the reader typed into is
+    /// still one answer, not two halves with their words between.
     pub fn chunk(&mut self, speaker: Speaker, text: &str) {
-        match self.said.last_mut() {
+        let end = self.before_the_waiting();
+        match end.checked_sub(1).and_then(|last| self.said.get_mut(last)) {
             Some(last) if last.speaker == speaker && last.tag.is_none() => {
                 last.text.push_str(text);
                 // The rows this was laid out into are rows of the text as
@@ -1377,7 +1406,7 @@ impl Chat {
                 // easy to make without noticing it is one.
                 self.forget_the_layout();
             }
-            _ => self.push(speaker, text, None),
+            _ => self.arrive(Said::plainly(speaker, text, None)),
         }
     }
 
@@ -1404,8 +1433,7 @@ impl Chat {
     /// [`Chat::arrived`] finds it again: the agent watches the far end and
     /// names this when it sees it.
     pub fn away(&mut self, id: &str, message: &str, url: &str) {
-        self.forget_the_layout();
-        self.said.push(Said {
+        self.arrive(Said {
             parts: Vec::new(),
             speaker: Speaker::Away,
             text: message.to_string(),
@@ -1534,7 +1562,7 @@ impl Chat {
             _ => status,
         };
         let Some(said) = existing else {
-            self.said.push(Said {
+            self.arrive(Said {
                 parts: Vec::new(),
                 speaker: Speaker::Tool,
                 text: call.title.clone(),
@@ -1688,6 +1716,7 @@ impl Chat {
     /// follows them. A reader who has scrolled up keeps their place, and the
     /// window is only pulled back if the transcript shrank under it.
     pub fn settle(&mut self, rows: usize, room: u16) {
+        self.find_the_cursor_in_the_waiting();
         self.window.set_count(rows);
         self.window.settle(room);
         // Where the reader left, so that what has arrived since can be
@@ -1721,17 +1750,22 @@ impl Chat {
     /// Forgets the rows, because what they are made of has changed.
     ///
     /// Called by everything that changes what there is to lay out: by
-    /// [`Chat::push`], which is the one door for everything that adds
-    /// something said, and by each of the ones that reach into what is
-    /// already there -- a call's state, an address answered, a run opened,
-    /// the plan, what is happening now.
+    /// [`Chat::push`] and [`Chat::arrive`], which are the two doors for
+    /// everything that adds something said, and by each of the ones that
+    /// reach into what is already there -- a call's state, an address
+    /// answered, a run opened, the plan, what is happening now.
+    ///
+    /// And the rows going is the last moment they can say which of the
+    /// reader's waiting words the cursor is on ([`Chat::waiting_at`]).
     ///
     /// The cost of calling it where it was not needed is one laying out.
     /// The cost of not calling it where it was is a screen that has
     /// stopped saying what happened, which is why the test that walks
     /// every one of them is where the promise really lives.
     fn forget_the_layout(&mut self) {
-        self.laid.get_mut().take();
+        if let Some((_, rows)) = self.laid.get_mut().take() {
+            self.remember_where_the_cursor_waits(&rows);
+        }
     }
 
     /// Puts the keys on one of the settings on the status row.
@@ -1914,10 +1948,134 @@ impl Chat {
         self.input.put_parts(parts);
     }
 
-    /// Adds something said, and keeps the view at the end.
+    /// Adds something the reader said, at the very end.
+    ///
+    /// The one voice that goes after what is waiting, because it is the
+    /// voice what is waiting is in: a second thing typed into a running turn
+    /// waits behind the first.
     fn push(&mut self, speaker: Speaker, text: &str, tag: Option<String>) {
         self.forget_the_layout();
-        self.said.push(Said {
+        self.said.push(Said::plainly(speaker, text, tag));
+    }
+
+    /// Where what arrives goes: in front of everything the reader has said
+    /// that has not gone.
+    ///
+    /// What is waiting is always the tail of what was said, because the
+    /// reader's words are the only thing that goes behind it. It is waiting
+    /// for the turn in front of it to end, and that turn's answer, its calls
+    /// and Obelus's remarks about it all belong to that turn: put after it,
+    /// an answer still streaming came out in two halves with the reader's
+    /// next message between them, and stayed that way once it had gone.
+    fn before_the_waiting(&self) -> usize {
+        let waiting = self
+            .said
+            .iter()
+            .rev()
+            .take_while(|said| said.unsent)
+            .count();
+        self.said.len() - waiting
+    }
+
+    /// Adds something that is not the reader's words, in front of what
+    /// they have waiting.
+    ///
+    /// Everything kept as a place in what was said is moved with what it
+    /// was on, because the place of everything waiting has just moved one.
+    fn arrive(&mut self, said: Said) {
+        self.forget_the_layout();
+        let at = self.before_the_waiting();
+        if let Some((from, to)) = &mut self.held {
+            for spot in [from, to] {
+                if spot.said >= at {
+                    spot.said += 1;
+                }
+            }
+        }
+        // Counted from here if the reader left after this point: what has
+        // arrived since they stopped looking is this, wherever it went.
+        if let Some(left_at) = &mut self.left_at {
+            *left_at = (*left_at).min(at);
+        }
+        self.said.insert(at, said);
+    }
+
+    /// Remembers which of the waiting words the cursor is on, from the rows
+    /// it was counted in, before they go.
+    fn remember_where_the_cursor_waits(&mut self, rows: &[Row]) {
+        let Focus::Transcript(place) = self.focus else {
+            return;
+        };
+        // The first rows to go are the ones the reader was looking at.
+        if self.waiting_at.is_some() {
+            return;
+        }
+        let Some((at, _)) = rows.get(place.row).and_then(|row| row.from) else {
+            return;
+        };
+        if !self.said.get(at).is_some_and(|said| said.unsent) {
+            return;
+        }
+        let of = |row: &Row| row.from.map(|(of, _)| of);
+        let first = rows[..place.row]
+            .iter()
+            .rposition(|row| of(row) != Some(at))
+            .map_or(0, |before| before + 1);
+        self.waiting_at = Some(Waiting {
+            place,
+            which: self.said[..at].iter().filter(|said| said.unsent).count(),
+            row: place.row - first,
+        });
+    }
+
+    /// Puts the cursor back on the waiting words it was on, now that there
+    /// are rows to count again.
+    ///
+    /// Kept until there are: rows that have not been laid out yet say
+    /// nothing about where anything is.
+    pub(super) fn find_the_cursor_in_the_waiting(&mut self) {
+        let Some(waiting) = self.waiting_at else {
+            return;
+        };
+        let Some((_, rows)) = self.laid.get_mut().as_ref() else {
+            return;
+        };
+        self.waiting_at = None;
+        if self.focus != Focus::Transcript(waiting.place) {
+            return;
+        }
+        // Gone, taken back or sent, and the cursor is left where the keys
+        // left it.
+        let Some(at) = self
+            .said
+            .iter()
+            .enumerate()
+            .filter(|(_, said)| said.unsent)
+            .nth(waiting.which)
+            .map(|(at, _)| at)
+        else {
+            return;
+        };
+        let of = |row: &Row| row.from.map(|(of, _)| of);
+        let Some(first) = rows.iter().position(|row| of(row) == Some(at)) else {
+            return;
+        };
+        let last = rows
+            .iter()
+            .rposition(|row| of(row) == Some(at))
+            .unwrap_or(first);
+        let row = (first + waiting.row).min(last);
+        self.focus = Focus::Transcript(Place {
+            row,
+            character: waiting.place.character.min(rows[row].characters()),
+        });
+    }
+}
+
+impl Said {
+    /// Something said in words alone, with nothing about it yet.
+    fn plainly(speaker: Speaker, text: &str, tag: Option<String>) -> Self {
+        Self {
             speaker,
             text: text.to_string(),
             tag,
@@ -1932,7 +2090,7 @@ impl Chat {
             run_opened: None,
             unsent: false,
             afar: false,
-        });
+        }
     }
 }
 
@@ -1997,6 +2155,155 @@ mod tests {
                 Part::Words(" please".to_string()),
             ]],
             "what waits lost the picture between its words"
+        );
+    }
+
+    /// What the agent goes on saying while the reader has something
+    /// waiting goes in front of it: the answer stays one answer, and the
+    /// reader's words stay at the foot, where they will go from.
+    ///
+    /// The answer went on below them instead, so a message typed into a
+    /// running turn landed in the middle of it -- split in two around the
+    /// reader's words, and left that way once the words had gone.
+    ///
+    /// Broken deliberately by having `arrive` push at the end, and by
+    /// having `chunk` continue whatever is last: either one puts the
+    /// second half of the answer after the waiting words.
+    #[test]
+    fn what_arrives_goes_in_front_of_what_waits() {
+        let mut chat = Chat::new();
+        chat.chunk(Speaker::Agent, "The first half,");
+        chat.will_say(&[Part::Words("and also this".to_string())]);
+        chat.will_say(&[Part::Words("and that".to_string())]);
+        chat.chunk(Speaker::Agent, " and the second.");
+        chat.tool(&call("c1", "Read it", "read", Vec::new()), "in_progress");
+        chat.note("A remark");
+        chat.chunk(Speaker::Agent, "Done.");
+
+        let said = |chat: &Chat| {
+            chat.said
+                .iter()
+                .map(|said| (said.speaker, said.text.clone()))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            said(&chat),
+            [
+                (
+                    Speaker::Agent,
+                    "The first half, and the second.".to_string()
+                ),
+                (Speaker::Tool, "Read it".to_string()),
+                (Speaker::Note, "A remark".to_string()),
+                (Speaker::Agent, "Done.".to_string()),
+                (Speaker::Reader, "and also this".to_string()),
+                (Speaker::Reader, "and that".to_string()),
+            ],
+            "what the agent said went somewhere other than in front of what waits"
+        );
+
+        // Once they have gone, the next answer is an answer to them.
+        chat.sent();
+        chat.chunk(Speaker::Agent, "Both done.");
+        assert_eq!(
+            said(&chat).last(),
+            Some(&(Speaker::Agent, "Both done.".to_string())),
+            "the answer to what went is not after it"
+        );
+    }
+
+    /// What was kept as a place among the waiting words stays on them when
+    /// something arrives in front: what the reader has hold of, and how much
+    /// has been said since they scrolled up.
+    ///
+    /// Broken deliberately twice: take the moving of `held` out of `arrive`,
+    /// and the hold is on the answer; take out the moving of `left_at`, and
+    /// the answer that arrived is not counted.
+    #[test]
+    fn what_is_kept_of_what_waits_moves_with_it() {
+        let mut chat = Chat::new();
+        chat.chunk(Speaker::Agent, "Working");
+        chat.will_say(&[Part::Words("wait for me".to_string())]);
+        // Two of them, so that what arrives lands in front of where the
+        // reader left and not after it, where it would be counted anyway.
+        chat.will_say(&[Part::Words("and me".to_string())]);
+        chat.hold_from(Spot {
+            said: 1,
+            source: Source::Text,
+            at: 0,
+        });
+        chat.hold_to(Spot {
+            said: 1,
+            source: Source::Text,
+            at: 4,
+        });
+        // The reader left the end while the waiting words were there.
+        chat.left_at = Some(chat.said.len());
+        chat.tool(&call("c1", "Read it", "read", Vec::new()), "in_progress");
+        chat.chunk(Speaker::Agent, "An answer");
+
+        assert_eq!(
+            chat.held_text(ROOM.reading).as_deref(),
+            Some("wait"),
+            "the hold did not move with the words it was on"
+        );
+        assert_eq!(
+            chat.said_since(),
+            1,
+            "the answer that arrived went uncounted"
+        );
+    }
+
+    /// A cursor standing on something waiting is still on it after the
+    /// answer in front of it has grown -- whether the next thing is a frame
+    /// or a key -- and enter there takes back what it is on.
+    ///
+    /// The cursor is a row, and every row the answer grew by moved the
+    /// waiting words down one under it: enter then landed on the answer.
+    ///
+    /// Broken deliberately twice: take the remembering out of
+    /// `forget_the_layout`, and the cursor is on the answer after the
+    /// frame; take the finding out of `handle_key`, and enter before the
+    /// frame takes nothing back.
+    #[test]
+    fn a_cursor_on_what_waits_stays_on_it() {
+        let grown = |chat: &mut Chat| {
+            chat.chunk(Speaker::Agent, "Working");
+            chat.will_say(&[Part::Words("take me back".to_string())]);
+            let rows = chat.rows(ROOM.reading);
+            let on = rows
+                .iter()
+                .position(|row| row.unsent.is_some())
+                .expect("nothing is waiting on the page");
+            chat.stand_in_transcript(Place {
+                row: on,
+                character: 2,
+            });
+            // Several rows more of the answer, between frames.
+            chat.chunk(Speaker::Agent, &" and on".repeat(30));
+        };
+
+        let mut chat = Chat::new();
+        grown(&mut chat);
+        let rows = chat.rows(ROOM.reading);
+        chat.settle(rows.len(), ROOM.transcript);
+        let Focus::Transcript(place) = chat.focus() else {
+            panic!("the cursor left the transcript");
+        };
+        assert!(
+            rows[place.row].unsent.is_some(),
+            "the cursor is on {:?}, not on what waits",
+            rows[place.row].text()
+        );
+        assert_eq!(place.character, 2, "the cursor lost its column");
+
+        let mut chat = Chat::new();
+        grown(&mut chat);
+        let outcome = chat.handle_key(&key(KeyCode::Enter), true, ROOM, &[], false);
+        assert!(
+            matches!(&outcome, ChatOutcome::TakeBack(words)
+                if *words == [Part::Words("take me back".to_string())]),
+            "enter on what waits did {outcome:?}"
         );
     }
 
