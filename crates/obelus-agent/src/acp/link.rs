@@ -1077,18 +1077,23 @@ async fn talk(
                             // process that gave it: the notes worked all
                             // morning and then stopped, and from the
                             // agent's side the tools had simply gone.
-                            let mut loading =
-                                LoadSessionRequest::new(session.clone(), root.clone());
+                            let loading = || {
+                                let loading =
+                                    LoadSessionRequest::new(session.clone(), root.clone());
+                                match offered.as_ref() {
+                                    Some(offered) => loading.mcp_servers(vec![offered.clone()]),
+                                    None => loading,
+                                }
+                            };
                             let mut resuming =
                                 ResumeSessionRequest::new(session.clone(), root.clone());
                             if let Some(offered) = offered.as_ref() {
-                                loading = loading.mcp_servers(vec![offered.clone()]);
                                 resuming = resuming.mcp_servers(vec![offered.clone()]);
                             }
-                            let taken = match again {
+                            let mut taken = match again {
                                 Again::Replayed => Some(
                                     connection
-                                        .send_request(loading)
+                                        .send_request(loading())
                                         .block_task()
                                         .await
                                         .map(|it| (it.modes, it.config_options)),
@@ -1106,6 +1111,26 @@ async fn talk(
                                 // trip spent learning nothing.
                                 Again::Not => None,
                             };
+                            // A resume chosen over a load that the agent
+                            // also offers, and refused: the load is tried
+                            // before the conversation is given up for lost.
+                            // What failed was the lighter way of taking it
+                            // up, not the agent's memory of it -- and given
+                            // up, the reader's row was forgotten with it.
+                            if again == Again::Remembered
+                                && capabilities.load_session
+                                && let Some(Err(error)) = &taken
+                                && !wants_signing_in(error)
+                            {
+                                tracing::info!(%error, "a conversation would not resume, so it is loaded");
+                                taken = Some(
+                                    connection
+                                        .send_request(loading())
+                                        .block_task()
+                                        .await
+                                        .map(|it| (it.modes, it.config_options)),
+                                );
+                            }
                             if let Some(Err(error)) = &taken
                                 && wants_signing_in(error)
                             {

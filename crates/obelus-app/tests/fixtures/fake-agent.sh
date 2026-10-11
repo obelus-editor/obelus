@@ -203,6 +203,7 @@ prompts=''
 pictures=''
 # Whether what it replays of a conversation taken up again has a plan in it.
 replans=''
+resume_fails=''
 # Which version of JetBrains' extension it offers, if any, and whether it
 # can stop what it started.
 air=''
@@ -223,6 +224,10 @@ for word in "$@"; do
         # Both, the way Claude's adapter offers them: a client can choose,
         # and which it chose is in the log.
         loads-and-resumes) again='both' ;;
+        # And refuses to resume all the same, which an agent can: the
+        # lighter way of taking a conversation up failing while the fuller
+        # one still works.
+        resume-fails) resume_fails='yes' ;;
         forgets) again='none' ;;
         tells-settings) tells='yes' ;;
         options-later) later='yes' ;;
@@ -1263,6 +1268,10 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","id":%s,"result":{"modes":{"currentModeId":"ask","availableModes":[{"id":"ask","name":"ask first"},{"id":"code","name":"write code"}]},"configOptions":%s}}\n' "$(id_of "$line")" "$(options)"
             ;;
         *'"method":"session/resume"'*)
+            if [ -n "$resume_fails" ]; then
+                printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"could not resume"}}\n' "$(id_of "$line")"
+                continue
+            fi
             # Taken up with its context and not a word of it sent back,
             # which is the whole difference from `session/load`. It says so
             # in the answer only; the page stays empty.

@@ -7328,6 +7328,46 @@ fn a_kept_page_is_resumed_and_not_replayed() {
     );
 }
 
+/// A conversation that will not resume is loaded instead, by an agent that
+/// offers both, before it is given up for lost.
+///
+/// What failed was the lighter way of taking it up and not the agent's
+/// memory of it. Given up, the reader's row went with it and the agent
+/// started a conversation that knew nothing.
+///
+/// Broken deliberately by taking out the load after a refused resume in
+/// `link.rs`: the conversation started again, and said so.
+#[test]
+fn a_conversation_that_will_not_resume_is_loaded() {
+    let root = agents_root_for("kept-page-resume-fails");
+    std::fs::create_dir_all(&root).expect("the root");
+    let log = root.join("asked.log");
+    let _ = std::fs::remove_file(&log);
+    let logged = format!("log={}", log.display());
+    let (_scratch, mut app, events) = remembering_after(
+        "agent-kept-page-resume-fails",
+        "0123456F",
+        "s-old",
+        &["loads-and-resumes", "resume-fails", &logged],
+        None,
+        |root| keep_a_page(root, "s-old"),
+    );
+    asked(&mut app, &events, &log, "session/load s-old");
+    pump(&mut app, &events, "the conversation taken up", |app| {
+        app.agent_holds_for_test("s-old")
+    });
+
+    let text = screen(&mut app);
+    assert!(
+        !text.contains("Starting again"),
+        "the conversation was given up rather than loaded:\n{text}"
+    );
+    assert!(
+        text.contains("what the page kept") && !text.contains("where we were"),
+        "the page is not the one kept:\n{text}"
+    );
+}
+
 /// A turn that ends leaves its page kept, with what the reader said and
 /// what the agent answered on it.
 ///
