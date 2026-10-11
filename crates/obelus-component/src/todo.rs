@@ -781,12 +781,6 @@ impl TodoView {
         self.window.settle(rows);
     }
 
-    /// How wide a note's text is laid out.
-    #[must_use]
-    pub const fn laid(&self) -> u16 {
-        self.laid
-    }
-
     /// The notes as they stand.
     #[must_use]
     pub const fn todo(&self) -> &Todo {

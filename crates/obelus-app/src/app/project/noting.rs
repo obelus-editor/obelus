@@ -674,7 +674,7 @@ impl App {
     /// How wide a note's own text is, which is where it wraps.
     ///
     /// Not the reader's wrapping setting: that is about a file
-    /// (`NotesView::laid`).
+    /// (`TodoView::laid`).
     pub(in crate::app) fn notes_laid_out(&self) -> u16 {
         obelus_ui::todo::text_width_in(self.editor_area)
     }

@@ -1109,7 +1109,8 @@ fn dropping_a_note_is_at_the_foot() {
 /// and leaves the rest of the note unread behind a mark.
 ///
 /// Broken deliberately by laying the notes out at no limit where the
-/// setting is off, which is what they did: the second half fails.
+/// setting is off, which is what they did: the comparison with the setting
+/// off fails.
 #[test]
 fn a_long_note_wraps_whatever_the_setting_says() {
     let long = "a note long enough that it will not sit on one row of a narrow \
@@ -1190,13 +1191,7 @@ fn a_place_is_a_row_of_its_own() {
     .expect("the notes");
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
-    app.configure(
-        obelus_config::Config {
-            wrap: true,
-            ..obelus_config::Config::default()
-        },
-        Vec::new(),
-    );
+    app.configure(obelus_config::Config::default(), Vec::new());
     app.working_directory_for_test(scratch.path().to_path_buf());
     support::lay_out(&mut app, 70, 14);
     dispatch::dispatch(&mut app, Command::TodoOpen);
@@ -2293,13 +2288,7 @@ fn a_deep_notes_words_are_wrapped_to_fit_where_they_are_drawn() {
         ),
     );
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
-    app.configure(
-        obelus_config::Config {
-            wrap: true,
-            ..obelus_config::Config::default()
-        },
-        Vec::new(),
-    );
+    app.configure(obelus_config::Config::default(), Vec::new());
     app.working_directory_for_test(scratch.path().to_path_buf());
     support::lay_out(&mut app, 56, 20);
     dispatch::dispatch(&mut app, Command::TodoOpen);
@@ -2442,13 +2431,7 @@ fn the_notes_are_wrapped_to_the_width_of_the_frame_being_drawn() {
         &format!("[[todo]]\nsaid = \"{long}\"\ndone = false\n"),
     );
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
-    app.configure(
-        obelus_config::Config {
-            wrap: true,
-            ..obelus_config::Config::default()
-        },
-        Vec::new(),
-    );
+    app.configure(obelus_config::Config::default(), Vec::new());
     app.working_directory_for_test(scratch.path().to_path_buf());
     support::lay_out(&mut app, 100, 18);
     dispatch::dispatch(&mut app, Command::TodoOpen);
