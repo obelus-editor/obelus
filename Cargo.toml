@@ -471,10 +471,11 @@ winresource = "0.1.31"
 sys-locale = "0.3.2"
 
 # macOS's pasteboard, for the same reason, and the window's title bar: how
-# tall the strip is that the system draws its title in -- see
-# `obelus-gui`'s `title.rs`. Only on that platform.
+# tall the strip is that the system draws its title in, and what a double
+# click on it does -- see `obelus-gui`'s `title.rs`. Only on that platform.
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", features = [
+    "NSEvent",
     "NSPasteboard",
     "NSResponder",
     "NSView",
@@ -485,6 +486,7 @@ objc2-foundation = { version = "0.3", features = [
     "NSData",
     "NSString",
     "NSURL",
+    "NSUserDefaults",
 ] }
 # And the fonts: which files the machine has, what it draws code in, and what
 # it falls back to after that, which only CoreText can say -- see

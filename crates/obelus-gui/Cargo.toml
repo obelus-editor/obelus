@@ -69,8 +69,9 @@ wayland-client.workspace = true
 wayland-protocols.workspace = true
 x11rb.workspace = true
 
-# How tall the title bar is, which only AppKit can say. See `title.rs`.
-# And who sent the event that opens Obelus again: see `elsewhere/again.rs`.
+# How tall the title bar is, and what a double click on it does, which only
+# AppKit can say. See `title.rs`. And who sent the event that opens Obelus
+# again: see `elsewhere/again.rs`.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2.workspace = true
 objc2-app-kit.workspace = true
