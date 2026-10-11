@@ -513,22 +513,34 @@ fn a_setting_with_no_gloss_keeps_the_blank_under_it() {
     );
 }
 
-/// The theme's choices open as a compact list over the settings, and the
-/// file behind the settings keeps the whole of its room: the list is over
-/// the page, not over the file, so there is no caret to keep clear of it.
+/// A setting's choices open as a compact list over the settings, and the
+/// file behind the settings stays where it is: the list is over the page,
+/// not over the file, so there is no caret to keep clear of it. The page
+/// itself still has only the rows above the list, which is how a setting
+/// low on it keeps its row in sight while its choices are open.
 ///
-/// Deliberate break: `editor_room` without its question about a page in
-/// between, which hands the file only the rows above the list -- and the
-/// file scrolled behind the glass while the reader chose a theme.
+/// Deliberate breaks: the file scrolled into view whatever covers it (its
+/// top line moves while a theme is chosen), and `editor_room` handing the
+/// whole region over whenever a page is open, which was the first fix for
+/// that (the page then has no room kept above the list).
 #[test]
-fn a_list_over_the_settings_leaves_the_file_its_room() {
+fn a_list_over_the_settings_leaves_the_file_where_it_is() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let scratch = temporary("room-behind");
-    let mut app = open(&settings_file(&scratch));
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    app.config_file_for_test(settings_file(&scratch));
     let screen = ratatui::layout::Rect::new(0, 0, 66, 12);
+    support::lay_out(&mut app, screen.width, screen.height);
+    // Low on the screen, where a list's room would have to scroll it.
+    for _ in 0..8 {
+        support::press(&mut app, KeyCode::Down);
+    }
+    let _ = support::render(&mut app, screen.width, screen.height);
+    let top = app.current_buffer().expect("the file").viewport().top;
 
+    dispatch::dispatch(&mut app, Command::ConfigOpen);
     // The theme is the first row, and enter opens its choices.
     support::press(&mut app, KeyCode::Enter);
     let _ = support::render(&mut app, screen.width, screen.height);
@@ -538,9 +550,13 @@ fn a_list_over_the_settings_leaves_the_file_its_room() {
         "the theme's choices are not a compact list"
     );
     assert_eq!(
-        obelus_ui::editor_room(screen, &app),
-        obelus_ui::regions(screen).editor,
-        "the file behind the settings gave its room to a list over the settings"
+        app.current_buffer().expect("the file").viewport().top,
+        top,
+        "the file behind the settings scrolled for a list over the settings"
+    );
+    assert!(
+        obelus_ui::editor_room(screen, &app).height < obelus_ui::regions(screen).editor.height,
+        "the settings page lost the room above its own list"
     );
 }
 

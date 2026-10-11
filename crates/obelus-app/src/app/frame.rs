@@ -323,6 +323,13 @@ impl App {
         // rows an opened hunk draws: the arithmetic counts them, so nothing
         // here has to make up for them.
         let area = self.text_area();
+        // Nor while a page covers the file. The room above a compact list is
+        // the room of whatever the list is over -- the settings page keeps
+        // the setting being changed above its choices with it -- and with a
+        // page between, that is not the file: kept clear of a list that is
+        // nowhere near it, the file scrolled behind the glass while a theme
+        // was chosen. The page going is the next frame, with the room whole.
+        let covered = self.layers().filling();
         // Only where the viewport is a place in the *text*. While a reading
         // is showing, the viewport's top is a row of that reading -- and a
         // reading has more rows than the file has lines, because it wraps
@@ -331,7 +338,7 @@ impl App {
         // scrolling is what keeps it in bounds there.
         if let Some(buffer) = self
             .current_buffer_mut()
-            .filter(|buffer| buffer.mode() == obelus_buffer::Mode::Edit)
+            .filter(|buffer| buffer.mode() == obelus_buffer::Mode::Edit && !covered)
         {
             buffer.scroll_into_view(area);
         }
