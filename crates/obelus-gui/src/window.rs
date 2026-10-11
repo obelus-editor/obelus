@@ -296,6 +296,8 @@ struct Showing {
     /// Whether the left button went down on the title bar, so that letting
     /// it go is the bar's too and not a release Obelus never saw pressed.
     pressed_on_the_title: bool,
+    /// The presses on the title bar, for the second of two to be a double
+    /// click -- see `title::Presses`.
     title_presses: crate::title::Presses,
     /// Wheels that report pixels rather than lines, added up until they
     /// amount to a row.
@@ -1610,6 +1612,15 @@ impl ApplicationHandler<Waking> for Showing {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.over_the_title = crate::title::under(position.y, self.titled);
+                // Off the page, the way leaving the window is, so that a
+                // link on the first row does not put a hand over the bar.
+                // Not while a drag is held: one that goes up past the page
+                // is still choosing on its first row.
+                if self.over_the_title && !self.held {
+                    self.pointer = None;
+                    self.point_at_links();
+                    return;
+                }
                 let Some(at) = self.cell_at(position) else {
                     return;
                 };
