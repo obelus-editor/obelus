@@ -7444,6 +7444,33 @@ fn the_page_of_a_conversation_whose_agent_died_is_kept() {
     );
 }
 
+/// What the reader says is kept the moment it goes, not when the turn
+/// answering it ends.
+///
+/// A turn can run for the length of a build, and a window that went in
+/// the middle of one left the question behind.
+///
+/// Broken deliberately by taking `keep_the_page` out of `say_in`: the turn
+/// never ends, so nothing was kept.
+#[test]
+fn what_is_said_is_kept_as_it_goes() {
+    let (scratch, mut app, events) = remembering("agent-kept-on-saying", "0123456G", "s-old", &[]);
+    pump(&mut app, &events, "the conversation taken up", |app| {
+        app.agent_holds_for_test("s-old")
+    });
+    support::type_text(&mut app, "take it slowly");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "it to start thinking", |app| {
+        app.talking() == obelus_agent::Talking::Thinking
+    });
+
+    let page = obelus_agent::acp::sessions::kept_page(scratch.path(), "s-old").unwrap_or_default();
+    assert!(
+        page.contains("take it slowly"),
+        "what was said is not on the page kept: {page:?}"
+    );
+}
+
 /// An agent that echoes the prompt back does not put it on the page twice.
 ///
 /// Obelus writes the reader's words when they press send, and some agents

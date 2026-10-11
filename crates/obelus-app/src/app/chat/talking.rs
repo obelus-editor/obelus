@@ -2023,6 +2023,10 @@ impl App {
         // arrives -- opening and all, because the opening belongs to
         // whatever goes first.
         talker.say(session.as_ref(), asking, said_of(parts), opening.as_deref());
+        // And the page with what was just said on it. A turn can run for
+        // the length of a build, and a window that goes in the middle of
+        // one would otherwise leave the question it was answering behind.
+        self.keep_the_page(whose);
         // A turn has started, which its thread says at the top of it.
         self.mirror_head(whose, Some(obelus_remote::model::Turning::Working));
     }
