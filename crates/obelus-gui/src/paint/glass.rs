@@ -96,10 +96,21 @@ impl Painter {
             }
         }
         let rooms: Vec<[f32; 4]> = bands.iter().map(|band| box_of(band.room, cell)).collect();
+        // And each band's bar, over a picture: the frame's copy of it is
+        // clear where the column is the page, so the mark standing where it
+        // is going showed through the one on its way there -- two marks.
+        // Put back below, only where the moving one has run out.
+        let hung = self.laid.is_some();
         let moving: Vec<[f32; 4]> = bands
             .iter()
             .zip(&rooms)
             .flat_map(|(band, room)| sliding(*room, panes, band.under))
+            .chain(
+                bands
+                    .iter()
+                    .filter(|_| hung)
+                    .filter_map(|band| band.bar.map(|(bar, _)| box_of(bar, cell))),
+            )
             .collect();
         self.covering(&moving);
         for (at, (band, room)) in bands.iter().zip(&rooms).enumerate() {
@@ -131,11 +142,29 @@ impl Painter {
             // seeing through. Out of the picture it is whatever it was,
             // glass included, moved.
             if let Some((bar, to_come)) = band.bar {
-                self.slid(
-                    box_of(bar, cell),
-                    mark_behind(to_come, band.behind, band.since) * cell.height,
-                    1.0,
-                );
+                let column = box_of(bar, cell);
+                let shift = mark_behind(to_come, band.behind, band.since) * cell.height;
+                // Where the moving copy runs out, the frame's own -- which
+                // `covering` left out over a picture, and put back here only
+                // in that strip, for the mark not to be drawn twice.
+                if hung {
+                    let (from, to) = scrolled_past(column[1], column[3], shift);
+                    self.quads.push(Quad {
+                        rect: [
+                            column[0],
+                            column[1],
+                            column[2] - column[0],
+                            column[3] - column[1],
+                        ],
+                        uv: [0.0; 4],
+                        colour: [0.0, 0.0, 0.0, 1.0],
+                        flags: FRAME | ONLY_ROWS,
+                        radius: from,
+                        lower: to,
+                        layer: 0,
+                    });
+                }
+                self.slid(column, shift, 1.0);
             }
         }
     }
@@ -223,7 +252,15 @@ impl Painter {
         }
         let above = start..self.quads.len();
         let start = self.quads.len();
-        self.covering(&[]);
+        // Less where the band is put back, over a picture: the frame is clear
+        // there where it is the page, and the rows standing still showed
+        // through the rows sliding -- every line twice, in the frost. Where
+        // the slide runs out, what shows is the picture, through the blur.
+        let pieces: Vec<[f32; 4]> = match self.laid {
+            Some(_) => under.iter().map(|(_, piece)| *piece).collect(),
+            None => Vec::new(),
+        };
+        self.covering(&pieces);
         for (band, piece) in &under {
             self.slid_piece(
                 *piece,
