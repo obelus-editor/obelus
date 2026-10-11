@@ -45,6 +45,11 @@ pub(crate) const COMMAND_IS_CONTROL: bool = cfg!(target_os = "macos");
 /// winit puts up answered the first two, and its `Quit` ended the process
 /// without asking about unwritten files, so `obg` has no menu and answers
 /// these itself -- and `cmd+q` is the key that leaves, question included.
+///
+/// Which mends the key and not every way of quitting. Quit from the Dock,
+/// from the switcher and at logging out still end the process unasked:
+/// they go to the application rather than to a key, and winit gives no way
+/// to answer them (`applicationShouldTerminate:` is not one it implements).
 #[cfg(any(test, target_os = "macos"))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Asked {
