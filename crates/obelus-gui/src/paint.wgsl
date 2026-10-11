@@ -321,9 +321,19 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
         }
     }
     // The picture under the page, where `uv` says: past its edges for a
-    // tiling, which the sampler repeats.
+    // tiling, which the sampler repeats. With its corners taken off the
+    // way a rounded solid's are, where it is the page put back inside a
+    // rounded shape -- the hollow of a switch that is not set.
     if ((in.flags & 1073741824u) != 0u) {
-        return textureSample(wallpaper, wallpaper_sampler, in.uv);
+        let texel = textureSample(wallpaper, wallpaper_sampler, in.uv);
+        if ((in.flags & 4u) == 0u) {
+            return texel;
+        }
+        let corner = abs(in.middle) - in.half_size + vec2<f32>(in.radius);
+        let distance = length(max(corner, vec2<f32>(0.0)))
+            + min(max(corner.x, corner.y), 0.0) - in.radius;
+        let covered = clamp(0.5 - distance, 0.0, 1.0);
+        return vec4<f32>(texel.rgb, texel.a * covered);
     }
     // The mark that turns, its head `radius` of a turn round from the top
     // and going clockwise, which is the way the braille it stands in for

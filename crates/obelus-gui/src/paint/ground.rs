@@ -304,28 +304,49 @@ impl Painter {
     /// leave the cell out the way `backgrounds` does, because what is under
     /// them is not the picture but whatever was drawn in the cell.
     pub(super) fn ground_back(&mut self, rect: [f32; 4], colour: Color, held: Option<[f32; 4]>) {
+        self.rounded_back(rect, 0.0, colour, held);
+    }
+
+    /// The same, inside a shape with its corners taken off by `radius`:
+    /// the hollow of a switch that is not set, which is the cell's ground
+    /// seen through the box's outline.
+    pub(super) fn rounded_back(
+        &mut self,
+        rect: [f32; 4],
+        radius: f32,
+        colour: Color,
+        held: Option<[f32; 4]>,
+    ) {
         let [left, top, width, height] = rect;
         let painted = held.unwrap_or_else(|| rgba(colour, Ink::Background));
+        let paint = |painter: &mut Self, colour: [f32; 4]| match radius > 0.0 {
+            true => painter.rounded(left, top, width, height, radius, colour),
+            false => painter.block(left, top, width, height, colour),
+        };
         match self.laid {
             Some(laid) if held.is_none() && colour == self.ground => {
                 // The ground first, for whatever of the cell a contained or
                 // centred picture does not reach.
-                self.block(left, top, width, height, painted);
+                paint(self, painted);
                 if let Some(piece) = laid.piece(rect) {
                     self.quads.push(Quad {
                         rect: piece.rect,
                         uv: piece.uv,
                         colour: [1.0; 4],
-                        flags: WALLPAPER,
-                        radius: 0.0,
+                        flags: if radius > 0.0 {
+                            WALLPAPER | ROUNDED
+                        } else {
+                            WALLPAPER
+                        },
+                        radius,
                         layer: 0,
                         lower: 0.0,
                     });
                 }
                 let veil = self.veil();
-                self.block(left, top, width, height, veil);
+                paint(self, veil);
             }
-            _ => self.block(left, top, width, height, painted),
+            _ => paint(self, painted),
         }
     }
 

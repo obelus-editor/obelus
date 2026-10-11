@@ -322,7 +322,6 @@ impl Painter {
         let cell = fonts.cell();
         let look = page.look(caret.x, caret.y);
         let ink = rgba(look.foreground, Ink::Foreground);
-        let paper = rgba(look.background, Ink::Background);
         let mut column = caret.x;
         for character in spelling.text.chars() {
             if column >= page.columns() {
@@ -339,7 +338,9 @@ impl Painter {
             let left = f32::from(column) * cell.width;
             let top = f32::from(caret.y) * cell.height;
             let width = f32::from(wide) * cell.width;
-            self.block(left, top, width, cell.height, paper);
+            // The page as it looks there, which over a picture is the
+            // picture with the page laid on it.
+            self.ground_back([left, top, width, cell.height], look.background, None);
             let over = Look {
                 text: &written,
                 foreground: look.foreground,
