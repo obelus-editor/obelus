@@ -236,8 +236,12 @@ impl Chat {
         serde_json::to_string(&page).unwrap_or_default()
     }
 
-    /// Puts back a page [`Chat::to_keep`] wrote, in place of whatever is on
-    /// this one.
+    /// Puts back a page [`Chat::to_keep`] wrote, above whatever is on this
+    /// one.
+    ///
+    /// Above rather than in place of: what is on the page already was said
+    /// in this sitting before the conversation was taken up -- a message
+    /// typed while the agent was starting -- and it came after.
     ///
     /// Nothing changes where the file will not read: half a page put back
     /// is a page that says less happened than did, and the agent's own
@@ -251,16 +255,21 @@ impl Chat {
         if page.version != VERSION {
             return Err(format!("written as version {}", page.version));
         }
-        let said = page
+        let mut said = page
             .said
             .into_iter()
             .map(said_of)
             .collect::<Result<Vec<_>, _>>()?;
-        self.said = said;
-        self.forget_the_layout();
         // Nothing will finish what was running when the page was written:
         // the turn went with the process that was having it.
-        self.stop_the_calls();
+        for row in &mut said {
+            if matches!(row.state.as_deref(), Some("pending" | "in_progress")) {
+                row.state = Some("cancelled".to_string());
+            }
+        }
+        said.append(&mut self.said);
+        self.said = said;
+        self.forget_the_layout();
         Ok(())
     }
 }
@@ -379,6 +388,25 @@ mod tests {
         let mut back = Chat::new();
         back.bring_back(&chat.to_keep()).expect("the page");
         assert_eq!(back.last_to_write().as_deref(), Some("t1"));
+    }
+
+    /// What was said on the page before it was brought back stays, under
+    /// what was kept.
+    ///
+    /// Broken deliberately by replacing the page with what was kept: the
+    /// reader's message typed while the agent was starting went.
+    #[test]
+    fn what_is_on_the_page_already_comes_after_what_was_kept() {
+        let kept = a_full_page().to_keep();
+        let mut chat = Chat::new();
+        chat.asked(&[Part::Words("typed while it started".to_string())]);
+        chat.bring_back(&kept).expect("the page");
+        assert_eq!(
+            chat.said.last().map(|said| said.text.as_str()),
+            Some("typed while it started")
+        );
+        assert_eq!(chat.said[0].speaker, Speaker::Reader);
+        assert_eq!(chat.said[0].text, a_full_page().said[0].text);
     }
 
     /// A file that will not read leaves the page as it was.

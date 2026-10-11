@@ -7358,6 +7358,92 @@ fn the_page_is_kept_when_a_turn_ends() {
     );
 }
 
+/// A conversation the agent has forgotten starts again over its kept page,
+/// and the session it starts again with is not written down until
+/// something is said in it.
+///
+/// The page above is the old conversation's, and was taken for something
+/// said to the new one. So the new session was written down at once and
+/// never let go -- and an agent keeps no session nobody talked in, so the
+/// next start asked for it, was told it had gone, and started again under
+/// the same page. Every start, one more "Starting again".
+///
+/// Broken deliberately by taking `page_outlived_its_session` out of the
+/// `Lost` arm: the fresh session was written down against the note.
+#[test]
+fn a_session_started_over_a_kept_page_is_not_written_down_for_it() {
+    let (scratch, mut app, events) = remembering_after(
+        "agent-lost-kept-page",
+        "0123456M",
+        "s-gone",
+        &[],
+        None,
+        |root| {
+            keep_a_page(root, "s-gone");
+        },
+    );
+    pump(&mut app, &events, "a fresh conversation", |app| {
+        app.chat_session_for_test()
+            .is_some_and(|session| session != "s-gone" && app.agent_holds_for_test(&session))
+    });
+    let fresh = app.chat_session_for_test().expect("the fresh session");
+    let text = screen(&mut app);
+    assert!(
+        text.contains("what the page kept") && text.contains("Starting again"),
+        "this is not the case it is about:\n{text}"
+    );
+
+    let note = obelus_todo::NoteId::read("0123456M").expect("a name");
+    let written = obelus_agent::acp::sessions::read(scratch.path(), 0)
+        .remembered()
+        .expect("the table")
+        .get(
+            &obelus_agent::chats::ChatId::Note(note),
+            "fake",
+            scratch.path(),
+        )
+        .map(|kept| kept.session.clone());
+    assert_eq!(
+        written, None,
+        "a session nothing was said in was written down for the note"
+    );
+    app.keep_every_page();
+    assert!(
+        obelus_agent::acp::sessions::kept_page(scratch.path(), &fresh).is_none(),
+        "a page was kept for a session nothing was said in"
+    );
+}
+
+/// The page of a conversation whose agent died is kept as it was left,
+/// with the agent's going on it.
+///
+/// The agent dying takes every session with it, and a page was kept under
+/// the session listening -- so a reader who left without another word
+/// left the end of the page behind.
+///
+/// Broken deliberately by keeping under `session` rather than `page_of`
+/// in `keep_the_page_of`: nothing was kept after the agent went.
+#[test]
+fn the_page_of_a_conversation_whose_agent_died_is_kept() {
+    let (scratch, mut app, events) = remembering("agent-died-page", "0123456D", "s-old", &[]);
+    pump(&mut app, &events, "the conversation taken up", |app| {
+        app.agent_holds_for_test("s-old")
+    });
+    support::type_text(&mut app, "/die");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "it to stop", |app| {
+        app.talking() == obelus_agent::Talking::Gone
+    });
+
+    // The way out, which is what keeps every page.
+    app.keep_every_page();
+    let page = obelus_agent::acp::sessions::kept_page(scratch.path(), "s-old").unwrap_or_default();
+    assert!(
+        page.contains("The agent stopped"),
+        "the page was not kept as the agent left it: {page:?}"
+    );
+}
+
 /// An agent that echoes the prompt back does not put it on the page twice.
 ///
 /// Obelus writes the reader's words when they press send, and some agents

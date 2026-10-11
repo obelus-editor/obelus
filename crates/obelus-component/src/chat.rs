@@ -994,7 +994,33 @@ impl Chat {
     /// deciding whether this conversation is worth keeping a name for.
     #[must_use]
     pub fn anything_said(&self) -> bool {
-        self.said.iter().any(|said| said.speaker != Speaker::Note)
+        self.anything_said_since(0)
+    }
+
+    /// The same, of what is on the page from `at` on.
+    ///
+    /// For a page that outlived the session it was had in -- the agent
+    /// forgot it, or another agent is talking now -- where what counts is
+    /// what was said to the session there is now.
+    #[must_use]
+    pub fn anything_said_since(&self, at: usize) -> bool {
+        self.said
+            .iter()
+            .skip(at)
+            .any(|said| said.speaker != Speaker::Note)
+    }
+
+    /// How many things are on the page, which is where the next one goes.
+    #[must_use]
+    pub fn how_many_said(&self) -> usize {
+        self.said.len()
+    }
+
+    /// Takes everything off the page, for one about to be another
+    /// conversation's.
+    pub fn clear_the_page(&mut self) {
+        self.said.clear();
+        self.forget_the_layout();
     }
 
     /// The first line of the first thing the reader said, its blanks run
