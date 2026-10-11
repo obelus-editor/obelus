@@ -240,6 +240,28 @@ fn a_chord_is_written_with_glyphs_or_spelled_out() {
     );
 }
 
+/// Control is drawn as command when the reader holds command for it, and
+/// written into the file as control whichever way, because `ob` in a
+/// terminal on the same machine reads the same file.
+///
+/// Broken deliberately by writing `Ctrl` in `label_as` whatever `command`
+/// said, and by dropping the `cmd+` arm from `parse`: the first two and the
+/// last assertion fail.
+#[test]
+fn control_is_drawn_as_command_and_written_as_control() {
+    let save = control('s');
+    assert_eq!(save.label_as(false, true), "Cmd+s");
+    assert_eq!(
+        save.label_as(true, true),
+        format!("{} s", obelus_icons::key::COMMAND)
+    );
+    assert_eq!(save.label_as(false, false), save.label_in(false));
+    assert_eq!(save.label_in(false), "Ctrl+s");
+    // What the screen says reads back as the key it names, so copying a
+    // chord off the foot into the file binds what the reader saw.
+    assert_eq!(KeyChord::parse(&save.label_as(false, true)), Some(save));
+}
+
 /// A chord written down reads back as itself.
 ///
 /// The file is the only place a rebinding survives, so a chord that does not

@@ -824,7 +824,7 @@ crates/
                       (main); `App` crosses a thread and stays there, and what
                       an input method is spelling is on the page and is not in
                       the file (window); closing the window is the key that
-                      leaves (keys); the page is what Obelus said and motion is
+                      leaves, and on macOS command is control (keys); the page is what Obelus said and motion is
                       only how the window is showing it, a moment and a rate
                       are two kinds of waiting, and none of it crosses to the
                       application (motion); a full-width character takes the

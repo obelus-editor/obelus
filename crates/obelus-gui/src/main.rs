@@ -102,6 +102,9 @@ fn main() -> Result<()> {
     // than installed, and how big the text is is a question a terminal
     // does not have.
     obelus_config::drawn_in_a_window();
+    // Where the window reports command as control, the screen calls it
+    // command -- both halves from the one constant.
+    obelus_keymap::draw_control_as_command(keys::COMMAND_IS_CONTROL);
 
     // Opened before there is a window, so that a bad path reports itself on
     // the console the reader started Obelus from rather than flashing past

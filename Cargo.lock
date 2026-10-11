@@ -4589,6 +4589,7 @@ dependencies = [
  "obelus-config",
  "obelus-font",
  "obelus-icons",
+ "obelus-keymap",
  "obelus-logging",
  "obelus-program",
  "obelus-runtime",

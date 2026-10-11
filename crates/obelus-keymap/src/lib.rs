@@ -58,6 +58,13 @@
 //! only judge -- it lives in [`obelus_editing`], because the caret asks it too;
 //! `SUPER`/`HYPER`/`META` disqualify a key rather than being masked
 //! away. Masking meant `ctrl+super+q` quit.
+//!
+//! On macOS a window is told command where everything else is told control,
+//! and `obg` reports one as the other before a key reaches this table. So
+//! there is still one table, and it is drawn the way the reader presses it:
+//! [`draw_control_as_command`].
+
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use obelus_command::Command;
@@ -65,6 +72,27 @@ use obelus_command::Command;
 /// table and the caret draw the line in the same place because they ask the
 /// same function.
 pub use obelus_editing::{BINDABLE_MODIFIERS, modifiers_of};
+
+/// Whether control is drawn as command.
+///
+/// A global, as the glyph switch is: which key the reader holds for control
+/// is a fact about the front end and the machine, decided once, and every
+/// chord on the screen is drawn through [`KeyChord::label`] without being
+/// handed it. Off unless `obg` on macOS turns it on, which is the one place
+/// that also turns command into control on the way in -- the two halves have
+/// to agree, or the foot names a key that does nothing.
+static COMMAND: AtomicBool = AtomicBool::new(false);
+
+/// Draws control as command from now on, or stops.
+pub fn draw_control_as_command(on: bool) {
+    COMMAND.store(on, Ordering::Relaxed);
+}
+
+/// Whether control is drawn as command.
+#[must_use]
+pub fn control_drawn_as_command() -> bool {
+    COMMAND.load(Ordering::Relaxed)
+}
 
 /// A key plus its modifiers, in a form two equivalent presses agree on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -80,7 +108,7 @@ impl KeyChord {
     /// key changes what is displayed rather than leaving a hint that lies.
     #[must_use]
     pub fn label(self) -> String {
-        self.label_in(obelus_icons::enabled())
+        self.label_as(obelus_icons::enabled(), control_drawn_as_command())
     }
 
     /// The same, with the glyphs asked for or refused.
@@ -112,9 +140,26 @@ impl KeyChord {
     /// they saw.
     #[must_use]
     pub fn label_in(self, glyphs: bool) -> String {
+        self.label_as(glyphs, false)
+    }
+
+    /// The same, with control written as command or not.
+    ///
+    /// Only the screen asks for command, and only from `obg` on macOS: the
+    /// settings file is shared with `ob` in a terminal on the same machine,
+    /// where the reader holds control, so it keeps the one spelling
+    /// [`KeyChord::label_in`] writes. What the screen says still reads back
+    /// -- [`KeyChord::parse`] takes `Cmd` for control -- so a reader who
+    /// copies a chord off the foot into the file gets the key they saw.
+    #[must_use]
+    pub fn label_as(self, glyphs: bool, command: bool) -> String {
+        let control = match command {
+            true => ("Cmd", obelus_icons::key::COMMAND),
+            false => ("Ctrl", obelus_icons::key::CONTROL),
+        };
         let mut label = String::new();
         for (modifier, name, glyph) in [
-            (KeyModifiers::CONTROL, "Ctrl", obelus_icons::key::CONTROL),
+            (KeyModifiers::CONTROL, control.0, control.1),
             (KeyModifiers::ALT, "Alt", obelus_icons::key::ALT),
             (KeyModifiers::SHIFT, "Shift", obelus_icons::key::SHIFT),
         ] {
@@ -192,6 +237,11 @@ impl KeyChord {
             let (modifier, tail) = match rest {
                 _ if rest.len() > 5 && rest[..5].eq_ignore_ascii_case("ctrl+") => {
                     (KeyModifiers::CONTROL, &rest[5..])
+                }
+                // What the screen calls control in `obg` on macOS -- see
+                // `label_as`.
+                _ if rest.len() > 4 && rest[..4].eq_ignore_ascii_case("cmd+") => {
+                    (KeyModifiers::CONTROL, &rest[4..])
                 }
                 _ if rest.len() > 4 && rest[..4].eq_ignore_ascii_case("alt+") => {
                     (KeyModifiers::ALT, &rest[4..])

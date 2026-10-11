@@ -65,6 +65,9 @@ pub fn enabled() -> bool {
 pub mod key {
     /// `ctrl`.
     pub const CONTROL: char = '\u{f0634}';
+    /// `ctrl` where the key the reader presses for it is command -- `obg`
+    /// on macOS.
+    pub const COMMAND: char = '\u{f0633}';
     /// `alt`.
     pub const ALT: char = '\u{f0635}';
     /// `shift`.

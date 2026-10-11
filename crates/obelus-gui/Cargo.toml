@@ -27,6 +27,7 @@ obelus-config.workspace = true
 # The faces, the size of a cell, and where a glyph's pixels come from.
 obelus-font.workspace = true
 obelus-icons.workspace = true
+obelus-keymap.workspace = true
 obelus-logging.workspace = true
 # Asking the reader's shell what is on the path, for a window the desktop
 # started -- see `take_the_shells_environment`.
