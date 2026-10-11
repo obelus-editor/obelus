@@ -198,8 +198,9 @@ pub struct Config {
     /// Zero forgets none. Only those, because one about a note already goes
     /// when the note does, and a note still there is work not yet done --
     /// coming back to it a season later is coming back to that
-    /// conversation. What is forgotten is Obelus's own line about it: the
-    /// agent keeps every word, and nothing is asked of it.
+    /// conversation. What is forgotten is Obelus's own line about it and the
+    /// page it kept: the agent keeps its own account, and nothing is asked
+    /// of it.
     pub conversation_days: usize,
     /// Whether Obelus asks, once a day, whether a newer version is out.
     ///
@@ -904,7 +905,7 @@ pub const ALL: &[Setting] = &[
     Setting {
         key: "conversation_days",
         name: "Forget conversations",
-        about: "How long after anything was last said in it a conversation about no note is forgotten. The agent still has it, but Obelus forgets the way back, and making this longer does not bring it back. One about a note goes when the note does",
+        about: "How long after anything was last said in it a conversation about no note is forgotten. The agent still has it, but Obelus forgets the way back and the page it kept, and making this longer does not bring either back. One about a note goes when the note does",
         group: Group::Agent,
         // The reader's alone: it decides what Obelus forgets of theirs, and
         // a project that could shorten it would be a downloaded file
