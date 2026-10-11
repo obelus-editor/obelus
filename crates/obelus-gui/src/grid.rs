@@ -404,15 +404,31 @@ impl Behind {
     /// the frame of another box, and a window draws those as lines of its
     /// own and never from the font: put back here, the glyph was a stub of
     /// a second line beside the first, at the font's height and thickness.
-    pub(crate) fn lettered_ring(&self, page: &Page) -> Vec<(u16, u16)> {
+    pub(crate) fn lettered_ring(&self, page: &Page) -> Vec<(u16, u16, Look<'_>)> {
         let area = self.area;
-        (area.top()..area.bottom())
-            .flat_map(|y| (area.left()..area.right()).map(move |x| (x, y)))
-            .filter(|&(x, y)| {
-                self.ring_holds(page, x, y)
-                    && self
-                        .look(x, y)
-                        .is_some_and(|under| !under.text.trim().is_empty() && !a_line(under.text))
+        if area.width == 0 || area.height == 0 {
+            return Vec::new();
+        }
+        let (right, bottom) = (area.right() - 1, area.bottom() - 1);
+        // The top and the bottom rows whole, and the two sides between
+        // them: a box's ring, once each. A box one row tall is all top.
+        let across = [area.y, bottom]
+            .into_iter()
+            .take(if bottom > area.y { 2 } else { 1 })
+            .flat_map(|y| (area.x..=right).map(move |x| (x, y)));
+        let down = (area.y + 1..bottom).flat_map(|y| {
+            [area.x, right]
+                .into_iter()
+                .take(if right > area.x { 2 } else { 1 })
+                .map(move |x| (x, y))
+        });
+        across
+            .chain(down)
+            .filter(|&(x, y)| self.ring_holds(page, x, y))
+            .filter_map(|(x, y)| {
+                self.look(x, y)
+                    .filter(|under| !under.text.trim().is_empty() && !a_line(under.text))
+                    .map(|under| (x, y, under))
             })
             .collect()
     }
@@ -2005,19 +2021,21 @@ mod tests {
     /// Deliberate breaks: answer an empty list from `Behind::lettered_ring`,
     /// which is what `frame` did before -- the ground put back and no
     /// letter, a blank half cell all round a hover. Drop `ring_holds` from
-    /// it, and the letters under the inside of the box are put back under
-    /// its glass, and under the cell a list drew over goes the letter that
-    /// was there before the list. Drop `a_line`, and the rule under the
-    /// ring is drawn from the font beside the frame's own line.
+    /// it, and under the cell a list drew over goes the letter that was
+    /// there before the list. Drop `a_line`, and the rule under the
+    /// ring is drawn from the font beside the frame's own line. Leave the
+    /// sides out of the walk round the ring, and the code beside a hover
+    /// loses its letter on every row but the first and the last.
     #[test]
     fn a_frame_puts_back_the_letters_under_its_ring() {
         let page = written(&[
             "\u{256d}\u{2500}\u{2500}\u{256e}",
             "x a\u{2502}",
+            "\u{2502} b\u{2502}",
             "\u{2570}\u{2500}\u{2500}\u{256f}",
         ]);
         let frame = Behind {
-            cells: "fn main\u{2500}    "
+            cells: "fn main\u{2500}q  r    "
                 .chars()
                 .map(|character| {
                     let mut cell = Cell::default();
@@ -2025,13 +2043,26 @@ mod tests {
                     cell
                 })
                 .collect(),
-            ..a_box(4, 3)
+            ..a_box(4, 4)
         };
+        let mut cells: Vec<(u16, u16, &str)> = frame
+            .lettered_ring(&page)
+            .into_iter()
+            .map(|(x, y, under)| (x, y, under.text))
+            .collect();
+        cells.sort_by_key(|&(x, y, _)| (y, x));
         assert_eq!(
-            frame.lettered_ring(&page),
-            [(0, 0), (1, 0), (3, 0)],
-            "the space in `fn m`, the rule under the right-hand side, the row of \
-             spaces, the inside of the box and the cell written over are not"
+            cells,
+            [
+                (0, 0, "f"),
+                (1, 0, "n"),
+                (3, 0, "m"),
+                (0, 2, "q"),
+                (3, 2, "r")
+            ],
+            "the space in `fn m`, the cell written over, the rule under the \
+             right-hand side, the inside of the box and the row of spaces are \
+             not"
         );
     }
 

@@ -201,10 +201,7 @@ impl Painter {
         // letter is inside it. And after every ground of the ring, for the
         // reason `behind_row` gives: a full-width character along the top
         // runs into the next cell, whose ground would cover half of it.
-        for (x, y) in card.lettered_ring(page) {
-            let Some(under) = card.look(x, y) else {
-                continue;
-            };
+        for (x, y, under) in card.lettered_ring(page) {
             let ink = rgba(under.foreground, Ink::Foreground);
             self.glyphs_at(
                 (f32::from(x) * cell.width, f32::from(y) * cell.height),
