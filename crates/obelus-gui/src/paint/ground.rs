@@ -30,6 +30,11 @@ impl Painter {
                 .chain(spilt.iter().filter(|&&(_, y)| y == row).map(|&(x, _)| x))
                 .collect();
             for (start, end, colour) in runs(page, row) {
+                // The page over a picture is drawn once for the whole
+                // window, under everything -- see `lay`.
+                if self.on_the_picture(colour) {
+                    continue;
+                }
                 // The pane's own colour inside the pane is where the glass
                 // is: it is the pane saying nothing there, and drawing it
                 // would be painting over what the reader is meant to see
@@ -268,6 +273,60 @@ impl Painter {
     /// The page's own ground, as a colour.
     pub(super) fn ground_colour(&self) -> [f32; 4] {
         rgba(self.ground, Ink::Background)
+    }
+
+    /// Whether a cell wearing `colour` is the page with the picture under
+    /// it, which is drawn once for the whole window -- so the cell's own
+    /// ground is not drawn again over it, or it would be a square of the
+    /// page's colour standing on the picture.
+    pub(super) fn on_the_picture(&self, colour: Color) -> bool {
+        self.laid.is_some() && colour == self.ground
+    }
+
+    /// The page's colour as it is laid over the picture: the page, at the
+    /// theme's opacity.
+    pub(super) fn veil(&self) -> [f32; 4] {
+        let opacity = self
+            .wallpaper
+            .as_ref()
+            .map_or(1.0, |hanging| f32::from(hanging.opacity) / 100.0);
+        let [red, green, blue, _] = self.ground_colour();
+        [red, green, blue, opacity]
+    }
+
+    /// A cell's ground painted back over whatever is there, as the screen
+    /// would show it: its own colour, or -- where that is the page over a
+    /// picture -- the page as it looks there, which is the piece of the
+    /// picture under it with the page laid over.
+    ///
+    /// For the places that paint a ground back over something already
+    /// drawn, a frame's ring and what a box was put over: those cannot
+    /// leave the cell out the way `backgrounds` does, because what is under
+    /// them is not the picture but whatever was drawn in the cell.
+    pub(super) fn ground_back(&mut self, rect: [f32; 4], colour: Color, held: Option<[f32; 4]>) {
+        let [left, top, width, height] = rect;
+        let painted = held.unwrap_or_else(|| rgba(colour, Ink::Background));
+        match self.laid {
+            Some(laid) if held.is_none() && colour == self.ground => {
+                // The ground first, for whatever of the cell a contained or
+                // centred picture does not reach.
+                self.block(left, top, width, height, painted);
+                if let Some(piece) = laid.piece(rect) {
+                    self.quads.push(Quad {
+                        rect: piece.rect,
+                        uv: piece.uv,
+                        colour: [1.0; 4],
+                        flags: WALLPAPER,
+                        radius: 0.0,
+                        layer: 0,
+                        lower: 0.0,
+                    });
+                }
+                let veil = self.veil();
+                self.block(left, top, width, height, veil);
+            }
+            _ => self.block(left, top, width, height, painted),
+        }
     }
 
     /// What a hold at this cell is standing on: a pane's own ground where

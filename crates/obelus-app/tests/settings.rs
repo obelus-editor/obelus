@@ -3761,6 +3761,9 @@ impl obelus_app::app::Drawing for Told {
     /// Nor this: which faces a window draws with is its own business, and
     /// what is under test here is the size.
     fn use_fonts(&self, _: &[String]) {}
+
+    /// Nor this, which has a test of its own in `themes`.
+    fn hang(&self, _: Option<&obelus_theme::Wallpaper>) {}
 }
 
 impl Told {

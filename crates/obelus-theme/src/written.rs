@@ -15,7 +15,10 @@ use std::path::{Path, PathBuf};
 
 use ratatui::style::Color;
 
-use crate::{SyntaxTheme, Theme, builtin};
+use crate::{
+    SyntaxTheme, Theme, Worn, builtin,
+    wallpaper::{self, Anchor, Fit, Wallpaper},
+};
 
 /// The directory a layer's themes live in, beside its settings file.
 #[must_use]
@@ -23,11 +26,17 @@ pub fn beside(settings: &Path) -> Option<PathBuf> {
     Some(settings.parent()?.join("themes"))
 }
 
+/// What the colours are called inside a theme that is a directory.
+pub const FILE: &str = "theme.toml";
+
 /// The themes in a directory, by the name each answers to.
 ///
 /// The file's own stem, so `omarchy.toml` is `omarchy`: a name written
 /// inside the file would be a name that can disagree with the one the
-/// reader typed into their settings.
+/// reader typed into their settings. And a directory holding a
+/// `theme.toml` is a theme by the directory's name, which is how a theme
+/// keeps a picture beside its colours: the picture is named from inside the
+/// file, and a directory is what keeps the two together when it is copied.
 #[must_use]
 pub fn found_in(directory: &Path) -> Vec<(String, PathBuf)> {
     let Ok(entries) = std::fs::read_dir(directory) else {
@@ -36,10 +45,17 @@ pub fn found_in(directory: &Path) -> Vec<(String, PathBuf)> {
     let mut found: Vec<(String, PathBuf)> = entries
         .filter_map(std::result::Result::ok)
         .map(|entry| entry.path())
-        .filter(|path| path.extension().is_some_and(|kind| kind == "toml"))
         .filter_map(|path| {
-            let name = path.file_stem()?.to_str()?.to_string();
-            Some((name, path))
+            if path.extension().is_some_and(|kind| kind == "toml") {
+                let name = path.file_stem()?.to_str()?.to_string();
+                return Some((name, path));
+            }
+            let inside = path.join(FILE);
+            if !inside.is_file() {
+                return None;
+            }
+            let name = path.file_name()?.to_str()?.to_string();
+            Some((name, inside))
         })
         .collect();
     // By name, because a directory hands them over in whatever order it
@@ -59,7 +75,7 @@ pub fn found_in(directory: &Path) -> Vec<(String, PathBuf)> {
 /// # Errors
 ///
 /// When the file cannot be read or is not TOML.
-pub fn read_where(path: &Path) -> std::result::Result<Theme, Wrong> {
+pub fn read_where(path: &Path) -> std::result::Result<Read, Wrong> {
     let said = std::fs::read_to_string(path).map_err(|error| Wrong {
         why: format!("reading {}: {error}", path.display()),
         at: None,
@@ -70,7 +86,176 @@ pub fn read_where(path: &Path) -> std::result::Result<Theme, Wrong> {
             .span()
             .map(|bytes| obelus_text::span_of_bytes(&said, &bytes)),
     })?;
-    Ok(over(&table))
+    let mut troubles = Vec::new();
+    let wallpaper = hung(path, &said, &table, &mut troubles);
+    Ok(Read {
+        worn: Worn {
+            colours: over(&table),
+            wallpaper,
+        },
+        troubles,
+    })
+}
+
+/// What a theme file turned out to say.
+#[derive(Clone, Debug)]
+pub struct Read {
+    /// The theme, picture and all.
+    pub worn: Worn,
+    /// What in it Obelus could not use, each left at what it would have
+    /// been without the line.
+    ///
+    /// The file still read, so these are a reader's to fix and not a reason
+    /// to refuse the theme: a picture put in the middle because its anchor
+    /// was misspelled is on a screen the reader can still use to fix it.
+    pub troubles: Vec<Wrong>,
+}
+
+/// The picture a table names in its `[wallpaper]`.
+///
+/// Nothing where there is no such table, and nothing where it names no
+/// picture Obelus can find -- which is said, because a theme whose picture
+/// has gone looks, without a word, exactly like a theme that never had one.
+fn hung(
+    path: &Path,
+    said: &str,
+    table: &toml::Table,
+    troubles: &mut Vec<Wrong>,
+) -> Option<Wallpaper> {
+    let hung = table.get("wallpaper")?;
+    let spans = Spans::of(said);
+    let Some(hung) = hung.as_table() else {
+        troubles.push(spans.wrong(&["wallpaper"], "A wallpaper is a table of its own"));
+        return None;
+    };
+    let Some(named) = hung.get("file") else {
+        troubles.push(spans.wrong(&["wallpaper"], "This wallpaper names no file"));
+        return None;
+    };
+    let Some(named) = named.as_str() else {
+        troubles.push(spans.wrong(&["wallpaper", "file"], "A file is named in quotes"));
+        return None;
+    };
+    // Beside the theme as it really is: a theme file is often a link into a
+    // directory something else owns -- a desktop that themes every program
+    // it has -- and its picture is beside the file it was written with, not
+    // beside the link.
+    let really = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let file = really
+        .parent()
+        .map_or_else(|| PathBuf::from(named), |beside| beside.join(named));
+    let Ok(about) = std::fs::metadata(&file) else {
+        troubles.push(spans.wrong(
+            &["wallpaper", "file"],
+            &format!("There is no picture at {}", file.display()),
+        ));
+        return None;
+    };
+
+    let opacity = match hung.get("opacity") {
+        None => wallpaper::OPACITY,
+        Some(value) => match value
+            .as_integer()
+            .and_then(|number| u8::try_from(number).ok())
+        {
+            Some(opacity) if opacity <= 100 => opacity,
+            _ => {
+                troubles.push(spans.wrong(
+                    &["wallpaper", "opacity"],
+                    &format!(
+                        "An opacity is a whole number from 0 to 100, so this is {}",
+                        wallpaper::OPACITY
+                    ),
+                ));
+                wallpaper::OPACITY
+            }
+        },
+    };
+    let fit = match hung.get("fit") {
+        None => Fit::default(),
+        Some(value) => value.as_str().and_then(Fit::named).unwrap_or_else(|| {
+            troubles.push(spans.wrong(
+                &["wallpaper", "fit"],
+                &format!(
+                    "No fit is called this, so it is cover\nOne of {}",
+                    words(&Fit::ALL)
+                ),
+            ));
+            Fit::default()
+        }),
+    };
+    let anchor = match hung.get("anchor") {
+        None => Anchor::default(),
+        Some(value) => value.as_str().and_then(Anchor::named).unwrap_or_else(|| {
+            troubles.push(spans.wrong(
+                &["wallpaper", "anchor"],
+                &format!(
+                    "No anchor is called this, so it is center\nOne of {}",
+                    words(&Anchor::ALL)
+                ),
+            ));
+            Anchor::default()
+        }),
+    };
+    Some(Wallpaper {
+        file,
+        opacity,
+        fit,
+        anchor,
+        modified: about.modified().ok(),
+    })
+}
+
+/// The words a list answers to, for a sentence saying which they are.
+fn words<T>(list: &[(&str, T)]) -> String {
+    list.iter()
+        .map(|(word, _)| *word)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Where things are in a theme file, for saying which line is wrong.
+///
+/// A second parse, by the crate that keeps spans, for the reason the
+/// settings have one: the parse the values come from throws them away.
+struct Spans<'a> {
+    said: &'a str,
+    document: Option<toml_edit::ImDocument<&'a str>>,
+}
+
+impl<'a> Spans<'a> {
+    fn of(said: &'a str) -> Self {
+        Self {
+            said,
+            document: toml_edit::ImDocument::parse(said).ok(),
+        }
+    }
+
+    /// A trouble at a value, or at its key where the value has no span of
+    /// its own -- a table does not -- and at nothing where the file has
+    /// neither, which is a mark not made rather than one made in the wrong
+    /// place.
+    fn wrong(&self, keys: &[&str], why: &str) -> Wrong {
+        Wrong {
+            why: why.to_string(),
+            at: self.span(keys),
+        }
+    }
+
+    fn span(&self, keys: &[&str]) -> Option<obelus_text::coordinates::Span> {
+        let document = self.document.as_ref()?;
+        let (last, path) = keys.split_last()?;
+        let mut table: &dyn toml_edit::TableLike = document.as_table();
+        for key in path {
+            table = table.get(key)?.as_table_like()?;
+        }
+        let bytes = table
+            .get(last)
+            .and_then(toml_edit::Item::as_value)
+            .and_then(toml_edit::Value::span)
+            .or_else(|| table.key(last).and_then(toml_edit::Key::span))?;
+        Some(obelus_text::span_of_bytes(self.said, &bytes))
+    }
 }
 
 /// Why a theme file would not read, and where.

@@ -4594,6 +4594,7 @@ dependencies = [
  "obelus-program",
  "obelus-runtime",
  "obelus-text",
+ "obelus-theme",
  "obelus-ui",
  "objc2 0.6.4",
  "objc2-app-kit 0.3.2",
@@ -4840,6 +4841,7 @@ dependencies = [
  "obelus-text",
  "ratatui",
  "toml 1.1.5+spec-1.1.0",
+ "toml_edit 0.22.27",
  "tracing",
 ]
 

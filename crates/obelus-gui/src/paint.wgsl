@@ -41,6 +41,10 @@ struct Screen {
 // And the pictures with colours of their own, beside the letters: an emoji,
 // and an agent's mark.
 @group(0) @binding(6) var pictures: texture_2d_array<f32>;
+// The picture under the page, and a sampler that repeats it past its edges,
+// which is a tiling -- read only by the quads flagged 1073741824.
+@group(0) @binding(7) var wallpaper: texture_2d<f32>;
+@group(0) @binding(8) var wallpaper_sampler: sampler;
 
 // What the instance buffer holds.
 struct Quad {
@@ -63,6 +67,8 @@ struct Quad {
     // triangle filling the quad, which is the arrow on the seam a
     // deletion left. 16777216: the mark that turns while something is
     // happening. 536870912: the light round a run the reader has hold of.
+    // 1073741824: the picture under the page. 2147483648, beside any of
+    // the others: drawn only outside the rows from `radius` to `lower`.
     @location(3) flags: u32,
     // How far those corners are taken off, in pixels -- and for the
     // quads that carry no corners, the one number each of them needs
@@ -291,8 +297,33 @@ const RING_NIB: f32 = 0.09;
 const RING_TAIL: f32 = 0.75;
 const WHOLE_TURN: f32 = 6.2831855;
 
+// A pixel of a picture drawn on nothing, as a colour and how much of it
+// there is, faded by `fade` -- see the pieces of the frame below.
+fn whole(texel: vec4<f32>, fade: f32) -> vec4<f32> {
+    if (texel.a <= 0.0) {
+        return vec4<f32>(0.0);
+    }
+    return vec4<f32>(texel.rgb / texel.a, texel.a * fade);
+}
+
 @fragment
 fn fragment(in: Fragment) -> @location(0) vec4<f32> {
+    // The rows a band slides in, where the page it scrolled off is not to
+    // be drawn: they are showing the page it scrolled to, and over a
+    // picture that page is clear, so this one would show through it -- see
+    // `catching_up`. Before everything, because it is beside whatever the
+    // quad otherwise is; neither a letter nor a block reads these two.
+    if ((in.flags & 2147483648u) != 0u) {
+        let y = in.position.y - screen.origin.y;
+        if (y >= in.radius && y < in.lower) {
+            discard;
+        }
+    }
+    // The picture under the page, where `uv` says: past its edges for a
+    // tiling, which the sampler repeats.
+    if ((in.flags & 1073741824u) != 0u) {
+        return textureSample(wallpaper, wallpaper_sampler, in.uv);
+    }
     // The mark that turns, its head `radius` of a turn round from the top
     // and going clockwise, which is the way the braille it stands in for
     // goes.
@@ -357,8 +388,14 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
     // arrived is not composed at all, and neither is a window with
     // nothing moving on it: what it costs is one pass, for a fifth of a
     // second.
+    //
+    // Over a picture under the page, the frame was drawn on nothing, so
+    // what it holds is already multiplied by how much of it there is: a
+    // letter's edge is part ink and part clear. Divided back out, so the
+    // blend puts the edge over what is under the piece once, not twice.
+    // Where there is no picture every pixel is whole and this does nothing.
     if ((in.flags & 32u) != 0u) {
-        return textureSample(behind, behind_sampler, in.position.xy / screen.size);
+        return whole(textureSample(behind, behind_sampler, in.position.xy / screen.size), 1.0);
     }
     if ((in.flags & 64u) != 0u) {
         let at = in.position.xy;
@@ -368,7 +405,7 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
             discard;
         }
         let taken = textureSample(behind, behind_sampler, taken_at / screen.size);
-        return vec4<f32>(taken.rgb, in.colour.a);
+        return whole(taken, in.colour.a);
     }
     // What is behind a pane, blurred one way: across on the first pass and
     // down on the second, which together are a Gaussian in both.

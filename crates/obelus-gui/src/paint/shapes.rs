@@ -186,13 +186,16 @@ impl Painter {
                 };
                 if card.ring_holds(page, x, y) && !seen_through(panes, x, y, under.background) {
                     let ground = self.under(panes, &[], x, y);
-                    self.block(
-                        f32::from(x) * cell.width,
-                        f32::from(y) * cell.height,
-                        cell.width,
-                        cell.height,
-                        as_held(under.background, self.holding, ground)
-                            .unwrap_or_else(|| rgba(under.background, Ink::Background)),
+                    let held = as_held(under.background, self.holding, ground);
+                    self.ground_back(
+                        [
+                            f32::from(x) * cell.width,
+                            f32::from(y) * cell.height,
+                            cell.width,
+                            cell.height,
+                        ],
+                        under.background,
+                        held,
                     );
                 }
             }

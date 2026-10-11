@@ -6,10 +6,36 @@
 //! nobody.
 
 pub mod builtin;
+pub mod wallpaper;
 pub mod written;
 
 use obelus_text::kind::SyntaxKind;
 use ratatui::style::Color;
+pub use wallpaper::Wallpaper;
+
+/// A theme as it is worn: its colours, and the picture under them where it
+/// carries one.
+///
+/// One value rather than two, because a theme is chosen, previewed and put
+/// back as one thing -- and a picture that stayed behind when the colours
+/// were put back would be one theme's picture under another's page.
+#[derive(Clone, Debug)]
+pub struct Worn {
+    /// The colours.
+    pub colours: Theme,
+    /// The picture, where there is one.
+    pub wallpaper: Option<Wallpaper>,
+}
+
+impl From<Theme> for Worn {
+    /// A theme with no picture, which is every theme compiled in.
+    fn from(colours: Theme) -> Self {
+        Self {
+            colours,
+            wallpaper: None,
+        }
+    }
+}
 
 /// One colour per [`SyntaxKind`].
 #[derive(Clone, Copy, Debug)]

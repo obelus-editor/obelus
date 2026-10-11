@@ -95,7 +95,7 @@ use obelus_reading::Reading;
 use obelus_search::Scope;
 use obelus_syntax::{LanguageId, brackets, highlight::Highlights, parse::SyntaxState, tags};
 use obelus_text::coordinates::{ByteOffset, CharColumn, LineNumber, Span};
-use obelus_theme::{Theme, builtin};
+use obelus_theme::{Theme, Worn, builtin};
 use obelus_ui::{Previewed, Screen, image::Images};
 use obelus_watch::Watcher;
 use previewing::Preview;
@@ -226,6 +226,12 @@ pub struct App {
     /// a theme is a set of colours and a name is not one of them.
     theme: Theme,
     theme_name: String,
+    /// The picture under the page, where the theme in force carries one.
+    ///
+    /// Beside the colours rather than among them, because no view reads
+    /// it: it is said to whatever is drawing, and a terminal has nowhere to
+    /// put it -- see `Drawing::hang`.
+    wallpaper: Option<obelus_theme::Wallpaper>,
     /// The open picker, if one is open.
     ///
     /// One field for all four, because they differ only in what they list.
@@ -306,7 +312,7 @@ pub struct App {
     /// each theme: a list of colour names is not a choice between colour
     /// schemes, and the only honest preview of a theme is the screen wearing
     /// it. Cancelling has to undo that.
-    theme_before: Option<(String, Theme)>,
+    theme_before: Option<(String, Worn)>,
     /// Where the reader was before quitting took them to the file it is
     /// asking about.
     ///
@@ -572,6 +578,7 @@ impl App {
             current,
             theme: builtin::DARK,
             theme_name: obelus_config::DEFAULT_THEME.to_string(),
+            wallpaper: None,
             picker: None,
             servers: HashMap::new(),
             stopped: HashSet::new(),
@@ -804,13 +811,41 @@ impl App {
     /// Only when they have moved. A theme being previewed is worn again on
     /// every frame the list is open, and a front end told something wakes
     /// to draw it -- so telling it every time is a frame that asks for the
-    /// next one, for as long as the reader looks at the list.
-    pub fn set_theme(&mut self, name: &str, theme: Theme) {
-        let moved = colours_said(&theme) != colours_said(&self.theme);
+    /// next one, for as long as the reader looks at the list. The picture
+    /// most of all: a window told about one reads and decodes the file.
+    pub fn set_theme(&mut self, name: &str, worn: impl Into<Worn>) {
+        let Worn { colours, wallpaper } = worn.into();
+        let moved = colours_said(&colours) != colours_said(&self.theme);
+        let hung = wallpaper != self.wallpaper;
         self.theme_name = name.to_string();
-        self.theme = theme;
+        self.theme = colours;
+        self.wallpaper = wallpaper;
         if moved {
             self.say_the_colours();
+        }
+        if hung {
+            self.say_the_wallpaper();
+        }
+    }
+
+    /// The theme in force, picture and all, for putting back later.
+    pub(crate) fn worn(&self) -> Worn {
+        Worn {
+            colours: self.theme,
+            wallpaper: self.wallpaper.clone(),
+        }
+    }
+
+    /// The picture under the page, where there is one.
+    #[must_use]
+    pub const fn wallpaper(&self) -> Option<&obelus_theme::Wallpaper> {
+        self.wallpaper.as_ref()
+    }
+
+    /// Tells whatever is drawing which picture is under the page.
+    pub(crate) fn say_the_wallpaper(&self) {
+        if let Some(drawing) = self.drawing.as_ref() {
+            drawing.hang(self.wallpaper.as_ref());
         }
     }
 
@@ -1539,6 +1574,19 @@ pub trait Drawing: std::fmt::Debug + Send + Sync {
     /// like every other list because it paints the row the same colour,
     /// which it must do anyway for the terminal.
     fn holding(&self, held: Color, row: Color);
+
+    /// The picture under the page, or that there is none.
+    ///
+    /// What the theme says and nothing more: which file, how much of the
+    /// page covers it, how it is fitted. Reading the file, decoding it and
+    /// laying it out on a window of some size are the front end's, which
+    /// is the one that knows the size -- and decoding a photograph is not
+    /// work for the thread a key is waiting on.
+    ///
+    /// Said when it moves -- a theme chosen, previewed, put back, or its
+    /// file or its picture rewritten -- and once when the front end says
+    /// who it is, the way the page's ground is.
+    fn hang(&self, wallpaper: Option<&obelus_theme::Wallpaper>);
 }
 
 /// Lays out, scrolls and draws one frame.

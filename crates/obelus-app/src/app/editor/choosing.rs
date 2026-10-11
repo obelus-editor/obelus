@@ -22,7 +22,7 @@ impl App {
 
     /// Offers the built-in themes.
     pub fn open_theme_picker(&mut self) {
-        self.theme_before = Some((self.theme_name().to_string(), *self.theme()));
+        self.theme_before = Some((self.theme_name().to_string(), self.worn()));
         let items = self
             .themes()
             .into_iter()

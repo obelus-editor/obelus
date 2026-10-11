@@ -44,6 +44,7 @@ mod keys;
 mod motion;
 mod paint;
 mod title;
+mod wallpaper;
 mod window;
 
 use std::path::PathBuf;

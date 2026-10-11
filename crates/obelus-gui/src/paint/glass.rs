@@ -53,12 +53,17 @@ impl Painter {
             // back than the band by however much of the move is already
             // done.
             let offset = (band.behind - band.since) * cell.height;
+            let rows = self.quads.len();
             for y in room.top()..room.bottom() {
                 for x in room.left()..room.right() {
                     let look = band.before.look(x, y);
                     let left = f32::from(x) * cell.width;
                     let top = f32::from(y).mul_add(cell.height, offset);
-                    if glass.is_none_or(|level| look.background != stack[level].ground) {
+                    // Nor the page over a picture, which stands where it
+                    // is under the band -- see `encode`.
+                    if glass.is_none_or(|level| look.background != stack[level].ground)
+                        && !(glass.is_none() && self.on_the_picture(look.background))
+                    {
                         self.block(
                             left,
                             top,
@@ -71,6 +76,21 @@ impl Painter {
                         let ink = rgba(look.foreground, Ink::Foreground);
                         self.glyphs_at((left, top), look, ink, 0, fonts, Size::Cell);
                     }
+                }
+            }
+            // Over a picture, the rows the band slides in are not opaque:
+            // where they are the page, what shows through them is the
+            // picture, and these rows would show through with it -- the
+            // same line twice, drawn by the old page and by the new one.
+            // So these are kept to where the slid rows have nothing to
+            // show, which is what they are for: the rows scrolled past.
+            if self.laid.is_some() {
+                let [_, top, _, bottom] = box_of(room, cell);
+                let shift = band.behind * cell.height;
+                for quad in &mut self.quads[rows..] {
+                    quad.flags |= OUTSIDE;
+                    quad.radius = top + shift;
+                    quad.lower = bottom + shift;
                 }
             }
         }
@@ -182,13 +202,17 @@ impl Painter {
                 for x in room.left()..room.right() {
                     let look = page.look(x, y);
                     let (left, top) = (f32::from(x) * cell.width, f32::from(y) * cell.height);
-                    self.block(
-                        left,
-                        top,
-                        cell.width,
-                        cell.height,
-                        rgba(look.background, Ink::Background),
-                    );
+                    // The page over a picture is what the backdrop is drawn
+                    // on before these are put back into it -- see `encode`.
+                    if !self.on_the_picture(look.background) {
+                        self.block(
+                            left,
+                            top,
+                            cell.width,
+                            cell.height,
+                            rgba(look.background, Ink::Background),
+                        );
+                    }
                     if !look.text.trim().is_empty() {
                         let ink = rgba(look.foreground, Ink::Foreground);
                         self.glyphs_at((left, top), look, ink, 0, fonts, Size::Cell);
@@ -324,6 +348,11 @@ impl Painter {
             let ground = self.ground_colour();
             let (grounds, lettered) = behind_row(behind, barred, y);
             for (start, end, colour) in grounds {
+                // Straight after the picture under the page, which is the
+                // page here already -- see `backgrounds`.
+                if self.on_the_picture(colour) {
+                    continue;
+                }
                 // What a pane was put over is the page, so a hold in it
                 // is a plate on the page's own ground.
                 self.block(
@@ -565,14 +594,8 @@ impl Painter {
                 let top = f32::from(y) * cell.height;
                 if !seen_through(lower, x, y, under.background) {
                     let ground = self.under(lower, &[], x, y);
-                    self.block(
-                        left,
-                        top,
-                        cell.width,
-                        cell.height,
-                        as_held(under.background, self.holding, ground)
-                            .unwrap_or_else(|| rgba(under.background, Ink::Background)),
-                    );
+                    let held = as_held(under.background, self.holding, ground);
+                    self.ground_back([left, top, cell.width, cell.height], under.background, held);
                 }
                 if !under.text.trim().is_empty() {
                     let ink = rgba(under.foreground, Ink::Foreground);

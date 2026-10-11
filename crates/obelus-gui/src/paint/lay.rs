@@ -56,6 +56,56 @@ impl Painter {
         // be the black the pass clears to.
         let [left, top, wide, tall] = whole_window([across, down], margin);
         self.block(left, top, wide, tall, rgba(self.ground, Ink::Background));
+        // And the picture under the page, over that ground and under the
+        // page's own colour laid at the theme's opacity -- once, across the
+        // whole window, so the cells in the page's colour are not painted
+        // again on top of it (`backgrounds` leaves them out). Where the
+        // picture does not reach, a contained or centred one, the ground
+        // is the page at full strength: there is nothing there to see
+        // through to.
+        //
+        // In the first picture with everything else, so every pane and box
+        // has it under its glass.
+        self.laid = self.wallpaper.as_ref().map(|hanging| {
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "a screen is a few points to a pixel"
+            )]
+            let scale = self.window.scale_factor() as f32;
+            let laid = crate::wallpaper::laid(
+                hanging.size,
+                hanging.fit,
+                hanging.anchor,
+                [across, down],
+                scale,
+            );
+            let [x, y, width, height] = laid.rect;
+            crate::wallpaper::Laid {
+                rect: [x - margin[0], y - margin[1], width, height],
+                ..laid
+            }
+        });
+        if let Some(laid) = self.laid {
+            self.quads.push(Quad {
+                rect: laid.rect,
+                uv: laid.uv,
+                colour: [1.0; 4],
+                flags: WALLPAPER,
+                radius: 0.0,
+                layer: 0,
+                lower: 0.0,
+            });
+            let veil = self.veil();
+            self.block(left, top, wide, tall, veil);
+        }
+        // Where the picture's quads end, which every whole screen drawn
+        // from this frame draws first -- and the one picture of the frame
+        // that is cut into moving pieces leaves out (see `encode`).
+        self.placed.hung = if self.laid.is_some() {
+            self.quads.len()
+        } else {
+            0
+        };
         // Every pane and box, furthest first, each over the glass of those
         // before it. A box is one only while its frame is still there to
         // hold it -- see `Behind::framed` -- which four passes ask about.

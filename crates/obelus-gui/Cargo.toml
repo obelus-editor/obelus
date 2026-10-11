@@ -39,6 +39,9 @@ obelus-runtime.workspace = true
 # and has to be: the window draws the character where the application put
 # the one after it.
 obelus-text.workspace = true
+# What a theme says about the picture under the page, which only a window
+# draws.
+obelus-theme.workspace = true
 obelus-ui.workspace = true
 anyhow.workspace = true
 bytemuck.workspace = true

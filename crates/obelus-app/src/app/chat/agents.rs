@@ -351,6 +351,7 @@ impl App {
         drawing.animates(self.settled.config.animation);
         self.drawing = Some(drawing);
         self.say_the_colours();
+        self.say_the_wallpaper();
     }
 
     /// The marks, for the view to draw.

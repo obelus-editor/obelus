@@ -21,6 +21,16 @@
 //! were two places for that, one pane and one box, and the second pane
 //! said took the first one's: the settings went solid the moment a
 //! setting's choices opened over them (`Level`, `put_over`).
+//!
+//! **The picture under the page stands still while what is written on it
+//! moves.** A theme may carry one (`crate::wallpaper`), drawn once across
+//! the whole window with the page's colour laid over it at the theme's
+//! opacity -- so a cell in the page's colour is not drawn at all, and one
+//! that paints a ground back over something paints the page as it looks
+//! there (`ground_back`). Where things move, the frame is cut into pieces
+//! and put back; the picture is left out of what is cut, so a file sliding
+//! as it scrolls takes its words along and not the picture under them
+//! (`without_the_picture`, `Placed::hung`).
 
 mod atlas;
 mod glass;
@@ -221,12 +231,38 @@ pub(crate) struct Painter {
     /// a binding cannot be left empty and the atlas is the wrong shape for
     /// the slot.
     nothing: wgpu::TextureView,
+    /// What the picture under the page is read through -- see `hang`.
+    repeating: wgpu::Sampler,
+    /// The picture under the page, on the card, where the theme carries
+    /// one.
+    wallpaper: Option<Hanging>,
+    /// And where it lies on the frame being laid out, in the grid's pixels.
+    laid: Option<crate::wallpaper::Laid>,
+}
+
+/// The picture under the page, as the card holds it.
+pub(super) struct Hanging {
+    /// What the shader reads.
+    view: wgpu::TextureView,
+    /// How large it is, in pixels.
+    size: [u32; 2],
+    /// How much of the page covers it, out of a hundred.
+    opacity: u8,
+    /// How it is fitted to the window.
+    fit: obelus_theme::wallpaper::Fit,
+    /// What stays where the window's edges move.
+    anchor: obelus_theme::wallpaper::Anchor,
 }
 
 /// Where things are in the frame being built, which the passes that draw
 /// it read.
 #[derive(Clone, Debug, Default)]
 struct Placed {
+    /// Where the picture under the page ends: the window's ground, the
+    /// picture, and the page's colour laid over it, which are the first
+    /// quads of the frame. Nothing where there is no picture, and then the
+    /// ground is simply the frame's first quad, as it always was.
+    hung: usize,
     /// Each pane and box, furthest first -- see `Level`.
     levels: Vec<Level>,
     /// And which quad lays the nearest box's picture back over it while the
@@ -378,6 +414,23 @@ fn on_the_screen(placed: &Placed) -> Vec<(Range<usize>, Reads)> {
     plan
 }
 
+/// A plan less the picture under the page, the first `hung` quads.
+///
+/// For the one picture of the frame that is cut up and put back where
+/// things are moving: the picture under the page does not move, so it is
+/// not in what is cut -- what moves is what is written on the page, over it
+/// -- and the page there is left clear, to be seen through to the picture
+/// drawn under the pieces.
+fn without_the_picture(
+    plan: Vec<(Range<usize>, Reads)>,
+    hung: usize,
+) -> Vec<(Range<usize>, Reads)> {
+    plan.into_iter()
+        .map(|(quads, reads)| (quads.start.max(hung)..quads.end, reads))
+        .filter(|(quads, _)| !quads.is_empty())
+        .collect()
+}
+
 /// What one level was put over, as the screen had it: the picture its
 /// glass reads, and what shows under a pane while it is on its way in.
 ///
@@ -453,6 +506,12 @@ struct Quad {
 
 /// A rectangle with no picture: its colour is the whole of it.
 const SOLID: u32 = 1;
+/// The picture under the page, read where `uv` says -- see `wallpaper`.
+const WALLPAPER: u32 = 1_073_741_824;
+/// Drawn only outside the rows from `radius` down to `lower`, in the grid's
+/// pixels: the rows a band slides in, where the page it scrolled off is
+/// already showing -- see `catching_up`. Beside whatever else the quad is.
+const OUTSIDE: u32 = 2_147_483_648;
 /// A picture with colours of its own, which is an emoji.
 const COLOURFUL: u32 = 2;
 /// A solid whose corners are taken off, which is a key's cap.
@@ -1056,6 +1115,52 @@ fn indexed(index: u8) -> (u8, u8, u8) {
 #[cfg(test)]
 mod tests {
     use super::glass::mark_behind;
+
+    /// The shader is compiled when a window opens and at no other moment,
+    /// so a mistake in it is a window that will not open -- on whichever
+    /// machine first tries, which is never the one that made the mistake
+    /// if that one only ran the tests. Checked here as the device would.
+    ///
+    /// Deliberate break: `textureSample(wallpaper, ...)` with the sampler
+    /// left out, which fails the parse.
+    #[test]
+    fn the_shader_is_one_a_device_would_take() {
+        use wgpu::naga::{
+            front::wgsl,
+            valid::{Capabilities, ValidationFlags, Validator},
+        };
+        let module = wgsl::parse_str(include_str!("paint.wgsl"))
+            .unwrap_or_else(|error| panic!("{}", error.emit_to_string(include_str!("paint.wgsl"))));
+        Validator::new(ValidationFlags::all(), Capabilities::default())
+            .validate(&module)
+            .expect("the shader would not validate");
+    }
+
+    /// The frame cut into moving pieces leaves out the picture under the
+    /// page, and nothing else.
+    ///
+    /// Deliberate break: `without_the_picture` keeping a run that ends
+    /// inside the picture, which draws the picture into what moves.
+    #[test]
+    fn what_moves_leaves_the_picture_where_it_is() {
+        use super::{Reads, without_the_picture};
+        let plan = vec![
+            (0..2, Reads::Nothing),
+            (2..10, Reads::Nothing),
+            (10..11, Reads::Level(0)),
+        ];
+        let trimmed: Vec<_> = without_the_picture(plan.clone(), 3)
+            .into_iter()
+            .map(|(quads, _)| quads)
+            .collect();
+        assert_eq!(trimmed, vec![3..10, 10..11]);
+        // And with no picture, the plan as it was.
+        let untouched: Vec<_> = without_the_picture(plan, 0)
+            .into_iter()
+            .map(|(quads, _)| quads)
+            .collect();
+        assert_eq!(untouched, vec![0..2, 2..10, 10..11]);
+    }
 
     mod stacked {
         use obelus_font::CellSize;

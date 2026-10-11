@@ -556,7 +556,7 @@ impl App {
         // walking this list wears each colour in turn, and the one that was
         // on is only in the running program.
         if key == "theme" {
-            self.theme_before = Some((self.theme_name().to_string(), *self.theme()));
+            self.theme_before = Some((self.theme_name().to_string(), self.worn()));
         }
         self.show_list(picker);
     }
@@ -855,20 +855,32 @@ impl App {
     }
 
     /// The colours a name stands for, out of the files and then the
-    /// built-in ones.
+    /// built-in ones -- and the picture under them, where a file names one.
     ///
     /// `None` where nothing answers to it, which is a setting naming a theme
     /// that has been renamed or deleted: the colours on screen stay as they
     /// are, because a reader who cannot read the screen cannot fix the file.
     #[must_use]
-    pub fn theme_called(&mut self, name: &str) -> Option<Theme> {
+    pub fn theme_called(&mut self, name: &str) -> Option<Worn> {
         let Some(path) = self.theme_file(name) else {
-            return builtin::by_name(name).copied();
+            return builtin::by_name(name).copied().map(Worn::from);
         };
         match obelus_theme::written::read_where(&path) {
-            Ok(theme) => {
+            Ok(read) => {
                 self.nothing_wrong_with(&path);
-                Some(theme)
+                // A line the theme could do without, marked where it is:
+                // the theme is worn all the same, with that line left at
+                // what it would have been had it not been written.
+                for trouble in read.troubles {
+                    tracing::debug!(why = trouble.why, "a line of a theme that did nothing");
+                    self.obelus_says(
+                        &path,
+                        trouble.at,
+                        obelus_lsp::trouble::Severity::Warning,
+                        &trouble.why,
+                    );
+                }
+                Some(read.worn)
             }
             Err(wrong) => {
                 tracing::warn!(why = wrong.why, "a theme that would not read");
@@ -912,6 +924,14 @@ impl App {
         let mut directories = self.theme_directories();
         if let Some(path) = self.theme_file(&self.settled.config.theme)
             && let Some(parent) = obelus_config::resolved(&path).parent()
+        {
+            directories.push(parent.to_path_buf());
+        }
+        // And wherever its picture is, which a theme may name from anywhere:
+        // a picture replaced under its own name is the theme changing as
+        // surely as a colour is.
+        if let Some(parent) = self.wallpaper().and_then(|hung| hung.file.parent())
+            && !directories.iter().any(|directory| directory == parent)
         {
             directories.push(parent.to_path_buf());
         }

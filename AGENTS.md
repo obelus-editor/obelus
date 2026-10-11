@@ -641,6 +641,8 @@ crates/
                     neither
   obelus-icons/     the Nerd Font switch and every glyph behind it
   obelus-theme/     colours, and only fields the renderer reads
+                    · a picture travels beside a theme's colours and not
+                      among them (wallpaper)
   obelus-config/    the settings, their file, and what each one is
                     · what a project may set is a property of the setting; the
                       file holds preferences, not state; a setting says where
@@ -841,8 +843,12 @@ crates/
                       before it is a blur, a region of the frame is put
                       back somewhere else rather than drawn again, a pane
                       that has gone leaves out of a picture of the screen it
-                      went from, and every pane and every box is glass over
-                      everything said before it (paint); a
+                      went from, every pane and every box is glass over
+                      everything said before it, and the picture under the
+                      page stands still while what is written on it moves
+                      (paint); a picture is decoded on a thread of its own
+                      and only the newest is drawn, and is never drawn
+                      larger than it has to be (wallpaper); a
                       window owns the selection and hands the words
                       over on the way out (clipboard); a thread that borrows
                       somebody else's connection stops before the owner takes

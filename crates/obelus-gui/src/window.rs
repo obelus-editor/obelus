@@ -373,6 +373,9 @@ struct Showing {
     /// characters, and the row their keys are on. The application's, said
     /// at the same two moments the ground is.
     holding: (Color, Color),
+    /// Which asking for a picture under the page was the last one drawn,
+    /// so that an older one decoded later is not -- see `wallpaper`.
+    hung: u64,
     /// Which cells are switches on the frame being shown.
     ticked: Vec<Ticked>,
     /// Which cells are the mark that turns on the frame being shown.
@@ -508,6 +511,7 @@ impl Showing {
             shown: false,
             titled: 0.0,
             holding: (Color::Reset, Color::Reset),
+            hung: 0,
             ticked: Vec::new(),
             spun: Vec::new(),
             spinning: Vec::new(),
@@ -934,9 +938,18 @@ impl ApplicationHandler<Waking> for Showing {
         // And the other direction: what the settings say about the window,
         // which the application sends when they change and nobody else can
         // answer.
+        // The screen it opened on, which is as large as a picture under the
+        // page is ever drawn; a window moved to a larger one later draws
+        // the picture a little soft rather than keeping one this large in
+        // case. Two common screens where the platform will not say.
+        let screen = window.current_monitor().map_or([3840, 2160], |monitor| {
+            let size = monitor.size();
+            [size.width, size.height]
+        });
         app.drawn_by(Arc::new(crate::grid::Telling::new(
             frames.clone(),
             Arc::clone(&wake),
+            screen,
         )));
         // And the marks, which a window draws itself. A terminal is asked
         // what it can show and mostly cannot; there is nothing to ask
@@ -1018,6 +1031,10 @@ impl ApplicationHandler<Waking> for Showing {
                 let mut drew = false;
                 let mut sized = None;
                 let mut faces = None;
+                // A picture arrives on its own, with no frame behind it --
+                // it was being decoded while the frames went by -- so it
+                // asks for the screen to be drawn again by itself.
+                let mut rehung = false;
                 while let Ok(update) = frames.try_recv() {
                     match update {
                         // Not cells, so the page never sees them.
@@ -1036,6 +1053,15 @@ impl ApplicationHandler<Waking> for Showing {
                             self.page.drawn_on(ground);
                         }
                         Update::Holding { held, row } => self.holding = (held, row),
+                        Update::Wallpaper { number, hung } => {
+                            if number > self.hung
+                                && let Some(painter) = self.painter.as_mut()
+                            {
+                                self.hung = number;
+                                painter.hang(hung.as_deref());
+                                rehung = true;
+                            }
+                        }
                         Update::Mark {
                             id,
                             focused,
@@ -1346,6 +1372,8 @@ impl ApplicationHandler<Waking> for Showing {
                         window.set_visible(true);
                         self.shown = true;
                     }
+                    self.redraw();
+                } else if rehung && self.shown {
                     self.redraw();
                 }
             }

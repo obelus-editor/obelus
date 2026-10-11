@@ -46,7 +46,7 @@ fn a_theme_file_says_what_it_wants_and_inherits_the_rest() {
     .expect("the theme");
 
     let mut app = open(&scratch);
-    let theme = app.theme_called("mine").expect("the theme");
+    let theme = app.theme_called("mine").expect("the theme").colours;
     assert_eq!(
         theme.background,
         written::hex("#121212").expect("a colour"),
@@ -148,7 +148,10 @@ fn a_tree_can_carry_a_theme_of_its_own() {
     let mut app = open(&scratch);
     app.working_directory_for_test(tree.path().to_path_buf());
     assert_eq!(
-        app.theme_called("shared").expect("the theme").background,
+        app.theme_called("shared")
+            .expect("the theme")
+            .colours
+            .background,
         written::hex("#020202").expect("a colour"),
         "the reader's file won over the tree's own"
     );
@@ -174,7 +177,7 @@ fn a_theme_that_will_not_read_leaves_the_screen_alone() {
         "base = \"dark\"\nbackground = \"blue\"\nforeground = \"#abcdef\"\n",
     )
     .expect("the file");
-    let theme = app.theme_called("half").expect("the theme");
+    let theme = app.theme_called("half").expect("the theme").colours;
     assert_eq!(
         theme.background,
         builtin::DARK.background,
@@ -375,4 +378,193 @@ fn the_template_for_omarchy_names_colours_obelus_has() {
             "the template sets a colour Obelus does not have: {key}"
         );
     }
+}
+
+/// A theme that is a directory, with a picture named from inside it.
+fn rain(scratch: &support::Scratch, wallpaper: &str) -> std::path::PathBuf {
+    std::fs::create_dir_all(scratch.join("themes/rain")).expect("the directory");
+    let file = scratch.join("themes/rain/theme.toml");
+    std::fs::write(
+        &file,
+        format!("base = \"dark\"\nbackground = \"#101820\"\n\n[wallpaper]\n{wallpaper}"),
+    )
+    .expect("the theme");
+    // What is in it is the window's to decode, and a test has no window:
+    // that there is a file is all the application asks.
+    std::fs::write(scratch.join("themes/rain/rain.jpg"), "not decoded here").expect("the picture");
+    file
+}
+
+/// A theme may be a directory, and carries the picture its file names,
+/// found beside it and laid as it says.
+///
+/// Deliberate breaks: `found_in` taking only `.toml` files (there is then
+/// no `rain` to offer), and the picture's path taken from beside the
+/// settings rather than beside the theme (it is then not there, and the
+/// theme carries none).
+#[test]
+fn a_theme_carries_the_picture_its_file_names() {
+    use obelus_theme::wallpaper::{Anchor, Edge, Fit};
+    let scratch = reader("wallpaper");
+    let file = rain(
+        &scratch,
+        "file = \"rain.jpg\"\nopacity = 70\nfit = \"tile\"\nanchor = \"top-left\"\n",
+    );
+
+    let mut app = open(&scratch);
+    assert!(
+        app.themes().contains(&"rain".to_string()),
+        "no rain in {:?}",
+        app.themes()
+    );
+    let worn = app.theme_called("rain").expect("the theme");
+    assert_eq!(
+        worn.colours.background,
+        written::hex("#101820").expect("a colour")
+    );
+    let hung = worn.wallpaper.expect("no picture under the page");
+    assert_eq!(
+        hung.file.canonicalize().expect("the picture"),
+        scratch
+            .join("themes/rain/rain.jpg")
+            .canonicalize()
+            .expect("the picture"),
+    );
+    assert_eq!(hung.opacity, 70);
+    assert_eq!(hung.fit, Fit::Tile);
+    assert_eq!(
+        hung.anchor,
+        Anchor {
+            across: Edge::Start,
+            down: Edge::Start
+        }
+    );
+    assert_eq!(app.marks_on_for_test(&file).0, 0, "a good theme was marked");
+}
+
+/// A line of the picture's table Obelus cannot use is marked where it is,
+/// and the picture is laid as though it had not been written; a picture
+/// that is not there is marked, and there is none.
+///
+/// Deliberate breaks: the troubles left out of `theme_called` (nothing is
+/// marked), and a misspelt fit refusing the picture (there is then none,
+/// where the reader is owed one in the middle while they fix the word).
+#[test]
+fn a_line_of_a_wallpaper_that_does_nothing_is_marked() {
+    use obelus_theme::wallpaper::{Anchor, Fit, OPACITY};
+    let scratch = reader("wallpaper-wrong");
+    let file = rain(
+        &scratch,
+        "file = \"rain.jpg\"\nopacity = 150\nfit = \"tiled\"\nanchor = \"middle\"\n",
+    );
+
+    let mut app = open(&scratch);
+    let hung = app
+        .theme_called("rain")
+        .expect("the theme")
+        .wallpaper
+        .expect("the picture was refused over a misspelt word");
+    assert_eq!(
+        (hung.opacity, hung.fit, hung.anchor),
+        (OPACITY, Fit::Cover, Anchor::default())
+    );
+    assert_eq!(
+        app.marks_on_for_test(&file).0,
+        3,
+        "not every bad line was marked"
+    );
+
+    rain(&scratch, "file = \"gone.jpg\"\n");
+    let worn = app.theme_called("rain").expect("the theme");
+    assert!(
+        worn.wallpaper.is_none(),
+        "a picture that is not there was hung"
+    );
+    assert_eq!(
+        app.marks_on_for_test(&file).0,
+        1,
+        "the missing picture was not said"
+    );
+}
+
+/// What a window is told about the picture under the page.
+#[derive(Debug, Default)]
+struct Hangs(std::sync::Mutex<Vec<Option<std::path::PathBuf>>>);
+
+impl obelus_app::app::Drawing for Hangs {
+    fn hang(&self, wallpaper: Option<&obelus_theme::Wallpaper>) {
+        self.0
+            .lock()
+            .expect("what was said")
+            .push(wallpaper.map(|hung| hung.file.clone()));
+    }
+
+    // The rest are other tests' -- see `settings`.
+    fn text_size(&self, _: usize) {}
+
+    fn animates(&self, _: bool) {}
+
+    fn use_fonts(&self, _: &[String]) {}
+
+    fn drawn_on(&self, _: ratatui::style::Color) {}
+
+    fn holding(&self, _: ratatui::style::Color, _: ratatui::style::Color) {}
+
+    fn caret_is(
+        &self,
+        _: obelus_app::app::Caret,
+        _: Option<obelus_component::layers::Layer>,
+        _: bool,
+    ) {
+    }
+}
+
+impl Hangs {
+    fn said(&self) -> Vec<Option<std::path::PathBuf>> {
+        self.0.lock().expect("what was said").clone()
+    }
+}
+
+/// The window is told which picture is under the page when it says who it
+/// is, when a theme walked to in the list has none, and again when escape
+/// puts the old theme back -- and not again on every frame the list is
+/// open, because a window told about a picture reads and decodes it.
+///
+/// Deliberate breaks: the picture left out of what the list keeps to put
+/// back (escape then leaves the page with none), and `set_theme` telling
+/// the window every time (the list's frames then each say it again).
+#[test]
+fn the_window_is_told_which_picture_is_under_the_page() {
+    let scratch = reader("wallpaper-told");
+    rain(&scratch, "file = \"rain.jpg\"\n");
+    std::fs::write(scratch.join("config.toml"), "theme = \"rain\"\n").expect("the settings");
+
+    let mut app = open(&scratch);
+    let told = std::sync::Arc::new(Hangs::default());
+    app.drawn_by(told.clone());
+    let picture = app.wallpaper().expect("the picture").file.clone();
+    assert_eq!(
+        told.said(),
+        vec![Some(picture.clone())],
+        "not told on the way up"
+    );
+
+    // The list opens on rain, and the built-in themes come after the files.
+    dispatch::dispatch(&mut app, Command::ThemeSelect);
+    support::press(&mut app, KeyCode::Down);
+    let _ = support::render(&mut app, 70, 14);
+    let _ = support::render(&mut app, 70, 14);
+    assert_eq!(
+        told.said(),
+        vec![Some(picture.clone()), None],
+        "walking to dark"
+    );
+
+    support::press(&mut app, KeyCode::Esc);
+    let _ = support::render(&mut app, 70, 14);
+    assert_eq!(
+        told.said(),
+        vec![Some(picture.clone()), None, Some(picture)],
+        "escape did not put the picture back"
+    );
 }
