@@ -828,9 +828,9 @@ crates/
                       the file (window); closing the window is the key that
                       leaves, and on macOS command is control (keys); the page
                       is what Obelus said and motion is only how the window
-                      is showing it, a moment and a rate
-                      are two kinds of waiting, and none of it crosses to the
-                      application (motion); a full-width character takes the
+                      is showing it, a moment and a rate are two kinds of
+                      waiting, and none of it crosses to the application
+                      (motion); a full-width character takes the
                       cells it covers with it, because the diff will not
                       (grid); the colours go through untouched, only a window
                       can draw the caret's shape, a pane joined to the page has
