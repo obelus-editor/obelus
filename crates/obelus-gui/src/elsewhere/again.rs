@@ -1,7 +1,7 @@
 //! Obelus opened again, from Finder, while one is already open.
 //!
 //! Launch Services starts an application once. Opening it again -- from
-//! Finder, Spotlight, Launchpad, `open -a` -- starts nothing: the one that is
+//! Finder, Spotlight, `open -a` -- starts nothing: the one that is
 //! running is sent the reopen event and is expected to put up a window of
 //! its own. Obelus has one window to a process (several Obelus processes is
 //! the normal case), so a second window is a second process, and the event
@@ -15,6 +15,11 @@
 //! for every time the reader came back to this one. So the event says who
 //! sent it, and the Dock is answered by bringing this window forward,
 //! which is what AppKit's own answer did for a window that was minimised.
+//!
+//! Launchpad is not on the list above, because it runs inside the Dock's
+//! process and may well be taken for it: an Obelus opened from there while
+//! one is open is likely to bring that one forward rather than start
+//! another. Nothing in the event tells the two apart.
 
 use objc2::{
     DefinedClass as _, MainThreadMarker, MainThreadOnly, define_class, msg_send,
@@ -51,8 +56,10 @@ define_class!(
     struct Listener;
 
     impl Listener {
+        // The reply as an `Option`: nothing promises it is not nil, and a
+        // reference is taken from the pointer without asking.
         #[unsafe(method(reopened:withReply:))]
-        fn reopened(&self, event: &AnyObject, _reply: &AnyObject) {
+        fn reopened(&self, event: &AnyObject, _reply: Option<&AnyObject>) {
             let sender = sent_by(event);
             // Said either way: which of the two it was taken for is the
             // whole of what this decides, and the sender is a helper of

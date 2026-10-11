@@ -320,7 +320,11 @@ fn open(tree: Option<&Path>, token: Option<&str>) {
     #[cfg(unix)]
     command.process_group(0);
     match command.spawn() {
-        Ok(_) => tracing::info!(tree = ?tree, "started another window"),
+        Ok(_) => tracing::info!(
+            // Left out where there is none, as the desktop starts one.
+            tree = tree.map(|tree| tracing::field::display(tree.display())),
+            "started another window"
+        ),
         Err(error) => {
             tracing::warn!(%error, program = %program.display(), "another window would not start");
         }
