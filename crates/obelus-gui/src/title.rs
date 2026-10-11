@@ -148,6 +148,10 @@ impl Presses {
 /// What a double click on a title bar does, which the reader chose in the
 /// system's settings and not in Obelus's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(
+    all(not(target_os = "macos"), not(test)),
+    expect(dead_code, reason = "only macOS asks what the reader chose")
+)]
 enum Action {
     /// Fills the screen, or comes back from it.
     Zoom,
@@ -165,6 +169,10 @@ enum Action {
 /// the one that counts. `Fill`, which the newest systems offer beside
 /// Zoom, has no public way to be asked for, and zoom is the nearest thing
 /// to it: a window with no frame of its own to zoom to fills the screen.
+#[cfg_attr(
+    all(not(target_os = "macos"), not(test)),
+    expect(dead_code, reason = "only macOS asks what the reader chose")
+)]
 fn chosen(action: Option<&str>, minimise: bool) -> Action {
     match action {
         Some("Minimize") => Action::Minimise,
