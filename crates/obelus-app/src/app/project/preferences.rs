@@ -948,18 +948,35 @@ impl App {
 
     /// The directories a change to the theme in force could arrive in.
     ///
-    /// The two themes are looked for in, and wherever the one in force
-    /// really lives. That last one is the whole reason this is not simply
-    /// the first two: a theme file is often a link into a directory
-    /// something else owns -- a dotfiles repository, or a desktop that
-    /// themes every program it has -- and what rewrites it rewrites that
-    /// directory, which a watch on the link's own would never hear about.
+    /// The one themes are looked for in, and wherever the one in force
+    /// really lives. That second one is the whole reason this is not simply
+    /// the first: a theme file is often a link into a directory something
+    /// else owns -- a dotfiles repository, or a desktop that themes every
+    /// program it has -- and what rewrites it rewrites that directory, which
+    /// a watch on the link's own would never hear about.
     pub(in crate::app) fn theme_watches(&self) -> Vec<PathBuf> {
         let mut directories = self.theme_directories();
         if let Some(path) = self.theme_file(&self.settled.config.theme)
             && let Some(parent) = obelus_config::resolved(&path).parent()
         {
             directories.push(parent.to_path_buf());
+        }
+        // And omarchy's `current`, while omarchy's theme is the one named:
+        // omarchy replaces the directory under it whole, so for a moment
+        // there is no file to find the directory by -- and before omarchy
+        // first renders one there never was. `current` stays, and the theme
+        // arriving in it is heard there; reading it takes up the watch on
+        // the new directory again.
+        if self.settled.config.theme == builtin::OMARCHY
+            && let Some(current) = self
+                .settled
+                .omarchy
+                .as_deref()
+                .and_then(Path::parent)
+                .and_then(Path::parent)
+            && !directories.iter().any(|directory| directory == current)
+        {
+            directories.push(current.to_path_buf());
         }
         // And wherever its picture is, which a theme may name from anywhere:
         // a picture replaced under its own name is the theme changing as

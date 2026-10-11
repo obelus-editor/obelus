@@ -216,6 +216,44 @@ fn omarchys_theme_is_offered_where_omarchy_wrote_one() {
     );
 }
 
+/// omarchy's theme named before omarchy has written it arrives when it is
+/// written: the directory it is written in is made then, whole, so it is
+/// heard in the one above it that omarchy keeps.
+///
+/// Deliberate break: no watch on omarchy's `current` (the new directory is
+/// then nobody's theme, and the screen keeps the colours it had).
+#[test]
+fn omarchys_theme_arrives_when_omarchy_first_writes_it() {
+    let scratch = reader("omarchy-later");
+    std::fs::write(scratch.join("config.toml"), "theme = \"omarchy\"\n").expect("the settings");
+    let state = support::Scratch::new("omarchy-later-state");
+    std::fs::create_dir_all(state.join("current")).expect("the directory");
+    let rendered = state.join("current/theme/obelus.toml");
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.omarchy_for_test(rendered.clone());
+    app.config_file_for_test(scratch.join("config.toml"));
+    support::lay_out(&mut app, 70, 14);
+    assert_eq!(app.theme().background, builtin::DARK.background);
+
+    // Made beside and moved into place, the way omarchy swaps a theme.
+    std::fs::create_dir_all(state.join("next")).expect("the directory");
+    std::fs::write(
+        state.join("next/obelus.toml"),
+        "base = \"dark\"\nbackground = \"#1a1b26\"\n",
+    )
+    .expect("the theme");
+    std::fs::rename(state.join("next"), state.join("current/theme")).expect("the swap");
+    app.handle(Event::Watched(obelus_watch::Changed {
+        path: state.join("current/theme"),
+    }));
+    assert_eq!(
+        app.theme().background,
+        written::hex("#1a1b26").expect("a colour"),
+        "omarchy's theme was written and not heard"
+    );
+}
+
 /// A file that will not read leaves the colours alone and says so.
 ///
 /// A theme thrown away over one bad line would be a screen the reader
