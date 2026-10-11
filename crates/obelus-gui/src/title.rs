@@ -219,12 +219,33 @@ const fn action() -> Action {
     Action::Nothing
 }
 
+/// Does what a double click on the bar was chosen to do.
 fn double_clicked(window: &Window, action: Action) {
     match action {
-        Action::Zoom => window.set_maximized(!window.is_maximized()),
+        Action::Zoom => zoom(window),
         Action::Minimise => window.set_minimized(true),
         Action::Nothing => {}
     }
+}
+
+/// Zooms the window, or brings it back from being zoomed, the way the
+/// green button does.
+///
+/// Through AppKit rather than winit's `set_maximized`, which zooms the same
+/// way but also writes down that the window is maximised, and puts that
+/// back on the way out of full screen. Unzoomed since by the green button,
+/// which winit does not hear, the window would then zoom again by itself.
+#[cfg(target_os = "macos")]
+fn zoom(window: &Window) {
+    if let Some(shown) = appkit(window) {
+        shown.performZoom(None);
+    }
+}
+
+/// See `interval`.
+#[cfg(not(target_os = "macos"))]
+fn zoom(window: &Window) {
+    window.set_maximized(!window.is_maximized());
 }
 
 /// Paints the title bar the colour the page is drawn on, and has the system
