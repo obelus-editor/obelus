@@ -394,18 +394,16 @@ impl Behind {
         let area = self.area;
         let inside = x >= area.x && x < area.right() && y >= area.y && y < area.bottom();
         let ring = x == area.x || x + 1 == area.right() || y == area.y || y + 1 == area.bottom();
-        inside
-            && ring
-            && page
-                .look(x, y)
-                .text
-                .chars()
-                .next()
-                .is_some_and(|glyph| ('\u{2500}'..='\u{257f}').contains(&glyph))
+        inside && ring && a_line(page.look(x, y).text)
     }
 
     /// The cells of the ring with a letter under them, which a window puts
     /// back outside the line -- see `Painter::frame`.
+    ///
+    /// A letter and not a line. What is under the ring may be a rule, or
+    /// the frame of another box, and a window draws those as lines of its
+    /// own and never from the font: put back here, the glyph was a stub of
+    /// a second line beside the first, at the font's height and thickness.
     pub(crate) fn lettered_ring(&self, page: &Page) -> Vec<(u16, u16)> {
         let area = self.area;
         (area.top()..area.bottom())
@@ -414,10 +412,18 @@ impl Behind {
                 self.ring_holds(page, x, y)
                     && self
                         .look(x, y)
-                        .is_some_and(|under| !under.text.trim().is_empty())
+                        .is_some_and(|under| !under.text.trim().is_empty() && !a_line(under.text))
             })
             .collect()
     }
+}
+
+/// Whether a cell holds one of the box-drawing lines, which is what a
+/// frame and a rule are spelled in.
+fn a_line(text: &str) -> bool {
+    text.chars()
+        .next()
+        .is_some_and(|glyph| ('\u{2500}'..='\u{257f}').contains(&glyph))
 }
 
 /// Where a switch is in the frame being drawn, and how it stands.
@@ -1990,13 +1996,19 @@ mod tests {
     }
 
     /// What a box was put over keeps its letters under the ring, and only
-    /// under the ring.
+    /// its letters and only under the ring.
     ///
-    /// Deliberate break: answer an empty list from `Behind::lettered_ring`,
+    /// Which cells, and nothing about how they are drawn: that `frame`
+    /// draws them, and before its line, is the painter's, and nothing here
+    /// can see it.
+    ///
+    /// Deliberate breaks: answer an empty list from `Behind::lettered_ring`,
     /// which is what `frame` did before -- the ground put back and no
-    /// letter, a blank half cell all round a hover. Or drop `ring_holds`
-    /// from it, and the letters under the inside of the box are put back
-    /// under its glass, and the one a list drew over is drawn twice.
+    /// letter, a blank half cell all round a hover. Drop `ring_holds` from
+    /// it, and the letters under the inside of the box are put back under
+    /// its glass, and under the cell a list drew over goes the letter that
+    /// was there before the list. Drop `a_line`, and the rule under the
+    /// ring is drawn from the font beside the frame's own line.
     #[test]
     fn a_frame_puts_back_the_letters_under_its_ring() {
         let page = written(&[
@@ -2005,7 +2017,7 @@ mod tests {
             "\u{2570}\u{2500}\u{2500}\u{256f}",
         ]);
         let frame = Behind {
-            cells: "fn main(    "
+            cells: "fn main\u{2500}    "
                 .chars()
                 .map(|character| {
                     let mut cell = Cell::default();
@@ -2017,9 +2029,9 @@ mod tests {
         };
         assert_eq!(
             frame.lettered_ring(&page),
-            [(0, 0), (1, 0), (3, 0), (3, 1)],
-            "the space in `fn m`, the row of spaces, the inside of the box \
-             and the cell written over are not"
+            [(0, 0), (1, 0), (3, 0)],
+            "the space in `fn m`, the rule under the right-hand side, the row of \
+             spaces, the inside of the box and the cell written over are not"
         );
     }
 
