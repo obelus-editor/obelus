@@ -7,18 +7,23 @@ use obelus_keymap::{control, control_drawn_as_command, draw_control_as_command};
 /// What is drawn follows the switch, and only the switch.
 ///
 /// Broken deliberately by having `label` pass `false` for command: the
-/// first assertion fails.
+/// assertion that the screen says command fails.
 #[test]
 fn the_screen_draws_control_the_way_the_switch_says() {
     let save = control('s');
-    let glyphs = obelus_icons::enabled();
+    // Either way of drawing it, because which is the glyph switch's.
+    let says = |label: &str, word: &str, glyph: char| label.contains(word) || label.contains(glyph);
 
     draw_control_as_command(true);
     assert!(control_drawn_as_command());
-    assert_eq!(save.label(), save.label_as(glyphs, true));
+    assert!(
+        says(&save.label(), "Cmd", obelus_icons::key::COMMAND),
+        "the screen does not say command: {}",
+        save.label()
+    );
     // The file's spelling is not the screen's.
     assert_eq!(save.label_in(false), "Ctrl+s");
 
     draw_control_as_command(false);
-    assert_eq!(save.label(), save.label_as(glyphs, false));
+    assert!(says(&save.label(), "Ctrl", obelus_icons::key::CONTROL));
 }

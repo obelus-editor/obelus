@@ -303,6 +303,29 @@ mod tests {
         );
     }
 
+    /// What a press with command arrives as follows the platform's constant,
+    /// and so does whether a terminal is told it was command.
+    ///
+    /// Deliberate break: passing `false` to `modifiers_of` in `pressed`
+    /// fails this on macOS, and passing `true` fails it everywhere else.
+    #[test]
+    fn a_press_with_command_is_what_the_platform_says() {
+        let save = pressed(
+            &character("s"),
+            PhysicalKey::Code(Physical::KeyS),
+            ModifiersState::SUPER,
+            false,
+        )
+        .expect("cmd+s is a press");
+        let wanted = match COMMAND_IS_CONTROL {
+            true => KeyModifiers::CONTROL,
+            false => KeyModifiers::SUPER,
+        };
+        assert_eq!(save.modifiers, wanted);
+        assert_eq!(by_command(ModifiersState::SUPER), COMMAND_IS_CONTROL);
+        assert!(!by_command(ModifiersState::CONTROL));
+    }
+
     /// The three keys a Mac window answers are the window's, and the rest of
     /// command is Obelus's.
     ///
