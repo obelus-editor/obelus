@@ -869,6 +869,10 @@ impl ApplicationHandler<Waking> for Showing {
             here.can_bring(),
         )));
         self.here = Some(here);
+        // And Obelus opened again from Finder, which is this process's to
+        // answer, once there is a window to come forward with.
+        #[cfg(target_os = "macos")]
+        crate::elsewhere::again::listen(self.proxy.clone());
         // On for good there -- see `allow_the_input_method`.
         self.on_x11 = on_x11(&window);
         if self.on_x11 {

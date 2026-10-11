@@ -23,6 +23,8 @@
 //! Each of those waits, so a request goes out and is answered later on the
 //! window's loop: the application is never kept waiting for a compositor.
 
+#[cfg(target_os = "macos")]
+pub(crate) mod again;
 #[cfg(target_os = "linux")]
 mod wayland;
 #[cfg(target_os = "linux")]
@@ -255,7 +257,7 @@ pub(crate) const fn ask(_window: &Window) -> Option<winit::event_loop::AsyncRequ
 /// Goes there, with whatever the compositor gave for it.
 pub(crate) fn go(going: Going, token: Option<String>) {
     match going {
-        Going::Open(tree) => open(&tree, token.as_deref()),
+        Going::Open(tree) => open(Some(&tree), token.as_deref()),
         Going::Bring(door) => {
             let_it_come_forward();
             obelus_app::app::knock(&door, token.as_deref());
@@ -265,6 +267,9 @@ pub(crate) fn go(going: Going, token: Option<String>) {
 
 /// Starts another Obelus in a window of its own, on `tree`.
 ///
+/// Or on none, which is a start the way the desktop starts one: in the home
+/// directory, asking which project -- see `again`.
+///
 /// The same binary as this one, which is what "a window" means here: `obg`
 /// starts `obg`. With the token in both of the variables a toolkit reads it
 /// from, set on the child alone -- the one this process was started with is
@@ -273,7 +278,7 @@ pub(crate) fn go(going: Going, token: Option<String>) {
 /// On the runtime, whose process handling reaps a child that is let go of:
 /// the new window is the reader's from here, and nothing in this one waits
 /// for it to close.
-fn open(tree: &Path, token: Option<&str>) {
+fn open(tree: Option<&Path>, token: Option<&str>) {
     let program = match std::env::current_exe() {
         Ok(program) => program,
         Err(error) => {
@@ -283,9 +288,17 @@ fn open(tree: &Path, token: Option<&str>) {
     };
     let _inside = obelus_runtime::handle().enter();
     let mut command = tokio::process::Command::new(&program);
+    match tree {
+        Some(tree) => {
+            command.arg(tree).current_dir(tree);
+        }
+        None => {
+            if let Some(home) = std::env::home_dir() {
+                command.current_dir(home);
+            }
+        }
+    }
     command
-        .arg(tree)
-        .current_dir(tree)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -307,7 +320,7 @@ fn open(tree: &Path, token: Option<&str>) {
     #[cfg(unix)]
     command.process_group(0);
     match command.spawn() {
-        Ok(_) => tracing::info!(tree = %tree.display(), "started another window"),
+        Ok(_) => tracing::info!(tree = ?tree, "started another window"),
         Err(error) => {
             tracing::warn!(%error, program = %program.display(), "another window would not start");
         }
