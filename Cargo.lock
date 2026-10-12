@@ -4838,6 +4838,7 @@ name = "obelus-theme"
 version = "0.12.0"
 dependencies = [
  "anyhow",
+ "image",
  "obelus-text",
  "ratatui",
  "toml 1.1.5+spec-1.1.0",

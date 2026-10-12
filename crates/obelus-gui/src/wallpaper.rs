@@ -22,12 +22,9 @@
 //! once is the normal case. One drawn at its own size is left alone,
 //! because its own size is what it is drawn at.
 
-use std::{
-    path::Path,
-    sync::{
-        Arc, Condvar, Mutex, PoisonError,
-        atomic::{AtomicU64, Ordering},
-    },
+use std::sync::{
+    Arc, Condvar, Mutex, PoisonError,
+    atomic::{AtomicU64, Ordering},
 };
 
 use obelus_theme::wallpaper::{Anchor, Edge, Fit, Wallpaper};
@@ -200,7 +197,7 @@ impl Waiting {
 /// file named a picture that was there when it was read -- that much is
 /// marked on the file -- so what is left to go wrong is the picture itself.
 fn decoded(wallpaper: &Wallpaper, screen: [u32; 2]) -> Option<Hung> {
-    let pixels = match read(&wallpaper.file) {
+    let pixels = match obelus_theme::wallpaper::decode(&wallpaper.file) {
         Ok(pixels) => pixels,
         Err(error) => {
             tracing::warn!(%error, file = %wallpaper.file.display(), "a wallpaper that would not decode");
@@ -219,13 +216,6 @@ fn decoded(wallpaper: &Wallpaper, screen: [u32; 2]) -> Option<Hung> {
         fit: wallpaper.fit,
         anchor: wallpaper.anchor,
     })
-}
-
-fn read(file: &Path) -> image::ImageResult<image::RgbaImage> {
-    Ok(image::ImageReader::open(file)?
-        .with_guessed_format()?
-        .decode()?
-        .into_rgba8())
 }
 
 /// The picture at the size it will be drawn at, or smaller.

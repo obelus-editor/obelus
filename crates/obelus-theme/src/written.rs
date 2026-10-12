@@ -11,7 +11,11 @@
 //! later is a colour every file on disk is silently already answering,
 //! because the base answers it.
 
-use std::path::{Path, PathBuf};
+use std::{
+    cell::RefCell,
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
 use ratatui::style::Color;
 
@@ -94,13 +98,18 @@ pub fn read_where(path: &Path) -> std::result::Result<Read, Wrong> {
             .span()
             .map(|bytes| obelus_text::span_of_bytes(&said, &bytes)),
     })?;
-    let mut troubles = Vec::new();
-    let wallpaper = hung(path, &said, &table, &mut troubles);
+    let spans = Spans::of(&said);
+    let (colours, noted) = over_noting(&table);
+    let mut troubles: Vec<Wrong> = noted
+        .iter()
+        .map(|(keys, why)| {
+            let keys: Vec<&str> = keys.iter().map(String::as_str).collect();
+            spans.wrong(&keys, why)
+        })
+        .collect();
+    let wallpaper = hung(path, &spans, &table, &mut troubles);
     Ok(Read {
-        worn: Worn {
-            colours: over(&table),
-            wallpaper,
-        },
+        worn: Worn { colours, wallpaper },
         troubles,
     })
 }
@@ -126,12 +135,11 @@ pub struct Read {
 /// has gone looks, without a word, exactly like a theme that never had one.
 fn hung(
     path: &Path,
-    said: &str,
+    spans: &Spans<'_>,
     table: &toml::Table,
     troubles: &mut Vec<Wrong>,
 ) -> Option<Wallpaper> {
     let hung = table.get("wallpaper")?;
-    let spans = Spans::of(said);
     let Some(hung) = hung.as_table() else {
         troubles.push(spans.wrong(&["wallpaper"], "A wallpaper is a table of its own"));
         return None;
@@ -279,26 +287,70 @@ pub struct Wrong {
 /// The theme a table describes, over the one it builds on.
 #[must_use]
 pub fn over(table: &toml::Table) -> Theme {
+    over_noting(table).0
+}
+
+/// Where a line is in a theme file, by the keys that lead to it, and what
+/// Obelus could not make of it.
+type Noted = Vec<(Vec<String>, String)>;
+
+/// The theme a table describes, and every line of it that did nothing: a
+/// value that is not a colour, a name no colour has, a base that is no
+/// built-in theme.
+///
+/// What a name is, is asked of the reading itself: every key looked for is
+/// written down as it is looked for, and a key in the file nobody looked for
+/// is one nothing reads -- a misspelling, as silent as leaving the colour
+/// out. A list of the names kept beside this would be a second answer to
+/// which colours there are, and the first colour added to the theme and
+/// not to the list would be marked as a misspelling in every file that set
+/// it.
+fn over_noting(table: &toml::Table) -> (Theme, Noted) {
+    let asked: RefCell<HashSet<(&str, &str)>> = RefCell::new(HashSet::new());
+    let noted: RefCell<Noted> = RefCell::new(Vec::new());
     // Named `base` rather than `mode`, because it names a theme rather than
     // a kind of one: what a file inherits is thirty-seven colours, and which
     // thirty-seven is the whole of what this says.
-    let base = table
-        .get("base")
-        .and_then(toml::Value::as_str)
-        .and_then(builtin::by_name)
-        .unwrap_or(&builtin::DARK);
+    let base = match table.get("base") {
+        None => &builtin::DARK,
+        Some(said) => match said.as_str().and_then(builtin::by_name) {
+            Some(base) => base,
+            None => {
+                noted.borrow_mut().push((
+                    vec!["base".to_string()],
+                    "No built-in theme is called this, so it builds on dark".to_string(),
+                ));
+                &builtin::DARK
+            }
+        },
+    };
     let syntax = table.get("syntax").and_then(toml::Value::as_table);
     let terminal = table.get("terminal").and_then(toml::Value::as_table);
-    let of = |key: &str, fallback: Color| colour(table, key, fallback);
-    let syn = |key: &str, fallback: Color| match syntax {
-        Some(table) => colour(table, key, fallback),
-        None => fallback,
+    let read = |section: &'static str, within: Option<&toml::Table>, key: &'static str| {
+        asked.borrow_mut().insert((section, key));
+        let said = within?.get(key)?;
+        let read = said.as_str().and_then(hex);
+        if read.is_none() {
+            let mut at: Vec<String> = Vec::new();
+            if !section.is_empty() {
+                at.push(section.to_string());
+            }
+            at.push(key.to_string());
+            noted.borrow_mut().push((
+                at,
+                "Not a colour, so it is the one this builds on\nA colour is written #rrggbb or #rgb"
+                    .to_string(),
+            ));
+        }
+        read
     };
+    let of = |key: &'static str, fallback: Color| read("", Some(table), key).unwrap_or(fallback);
+    let syn = |key: &'static str, fallback: Color| read("syntax", syntax, key).unwrap_or(fallback);
 
     // A field at a time rather than a loop over names, so a colour added to
     // the theme and not read here does not compile. The same rule the
     // settings follow, and the reason both are this long.
-    Theme {
+    let theme = Theme {
         background: of("background", base.background),
         foreground: of("foreground", base.foreground),
         gutter: of("gutter", base.gutter),
@@ -345,42 +397,46 @@ pub fn over(table: &toml::Table) -> Theme {
         // a colour left to Obelus stays left, so it is worked out from
         // *this* theme's colours rather than from the base's.
         terminal: std::array::from_fn(|index| {
-            terminal
-                .and_then(|table| table.get(crate::TERMINAL_NAMES[index]))
-                .and_then(toml::Value::as_str)
-                .and_then(|said| {
-                    let read = hex(said);
-                    if read.is_none() {
-                        tracing::warn!(
-                            key = crate::TERMINAL_NAMES[index],
-                            said,
-                            "not a colour, so it was left alone"
-                        );
-                    }
-                    read
-                })
-                .or(base.terminal[index])
+            read("terminal", terminal, crate::TERMINAL_NAMES[index]).or(base.terminal[index])
         }),
-    }
-}
-
-/// One colour out of a table, or what it inherits.
-///
-/// A line that will not parse is a line that did nothing, with a word in
-/// the log for whoever wrote it: the rest of the file is still colours, and
-/// a theme thrown away over one typo is a screen the reader cannot use to
-/// find the typo.
-fn colour(table: &toml::Table, key: &str, fallback: Color) -> Color {
-    let Some(said) = table.get(key).and_then(toml::Value::as_str) else {
-        return fallback;
     };
-    match hex(said) {
-        Some(colour) => colour,
-        None => {
-            tracing::warn!(key, said, "not a colour, so it was left alone");
-            fallback
+
+    // And what nobody asked for. A line that will not do is a line that did
+    // nothing, and is said, rather than the theme thrown away: the rest of
+    // the file is still colours, and a theme refused over one typo is a
+    // screen the reader cannot use to find the typo.
+    let asked = asked.into_inner();
+    let mut noted = noted.into_inner();
+    for (key, said) in table {
+        match key.as_str() {
+            // Read elsewhere: the base above, the picture by `hung`, and
+            // what a theme says about itself by whatever lists it.
+            "base" | "wallpaper" | "about" => {}
+            section @ ("syntax" | "terminal") => match said.as_table() {
+                Some(within) => noted.extend(
+                    within
+                        .keys()
+                        .filter(|key| !asked.contains(&(section, key.as_str())))
+                        .map(|key| {
+                            (
+                                vec![section.to_string(), key.clone()],
+                                "No colour here is called this".to_string(),
+                            )
+                        }),
+                ),
+                None => noted.push((
+                    vec![section.to_string()],
+                    "This is a table of colours of its own".to_string(),
+                )),
+            },
+            key if !asked.contains(&("", key)) => noted.push((
+                vec![key.to_string()],
+                "No colour in a theme is called this".to_string(),
+            )),
+            _ => {}
         }
     }
+    (theme, noted)
 }
 
 /// `#rrggbb`, which is how every palette anybody has is written down.
@@ -413,6 +469,43 @@ pub fn hex(said: &str) -> Option<Color> {
 #[cfg(test)]
 mod tests {
     use ratatui::style::Color;
+
+    /// Every line that does nothing is noted where it is -- a value that is
+    /// not a colour, a name no colour has at the top and in each table, a
+    /// base that is no built-in theme -- and nothing else is: the colours
+    /// that are colours, and the tables something else reads.
+    ///
+    /// Deliberate breaks: no walk for what nobody asked for (only the bad
+    /// value and the base are noted), and the names asked for not written
+    /// down as they are asked (every colour in the file is then a
+    /// misspelling).
+    #[test]
+    fn a_line_that_does_nothing_is_noted_where_it_is() {
+        let table: toml::Table =
+            "base = \"dusk\"\nbackground = \"blue\"\nbackgound = \"#111111\"\n\
+             foreground = \"#abcdef\"\n\
+             [syntax]\nkeywrd = \"#123456\"\ncomment = \"#654321\"\n\
+             [terminal]\nred = \"#123456\"\npurple = \"#123456\"\n\
+             [wallpaper]\nfile = \"rain.jpg\"\n[about]\nauthor = \"someone\"\n"
+                .parse()
+                .expect("a table");
+        let (theme, noted) = super::over_noting(&table);
+        let mut at: Vec<String> = noted.iter().map(|(keys, _)| keys.join(".")).collect();
+        at.sort();
+        assert_eq!(
+            at,
+            [
+                "backgound",
+                "background",
+                "base",
+                "syntax.keywrd",
+                "terminal.purple"
+            ]
+        );
+        // And what could be used, was.
+        assert_eq!(theme.foreground, Color::Rgb(0xab, 0xcd, 0xef));
+        assert_eq!(theme.syntax.comment, Color::Rgb(0x65, 0x43, 0x21));
+    }
 
     /// A terminal colour a file names is the file's, and one it does not is
     /// worked out from the file's own colours -- not from the base it built

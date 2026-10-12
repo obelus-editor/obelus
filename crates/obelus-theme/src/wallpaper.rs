@@ -11,7 +11,7 @@
 //! of a given size is the window's arithmetic, because only the window
 //! knows its size.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// The picture, and how it is laid under the page.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -133,6 +133,24 @@ impl Anchor {
             .find(|(name, _)| *name == word)
             .map(|(_, anchor)| *anchor)
     }
+}
+
+/// The picture in `file`, decoded, its pixels as the file has them.
+///
+/// The one reading of a wallpaper: the window that draws it and the check a
+/// theme is put through before it is published both come here, so a theme
+/// that passes the check has a picture the window can draw. By what the
+/// bytes are rather than by the file's name, which a picture saved from a
+/// browser does not always say truly.
+///
+/// # Errors
+///
+/// When the file cannot be read, or is not a picture this can decode.
+pub fn decode(file: &Path) -> image::ImageResult<image::RgbaImage> {
+    Ok(image::ImageReader::open(file)?
+        .with_guessed_format()?
+        .decode()?
+        .into_rgba8())
 }
 
 #[cfg(test)]
