@@ -10,10 +10,18 @@ license.workspace = true
 workspace = true
 
 [dependencies]
+obelus-claim.workspace = true
 obelus-download.workspace = true
 obelus-runtime.workspace = true
 obelus-sink.workspace = true
+obelus-theme.workspace = true
 dirs.workspace = true
 reqwest.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+# Packing a package to install, in the shape the registry packs one.
+flate2.workspace = true
+sha2.workspace = true
+tar.workspace = true

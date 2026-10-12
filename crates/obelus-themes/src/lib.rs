@@ -21,6 +21,8 @@
 //! [`root`] -- not beside the reader's settings, where their own themes are
 //! and where a theme of theirs by the same name goes first.
 
+pub mod install;
+
 use std::path::{Path, PathBuf};
 
 use obelus_sink::Sink;
@@ -47,6 +49,20 @@ pub enum Event {
         /// Every theme it lists that Obelus can make sense of.
         themes: Vec<Listed>,
         /// Why nothing was fetched, where nothing was.
+        failure: Option<String>,
+    },
+    /// How far an install has got.
+    Installing {
+        /// Which theme, by its name.
+        name: String,
+        /// What is known about how far along it is.
+        progress: install::Progress,
+    },
+    /// An install is over: done, or why not.
+    Installed {
+        /// Which theme, by its name.
+        name: String,
+        /// Why it is not installed, where it is not.
         failure: Option<String>,
     },
 }

@@ -4868,11 +4868,16 @@ name = "obelus-themes"
 version = "0.12.0"
 dependencies = [
  "dirs",
+ "flate2",
+ "obelus-claim",
  "obelus-download",
  "obelus-runtime",
  "obelus-sink",
+ "obelus-theme",
  "reqwest",
  "serde_json",
+ "sha2 0.11.0",
+ "tar",
  "tracing",
 ]
 

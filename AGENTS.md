@@ -647,9 +647,12 @@ crates/
                     groups, and where a theme taken from it is kept
                     · fetched when the reader opens the page, and kept; read
                       field by field, and an entry Obelus cannot use is left
-                      out (lib)
+                      out (lib); a theme is installed whole or not at all,
+                      which commit it came from is written inside it, and one
+                      Obelus at a time installs a theme (install)
   obelus-download/  what every fetch from somebody else's server shares:
-                    reading a body within a limit
+                    reading a body within a limit, fetching one with its
+                    progress, checking its hash and unpacking it
   obelus-config/    the settings, their file, and what each one is
                     · what a project may set is a property of the setting; the
                       file holds preferences, not state; a setting says where

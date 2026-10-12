@@ -50,6 +50,14 @@ pub fn found_in(directory: &Path) -> Vec<(String, PathBuf)> {
     let mut found: Vec<(String, bool, PathBuf)> = entries
         .filter_map(std::result::Result::ok)
         .map(|entry| entry.path())
+        // Not what is hidden: a theme on its way in is unpacked beside where
+        // it goes, under a name starting with a dot, and half of one is not
+        // a theme to offer.
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| !name.starts_with('.'))
+        })
         .filter_map(|path| {
             if path.extension().is_some_and(|kind| kind == "toml") {
                 let name = path.file_stem()?.to_str()?.to_string();
@@ -525,6 +533,28 @@ pub fn hex(said: &str) -> Option<Color> {
 #[cfg(test)]
 mod tests {
     use ratatui::style::Color;
+
+    /// A theme on its way in, unpacked under a hidden name beside where it
+    /// goes, is not offered as one.
+    ///
+    /// Deliberate break: what is hidden not left out, which offers
+    /// `.rain.arriving-1` beside `rain` for as long as an install takes.
+    #[test]
+    fn what_is_hidden_is_not_a_theme() {
+        let root = std::env::temp_dir().join(format!("obelus-hidden-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for name in ["rain", ".rain.arriving-1"] {
+            std::fs::create_dir_all(root.join(name)).expect("the directory");
+            std::fs::write(root.join(name).join("theme.toml"), "base = \"dark\"\n")
+                .expect("the theme");
+        }
+        let names: Vec<String> = super::found_in(&root)
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect();
+        assert_eq!(names, ["rain"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     /// A colour is six or three hexadecimal digits and nothing else: a
     /// character of several bytes among them is not one, and is said not
