@@ -828,6 +828,10 @@ impl Painter {
                 Some(level) => {
                     let pane = placed.levels[level].rect;
                     let (glass, written) = parted_at(plan, placed.levels[level].end);
+                    let glass = match placed.glass_so_far {
+                        Some(copy) => in_place_of(glass, placed.levels[level].glass, copy),
+                        None => glass,
+                    };
                     self.follow(&mut pass, &glass, &self.levels[0].bindings);
                     for tile in tiles([f32::MIN, f32::MIN, f32::MAX, f32::MAX], &[pane]) {
                         self.within(&mut pass, tile);

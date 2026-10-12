@@ -281,6 +281,7 @@ impl Painter {
         // putting it back on the screen in pieces, where a pane is on its
         // way in -- see `paint.wgsl` and `Painter::lifted`.
         self.placed.drawn = self.quads.len();
+        let mut so_far = None;
         if let (Some(top), Some(pane), Some(along)) = (top, pane, moving.pane) {
             let height = pane[3] - pane[1];
             // A pane comes from the side it is joined to, which is the
@@ -294,8 +295,17 @@ impl Painter {
             // it there -- which stands where it is while the slab goes over
             // it -- and cut off at the seam it comes out of, which is the
             // rectangle it was given and keeps.
-            let glass = self.placed.levels[top].glass;
-            self.quads[glass].rect[1] += shift;
+            //
+            // A copy, drawn in the frame in the place of the glass, and the
+            // glass itself left where the pane is going: a box over the
+            // pane is what is written on it and comes in with it, so what
+            // its own glass reads is the pane as it will be.
+            let glass = self.quads[self.placed.levels[top].glass];
+            let [left, top_edge, wide, tall] = glass.rect;
+            so_far = Some(Quad {
+                rect: [left, top_edge + shift, wide, tall],
+                ..glass
+            });
             self.placed.arriving = Some(top);
             self.placed.composed = true;
             self.covering(&[pane]);
@@ -350,6 +360,10 @@ impl Painter {
             && let Some(first) = first
         {
             self.sliding_under(page, first, said.bands, fonts);
+        }
+        if let Some(glass) = so_far {
+            self.placed.glass_so_far = Some(self.quads.len());
+            self.quads.push(glass);
         }
         // After the last glyph has been placed and before anything is drawn:
         // a glyph that found no room made the texture again, and every

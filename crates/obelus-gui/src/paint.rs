@@ -303,6 +303,10 @@ struct Placed {
     arriving: Option<usize>,
     /// And the piece that puts that picture back on the screen.
     lifting: Option<Range<usize>>,
+    /// And its glass where the pane has got to: a copy, drawn in the frame
+    /// in the place of the glass every other picture reads -- see
+    /// `in_place_of`.
+    glass_so_far: Option<usize>,
     /// The glass under each list catching up, where its rows have not
     /// arrived yet, with which level's glass it is. On the screen and not
     /// in the frame, so drawn there among the pieces with that level's
@@ -465,6 +469,28 @@ fn parted_at(plan: Plan, at: usize) -> (Plan, Plan) {
         }
     }
     (before, after)
+}
+
+/// A plan with one quad drawn in the place of another, reading what the
+/// other read.
+///
+/// For the glass of a pane on its way in, which the frame draws where the
+/// pane has got to and every picture of a box over the pane reads where it
+/// is going: the box comes in with the pane, so it is the pane as it will
+/// be that it is over.
+fn in_place_of(plan: Plan, quad: usize, copy: usize) -> Plan {
+    let mut placed = Vec::with_capacity(plan.len() + 2);
+    for (quads, reads) in plan {
+        if !quads.contains(&quad) {
+            placed.push((quads, reads));
+            continue;
+        }
+        placed.push((quads.start..quad, reads));
+        placed.push((copy..copy + 1, reads));
+        placed.push((quad + 1..quads.end, reads));
+    }
+    placed.retain(|(quads, _)| !quads.is_empty());
+    placed
 }
 
 /// What one level was put over, as the screen had it: the picture its
@@ -1230,7 +1256,7 @@ mod tests {
 
         use super::super::{
             GLASS, HANGING, Level, Placed, Quad, Reads, SOLID, box_of, casts, catching,
-            glass::kept_still, on_the_screen, parted_at, put_over, uncovered,
+            glass::kept_still, in_place_of, on_the_screen, parted_at, put_over, uncovered,
         };
         use crate::grid::{Behind, Page, Rolled};
 
@@ -1566,6 +1592,44 @@ mod tests {
             assert_eq!(
                 written,
                 vec![(8..12, Reads::Nothing), (12..13, Reads::Level(1))]
+            );
+        }
+
+        /// The frame draws the glass of a pane on its way in where the pane
+        /// has got to, in the glass's own place and reading what it read --
+        /// and nothing else moves.
+        ///
+        /// Deliberate break: hand the plan back as it came. The frame then
+        /// draws the glass where the pane is going, and what shows through
+        /// it slides in under the pane's rows rather than standing still.
+        /// Which picture a box over the pane reads is `put_over`'s, and is
+        /// the glass where it is going -- see the test after this one.
+        #[test]
+        fn a_pane_coming_in_has_its_glass_drawn_where_it_has_got_to() {
+            let plan = vec![
+                (0..5, Reads::Nothing),
+                (5..6, Reads::Level(0)),
+                (6..9, Reads::Nothing),
+            ];
+            assert_eq!(
+                in_place_of(plan.clone(), 5, 40),
+                vec![
+                    (0..5, Reads::Nothing),
+                    (40..41, Reads::Level(0)),
+                    (6..9, Reads::Nothing),
+                ]
+            );
+            // And from the middle of a run, which is the one shape this
+            // could be handed that is not the glass on a run of its own.
+            assert_eq!(
+                in_place_of(plan, 7, 40),
+                vec![
+                    (0..5, Reads::Nothing),
+                    (5..6, Reads::Level(0)),
+                    (6..7, Reads::Nothing),
+                    (40..41, Reads::Nothing),
+                    (8..9, Reads::Nothing),
+                ]
             );
         }
 
