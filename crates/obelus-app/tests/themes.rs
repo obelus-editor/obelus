@@ -434,7 +434,12 @@ fn a_theme_whose_directory_is_replaced_arrives_here() {
 ///
 /// So every placeholder in it is filled with a colour of its own, and every
 /// one of those colours has to turn up somewhere in the theme that comes
-/// out.
+/// out. And it is read the way the editor reads the file omarchy renders,
+/// with nothing to mark: a misspelt key is a mark now, on the theme file of
+/// every reader omarchy renders it for.
+///
+/// Deliberate break for that half: a key the template does not have added
+/// to what is rendered, which is marked.
 #[test]
 fn the_template_for_omarchy_names_colours_obelus_has() {
     let template = std::fs::read_to_string(
@@ -466,6 +471,19 @@ fn the_template_for_omarchy_names_colours_obelus_has() {
 
     let table: toml::Table = said.parse().expect("the rendered template is not toml");
     let theme = written::over(&table);
+    let scratch = support::Scratch::new("omarchy-template");
+    let rendered = scratch.join("obelus.toml");
+    std::fs::write(&rendered, &said).expect("the rendered template");
+    let troubles: Vec<String> = written::read_where(&rendered)
+        .expect("the rendered template reads")
+        .troubles
+        .into_iter()
+        .map(|wrong| wrong.why)
+        .collect();
+    assert!(
+        troubles.is_empty(),
+        "the rendered template has lines Obelus marks: {troubles:?}"
+    );
     // Every colour the template put in, somewhere in what came out.
     let mut got = vec![
         theme.background,
