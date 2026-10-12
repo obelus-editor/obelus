@@ -40,11 +40,12 @@ struct Heard {
 /// A pane, what was under it, and the thread that said it.
 type Under = (ThreadId, Rect, Joined, Vec<Cell>);
 
-/// A band or a pane, as it was said.
+/// A band, a pane or a rule, as it was said.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Told {
     Band(Rect),
     Pane(Rect, Joined),
+    Rule(Rect),
 }
 
 impl Heard {
@@ -71,7 +72,9 @@ impl obelus_ui::shapes::Shapes for Heard {
 
     fn spun(&self, _area: Rect) {}
 
-    fn ruled(&self, _area: Rect) {}
+    fn ruled(&self, area: Rect) {
+        self.told(Told::Rule(area));
+    }
 
     fn capped(&self, _keys: &str, _area: Rect, _cap: Color, _page: Color, _edge: Color) {}
 
@@ -229,7 +232,7 @@ fn either_side_of_the_pane(told: &[Told]) -> (Rect, Joined, Vec<Rect>, Vec<Rect>
         told.iter()
             .filter_map(|told| match told {
                 Told::Band(area) => Some(*area),
-                Told::Pane(..) => None,
+                Told::Pane(..) | Told::Rule(..) => None,
             })
             .collect()
     };
@@ -311,6 +314,81 @@ fn a_band_under_the_settings_is_said_before_them() {
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConfigOpen);
     let (_, joined) = the_file_is_said_before_the_pane(&mut app, "Theme", true);
     assert_eq!(joined, Joined::Screen, "the settings are the whole screen");
+}
+
+/// The status row's rule is said again after a pane that takes its row in,
+/// over the pane, and only where the pane is.
+///
+/// It is said once at the top of the frame, before anything is put over
+/// the page, and a window takes whatever is said before a pane and inside
+/// it to be under it (`Page::layer` in `obelus-gui`): the line under the
+/// settings went back to the font's glyph, and the names' glass ran on past
+/// the line they stand on. The settings draw nothing on that row and the
+/// names end at it, so the rule after each pane is this one and no other.
+///
+/// Deliberate break: take `shapes::ruled` out of `laid_over`, and neither
+/// pane has a rule said after it.
+#[test]
+fn the_status_row_s_rule_is_said_again_over_a_pane_on_its_row() {
+    let edge = 22;
+    let rule_after = |app: &mut App| {
+        let since = told_so_far();
+        let _ = support::cells_of(app, 60, 24);
+        let told = told_since(since);
+        let at = told
+            .iter()
+            .rposition(|told| matches!(told, Told::Pane(..)))
+            .unwrap_or_else(|| panic!("a pane: {told:?}"));
+        let Told::Pane(pane, _) = told[at] else {
+            unreachable!("found as a pane")
+        };
+        let rule = told[at + 1..].iter().find_map(|told| match told {
+            Told::Rule(area) if area.y == edge => Some(*area),
+            _ => None,
+        });
+        (pane, rule, told)
+    };
+
+    let mut app = App::new(vec![support::open_fixture("long.rs")]);
+    app.statuses_for_test(std::collections::HashMap::new());
+    app.config_file_for_test(
+        std::env::temp_dir()
+            .join(format!("obelus-panes-rule-{}", std::process::id()))
+            .join("config.toml"),
+    );
+    support::lay_out(&mut app, 60, 24);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConfigOpen);
+    let (pane, rule, told) = rule_after(&mut app);
+    assert_eq!(pane, Rect::new(0, 0, 60, 24), "the settings: {told:?}");
+    assert_eq!(
+        rule,
+        Some(Rect::new(0, edge, 60, 1)),
+        "under the settings: {told:?}"
+    );
+
+    let mut app = App::new(vec![support::open_fixture("long.rs")]);
+    app.statuses_for_test(std::collections::HashMap::new());
+    support::lay_out(&mut app, 60, 24);
+    app.handle(obelus_app::event::Event::Fonts {
+        here: vec!["Iosevka".to_string()],
+        otherwise: None,
+    });
+    app.open_names("fonts");
+    let (pane, rule, told) = rule_after(&mut app);
+    assert_eq!(
+        pane.bottom() - 1,
+        edge,
+        "the names stand on the rule: {pane:?}"
+    );
+    assert_eq!(
+        rule,
+        Some(Rect {
+            y: edge,
+            height: 1,
+            ..pane
+        }),
+        "under the names: {told:?}"
+    );
 }
 
 /// The status row under the settings is the page's colour before the glass

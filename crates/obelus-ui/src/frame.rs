@@ -481,7 +481,7 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
             // file behind it, which is a row saying two things at once.
             Layer::Settings => {
                 if let Some(view) = settings::SettingsView::new(app) {
-                    shapes::behind(area, shapes::Joined::Screen, app.theme().background, cells);
+                    laid_over(cells, area, shapes::Joined::Screen, app, regions.edge);
                     // The same three rectangles as ever -- the page, the rule
                     // under it, the row at the foot. What changed is who
                     // writes the last of them: the page does, because it is
@@ -513,7 +513,7 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
             // `Room::Screen` says about them.
             Layer::Counts => {
                 if let Some(view) = counts::CountsView::new(app) {
-                    shapes::behind(area, shapes::Joined::Screen, app.theme().background, cells);
+                    laid_over(cells, area, shapes::Joined::Screen, app, regions.edge);
                     bars::of(Whose::Counts, || view.render(area, cells));
                 }
             }
@@ -522,7 +522,7 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
             // and a terminal, which has no glass, as the page alone.
             Layer::Gone => {
                 if let Some(view) = gone::GoneView::new(app) {
-                    shapes::behind(area, shapes::Joined::Screen, app.theme().background, cells);
+                    laid_over(cells, area, shapes::Joined::Screen, app, regions.edge);
                     view.render(area, cells);
                 }
             }
@@ -552,11 +552,12 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
                     // Standing on the row below it, like every list that
                     // leaves the page showing above it -- and its rule
                     // with it, the same as a compact list's.
-                    shapes::behind(
+                    laid_over(
+                        cells,
                         with_its_rules(region, room, regions.edge),
                         shapes::Joined::Below,
-                        app.theme().background,
-                        cells,
+                        app,
+                        regions.edge,
                     );
                     bars::of(Whose::Names, || {
                         names::NamesView::new(names, app.theme()).render(region, cells);
@@ -776,6 +777,31 @@ fn with_its_rules(band: Rect, room: Rect, edge: Rect) -> Rect {
     }
 }
 
+/// Says a pane is put over the page -- and the status row's rule again,
+/// over it, where the pane takes that row in.
+///
+/// The rule is said once, at the top of the frame, before anything is put
+/// over the page; a list that stands on it, or a dialog that takes the
+/// whole screen, is then over it. A window asks whose a cell is by what was
+/// said after what, so the line was the pane's to cover: it went back to
+/// the font's glyph, and a list's glass ran on past the line it stands on.
+/// The row is the pane's edge as much as the page's, and it is said again
+/// as the pane's -- only where the pane is, so that no part of it is said
+/// twice.
+fn laid_over(
+    cells: &mut CellBuffer,
+    pane: Rect,
+    joined: shapes::Joined,
+    app: &impl Screen,
+    edge: Rect,
+) {
+    shapes::behind(pane, joined, app.theme().background, cells);
+    let rule = edge.intersection(pane);
+    if !rule.is_empty() {
+        shapes::ruled(Rect { height: 1, ..rule });
+    }
+}
+
 /// Draws a list over whatever is behind it, with its edge and its preview.
 ///
 /// One function for all of them, because a list opened over the code, over
@@ -833,7 +859,7 @@ fn list_over(
         },
         None => pane,
     };
-    shapes::behind(pane, joined, app.theme().background, cells);
+    laid_over(cells, pane, joined, app, edge);
     picker::PickerView::new(list, app.theme(), app.phase(), in_front(app, whose))
         .render(region, cells);
     if let Some(row) = own_row {
