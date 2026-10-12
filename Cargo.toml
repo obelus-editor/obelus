@@ -573,3 +573,23 @@ tokio-tungstenite = { version = "0.30", features = ["rustls-tls-native-roots"] }
 inherits = "release"
 lto = "thin"
 codegen-units = 1
+
+# Every file under a `tests/` is a binary of its own, and so is every crate's
+# unit tests -- over a hundred of them -- and each one is linked statically
+# with the whole of what it depends on, debug info and all. That debug info
+# was two thirds of every binary, so a checkout that had run the tests once
+# held 63G, most of it the same DWARF copied a hundred times.
+#
+# Split, it stays in a `.dwo` beside the object it came from and a binary
+# only points at it, so it is on the disk once. A platform that cannot split
+# it -- Windows, which only packs -- is not asked: cargo leaves the setting
+# out where rustc does not offer it. And what nobody here steps through, the
+# dependencies, keeps the line tables and nothing else, which is what a
+# backtrace reads. The same checkout holds 30G now, and building it from
+# nothing is two and a half minutes quicker; what is left in a binary is the
+# code and its symbols, one copy per binary, which only fewer binaries cut.
+[profile.dev]
+split-debuginfo = "unpacked"
+
+[profile.dev.package."*"]
+debug = "line-tables-only"
