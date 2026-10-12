@@ -387,6 +387,7 @@ fn enter_puts_the_chosen_row_in_the_box() {
 /// frame puts the list back and the second enter fills the box again.
 #[test]
 fn a_project_chosen_from_the_list_is_where_the_walk_stops() {
+    let _list = the_list();
     let scratch = support::Scratch::new("choosing-stops-at-a-project");
     let project = scratch.path().join("alpha");
     std::fs::create_dir_all(project.join("inner")).expect("directories");
@@ -417,6 +418,46 @@ fn a_project_chosen_from_the_list_is_where_the_walk_stops() {
         app.working_directory(),
         project,
         "it did not open the project"
+    );
+}
+
+/// And a file chosen from the list is the end of the walk too: enter
+/// opens it.
+///
+/// The frame builds the list again from the directory the file is in,
+/// which offers the one file just taken -- so before the list was kept
+/// shut there, the enter after it put the same file in the box again, and
+/// the one after that, and the reader had to know to press escape.
+///
+/// Broken deliberately by setting `naming_shut` to `false` in
+/// `naming_list_key`: the second enter fills the box rather than opening.
+#[test]
+fn a_file_chosen_from_the_list_opens_on_the_next_enter() {
+    let scratch = support::Scratch::new("choosing-a-file");
+    let file = scratch.write("notes.md", "# Notes\n");
+    let mut app = asking();
+    open_another(&mut app);
+    for character in format!("{}/", scratch.path().display()).chars() {
+        press(&mut app, KeyCode::Char(character));
+    }
+
+    press(&mut app, KeyCode::Enter);
+    support::render(&mut app, 120, 20);
+    assert!(
+        app.choosing().expect("asking").typed.ends_with("notes.md"),
+        "the file did not go into the box"
+    );
+
+    press(&mut app, KeyCode::Enter);
+
+    assert!(app.choosing().is_none(), "it is still asking");
+    // Resolved, because a temporary directory on macOS is reached
+    // through a link.
+    assert_eq!(
+        app.current_buffer()
+            .and_then(|buffer| buffer.path().canonicalize().ok()),
+        file.canonicalize().ok(),
+        "the file chosen is not the one open"
     );
 }
 
@@ -603,28 +644,22 @@ fn choosing_a_project_settles_it() {
     );
 }
 
-/// Whether the list the page offers has `root` on it, as the file Obelus
-/// keeps it in says.
+/// Taken by every test here that writes the list of projects or asks
+/// what is on it.
 ///
-/// Read from the file rather than asked of the page, which reads the same
-/// file through the code under test. Compared resolved, because a
-/// temporary directory on macOS is reached through a link.
-fn remembered(root: &std::path::Path) -> bool {
-    let list = obelus_logging::state_directory()
-        .expect("somewhere to keep state")
-        .join("projects.toml");
-    let Ok(text) = std::fs::read_to_string(list) else {
-        return false;
-    };
-    let root = std::fs::canonicalize(root).expect("the project is there");
-    text.parse::<toml::Table>()
-        .expect("the list reads")
-        .get("opened")
-        .and_then(toml::Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|row| row.get("path")?.as_str())
-        .any(|path| std::fs::canonicalize(path).is_ok_and(|path| path == root))
+/// One file for the whole binary, written read-modify-write and without a
+/// lock -- a choice `projects::remember` makes for Obelus -- so two tests
+/// writing it at once can each put back a list without the other's row:
+/// choosing a project remembers it, and asking which project forgets any
+/// scratch directory that has gone since. The unit tests beside the list
+/// take turns for the same reason.
+static THE_LIST: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// A turn at the list, held for as long as the test runs.
+fn the_list() -> std::sync::MutexGuard<'static, ()> {
+    THE_LIST
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// A project chosen on the page goes on the page's list.
@@ -635,6 +670,7 @@ fn remembered(root: &std::path::Path) -> bool {
 /// project is opened and the file never hears of it.
 #[test]
 fn choosing_a_project_remembers_it() {
+    let _list = the_list();
     let scratch = support::Scratch::new("choosing-remembers");
     gix::init(scratch.path()).expect("a repository");
     let mut app = asking();
@@ -647,7 +683,7 @@ fn choosing_a_project_remembers_it() {
 
     assert!(app.choosing().is_none(), "it is still asking");
     assert!(
-        remembered(scratch.path()),
+        support::remembered(scratch.path()),
         "a project chosen on the page is not on its list"
     );
 }
@@ -663,6 +699,7 @@ fn choosing_a_project_remembers_it() {
 /// been asked.
 #[test]
 fn a_project_not_chosen_on_the_page_is_not_remembered() {
+    let _list = the_list();
     let scratch = support::Scratch::new("started-in-it");
     gix::init(scratch.path()).expect("a repository");
     let mut app = App::new(Vec::new());
@@ -670,7 +707,7 @@ fn a_project_not_chosen_on_the_page_is_not_remembered() {
 
     assert_eq!(app.working_directory(), scratch.path(), "not put on it");
     assert!(
-        !remembered(scratch.path()),
+        !support::remembered(scratch.path()),
         "a project nobody chose on the page is on its list"
     );
 }
@@ -1192,6 +1229,7 @@ fn a_copy_a_cut_and_a_paste_work_in_the_page_that_asks() {
 /// the project, and the one after the write does).
 #[test]
 fn closing_the_project_asks_about_what_is_unwritten_and_then_which_project() {
+    let _list = the_list();
     let scratch = support::Scratch::new("closing-asks");
     let file = scratch.join("file.rs");
     std::fs::write(&file, "fn main() {}\n").expect("a file");
@@ -1241,6 +1279,7 @@ fn closing_the_project_asks_about_what_is_unwritten_and_then_which_project() {
 /// one there was in `App::leave_the_project`: the file is still open.
 #[test]
 fn closing_a_project_with_nothing_unwritten_goes_straight_to_asking() {
+    let _list = the_list();
     let scratch = support::Scratch::new("closing-clean");
     let file = scratch.join("file.rs");
     std::fs::write(&file, "fn main() {}\n").expect("a file");
@@ -1263,6 +1302,7 @@ fn closing_a_project_with_nothing_unwritten_goes_straight_to_asking() {
 /// `App::answered`: Obelus stays on the project.
 #[test]
 fn closing_without_saving_leaves_the_file_as_it_was() {
+    let _list = the_list();
     let scratch = support::Scratch::new("closing-discards");
     let file = scratch.join("file.rs");
     std::fs::write(&file, "fn main() {}\n").expect("a file");

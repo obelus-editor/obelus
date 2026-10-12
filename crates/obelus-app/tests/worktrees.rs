@@ -312,6 +312,32 @@ fn a_terminal_lists_the_worktrees_and_says_where_it_is() {
     );
 }
 
+/// Going to another tree does not put it on the list the page that asks
+/// which project offers: that list is of the answers the page was given.
+///
+/// Broken deliberately by remembering in `App::settle`, which going to a
+/// tree shares with the page: the tree is on the list.
+#[test]
+fn going_to_a_tree_does_not_remember_it() {
+    let scratch = Scratch::new("worktrees-not-remembered");
+    let (main, feature, _) = repository(&scratch);
+    let asked = Arc::new(Asked::default());
+    let (mut app, _events) = window_on(&main, &asked);
+
+    dispatch::dispatch(&mut app, Command::WorktreeList);
+    choose_in_place(&mut app, "feature");
+
+    assert_eq!(
+        resolved(app.working_directory()),
+        resolved(&feature),
+        "this window did not go to the tree"
+    );
+    assert!(
+        !support::remembered(&feature),
+        "a tree gone to is on the list of projects chosen"
+    );
+}
+
 /// In a window, `ctrl+enter` puts this Obelus on the tree, closing what was
 /// open in the one it left and saying where it is now.
 ///

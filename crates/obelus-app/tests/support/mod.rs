@@ -958,3 +958,28 @@ pub(crate) fn heard_requests(
     }
     seen
 }
+
+/// Whether the list the page offers has `root` on it, as the file Obelus
+/// keeps it in says.
+///
+/// Read from the file rather than asked of the page, which reads the same
+/// file through the code under test. Compared resolved, because a
+/// temporary directory on macOS is reached through a link.
+#[allow(dead_code)]
+pub(crate) fn remembered(root: &std::path::Path) -> bool {
+    let list = obelus_logging::state_directory()
+        .expect("somewhere to keep state")
+        .join("projects.toml");
+    let Ok(text) = std::fs::read_to_string(list) else {
+        return false;
+    };
+    let root = std::fs::canonicalize(root).expect("the project is there");
+    text.parse::<toml::Table>()
+        .expect("the list reads")
+        .get("opened")
+        .and_then(toml::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|row| row.get("path")?.as_str())
+        .any(|path| std::fs::canonicalize(path).is_ok_and(|path| path == root))
+}
