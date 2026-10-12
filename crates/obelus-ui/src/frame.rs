@@ -388,14 +388,17 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
         }),
     }
     // Nothing open and nothing to open: the one moment a reader needs
-    // telling what the keys are. Not while something has taken the region,
-    // because then the region is not empty -- but a list or a question
-    // leaves it alone, and this is what they would be over.
+    // telling what the keys are. Under a dialog that takes the whole
+    // region as well, because a dialog is glass and this is what is
+    // behind it: left out there, the settings opened from here were over a
+    // blank page, and the screen the reader had just been looking at was
+    // nowhere in them. A terminal draws the dialog over every cell of it,
+    // so there it is drawn and not seen.
     //
     // Or, where there is no project yet, the question of which: a screen
     // of its own rather than the welcome screen, because every key the
     // welcome screen names is about a project.
-    if app.reading_nothing() && !layers.filling() {
+    if app.reading_nothing() {
         match projects::ProjectsView::new(app) {
             Some(view) => bars::of(Whose::Projects, || view.render(regions.editor, cells)),
             None => welcome::WelcomeView::new(app).render(regions.editor, cells),

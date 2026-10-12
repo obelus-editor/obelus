@@ -20,8 +20,9 @@ use ratatui::{buffer::Cell, layout::Rect, style::Color};
 #[derive(Default)]
 struct Heard {
     /// The mark the light runs across, and the two colours it runs
-    /// between.
-    marks: Mutex<Vec<(Rect, Color, Color)>>,
+    /// between, with the thread that said it: the welcome screen is under
+    /// the settings in another test's frames too.
+    marks: Mutex<Vec<(ThreadId, Rect, Color, Color)>>,
     /// And where one thing was said to stop and the next to begin, with
     /// the thread that said it: a second test here opens the notes too.
     partings: Mutex<Vec<(ThreadId, Rect)>>,
@@ -90,7 +91,7 @@ impl obelus_ui::shapes::Shapes for Heard {
 
     fn sheened(&self, area: Rect, from: Color, to: Color) {
         if let Ok(mut marks) = self.marks.lock() {
-            marks.push((area, from, to));
+            marks.push((std::thread::current().id(), area, from, to));
         }
     }
     fn stroked(&self, stroke: obelus_ui::shapes::Stroke) {
@@ -421,6 +422,96 @@ fn the_row_a_setting_is_typed_on_is_there_under_the_glass() {
     the_status_row_is_under_the_glass(&mut app, "Speaks as", Joined::Screen);
 }
 
+/// The welcome screen is under the settings opened from it: a dialog is
+/// glass, and what is behind it is the screen the reader was looking at.
+/// And it is drawn and not seen in a terminal, where the dialog is over
+/// every cell of it.
+///
+/// Deliberate break: draw the welcome screen only where nothing fills the
+/// region (`!layers.filling()`), which is what it was. What the settings
+/// were put over is then a blank page, and the glass shows nothing.
+#[test]
+fn the_welcome_screen_is_under_the_settings() {
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.config_file_for_test(
+        std::env::temp_dir()
+            .join(format!("obelus-panes-welcome-{}", std::process::id()))
+            .join("config.toml"),
+    );
+    support::lay_out(&mut app, 60, 24);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConfigOpen);
+    let since = heard_under_so_far();
+    let cells = support::cells_of(&mut app, 60, 24);
+    let me = std::thread::current().id();
+    let under = heard().under.lock().expect("nothing poisoned it");
+    let (pane, behind) = under
+        .iter()
+        .filter(|(whose, ..)| *whose == me)
+        .skip(since)
+        .filter(|(_, _, joined, _)| *joined == Joined::Screen)
+        .map(|(_, pane, _, cells)| (*pane, cells))
+        .last()
+        .expect("the settings were said as a pane");
+    let width = usize::from(pane.width);
+    let text = |rows: Vec<String>| rows.join("\n");
+    let behind = text(
+        behind
+            .chunks(width)
+            .map(|row| row.iter().map(ratatui::buffer::Cell::symbol).collect())
+            .collect(),
+    );
+    assert!(
+        behind.contains("Open a file"),
+        "the settings were put over a blank page:\n{behind}"
+    );
+    let shown = text(
+        (0..24)
+            .map(|y| (0..60).map(|x| cells[(x, y)].symbol()).collect())
+            .collect(),
+    );
+    assert!(
+        !shown.contains("Open a file"),
+        "the welcome screen shows through the settings in a terminal:\n{shown}"
+    );
+    drop(under);
+
+    // And the counts, the other dialog that takes the whole screen.
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    support::lay_out(&mut app, 60, 24);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::CountLines);
+    let tally = |code| obelus_search::counts::Tally {
+        code,
+        comments: 0,
+        blanks: 0,
+    };
+    app.handle(obelus_app::event::Event::Counted(Box::new(
+        obelus_search::counts::Counted {
+            languages: vec![obelus_search::counts::Language {
+                name: "Rust",
+                files: 4,
+                extension: Some("rs"),
+                tally: tally(400),
+                children: Vec::new(),
+            }],
+            files: Vec::new(),
+            total: tally(400),
+        },
+    )));
+    let cells = support::cells_of(&mut app, 60, 24);
+    let shown = text(
+        (0..24)
+            .map(|y| (0..60).map(|x| cells[(x, y)].symbol()).collect())
+            .collect(),
+    );
+    assert!(shown.contains("Rust"), "the counts are not up:\n{shown}");
+    assert!(
+        !shown.contains("Open a file"),
+        "the welcome screen shows through the counts in a terminal:\n{shown}"
+    );
+}
+
 /// And the same under a list, which a question on the status row opens
 /// over without putting it away: renaming the row the reader is on in the
 /// file list. The list's pane runs down to the row it types into, so the
@@ -614,13 +705,20 @@ fn a_band_under_the_names_is_said_before_them() {
 #[test]
 fn the_mark_says_where_it_is_and_what_the_light_runs_between() {
     let heard = heard();
-    heard.marks.lock().expect("the marks").clear();
 
     let mut app = App::new(Vec::new());
     app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
     let cells = support::cells_of(&mut app, 64, 20);
 
-    let marks = heard.marks.lock().expect("the marks").clone();
+    let me = std::thread::current().id();
+    let marks: Vec<(Rect, Color, Color)> = heard
+        .marks
+        .lock()
+        .expect("the marks")
+        .iter()
+        .filter(|(whose, ..)| *whose == me)
+        .map(|&(_, area, from, to)| (area, from, to))
+        .collect();
     assert_eq!(marks.len(), 1, "not one mark: {marks:?}");
     let (area, from, to) = marks[0];
 
