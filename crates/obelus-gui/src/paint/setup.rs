@@ -414,6 +414,7 @@ impl Painter {
             picture: None,
             lifted: None,
             left: None,
+            left_lifted: None,
             gone: Vec::new(),
             plain_bindings,
             nothing,
@@ -533,6 +534,7 @@ impl Painter {
         // A picture of the window at its old size is a pane leaving from the
         // wrong place, so what was leaving is simply gone.
         self.left = None;
+        self.left_lifted = None;
         self.gone.clear();
     }
 
@@ -583,6 +585,8 @@ impl Painter {
         let showing = (self.picture.as_ref()).map(|whole| binder.bound(&whole.view, &self.nothing));
         let left = (self.left.as_ref()).map(|whole| binder.bound(&whole.view, &self.nothing));
         let lifted = (self.lifted.as_ref()).map(|whole| binder.bound(&whole.view, &self.nothing));
+        let left_lifted =
+            (self.left_lifted.as_ref()).map(|whole| binder.bound(&whole.view, &self.nothing));
         let plain = binder.bound(&self.nothing, &self.nothing);
         for (seen, bindings) in self.levels.iter_mut().zip(levels) {
             seen.bindings = bindings;
@@ -595,6 +599,9 @@ impl Painter {
             whole.bindings = bindings;
         }
         if let (Some(whole), Some(bindings)) = (self.lifted.as_mut(), lifted) {
+            whole.bindings = bindings;
+        }
+        if let (Some(whole), Some(bindings)) = (self.left_lifted.as_mut(), left_lifted) {
             whole.bindings = bindings;
         }
         self.plain_bindings = plain;
@@ -657,6 +664,7 @@ impl Painter {
         self.picture_while_wanted();
         if self.placed.going.is_none() {
             self.left = None;
+            self.left_lifted = None;
         }
         let acquiring = Instant::now();
         let acquired = self.surface.get_current_texture();
@@ -724,20 +732,35 @@ impl Painter {
         // Cut where its glass is, which is where it was cut from what was
         // under it: the half row above a list's rule is the file, and taken
         // along it would be a strip of the file going down with the list.
-        self.gone = going
+        let levels: Vec<Option<&Level>> = going
             .iter()
             .map(|gone| {
-                let level = self
-                    .placed
+                self.placed
                     .levels
                     .iter()
-                    .find(|level| level.pane && level.area == gone.area);
+                    .find(|level| level.pane && level.area == gone.area)
+            })
+            .collect();
+        self.gone = going
+            .iter()
+            .zip(&levels)
+            .map(|(gone, level)| {
                 (
                     level.map_or_else(|| box_of(gone.area, cell), |level| level.rect),
                     gone.joined,
                 )
             })
             .collect();
+        // What is written over the page from the lowest of them on goes in
+        // a picture of its own, where they were -- see `left_lifted`. Only
+        // where every one of them is a level: one that is not has no glass
+        // to keep apart from what is on it, and goes as one picture.
+        let kept_from = match levels.iter().all(Option::is_some) {
+            true => levels.iter().flatten().map(|level| level.end).min(),
+            false => None,
+        };
+        self.placed.kept_from = kept_from;
+        self.left_lifted = kept_from.map(|_| self.whole());
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -889,6 +912,32 @@ impl Painter {
                     }
                     self.follow(&mut pass, &catching(&placed), &picture.bindings);
                 }
+                // The screen a pane went from, being kept: what was
+                // written on the panes that went is left out where they
+                // were, and drawn into a picture of its own below.
+                None if placed.kept_from.is_some() => {
+                    let from = placed.kept_from.unwrap_or(placed.drawn);
+                    let (glass, written) = parted_at(on_the_screen(&placed), from);
+                    self.follow(&mut pass, &glass, &self.levels[0].bindings);
+                    let gone: Vec<[f32; 4]> = self.gone.iter().map(|&(pane, _)| pane).collect();
+                    for tile in tiles([f32::MIN, f32::MIN, f32::MAX, f32::MAX], &gone) {
+                        self.within(&mut pass, tile);
+                        self.follow(&mut pass, &written, &self.levels[0].bindings);
+                    }
+                    drop(pass);
+                    if let Some(lifted) = &self.left_lifted {
+                        let mut pass = self.pass_on(
+                            encoder,
+                            "obelus left lifted",
+                            &lifted.view,
+                            wgpu::Color::TRANSPARENT,
+                        );
+                        for pane in gone {
+                            self.within(&mut pass, pane);
+                            self.follow(&mut pass, &written, &self.levels[0].bindings);
+                        }
+                    }
+                }
                 // And a pane that went, over the frame it went from.
                 None => {
                     self.the_frame(&mut pass);
@@ -896,6 +945,12 @@ impl Painter {
                         && let Some(left) = &self.left
                     {
                         pass.set_bind_group(0, &left.bindings, &[]);
+                        drawing(&mut pass, going);
+                    }
+                    if let Some(going) = placed.going_lifted
+                        && let Some(lifted) = &self.left_lifted
+                    {
+                        pass.set_bind_group(0, &lifted.bindings, &[]);
                         drawing(&mut pass, going);
                     }
                 }
@@ -1041,6 +1096,9 @@ impl Painter {
                 Reads::Left => self.left.as_ref().map_or(otherwise, |left| &left.bindings),
                 Reads::Lifted => {
                     (self.lifted.as_ref()).map_or(otherwise, |lifted| &lifted.bindings)
+                }
+                Reads::LeftLifted => {
+                    (self.left_lifted.as_ref()).map_or(otherwise, |lifted| &lifted.bindings)
                 }
             };
             pass.set_bind_group(0, bindings, &[]);

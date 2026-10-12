@@ -230,6 +230,11 @@ pub(crate) struct Painter {
     /// what it is drawn leaving out of (`keep`). Made there, and let go by
     /// the first frame with nothing leaving.
     left: Option<Whole>,
+    /// And what was written on the panes that went, on nothing: `left`
+    /// holds their glass and not what was on it, so the glass can stay
+    /// over what it showed while what was on it goes -- the way a pane
+    /// arrives, the other way round (`lifted`).
+    left_lifted: Option<Whole>,
     /// Where each pane that went stood in it -- its glass, which is where
     /// it was cut from the screen under it -- and the edge it goes along.
     gone: Vec<([f32; 4], Joined)>,
@@ -303,6 +308,12 @@ struct Placed {
     arriving: Option<usize>,
     /// And the piece that puts that picture back on the screen.
     lifting: Option<Range<usize>>,
+    /// Where what is written over the page begins, on the screen being
+    /// kept for the panes that went: drawn into `left_lifted` where they
+    /// were, and into `left` everywhere else.
+    kept_from: Option<usize>,
+    /// And the pieces that put what was written on them back.
+    going_lifted: Option<Range<usize>>,
     /// And its glass where the pane has got to: a copy, drawn in the frame
     /// in the place of the glass every other picture reads -- see
     /// `in_place_of`.
@@ -401,6 +412,8 @@ enum Reads {
     Left,
     /// What is written on a pane on its way in.
     Lifted,
+    /// What was written on the panes that went.
+    LeftLifted,
 }
 
 /// Runs of quads, each with the pictures it is drawn with.
@@ -526,6 +539,12 @@ fn catching(placed: &Placed) -> Plan {
         .iter()
         .map(|&(glass, level)| (glass..glass + 1, Reads::Level(level)))
         .chain(placed.going.clone().map(|going| (going, Reads::Left)))
+        .chain(
+            placed
+                .going_lifted
+                .clone()
+                .map(|going| (going, Reads::LeftLifted)),
+        )
         .chain(
             placed
                 .lifting
@@ -1633,6 +1652,38 @@ mod tests {
             );
         }
 
+        /// What was written on a pane that went is put back out of its own
+        /// picture, and the pane's glass out of the screen it went from.
+        ///
+        /// Deliberate break: leave `going_lifted` out of `catching`. What
+        /// was written on the pane is then taken from the screen it went
+        /// from, which holds only its glass there: the list goes blank as
+        /// it leaves, and its glass goes twice. What this does not see is
+        /// the screen being kept in two pictures, which wants a device:
+        /// what was checked by hand is a list closed over the welcome
+        /// screen, shot frame by frame, with the mark seen through the
+        /// glass standing where it is while the rows go.
+        #[test]
+        fn what_was_written_on_a_pane_that_went_is_its_own_picture() {
+            let placed = Placed {
+                drawn: 20,
+                moved: 30,
+                composed: true,
+                going: Some(23..24),
+                going_lifted: Some(24..25),
+                ..Placed::default()
+            };
+            assert_eq!(
+                catching(&placed),
+                vec![
+                    (20..23, Reads::Nothing),
+                    (23..24, Reads::Left),
+                    (24..25, Reads::LeftLifted),
+                    (25..30, Reads::Nothing),
+                ]
+            );
+        }
+
         /// What a level was put over is the glass of every level under it
         /// and what it was put over -- and never its own picture, which is
         /// the one being drawn into.
@@ -1648,7 +1699,7 @@ mod tests {
                     plan.iter().all(|(_, reads)| match reads {
                         Reads::Nothing => true,
                         Reads::Level(read) => *read < level,
-                        Reads::Left | Reads::Lifted => false,
+                        Reads::Left | Reads::Lifted | Reads::LeftLifted => false,
                     }),
                     "level {level} reads its own picture or one over it: {plan:?}"
                 );
