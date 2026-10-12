@@ -197,8 +197,8 @@
       <p><kbd>Insert</kbd> 是 <code>toggle-replace</code>：打的字会盖掉光标下的字，而不是插在前面，开着的时候状态行会写着 <code>Replacing</code>。<kbd>Esc</kbd> 取消选择，或者关掉最上面那个东西。</p>
 
       <h3>移动光标，以及在列表里</h3>
-      <p>移动光标不算命令，所以不在上面的表里：方向键、<kbd>PageUp</kbd>/<kbd>PageDown</kbd>、<kbd>Home</kbd>/<kbd>End</kbd>（行首、行尾）、<kbd>Ctrl+Home</kbd>/<kbd>Ctrl+End</kbd>（文件开头、结尾）。上下是按屏幕上看到的行走的，长行折过来以后也一样。<kbd>Shift</kbd> 不对应任何命令，只用来扩大选区。</p>
-      <p>在列表里（各种选择列表、设置页、代码行数统计页）：打字筛选，<kbd>↑</kbd><kbd>↓</kbd> 选，<kbd>PageUp</kbd>/<kbd>PageDown</kbd> 翻页，<kbd>Home</kbd>/<kbd>End</kbd> 到头、到尾，<kbd>Enter</kbd> 选定当前这一行，<kbd>Esc</kbd> 取消。列表有自己的按键时，底部那一行会写出它们。功能键在整屏的视图里也能按，会直接换成它对应的视图：在文件列表里按 <kbd>F6</kbd> 就换成搜索，<kbd>F3</kbd> 是文件列表的另一个 tab。</p>
+      <p>移动光标不算命令，所以不在上面的表里：方向键、<kbd>PageUp</kbd>/<kbd>PageDown</kbd>、<kbd>Home</kbd>/<kbd>End</kbd>（行首、行尾）、<kbd>Ctrl+Home</kbd>/<kbd>Ctrl+End</kbd>（文件开头、结尾）、<kbd>Ctrl+↑</kbd>/<kbd>Ctrl+↓</kbd>（视图滚一行，光标不动）。上下是按屏幕上看到的行走的，长行折过来以后也一样。<kbd>Shift</kbd> 不对应任何命令，只用来扩大选区。</p>
+      <p>在列表里（各种选择列表、设置页、代码行数统计页）：打字筛选，<kbd>↑</kbd><kbd>↓</kbd> 选，<kbd>PageUp</kbd>/<kbd>PageDown</kbd> 翻页，<kbd>Home</kbd>/<kbd>End</kbd> 到头、到尾，<kbd>Enter</kbd> 选定当前这一行，<kbd>Esc</kbd> 取消。列表下面有预览时，两者分着用键：<kbd>↑</kbd><kbd>↓</kbd> 和 <kbd>Ctrl+PageUp</kbd>/<kbd>Ctrl+PageDown</kbd> 动列表，<kbd>PageUp</kbd>/<kbd>PageDown</kbd> 和 <kbd>Ctrl+↑</kbd>/<kbd>Ctrl+↓</kbd> 滚预览。列表有自己的按键时，底部那一行会写出它们。功能键在整屏的视图里也能按，会直接换成它对应的视图：在文件列表里按 <kbd>F6</kbd> 就换成搜索，<kbd>F3</kbd> 是文件列表的另一个 tab。</p>
 
       <h3>在对话里</h3>
       <p><kbd>Enter</kbd> 发送，<kbd>Alt+Enter</kbd> 换行（终端支持的话 <kbd>Shift+Enter</kbd> 也行）。在关于笔记的对话里，输入框空着时按 <kbd>→</kbd>，会填进一句建议的开场白。<kbd>Shift+Tab</kbd> 切换 agent 自己的模式，显示在最底下那一行。<kbd>Esc</kbd> 让 agent 停下，它正在跑的命令也一起停。<kbd>Alt+t</kbd> 跳到这段对话所属的笔记。agent 问你问题时是一张卡片：<kbd>↑</kbd><kbd>↓</kbd> 选，<kbd>Enter</kbd> 回答。</p>

@@ -1287,6 +1287,35 @@ fn paging_stops_at_both_ends() {
     );
 }
 
+/// Control and an arrow scroll the file a row and leave the cursor: the
+/// wheel's glance, from the keyboard. A cursor that came along would make it
+/// the arrow again, and a view that moved a screenful would make it paging.
+///
+/// Deliberate break: `editor_scrolling` answering `None` sends the key on to
+/// the motions, which have nothing for it, and the view stays put.
+#[test]
+fn control_and_an_arrow_scroll_the_file_and_leave_the_cursor() {
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    support::lay_out(&mut app, 40, 12);
+    let top = |app: &App| app.current_buffer().expect("a buffer").viewport().top.get();
+    let line = |app: &App| app.current_buffer().expect("a buffer").cursor().line.get();
+    press(&mut app, KeyCode::Down);
+    assert_eq!(
+        (top(&app), line(&app)),
+        (0, 1),
+        "not where this test starts"
+    );
+
+    support::press_control_key(&mut app, KeyCode::Down);
+    support::press_control_key(&mut app, KeyCode::Down);
+    assert_eq!(top(&app), 2, "the view did not move two rows");
+    assert_eq!(line(&app), 1, "the cursor came along");
+
+    support::press_control_key(&mut app, KeyCode::Up);
+    assert_eq!(top(&app), 1, "the view did not come back a row");
+    assert_eq!(line(&app), 1, "the cursor moved on the way back");
+}
+
 /// The thumb reaches the bottom of the track when the last line is on
 /// screen. That is the one position a reader checks it against: a bar that
 /// stops short says there is more below when there is not.
@@ -1558,6 +1587,57 @@ fn a_rendering_scrolls_by_rows() {
         support::text_block(&support::render(&mut app, 60, 8)),
         support::text_block(&first),
         "paging back did not come back"
+    );
+}
+
+/// Control and an arrow scroll a rendering a row, as they scroll the file:
+/// here the bare arrows do as well, because a rendering has no cursor, and a
+/// key that moved one document and did nothing in the next would be two
+/// rules for one key. A row of the rendering, which is not a line of the
+/// file, so the walk goes far enough down for the two to differ.
+///
+/// Deliberate break: taking the control arms out of `view_step` hands the key
+/// to the file's own scrolling, which steps by lines, and the two part
+/// company by the tenth step.
+#[test]
+fn control_and_an_arrow_scroll_a_rendering() {
+    use obelus_command::Command;
+
+    let rendering = || {
+        let mut app = App::new(vec![support::open_fixture("sample.md")]);
+        support::lay_out(&mut app, 60, 8);
+        obelus_app::app::dispatch::dispatch(&mut app, Command::PreviewToggle);
+        // A frame, which is what lays the rows out: before one there are
+        // no rows to scroll and the arrows go to the file's cursor.
+        support::render(&mut app, 60, 8);
+        app
+    };
+    let mut bare = rendering();
+    let mut control = rendering();
+    let first = support::render(&mut control, 60, 8);
+
+    for step in 1..=10 {
+        press(&mut bare, KeyCode::Down);
+        support::press_control_key(&mut control, KeyCode::Down);
+        let arrow = support::render(&mut bare, 60, 8);
+        assert_eq!(
+            support::text_block(&support::render(&mut control, 60, 8)),
+            support::text_block(&arrow),
+            "control and down {step} times is not the arrow {step} times"
+        );
+    }
+    assert_ne!(
+        support::text_block(&support::render(&mut control, 60, 8)),
+        support::text_block(&first),
+        "not a rendering with anywhere to scroll"
+    );
+    for _ in 1..=10 {
+        support::press_control_key(&mut control, KeyCode::Up);
+    }
+    assert_eq!(
+        support::text_block(&support::render(&mut control, 60, 8)),
+        support::text_block(&first),
+        "control and up did not come back"
     );
 }
 

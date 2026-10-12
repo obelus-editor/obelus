@@ -2430,6 +2430,67 @@ fn paging_scrolls_the_preview_and_not_the_list() {
     );
 }
 
+/// Control and an arrow scroll the preview a row and leave the list where it
+/// is: the arrows are the list's and control gives them to what it names,
+/// the way control gives the paging keys to the list.
+///
+/// Deliberate break: taking the control arms out of `preview_scrolling`
+/// sends the key to the list, which takes nothing with control and an arrow,
+/// and the preview stays at its top.
+#[test]
+fn control_and_an_arrow_scroll_the_preview_a_row() {
+    let mut app = app();
+    press_function(&mut app, 1);
+    app.handle(Event::Search(obelus_search::Event::FilesFound {
+        generation: 1,
+        paths: vec![
+            "tests/fixtures/many_lines.rs".into(),
+            "tests/fixtures/sample.rs".into(),
+        ],
+        ignored: false,
+    }));
+    // Both rows, so a key that walked the list would show.
+    type_text(&mut app, "rs");
+    let chosen = |app: &App| {
+        app.picker()
+            .and_then(|picker| picker.selected_item())
+            .map(|item| item.label.clone())
+    };
+    while chosen(&app).as_deref() != Some("tests/fixtures/many_lines.rs") {
+        press(&mut app, KeyCode::Down);
+    }
+
+    let at_rest = support::render(&mut app, 60, 22);
+    assert!(
+        support::text_block(&at_rest).contains("Forty lines"),
+        "not a preview at the top of the file:\n{at_rest}"
+    );
+
+    press_control_key(&mut app, KeyCode::Down);
+    let scrolled = support::render(&mut app, 60, 22);
+    let text = support::text_block(&scrolled);
+    assert!(
+        !text.contains("Forty lines"),
+        "the preview did not move:\n{scrolled}"
+    );
+    assert!(
+        text.contains("LINE_01"),
+        "the preview moved further than a row:\n{scrolled}"
+    );
+    assert_eq!(
+        chosen(&app).as_deref(),
+        Some("tests/fixtures/many_lines.rs"),
+        "the list moved as well"
+    );
+
+    press_control_key(&mut app, KeyCode::Up);
+    assert_eq!(
+        support::text_block(&support::render(&mut app, 60, 22)),
+        support::text_block(&at_rest),
+        "scrolling back did not come back"
+    );
+}
+
 /// A list with nothing under it keeps the keys: a compact list has no
 /// preview, so there is nothing for a paging key to move but the list, and a
 /// key that did nothing there would be a key that stopped working when the

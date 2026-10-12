@@ -10,9 +10,9 @@ use crate::app::*;
 impl App {
     /// What a key does to the file being read, and whether it did anything.
     ///
-    /// The motions, the paging, the scrolling of a rendering and the
-    /// typing: four things that are all about the document under everything
-    /// else. Asked only when nothing is in front of the file
+    /// The motions, the paging, the scrolling of the view or of a rendering
+    /// and the typing: things that are all about the document under
+    /// everything else. Asked only when nothing is in front of the file
     /// (`app/hearing`): four separate guards here were four chances to leave
     /// a view out, and two of them did -- a letter typed over the counts
     /// went into the file behind, and `ctrl+left` under either the counts or
@@ -44,6 +44,17 @@ impl App {
                 } else {
                     buffer.page(pages, area);
                 }
+            }
+            return true;
+        }
+
+        // And control with an arrow is the view a row at a time, which is
+        // the wheel's glance from the keyboard: the cursor stays, and the
+        // next move of it brings the screen back.
+        if let Some(rows) = editor_scrolling(key) {
+            let area = self.text_area();
+            if let Some(buffer) = self.current_buffer_mut() {
+                buffer.scroll_by(rows, area);
             }
             return true;
         }
@@ -93,6 +104,12 @@ pub(in crate::app) fn view_step(key: &KeyEvent, height: u16) -> Option<isize> {
     match (modifiers, key.code) {
         (KeyModifiers::NONE, KeyCode::Down) => Some(1),
         (KeyModifiers::NONE, KeyCode::Up) => Some(-1),
+        // The same row as bare, because here the arrows move nothing but
+        // the view either: control and an arrow is the view a row at a time
+        // everywhere, and a key should not do nothing in one document and
+        // something in the next (`editor_scrolling`).
+        (KeyModifiers::CONTROL, KeyCode::Down) => Some(1),
+        (KeyModifiers::CONTROL, KeyCode::Up) => Some(-1),
         (KeyModifiers::NONE, KeyCode::PageDown) => Some(page),
         (KeyModifiers::NONE, KeyCode::PageUp) => Some(-page),
         (KeyModifiers::CONTROL, KeyCode::End) => Some(isize::MAX),
@@ -111,6 +128,21 @@ pub(in crate::app) fn editor_paging(key: &KeyEvent) -> Option<(isize, bool)> {
         (KeyModifiers::NONE, KeyCode::PageUp) => Some((-1, false)),
         (KeyModifiers::SHIFT, KeyCode::PageDown) => Some((1, true)),
         (KeyModifiers::SHIFT, KeyCode::PageUp) => Some((-1, true)),
+        _ => None,
+    }
+}
+
+/// How many rows control and an arrow scroll the file being read by.
+///
+/// The view, not the place in it: the cursor is the arrows' and stays where
+/// they left it. Wherever a list sits over what it names, these two keys
+/// scroll what it names while the bare arrows walk the list
+/// (`previewing::preview_scrolling`), and this is that rule in a view that
+/// has no list.
+pub(in crate::app) fn editor_scrolling(key: &KeyEvent) -> Option<isize> {
+    match (obelus_keymap::modifiers_of(key)?, key.code) {
+        (KeyModifiers::CONTROL, KeyCode::Down) => Some(1),
+        (KeyModifiers::CONTROL, KeyCode::Up) => Some(-1),
         _ => None,
     }
 }

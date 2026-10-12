@@ -442,6 +442,15 @@ where the view is (`Window::scroll`, `component::window`). A list used to
 be the exception, a notch stepping its selection; that made the wheel two
 gestures depending on what was under it.
 
+The keys that make the wheel's gesture are control and up or down: the view
+a row, the cursor left where it was (`keys::editor_scrolling`). And where a
+list sits above what it names, the two share four pairs of keys, each the
+other's with control: the arrows walk the list and `ctrl+up`/`ctrl+down`
+scroll the preview a row; `pageup`/`pagedown` page the preview and with
+control page the list (`previewing::preview_scrolling`). The reading is
+paged a screenful at a time and the list is walked a row at a time, so each
+gets its bare keys for the way it is moved.
+
 **Wherever enter means something else, a line is `shift+enter` *and*
 `alt+enter`.** Both, every time: `shift+enter` arrives only from a terminal
 that speaks the kitty keyboard protocol -- `main` pushes its narrowest flag
@@ -574,8 +583,9 @@ crates/
                       view is split by the errand, not by the shape of the
                       answer, and an answer on screen is an answer about a
                       moment (app/git/history_view); a preview is of a subject, not
-                      of a path, and the paging keys belong to whatever is
-                      being read (app/editor/previewing); a project may carry
+                      of a path, and the paging keys and control's arrows
+                      belong to whatever is being read
+                      (app/editor/previewing); a project may carry
                       settings, and it is not the reader, and the reader's is
                       the layer it is laid over; anything read once at startup
                       must be re-read when somebody else changes it; what

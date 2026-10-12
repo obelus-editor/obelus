@@ -877,9 +877,10 @@ pub fn why_not(chord: KeyChord) -> Option<&'static str> {
     match chord.code {
         // The keys that move about a file. The editor takes them before the
         // table is reached -- bare and with shift -- and the rest are
-        // spoken for: `ctrl` and an arrow is the word motion Obelus does
-        // not have yet, and `ctrl` and a paging key is the previous and
-        // next buffer. With alt held they are how changes and history are
+        // spoken for: `ctrl` and left or right is the word motion, `ctrl`
+        // and up or down scrolls the view a row (or what a list names,
+        // under it), and `ctrl` and a paging key pages a list over what it
+        // names. With alt held they are how changes and history are
         // walked, and free.
         KeyCode::Up
         | KeyCode::Down

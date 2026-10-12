@@ -729,8 +729,8 @@ impl App {
         }
     }
 
-    /// Pages the preview, if that is what the key does and there is one to
-    /// page.
+    /// Scrolls the preview, if that is what the key does and there is one to
+    /// scroll.
     ///
     /// Answered here rather than where keys are sorted, because what decides
     /// it is whether a preview is on screen -- and that is this module's own
@@ -738,10 +738,7 @@ impl App {
     /// to the list, where the bare paging keys still page: a key that
     /// stopped working in a terminal too short for a preview would be worse
     /// than either arrangement.
-    pub(in crate::app) fn page_preview(&mut self, key: &KeyEvent) -> bool {
-        let Some(pages) = preview_paging(key) else {
-            return false;
-        };
+    pub(in crate::app) fn scroll_preview_by_key(&mut self, key: &KeyEvent) -> bool {
         // A pane of its own, and something in it. Not a preview drawn over
         // the code: there the list is the thing the reader is working
         // through, and paging belongs to its rows -- which is where these
@@ -749,25 +746,22 @@ impl App {
         if self.preview.is_none() || self.previews_over_the_code(self.editor_area) {
             return false;
         }
-        self.scroll_preview(pages);
-        true
-    }
-
-    /// Scrolls the preview, without moving the selection.
-    ///
-    /// Not a command: it is navigation, and navigation belongs to whatever
-    /// holds the position it moves. What holds this one is the preview.
-    pub(in crate::app) fn scroll_preview(&mut self, pages: isize) {
         let Some(area) = self.preview_area(self.editor_area) else {
-            return;
+            return false;
         };
-        let Some(preview) = self.preview.as_mut() else {
-            return;
+        let page = isize::try_from(area.height.max(1)).unwrap_or(1);
+        let Some(rows) = preview_scrolling(key, page) else {
+            return false;
         };
-        let rows = isize::try_from(area.height.max(1)).unwrap_or(1);
-        // Not clamped here: what the file can actually give is known when it
-        // is drawn, and `refresh_preview` stores that back.
-        preview.scrolled += pages * rows;
+        // Not a command: it is navigation, and navigation belongs to
+        // whatever holds the position it moves -- the preview, not the
+        // selection. Not clamped here either: what the file can actually
+        // give is known when it is drawn, and `refresh_preview` stores that
+        // back.
+        if let Some(preview) = self.preview.as_mut() {
+            preview.scrolled += rows;
+        }
+        true
     }
 
     /// Where this list shows what its selection names.
@@ -1382,20 +1376,23 @@ fn runs(columns: &[u32]) -> Vec<(usize, usize)> {
     runs
 }
 
-/// How many screenfuls a key scrolls the preview by.
+/// How many rows a key scrolls the preview by, when a screenful of it is
+/// `page` rows.
 ///
-/// The bare keys, because a screenful at a time is what a *reading* is
-/// paged by and the preview is the thing on screen being read: the list
-/// above it is ten rows walked one at a time, and its ends are a keypress
-/// away. The same keys with control page the list, for a reader in a list
-/// long enough to need it.
-fn preview_paging(key: &KeyEvent) -> Option<isize> {
-    if !obelus_keymap::modifiers_of(key)?.is_empty() {
-        return None;
-    }
-    match key.code {
-        KeyCode::PageDown => Some(1),
-        KeyCode::PageUp => Some(-1),
+/// A list above and what it names below share four pairs of keys, and each
+/// pair is the other's with control: the arrows walk the list and with
+/// control scroll the preview a row, the paging keys page the preview and
+/// with control page the list. The bare paging keys are the preview's
+/// because a screenful at a time is what a *reading* is paged by: the list
+/// is ten rows walked one at a time, with its ends a keypress away. The
+/// same rule the file being read keeps, where control and an arrow moves
+/// the view and leaves the cursor (`keys::editor_scrolling`).
+fn preview_scrolling(key: &KeyEvent, page: isize) -> Option<isize> {
+    match (obelus_keymap::modifiers_of(key)?, key.code) {
+        (KeyModifiers::NONE, KeyCode::PageDown) => Some(page),
+        (KeyModifiers::NONE, KeyCode::PageUp) => Some(-page),
+        (KeyModifiers::CONTROL, KeyCode::Down) => Some(1),
+        (KeyModifiers::CONTROL, KeyCode::Up) => Some(-1),
         _ => None,
     }
 }
