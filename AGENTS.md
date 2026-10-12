@@ -976,7 +976,8 @@ and a surprising way to see it.
 
 **A new test file is a module, not a binary.** Every file directly under a
 `tests/` is a binary linked with everything it depends on, debug info and
-all: `obelus-app`'s sixty were 63G of one checkout's `target`. So the
+all: `obelus-app`'s sixty were most of the 63G one checkout's `target`
+held after a run of the suite. So the
 application's tests are one binary, `obelus-app/tests/app/main.rs`, and a new
 file goes in that directory with a `mod` line there. A file stands beside it
 only when its tests set something the whole process reads and do not set it
