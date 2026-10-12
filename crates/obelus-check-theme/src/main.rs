@@ -99,19 +99,26 @@ fn check(given: &Path) -> Vec<String> {
 /// The theme `given` names, by the name it answers to, and the file its
 /// colours are in -- the name read the way Obelus reads it, so the check is
 /// of the theme a reader would choose.
+///
+/// The names from the whole path, and the file as it was given: `.` and
+/// `theme.toml` said from inside a theme have no name of their own to read,
+/// and were taken for no theme at all -- while what is said about the file
+/// stays the way the caller wrote it, which in a CI log is relative.
 fn theme_at(given: &Path) -> Option<(String, PathBuf)> {
+    let whole = std::path::absolute(given).ok()?;
+    let whole = whole.components().collect::<PathBuf>();
     if given.is_dir() {
         let file = given.join(written::FILE);
-        let name = given.file_name()?.to_str()?.to_string();
+        let name = whole.file_name()?.to_str()?.to_string();
         return file.is_file().then_some((name, file));
     }
     if !given.is_file() || given.extension().is_none_or(|kind| kind != "toml") {
         return None;
     }
     // A directory's own file names the theme by the directory.
-    let name = match given.file_name()?.to_str()? {
-        written::FILE => given.parent()?.file_name()?.to_str()?,
-        _ => given.file_stem()?.to_str()?,
+    let name = match whole.file_name()?.to_str()? {
+        written::FILE => whole.parent()?.file_name()?.to_str()?,
+        _ => whole.file_stem()?.to_str()?,
     };
     Some((name.to_string(), given.to_path_buf()))
 }
@@ -204,6 +211,36 @@ mod tests {
             "{said:#?}"
         );
         assert_eq!(said.len(), 4, "{said:#?}");
+    }
+
+    /// A theme named from inside it -- `.`, or its `theme.toml` -- is the
+    /// theme, by the directory's name, and what is said about it keeps the
+    /// path as it was given.
+    ///
+    /// The only test here that moves the working directory, which none of
+    /// the others reads: they name their themes by whole paths.
+    ///
+    /// Deliberate break: the names read from the path as given, which has
+    /// none to read in either case -- both are then "No theme is here".
+    #[test]
+    fn a_theme_named_from_inside_it_is_the_theme() {
+        // A directory of its own, where the other test's `nord` is not.
+        let theme = scratch("inside/nord");
+        std::fs::write(theme.join("theme.toml"), "background = \"#101820\"\n").expect("the theme");
+        let was = std::env::current_dir().expect("the working directory");
+        std::env::set_current_dir(&theme).expect("into the theme");
+        let here = super::check(std::path::Path::new("."));
+        let file = super::check(std::path::Path::new("theme.toml"));
+        std::env::set_current_dir(was).expect("back out");
+        // Named for the built-in theme so there is something to say, and so
+        // that what is said shows the name was read.
+        assert_eq!(
+            here,
+            ["./theme.toml: A theme built into Obelus is already called `nord`"],
+            "{here:#?}"
+        );
+        assert_eq!(file.len(), 1, "{file:#?}");
+        assert!(file[0].starts_with("theme.toml: "), "{file:#?}");
     }
 
     /// Something that is not a theme is said to be none, rather than read
