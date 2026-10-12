@@ -656,6 +656,12 @@ impl crate::app::App {
         // different place -- which is what it did: typing the separator
         // that walks into a directory left the one above it on screen.
         self.which_project.naming_list = None;
+        // And a list shut over the box is a list of somewhere else now.
+        // Said here and not left to the box having moved: `alpha` and
+        // `alpha/` are one path to a comparison, so the separator that
+        // walks on from a project the walk stopped at -- or from a box
+        // whose list was escaped -- would find the list still shut.
+        self.which_project.naming_shut = false;
         self.settle_the_naming_list();
     }
 

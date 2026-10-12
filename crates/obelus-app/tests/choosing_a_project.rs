@@ -420,6 +420,44 @@ fn a_project_chosen_from_the_list_is_where_the_walk_stops() {
     );
 }
 
+/// And a separator walks on from there, into what the project holds.
+///
+/// The box moves from `alpha` to `alpha/`, which is one path to a
+/// comparison, so nothing that asks whether the box moved will open the
+/// list the stop shut.
+///
+/// Broken deliberately by taking `naming_shut = false` out of `look_in`:
+/// the directory is read and nothing is offered from it.
+#[test]
+fn a_separator_after_a_project_walks_on_into_it() {
+    let scratch = support::Scratch::new("choosing-walks-on");
+    let project = scratch.path().join("alpha");
+    std::fs::create_dir_all(project.join("inner")).expect("directories");
+    gix::init(&project).expect("a repository");
+    let mut app = asking();
+    open_another(&mut app);
+    for character in format!("{}/", scratch.path().display()).chars() {
+        press(&mut app, KeyCode::Char(character));
+    }
+    press(&mut app, KeyCode::Enter);
+    support::render(&mut app, 120, 20);
+    assert!(
+        app.naming_list().is_none(),
+        "it did not stop at the project"
+    );
+
+    press(&mut app, KeyCode::Char('/'));
+    support::render(&mut app, 120, 20);
+
+    // No letter after it: a letter moves the box, and that alone would
+    // open the list. Two rows, `.git/` and `inner/`.
+    assert_eq!(
+        app.naming_list().map(Picker::match_count),
+        Some(2),
+        "the separator did not offer what is inside the project"
+    );
+}
+
 /// And a box that names a project says so in its ink, where enter would
 /// open it.
 ///
