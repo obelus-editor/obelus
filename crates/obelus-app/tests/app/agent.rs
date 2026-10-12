@@ -48,14 +48,15 @@ const HEIGHT: u16 = 24;
 /// Generous: it is a shell script starting up, and a test that fails because
 /// a machine was busy is a test nobody trusts.
 ///
-/// And what it has to clear is not how long a script takes to start. A
-/// hundred and eighteen tests in this binary run at once, most of them
-/// starting a shell script of their own, on a runner with two cores -- so
-/// a test can be starved for as long as its siblings take. Measured on
-/// the arm runner: the binary's own wall time was 63.5 seconds and the
-/// one that failed spent 60 of them waiting, which is nearly the whole
-/// run. So the deadline has to be comfortably past what the *binary*
-/// takes, not past what a shell does.
+/// And what it has to clear is not how long a script takes to start. The
+/// tests in a binary run at once, most of these starting a shell script of
+/// their own, on a runner with two cores -- so a test can be starved for as
+/// long as its siblings take. Measured on the arm runner when this file was
+/// a binary of its own: its wall time was 63.5 seconds and the one that
+/// failed spent 60 of them waiting, which is nearly the whole run. So the
+/// deadline has to be comfortably past what the *binary* takes, not past
+/// what a shell does -- and the binary is every application test now, so
+/// the number to watch is its time on that runner.
 ///
 /// Ten seconds was the first try and sixty the second, each set from the
 /// wrong measurement. It costs nothing where nothing is wrong: it is a
@@ -84,12 +85,17 @@ fn agents_root() -> std::path::PathBuf {
 
 /// The same, for one test alone.
 ///
-/// Tests in one file share a process, and an install's record is written
-/// under the agent's own name: two tests installing the fixture would
-/// write the same file. A test that is about that file, or about a log the
-/// fixture keeps beside it, needs one nobody else has.
+/// Tests share a process, and an install's record is written under the
+/// agent's own name: two tests installing the fixture would write the same
+/// file. A test that is about that file, or about a log the fixture keeps
+/// beside it, needs one nobody else has.
+///
+/// Not `obelus-agent-{name}`, which is where `Scratch::new("agent-{name}")`
+/// puts a tree: `died` emptied its own test's tree that way and kept its
+/// agents in it.
 fn agents_root_for(name: &str) -> std::path::PathBuf {
-    let root = std::env::temp_dir().join(format!("obelus-agent-{name}-{}", std::process::id()));
+    let root =
+        std::env::temp_dir().join(format!("obelus-agents-for-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     root
 }
