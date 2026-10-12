@@ -69,31 +69,37 @@ fn check(given: &Path) -> Vec<String> {
             written::FILE
         )];
     };
-    let mut said = Vec::new();
+    let mut wrong: Vec<written::Wrong> = Vec::new();
     // Before what is in it, because a theme by such a name would be a theme
     // standing in front of one every reader already has.
     if builtin::by_name(&name).is_some() || name == builtin::OMARCHY {
-        said.push(format!(
-            "{}: A theme built into Obelus is already called `{name}`",
-            file.display()
-        ));
+        wrong.push(written::Wrong {
+            why: format!("A theme built into Obelus is already called `{name}`"),
+            at: None,
+        });
     }
     match written::read_where(&file) {
-        Err(wrong) => said.push(line(&file, &wrong)),
+        Err(unread) => wrong.push(unread),
         Ok(read) => {
-            said.extend(read.troubles.iter().map(|wrong| line(&file, wrong)));
+            wrong.extend(read.troubles);
             if let Some(hung) = read.worn.wallpaper
                 && let Err(error) = wallpaper::decode(&hung.file)
             {
-                said.push(format!(
-                    "{}: The picture {} will not decode: {error}",
-                    file.display(),
-                    hung.file.display()
-                ));
+                wrong.push(written::Wrong {
+                    why: format!(
+                        "The picture {} will not decode: {error}",
+                        hung.file.display()
+                    ),
+                    at: read.wallpaper_at,
+                });
             }
         }
     }
-    said
+    // In the order of the file, the way a reader fixes it: what is about the
+    // whole of it first, then down the lines. They arrive in the order they
+    // were found, which is the order of the code that found them.
+    wrong.sort_by_key(|one| one.at.map(|at| (at.line.get(), at.column.get())));
+    wrong.iter().map(|one| line(&file, one)).collect()
 }
 
 /// The theme `given` names, by the name it answers to, and the file its
@@ -177,16 +183,18 @@ mod tests {
     ///
     /// Deliberate breaks: the built-in names not asked (`nord` passes), the
     /// picture not decoded (a file of words passes as one), the line
-    /// counted from nought (every place is a line early), and a misspelt
-    /// name marked at what it is set to rather than at the name (column 13
-    /// rather than 1).
+    /// counted from nought (every place is a line early), a misspelt name
+    /// marked at what it is set to rather than at the name (column 13
+    /// rather than 1), the sort taken out (line 9 comes before line 3), and
+    /// the picture said with no place (it sorts to the top).
     #[test]
     fn what_obelus_cannot_use_is_said_where_it_is() {
         let theme = scratch("nord");
         std::fs::write(theme.join("rain.png"), "not a picture").expect("the picture");
         std::fs::write(
             theme.join("theme.toml"),
-            "base = \"dark\"\nbackground = \"blue\"\nbackgound = \"#111111\"\n\n[wallpaper]\nfile = \"rain.png\"\n",
+            "base = \"dark\"\nbackground = \"blue\"\nbackgound = \"#111111\"\n\n[wallpaper]\nfile = \"rain.png\"\n\
+             \n[syntax]\nkeyword = \"nope\"\n",
         )
         .expect("the theme");
         let said = super::check(&theme);
@@ -210,7 +218,19 @@ mod tests {
             said.iter().any(|line| line.contains("will not decode")),
             "{said:#?}"
         );
-        assert_eq!(said.len(), 4, "{said:#?}");
+        assert_eq!(said.len(), 5, "{said:#?}");
+        // In the order of the file, and the picture where it is named: what
+        // is about the whole theme, then lines 2, 3, 6 and 9 -- where the
+        // colours are read before the names nobody asked for and before
+        // the picture, so 9 is found second.
+        assert!(said[0].contains("already called"), "{said:#?}");
+        assert!(said[1].starts_with(&format!("{file}:2:")), "{said:#?}");
+        assert!(said[2].starts_with(&format!("{file}:3:1:")), "{said:#?}");
+        assert!(
+            said[3].starts_with(&format!("{file}:6:")) && said[3].contains("will not decode"),
+            "the picture, at the line that names it: {said:#?}"
+        );
+        assert!(said[4].starts_with(&format!("{file}:9:")), "{said:#?}");
     }
 
     /// A theme named from inside it -- `.`, or its `theme.toml` -- is the

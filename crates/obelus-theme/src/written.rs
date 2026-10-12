@@ -114,6 +114,7 @@ pub fn read_where(path: &Path) -> std::result::Result<Read, Wrong> {
     Ok(Read {
         worn: Worn { colours, wallpaper },
         troubles,
+        wallpaper_at: spans.span(&["wallpaper", "file"], false),
     })
 }
 
@@ -129,6 +130,10 @@ pub struct Read {
     /// to refuse the theme: a picture put in the middle because its anchor
     /// was misspelled is on a screen the reader can still use to fix it.
     pub troubles: Vec<Wrong>,
+    /// Where the picture is named, for whatever finds the picture itself
+    /// wrong -- that it will not decode is learned by decoding it, which
+    /// reading the file does not do.
+    pub wallpaper_at: Option<obelus_text::coordinates::Span>,
 }
 
 /// The picture a table names in its `[wallpaper]`.
