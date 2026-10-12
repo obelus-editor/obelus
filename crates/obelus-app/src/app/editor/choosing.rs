@@ -662,15 +662,7 @@ impl App {
                     self.go_to_document(id);
                 }
             }
-            PickerValue::Theme(name) => {
-                // Kept, now that there is somewhere to keep it: a reader who
-                // picks a theme and finds the old one back tomorrow has been
-                // given a preview rather than a choice.
-                self.change_setting("theme", &obelus_config::Value::Choice(name.clone()));
-                if let Some(theme) = self.theme_called(&name) {
-                    self.set_theme(&name, theme);
-                }
-            }
+            PickerValue::Theme(name) => self.choose_theme(&name),
             PickerValue::Place {
                 path,
                 line,

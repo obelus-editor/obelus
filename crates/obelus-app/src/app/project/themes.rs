@@ -34,6 +34,9 @@ pub(in crate::app) struct Registry {
     pub installing: HashMap<String, Option<Progress>>,
     /// Why the last install of each did not take.
     pub failures: HashMap<String, String>,
+    /// The installs on their way that are first installs rather than
+    /// updates, which are worn when they land.
+    pub fresh: HashSet<String>,
     /// The theme the reader has pressed delete on once, where taking it
     /// away cannot be undone: the next press of the same key on the same
     /// card takes it.
@@ -241,6 +244,11 @@ impl App {
         self.themes.installing.insert(theme.name.clone(), None);
         self.themes.failures.remove(name);
         self.themes.taking = None;
+        // Asked now, while the directory says whether it is there: once the
+        // install lands it always is.
+        if obelus_themes::install::installed(name, &root).is_none() {
+            self.themes.fresh.insert(theme.name.clone());
+        }
         if let Some(sender) = self.events.clone() {
             tracing::info!(name, root = %root.display(), "installing a theme");
             obelus_themes::install::spawn(&theme, &root, sender);
@@ -257,8 +265,17 @@ impl App {
     /// The theme being worn, updated, is worn as it now is: the watch on the
     /// directory would say so a moment later, and the reader pressed the key
     /// now.
+    ///
+    /// **A theme installed for the first time is worn**, the way choosing it
+    /// from the list wears it, setting and all: installing one is the reader
+    /// saying they want to see it, and a theme that arrives and changes
+    /// nothing is a second step they have to go and find. Not an update to
+    /// a theme they are not wearing, which says nothing about wanting it on;
+    /// and not one a theme of the reader's own by that name stands in front
+    /// of, because wearing the name would wear theirs.
     pub(in crate::app) fn on_theme_installed(&mut self, name: String, failure: Option<String>) {
         self.themes.installing.remove(&name);
+        let fresh = self.themes.fresh.remove(&name);
         match failure {
             Some(why) => {
                 self.themes.failures.insert(name, why);
@@ -267,8 +284,27 @@ impl App {
                 self.themes.failures.remove(&name);
                 if self.settled.config.theme == name {
                     self.reread_theme();
+                } else if fresh && self.theme_whence(&name) == Some("Downloaded") {
+                    self.choose_theme(&name);
                 }
             }
+        }
+    }
+
+    /// Wears a theme and keeps it, as choosing it from a list does.
+    ///
+    /// Kept, because a reader who picks a theme and finds the old one back
+    /// tomorrow has been given a preview rather than a choice. And where a
+    /// list of themes is open over the page, the one it puts back on escape
+    /// is this one: it is the reader's choice now, whatever the list was
+    /// walking past.
+    pub(in crate::app) fn choose_theme(&mut self, name: &str) {
+        self.change_setting("theme", &obelus_config::Value::Choice(name.to_string()));
+        if let Some(theme) = self.theme_called(name) {
+            self.set_theme(name, theme);
+        }
+        if self.theme_before.is_some() {
+            self.theme_before = Some((name.to_string(), self.worn()));
         }
     }
 

@@ -1195,3 +1195,122 @@ fn the_settings_list_of_themes_ends_in_more_themes() {
     assert!(settings.on_themes(), "not on the themes page");
     assert_eq!(settings.query(), "", "the setting's filter came along");
 }
+
+/// Installs `name` from the themes page as a reader would -- enter on its
+/// card, which is the only card -- and lands the install as the registry's
+/// would: the directory and its record, then the word that it is done.
+fn install(app: &mut App, root: &std::path::Path, name: &str, commit: &str) {
+    support::type_text(app, name);
+    support::press(app, KeyCode::Enter);
+    installed_as(root, name, commit, "obelus");
+    app.handle(Event::Themes(obelus_themes::Event::Installed {
+        name: name.to_string(),
+        failure: None,
+    }));
+}
+
+/// A theme installed for the first time is worn as it lands, and kept --
+/// the same as choosing it from the list of themes.
+///
+/// Deliberate break: `on_theme_installed` not wearing a fresh install (the
+/// theme is then still the one before, and nothing is written).
+#[test]
+fn a_theme_installed_for_the_first_time_is_worn() {
+    let scratch = reader("install-wears");
+    let root = support::Scratch::new("install-wears-installed");
+    let mut app = open(&scratch);
+    app.installed_themes_for_test(root.path().to_path_buf());
+    app.themes_index_for_test(vec![listed("fresh", obelus_themes::Group::Obelus, "bbb")]);
+    on_the_themes_page(&mut app);
+
+    install(&mut app, root.path(), "fresh", "bbb");
+    assert_eq!(app.theme_name(), "fresh", "the new theme was not worn");
+    let written = std::fs::read_to_string(scratch.join("config.toml")).expect("the settings");
+    assert!(
+        written.contains("theme = \"fresh\""),
+        "worn and not kept: {written}"
+    );
+}
+
+/// An update to a theme the reader is not wearing changes nothing on the
+/// screen, and nor does a first install that a theme of the reader's own
+/// by the same name stands in front of.
+///
+/// Deliberate breaks: the install worn whether or not it is a first one
+/// (`spare` is then worn by its update), and worn whoever answers to the
+/// name (`shared` is then worn, and it is the reader's own colours).
+#[test]
+fn an_update_or_a_shadowed_install_is_not_worn() {
+    let scratch = reader("install-not-worn");
+    std::fs::write(scratch.join("themes/shared.toml"), "base = \"light\"\n").expect("the reader's");
+    let root = support::Scratch::new("install-not-worn-installed");
+    installed_as(root.path(), "spare", "old", "obelus");
+    let mut app = open(&scratch);
+    app.installed_themes_for_test(root.path().to_path_buf());
+    app.themes_index_for_test(vec![
+        listed("spare", obelus_themes::Group::Obelus, "new"),
+        listed("shared", obelus_themes::Group::Obelus, "ccc"),
+    ]);
+    let worn = app.theme_name().to_string();
+    on_the_themes_page(&mut app);
+
+    install(&mut app, root.path(), "spare", "new");
+    assert_eq!(
+        app.theme_name(),
+        worn,
+        "an update to another theme was worn"
+    );
+
+    for _ in 0.."spare".len() {
+        support::press(&mut app, KeyCode::Backspace);
+    }
+    install(&mut app, root.path(), "shared", "ccc");
+    assert_eq!(
+        app.theme_name(),
+        worn,
+        "the reader's own theme was worn for the one installed"
+    );
+}
+
+/// An install that lands while a list of themes is open over the settings
+/// is what escape puts back: the reader chose it, whatever the list was
+/// showing.
+///
+/// Deliberate break: `choose_theme` leaving `theme_before` alone (escape
+/// then wears the theme from before the install, while the settings say
+/// the new one).
+#[test]
+fn an_install_that_lands_under_a_list_of_themes_outlasts_it() {
+    let scratch = reader("install-under-list");
+    let root = support::Scratch::new("install-under-list-installed");
+    let mut app = open(&scratch);
+    app.installed_themes_for_test(root.path().to_path_buf());
+    app.themes_index_for_test(vec![listed("fresh", obelus_themes::Group::Obelus, "bbb")]);
+    on_the_themes_page(&mut app);
+    support::type_text(&mut app, "fresh");
+    support::press(&mut app, KeyCode::Enter);
+
+    // Back to the first page, to the theme's own list, while it installs.
+    support::press(&mut app, KeyCode::Tab);
+    support::press(&mut app, KeyCode::Tab);
+    assert!(!app.settings().expect("the settings").on_cards());
+    for _ in 0.."fresh".len() {
+        support::press(&mut app, KeyCode::Backspace);
+    }
+    support::type_text(&mut app, "theme");
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.picker().is_some(), "the theme's choices did not open");
+
+    installed_as(root.path(), "fresh", "bbb", "obelus");
+    app.handle(Event::Themes(obelus_themes::Event::Installed {
+        name: "fresh".to_string(),
+        failure: None,
+    }));
+    support::press(&mut app, KeyCode::Esc);
+    assert!(app.picker().is_none());
+    assert_eq!(
+        app.theme_name(),
+        "fresh",
+        "escape put back the theme from before the install"
+    );
+}
