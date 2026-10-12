@@ -22,9 +22,13 @@
 //! once is the normal case. One drawn at its own size is left alone,
 //! because its own size is what it is drawn at.
 
-use std::sync::{
-    Arc, Condvar, Mutex, PoisonError,
-    atomic::{AtomicU64, Ordering},
+use std::{
+    path::PathBuf,
+    sync::{
+        Arc, Condvar, Mutex, PoisonError,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::SystemTime,
 };
 
 use obelus_theme::wallpaper::{Anchor, Edge, Fit, Wallpaper};
@@ -89,6 +93,8 @@ pub(crate) struct Decoder {
     screen: [u32; 2],
     /// Where a decoded picture goes, until there is a thread to hold it.
     send: Mutex<Option<Send>>,
+    /// Which picture was last asked for, as a file at a moment.
+    asked: Mutex<Option<(PathBuf, Option<SystemTime>)>>,
 }
 
 impl Decoder {
@@ -104,16 +110,35 @@ impl Decoder {
             woken: Condvar::new(),
             screen,
             send: Mutex::new(Some(Box::new(send))),
+            asked: Mutex::new(None),
         })
     }
 
-    /// Asks for a picture, or for none, and says the number it was asked
-    /// by: higher than every one before it, and the one the window keeps.
+    /// Asks for a picture, or for none -- and says the number of a "none"
+    /// the caller is to say at once, where the page has to stop showing
+    /// what it shows before anything is decoded.
     ///
-    /// For none there is nothing to decode, so the caller says so itself;
-    /// what this does is take back a picture still waiting.
-    pub(crate) fn ask(self: &Arc<Self>, wallpaper: Option<Wallpaper>) -> u64 {
-        let number = self.newest.fetch_add(1, Ordering::Relaxed) + 1;
+    /// Which is whenever the picture is another file, or no picture: the
+    /// old one kept until the new one is ready is the new theme's colours
+    /// over the old theme's picture, for as long as a photograph takes to
+    /// decode. The same file asked for again -- its opacity, fit or anchor
+    /// changed -- keeps what is showing until it is decoded again, because
+    /// a page blinking with each save is worse than a picture a moment
+    /// late. The none is numbered below the picture asked for after it, so
+    /// the window takes both, in that order.
+    pub(crate) fn ask(self: &Arc<Self>, wallpaper: Option<Wallpaper>) -> Option<u64> {
+        let picture = wallpaper
+            .as_ref()
+            .map(|wallpaper| (wallpaper.file.clone(), wallpaper.modified));
+        let mut asked = self.asked.lock().unwrap_or_else(PoisonError::into_inner);
+        let another = wallpaper.is_none() || *asked != picture;
+        *asked = picture;
+        drop(asked);
+        let cleared = another.then(|| self.number());
+        let number = match wallpaper {
+            Some(_) => self.number(),
+            None => cleared.unwrap_or_else(|| self.number()),
+        };
         let mut waiting = self.waiting.lock().unwrap_or_else(PoisonError::into_inner);
         waiting.ask(number, wallpaper.clone());
         drop(waiting);
@@ -121,7 +146,13 @@ impl Decoder {
             self.woken.notify_one();
             self.start();
         }
-        number
+        cleared
+    }
+
+    /// A number higher than every one before it, which makes it the
+    /// newest ask.
+    fn number(&self) -> u64 {
+        self.newest.fetch_add(1, Ordering::Relaxed) + 1
     }
 
     /// Whether `number` is still the newest ask.
@@ -418,10 +449,11 @@ mod tests {
         let decoder = super::Decoder::new([1920, 1080], move |number, hung| {
             let _ = sent.send((number, hung.is_some()));
         });
-        let first = decoder.ask(Some(somewhere("first")));
-        assert_eq!(
-            heard.recv_timeout(std::time::Duration::from_secs(10)),
-            Ok((first, false)),
+        let _ = decoder.ask(Some(somewhere("first")));
+        assert!(
+            heard
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .is_ok_and(|(_, hung)| !hung),
             "an ask went unanswered"
         );
         let _ = decoder.ask(Some(somewhere("second")));
@@ -432,6 +464,54 @@ mod tests {
                 .is_err(),
             "an ask overtaken by none was answered"
         );
+    }
+
+    /// Another picture, or none, has the page let go of the one it shows
+    /// at once, numbered below the picture so the window draws both in
+    /// turn; the same picture asked for again -- made quieter -- does not.
+    ///
+    /// Deliberate breaks: `another` false for a picture (the old picture
+    /// then stays under the new theme until the new one decodes, and the
+    /// third ask says nothing), the picture numbered before the none (the
+    /// none is then the newest ask and the picture is never answered --
+    /// and were it answered, the window keeps only a number higher than
+    /// the last), and `another` true for the same file (the page blinks at
+    /// each save of an opacity).
+    #[test]
+    fn another_picture_takes_the_old_one_away_at_once() {
+        let (sent, heard) = std::sync::mpsc::channel();
+        let decoder = super::Decoder::new([1920, 1080], move |number, _| {
+            let _ = sent.send(number);
+        });
+        let answer = || {
+            heard
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .expect("an ask went unanswered")
+        };
+
+        let cleared = decoder
+            .ask(Some(somewhere("before")))
+            .expect("a first picture said nothing to clear");
+        assert!(
+            answer() > cleared,
+            "the picture is numbered below the none before it, so it is never drawn"
+        );
+
+        let mut quieter = somewhere("before");
+        quieter.opacity = 95;
+        assert_eq!(
+            decoder.ask(Some(quieter)),
+            None,
+            "the same picture made quieter took the page's picture away"
+        );
+        let _ = answer();
+
+        assert!(
+            decoder.ask(Some(somewhere("after"))).is_some(),
+            "another picture left the old one showing until it decoded"
+        );
+        let _ = answer();
+        assert!(decoder.ask(None).is_some(), "no picture left one showing");
     }
 
     const MIDDLE: Anchor = Anchor {

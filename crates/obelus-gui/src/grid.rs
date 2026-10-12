@@ -1081,10 +1081,10 @@ impl obelus_app::app::Drawing for Telling {
     }
 
     fn hang(&self, wallpaper: Option<&obelus_theme::Wallpaper>) {
-        let number = self.decoder.ask(wallpaper.cloned());
-        // Nothing to read, so said at once -- and numbered like any
-        // picture, so one still decoding cannot arrive after it.
-        if wallpaper.is_none()
+        // The page lets go of its picture at once where it is not the one
+        // wanted -- see `Decoder::ask` -- and that none is numbered like
+        // any picture, so one still decoding cannot arrive after it.
+        if let Some(number) = self.decoder.ask(wallpaper.cloned())
             && (self.updates.send(Update::Wallpaper { number, hung: None })).is_ok()
         {
             (self.wake)();
