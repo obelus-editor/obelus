@@ -584,20 +584,24 @@ fn a_theme_carries_the_picture_its_file_names() {
     assert_eq!(app.marks_on_for_test(&file).0, 0, "a good theme was marked");
 }
 
-/// A line of the picture's table Obelus cannot use is marked where it is,
-/// and the picture is laid as though it had not been written; a picture
+/// A line of the picture's table Obelus cannot use is marked where it is --
+/// a misspelt name with them, and not what the registry reads beside them
+/// -- and the picture is laid as though it had not been written; a picture
 /// that is not there is marked, and there is none.
 ///
 /// Deliberate breaks: the troubles left out of `theme_called` (nothing is
-/// marked), and a misspelt fit refusing the picture (there is then none,
-/// where the reader is owed one in the middle while they fix the word).
+/// marked), a misspelt fit refusing the picture (there is then none, where
+/// the reader is owed one in the middle while they fix the word), no walk
+/// for names the table does not know (`opcity` goes unmarked), and
+/// `license` left off what it may say (it is marked as a misspelling).
 #[test]
 fn a_line_of_a_wallpaper_that_does_nothing_is_marked() {
     use obelus_theme::wallpaper::{Anchor, Fit, OPACITY};
     let scratch = reader("wallpaper-wrong");
     let file = rain(
         &scratch,
-        "file = \"rain.jpg\"\nopacity = 150\nfit = \"tiled\"\nanchor = \"middle\"\n",
+        "file = \"rain.jpg\"\nopacity = 150\nfit = \"tiled\"\nanchor = \"middle\"\n\
+         opcity = 50\nlicense = \"CC0-1.0\"\nsource = \"https://example.invalid/rain\"\n",
     );
 
     let mut app = open(&scratch);
@@ -612,8 +616,8 @@ fn a_line_of_a_wallpaper_that_does_nothing_is_marked() {
     );
     assert_eq!(
         app.marks_on_for_test(&file).0,
-        3,
-        "not every bad line was marked"
+        4,
+        "not every bad line was marked, or a good one was"
     );
 
     rain(&scratch, "file = \"gone.jpg\"\n");

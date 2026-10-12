@@ -136,6 +136,11 @@ pub struct Read {
 /// Nothing where there is no such table, and nothing where it names no
 /// picture Obelus can find -- which is said, because a theme whose picture
 /// has gone looks, without a word, exactly like a theme that never had one.
+/// What a `[wallpaper]` table may say: the four this reads, and the two the
+/// themes registry reads beside them -- where the picture came from and on
+/// what terms -- which Obelus keeps no use for but which are not mistakes.
+const WALLPAPER: [&str; 6] = ["file", "opacity", "fit", "anchor", "license", "source"];
+
 fn hung(
     path: &Path,
     spans: &Spans<'_>,
@@ -147,6 +152,15 @@ fn hung(
         troubles.push(spans.wrong(&["wallpaper"], "A wallpaper is a table of its own"));
         return None;
     };
+    // A name nothing reads, before anything is read: a misspelt `opacity`
+    // is the most likely line in the file to be wrong, and the quietest --
+    // the picture is simply covered at the strength it would have been.
+    for key in hung.keys().filter(|key| !WALLPAPER.contains(&key.as_str())) {
+        troubles.push(spans.named(
+            &["wallpaper", key],
+            "Nothing about a wallpaper is called this",
+        ));
+    }
     let Some(named) = hung.get("file") else {
         troubles.push(spans.wrong(&["wallpaper"], "This wallpaper names no file"));
         return None;
