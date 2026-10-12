@@ -323,8 +323,16 @@ fn write(path: &Path, projects: &[Project]) -> bool {
     // leaves one whole file or the other, never half of either.
     // This process's own name beside it and not one every Obelus shares:
     // two writing at once into one shared name truncate each other's
-    // half-written file, and the first rename takes the other's away.
-    let beside = path.with_extension(format!("toml.writing.{}", std::process::id()));
+    // half-written file, and the first rename takes the other's away. And
+    // this write's own within the process, for the same reason one level
+    // down: the tests are threads of one process, and two of them writing
+    // through one name left a shorter list over a longer one's tail.
+    static WRITES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let beside = path.with_extension(format!(
+        "toml.writing.{}.{}",
+        std::process::id(),
+        WRITES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
     if let Err(error) =
         std::fs::write(&beside, to_toml(projects)).and_then(|()| std::fs::rename(&beside, path))
     {
@@ -1474,5 +1482,55 @@ mod tests {
         }
 
         assert_eq!(read().rows().len(), KEPT, "the list is not capped");
+    }
+
+    /// Two threads writing the list at once leave a list that reads.
+    ///
+    /// One process writes it from more than one thread when the
+    /// application's tests run, and they share the state directory. A
+    /// long list and a short one written through the same name beside it
+    /// left the short one over the long one's tail, which reads as nothing
+    /// -- and a list that will not read is one `remember` will not write
+    /// over again, so every test after it found the chooser saying so.
+    ///
+    /// Broken deliberately by taking the count back out of the name beside
+    /// the list: half a list is read within a tenth of a second, five runs
+    /// in five.
+    #[test]
+    fn two_writing_at_once_leave_a_list_that_reads() {
+        let (root, _turn) = scratch("at-once");
+        let list = path().expect("somewhere");
+        let rows = |how_many: usize| -> Vec<Project> {
+            (0..how_many)
+                .map(|which| Project {
+                    path: root.join(format!("a-rather-long-name-for-project-{which}")),
+                    last: Some(i64::try_from(which).expect("a time")),
+                })
+                .collect()
+        };
+        let (long, short) = (rows(KEPT), rows(1));
+        assert!(write(&list, &short), "nothing was written");
+        // One list or the other, whole: a torn write reads as neither --
+        // nothing at all where one truncated what the other had renamed,
+        // or a file that will not read where one wrote over the other.
+        let whole = || match read() {
+            Reading::Projects(projects) => [1, KEPT].contains(&projects.len()),
+            Reading::Nothing | Reading::Unreadable(_) => false,
+        };
+
+        std::thread::scope(|scope| {
+            for which in 0..8 {
+                let (list, projects) = (&list, if which % 2 == 0 { &long } else { &short });
+                scope.spawn(move || {
+                    for _ in 0..2000 {
+                        write(list, projects);
+                    }
+                });
+            }
+            for _ in 0..4000 {
+                assert!(whole(), "two writes at once left half a list");
+            }
+        });
+        assert!(whole(), "two writes at once left half a list");
     }
 }
