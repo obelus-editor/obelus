@@ -280,9 +280,14 @@ mod tests {
         std::env::set_current_dir(was).expect("back out");
         // Named for the built-in theme so there is something to say, and so
         // that what is said shows the name was read.
+        // Joined the way the platform joins them: `.\theme.toml` on Windows.
+        let given = std::path::Path::new(".").join("theme.toml");
         assert_eq!(
             here,
-            ["./theme.toml: A theme built into Obelus is already called `nord`"],
+            [format!(
+                "{}: A theme built into Obelus is already called `nord`",
+                given.display()
+            )],
             "{here:#?}"
         );
         assert_eq!(file.len(), 1, "{file:#?}");
