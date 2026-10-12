@@ -4449,6 +4449,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "obelus-check-theme"
+version = "0.12.0"
+dependencies = [
+ "image",
+ "obelus-theme",
+]
+
+[[package]]
 name = "obelus-claim"
 version = "0.12.0"
 dependencies = [

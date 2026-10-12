@@ -1,0 +1,221 @@
+//! `obelus-check-theme`: whether Obelus can read a theme, and where it
+//! cannot.
+//!
+//! What a theme is put through before the themes registry lists it. Given a
+//! theme -- a directory holding a `theme.toml`, or a `.toml` file -- it says
+//! every line Obelus could not use, as `file:line:column: why`, the way a
+//! compiler does, and fails; and says so and succeeds where there are none.
+//!
+//! **The same reading the editor does, and nothing of its own.** The words
+//! and the places come from [`obelus_theme::written::read_where`], which is
+//! what marks a theme file in the editor, and the picture is decoded by
+//! [`obelus_theme::wallpaper::decode`], which is what the window draws it
+//! from. A check of its own would be a second answer to what Obelus can
+//! read, and the first theme it passed that the editor could not read would
+//! be a theme a reader downloaded and could not wear.
+//!
+//! **Only Obelus's own rules.** A colour that is not a colour, a name no
+//! colour has, a fit or anchor nobody answers to, a picture that is not
+//! there or will not decode, a name a built-in theme already has. How large
+//! a picture may be, which licences are taken, what a theme must say about
+//! itself: those are the registry's, and kept beside the registry -- an
+//! Obelus has to be released for one of its rules to change, and the
+//! registry's change when it decides.
+//!
+//! **A binary of its own, and not in a release.** Nobody but the registry
+//! runs it: a reader making a theme sees the same marks on the file in the
+//! editor as they make it. So it is built where it is used, from the tag of
+//! the Obelus readers have, and every reader's download is not a megabyte
+//! larger for a tool one machine runs.
+
+use std::{
+    path::{Path, PathBuf},
+    process::ExitCode,
+};
+
+use obelus_theme::{builtin, wallpaper, written};
+
+fn main() -> ExitCode {
+    let mut given = std::env::args_os().skip(1);
+    let (Some(theme), None) = (given.next(), given.next()) else {
+        eprintln!(
+            "Usage: obelus-check-theme <a theme: a directory holding {}, or a .toml file>",
+            written::FILE
+        );
+        return ExitCode::from(2);
+    };
+    let theme = PathBuf::from(theme);
+    let said = check(&theme);
+    // On the error stream, the one a CI log and a terminal both show and a
+    // pipe of the answer does not take.
+    for line in &said {
+        eprintln!("{line}");
+    }
+    if said.is_empty() {
+        eprintln!("{}: Obelus can read this theme", theme.display());
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+/// Every line Obelus could not use in the theme at `given`, one to a line
+/// of output, or nothing where there are none.
+fn check(given: &Path) -> Vec<String> {
+    let Some((name, file)) = theme_at(given) else {
+        return vec![format!(
+            "{}: No theme is here: a theme is a .toml file, or a directory holding {}",
+            given.display(),
+            written::FILE
+        )];
+    };
+    let mut said = Vec::new();
+    // Before what is in it, because a theme by such a name would be a theme
+    // standing in front of one every reader already has.
+    if builtin::by_name(&name).is_some() || name == builtin::OMARCHY {
+        said.push(format!(
+            "{}: A theme built into Obelus is already called `{name}`",
+            file.display()
+        ));
+    }
+    match written::read_where(&file) {
+        Err(wrong) => said.push(line(&file, &wrong)),
+        Ok(read) => {
+            said.extend(read.troubles.iter().map(|wrong| line(&file, wrong)));
+            if let Some(hung) = read.worn.wallpaper
+                && let Err(error) = wallpaper::decode(&hung.file)
+            {
+                said.push(format!(
+                    "{}: The picture {} will not decode: {error}",
+                    file.display(),
+                    hung.file.display()
+                ));
+            }
+        }
+    }
+    said
+}
+
+/// The theme `given` names, by the name it answers to, and the file its
+/// colours are in -- the name read the way Obelus reads it, so the check is
+/// of the theme a reader would choose.
+fn theme_at(given: &Path) -> Option<(String, PathBuf)> {
+    if given.is_dir() {
+        let file = given.join(written::FILE);
+        let name = given.file_name()?.to_str()?.to_string();
+        return file.is_file().then_some((name, file));
+    }
+    if !given.is_file() || given.extension().is_none_or(|kind| kind != "toml") {
+        return None;
+    }
+    // A directory's own file names the theme by the directory.
+    let name = match given.file_name()?.to_str()? {
+        written::FILE => given.parent()?.file_name()?.to_str()?,
+        _ => given.file_stem()?.to_str()?,
+    };
+    Some((name.to_string(), given.to_path_buf()))
+}
+
+/// One thing wrong, where it is: the line and column counted from one, the
+/// way a compiler and every editor count them, and the rest of a reason
+/// that runs to a second line under the first.
+fn line(file: &Path, wrong: &written::Wrong) -> String {
+    let why = wrong.why.replace('\n', "\n    ");
+    match wrong.at {
+        Some(at) => format!(
+            "{}:{}:{}: {why}",
+            file.display(),
+            at.line.get() + 1,
+            at.column.get() + 1
+        ),
+        None => format!("{}: {why}", file.display()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    /// A directory to put a theme in, made fresh for one test.
+    fn scratch(name: &str) -> PathBuf {
+        let directory = std::env::temp_dir()
+            .join(format!("obelus-check-theme-{}", std::process::id()))
+            .join(name);
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("the directory");
+        directory
+    }
+
+    /// A theme Obelus can read, picture and all, is said to be one.
+    ///
+    /// Deliberate break: the name checked against the built-in themes the
+    /// wrong way round, which refuses every name that is not one.
+    #[test]
+    fn a_theme_obelus_can_read_passes() {
+        let theme = scratch("rain");
+        image::RgbaImage::new(4, 4)
+            .save(theme.join("rain.png"))
+            .expect("the picture");
+        std::fs::write(
+            theme.join("theme.toml"),
+            "base = \"dark\"\nbackground = \"#101820\"\n\n[wallpaper]\nfile = \"rain.png\"\nfit = \"tile\"\n",
+        )
+        .expect("the theme");
+        assert_eq!(super::check(&theme), Vec::<String>::new());
+    }
+
+    /// What Obelus could not use is said, each at the line it is on, and a
+    /// name a built-in theme has and a picture that will not decode with
+    /// them.
+    ///
+    /// Deliberate breaks: the built-in names not asked (`nord` passes), the
+    /// picture not decoded (a file of words passes as one), the line
+    /// counted from nought (every place is a line early), and a misspelt
+    /// name marked at what it is set to rather than at the name (column 13
+    /// rather than 1).
+    #[test]
+    fn what_obelus_cannot_use_is_said_where_it_is() {
+        let theme = scratch("nord");
+        std::fs::write(theme.join("rain.png"), "not a picture").expect("the picture");
+        std::fs::write(
+            theme.join("theme.toml"),
+            "base = \"dark\"\nbackground = \"blue\"\nbackgound = \"#111111\"\n\n[wallpaper]\nfile = \"rain.png\"\n",
+        )
+        .expect("the theme");
+        let said = super::check(&theme);
+        let file = theme.join("theme.toml").display().to_string();
+        assert!(
+            said.iter()
+                .any(|line| line.contains("already called `nord`")),
+            "{said:#?}"
+        );
+        assert!(
+            said.iter()
+                .any(|line| line.starts_with(&format!("{file}:2:"))),
+            "the colour that is not one, on the second line: {said:#?}"
+        );
+        assert!(
+            said.iter()
+                .any(|line| line.starts_with(&format!("{file}:3:1:"))),
+            "the misspelt name, at the start of the third: {said:#?}"
+        );
+        assert!(
+            said.iter().any(|line| line.contains("will not decode")),
+            "{said:#?}"
+        );
+        assert_eq!(said.len(), 4, "{said:#?}");
+    }
+
+    /// Something that is not a theme is said to be none, rather than read
+    /// as an empty one -- which would pass.
+    ///
+    /// Deliberate break: a directory taken for a theme whether it holds a
+    /// `theme.toml` or not.
+    #[test]
+    fn what_is_not_a_theme_is_said_to_be_none() {
+        let empty = scratch("empty");
+        let said = super::check(&empty);
+        assert_eq!(said.len(), 1, "{said:#?}");
+        assert!(said[0].contains("No theme is here"), "{said:#?}");
+    }
+}

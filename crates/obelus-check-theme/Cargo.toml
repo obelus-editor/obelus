@@ -1,0 +1,21 @@
+[package]
+name = "obelus-check-theme"
+description = "Whether Obelus can read a theme, and where it cannot"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "obelus-check-theme"
+path = "src/main.rs"
+
+# Cargo inherits nothing here on its own; every member says it.
+[lints]
+workspace = true
+
+[dependencies]
+obelus-theme.workspace = true
+
+[dev-dependencies]
+# A picture to check, made where the test runs rather than kept in the tree.
+image.workspace = true

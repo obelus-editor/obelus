@@ -102,9 +102,12 @@ pub fn read_where(path: &Path) -> std::result::Result<Read, Wrong> {
     let (colours, noted) = over_noting(&table);
     let mut troubles: Vec<Wrong> = noted
         .iter()
-        .map(|(keys, why)| {
-            let keys: Vec<&str> = keys.iter().map(String::as_str).collect();
-            spans.wrong(&keys, why)
+        .map(|note| {
+            let keys: Vec<&str> = note.keys.iter().map(String::as_str).collect();
+            match note.name {
+                true => spans.named(&keys, note.why),
+                false => spans.wrong(&keys, note.why),
+            }
         })
         .collect();
     let wallpaper = hung(path, &spans, &table, &mut troubles);
@@ -254,22 +257,37 @@ impl<'a> Spans<'a> {
     fn wrong(&self, keys: &[&str], why: &str) -> Wrong {
         Wrong {
             why: why.to_string(),
-            at: self.span(keys),
+            at: self.span(keys, false),
         }
     }
 
-    fn span(&self, keys: &[&str]) -> Option<obelus_text::coordinates::Span> {
+    /// A trouble with a name, at the name: what is misspelt is the word the
+    /// reader wrote on the left, not what they set it to.
+    fn named(&self, keys: &[&str], why: &str) -> Wrong {
+        Wrong {
+            why: why.to_string(),
+            at: self.span(keys, true),
+        }
+    }
+
+    fn span(&self, keys: &[&str], name: bool) -> Option<obelus_text::coordinates::Span> {
         let document = self.document.as_ref()?;
         let (last, path) = keys.split_last()?;
         let mut table: &dyn toml_edit::TableLike = document.as_table();
         for key in path {
             table = table.get(key)?.as_table_like()?;
         }
-        let bytes = table
-            .get(last)
-            .and_then(toml_edit::Item::as_value)
-            .and_then(toml_edit::Value::span)
-            .or_else(|| table.key(last).and_then(toml_edit::Key::span))?;
+        let key = || table.key(last).and_then(toml_edit::Key::span);
+        let value = || {
+            table
+                .get(last)
+                .and_then(toml_edit::Item::as_value)
+                .and_then(toml_edit::Value::span)
+        };
+        let bytes = match name {
+            true => key().or_else(value)?,
+            false => value().or_else(key)?,
+        };
         Some(obelus_text::span_of_bytes(self.said, &bytes))
     }
 }
@@ -290,9 +308,19 @@ pub fn over(table: &toml::Table) -> Theme {
     over_noting(table).0
 }
 
-/// Where a line is in a theme file, by the keys that lead to it, and what
-/// Obelus could not make of it.
-type Noted = Vec<(Vec<String>, String)>;
+/// A line of a theme file that did nothing.
+struct Note {
+    /// Where it is, by the keys that lead to it.
+    keys: Vec<String>,
+    /// What Obelus could not make of it.
+    why: &'static str,
+    /// Whether what is wrong is the name rather than what it is set to: a
+    /// misspelling is marked on the word that is misspelt.
+    name: bool,
+}
+
+/// Every line of a theme file that did nothing.
+type Noted = Vec<Note>;
 
 /// The theme a table describes, and every line of it that did nothing: a
 /// value that is not a colour, a name no colour has, a base that is no
@@ -316,10 +344,11 @@ fn over_noting(table: &toml::Table) -> (Theme, Noted) {
         Some(said) => match said.as_str().and_then(builtin::by_name) {
             Some(base) => base,
             None => {
-                noted.borrow_mut().push((
-                    vec!["base".to_string()],
-                    "No built-in theme is called this, so it builds on dark".to_string(),
-                ));
+                noted.borrow_mut().push(Note {
+                    keys: vec!["base".to_string()],
+                    why: "No built-in theme is called this, so it builds on dark",
+                    name: false,
+                });
                 &builtin::DARK
             }
         },
@@ -336,11 +365,11 @@ fn over_noting(table: &toml::Table) -> (Theme, Noted) {
                 at.push(section.to_string());
             }
             at.push(key.to_string());
-            noted.borrow_mut().push((
-                at,
-                "Not a colour, so it is the one this builds on\nA colour is written #rrggbb or #rgb"
-                    .to_string(),
-            ));
+            noted.borrow_mut().push(Note {
+                keys: at,
+                why: "Not a colour, so it is the one this builds on\nA colour is written #rrggbb or #rgb",
+                name: false,
+            });
         }
         read
     };
@@ -417,22 +446,23 @@ fn over_noting(table: &toml::Table) -> (Theme, Noted) {
                     within
                         .keys()
                         .filter(|key| !asked.contains(&(section, key.as_str())))
-                        .map(|key| {
-                            (
-                                vec![section.to_string(), key.clone()],
-                                "No colour here is called this".to_string(),
-                            )
+                        .map(|key| Note {
+                            keys: vec![section.to_string(), key.clone()],
+                            why: "No colour here is called this",
+                            name: true,
                         }),
                 ),
-                None => noted.push((
-                    vec![section.to_string()],
-                    "This is a table of colours of its own".to_string(),
-                )),
+                None => noted.push(Note {
+                    keys: vec![section.to_string()],
+                    why: "This is a table of colours of its own",
+                    name: false,
+                }),
             },
-            key if !asked.contains(&("", key)) => noted.push((
-                vec![key.to_string()],
-                "No colour in a theme is called this".to_string(),
-            )),
+            key if !asked.contains(&("", key)) => noted.push(Note {
+                keys: vec![key.to_string()],
+                why: "No colour in a theme is called this",
+                name: true,
+            }),
             _ => {}
         }
     }
@@ -490,7 +520,7 @@ mod tests {
                 .parse()
                 .expect("a table");
         let (theme, noted) = super::over_noting(&table);
-        let mut at: Vec<String> = noted.iter().map(|(keys, _)| keys.join(".")).collect();
+        let mut at: Vec<String> = noted.iter().map(|note| note.keys.join(".")).collect();
         at.sort();
         assert_eq!(
             at,
