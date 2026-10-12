@@ -16,13 +16,6 @@ impl App {
         // and a watch says what happens next rather than what already
         // has.
         self.head = obelus_git::head_of_the_tree(&self.working_directory);
-        // The one door every way of settling on a project goes through --
-        // an argument, the directory Obelus was started in, a row on the
-        // page that asks which -- which is why the remembering is here
-        // and at none of the three. `remember` declines anything that is
-        // not a worktree, so a process that began in the home directory
-        // writes nothing.
-        projects::remember(&self.working_directory, jiff::Timestamp::now().as_second());
         let root = self.working_directory.clone();
         self.keep_what_is_open_for(&root);
     }

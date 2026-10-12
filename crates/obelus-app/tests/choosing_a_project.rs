@@ -451,6 +451,78 @@ fn choosing_a_project_settles_it() {
     );
 }
 
+/// Whether the list the page offers has `root` on it, as the file Obelus
+/// keeps it in says.
+///
+/// Read from the file rather than asked of the page, which reads the same
+/// file through the code under test. Compared resolved, because a
+/// temporary directory on macOS is reached through a link.
+fn remembered(root: &std::path::Path) -> bool {
+    let list = obelus_logging::state_directory()
+        .expect("somewhere to keep state")
+        .join("projects.toml");
+    let Ok(text) = std::fs::read_to_string(list) else {
+        return false;
+    };
+    let root = std::fs::canonicalize(root).expect("the project is there");
+    text.parse::<toml::Table>()
+        .expect("the list reads")
+        .get("opened")
+        .and_then(toml::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|row| row.get("path")?.as_str())
+        .any(|path| std::fs::canonicalize(path).is_ok_and(|path| path == root))
+}
+
+/// A project chosen on the page goes on the page's list.
+///
+/// The one way onto it: the list is of the answers this page was given.
+///
+/// Broken deliberately by taking the `remember` out of `settle_on`: the
+/// project is opened and the file never hears of it.
+#[test]
+fn choosing_a_project_remembers_it() {
+    let scratch = support::Scratch::new("choosing-remembers");
+    gix::init(scratch.path()).expect("a repository");
+    let mut app = asking();
+    open_another(&mut app);
+    for character in scratch.path().display().to_string().chars() {
+        press(&mut app, KeyCode::Char(character));
+    }
+    press(&mut app, KeyCode::Esc);
+    press(&mut app, KeyCode::Enter);
+
+    assert!(app.choosing().is_none(), "it is still asking");
+    assert!(
+        remembered(scratch.path()),
+        "a project chosen on the page is not on its list"
+    );
+}
+
+/// And a project Obelus was put on any other way does not.
+///
+/// An argument, the directory Obelus was started in and going to another
+/// worktree all reach a project through `work_in`, which is what this
+/// goes through -- and where the remembering used to be.
+///
+/// Broken deliberately by putting `projects::remember` back in
+/// `App::work_in`: the project is on the list without the page having
+/// been asked.
+#[test]
+fn a_project_not_chosen_on_the_page_is_not_remembered() {
+    let scratch = support::Scratch::new("started-in-it");
+    gix::init(scratch.path()).expect("a repository");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(scratch.path().to_path_buf());
+
+    assert_eq!(app.working_directory(), scratch.path(), "not put on it");
+    assert!(
+        !remembered(scratch.path()),
+        "a project nobody chose on the page is on its list"
+    );
+}
+
 /// A path typed with forward slashes finds its directory on every
 /// platform.
 ///

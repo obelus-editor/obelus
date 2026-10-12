@@ -14,19 +14,20 @@
 //! first. The same shape the conversations have and for the same reason
 //! -- what a reader did outlives the window.
 //!
-//! **A project is remembered however it was named.** By an argument, by
-//! the directory Obelus was started in, or by being chosen on that
-//! screen: all three are a reader saying where they work, and a list that
-//! held only the third would be empty for exactly the reader who works
-//! from a terminal and then reaches for the menu once. [`App::work_in`] is
-//! the one door all three go through, which is why the remembering is
-//! there and not at any of them.
+//! **A project is remembered when it is chosen on that screen, and only
+//! then.** Not when an argument names it, not when Obelus is started
+//! standing in it, and not when a window goes to another worktree: the
+//! list is of the answers this page was given. It was once all of them,
+//! through [`App::work_in`], and the cost of not doing so is said out
+//! loud -- a reader who works from a terminal and reaches for the menu
+//! once finds the list empty and types the path, and choosing it then is
+//! what puts it on.
 //!
-//! **Only a worktree is remembered.** Not every directory Obelus is
-//! pointed at is somewhere a reader would come back to: a process started
-//! in `$HOME`, in `/`, or in a directory of downloads is the normal case
-//! for a launcher, and writing those down would fill the list with the
-//! places Obelus happened to begin rather than the places it was used.
+//! **Only a worktree is remembered.** Not every directory a reader
+//! chooses is somewhere they would come back to: a path typed into the
+//! box can be `$HOME`, `/`, or a directory of downloads, and writing
+//! those down would fill the list with places glanced at rather than
+//! places worked in.
 //! Asked of git, which is the same question [`crate::app::opening`] asks
 //! of a path on the command line.
 //!
@@ -219,8 +220,8 @@ fn spelled(path: &Path) -> PathBuf {
 /// to know whether to look again.
 pub(in crate::app) fn remember(root: &Path, now: i64) -> bool {
     // Not a worktree is not a project, and this is the one place that
-    // judgement is made: `work_in` is told about directories that are
-    // somewhere Obelus was started as well as ones a reader chose.
+    // judgement is made: the page puts Obelus on whatever directory was
+    // typed, worktree or not.
     if obelus_git::worktree(root).is_none() {
         return false;
     }
@@ -859,6 +860,9 @@ impl crate::app::App {
         self.which_project.naming_list = None;
         self.which_project.naming_read = None;
         self.which_project.naming_shut = false;
+        // Here and not in `settle`, which going to another worktree
+        // shares: only an answer to this page goes on its list.
+        remember(&root, jiff::Timestamp::now().as_second());
         self.settle(root, &opening.files);
         // A first start's question about the keys, held back while this
         // page was the screen (`App::ask_for_a_keymap`).

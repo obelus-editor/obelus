@@ -589,8 +589,8 @@ crates/
                       newest first, a conversation belongs to the agent that
                       had it and to the checkout it was had in, and a watch
                       is settled from what is open
-                      (app/chat/conversations); where Obelus has been is
-                      remembered however the project was named, and only a
+                      (app/chat/conversations); a project is remembered
+                      when it is chosen on the page that asks, and only a
                       worktree, and what a start with nothing to go on asks
                       (app/project/projects); what was open is kept by the tree,
                       and the last window to change it wins (app/project/reopening);
