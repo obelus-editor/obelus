@@ -917,8 +917,7 @@ impl Painter {
                 // The screen a pane went from, being kept: what was
                 // written on the panes that went is left out where they
                 // were, and drawn into a picture of its own below.
-                None if placed.kept_from.is_some() => {
-                    let from = placed.kept_from.unwrap_or(placed.drawn);
+                None if let Some(from) = placed.kept_from => {
                     let (glass, written) = parted_at(on_the_screen(&placed), from);
                     self.follow(&mut pass, &glass, &self.levels[0].bindings);
                     let gone: Vec<[f32; 4]> = self.gone.iter().map(|&(pane, _)| pane).collect();

@@ -789,8 +789,9 @@ fn with_its_rules(band: Rect, room: Rect, edge: Rect) -> Rect {
 /// said after what, so the line was the pane's to cover: it went back to
 /// the font's glyph, and a list's glass ran on past the line it stands on.
 /// The row is the pane's edge as much as the page's, and it is said again
-/// as the pane's -- only where the pane is, so that no part of it is said
-/// twice.
+/// as the pane's -- only where the pane is, because outside it the one said
+/// at the top is still the page's. A dialog that draws its own foot along
+/// that row says it once more, which is the same line in the same place.
 fn laid_over(
     cells: &mut CellBuffer,
     pane: Rect,
