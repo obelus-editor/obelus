@@ -1198,6 +1198,7 @@ mod tests {
                 joined,
                 ground: Color::Reset,
                 cells: Vec::new(),
+                depth: 0,
             }
         }
 
@@ -1881,6 +1882,7 @@ mod tests {
             joined: Joined::Nowhere,
             ground,
             cells: Vec::new(),
+            depth: 0,
         };
         let panes = [&pane];
         assert!(seen_through(&panes, 2, 1, ground), "a corner of it");
@@ -1965,7 +1967,7 @@ mod tests {
                 mark: 0,
                 thumb: 1,
             },
-            over: Vec::new(),
+            depth: 0,
             shown: 1.0,
             under: 0.0,
         };
@@ -2005,7 +2007,7 @@ mod tests {
                 mark: 0,
                 thumb: 1,
             },
-            over: Vec::new(),
+            depth: 0,
             shown: 1.0,
             under: 0.0,
         };
@@ -2047,7 +2049,7 @@ mod tests {
                 mark: 0,
                 thumb: 1,
             },
-            over: Vec::new(),
+            depth: 0,
             shown: 1.0,
             under: 0.0,
         }];
@@ -2215,6 +2217,7 @@ mod tests {
             cap: held,
             page,
             edge: Color::Rgb(7, 8, 9),
+            depth: 0,
         };
         let on = cap(held);
         assert_eq!(
@@ -2264,6 +2267,7 @@ mod tests {
                 side,
                 about,
             },
+            depth: 0,
         }
     }
 
@@ -2365,6 +2369,7 @@ mod tests {
             joined: obelus_ui::shapes::Joined::Below,
             ground: Color::Reset,
             cells,
+            depth: 0,
         }
     }
 

@@ -389,15 +389,16 @@ struct Showing {
     spinning: Vec<Spun>,
     sheening: Option<Sheened>,
     parting: Vec<Parted>,
-    /// Which columns are bars on the frame being shown.
-    barred: Vec<Bar>,
+    /// Which columns are bars on the frame being shown, each with how many
+    /// panes and boxes had been put over the page when it was said.
+    barred: Vec<(Bar, usize)>,
     /// And those again with how the window is showing each, refilled
     /// every frame rather than kept: `shown` is a moment's answer and
     /// the pointer moves between frames. A `Vec` that is cleared and
     /// filled rather than made, because this is on the frame's own path.
     showing: Vec<Barred>,
     /// And on the one being laid out.
-    barring_up: Vec<Bar>,
+    barring_up: Vec<(Bar, usize)>,
     /// Which rows are rules on the frame being shown.
     ruled: Vec<Ruled>,
     /// And on the one being laid out.
@@ -1094,6 +1095,7 @@ impl ApplicationHandler<Waking> for Showing {
                                 joined,
                                 ground,
                                 cells,
+                                depth: self.stacking.len(),
                             };
                             // A pane, however many edges it is joined
                             // along. A box goes on the pile too, and what
@@ -1127,11 +1129,22 @@ impl ApplicationHandler<Waking> for Showing {
                         Update::Sheened { area, from, to } => {
                             self.sheening = Some(Sheened { area, from, to });
                         }
-                        Update::Barred { bar } => self.barring_up.push(bar),
-                        Update::Ruled { area } => self.ruling.push(Ruled { area }),
+                        // Each shape with how much had been put over the
+                        // page when it was said, which is whose its cells
+                        // are -- see `Page::layer`.
+                        Update::Barred { bar } => {
+                            self.barring_up.push((bar, self.stacking.len()));
+                        }
+                        Update::Ruled { area } => self.ruling.push(Ruled {
+                            area,
+                            depth: self.stacking.len(),
+                        }),
                         Update::Linked { area } => self.linking.push(area),
                         Update::Stroked { stroke } => {
-                            self.stroking.push(Stroked { stroke });
+                            self.stroking.push(Stroked {
+                                stroke,
+                                depth: self.stacking.len(),
+                            });
                         }
                         Update::Capped {
                             keys,
@@ -1145,6 +1158,7 @@ impl ApplicationHandler<Waking> for Showing {
                             cap,
                             page,
                             edge,
+                            depth: self.stacking.len(),
                         }),
                         Update::Frame => {
                             if left.is_none()
@@ -1186,8 +1200,8 @@ impl ApplicationHandler<Waking> for Showing {
                             // arriving knows that. A frame drawn twice
                             // for some other reason must not read as a
                             // reader scrolling.
-                            self.motion
-                                .bars_drawn(&self.barred, self.pointer, Instant::now());
+                            let bars: Vec<Bar> = self.barred.iter().map(|(bar, _)| *bar).collect();
+                            self.motion.bars_drawn(&bars, self.pointer, Instant::now());
                             self.ruled = std::mem::take(&mut self.ruling);
                             self.linked = std::mem::take(&mut self.linking);
                             // Only where the page still holds it: the
@@ -1207,6 +1221,7 @@ impl ApplicationHandler<Waking> for Showing {
                                 .sheen_drawn(self.sheened.is_some(), Instant::now());
                             self.stroked = std::mem::take(&mut self.stroking);
                             self.stack = std::mem::take(&mut self.stacking);
+                            self.page.put_over(&self.stack);
                             self.panes = std::mem::take(&mut self.paning);
                             self.scrolled = std::mem::take(&mut self.scrolling);
                             drew = true;
@@ -1495,16 +1510,11 @@ impl ApplicationHandler<Waking> for Showing {
                 let now = Instant::now();
                 self.showing.clear();
                 self.showing
-                    .extend(self.barred.iter().enumerate().map(|(at, bar)| {
-                        Barred {
-                            bar: *bar,
-                            over: self.barred[at + 1..]
-                                .iter()
-                                .map(|later| later.area)
-                                .collect(),
-                            shown: self.motion.bar_shown(bar.area, now),
-                            under: self.motion.bar_under(bar.area, now),
-                        }
+                    .extend(self.barred.iter().map(|&(bar, depth)| Barred {
+                        bar,
+                        depth,
+                        shown: self.motion.bar_shown(bar.area, now),
+                        under: self.motion.bar_under(bar.area, now),
                     }));
 
                 // How each band is being shown, worked out for this

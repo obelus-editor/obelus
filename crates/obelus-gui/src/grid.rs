@@ -343,6 +343,9 @@ pub(crate) struct Behind {
     pub(crate) ground: Color,
     /// Row-major.
     pub(crate) cells: Vec<Cell>,
+    /// How many panes and boxes were put over the page before it, which
+    /// is where it is among them -- see `Page::layer`.
+    pub(crate) depth: usize,
 }
 
 impl Behind {
@@ -376,6 +379,12 @@ impl Behind {
             .get(usize::from(down) * usize::from(self.area.width) + usize::from(along))
     }
 
+    /// Whether this cell is still this one's: nothing said after it has
+    /// been put over the cell -- see `Page::layer`.
+    fn owns(&self, page: &Page, x: u16, y: u16) -> bool {
+        page.layer(x, y) <= self.depth + 1
+    }
+
     /// Whether a box's frame is still there to be drawn: its four corners
     /// still hold the corners the view put in them.
     ///
@@ -396,7 +405,7 @@ impl Behind {
             (right, bottom, "\u{256f}"),
         ]
         .into_iter()
-        .all(|(x, y, corner)| page.look(x, y).text == corner)
+        .all(|(x, y, corner)| page.look(x, y).text == corner && self.owns(page, x, y))
     }
 
     /// Whether this cell is part of a box's frame, and still holds it.
@@ -407,7 +416,7 @@ impl Behind {
         let area = self.area;
         let inside = x >= area.x && x < area.right() && y >= area.y && y < area.bottom();
         let ring = x == area.x || x + 1 == area.right() || y == area.y || y + 1 == area.bottom();
-        inside && ring && a_line(page.look(x, y).text)
+        inside && ring && a_line(page.look(x, y).text) && self.owns(page, x, y)
     }
 
     /// The cells of the ring with a letter under them, which a window puts
@@ -529,13 +538,15 @@ impl Spun {
 pub(crate) struct Barred {
     /// What was said about it.
     pub(crate) bar: Bar,
-    /// The bars said after it, which are over it.
+    /// How many panes and boxes had been put over the page when it was
+    /// said.
     ///
     /// A list opened over a file puts its own bar in the file's column, in
     /// the same block, so the cells cannot say whose a row is -- and the
     /// file's mark was drawn on the list's rows at the file's place, a
-    /// second thumb beside the list's that never moved with it.
-    pub(crate) over: Vec<Rect>,
+    /// second thumb beside the list's that never moved with it. See
+    /// `Page::layer`.
+    pub(crate) depth: usize,
     /// From nothing at all to all of it: full while it is moving and for
     /// a moment after, and settled back down once the reader has stopped.
     pub(crate) shown: f32,
@@ -560,10 +571,7 @@ impl Barred {
     /// `\u{2502}` into the cell and the bar is gone.
     fn holds(&self, page: &Page, y: u16) -> bool {
         page.look(self.bar.area.x, y).text == "\u{2588}"
-            && !self.over.iter().any(|over| {
-                (over.left()..over.right()).contains(&self.bar.area.x)
-                    && (over.top()..over.bottom()).contains(&y)
-            })
+            && page.layer(self.bar.area.x, y) <= self.depth
     }
 
     /// The rows of it that are still its own, as runs: where each starts
@@ -692,6 +700,9 @@ impl Sheened {
 pub(crate) struct Ruled {
     /// Which cells it is.
     pub(crate) area: Rect,
+    /// How many panes and boxes had been put over the page when it was
+    /// said -- see `Page::layer`.
+    pub(crate) depth: usize,
 }
 
 impl Ruled {
@@ -707,7 +718,11 @@ impl Ruled {
     /// A tee is where the line meets a frame's side, so it starts or
     /// stops in the middle, where that side's line is.
     pub(crate) fn spans(&self, page: &Page, x: u16, y: u16) -> Option<(f32, f32)> {
-        if y != self.area.y || x < self.area.x || x >= self.area.right() {
+        if y != self.area.y
+            || x < self.area.x
+            || x >= self.area.right()
+            || page.layer(x, y) > self.depth
+        {
             return None;
         }
         match page.look(x, y).text {
@@ -729,6 +744,9 @@ impl Ruled {
 pub(crate) struct Stroked {
     /// Which rows, which edge of the column, and what it is about.
     pub(crate) stroke: Stroke,
+    /// How many panes and boxes had been put over the page when it was
+    /// said -- see `Page::layer`.
+    pub(crate) depth: usize,
 }
 
 impl Stroked {
@@ -760,6 +778,7 @@ impl Stroked {
         x == area.x
             && (area.top()..area.bottom()).contains(&y)
             && page.look(x, y).text == self.glyph()
+            && page.layer(x, y) <= self.depth
     }
 
     /// The rows of it that are still its own, as runs: where each starts
@@ -825,6 +844,9 @@ pub(crate) struct Capped {
     pub(crate) page: Color,
     /// What draws its outline.
     pub(crate) edge: Color,
+    /// How many panes and boxes had been put over the page when it was
+    /// said -- see `Page::layer`.
+    pub(crate) depth: usize,
 }
 
 /// Where a mark is, in the frame being drawn.
@@ -894,7 +916,10 @@ impl Capped {
     /// The key sits one cell in from the cap's own left edge, which is
     /// where the blank inside a cap is, wherever the cap came from.
     pub(crate) fn still_said(&self, page: &Page) -> bool {
-        self.said_by(|x, y| page.look(x, y).text)
+        let area = self.area;
+        (area.top()..area.bottom())
+            .all(|y| (area.left()..area.right()).all(|x| page.layer(x, y) <= self.depth))
+            && self.said_by(|x, y| page.look(x, y).text)
     }
 
     /// Whether what a pane was put over says what this cap was said about.
@@ -1307,6 +1332,9 @@ pub(crate) struct Page {
     /// What the page is drawn on, which is what a cell nobody has written
     /// yet is drawn on too -- see `blank`.
     ground: Color,
+    /// Where each pane and box was put over it on the frame it holds, in
+    /// the order they were said -- see `layer`.
+    put_over: Vec<Rect>,
 }
 
 impl Default for Page {
@@ -1325,6 +1353,7 @@ impl Default for Page {
             // And nothing is typed into a screen with nothing on it.
             typing: false,
             ground: Color::Reset,
+            put_over: Vec::new(),
         }
     }
 }
@@ -1487,6 +1516,30 @@ impl Page {
         self.kept_columns = wide;
         self.kept_rows = tall;
         self.cells = cells;
+    }
+
+    /// Says where each pane and box was put over the frame the page now
+    /// holds, in the order they were said.
+    pub(crate) fn put_over(&mut self, stack: &[Behind]) {
+        self.put_over = stack.iter().map(|over| over.area).collect();
+    }
+
+    /// How many of the panes and boxes put over the page are under what
+    /// is in this cell: none for the page's own, one for the first pane's,
+    /// and so on -- the last one said whose area this cell is in.
+    ///
+    /// Which is who a cell belongs to, and the one thing its glyph cannot
+    /// say. A list opened over a file puts its bar in the file's column in
+    /// the same block, so the cells are the same whoever wrote them: the
+    /// file's mark was drawn on the list's rows. A shape is said at a
+    /// depth -- how many had been put over the page when it was said --
+    /// and a cell deeper than that is somebody else's by now, whatever it
+    /// holds.
+    pub(crate) fn layer(&self, x: u16, y: u16) -> usize {
+        self.put_over
+            .iter()
+            .rposition(|over| over.contains(Position { x, y }))
+            .map_or(0, |at| at + 1)
     }
 
     /// Says what the page is drawn on.
@@ -1842,6 +1895,7 @@ mod tests {
                 width: 5,
                 height: 1,
             },
+            depth: 0,
         };
         assert_eq!(rule.spans(&page, 0, 0), Some((0.5, 1.0)), "a tee");
         assert_eq!(rule.spans(&page, 1, 0), Some((0.0, 1.0)));
@@ -1935,6 +1989,7 @@ mod tests {
             joined: Joined::Above,
             ground: Color::Rgb(9, 9, 9),
             cells: Vec::new(),
+            depth: 0,
         };
         let over = [&pane];
 
@@ -2014,8 +2069,8 @@ mod tests {
         page
     }
 
-    /// And a bar is a bar only where its cells still say so, and where no
-    /// bar said after it is.
+    /// And a bar is a bar only where its cells still say so, and where
+    /// nothing put over the page after it was said is.
     ///
     /// Row by row, which is what a column needs and a cell does not: the
     /// thing drawn over a bar may take the middle of it, so what is left
@@ -2027,50 +2082,159 @@ mod tests {
     /// Deliberate break: have `holds` answer `true`. The file's own bar is
     /// then drawn down the side of the list opened over it -- past the
     /// list, the preview and the foot, widening under the pointer -- on a
-    /// list of nine rows with nothing to scroll. And take the `over`
-    /// clause out of it: the file's bar keeps the list's two rows.
+    /// list of nine rows with nothing to scroll. And take the layer out of
+    /// it: the file's bar keeps the list's two rows.
     #[test]
     fn a_bar_is_a_bar_only_where_its_cells_still_say_so() {
         // A column the list drew two rows of and the file drew all four:
         // the blank and the rule are the list's foot, over the file's bar.
-        let page = written(&["\u{2588}", "\u{2588}", " ", "\u{2500}"]);
+        let mut page = written(&["\u{2588}", "\u{2588}", " ", "\u{2500}"]);
         let area = |y: u16, height: u16| Rect {
             x: 0,
             y,
             width: 1,
             height,
         };
-        let showing = |y: u16, height: u16, over: Vec<Rect>| Barred {
+        let showing = |y: u16, height: u16, depth: usize| Barred {
             bar: Bar {
                 area: area(y, height),
                 mark: 0,
                 thumb: 1,
             },
-            over,
+            depth,
             shown: 1.0,
             under: 0.0,
         };
         assert_eq!(
-            showing(0, 2, Vec::new()).runs(&page),
-            vec![(0, 2)],
-            "the list's own, drawn last"
-        );
-        assert_eq!(
-            showing(0, 4, Vec::new()).runs(&page),
+            showing(0, 4, 0).runs(&page),
             vec![(0, 2)],
             "the file's alone, which reaches past what is still its own"
         );
+        page.put_over(&[pane(area(0, 4))]);
         assert_eq!(
-            showing(0, 4, vec![area(0, 2)]).runs(&page),
-            Vec::new(),
-            "and the file's under the list's, whose rows those are"
-        );
-        // A bar said later somewhere else takes nothing from it.
-        assert_eq!(
-            showing(0, 4, vec![Rect { x: 1, ..area(0, 2) }]).runs(&page),
+            showing(0, 2, 1).runs(&page),
             vec![(0, 2)],
-            "a bar in another column took rows from this one"
+            "the list's own, said over the list"
         );
+        assert_eq!(
+            showing(0, 4, 0).runs(&page),
+            Vec::new(),
+            "and the file's under the list, whose rows those are"
+        );
+        // A pane put over somewhere else takes nothing from it.
+        page.put_over(&[pane(Rect { x: 1, ..area(0, 4) })]);
+        assert_eq!(
+            showing(0, 4, 0).runs(&page),
+            vec![(0, 2)],
+            "a pane beside the column took rows from it"
+        );
+    }
+
+    /// A rule under a pane is not a line where the pane is, though the
+    /// pane wrote the same glyph in the same row.
+    ///
+    /// The status row's rule and a list's own line can be one row of `─`
+    /// written twice, so the cells cannot say whose the row is: the one
+    /// said before the pane is the page's, and the pane's cells are not.
+    ///
+    /// Deliberate break: take `page.layer` out of `Ruled::spans`, and the
+    /// page's rule is drawn across the pane's row as well as the pane's.
+    #[test]
+    fn a_rule_under_a_pane_is_not_the_panes() {
+        let mut page = written(&["\u{2500}\u{2500}\u{2500}\u{2500}"]);
+        page.put_over(&[pane(Rect::new(2, 0, 2, 1))]);
+        let rule = |depth| Ruled {
+            area: Rect::new(0, 0, 4, 1),
+            depth,
+        };
+        assert_eq!(rule(0).spans(&page, 1, 0), Some((0.0, 1.0)), "beside it");
+        assert_eq!(rule(0).spans(&page, 2, 0), None, "the pane's cell");
+        assert!(!rule(0).still_said(&page), "and so not all of it");
+        assert_eq!(
+            rule(1).spans(&page, 2, 0),
+            Some((0.0, 1.0)),
+            "the pane's own"
+        );
+    }
+
+    /// A change mark under a pane keeps only the rows the pane is not on.
+    ///
+    /// Deliberate break: take `page.layer` out of `Stroked::holds`, and
+    /// the file's margin runs on down the side of a list put over it.
+    #[test]
+    fn a_stroke_under_a_pane_keeps_the_rows_beside_it() {
+        let mut page = written(&["\u{2590}", "\u{2590}", "\u{2590}", "\u{2590}"]);
+        page.put_over(&[pane(Rect::new(0, 2, 1, 2))]);
+        let stroke = |area, depth| Stroked {
+            stroke: Stroke {
+                area,
+                side: Side::Right,
+                about: About::Rows,
+            },
+            depth,
+        };
+        let file = stroke(Rect::new(0, 0, 1, 4), 0);
+        assert_eq!(file.runs(&page), vec![(0, 2)], "above the pane");
+        let list = stroke(Rect::new(0, 2, 1, 2), 1);
+        assert_eq!(list.runs(&page), vec![(2, 2)], "and the pane's own");
+    }
+
+    /// A cap under a pane is not drawn on the pane, though the pane wrote
+    /// the same key in the same cells.
+    ///
+    /// Deliberate break: take the layers out of `Capped::still_said`, and
+    /// the welcome screen's cap is drawn over a list's own `f1`.
+    #[test]
+    fn a_cap_under_a_pane_is_not_the_panes() {
+        let mut page = written(&[" f1 "]);
+        let cap = |depth| Capped {
+            keys: "f1".to_string(),
+            area: Rect::new(0, 0, 4, 1),
+            cap: Color::Reset,
+            page: Color::Reset,
+            edge: Color::Reset,
+            depth,
+        };
+        assert!(cap(0).still_said(&page), "nothing over it");
+        page.put_over(&[pane(Rect::new(0, 0, 4, 1))]);
+        assert!(!cap(0).still_said(&page), "under the pane");
+        assert!(cap(1).still_said(&page), "the pane's own");
+    }
+
+    /// A box's frame is not the frame where something said after it was
+    /// put over, though that wrote a line in the same cell.
+    ///
+    /// Deliberate break: take `owns` out of `Behind::ring_holds`, and a
+    /// list over one side of a hover leaves the hover's frame drawn down
+    /// the list's own line; out of `framed`, and a hover whose corner a
+    /// list covered is still a box.
+    #[test]
+    fn a_frame_under_a_pane_is_not_the_panes() {
+        let mut page = written(&[
+            "\u{256d}\u{2500}\u{2500}\u{256e}",
+            "\u{2502}  \u{2502}",
+            "\u{2570}\u{2500}\u{2500}\u{256f}",
+        ]);
+        let frame = a_box(4, 3);
+        let list = Behind {
+            depth: 1,
+            ..pane(Rect::new(2, 0, 2, 3))
+        };
+        page.put_over(&[frame.clone(), list]);
+        assert!(frame.ring_holds(&page, 1, 0), "beside the list");
+        assert!(!frame.ring_holds(&page, 2, 0), "the list's cell");
+        assert!(!frame.framed(&page), "a corner is the list's");
+    }
+
+    /// A pane put over the page, of which only where it is matters here.
+    fn pane(area: Rect) -> Behind {
+        Behind {
+            area,
+            joined: Joined::Above,
+            ground: Color::Reset,
+            cells: Vec::new(),
+            depth: 0,
+        }
     }
 
     /// A box with a frame, as the view says one: a pane joined to nothing,
@@ -2086,6 +2250,7 @@ mod tests {
             joined: Joined::Nowhere,
             ground: Color::Reset,
             cells: Vec::new(),
+            depth: 0,
         }
     }
 
@@ -2267,6 +2432,7 @@ mod tests {
             cap: Color::Reset,
             page: Color::Reset,
             edge: Color::Reset,
+            depth: 0,
         };
         assert!(cap.still_said(&page));
         // What a view drawn over inside the same frame leaves behind.
@@ -2294,6 +2460,7 @@ mod tests {
                     cell
                 })
                 .collect(),
+            depth: 0,
         };
         let cap = Capped {
             keys: "f1".to_string(),
@@ -2306,6 +2473,7 @@ mod tests {
             cap: Color::Reset,
             page: Color::Reset,
             edge: Color::Reset,
+            depth: 0,
         };
         let row = Rect {
             x: 0,
@@ -2395,6 +2563,7 @@ mod tests {
             joined: Joined::Above,
             ground: Color::Reset,
             cells,
+            depth: 0,
         };
         assert_eq!(behind.look(3, 1).map(|look| look.text), Some("a"));
         assert_eq!(behind.look(4, 1).map(|look| look.text), Some("b"));
