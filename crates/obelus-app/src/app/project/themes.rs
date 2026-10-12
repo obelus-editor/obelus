@@ -112,7 +112,9 @@ impl App {
                     Status::Failed(why.clone())
                 } else {
                     match &record {
-                        Some(record) if record.commit == theme.commit => Status::Installed,
+                        Some(record) if record.sha256.as_ref() == Some(&theme.sha256) => {
+                            Status::Installed
+                        }
                         Some(_) => Status::Outdated,
                         None => Status::Missing,
                     }

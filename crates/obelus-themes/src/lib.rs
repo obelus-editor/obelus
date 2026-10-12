@@ -189,10 +189,10 @@ pub struct Listed {
     /// Where its package is, whole.
     pub package: String,
     /// What the package's bytes hash to, which is what says it is the
-    /// package the registry describes.
+    /// package the registry describes -- and whether the one installed is
+    /// the one listed.
     pub sha256: String,
-    /// The commit it was packed from, which is what says whether the one
-    /// installed is the one listed.
+    /// The commit it was packed from.
     pub commit: String,
     /// When that commit was made, as the registry writes a day.
     pub updated: String,

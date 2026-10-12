@@ -899,22 +899,36 @@ fn listed(name: &str, group: obelus_themes::Group, commit: &str) -> obelus_theme
         description: format!("The {name} colours"),
         wallpaper: None,
         package: format!("{name}-{commit}.tar.gz"),
-        sha256: String::new(),
+        sha256: package_of(commit),
         commit: commit.to_string(),
         updated: "2026-10-01".to_string(),
     }
 }
 
+/// What the package `listed` packs at a commit hashes to.
+fn package_of(commit: &str) -> String {
+    format!("{commit}-package")
+}
+
 /// A theme as an install leaves it: its file, and the record that says
-/// which commit it is and which shelf it came off.
+/// which commit and package it is and which shelf it came off.
 fn installed_as(root: &std::path::Path, name: &str, commit: &str, group: &str) {
+    recorded(
+        root,
+        name,
+        &format!(
+            "{{\"commit\": \"{commit}\", \"sha256\": \"{}\", \"group\": \"{group}\"}}",
+            package_of(commit)
+        ),
+    );
+}
+
+/// A theme installed with `record` beside it, as it was written.
+fn recorded(root: &std::path::Path, name: &str, record: &str) {
     std::fs::create_dir_all(root.join(name)).expect("the directory");
     std::fs::write(root.join(name).join("theme.toml"), "base = \"dark\"\n").expect("the theme");
-    std::fs::write(
-        root.join(name).join(obelus_themes::install::RECORD),
-        format!("{{\"commit\": \"{commit}\", \"group\": \"{group}\"}}"),
-    )
-    .expect("the record");
+    std::fs::write(root.join(name).join(obelus_themes::install::RECORD), record)
+        .expect("the record");
 }
 
 /// The settings open on their themes page.
@@ -937,12 +951,15 @@ fn card_row(text: &str, name: &str) -> String {
 /// The themes page is the registry's two shelves, each under its name, and
 /// a card says where its theme stands here: installed, behind, not there --
 /// and one taken from the registry that it no longer lists is still shown,
-/// under the shelf it came off, saying so.
+/// under the shelf it came off, saying so. Behind is a package the registry
+/// made again from the same commit, as it does omarchy's when how it makes
+/// them changes, and a record from before records said which package.
 ///
 /// Deliberate breaks: the cards made without the walk over what is
-/// installed (`gone` is then not on the page), the record's commit not
-/// compared (`behind` then says `Installed`), and the heading left out of
-/// the drawing (the page then has no `omarchy` line).
+/// installed (`gone` is then not on the page), the commit compared rather
+/// than the package (`repacked` and `unhashed` then say `Installed`), the
+/// package not compared at all (`behind` then says `Installed`), and the
+/// heading left out of the drawing (the page then has no `omarchy` line).
 #[test]
 fn the_themes_page_is_two_shelves_and_says_where_each_stands() {
     let scratch = reader("themes-page");
@@ -950,6 +967,16 @@ fn the_themes_page_is_two_shelves_and_says_where_each_stands() {
     installed_as(root.path(), "current", "aaa", "obelus");
     installed_as(root.path(), "behind", "old", "obelus");
     installed_as(root.path(), "gone", "zzz", "omarchy");
+    recorded(
+        root.path(),
+        "repacked",
+        r#"{"commit": "eee", "sha256": "made-before", "group": "omarchy"}"#,
+    );
+    recorded(
+        root.path(),
+        "unhashed",
+        r#"{"commit": "fff", "group": "omarchy"}"#,
+    );
 
     let mut app = open(&scratch);
     app.installed_themes_for_test(root.path().to_path_buf());
@@ -958,13 +985,17 @@ fn the_themes_page_is_two_shelves_and_says_where_each_stands() {
         listed("behind", obelus_themes::Group::Obelus, "new"),
         listed("fresh", obelus_themes::Group::Obelus, "bbb"),
         listed("omarchy-tokyo", obelus_themes::Group::Omarchy, "ccc"),
+        listed("repacked", obelus_themes::Group::Omarchy, "eee"),
+        listed("unhashed", obelus_themes::Group::Omarchy, "fff"),
     ]);
     on_the_themes_page(&mut app);
-    let dump = support::render(&mut app, 90, 44);
+    let dump = support::render(&mut app, 90, 60);
     let text = support::text_block(&dump);
 
     assert!(card_row(text, "current").contains("Installed"), "{dump}");
     assert!(card_row(text, "behind").contains("Update"), "{dump}");
+    assert!(card_row(text, "repacked").contains("Update"), "{dump}");
+    assert!(card_row(text, "unhashed").contains("Update"), "{dump}");
     assert!(card_row(text, "fresh").contains("Install"), "{dump}");
     assert!(
         card_row(text, "gone").contains("No longer listed"),

@@ -10,9 +10,14 @@
 //! failed half way would be the screen changing colour to whatever half of
 //! a theme was left.
 //!
-//! **Which commit it came from is written inside it**, as the last file of
-//! the unpacked theme before it is put in place: it is what says whether the
-//! theme the registry lists now is the one installed.
+//! **Which package it came from is written inside it**, as the last file of
+//! the unpacked theme before it is put in place: its hash is what says
+//! whether the theme the registry lists now is the one installed. Not its
+//! commit, which is the author's -- or omarchy's -- and stays where it was
+//! when the registry makes the same theme into other bytes, as it did when
+//! it began measuring how much of the page each of omarchy's pictures
+//! wants. A record written before the hash was is not known to be anything,
+//! so it is behind.
 //!
 //! **One Obelus at a time installs a theme**, by the lock an agent's install
 //! is held by -- beside the theme's directory, not in it, because the
@@ -36,6 +41,9 @@ pub const RECORD: &str = "installed.json";
 pub struct Installed {
     /// The commit it was packed from.
     pub commit: String,
+    /// What the package it was unpacked from hashes to -- none for one
+    /// installed before this was written.
+    pub sha256: Option<String>,
     /// Which shelf it came off -- kept, because a theme the registry no
     /// longer lists has nowhere else to say which group it is shown in.
     pub group: Group,
@@ -49,6 +57,10 @@ pub fn installed(name: &str, root: &Path) -> Option<Installed> {
     let record: serde_json::Value = serde_json::from_str(&text).ok()?;
     Some(Installed {
         commit: record.get("commit")?.as_str()?.to_string(),
+        sha256: record
+            .get("sha256")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string),
         group: record
             .get("group")
             .and_then(serde_json::Value::as_str)
@@ -131,8 +143,12 @@ fn unpack_and_read(bytes: &[u8], theme: &Listed, staging: &Path) -> Result<PathB
     // first time it is chosen.
     obelus_theme::written::read_where(&arrived.join(obelus_theme::written::FILE))
         .map_err(|wrong| format!("Obelus cannot read the theme it was sent: {}", wrong.why))?;
-    let record =
-        serde_json::json!({ "commit": theme.commit, "group": theme.group.word() }).to_string();
+    let record = serde_json::json!({
+        "commit": theme.commit,
+        "sha256": theme.sha256,
+        "group": theme.group.word(),
+    })
+    .to_string();
     std::fs::write(arrived.join(RECORD), record).map_err(|error| format!("{error}"))?;
     Ok(arrived)
 }
@@ -301,6 +317,11 @@ mod tests {
         assert_eq!(
             super::installed("rain", &root).map(|record| (record.commit, record.group)),
             Some(("aaa".to_string(), Group::Omarchy))
+        );
+        assert_eq!(
+            super::installed("rain", &root).and_then(|record| record.sha256),
+            Some(omarchys.sha256.clone()),
+            "the record does not say which package it was"
         );
 
         let second = package("rain", "base = \"dark\"\nbackground = \"#202830\"\n");
