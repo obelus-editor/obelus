@@ -2362,13 +2362,13 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).expect("the project");
         let path = project_path_for(&root);
-        let theme = Value::Choice("light".to_string());
-        write_project(&path, "theme", Some(&theme)).expect("a project's first setting");
+        let wrapped = Value::Switch(true);
+        write_project(&path, "wrap", Some(&wrapped)).expect("a project's first setting");
         assert!(path.is_file(), "a project's first setting made no file");
 
         std::fs::remove_dir_all(&root).expect("the project going");
         assert!(
-            write_project(&path, "theme", Some(&theme)).is_err(),
+            write_project(&path, "wrap", Some(&wrapped)).is_err(),
             "a setting was written into a project that has gone"
         );
         assert!(!root.exists(), "the project was made again");
@@ -3289,8 +3289,8 @@ mod tests {
         let theirs = project.with_extension("toml.writing");
         std::fs::create_dir_all(theirs.parent().expect("a directory")).expect("the directory");
         std::fs::write(&theirs, "another Obelus is halfway through this").expect("theirs");
-        let theme = super::Value::Choice("light".to_string());
-        super::write_project(&project, "theme", Some(&theme)).expect("a project's setting");
+        let wrapped = super::Value::Switch(true);
+        super::write_project(&project, "wrap", Some(&wrapped)).expect("a project's setting");
         assert_eq!(
             std::fs::read_to_string(&theirs).ok().as_deref(),
             Some("another Obelus is halfway through this"),

@@ -16,7 +16,8 @@ use obelus_app::{
 use obelus_command::Command;
 use obelus_theme::{builtin, written};
 
-/// A project with a settings file and a themes directory beside it.
+/// Where a reader's settings file goes, with their themes directory beside
+/// it.
 fn reader(name: &str) -> support::Scratch {
     let scratch = support::Scratch::new(&format!("theme-{name}"));
     std::fs::create_dir_all(scratch.join("themes")).expect("the directory");
@@ -251,6 +252,50 @@ fn omarchys_theme_arrives_when_omarchy_first_writes_it() {
         app.theme().background,
         written::hex("#1a1b26").expect("a colour"),
         "omarchy's theme was written and not heard"
+    );
+}
+
+/// omarchy setting another theme replaces the directory its file is in,
+/// whole, and the screen is wearing the new one a moment later -- through
+/// the file Obelus finds by itself, with no link of the reader's in
+/// between.
+///
+/// Deliberate breaks: omarchy's file not asked for when nothing of the
+/// reader's answers to the name (the first colours are then the default
+/// theme's), and `is_a_theme` taking no change for the theme's (the second
+/// are then the first).
+#[test]
+fn omarchys_theme_follows_omarchy_swapping_it() {
+    let scratch = reader("omarchy-swapped");
+    std::fs::write(scratch.join("config.toml"), "theme = \"omarchy\"\n").expect("the settings");
+    let state = support::Scratch::new("omarchy-swapped-state");
+    std::fs::create_dir_all(state.join("current/theme")).expect("the directory");
+    let rendered = state.join("current/theme/obelus.toml");
+    std::fs::write(&rendered, "base = \"dark\"\nbackground = \"#121212\"\n").expect("the theme");
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.omarchy_for_test(rendered.clone());
+    app.config_file_for_test(scratch.join("config.toml"));
+    support::lay_out(&mut app, 70, 14);
+    assert_eq!(
+        app.theme().background,
+        written::hex("#121212").expect("a colour"),
+        "omarchy's theme was not worn"
+    );
+
+    std::fs::create_dir_all(state.join("next")).expect("the directory");
+    std::fs::write(
+        state.join("next/obelus.toml"),
+        "base = \"dark\"\nbackground = \"#241f31\"\n",
+    )
+    .expect("the theme");
+    std::fs::remove_dir_all(state.join("current/theme")).expect("the old one");
+    std::fs::rename(state.join("next"), state.join("current/theme")).expect("the swap");
+    app.handle(Event::Watched(obelus_watch::Changed { path: rendered }));
+    assert_eq!(
+        app.theme().background,
+        written::hex("#241f31").expect("a colour"),
+        "the swapped theme did not arrive"
     );
 }
 
