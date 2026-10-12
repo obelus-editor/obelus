@@ -573,7 +573,11 @@ impl crate::app::App {
     fn note_what_the_box_names(&mut self) {
         let named = self.which_project.chooser.as_ref().and_then(Chooser::named);
         self.which_project.named_is_there = named.as_ref().is_some_and(|path| path.exists());
-        self.which_project.named_is_a_project = named.as_deref().is_some_and(a_project);
+        // Only of a path that is there, which is the path enter would open:
+        // an empty box names no directory, and `.git` against nothing is
+        // `.git` wherever the process happens to be.
+        self.which_project.named_is_a_project =
+            self.which_project.named_is_there && named.as_deref().is_some_and(a_project);
     }
 
     /// Reads what a directory holds and makes a list of it.

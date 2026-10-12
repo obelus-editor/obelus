@@ -481,10 +481,12 @@ fn a_box_that_names_a_project_is_drawn_in_the_green() {
         press(&mut app, KeyCode::Char(character));
     }
 
-    // The ink of the last letter of the row that ends in `path`: the
-    // box's, since the remembered rows above it are elsewhere.
-    let ink_of = |app: &mut App, path: &std::path::Path| {
-        let path = path.display().to_string();
+    // The ink of the last letter of the box's row, found by what is in the
+    // box: a path worked out here would be spelled with this platform's
+    // separator, and the box holds the `/` that was typed into it -- which
+    // on Windows is not the same string.
+    let ink_of = |app: &mut App| {
+        let path = app.choosing().expect("asking").typed;
         let cells = support::cells_of(app, 120, 20);
         let area = cells.area;
         (area.y..area.bottom())
@@ -503,7 +505,7 @@ fn a_box_that_names_a_project_is_drawn_in_the_green() {
 
     press(&mut app, KeyCode::Enter);
     assert_eq!(
-        ink_of(&mut app, &project),
+        ink_of(&mut app),
         obelus_theme::builtin::DARK.change_added,
         "a project in the box is not drawn as one"
     );
@@ -518,7 +520,7 @@ fn a_box_that_names_a_project_is_drawn_in_the_green() {
     }
     press(&mut app, KeyCode::Esc);
     assert_ne!(
-        ink_of(&mut app, &scratch.path().join("beta")),
+        ink_of(&mut app),
         obelus_theme::builtin::DARK.change_added,
         "a directory that is not a project is drawn as one"
     );
