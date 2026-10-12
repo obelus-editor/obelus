@@ -434,15 +434,21 @@ mod tests {
         );
     }
 
-    /// An ask is answered with its own number, and one overtaken by an ask
-    /// for none is never answered -- so a picture cannot arrive after the
-    /// page was told it has none.
+    /// An ask is answered, and one overtaken by an ask for none is no
+    /// longer the newest -- so whatever of it is still answered is numbered
+    /// below the none, and the window, which keeps only a number higher
+    /// than the last, never draws a picture after being told it has none.
+    ///
+    /// Not "never answered": the thread may have finished the overtaken
+    /// one before the none was asked, and answered it then, rightly. This
+    /// test once said so and failed on a runner quick enough to do it.
     ///
     /// A picture that is not there, which decodes to nothing at once: what
     /// is under test is which answers are sent, not the decoding.
     ///
-    /// Deliberate break: `newest` always true and an ask for none leaving
-    /// what was waiting, which sends the overtaken one's answer.
+    /// Deliberate breaks: `newest` always true (the overtaken ask is then
+    /// still the newest), and the none given the number before it rather
+    /// than one of its own (it is then not above the overtaken picture).
     #[test]
     fn the_decoder_answers_only_the_newest() {
         let (sent, heard) = std::sync::mpsc::channel();
@@ -457,13 +463,22 @@ mod tests {
             "an ask went unanswered"
         );
         let _ = decoder.ask(Some(somewhere("second")));
-        let _ = decoder.ask(None);
+        let second = decoder.newest.load(std::sync::atomic::Ordering::Relaxed);
+        let none = decoder.ask(None).expect("an ask for none says its number");
         assert!(
-            heard
-                .recv_timeout(std::time::Duration::from_millis(300))
-                .is_err(),
-            "an ask overtaken by none was answered"
+            none > second,
+            "the none is not above the picture it overtook"
         );
+        assert!(
+            !decoder.newest(second),
+            "the overtaken picture is still the newest"
+        );
+        while let Ok((number, _)) = heard.recv_timeout(std::time::Duration::from_millis(300)) {
+            assert!(
+                number < none,
+                "a picture was answered above the none that overtook it"
+            );
+        }
     }
 
     /// Another picture, or none, has the page let go of the one it shows
