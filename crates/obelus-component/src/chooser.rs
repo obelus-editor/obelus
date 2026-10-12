@@ -36,6 +36,14 @@
 //! settles it. The rows are walked with the keys every other list is
 //! walked with.
 //!
+//! **A walk down the tree stops at a project.** Choosing a directory
+//! goes on into it, one key a level, except where the directory is the
+//! top of a checkout: that is where the walk was going, so the box stops
+//! there, in the ink that says enter opens a project. A directory that is
+//! not one is still a place enter can open -- escape shuts the list and
+//! enter takes what is in the box -- and anywhere below a project is one
+//! separator away, the way a shell has it.
+//!
 //! **What could finish a path is not here.** It is an ordinary compact
 //! list, built and drawn where every other one is -- the agent's own
 //! commands while one is being typed are the same arrangement, and the
@@ -436,15 +444,19 @@ impl Chooser {
 
     /// Puts a chosen candidate in the box.
     ///
-    /// A directory takes a separator with it, so that the next level's
+    /// `into` is whether the reader goes on into it. A directory they are
+    /// walking down takes a separator with it, so that the next level's
     /// candidates are asked for without the reader typing one -- which is
-    /// what makes walking down a tree one key per level.
-    pub fn put(&mut self, path: &Path, directory: bool) -> Outcome {
+    /// what makes walking down a tree one key per level. A project is
+    /// where the walk ends and a file is never gone into, and which a
+    /// directory is is the application's to say: this crate does not ask
+    /// the disk.
+    pub fn put(&mut self, path: &Path, into: bool) -> Outcome {
         let Doing::Naming(naming) = &mut self.doing else {
             return Outcome::Ignored;
         };
         let mut said = path.to_string_lossy().into_owned();
-        if directory && !said.ends_with(std::path::is_separator) {
+        if into && !said.ends_with(std::path::is_separator) {
             said.push(std::path::MAIN_SEPARATOR);
         }
         naming.typed.replace(&said);

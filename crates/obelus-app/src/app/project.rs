@@ -57,6 +57,8 @@ pub(in crate::app) struct Asking {
     /// to see that enter will refuse before they press it, which is the
     /// rule the palette follows for a command it will not run.
     pub(in crate::app) named_is_there: bool,
+    /// Whether it names the top of a checkout, kept for the same reason.
+    pub(in crate::app) named_is_a_project: bool,
 }
 
 /// The notes, as last read -- every window and an agent's tools write them --

@@ -1251,9 +1251,14 @@ impl StatusView<'_> {
         // wrong, and that is the moment to say so.
         let nowhere =
             choosing.naming && !choosing.typed.is_empty() && !choosing.there && !choosing.offering;
-        let ink = match nowhere {
-            true => style.fg(self.theme.syntax.warning),
-            false => style,
+        // And a project, in the green the settings say `In use` in, where
+        // enter would open it: under a list, enter fills the box instead,
+        // and the ink would be promising what the key does not do.
+        let project = choosing.naming && choosing.project && !choosing.offering;
+        let ink = match (nowhere, project) {
+            (true, _) => style.fg(self.theme.syntax.warning),
+            (false, true) => style.fg(self.theme.change_added),
+            (false, false) => style,
         };
         let after = write_marked(
             cells,

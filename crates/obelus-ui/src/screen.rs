@@ -47,6 +47,12 @@ pub struct Choosing {
     /// what a path on the command line means -- would put Obelus on
     /// wherever the process began.
     pub there: bool,
+    /// Whether what is in that box is the top of a checkout.
+    ///
+    /// The ink that says enter opens a project, which is what a reader
+    /// walking down the tree is looking for: the box stops there rather
+    /// than going on into it.
+    pub project: bool,
     /// Whether anything is being offered to finish it with.
     ///
     /// What keeps the row quiet while a path is half typed: `/tmp/o` is

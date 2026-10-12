@@ -298,6 +298,18 @@ pub(in crate::app) fn forget(these: &[PathBuf]) -> bool {
     write(&path, &projects)
 }
 
+/// Whether a directory is the top of a checkout, where a walk down the
+/// tree towards a project ends.
+///
+/// The top and not anywhere inside one, which is the question meant:
+/// `crates` in a repository is a level on the way, and a reader going
+/// into one crate of many goes on with a separator. `.git` as anything at
+/// all, because in a linked worktree it is a file. One `stat`, on the key
+/// that moved the box.
+fn a_project(directory: &Path) -> bool {
+    directory.join(".git").exists()
+}
+
 /// Writes the list, whole.
 fn write(path: &Path, projects: &[Project]) -> bool {
     if let Some(directory) = path.parent()
@@ -559,12 +571,9 @@ impl crate::app::App {
     /// keys -- what the reader types, and what the list puts in -- and
     /// the second one forgot.
     fn note_what_the_box_names(&mut self) {
-        self.which_project.named_is_there = self
-            .which_project
-            .chooser
-            .as_ref()
-            .and_then(Chooser::named)
-            .is_some_and(|path| path.exists());
+        let named = self.which_project.chooser.as_ref().and_then(Chooser::named);
+        self.which_project.named_is_there = named.as_ref().is_some_and(|path| path.exists());
+        self.which_project.named_is_a_project = named.as_deref().is_some_and(a_project);
     }
 
     /// Reads what a directory holds and makes a list of it.
@@ -771,17 +780,26 @@ impl crate::app::App {
                     .and_then(Picker::selected_item)
                     .map(|item| item.value.clone());
                 let put = match chosen {
-                    Some(PickerValue::Directory(path)) => Some((path, true)),
+                    Some(PickerValue::Directory(path)) => {
+                        let into = !a_project(&path);
+                        Some((path, into))
+                    }
                     Some(PickerValue::File(path)) => Some((path, false)),
                     _ => None,
                 };
-                if let Some((path, directory)) = put {
+                if let Some((path, into)) = put {
                     self.which_project.naming_list = None;
+                    // And kept shut where the box stopped: it names
+                    // something in the directory already read, and the
+                    // next frame would build that list again, offering
+                    // the row just taken in front of the enter that opens
+                    // it.
+                    self.which_project.naming_shut = !into;
                     let outcome = self
                         .which_project
                         .chooser
                         .as_mut()
-                        .map(|chooser| chooser.put(&path, directory));
+                        .map(|chooser| chooser.put(&path, into));
                     // A directory asks for what is inside it at once, so
                     // walking down a tree is one key a level.
                     if let Some(obelus_component::chooser::Outcome::Wants(next)) = outcome {
@@ -945,6 +963,7 @@ impl crate::app::App {
             held: chooser.typing().held(),
             naming: chooser.is_naming(),
             there: self.which_project.named_is_there,
+            project: self.which_project.named_is_a_project,
             offering: self.which_project.naming_list.is_some(),
         })
     }

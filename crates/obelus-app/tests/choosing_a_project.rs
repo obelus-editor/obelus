@@ -374,6 +374,118 @@ fn enter_puts_the_chosen_row_in_the_box() {
     );
 }
 
+/// A project chosen from the list is where the walk stops: no separator,
+/// no list of what is inside it, and enter opens it.
+///
+/// A frame between the two enters, because the frame is what builds the
+/// list again from the directory the box is in -- and that list offers
+/// the row just taken, in front of the enter that would open it.
+///
+/// Broken deliberately twice: going `into` every directory in
+/// `naming_list_key`, so the box takes a separator and the list is what
+/// is inside the project; and leaving `naming_shut` alone there, so the
+/// frame puts the list back and the second enter fills the box again.
+#[test]
+fn a_project_chosen_from_the_list_is_where_the_walk_stops() {
+    let scratch = support::Scratch::new("choosing-stops-at-a-project");
+    let project = scratch.path().join("alpha");
+    std::fs::create_dir_all(project.join("inner")).expect("directories");
+    gix::init(&project).expect("a repository");
+    let mut app = asking();
+    open_another(&mut app);
+    for character in format!("{}/", scratch.path().display()).chars() {
+        press(&mut app, KeyCode::Char(character));
+    }
+
+    press(&mut app, KeyCode::Enter);
+    support::render(&mut app, 120, 20);
+
+    let typed = app.choosing().expect("asking").typed;
+    assert!(
+        typed.ends_with("alpha"),
+        "the box went on into the project: {typed:?}"
+    );
+    assert!(
+        app.naming_list().is_none(),
+        "a list is still in front of the enter that opens it"
+    );
+
+    press(&mut app, KeyCode::Enter);
+
+    assert!(app.choosing().is_none(), "it is still asking");
+    assert_eq!(
+        app.working_directory(),
+        project,
+        "it did not open the project"
+    );
+}
+
+/// And a box that names a project says so in its ink, where enter would
+/// open it.
+///
+/// The green is the settings' `In use`, and it is on the path itself:
+/// what the reader is looking at when they decide to press.
+///
+/// Broken deliberately twice: answering `false` for `named_is_a_project`
+/// in `note_what_the_box_names`, so the path is drawn in the ordinary
+/// ink; and inking on `there` instead of `project` in `render_choosing`,
+/// so every directory that is there turns green.
+#[test]
+fn a_box_that_names_a_project_is_drawn_in_the_green() {
+    let scratch = support::Scratch::new("choosing-green");
+    let project = scratch.path().join("alpha");
+    std::fs::create_dir_all(&project).expect("a directory");
+    gix::init(&project).expect("a repository");
+    std::fs::create_dir_all(scratch.path().join("beta")).expect("a directory");
+    let mut app = asking();
+    open_another(&mut app);
+    for character in format!("{}/", scratch.path().display()).chars() {
+        press(&mut app, KeyCode::Char(character));
+    }
+
+    // The ink of the last letter of the row that ends in `path`: the
+    // box's, since the remembered rows above it are elsewhere.
+    let ink_of = |app: &mut App, path: &std::path::Path| {
+        let path = path.display().to_string();
+        let cells = support::cells_of(app, 120, 20);
+        let area = cells.area;
+        (area.y..area.bottom())
+            .find_map(|y| {
+                let row: String = (area.x..area.right())
+                    .map(|x| cells[(x, y)].symbol().to_string())
+                    .collect();
+                let row = row.trim_end();
+                row.ends_with(&path).then(|| {
+                    let x = u16::try_from(row.chars().count() - 1).expect("narrow");
+                    cells[(area.x + x, y)].fg
+                })
+            })
+            .expect("the box")
+    };
+
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        ink_of(&mut app, &project),
+        obelus_theme::builtin::DARK.change_added,
+        "a project in the box is not drawn as one"
+    );
+
+    // And a directory that is there and is not one is not: typed, and the
+    // list in front of it shut, so enter would open it all the same.
+    for _ in "alpha".chars() {
+        press(&mut app, KeyCode::Backspace);
+    }
+    for character in "beta".chars() {
+        press(&mut app, KeyCode::Char(character));
+    }
+    press(&mut app, KeyCode::Esc);
+    assert_ne!(
+        ink_of(&mut app, &scratch.path().join("beta")),
+        obelus_theme::builtin::DARK.change_added,
+        "a directory that is not a project is drawn as one"
+    );
+}
+
 /// Escape shuts the list, and then enter opens what is in the box.
 ///
 /// The one place a path differs from the agent's commands: a command's
