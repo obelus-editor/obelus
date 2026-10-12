@@ -570,4 +570,19 @@ mod tests {
             "in-place does not say to change the checkout itself"
         );
     }
+
+    /// A review's worktree goes where the feature branch's go, and is kept
+    /// out of the reader's `git status` the same way.
+    ///
+    /// Asked "outside this checkout", an agent made it beside the project,
+    /// in the reader's own directory of projects. Broken deliberately by
+    /// putting those words back, and by taking the `info/exclude` sentence
+    /// out, which leaves a directory untracked in the reader's checkout.
+    #[test]
+    fn a_review_checks_its_head_out_under_the_worktree_directory() {
+        let words = super::PULL_REQUEST.replace("{number}", "7");
+        assert!(words.contains("`.worktree/pr-7`"), "{words}");
+        assert!(words.contains("info/exclude"), "{words}");
+        assert!(!words.contains("outside this checkout"), "{words}");
+    }
 }
