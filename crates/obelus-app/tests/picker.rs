@@ -2456,9 +2456,19 @@ fn control_and_an_arrow_scroll_the_preview_a_row() {
             .and_then(|picker| picker.selected_item())
             .map(|item| item.label.clone())
     };
-    while chosen(&app).as_deref() != Some("tests/fixtures/many_lines.rs") {
+    // At most once round the two rows: a list that lost the row fails here
+    // rather than walking for ever.
+    for _ in 0..2 {
+        if chosen(&app).as_deref() == Some("tests/fixtures/many_lines.rs") {
+            break;
+        }
         press(&mut app, KeyCode::Down);
     }
+    assert_eq!(
+        chosen(&app).as_deref(),
+        Some("tests/fixtures/many_lines.rs"),
+        "the row this test reads is not in the list"
+    );
 
     let at_rest = support::render(&mut app, 60, 22);
     assert!(

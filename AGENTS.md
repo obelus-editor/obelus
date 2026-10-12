@@ -442,14 +442,9 @@ where the view is (`Window::scroll`, `component::window`). A list used to
 be the exception, a notch stepping its selection; that made the wheel two
 gestures depending on what was under it.
 
-The keys that make the wheel's gesture are control and up or down: the view
-a row, the cursor left where it was (`keys::editor_scrolling`). And where a
-list sits above what it names, the two share four pairs of keys, each the
-other's with control: the arrows walk the list and `ctrl+up`/`ctrl+down`
-scroll the preview a row; `pageup`/`pagedown` page the preview and with
-control page the list (`previewing::preview_scrolling`). The reading is
-paged a screenful at a time and the list is walked a row at a time, so each
-gets its bare keys for the way it is moved.
+In the file being read and in a list's preview, control and up or down make
+the wheel's gesture: the view a row, the cursor or the selection left where
+it was (`keys::editor_scrolling`, `previewing::preview_scrolling`).
 
 **Wherever enter means something else, a line is `shift+enter` *and*
 `alt+enter`.** Both, every time: `shift+enter` arrives only from a terminal

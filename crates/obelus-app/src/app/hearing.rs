@@ -115,13 +115,10 @@ impl App {
             Hearer::Layer(Layer::Prompt) => self.prompt_key(key),
             Hearer::Layer(Layer::Names) => self.names_key(key),
             // The keys that scroll the preview first, while one is on
-            // screen: the bare paging keys, because a screenful is what the
-            // thing being *read* is moved by, and the arrows with control.
-            // The list keeps the bare arrows and the paging keys with
-            // control, which is the other half of the same swap. Then the
-            // keys a file list and a search have that are not about moving
-            // around them, which the picker would not know: what they
-            // change is where the rows come from, and that is the
+            // screen, and the list has the rest (`preview_scrolling`). Then
+            // the keys a file list and a search have that are not about
+            // moving around them, which the picker would not know: what
+            // they change is where the rows come from, and that is the
             // application's.
             Hearer::Layer(Layer::Picker) => {
                 self.scroll_preview_by_key(key)

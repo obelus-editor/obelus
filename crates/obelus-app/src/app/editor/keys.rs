@@ -106,8 +106,9 @@ pub(in crate::app) fn view_step(key: &KeyEvent, height: u16) -> Option<isize> {
         (KeyModifiers::NONE, KeyCode::Up) => Some(-1),
         // The same row as bare, because here the arrows move nothing but
         // the view either: control and an arrow is the view a row at a time
-        // everywhere, and a key should not do nothing in one document and
-        // something in the next (`editor_scrolling`).
+        // in the file being read and in a list's preview, and a key should
+        // not do nothing in one document and something in the next
+        // (`editor_scrolling`).
         (KeyModifiers::CONTROL, KeyCode::Down) => Some(1),
         (KeyModifiers::CONTROL, KeyCode::Up) => Some(-1),
         (KeyModifiers::NONE, KeyCode::PageDown) => Some(page),
