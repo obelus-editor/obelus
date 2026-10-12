@@ -473,7 +473,7 @@ fn over_noting(table: &toml::Table) -> (Theme, Noted) {
                 ),
                 None => noted.push(Note {
                     keys: vec![section.to_string()],
-                    why: "This is a table of colours of its own",
+                    why: "These colours are a table of their own",
                     name: false,
                 }),
             },

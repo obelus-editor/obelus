@@ -82,16 +82,29 @@ fn check(given: &Path) -> Vec<String> {
         Err(unread) => wrong.push(unread),
         Ok(read) => {
             wrong.extend(read.troubles);
-            if let Some(hung) = read.worn.wallpaper
-                && let Err(error) = wallpaper::decode(&hung.file)
-            {
-                wrong.push(written::Wrong {
-                    why: format!(
-                        "The picture {} will not decode: {error}",
-                        hung.file.display()
-                    ),
-                    at: read.wallpaper_at,
-                });
+            if let Some(hung) = read.worn.wallpaper {
+                // Beside the theme, which a reader's own theme need not be
+                // -- it may name a picture anywhere on their machine -- and a
+                // theme checked here must: it is about to be packed up and
+                // copied somewhere else, and what is outside its directory
+                // stays behind, leaving a theme that names a picture nobody
+                // who downloads it has.
+                if !beside(&file, &hung.file) {
+                    wrong.push(written::Wrong {
+                        why: "The picture is outside the theme's directory, and is not carried with it"
+                            .to_string(),
+                        at: read.wallpaper_at,
+                    });
+                }
+                if let Err(error) = wallpaper::decode(&hung.file) {
+                    wrong.push(written::Wrong {
+                        why: format!(
+                            "The picture {} will not decode: {error}",
+                            hung.file.display()
+                        ),
+                        at: read.wallpaper_at,
+                    });
+                }
             }
         }
     }
@@ -127,6 +140,19 @@ fn theme_at(given: &Path) -> Option<(String, PathBuf)> {
         _ => whole.file_stem()?.to_str()?,
     };
     Some((name.to_string(), given.to_path_buf()))
+}
+
+/// Whether `picture` is inside the directory `theme`'s file is in, as the
+/// disk has them -- `..` and links followed -- so a path that climbs out
+/// and back is inside, and one that reaches out through a link is not.
+fn beside(theme: &Path, picture: &Path) -> bool {
+    let (Ok(theme), Ok(picture)) = (theme.canonicalize(), picture.canonicalize()) else {
+        // A picture that is not there is said by the reading, at its line.
+        return true;
+    };
+    theme
+        .parent()
+        .is_some_and(|directory| picture.starts_with(directory))
 }
 
 /// One thing wrong, where it is: the line and column counted from one, the
@@ -261,6 +287,38 @@ mod tests {
         );
         assert_eq!(file.len(), 1, "{file:#?}");
         assert!(file[0].starts_with("theme.toml: "), "{file:#?}");
+    }
+
+    /// A picture from outside the theme's directory is said, because it is
+    /// not carried with the theme -- whether it climbs out with `..` or is
+    /// named by its whole path -- and one in a directory inside it is not.
+    ///
+    /// Deliberate break: the question asked of the picture's path as the
+    /// file wrote it rather than as the disk has it, which takes the one
+    /// climbing out for one inside.
+    #[test]
+    fn a_picture_outside_the_theme_is_said() {
+        let root = scratch("outside");
+        let theme = root.join("rain");
+        std::fs::create_dir_all(theme.join("pictures")).expect("the directories");
+        image::RgbaImage::new(2, 2)
+            .save(root.join("away.png"))
+            .expect("the picture outside");
+        image::RgbaImage::new(2, 2)
+            .save(theme.join("pictures/here.png"))
+            .expect("the picture inside");
+        let file = theme.join("theme.toml");
+
+        std::fs::write(&file, "[wallpaper]\nfile = \"../away.png\"\n").expect("the theme");
+        let said = super::check(&theme);
+        assert_eq!(said.len(), 1, "{said:#?}");
+        assert!(
+            said[0].contains("outside the theme's directory"),
+            "{said:#?}"
+        );
+
+        std::fs::write(&file, "[wallpaper]\nfile = \"pictures/here.png\"\n").expect("the theme");
+        assert_eq!(super::check(&theme), Vec::<String>::new());
     }
 
     /// Something that is not a theme is said to be none, rather than read
