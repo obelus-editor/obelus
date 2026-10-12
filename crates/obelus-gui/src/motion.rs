@@ -304,12 +304,13 @@ const TURN: Duration = Duration::from_millis(900);
 /// How often the mark that turns is drawn again.
 ///
 /// A moment and not a rate, though it is an animation, because of how
-/// long it lasts: a rate is `ControlFlow::Poll`, and a loop that polls
-/// runs flat out between the frames the screen paces -- which for the
-/// fifth of a second a pane slides is nothing, and for the minutes an
+/// long it lasts: a rate was `ControlFlow::Poll` then, and a loop that
+/// polled ran flat out between the frames the screen paced -- which for
+/// the fifth of a second a pane slides is nothing, and for the minutes an
 /// agent works was a whole core, measured at a hundred per cent against
-/// six for this. Sixty a second is a turn the eye cannot count, which is
-/// all the braille could not be.
+/// six for this. A rate sleeps between frames now (`window::control_flow`).
+/// Sixty a second is a turn the eye cannot count, which is all the braille
+/// could not be.
 const TURN_STEP: Duration = Duration::from_micros(16_667);
 
 /// And how long the mark rests between passes.

@@ -827,12 +827,33 @@ impl Showing {
 /// which from the outside is indistinguishable from Obelus having hung.
 ///
 /// `Wake::EveryFrame` is the second question already answered: it is the
-/// window saying something is in flight. A pass about to poll for a frame
-/// is a pass that wants one, and asking for it is also what lets the
-/// surface pace the loop at all -- the vertical blank holds nothing back
-/// from a loop that never presents.
+/// window saying something is in flight. A pass that wants a rate is a
+/// pass that wants the next frame, and asking for it is what wakes the
+/// loop at all now that it sleeps in between -- see `control_flow`.
 fn wants_a_frame(stepped: bool, wake: Option<Wake>) -> bool {
     stepped || wake == Some(Wake::EveryFrame)
+}
+
+/// How the loop waits after a pass that worked out `wake`.
+///
+/// Something in flight sleeps as if nothing were, because the frame
+/// `wants_a_frame` has just asked for is what wakes it, and the screen is
+/// what lets that frame through: the surface presented on the vertical
+/// blank, or on Wayland the compositor's frame callback (see `paint`).
+/// That is the rate an animation is meant to run at, and the one number
+/// nobody here has to pick.
+///
+/// It was `ControlFlow::Poll`, which never sleeps: the loop ran flat out
+/// between the frames the screen let through, and a compositor lets
+/// through none at all to a window it is not showing. So the welcome
+/// screen left on another workspace held a whole core for the two and a
+/// half seconds of every pass of its light, for hours, with nothing
+/// drawn.
+fn control_flow(wake: Option<Wake>) -> ControlFlow {
+    match wake {
+        Some(Wake::At(when)) => ControlFlow::WaitUntil(when),
+        Some(Wake::EveryFrame) | None => ControlFlow::Wait,
+    }
 }
 
 /// Whether the window is on X11, XWayland included.
@@ -1469,19 +1490,7 @@ impl ApplicationHandler<Waking> for Showing {
         if wants_a_frame(self.motion.advance(now, caret), wake) {
             self.redraw();
         }
-        events.set_control_flow(match wake {
-            Some(Wake::At(when)) => ControlFlow::WaitUntil(when),
-            // Something is in flight, so the next frame is wanted as soon
-            // as the screen will take one. What paces it is the screen's
-            // refresh -- the surface presented on the vertical blank, or on
-            // Wayland the compositor's frame callback (see `paint`): that is
-            // the rate an animation is meant to run at, and the one
-            // number nobody here has to pick -- and it paces nothing at
-            // all unless a frame was actually asked for, which is what
-            // the line above is.
-            Some(Wake::EveryFrame) => ControlFlow::Poll,
-            None => ControlFlow::Wait,
-        });
+        events.set_control_flow(control_flow(wake));
     }
 
     fn window_event(&mut self, events: &ActiveEventLoop, _window: WindowId, event: WindowEvent) {
@@ -1937,11 +1946,12 @@ fn marked(attributes: winit::window::WindowAttributes) -> winit::window::WindowA
 
 #[cfg(test)]
 mod tests {
-    use std::time::Instant;
+    use std::time::{Duration, Instant};
 
     use ratatui::layout::Rect;
+    use winit::event_loop::ControlFlow;
 
-    use super::{MARK, Rolling, on_a_link, wants_a_frame};
+    use super::{MARK, Rolling, control_flow, on_a_link, wants_a_frame};
     use crate::{
         grid::{Page, Update},
         motion::{Motion, Wake},
@@ -2058,13 +2068,13 @@ mod tests {
         );
     }
 
-    /// A pass that is about to poll asks for the frame it is polling for.
+    /// A pass that wants a rate asks for the frame it wants.
     ///
-    /// Otherwise the loop polls for nothing: `ControlFlow::Poll` with no
-    /// redraw requested is a busy wait that draws nothing and is paced by
-    /// nothing, because what paces an animation here is the surface being
-    /// presented and a loop that never presents is never held back. The
-    /// welcome screen sat at a hundred per cent behind a frozen picture.
+    /// Otherwise nothing ever arrives: the loop sleeps until a frame wakes
+    /// it, and a frame nobody asked for is never let through. When the
+    /// loop polled instead, the same mistake was a busy wait that drew
+    /// nothing -- the welcome screen sat at a hundred per cent behind a
+    /// frozen picture -- and now it would be a light that never moves.
     ///
     /// The second half is why the first cannot be `advance` alone, and it
     /// is asked of `Motion` rather than assumed: the light is out, so the
@@ -2074,7 +2084,7 @@ mod tests {
     /// The third assertion goes red, which is exactly the case this is
     /// about -- in flight, and nothing stepped for it.
     #[test]
-    fn a_pass_that_polls_asks_for_the_frame_it_is_polling_for() {
+    fn a_pass_that_wants_a_rate_asks_for_the_frame_it_wants() {
         assert!(!wants_a_frame(false, None), "nothing is moving");
         assert!(wants_a_frame(true, None), "something stepped");
         assert!(
@@ -2099,6 +2109,35 @@ mod tests {
         assert!(
             !motion.advance(now, false),
             "and nothing stepped, so `advance` cannot be what asks"
+        );
+    }
+
+    /// Something in flight sleeps between frames, the way nothing at all
+    /// does, and a moment is slept until.
+    ///
+    /// Asked with the light across the welcome screen's mark, which is
+    /// what held a core: a window on another workspace is let draw no
+    /// frame at all, and a loop that polled for one spun the whole time
+    /// the light was out.
+    ///
+    /// Deliberate break: answer `ControlFlow::Poll` for `EveryFrame` in
+    /// `control_flow`, as it did. The first assertion goes red.
+    #[test]
+    fn a_window_waiting_for_a_frame_sleeps_until_the_screen_lets_it_draw() {
+        let mut motion = Motion::new(None);
+        let now = Instant::now();
+        motion.sheen_drawn(true, now);
+        assert_eq!(
+            control_flow(motion.wake(now, false)),
+            ControlFlow::Wait,
+            "the light is out, and the loop sleeps until its frame"
+        );
+        assert_eq!(control_flow(None), ControlFlow::Wait, "nothing moving");
+        let later = now + Duration::from_secs(1);
+        assert_eq!(
+            control_flow(Some(Wake::At(later))),
+            ControlFlow::WaitUntil(later),
+            "a moment"
         );
     }
 
