@@ -187,6 +187,10 @@ pub(in crate::app) struct Settled {
     /// a test run on a machine with omarchy on it sees what it sees
     /// everywhere else.
     pub omarchy: Option<PathBuf>,
+    /// Where the themes taken from the registry are kept, a directory
+    /// each -- see `obelus_themes::root`. Set where the reader's settings
+    /// path is, for the reason `omarchy` is.
+    pub installed: Option<PathBuf>,
 }
 
 impl Default for Settled {
@@ -204,6 +208,7 @@ impl Default for Settled {
             project: None,
             pinned: Vec::new(),
             omarchy: None,
+            installed: None,
         }
     }
 }
@@ -531,7 +536,11 @@ impl App {
                 label: label(&choice),
                 version: None,
                 detail: about,
-                trailing: None,
+                // Where a theme comes from, the way the theme list says it.
+                trailing: (key == "theme")
+                    .then(|| self.theme_whence(&choice))
+                    .flatten()
+                    .map(str::to_string),
                 changed: None,
                 value: PickerValue::Setting { key, word: choice },
                 enabled: true,
@@ -778,13 +787,54 @@ impl App {
     /// `ReaderOnly`), so a theme a project carried could only ever be one
     /// the reader went looking for -- and the reader's own directory is
     /// where they keep those.
+    ///
+    /// And where the themes taken from the registry are kept, after it: a
+    /// theme of the reader's by the same name is theirs, and comes first.
     fn theme_directories(&self) -> Vec<PathBuf> {
+        self.readers_themes()
+            .into_iter()
+            .chain(self.settled.installed.clone())
+            .collect()
+    }
+
+    /// The reader's own themes, beside their settings.
+    fn readers_themes(&self) -> Option<PathBuf> {
         self.settled
             .path
             .as_deref()
             .and_then(obelus_theme::written::beside)
-            .into_iter()
-            .collect()
+    }
+
+    /// Where a theme comes from, as a list says it beside the name: from
+    /// the registry, or the reader's own -- and nothing for one built in,
+    /// which every reader has.
+    ///
+    /// Said because a theme of the reader's can wear a built-in name, and
+    /// does go first: without it, the `nord` in the list is not the `nord`
+    /// in Obelus, and nothing on the screen says so.
+    #[must_use]
+    pub fn theme_whence(&self, name: &str) -> Option<&'static str> {
+        let holds = |directory: Option<PathBuf>| {
+            directory.is_some_and(|directory| {
+                obelus_theme::written::found_in(&directory)
+                    .iter()
+                    .any(|(called, _)| called == name)
+            })
+        };
+        if holds(self.readers_themes()) {
+            Some("Local")
+        } else if holds(self.settled.installed.clone()) {
+            Some("Downloaded")
+        } else {
+            None
+        }
+    }
+
+    /// Says where the themes taken from the registry are, for a test: the
+    /// real place is under the reader's data directory, which a test must
+    /// not read.
+    pub fn installed_themes_for_test(&mut self, root: PathBuf) {
+        self.settled.installed = Some(root);
     }
 
     /// What one of a setting's words is called on screen, where it is
@@ -1276,6 +1326,7 @@ impl App {
         self.settled.path = obelus_config::path();
         self.settled.omarchy =
             dirs::home_dir().map(|home| obelus_theme::builtin::omarchy_in(&home));
+        self.settled.installed = obelus_themes::root();
         if self.settled.path.is_none() {
             tracing::info!("nowhere to keep settings, so the defaults");
             return;

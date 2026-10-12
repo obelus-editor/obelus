@@ -4358,6 +4358,7 @@ dependencies = [
  "image",
  "libc",
  "obelus-claim",
+ "obelus-download",
  "obelus-git",
  "obelus-jobs",
  "obelus-logging",
@@ -4419,6 +4420,7 @@ dependencies = [
  "obelus-terminal",
  "obelus-text",
  "obelus-theme",
+ "obelus-themes",
  "obelus-todo",
  "obelus-ui",
  "obelus-watch",
@@ -4535,6 +4537,14 @@ dependencies = [
  "toml 1.1.5+spec-1.1.0",
  "toml_edit 0.22.27",
  "tracing",
+]
+
+[[package]]
+name = "obelus-download"
+version = "0.12.0"
+dependencies = [
+ "futures",
+ "reqwest",
 ]
 
 [[package]]
@@ -4851,6 +4861,19 @@ dependencies = [
  "ratatui",
  "toml 1.1.5+spec-1.1.0",
  "toml_edit 0.22.27",
+]
+
+[[package]]
+name = "obelus-themes"
+version = "0.12.0"
+dependencies = [
+ "dirs",
+ "obelus-download",
+ "obelus-runtime",
+ "obelus-sink",
+ "reqwest",
+ "serde_json",
+ "tracing",
 ]
 
 [[package]]

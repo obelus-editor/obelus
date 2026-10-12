@@ -1,0 +1,19 @@
+[package]
+name = "obelus-themes"
+description = "The themes registry: what it lists, and the themes taken from it"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Cargo inherits nothing here on its own; every member says it.
+[lints]
+workspace = true
+
+[dependencies]
+obelus-download.workspace = true
+obelus-runtime.workspace = true
+obelus-sink.workspace = true
+dirs.workspace = true
+reqwest.workspace = true
+serde_json.workspace = true
+tracing.workspace = true

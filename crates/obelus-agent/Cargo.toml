@@ -11,6 +11,7 @@ workspace = true
 
 [dependencies]
 obelus-claim.workspace = true
+obelus-download.workspace = true
 obelus-todo.workspace = true
 base64.workspace = true
 obelus-git.workspace = true

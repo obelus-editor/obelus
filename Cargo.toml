@@ -44,6 +44,7 @@ obelus-clipboard = { path = "crates/obelus-clipboard" }
 obelus-command = { path = "crates/obelus-command" }
 obelus-component = { path = "crates/obelus-component" }
 obelus-config = { path = "crates/obelus-config" }
+obelus-download = { path = "crates/obelus-download" }
 obelus-editing = { path = "crates/obelus-editing" }
 obelus-font = { path = "crates/obelus-font" }
 obelus-git = { path = "crates/obelus-git" }
@@ -68,6 +69,7 @@ obelus-text = { path = "crates/obelus-text" }
 obelus-todo = { path = "crates/obelus-todo" }
 obelus-ui = { path = "crates/obelus-ui" }
 obelus-theme = { path = "crates/obelus-theme" }
+obelus-themes = { path = "crates/obelus-themes" }
 obelus-watch = { path = "crates/obelus-watch" }
 
 # 0.30 split the backends into separate crates (ratatui-crossterm and friends).

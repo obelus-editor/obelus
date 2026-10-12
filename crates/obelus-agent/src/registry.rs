@@ -230,7 +230,7 @@ async fn fetch() -> Result<String, reqwest::Error> {
         .user_agent(concat!("obelus/", env!("CARGO_PKG_VERSION")))
         .build()?;
     let response = client.get(URL).send().await?.error_for_status()?;
-    crate::icon::text_within(response, MOST).await
+    obelus_download::text_within(response, MOST).await
 }
 
 /// Whether a path holds a file, for deciding an agent is installed.

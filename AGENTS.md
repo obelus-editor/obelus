@@ -39,7 +39,7 @@ ignores them, and mixing the two makes the formatting oscillate. **Always
 Clippy must be silent. The lints are the workspace's, in the root
 `Cargo.toml` -- `missing_docs`, `unreachable_pub`, `private_interfaces` --
 because a `#![deny(..)]` in one crate root would silently stop applying to
-the other thirty-five. Every member opts in with a `[lints] workspace = true`
+the other thirty-seven. Every member opts in with a `[lints] workspace = true`
 of its own, which Cargo does not inherit for it, and every public item needs
 a doc comment.
 
@@ -643,6 +643,13 @@ crates/
   obelus-theme/     colours, and only fields the renderer reads
                     · a picture travels beside a theme's colours and not
                       among them (wallpaper)
+  obelus-themes/    the themes registry: what its index lists, in its two
+                    groups, and where a theme taken from it is kept
+                    · fetched when the reader opens the page, and kept; read
+                      field by field, and an entry Obelus cannot use is left
+                      out (lib)
+  obelus-download/  what every fetch from somebody else's server shares:
+                    reading a body within a limit
   obelus-config/    the settings, their file, and what each one is
                     · what a project may set is a property of the setting; the
                       file holds preferences, not state; a setting says where

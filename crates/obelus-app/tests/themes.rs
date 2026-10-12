@@ -299,6 +299,66 @@ fn omarchys_theme_follows_omarchy_swapping_it() {
     );
 }
 
+/// A theme taken from the registry is offered beside the reader's own, a
+/// theme of theirs by the same name goes first, and the list says which is
+/// which -- with nothing beside one built in.
+///
+/// Deliberate breaks: the registry's directory not looked in (`rain` is
+/// not offered), the reader's asked after it (`shared` is then the
+/// registry's, in colour and in the list's word), and the words not put on
+/// the rows (the list says nothing).
+#[test]
+fn a_theme_from_the_registry_is_offered_and_said_to_be() {
+    let scratch = reader("registry-themes");
+    std::fs::write(scratch.join("themes/mine.toml"), "base = \"dark\"\n").expect("the reader's");
+    std::fs::write(
+        scratch.join("themes/shared.toml"),
+        "base = \"dark\"\nbackground = \"#010101\"\n",
+    )
+    .expect("the reader's");
+    let installed = support::Scratch::new("registry-themes-installed");
+    for (name, page) in [("rain", "#101820"), ("shared", "#020202")] {
+        std::fs::create_dir_all(installed.join(name)).expect("the directory");
+        std::fs::write(
+            installed.join(name).join("theme.toml"),
+            format!("base = \"dark\"\nbackground = \"{page}\"\n"),
+        )
+        .expect("the registry's");
+    }
+
+    let mut app = open(&scratch);
+    app.installed_themes_for_test(installed.path().to_path_buf());
+    assert!(
+        app.themes().contains(&"rain".to_string()),
+        "{:?}",
+        app.themes()
+    );
+    assert_eq!(app.theme_whence("rain"), Some("Downloaded"));
+    assert_eq!(app.theme_whence("mine"), Some("Local"));
+    assert_eq!(app.theme_whence("shared"), Some("Local"));
+    assert_eq!(app.theme_whence("dark"), None);
+    assert_eq!(
+        app.theme_called("shared")
+            .expect("the theme")
+            .colours
+            .background,
+        written::hex("#010101").expect("a colour"),
+        "the registry's theme went in front of the reader's own"
+    );
+
+    dispatch::dispatch(&mut app, Command::ThemeSelect);
+    let dump = support::render(&mut app, 70, 14);
+    let text = support::text_block(&dump);
+    let row = |name: &str| {
+        text.lines()
+            .find(|line| line.contains(&format!(" {name} ")))
+            .unwrap_or_default()
+            .to_string()
+    };
+    assert!(row("rain").contains("Downloaded"), "{dump}");
+    assert!(row("mine").contains("Local"), "{dump}");
+}
+
 /// A file that will not read leaves the colours alone and says so.
 ///
 /// A theme thrown away over one bad line would be a screen the reader

@@ -36,7 +36,7 @@ impl App {
                 label: name.clone(),
                 version: None,
                 detail: None,
-                trailing: None,
+                trailing: self.theme_whence(&name).map(str::to_string),
                 changed: None,
                 value: PickerValue::Theme(name),
                 enabled: true,
