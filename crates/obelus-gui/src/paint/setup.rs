@@ -751,13 +751,15 @@ impl Painter {
                 )
             })
             .collect();
-        // What is written over the page from the lowest of them on goes in
-        // a picture of its own, where they were -- see `left_lifted`. Only
-        // where every one of them is a level: one that is not has no glass
-        // to keep apart from what is on it, and goes as one picture.
-        let kept_from = match levels.iter().all(Option::is_some) {
-            true => levels.iter().flatten().map(|level| level.end).min(),
-            false => None,
+        // What is written over the page after its glass goes in a picture
+        // of its own, where it was -- see `left_lifted`. Only for one pane
+        // going, and one that is a level: two that went side by side would
+        // be cut at the lower one's glass, and the other's glass would go
+        // with what is written on it, a flat block where the glass stood.
+        // Those go as one picture, the way every pane did.
+        let kept_from = match levels.as_slice() {
+            [Some(level)] => Some(level.end),
+            _ => None,
         };
         self.placed.kept_from = kept_from;
         self.left_lifted = kept_from.map(|_| self.whole());
