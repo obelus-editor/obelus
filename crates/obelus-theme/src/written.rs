@@ -477,6 +477,13 @@ fn over_noting(table: &toml::Table) -> (Theme, Noted) {
 #[must_use]
 pub fn hex(said: &str) -> Option<Color> {
     let digits = said.strip_prefix('#')?;
+    // Asked before anything is cut out of it: the cutting below is by byte,
+    // and a character of more than one byte among six of them was a cut
+    // through the middle of it -- a panic, in the editor wearing the theme
+    // and in the check a theme is put through before anybody wears it.
+    if !digits.chars().all(|digit| digit.is_ascii_hexdigit()) {
+        return None;
+    }
     let (red, green, blue) = match digits.len() {
         3 => {
             let mut characters = digits.chars();
@@ -499,6 +506,21 @@ pub fn hex(said: &str) -> Option<Color> {
 #[cfg(test)]
 mod tests {
     use ratatui::style::Color;
+
+    /// A colour is six or three hexadecimal digits and nothing else: a
+    /// character of several bytes among them is not one, and is said not
+    /// to be rather than cut through -- and nor is the sign a number may
+    /// carry.
+    ///
+    /// Deliberate break: the question about the digits taken out, which
+    /// panics on the first and reads the second as a colour.
+    #[test]
+    fn a_colour_is_hexadecimal_digits_and_nothing_else() {
+        assert_eq!(super::hex("#a€bc"), None);
+        assert_eq!(super::hex("#+1+1+1"), None);
+        assert_eq!(super::hex("#€"), None);
+        assert_eq!(super::hex("#1a2B3c"), Some(Color::Rgb(0x1a, 0x2b, 0x3c)));
+    }
 
     /// Every line that does nothing is noted where it is -- a value that is
     /// not a colour, a name no colour has at the top and in each table, a
