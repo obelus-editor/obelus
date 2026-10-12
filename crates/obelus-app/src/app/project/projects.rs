@@ -10,18 +10,18 @@
 //! conversations were filed under a directory nobody works in.
 //!
 //! So Obelus asks, on a page of its own before the welcome screen, and
-//! this is what it offers: the projects this reader has had open, newest
-//! first. The same shape the conversations have and for the same reason
+//! this is what it offers: the projects this reader has chosen here,
+//! newest first. The same shape the conversations have and for the same reason
 //! -- what a reader did outlives the window.
 //!
 //! **A project is remembered when it is chosen on that screen, and only
 //! then.** Not when an argument names it, not when Obelus is started
 //! standing in it, and not when a window goes to another worktree: the
-//! list is of the answers this page was given. It was once all of them,
-//! through [`App::work_in`], and the cost of not doing so is said out
-//! loud -- a reader who works from a terminal and reaches for the menu
-//! once finds the list empty and types the path, and choosing it then is
-//! what puts it on.
+//! list is of the answers this page was given. It once held every project
+//! Obelus was put on, through [`App::work_in`], and what leaving the rest
+//! out costs is said out loud -- a reader who works from a terminal and
+//! reaches for the menu once finds the list empty and types the path, and
+//! choosing it then is what puts it on.
 //!
 //! **Only a worktree is remembered.** Not every directory a reader
 //! chooses is somewhere they would come back to: a path typed into the
@@ -45,8 +45,8 @@
 //! as well as off the screen, which is a choice with a cost said out loud
 //! -- a disk that is not plugged in, or a share not mounted yet at the
 //! moment a launcher starts Obelus, looks exactly like a project that was
-//! deleted, and its row goes with it. A reader who opens it again has it
-//! back, because opening it is how anything gets onto the list.
+//! deleted, and its row goes with it. A reader who chooses it here again
+//! has it back, because choosing it is how anything gets onto the list.
 
 use std::path::{Path, PathBuf};
 
@@ -211,7 +211,7 @@ fn spelled(path: &Path) -> PathBuf {
 /// an oversight: two of these within the same fraction of a millisecond
 /// both read the list before either writes it, and what the second writes
 /// has no row for what the first remembered. That costs one project
-/// missing until it is next opened, which opening puts right -- and a lock
+/// missing until it is next chosen, which choosing puts right -- and a lock
 /// is whole-file on Windows, which is what a claim's cost last time.
 ///
 /// Answers whether anything was written, which is `false` for a directory
@@ -821,15 +821,11 @@ impl crate::app::App {
             // The list, not the box: escape gives up on the nearest
             // thing first, and what the reader typed stays.
             //
-            // Nothing is written down about having shut it, which is
-            // where this differs from the agent's commands: that list is
-            // rebuilt from the box on every frame, so closing it needs a
-            // flag or the next frame puts it back. This one is built
-            // only when the *directory* moves -- `settle_the_naming_list`
-            // narrows what a read already found and never conjures a
-            // list -- so shutting it is enough, and it comes back when
-            // the reader types their way into somewhere else, which is
-            // a new question.
+            // Written down, because the frame builds the list again from
+            // what the last read found: shut only on screen, it would be
+            // back before the reader saw it go. It comes back when the
+            // box moves or a separator walks into somewhere else, which
+            // is a new question.
             KeyCode::Esc => {
                 self.which_project.naming_shut = true;
                 self.which_project.naming_list = None;

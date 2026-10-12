@@ -24,7 +24,7 @@
 //! launcher cost a key to get past it.
 //!
 //! **Two boxes, never two meanings.** The filter is about the rows
-//! underneath it -- projects this reader has had open -- and the path box
+//! underneath it -- projects this reader has chosen here -- and the path box
 //! is about the filesystem. They are two states of the one row at the foot
 //! and they do not share their text: what was typed to narrow a list of
 //! places is not the beginning of a path, and carrying it over would be
@@ -60,7 +60,7 @@ use crate::{
     window::{Move, Window, Wrap},
 };
 
-/// One project the reader has had open.
+/// One project the reader has chosen on this page.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Known {
     /// Where it is, as it was named.
@@ -109,7 +109,7 @@ pub enum Outcome {
 /// What the reader is doing.
 #[derive(Debug)]
 enum Doing {
-    /// Looking through the projects they have had open.
+    /// Looking through the projects they have chosen here.
     Choosing,
     /// Naming one that is not in the list.
     ///

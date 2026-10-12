@@ -62,7 +62,7 @@ pub struct Choosing {
     pub offering: bool,
 }
 
-/// One project the reader has had open, as a row.
+/// One project the reader has chosen on the page that asks which, as a row.
 #[derive(Clone, Debug)]
 pub struct Opened {
     /// Where it is, with `~` for the reader's own directory.
