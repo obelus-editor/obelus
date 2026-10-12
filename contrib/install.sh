@@ -129,13 +129,18 @@ done
 # own theme file -- which this would not write over either -- and a dangling
 # link is still one of ours, since that is the ordinary state of it between
 # a theme being set and the next (`-L` is true where `-e` is false).
+#
+# Says whether it went in `unlinked_it` rather than in its status, which
+# under `set -e` would end the script wherever there was no link to take.
 unlinked() {
+    unlinked_it=no
     if [ -L "$link" ]; then
         points=$(readlink "$link" 2> /dev/null || true)
         if [ "$points" != "$rendered" ]; then
             say "  left $link alone: it points at $points"
         elif rm -f "$link"; then
             say "  removed $link, which Obelus no longer needs"
+            unlinked_it=yes
         else
             say "  $link could not be removed"
         fi
@@ -200,8 +205,13 @@ take_it_away() {
     fi
 
     if [ "$omarchy" = yes ]; then
-        # The link an earlier install made, where there still is one.
+        # The link an earlier install made, where there still is one --
+        # counted, or an uninstall that found only that said it had
+        # removed it and then that there was nothing to remove.
         unlinked
+        if [ "$unlinked_it" = yes ]; then
+            removed=$((removed + 1))
+        fi
 
         # The template, which is Obelus's own file at a name Obelus chose --
         # the install writes over whatever wears that name for the same
