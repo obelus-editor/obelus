@@ -231,8 +231,10 @@ impl App {
         self.make_room(Room::Region);
         // Asked for now rather than when the tab is reached: the fetch
         // takes a moment, and a reader who walks to the agents tab should
-        // find a list there rather than watch one arrive.
+        // find a list there rather than watch one arrive. And the themes'
+        // index, for the same reason.
         self.refresh_registry();
+        self.refresh_themes();
         // And what the active agent offers, asked of it now: the page draws
         // what was last heard until the answer arrives.
         self.ask_what_the_agent_offers();
@@ -289,12 +291,17 @@ impl App {
         // for them: the rows a notch counts are the rows the page shows now.
         self.settle_the_remote_page();
         let listed = self.listed_agents();
+        let themes = self.themes_on_the_page();
         let offering = self.agent_offering();
         let room = self.settings_room(self.editor_area, offering.as_ref());
         let Some(settings) = self.settings.as_mut() else {
             return false;
         };
-        settings.scroll(rows, &listed, offering.as_ref(), room);
+        let cards = Cards {
+            agents: &listed,
+            themes: &themes,
+        };
+        settings.scroll(rows, cards, offering.as_ref(), room);
         true
     }
 
@@ -311,6 +318,10 @@ impl App {
         // is borrowed: it needs them to know what enter means on a card,
         // and it is not the thing that knows them.
         let listed = self.listed_agents();
+        let themes = self.themes_on_the_page();
+        // A delete pressed once on a theme only counts towards the next
+        // press if nothing else was pressed between.
+        let taking = self.themes.taking.take();
         // Cloned for the same reason: the page needs the table to say which
         // key each command is on, and it is the application that owns it.
         let keymap = self.keymap.clone();
@@ -326,7 +337,10 @@ impl App {
             key,
             &self.settled.config,
             &keymap,
-            &listed,
+            Cards {
+                agents: &listed,
+                themes: &themes,
+            },
             offering.as_ref(),
             room,
         ) {
@@ -361,6 +375,15 @@ impl App {
             }
             SettingsOutcome::Install(id) => {
                 self.install_agent(&id);
+                true
+            }
+            SettingsOutcome::InstallTheme(name) => {
+                self.install_theme(&name);
+                true
+            }
+            SettingsOutcome::RemoveTheme(name) => {
+                self.themes.taking = taking;
+                self.take_theme_away(&name);
                 true
             }
             SettingsOutcome::Activate(id) => {

@@ -77,6 +77,9 @@ pub enum Group {
 }
 
 impl Group {
+    /// Both, in the order they are shown: Obelus's own first.
+    pub const ALL: [Self; 2] = [Self::Obelus, Self::Omarchy];
+
     /// The word the index writes it as.
     fn named(word: &str) -> Option<Self> {
         match word {
@@ -85,6 +88,84 @@ impl Group {
             _ => None,
         }
     }
+
+    /// And the word, the other way.
+    const fn word(self) -> &'static str {
+        match self {
+            Self::Obelus => "obelus",
+            Self::Omarchy => "omarchy",
+        }
+    }
+
+    /// What the page calls it, as a heading: a name, written the way it is
+    /// written everywhere.
+    #[must_use]
+    pub const fn heading(self) -> &'static str {
+        match self {
+            Self::Obelus => "Obelus",
+            Self::Omarchy => "omarchy",
+        }
+    }
+}
+
+/// One theme as the page shows it: what the registry says, beside what is
+/// true on this machine.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Card {
+    /// What the registry lists -- or, for a theme it no longer lists, what
+    /// is known of it here: its name and its group.
+    pub theme: Listed,
+    /// Where it stands.
+    pub status: Status,
+    /// Whether it is installed -- which an update that did not take leaves
+    /// it, whatever its status says about the last try.
+    pub installed: bool,
+    /// Whether it is the theme being worn.
+    pub worn: bool,
+    /// Whether a theme of the reader's own by the same name is the one
+    /// that answers to it, so this one is installed and not the one worn.
+    pub shadowed: bool,
+}
+
+impl Card {
+    /// Whether its theme may be taken away: installed, not on its way in,
+    /// and not the one being worn -- a theme taken away from under the
+    /// reader is the screen changing to one nobody chose.
+    ///
+    /// The one answer, for the key that does it and the foot that offers
+    /// it: a key the foot does not show has to be a key that does nothing.
+    #[must_use]
+    pub fn may_be_taken_away(&self) -> bool {
+        self.installed && !self.worn && !matches!(self.status, Status::Installing(_))
+    }
+
+    /// Whether pressing it would install it, or update it: not installed,
+    /// or behind, or tried and not taken -- and not on its way already, nor
+    /// one the registry no longer has to give.
+    #[must_use]
+    pub const fn may_be_installed(&self) -> bool {
+        matches!(
+            self.status,
+            Status::Missing | Status::Outdated | Status::Failed(_)
+        )
+    }
+}
+
+/// Where a theme the page shows stands, on this machine.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Status {
+    /// Not installed.
+    Missing,
+    /// Installed, and the one listed.
+    Installed,
+    /// Installed, and the registry lists a newer one.
+    Outdated,
+    /// On its way, and how far it has got where that is known.
+    Installing(Option<install::Progress>),
+    /// The last install did not take, and why.
+    Failed(String),
+    /// Installed, and the registry no longer lists it.
+    Delisted,
 }
 
 /// One theme the registry lists.

@@ -1,6 +1,6 @@
 screen 66x20  editor 66x18  status 66x1
 -- text --
- 0|  Settings  Keys  Remote  Agents                              ⇤ ⇥ 
+ 0|  Settings  Keys  Remote  Themes  Agents                      ⇤ ⇥ 
  1|──────────────────────────────────────────────────────────────────
  2| Slack                                                            
  3|                                                                  

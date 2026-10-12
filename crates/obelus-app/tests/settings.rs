@@ -69,7 +69,8 @@ fn the_row_under_a_list_is_not_marked() {
     let scratch = temporary("under-a-list");
     let mut app = open(&settings_file(&scratch));
     let dump = support::render(&mut app, 66, 12);
-    let lit = support::drawn_in(&dump, "Theme");
+    // With the space, which the tab of themes has not got after its word.
+    let lit = support::drawn_in(&dump, "Theme ");
     // And the tab, which is the same mark across a row: the page's own name
     // is the first word on the screen.
     let tab = support::drawn_in(&dump, "Settings");
@@ -82,7 +83,7 @@ fn the_row_under_a_list_is_not_marked() {
     let dump = support::render(&mut app, 66, 12);
     assert!(app.picker().is_some(), "the choices did not open:\n{dump}");
     assert_ne!(
-        support::drawn_in(&dump, "Theme"),
+        support::drawn_in(&dump, "Theme "),
         lit,
         "the page's row is lit under the list:\n{dump}"
     );
@@ -95,7 +96,7 @@ fn the_row_under_a_list_is_not_marked() {
     support::press(&mut app, KeyCode::Esc);
     let dump = support::render(&mut app, 66, 12);
     assert_eq!(
-        support::drawn_in(&dump, "Theme"),
+        support::drawn_in(&dump, "Theme "),
         lit,
         "the row did not take the mark back:\n{dump}"
     );
@@ -441,22 +442,31 @@ fn every_setting_is_on_one_page_under_a_heading() {
     );
 
     // And the tabs are the pages: the settings, the keys, the chat this
-    // machine can be reached from, the agents -- the agents last, so that
-    // shift and tab from the settings is still the way to them.
+    // machine can be reached from, the themes, the agents -- the agents
+    // last, so that shift and tab from the settings is still the way to
+    // them.
     assert_eq!(
         app.settings().expect("the settings").tabs(),
-        ["Settings", "Keys", "Remote", "Agents"]
+        ["Settings", "Keys", "Remote", "Themes", "Agents"]
     );
     support::press(&mut app, KeyCode::Tab);
     assert!(app.settings().expect("the settings").on_keys());
     support::press(&mut app, KeyCode::Tab);
     assert!(app.settings().expect("the settings").on_remote());
     support::press(&mut app, KeyCode::Tab);
+    assert!(app.settings().expect("the settings").on_themes());
+    assert!(
+        rows(&app).is_empty(),
+        "the themes page has settings rows on it"
+    );
+    support::press(&mut app, KeyCode::Tab);
     assert!(app.settings().expect("the settings").on_agents());
     assert!(
         rows(&app).is_empty(),
         "the agents page has settings rows on it"
     );
+    support::press(&mut app, KeyCode::BackTab);
+    assert!(app.settings().expect("the settings").on_themes());
     support::press(&mut app, KeyCode::BackTab);
     assert!(app.settings().expect("the settings").on_remote());
     support::press(&mut app, KeyCode::BackTab);
@@ -601,7 +611,8 @@ fn typing_narrows_the_settings() {
     let row = support::text_block(&dump)
         .lines()
         .filter(|row| !row.is_empty())
-        .position(|row| row.contains("Theme"))
+        // With the space, which the tab of themes has not got.
+        .position(|row| row.contains("Theme "))
         .expect("the row that matched");
     // The "T" of "Theme" is the first cell of the name: past the
     // `NN|` the dump writes down its side, past the row's own left-hand
@@ -2665,9 +2676,9 @@ fn a_press_on_a_tab_goes_to_it() {
     let dump = support::render(&mut app, 66, 12);
 
     // The tabs are the page's first row, and the third of them is two away
-    // -- which the shorter way round makes one step, because they wrap.
+    // -- and three the other way, because they wrap.
     let names = app.settings().expect("the page").tabs();
-    assert_eq!(names.len(), 4, "the page does not have the four tabs");
+    assert_eq!(names.len(), 5, "the page does not have the five tabs");
     assert_eq!(app.settings().expect("the page").tab(), 0);
     let row = support::text_block(&dump)
         .lines()
@@ -3307,10 +3318,10 @@ fn the_projects_page_has_one_tab() {
         failure: None,
     }));
 
-    // The reader's own page has four.
+    // The reader's own page has five.
     assert_eq!(
         app.settings().expect("the settings").tabs(),
-        ["Settings", "Keys", "Remote", "Agents"]
+        ["Settings", "Keys", "Remote", "Themes", "Agents"]
     );
 
     dispatch::dispatch(&mut app, Command::ConfigProject);

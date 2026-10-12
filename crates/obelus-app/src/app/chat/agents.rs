@@ -409,8 +409,9 @@ impl App {
         if self.settings.is_none() {
             return;
         }
-        let cards = self.settings.as_ref().is_some_and(Settings::on_agents);
+        let cards = self.settings.as_ref().is_some_and(Settings::on_cards);
         let listed = self.listed_agents();
+        let themes = self.themes_on_the_page();
         // Built before the page is borrowed: it comes out of the
         // application, and the page is about to be held mutably.
         let offering = self.agent_offering();
@@ -419,7 +420,13 @@ impl App {
         let room = self.settings_room(editor_area, offering.as_ref());
         if let Some(settings) = self.settings.as_mut() {
             match cards {
-                true => settings.settle_cards(&listed, room),
+                true => settings.settle_cards(
+                    Cards {
+                        agents: &listed,
+                        themes: &themes,
+                    },
+                    room,
+                ),
                 // A group of settings is a dozen entries and they all fit
                 // today. It has a window anyway: a group that grows past
                 // the screen should scroll rather than lose its last rows

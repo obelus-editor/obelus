@@ -318,6 +318,15 @@ impl App {
             Event::Agent(obelus_agent::Event::Installed { id, failure }) => {
                 self.on_installed(id, failure)
             }
+            Event::Themes(obelus_themes::Event::Index { themes, failure }) => {
+                self.on_themes(themes, failure)
+            }
+            Event::Themes(obelus_themes::Event::Installing { name, progress }) => {
+                self.on_theme_installing(name, progress)
+            }
+            Event::Themes(obelus_themes::Event::Installed { name, failure }) => {
+                self.on_theme_installed(name, failure)
+            }
             Event::Git(obelus_git::Event::Blamed { path, at, lines }) => {
                 // Kept whether or not the reader is still looking at that
                 // file: they walked away from it while a walk of its history

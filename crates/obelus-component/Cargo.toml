@@ -25,6 +25,7 @@ obelus-remote.workspace = true
 obelus-row.workspace = true
 obelus-search.workspace = true
 obelus-text.workspace = true
+obelus-themes.workspace = true
 obelus-todo.workspace = true
 crossterm.workspace = true
 gix.workspace = true

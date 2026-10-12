@@ -1,6 +1,6 @@
 screen 66x24  editor 66x22  status 66x1
 -- text --
- 0|  Settings  Keys  Remote  Agents                              ⇤ ⇥ 
+ 0|  Settings  Keys  Remote  Themes  Agents                      ⇤ ⇥ 
  1|──────────────────────────────────────────────────────────────────
  2| Feishu                                                           
  3|                                                                  

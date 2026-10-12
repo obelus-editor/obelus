@@ -4520,6 +4520,7 @@ dependencies = [
  "obelus-row",
  "obelus-search",
  "obelus-text",
+ "obelus-themes",
  "obelus-todo",
  "tracing",
 ]
@@ -4916,6 +4917,7 @@ dependencies = [
  "obelus-terminal",
  "obelus-text",
  "obelus-theme",
+ "obelus-themes",
  "obelus-todo",
  "ratatui",
  "ratatui-image",

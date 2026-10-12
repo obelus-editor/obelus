@@ -163,6 +163,8 @@ pub enum Event {
     Git(obelus_git::Event),
     /// Something about an agent, or from one.
     Agent(obelus_agent::Event),
+    /// Something about the themes registry, or a theme taken from it.
+    Themes(obelus_themes::Event),
     /// A message from a language server.
     Lsp(obelus_lsp::Message),
     /// An agent used one of the tools Obelus offers it.
@@ -275,6 +277,7 @@ impl Event {
             Self::Search(_) => "Search",
             Self::Git(_) => "Git",
             Self::Agent(_) => "Agent",
+            Self::Themes(_) => "Themes",
             Self::Lsp(_) => "Lsp",
             Self::Tools(_) => "Tools",
             Self::Counted(_) => "Counted",
@@ -320,6 +323,7 @@ from_worker! {
     obelus_search::Event => Search,
     obelus_git::Event => Git,
     obelus_agent::Event => Agent,
+    obelus_themes::Event => Themes,
     obelus_lsp::Message => Lsp,
     obelus_mcp::Asked => Tools,
     obelus_remote::Event => Remote,

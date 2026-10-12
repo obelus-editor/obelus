@@ -81,7 +81,7 @@ use obelus_component::{
         Remark,
     },
     prompt::{Prompt, PromptKind, PromptOutcome},
-    settings::{Settings, SettingsOutcome},
+    settings::{Cards, Settings, SettingsOutcome},
 };
 use obelus_editing::motion_for;
 use obelus_keymap::{Context, KeyChord, Keymap};
@@ -359,6 +359,8 @@ pub struct App {
     jobs: Option<obelus_jobs::Pool>,
     /// What Obelus knows about the agents it could run.
     agents: agents::Agents,
+    /// What Obelus knows about the registry's themes.
+    themes: project::themes::Registry,
     /// Where the agents page's marks were on the frame just drawn.
     ///
     /// Kept so that the next frame can be asked whether they have moved,
@@ -598,6 +600,7 @@ impl App {
             jobs: None,
             settled: preferences::Settled::default(),
             agents: agents::Agents::default(),
+            themes: project::themes::Registry::default(),
             picture_layout: None,
             settings: None,
             counts: None,

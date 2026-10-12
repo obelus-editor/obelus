@@ -359,6 +359,8 @@ pub trait Screen {
     fn layers(&self) -> layers::Layers;
     /// The agents page's rows.
     fn listed_agents(&self) -> Vec<Listed>;
+    /// The themes page's cards, and none while another page is showing.
+    fn listed_themes(&self) -> Vec<obelus_themes::Card>;
     /// The runs the editor marks: the uses of the name the pointer is
     /// resting on.
     fn marked_runs(&self) -> &[obelus_text::coordinates::Span];
@@ -439,6 +441,9 @@ pub trait Screen {
     fn text_area(&self) -> TextArea;
     /// The colours currently in force.
     fn theme(&self) -> &Theme;
+    /// Why the registry's list of themes could not be fetched, if it could
+    /// not.
+    fn themes_failure(&self) -> Option<&str>;
     /// The project's own settings file, while the project has one.
     fn project_config(&self) -> Option<&Path>;
     /// What the server says is wrong with the file being read.

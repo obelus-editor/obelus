@@ -591,7 +591,9 @@ crates/
                       asked (app/hearing); what is typed in a terminal is the
                       program's (app/terminals); a
                       newer Obelus is asked about once a day, not once a start
-                      (app/project/releases); pull requests and issues are two tabs of
+                      (app/project/releases); a theme the registry no longer
+                      lists is still shown, if it is installed
+                      (app/project/themes); pull requests and issues are two tabs of
                       one errand, asked of `gh` and not of GitHub, a page
                       when the reader gets to the end of the last one,
                       choosing one opens the review or the answer and says

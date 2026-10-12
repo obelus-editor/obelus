@@ -149,7 +149,7 @@ fn a_list_that_is_a_question_says_the_question() {
     );
 }
 
-/// The settings page says it too, and says which of its four lists.
+/// The settings page says it too, and says which of its five lists.
 ///
 /// The foot already says a key filters; this says what it would filter, on
 /// the row the reader would type into. Which is not the same sentence: a
@@ -157,7 +157,7 @@ fn a_list_that_is_a_question_says_the_question() {
 ///
 /// Deliberate break: have `what_is_filtered` answer the same words on
 /// every tab. The keys page and the agents page then say they filter
-/// settings, which is two of the three lists lying about themselves.
+/// settings, which is two of the lists lying about themselves.
 #[test]
 fn the_settings_page_says_which_of_its_lists_is_filtered() {
     let (_scratch, mut app) = reading("invited-settings");
@@ -166,6 +166,9 @@ fn the_settings_page_says_which_of_its_lists_is_filtered() {
 
     support::press(&mut app, KeyCode::BackTab);
     assert_eq!(row(&mut app), "> Filter agents");
+
+    support::press(&mut app, KeyCode::BackTab);
+    assert_eq!(row(&mut app), "> Filter themes");
 
     support::press(&mut app, KeyCode::BackTab);
     assert_eq!(row(&mut app), "> Filter remote settings");

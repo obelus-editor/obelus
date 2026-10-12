@@ -74,6 +74,9 @@ impl Screen for App {
     fn listed_agents(&self) -> Vec<Listed> {
         App::listed_agents(self)
     }
+    fn listed_themes(&self) -> Vec<obelus_themes::Card> {
+        App::themes_on_the_page(self)
+    }
     fn marked_runs(&self) -> &[obelus_text::coordinates::Span] {
         App::marked_runs(self)
     }
@@ -183,6 +186,9 @@ impl Screen for App {
     }
     fn theme(&self) -> &Theme {
         App::theme(self)
+    }
+    fn themes_failure(&self) -> Option<&str> {
+        App::themes_failure(self)
     }
     fn project_config(&self) -> Option<&Path> {
         App::project_config(self)

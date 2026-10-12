@@ -26,7 +26,7 @@ use std::{
 pub use obelus_download::Progress;
 use obelus_sink::Sink;
 
-use crate::{Event, Listed, home};
+use crate::{Event, Group, Listed, home};
 
 /// What an installed theme says about where it came from.
 pub const RECORD: &str = "installed.json";
@@ -36,6 +36,9 @@ pub const RECORD: &str = "installed.json";
 pub struct Installed {
     /// The commit it was packed from.
     pub commit: String,
+    /// Which shelf it came off -- kept, because a theme the registry no
+    /// longer lists has nowhere else to say which group it is shown in.
+    pub group: Group,
 }
 
 /// What the theme called `name` under `root` says about itself, where it
@@ -46,6 +49,11 @@ pub fn installed(name: &str, root: &Path) -> Option<Installed> {
     let record: serde_json::Value = serde_json::from_str(&text).ok()?;
     Some(Installed {
         commit: record.get("commit")?.as_str()?.to_string(),
+        group: record
+            .get("group")
+            .and_then(serde_json::Value::as_str)
+            .and_then(Group::named)
+            .unwrap_or(Group::Obelus),
     })
 }
 
@@ -123,7 +131,8 @@ fn unpack_and_read(bytes: &[u8], theme: &Listed, staging: &Path) -> Result<PathB
     // first time it is chosen.
     obelus_theme::written::read_where(&arrived.join(obelus_theme::written::FILE))
         .map_err(|wrong| format!("Obelus cannot read the theme it was sent: {}", wrong.why))?;
-    let record = serde_json::json!({ "commit": theme.commit }).to_string();
+    let record =
+        serde_json::json!({ "commit": theme.commit, "group": theme.group.word() }).to_string();
     std::fs::write(arrived.join(RECORD), record).map_err(|error| format!("{error}"))?;
     Ok(arrived)
 }
@@ -283,11 +292,15 @@ mod tests {
     fn a_theme_goes_in_whole_or_not_at_all() {
         let root = scratch("whole");
         let first = package("rain", "base = \"dark\"\nbackground = \"#101820\"\n");
-        super::settle(&first, &listed("rain", &first, "aaa"), &root).expect("installed");
+        // Off omarchy's shelf, which is not what a record that says nothing
+        // is taken for -- so the group is what was written, not the default.
+        let mut omarchys = listed("rain", &first, "aaa");
+        omarchys.group = Group::Omarchy;
+        super::settle(&first, &omarchys, &root).expect("installed");
         assert!(page(&root, "rain").contains("#101820"));
         assert_eq!(
-            super::installed("rain", &root).map(|record| record.commit),
-            Some("aaa".to_string())
+            super::installed("rain", &root).map(|record| (record.commit, record.group)),
+            Some(("aaa".to_string(), Group::Omarchy))
         );
 
         let second = package("rain", "base = \"dark\"\nbackground = \"#202830\"\n");

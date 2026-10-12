@@ -888,3 +888,206 @@ fn the_window_is_told_which_picture_is_under_the_page() {
         "escape did not put the picture back"
     );
 }
+
+/// One theme as the registry's index lists it.
+fn listed(name: &str, group: obelus_themes::Group, commit: &str) -> obelus_themes::Listed {
+    obelus_themes::Listed {
+        name: name.to_string(),
+        group,
+        dark: true,
+        author: "Somebody".to_string(),
+        description: format!("The {name} colours"),
+        wallpaper: None,
+        package: format!("{name}-{commit}.tar.gz"),
+        sha256: String::new(),
+        commit: commit.to_string(),
+        updated: "2026-10-01".to_string(),
+    }
+}
+
+/// A theme as an install leaves it: its file, and the record that says
+/// which commit it is and which shelf it came off.
+fn installed_as(root: &std::path::Path, name: &str, commit: &str, group: &str) {
+    std::fs::create_dir_all(root.join(name)).expect("the directory");
+    std::fs::write(root.join(name).join("theme.toml"), "base = \"dark\"\n").expect("the theme");
+    std::fs::write(
+        root.join(name).join(obelus_themes::install::RECORD),
+        format!("{{\"commit\": \"{commit}\", \"group\": \"{group}\"}}"),
+    )
+    .expect("the record");
+}
+
+/// The settings open on their themes page.
+fn on_the_themes_page(app: &mut App) {
+    dispatch::dispatch(app, Command::ConfigOpen);
+    // The agents are the last tab and the themes the one before.
+    support::press(app, KeyCode::BackTab);
+    support::press(app, KeyCode::BackTab);
+    assert!(app.settings().expect("the settings").on_themes());
+}
+
+/// The row a card's name is on.
+fn card_row(text: &str, name: &str) -> String {
+    text.lines()
+        .find(|line| line.contains(&format!(" {name} ")))
+        .unwrap_or_else(|| panic!("no card for {name}:\n{text}"))
+        .to_string()
+}
+
+/// The themes page is the registry's two shelves, each under its name, and
+/// a card says where its theme stands here: installed, behind, not there --
+/// and one taken from the registry that it no longer lists is still shown,
+/// under the shelf it came off, saying so.
+///
+/// Deliberate breaks: the cards made without the walk over what is
+/// installed (`gone` is then not on the page), the record's commit not
+/// compared (`behind` then says `Installed`), and the heading left out of
+/// the drawing (the page then has no `omarchy` line).
+#[test]
+fn the_themes_page_is_two_shelves_and_says_where_each_stands() {
+    let scratch = reader("themes-page");
+    let root = support::Scratch::new("themes-page-installed");
+    installed_as(root.path(), "current", "aaa", "obelus");
+    installed_as(root.path(), "behind", "old", "obelus");
+    installed_as(root.path(), "gone", "zzz", "omarchy");
+
+    let mut app = open(&scratch);
+    app.installed_themes_for_test(root.path().to_path_buf());
+    app.themes_index_for_test(vec![
+        listed("current", obelus_themes::Group::Obelus, "aaa"),
+        listed("behind", obelus_themes::Group::Obelus, "new"),
+        listed("fresh", obelus_themes::Group::Obelus, "bbb"),
+        listed("omarchy-tokyo", obelus_themes::Group::Omarchy, "ccc"),
+    ]);
+    on_the_themes_page(&mut app);
+    let dump = support::render(&mut app, 90, 44);
+    let text = support::text_block(&dump);
+
+    assert!(card_row(text, "current").contains("Installed"), "{dump}");
+    assert!(card_row(text, "behind").contains("Update"), "{dump}");
+    assert!(card_row(text, "fresh").contains("Install"), "{dump}");
+    assert!(
+        card_row(text, "gone").contains("No longer listed"),
+        "{dump}"
+    );
+    // A heading over each shelf, and the theme it no longer lists under the
+    // one it came off.
+    let heading = |word: &str| {
+        text.lines().position(|line| {
+            line.split_once('|')
+                .is_some_and(|(_, rest)| rest.trim() == word)
+        })
+    };
+    let omarchy = heading("omarchy").expect("the omarchy heading");
+    let obelus = heading("Obelus").expect("the Obelus heading");
+    let at = |name: &str| {
+        text.lines()
+            .position(|line| line.contains(&format!(" {name} ")))
+            .expect("the card")
+    };
+    assert!(obelus < at("fresh") && at("fresh") < omarchy, "{dump}");
+    assert!(omarchy < at("gone"), "{dump}");
+    assert!(at("omarchy-tokyo") < at("gone"), "{dump}");
+}
+
+/// Enter on a card the registry has to give installs it: the card stops
+/// offering the key the moment it is pressed, and an install that did not
+/// take says why under the card and offers it again.
+///
+/// Deliberate breaks: the page's `InstallTheme` handed to nothing (the card
+/// then still says `Install`), and the failure not kept (no reason on the
+/// card).
+#[test]
+fn enter_installs_a_theme_and_a_failure_stays_on_its_card() {
+    let scratch = reader("themes-install");
+    let root = support::Scratch::new("themes-install-installed");
+
+    let mut app = open(&scratch);
+    app.installed_themes_for_test(root.path().to_path_buf());
+    app.themes_index_for_test(vec![listed("fresh", obelus_themes::Group::Obelus, "bbb")]);
+    on_the_themes_page(&mut app);
+
+    support::press(&mut app, KeyCode::Enter);
+    let dump = support::render(&mut app, 90, 30);
+    assert!(
+        card_row(support::text_block(&dump), "fresh").contains("Installing"),
+        "the card did not say it was on its way:\n{dump}"
+    );
+
+    app.handle(Event::Themes(obelus_themes::Event::Installed {
+        name: "fresh".to_string(),
+        failure: Some("The package is not the one the index names".to_string()),
+    }));
+    let dump = support::render(&mut app, 90, 30);
+    let text = support::text_block(&dump);
+    assert!(card_row(text, "fresh").contains("Install"), "{dump}");
+    assert!(
+        text.contains("The package is not the one the index names"),
+        "the reason is not on the card:\n{dump}"
+    );
+}
+
+/// Delete takes a theme from the registry away -- not the one being worn,
+/// and one the registry no longer lists only on a second press with nothing
+/// pressed between, because nothing can put it back.
+///
+/// Deliberate breaks: `may_be_taken_away` not asking whether it is worn
+/// (`current` then goes from under the reader), the second press not asked
+/// for (`gone` then goes on the first), and the first press kept across
+/// other keys (`gone` then goes after a walk away and back).
+#[test]
+fn delete_takes_a_theme_away_but_not_the_one_worn() {
+    let scratch = reader("themes-remove");
+    let root = support::Scratch::new("themes-remove-installed");
+    installed_as(root.path(), "current", "aaa", "obelus");
+    installed_as(root.path(), "spare", "bbb", "obelus");
+    installed_as(root.path(), "gone", "zzz", "obelus");
+
+    let mut app = open(&scratch);
+    app.installed_themes_for_test(root.path().to_path_buf());
+    app.themes_index_for_test(vec![
+        listed("current", obelus_themes::Group::Obelus, "aaa"),
+        listed("spare", obelus_themes::Group::Obelus, "bbb"),
+    ]);
+    // Worn the way a reader wears one: chosen from the list.
+    dispatch::dispatch(&mut app, Command::ThemeSelect);
+    support::type_text(&mut app, "current");
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(app.theme_name(), "current");
+
+    on_the_themes_page(&mut app);
+    support::type_text(&mut app, "current");
+    support::press(&mut app, KeyCode::Delete);
+    let dump = support::render(&mut app, 90, 30);
+    assert!(
+        root.join("current").exists(),
+        "the theme being worn was taken away"
+    );
+    assert!(
+        card_row(support::text_block(&dump), "current").contains("In use"),
+        "{dump}"
+    );
+
+    for _ in 0.."current".len() {
+        support::press(&mut app, KeyCode::Backspace);
+    }
+    support::type_text(&mut app, "spare");
+    support::press(&mut app, KeyCode::Delete);
+    assert!(!root.join("spare").exists(), "delete took nothing away");
+
+    for _ in 0.."spare".len() {
+        support::press(&mut app, KeyCode::Backspace);
+    }
+    support::type_text(&mut app, "gone");
+    support::press(&mut app, KeyCode::Delete);
+    assert!(root.join("gone").exists(), "one press took it for good");
+    // A key between, and the next delete is a first one again.
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Delete);
+    assert!(
+        root.join("gone").exists(),
+        "a press before the walk counted towards this one"
+    );
+    support::press(&mut app, KeyCode::Delete);
+    assert!(!root.join("gone").exists(), "two presses did not take it");
+}

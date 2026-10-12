@@ -51,6 +51,7 @@ use obelus_command::Command;
 use obelus_config::{Config, Group, Kind, Setting, Value, Whose};
 use obelus_keymap::{KeyChord, Keymap};
 use obelus_remote::platform::{Description, Field as Told, Setup};
+use obelus_themes::Card as ThemeCard;
 
 use crate::{
     field::Field,
@@ -74,6 +75,10 @@ pub enum SettingsOutcome {
     Unset(&'static str),
     /// An agent should be installed.
     Install(String),
+    /// A theme from the registry should be installed, or updated.
+    InstallTheme(String),
+    /// A theme taken from the registry should be taken away.
+    RemoveTheme(String),
     /// An agent should be the one Obelus talks to.
     Activate(String),
     /// Whichever agent was active should stop being.
@@ -268,11 +273,19 @@ pub enum Page {
     Agents,
     /// Which chat a note can be worked on from.
     Remote,
+    /// The themes the registry lists, and the ones taken from it.
+    Themes,
 }
 
 impl Page {
     /// Every page, in the order their tabs sit in.
-    pub const ALL: [Self; 4] = [Self::Settings, Self::Keys, Self::Remote, Self::Agents];
+    pub const ALL: [Self; 5] = [
+        Self::Settings,
+        Self::Keys,
+        Self::Remote,
+        Self::Themes,
+        Self::Agents,
+    ];
 
     /// The pages one file's settings have.
     ///
@@ -304,8 +317,23 @@ impl Page {
             Self::Keys => "Keys",
             Self::Agents => "Agents",
             Self::Remote => "Remote",
+            Self::Themes => "Themes",
         }
     }
+}
+
+/// What the pages of cards are of, as the application hands them in.
+///
+/// Both together, so that every function a page of cards goes through is
+/// handed the same two lists -- the one that moves the focus, the one that
+/// measures the cards and the one that scrolls them -- and a page cannot be
+/// measured from one list and walked through another.
+#[derive(Clone, Copy, Debug)]
+pub struct Cards<'a> {
+    /// The agents Obelus could install.
+    pub agents: &'a [Agent],
+    /// The themes the registry lists, and the ones taken from it.
+    pub themes: &'a [ThemeCard],
 }
 
 /// The active agent's settings, as this page needs them.
@@ -673,6 +701,7 @@ impl Settings {
             Page::Agents => "Filter agents",
             Page::Remote => "Filter remote settings",
             Page::Settings => "Filter settings",
+            Page::Themes => "Filter themes",
         })
     }
 
@@ -686,6 +715,18 @@ impl Settings {
     #[must_use]
     pub fn on_agents(&self) -> bool {
         self.page() == Page::Agents
+    }
+
+    /// Whether the page showing is the themes.
+    #[must_use]
+    pub fn on_themes(&self) -> bool {
+        self.page() == Page::Themes
+    }
+
+    /// Whether the page showing is one of cards rather than of rows.
+    #[must_use]
+    pub fn on_cards(&self) -> bool {
+        self.on_agents() || self.on_themes()
     }
 
     /// Whether the page showing is the remote one.
@@ -885,15 +926,15 @@ impl Settings {
     pub fn scroll(
         &mut self,
         rows: isize,
-        agents: &[Agent],
+        cards: Cards<'_>,
         offering: Option<&Offering>,
         room: (u16, u16),
     ) {
         if self.binding.is_some() {
             return;
         }
-        let heights = match self.on_agents() {
-            true => self.card_heights(agents, room),
+        let heights = match self.on_cards() {
+            true => self.card_heights(cards, room),
             false => self.entry_heights(room, offering),
         };
         self.window.scroll_rows(rows, &heights);
@@ -1025,7 +1066,7 @@ impl Settings {
     // handed in, and a page that lent itself out here could not move its
     // own window while it held them.
     pub fn rows<'a>(&self, offering: Option<&'a Offering>) -> Vec<Shown<'a>> {
-        if self.on_agents() || self.on_keys() {
+        if self.on_cards() || self.on_keys() {
             return Vec::new();
         }
         if self.on_remote() {
@@ -1178,21 +1219,67 @@ impl Settings {
     /// has to be whole -- and cards are not all the same height, so there
     /// is no number to divide by.
     #[must_use]
-    pub fn cards_that_fit(&self, agents: &[Agent], room: (u16, u16)) -> usize {
-        let width = Self::card_width(room.0);
-        let height = room.1;
-        let listed = self.agents(agents);
+    pub fn cards_that_fit(&self, cards: Cards<'_>, room: (u16, u16)) -> usize {
+        let heights = self.card_heights(cards, room);
         let mut taken = 0;
         let mut fits = 0;
-        for agent in listed.iter().skip(self.window.focus().min(listed.len())) {
-            let card = self.card_rows(agent, width) + 1;
-            if taken + card > height && fits > 0 {
+        for card in heights.iter().skip(self.window.focus().min(heights.len())) {
+            if taken + card > room.1 && fits > 0 {
                 break;
             }
             taken += card;
             fits += 1;
         }
         fits
+    }
+
+    /// The themes on show: all of them, narrowed by what has been typed --
+    /// by name, the way the agents are.
+    #[must_use]
+    pub fn themes(&self, themes: &[ThemeCard]) -> Vec<ThemeCard> {
+        if self.query.is_empty() {
+            return themes.to_vec();
+        }
+        themes
+            .iter()
+            .filter(|card| self.matched_in(&card.theme.name).is_some())
+            .cloned()
+            .collect()
+    }
+
+    /// Whether the theme at `at` among those on show is the first of its
+    /// group, and so opens the group with a heading.
+    #[must_use]
+    pub fn opens_a_group(themes: &[ThemeCard], at: usize) -> bool {
+        match at {
+            0 => !themes.is_empty(),
+            _ => themes
+                .get(at)
+                .zip(themes.get(at - 1))
+                .is_some_and(|(this, before)| this.theme.group != before.theme.group),
+        }
+    }
+
+    /// How many rows a theme's card takes, the heading of the group it
+    /// opens included.
+    ///
+    /// Its name, its description wrapped, the line of facts under it, and
+    /// why the last install failed if one did -- the agents' card, less
+    /// nothing -- and two rows above it where it opens a group: the heading
+    /// and the blank under it.
+    #[must_use]
+    pub fn theme_rows(&self, themes: &[ThemeCard], at: usize, width: u16) -> u16 {
+        let Some(card) = themes.get(at) else {
+            return 0;
+        };
+        let failed = u16::from(matches!(card.status, obelus_themes::Status::Failed(_)));
+        let heading = if Self::opens_a_group(themes, at) {
+            2
+        } else {
+            0
+        };
+        let described = self.wrapped(&card.theme.description, width).len().max(1);
+        heading + 2 + u16::try_from(described).unwrap_or(u16::MAX) + failed
     }
 
     /// Where what has been typed matched in a name, in characters.
@@ -1263,10 +1350,11 @@ impl Settings {
         key: &KeyEvent,
         config: &Config,
         keymap: &Keymap,
-        agents: &[Agent],
+        cards: Cards<'_>,
         offering: Option<&Offering>,
         room: (u16, u16),
     ) -> SettingsOutcome {
+        let agents = cards.agents;
         // A row waiting for a key takes the next one, whatever it is: that
         // is what the reader asked for by pressing enter on it, and a
         // modifier is half of most chords worth binding. Escape is the way
@@ -1351,16 +1439,20 @@ impl Settings {
         let keys = self.keys(keymap);
         // How many things the focus can be on: the rows of the page, or the
         // agents that the query leaves.
-        let count = match self.on_agents() {
-            true => self.agents(agents).len(),
-            false => self.row_count(offering),
+        let themes = self.themes(cards.themes);
+        let count = if self.on_agents() {
+            self.agents(agents).len()
+        } else if self.on_themes() {
+            themes.len()
+        } else {
+            self.row_count(offering)
         };
 
         // How far a page moves: the rows a group shows, or however many
         // cards fit -- which is not a fixed number, because a card is as
         // tall as its description needs.
-        let page = if self.on_agents() {
-            self.cards_that_fit(agents, room).max(1)
+        let page = if self.on_cards() {
+            self.cards_that_fit(cards, room).max(1)
         } else {
             usize::from(room.1).max(1)
         };
@@ -1447,6 +1539,26 @@ impl Settings {
                         }
                     },
                     None => SettingsOutcome::Consumed,
+                }
+            }
+            // On the themes page, enter is the card's button: install it,
+            // or update it -- and nothing on one installed and current, or
+            // on its way, or one the registry no longer has to give.
+            KeyCode::Enter if bare && self.on_themes() => match themes.get(self.window.focus()) {
+                Some(card) if card.may_be_installed() => {
+                    SettingsOutcome::InstallTheme(card.theme.name.clone())
+                }
+                _ => SettingsOutcome::Consumed,
+            },
+            // And delete takes one away, where one may be: the same answer
+            // the foot asks before it offers the key, so a key it does not
+            // show does nothing.
+            KeyCode::Delete if bare && !self.query.takes_a_delete() && self.on_themes() => {
+                match themes.get(self.window.focus()) {
+                    Some(card) if card.may_be_taken_away() => {
+                        SettingsOutcome::RemoveTheme(card.theme.name.clone())
+                    }
+                    _ => SettingsOutcome::Consumed,
                 }
             }
             // On the keys page, enter is the reader saying "the next key I
@@ -1562,7 +1674,7 @@ impl Settings {
                     && !self.query.takes_a_delete()
                     && self.on_project()
                     && !self.on_keys()
-                    && !self.on_agents() =>
+                    && !self.on_cards() =>
             {
                 match rows.get(self.window.focus()).and_then(Shown::setting) {
                     Some(setting) => SettingsOutcome::Unset(setting.key),
@@ -1656,15 +1768,21 @@ impl Settings {
     /// and the geometry is only settled at that point -- which is also what
     /// makes a resize move the window rather than leave the focus off the
     /// screen.
-    pub fn settle_cards(&mut self, agents: &[Agent], room: (u16, u16)) {
-        let heights = self.card_heights(agents, room);
+    pub fn settle_cards(&mut self, cards: Cards<'_>, room: (u16, u16)) {
+        let heights = self.card_heights(cards, room);
         self.window.settle_by_height(&heights, room.1);
     }
 
-    /// How tall each card is, with the blank after it.
-    fn card_heights(&self, agents: &[Agent], room: (u16, u16)) -> Vec<u16> {
+    /// How tall each card on the page showing is, with the blank after it.
+    fn card_heights(&self, cards: Cards<'_>, room: (u16, u16)) -> Vec<u16> {
         let width = Self::card_width(room.0);
-        self.agents(agents)
+        if self.on_themes() {
+            let themes = self.themes(cards.themes);
+            return (0..themes.len())
+                .map(|at| self.theme_rows(&themes, at, width) + 1)
+                .collect();
+        }
+        self.agents(cards.agents)
             .iter()
             .map(|agent| self.card_rows(agent, width) + 1)
             .collect()
