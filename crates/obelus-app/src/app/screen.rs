@@ -94,7 +94,7 @@ impl Screen for App {
 
         // The kind of document is the variant, so these cannot be two at
         // once; and a reading is only ever of a file. Broken deliberately by
-        // never answering a reading: `tests/rendering.rs` drew the file's
+        // never answering a reading: `tests/app/rendering.rs` drew the file's
         // bytes for three readings.
         match self.current.and_then(|id| self.document(id)) {
             Some(Document::Chat(talk)) => Shown::Chat(&talk.chat),

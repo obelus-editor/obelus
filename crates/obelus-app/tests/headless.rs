@@ -3,6 +3,9 @@
 //!
 //! What it needs of the chat, and the chat going wrong under it, are in
 //! `tests/remote.rs` beside the fake platform.
+//!
+//! A binary of its own for the reason `starting` is: a start applies the
+//! settings to the whole process.
 
 mod support;
 

@@ -907,10 +907,14 @@ crates/
                       machine's own answer, asked of the machine (cascade)
   */tests/          integration tests, most of them `obelus-app`'s, plus
                     obelus-app/tests/fixtures/*.txt golden grids
-                    · why the fake agent is `sh`, and what it checks back
-                      (obelus-app/tests/agent); a test whose input is the
+                    · every file is a binary linked with all of Obelus, so
+                      the application's share one, and a file beside it
+                      sets something the whole process reads
+                      (obelus-app/tests/app/main); why the fake agent is
+                      `sh`, and what it checks back
+                      (obelus-app/tests/app/agent); a test whose input is the
                       checkout's own history only passes at one moment
-                      (obelus-app/tests/git)
+                      (obelus-app/tests/app/git)
 ```
 
 A `·` line is the rules that live in that module's own doc rather than here,
@@ -953,7 +957,7 @@ deadline's own clock can reach the work.**
 **Pressing install still runs `npm`, so a test must not press it.**
 `App::agents_root_for_test` lets a test write the record a finished install
 leaves and drive `Event::Installed`; `App::talk_to` takes the command directly
-(`obelus-app/tests/agent`).
+(`obelus-app/tests/app/agent`).
 
 **Nothing draws a band of colour across a row.** The status row is the page's
 own colour, like the conversation's row below the box: it has a rule above it
@@ -969,6 +973,21 @@ the fixture file being *committed*: edit `obelus-app/tests/fixtures/long.rs`
 without
 committing and the preview grows change marks. Which is the feature working,
 and a surprising way to see it.
+
+**A new test file is a module, not a binary.** Every file directly under a
+`tests/` is a binary linked with everything it depends on, debug info and
+all: `obelus-app`'s sixty were 63G of one checkout's `target`. So the
+application's tests are one binary, `obelus-app/tests/app/main.rs`, and a new
+file goes in that directory with a `mod` line there. A file stands beside it
+only when its tests set something the whole process reads and do not set it
+back -- the glyph switch, the tab width, a start that applies the settings
+-- and it says so at its top, `A binary of its own because ...`. Sharing a
+process has a price the old layout hid: anything one per process is now
+shared with every file, so a test that writes the clipboard or opens a link
+takes `support::clipboard_turn`, a scratch directory's name is unique across
+the binary (`support::Scratch` panics on a second), and a test that reads
+what the process remembers -- the projects it has been in -- says what that
+is rather than reading what its neighbours left there.
 
 **A test that only passes in one checkout is a broken test, not a rule.** The
 welcome screen prints the working directory, so its fixture once carried
@@ -991,7 +1010,7 @@ halves agree. It asserts nothing about whether that file is currently dirty.
 **A test whose input is the checkout's own history only passes at one moment**
 -- the same rule with a clock on it. The diff pairs are fixtures answered by
 real `git diff --no-index`, and the sweep that finds new ones is `#[ignore]`d
-(`obelus-app/tests/git`).
+(`obelus-app/tests/app/git`).
 
 ## Comments
 

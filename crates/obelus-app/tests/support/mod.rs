@@ -834,8 +834,9 @@ pub(crate) fn said(dump: &str) -> String {
 /// provider the last one asked for, which makes what it does depend on the
 /// order the threads happened to run in.
 ///
-/// One mutex per test binary, because the state is per process: a file whose
-/// tests all take it is safe from the others whatever they do.
+/// One mutex per test binary, because the state is per process -- and the
+/// application's tests are one binary, so every test in it that writes the
+/// clipboard or opens a link takes this, whichever file it is in.
 pub(crate) fn clipboard_turn() -> std::sync::MutexGuard<'static, ()> {
     static TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
     // A test that failed while holding it poisoned nothing: there is no

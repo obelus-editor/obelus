@@ -1,5 +1,9 @@
 //! The remote page: which chat this machine can be reached from, and what is
 //! kept for it.
+//!
+//! A binary of its own because the secrets are kept in one directory for the
+//! whole process and the platform a test connects to is faked for all of it,
+//! and because its tests apply settings, which `settings` says the cost of.
 
 mod support;
 

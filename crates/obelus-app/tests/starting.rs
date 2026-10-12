@@ -5,6 +5,10 @@
 //! settings that belong to it, and what the command line asked for decides
 //! whether Obelus opens on a file or on the list. Each of those was a line
 //! in `main` with a comment explaining itself and nothing checking it.
+//!
+//! A binary of its own because a start reads the settings and applies them
+//! to the whole process: the tree here that says `tab_width = 8` lays every
+//! tab in it at eight, under any test beside it that draws one.
 
 mod support;
 

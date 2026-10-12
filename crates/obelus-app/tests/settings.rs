@@ -1,4 +1,8 @@
 //! The settings view: tabs, a filter, and a control per row.
+//!
+//! A binary of its own because applying a setting lays the glyph switch and
+//! the tab width for the whole process, and a test beside these drawing a
+//! screen would draw it with whatever the last one turned on.
 
 mod support;
 

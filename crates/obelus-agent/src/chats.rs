@@ -510,9 +510,9 @@ mod tests {
     ///
     /// Broken deliberately by opening with `.write(true)` in `held`: the
     /// lock is still seen, so nothing here goes red -- and that is the point
-    /// of the pair in `tests/watch.rs`, which is where the silence is
-    /// asserted. Broken the other way, by taking the read off, `held` opens
-    /// nothing and the claim disappears.
+    /// of the pair in `obelus-app/tests/app/watch.rs`, which is where the
+    /// silence is asserted. Broken the other way, by taking the read off,
+    /// `held` opens nothing and the claim disappears.
     #[test]
     fn a_claim_is_seen_through_a_descriptor_that_cannot_write() {
         let root = scratch("looking");

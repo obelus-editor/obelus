@@ -5,6 +5,10 @@
 //! through `startup::start`, which is where a reader comes in; whether to
 //! is said in the tree's own `.obelus/config.toml`, so the answer does not
 //! hang on the settings of the machine the suite runs on.
+//!
+//! A binary of its own for the reason `starting` is: a start applies the
+//! settings to the whole process -- the glyph switch among them, which is
+//! the machine's and not the tree's.
 
 mod support;
 

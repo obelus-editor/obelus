@@ -672,7 +672,7 @@ mod tests {
     /// `height`. What that mismatch *did* on screen -- the selection
     /// standing a row below the last one drawn, the view scrolling only
     /// once it had -- is held down by the test of the same name in
-    /// `tests/counts.rs`.
+    /// `obelus-app/tests/app/counts.rs`.
     #[test]
     fn the_list_is_what_is_left_under_the_tabs_and_the_headings() {
         let counts = Counts::new();

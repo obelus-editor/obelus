@@ -1,0 +1,3219 @@
+//! What the editor region and the status bar actually put on screen.
+
+use crossterm::event::KeyCode;
+use obelus_app::app::App;
+use obelus_text::coordinates::{CharColumn, LineNumber};
+use support::{press, press_shift};
+
+use crate::support;
+
+/// The screen these tests use unless they say otherwise.
+const WIDTH: u16 = 40;
+const HEIGHT: u16 = 8;
+
+/// A file with a tab-indented body and a wide glyph, so the gutter, tab
+/// expansion and double-width cells are all exercised by the same fixture.
+fn app() -> App {
+    App::new(vec![support::open_fixture("sample.rs")])
+}
+
+/// Turns wrapping on, for a test that is about wrapping.
+///
+/// Off is the default -- a line is a line, and a reader counting rows or
+/// looking at a table in a comment is reading something the screen has not
+/// rearranged -- so a test of what wrapping does has to ask for it.
+fn wrapping(app: &mut App) {
+    app.configure(
+        obelus_config::Config {
+            wrap: true,
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+}
+
+/// An application whose geometry is already known.
+///
+/// The loop draws before it waits for a key, so the geometry always exists by
+/// the time a key arrives. A test that presses first would be moving a cursor
+/// through a zero-sized screen — which, with wrapping, is a screen one cell
+/// wide, and every line in it is one character tall.
+fn app_on_screen(width: u16, height: u16) -> App {
+    let mut app = app();
+    support::lay_out(&mut app, width, height);
+    app
+}
+
+#[test]
+fn a_file_renders_with_a_gutter_and_a_status_bar() {
+    let mut app = app();
+    support::check("sample_40x8", &support::render(&mut app, 40, 8));
+}
+
+/// The status row sits on the page, not on a band of its own.
+///
+/// It has the rule above it to say it is a different subject from the file,
+/// and saying that twice makes a strip of colour -- the heaviest thing
+/// Obelus draws -- out of the smallest part of the screen. What tells the
+/// row apart is the rule and the words on it.
+#[test]
+fn the_status_row_is_the_pages_own_colour() {
+    let mut app = app();
+    let dump = support::render(&mut app, 40, 8);
+    let rows: Vec<&str> = support::style_block(&dump).lines().skip(1).collect();
+    let behind = |row: &str, cell: usize| {
+        let letter = row
+            .split('|')
+            .nth(1)
+            .and_then(|cells| cells.chars().nth(cell))
+            .expect("a style cell");
+        support::legend_block(&dump)
+            .lines()
+            .find(|line| line.trim_start().starts_with(letter))
+            .and_then(|line| line.split("bg=").nth(1))
+            .map(str::to_string)
+            .expect("a background")
+    };
+    let status = rows.last().expect("a status row");
+    let code = rows.first().expect("a row of code");
+    assert_eq!(
+        behind(status, 0),
+        behind(code, 0),
+        "the status row is on a band of its own:\n{dump}"
+    );
+    // And the rule above it is what says where the file stops.
+    let text: Vec<&str> = support::text_block(&dump).lines().skip(1).collect();
+    let over = text
+        .get(text.len().saturating_sub(2))
+        .expect("the row above the status row");
+    assert!(
+        over.split('|')
+            .nth(1)
+            .is_some_and(|drawn| drawn.chars().all(|glyph| glyph == '\u{2500}')),
+        "there is no rule over the status row:\n{dump}"
+    );
+}
+
+#[test]
+fn the_cursor_line_number_is_brighter_than_the_others() {
+    let mut app = app_on_screen(WIDTH, HEIGHT);
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Down);
+    support::check(
+        "sample_cursor_line_3_40x8",
+        &support::render(&mut app, 40, 8),
+    );
+}
+
+#[test]
+fn a_narrow_screen_truncates_the_path_from_the_left() {
+    let mut app = app();
+    support::check("sample_narrow_24x6", &support::render(&mut app, 24, 6));
+}
+
+/// Starting with nothing open is the one moment a reader needs telling what
+/// the keys are.
+#[test]
+fn starting_with_nothing_open_shows_a_welcome_screen() {
+    let mut app = App::new(Vec::new());
+    // The screen says which tree Obelus is on, so the test says which tree
+    // that is: left to the process's own directory this grid holds the path
+    // of whoever's checkout ran it -- and a path outside `$HOME` so the `~`
+    // it would otherwise be written with is not this machine's either.
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    // And which version, for the same reason with a release in place of a
+    // checkout: left to the manifest, the grid is rewritten at every
+    // release. That the manifest's is what is drawn is
+    // `the_welcome_screen_says_which_version_this_is`'s to say.
+    app.version_for_test("1.2.3");
+    support::check("welcome_64x20", &support::render(&mut app, 64, 20));
+}
+
+/// The welcome screen says which version this is, in the plate's own edge.
+///
+/// In the frame rather than on a row under it: it is a fact about the thing
+/// the plate names, and a row of screen holding one short word is a row
+/// spent on punctuation. The edge closes up around it, which is what makes
+/// it part of the frame rather than a word sitting on top of one.
+///
+/// The commit it was built at was beside it and is not any more. What that
+/// answered -- "is the fix in the thing I am looking at" -- is a question
+/// somebody asks about a build they are chasing, not one the way in has to
+/// carry, and the log says it on the first line of every run. Which also
+/// takes a question out of the golden fixtures: a commit in one would be a
+/// fixture rewritten every time anybody commits anything.
+///
+/// And the screen too small for a plate keeps both, on the one row: the
+/// name at one end and the version at the other.
+///
+/// Broken deliberately two ways, one assertion each: having `foot` hand the
+/// edge back untouched leaves the plate saying nothing; and dropping the
+/// version from the narrow layout leaves that screen with the name alone.
+#[test]
+fn the_welcome_screen_says_which_version_this_is() {
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+
+    let dump = support::render(&mut app, 64, 20);
+    let edge = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains('\u{255a}'))
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        edge.contains(concat!(
+            "\u{2550} v",
+            env!("CARGO_PKG_VERSION"),
+            " \u{2550}"
+        )),
+        "the plate's edge is not closed up around the version: {edge:?}\n{dump}"
+    );
+
+    // And the narrow one, where the plate is dropped and the row it leaves
+    // carries both.
+    let dump = support::render(&mut app, 34, 10);
+    let row = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains("Obelus"))
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        row.contains(concat!("v", env!("CARGO_PKG_VERSION"))),
+        "the narrow welcome does not read {row:?} as expected:\n{dump}"
+    );
+}
+
+/// A newer Obelus is said beside the version, in the plate's edge -- and
+/// only a newer one, and only while the reader wants to be told.
+///
+/// Broken deliberately three ways, one assertion each: `foot` setting the
+/// version alone whatever it is handed; `on_released` keeping the tag
+/// without asking whether it is newer; and `newer_release` leaving out
+/// the switch.
+#[test]
+fn the_welcome_screen_says_a_newer_version_is_out() {
+    use obelus_app::event::Event;
+
+    let edge = |app: &mut App| {
+        let dump = support::render(app, 64, 20);
+        support::text_block(&dump)
+            .lines()
+            .find(|row| row.contains('\u{255a}'))
+            .unwrap_or_default()
+            .to_string()
+    };
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+
+    app.handle(Event::Released("v99.0.0".to_string()));
+    let said = edge(&mut app);
+    assert!(
+        said.contains(concat!(
+            "\u{2550} v",
+            env!("CARGO_PKG_VERSION"),
+            " \u{b7} v99.0.0 is out \u{2550}"
+        )),
+        "the plate's edge does not say a newer one is out: {said:?}"
+    );
+
+    // An older one is not news: a build ahead of the last release has not
+    // been left behind by it.
+    app.handle(Event::Released("v0.0.1".to_string()));
+    let said = edge(&mut app);
+    assert!(
+        !said.contains("is out"),
+        "an older version was offered as news: {said:?}"
+    );
+
+    // And a reader who has turned it off is not told, even with the answer
+    // in hand.
+    app.handle(Event::Released("v99.0.0".to_string()));
+    app.configure(
+        obelus_config::Config {
+            new_versions: false,
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    let said = edge(&mut app);
+    assert!(
+        !said.contains("is out"),
+        "the switch is off and the news is still on the plate: {said:?}"
+    );
+}
+
+/// A screen with no room for the wordmark still gets the keys.
+#[test]
+fn a_narrow_screen_gets_the_keys_without_the_wordmark() {
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.version_for_test("1.2.3");
+    let dump = support::render(&mut app, 34, 10);
+
+    let open = obelus_keymap::function(1).label();
+    assert!(support::text_block(&dump).contains(&open), "{dump}");
+    assert!(
+        !support::text_block(&dump).contains('\u{2588}'),
+        "the wordmark was drawn into a screen too narrow for it:\n{dump}"
+    );
+    support::check("welcome_narrow_34x10", &dump);
+}
+
+/// The keys on it come from the key table, so a rebound key changes the screen
+/// rather than leaving a hint that lies.
+#[test]
+fn the_welcome_screen_reads_the_key_table() {
+    use crossterm::event::{KeyCode, KeyModifiers};
+    use obelus_command::Command;
+    use obelus_keymap::{Binding, Context, KeyChord, Keymap};
+
+    let mut app = App::new(Vec::new());
+    let shown = support::render(&mut app, 64, 20);
+    let open = obelus_keymap::function(1).label();
+    assert!(support::text_block(&shown).contains(&open), "{shown}");
+
+    app.set_keymap(Keymap::from_bindings(vec![Binding {
+        command: Command::FileOpen,
+        context: Context::Normal,
+        chord: KeyChord::new(KeyCode::Char('z'), KeyModifiers::ALT),
+    }]));
+    let rebound = support::render(&mut app, 64, 20);
+    let text = support::text_block(&rebound);
+
+    assert!(
+        text.contains(&KeyChord::new(KeyCode::Char('z'), KeyModifiers::ALT).label()),
+        "the rebound key is not shown:\n{rebound}"
+    );
+    assert!(
+        !text.contains(&open),
+        "the old key is still being offered:\n{rebound}"
+    );
+    assert!(
+        !text.contains(&KeyChord::new(KeyCode::Char('q'), KeyModifiers::CONTROL).label()),
+        "a command with no binding left is still listed:\n{rebound}"
+    );
+}
+
+/// Too small to read at a glance is worse than nothing.
+#[test]
+fn a_screen_too_small_for_the_welcome_block_shows_none_of_it() {
+    let mut app = App::new(Vec::new());
+    support::check("empty_20x4", &support::render(&mut app, 20, 4));
+}
+
+#[test]
+fn the_status_bar_reports_a_one_based_character_column() {
+    let mut app = app_on_screen(WIDTH, HEIGHT);
+    press(&mut app, KeyCode::Down);
+    for _ in 0..17 {
+        press(&mut app, KeyCode::Right);
+    }
+
+    let cursor = app.current_buffer().expect("a buffer").cursor();
+    assert_eq!(cursor.line, LineNumber::new(1));
+    // Seventeen characters in, which is past the wide pair: the cell column
+    // there is nineteen, and the status bar must not report that one.
+    assert_eq!(cursor.column, CharColumn::new(17));
+}
+
+/// Switching theme must change colours and nothing else.
+///
+/// The claim being tested is architectural: what is cached per byte is which
+/// kind of thing it is, not what colour, so a theme change is one field and
+/// the next frame. If a reparse or a cache were involved, the cheapest way for
+/// that to go wrong is for the text to come out different too.
+#[test]
+fn switching_theme_repaints_without_moving_anything() {
+    let mut app = app();
+    let dark = support::render(&mut app, 40, 8);
+
+    app.set_theme("light", obelus_theme::builtin::LIGHT);
+    let light = support::render(&mut app, 40, 8);
+
+    assert_eq!(
+        support::text_block(&dark),
+        support::text_block(&light),
+        "the theme moved something"
+    );
+    // Even the style *structure* is identical: the same runs of cells share a
+    // style, because which kind of thing each byte is did not change. Only the
+    // colours those styles resolve to did.
+    assert_eq!(
+        support::style_block(&dark),
+        support::style_block(&light),
+        "the theme regrouped the styles, so more than the colours changed"
+    );
+    assert_ne!(
+        support::legend_block(&dark),
+        support::legend_block(&light),
+        "the theme changed nothing"
+    );
+
+    support::check("sample_light_40x8", &light);
+}
+
+#[test]
+fn syntax_is_highlighted() {
+    let mut app = app();
+    let dump = support::render(&mut app, 40, 8);
+    let legend = support::legend_block(&dump);
+
+    // Six distinct foregrounds at least: plain text, the gutter, the cursor's
+    // gutter line, the status bar, and at least two syntax colours. Without
+    // highlighting there would be four.
+    let colours = legend.lines().filter(|line| !line.is_empty()).count();
+    assert!(
+        colours >= 6,
+        "only {colours} styles on screen, so nothing is being highlighted:\n{legend}"
+    );
+}
+
+/// The cursor is the terminal's own, positioned rather than painted. That is
+/// what makes it take the shape and blink the reader configured, and what
+/// makes it go hollow by itself when the window loses focus — a cell grid
+/// cannot express an outline over a cell.
+#[test]
+fn the_terminal_is_told_where_to_put_its_cursor() {
+    let mut app = app();
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+
+    // A five-cell gutter and the fold column after it, so the first
+    // character of the first line is cell six. No change margin: this
+    // fixture is committed and unchanged, and the margin is reserved by
+    // git having something to say rather than by there being a repository.
+    assert_eq!(support::cursor_line(&dump), "6,0", "{dump}");
+    support::check("sample_40x8", &dump);
+}
+
+#[test]
+fn the_cursor_follows_the_keys() {
+    let mut app = app_on_screen(WIDTH, HEIGHT);
+    press(&mut app, KeyCode::Down);
+    for _ in 0..5 {
+        press(&mut app, KeyCode::Right);
+    }
+
+    // Line 1 is `\tlet greeting = ...`. The tab is four cells, then `let `
+    // is four more, so character five sits at cell eight — and the gutter
+    // and the fold column are six columns before that. The tab is why the
+    // two numbers differ.
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert_eq!(support::cursor_line(&dump), "14,1", "{dump}");
+}
+
+/// Shift extends the selection from where the reader began, while an ordinary
+/// motion starts a new place and clears it.
+#[test]
+fn shift_arrows_select_and_plain_motion_clears_the_selection() {
+    let mut app = app_on_screen(WIDTH, HEIGHT);
+    press_shift(&mut app, KeyCode::Right);
+    press_shift(&mut app, KeyCode::Right);
+
+    let selected = app.current_buffer().and_then(|buffer| buffer.selection());
+    assert_eq!(
+        selected,
+        Some(obelus_text::coordinates::Span {
+            line: LineNumber::new(0),
+            column: CharColumn::new(0),
+            end_line: LineNumber::new(0),
+            end_column: CharColumn::new(2),
+        })
+    );
+    assert_eq!(
+        app.current_buffer()
+            .and_then(|buffer| buffer.selected_text()),
+        Some("fn".to_string())
+    );
+
+    let selected_dump = support::render(&mut app, WIDTH, HEIGHT);
+    // The two selected characters, found by their text rather than by a
+    // column: what is to the left of them -- the margin, the gutter -- is
+    // not what this test is about.
+    let row = support::text_block(&selected_dump)
+        .lines()
+        .find(|row| row.contains("fn main"))
+        .expect("the first row");
+    let styles = support::style_block(&selected_dump)
+        .lines()
+        .find(|row| !row.is_empty())
+        .expect("its styles");
+    // Counted in characters, not bytes: the style row is one character per
+    // cell, and what sits before the code -- the gutter, a fold mark -- is
+    // not all one byte wide.
+    let bytes = row.find("fn main").expect("the code");
+    let at = row[..bytes].chars().count();
+    let style_at = |x: usize| styles.chars().nth(x).expect("a style cell");
+
+    assert_eq!(
+        style_at(at),
+        style_at(at + 1),
+        "the two selected characters do not match:\n{selected_dump}"
+    );
+    assert_ne!(
+        style_at(at),
+        style_at(at + 2),
+        "the character after the selection is selected too:\n{selected_dump}"
+    );
+
+    // And the arrow that points at an end of it puts the caret on that end
+    // rather than stepping past it: the reader has a piece of the file in
+    // hand and is saying which end of it they mean.
+    press(&mut app, KeyCode::Right);
+    let buffer = app.current_buffer().expect("a buffer");
+    assert!(
+        buffer.selection().is_none(),
+        "the selection survived a plain move"
+    );
+    assert_eq!(
+        buffer.cursor().column,
+        CharColumn::new(2),
+        "the caret stepped on from the end of the selection"
+    );
+}
+
+/// Copying without a selection copies the line the cursor is on, newline
+/// and all, so that what comes back out of the clipboard is a line rather
+/// than the middle of one. Selecting the line first is a step every editor
+/// spares the reader.
+#[test]
+fn copying_without_a_selection_copies_the_line() {
+    let _turn = support::clipboard_turn();
+    obelus_clipboard::use_provider_for_test(obelus_clipboard::Provider::Kept);
+    let mut app = app_on_screen(WIDTH, HEIGHT);
+    support::press_control(&mut app, 'c');
+    assert_eq!(app.note(), Some("Copied line"));
+    assert_eq!(
+        obelus_clipboard::paste().as_deref(),
+        Some("fn main() {\n"),
+        "the line did not reach the clipboard whole"
+    );
+}
+
+/// Shift applies equally to the line and document-sized motions. A page moves
+/// the cursor, so it extends a selection rather than merely moving the view.
+#[test]
+fn shift_home_end_and_paging_adjust_the_selection() {
+    let mut line = app_on_screen(WIDTH, HEIGHT);
+    for _ in 0..3 {
+        press(&mut line, KeyCode::Right);
+    }
+    press_shift(&mut line, KeyCode::Home);
+    assert_eq!(
+        line.current_buffer().and_then(|buffer| buffer.selection()),
+        Some(obelus_text::coordinates::Span {
+            line: LineNumber::new(0),
+            column: CharColumn::new(0),
+            end_line: LineNumber::new(0),
+            end_column: CharColumn::new(3),
+        })
+    );
+    press_shift(&mut line, KeyCode::End);
+    assert_eq!(
+        line.current_buffer()
+            .expect("a buffer")
+            .selection()
+            .expect("a selection")
+            .end_column,
+        line.current_buffer()
+            .expect("a buffer")
+            .text()
+            .line_length(LineNumber::new(0))
+    );
+
+    // Wrapped, so the one long line is taller than the screen and there is
+    // a page to move by.
+    let mut page = App::new(vec![support::open_fixture("long.rs")]);
+    wrapping(&mut page);
+    support::lay_out(&mut page, 40, 6);
+    press_shift(&mut page, KeyCode::PageDown);
+    let selected = page
+        .current_buffer()
+        .and_then(|buffer| buffer.selection())
+        .expect("shift page down selected text");
+    assert!(selected.end_line > selected.line, "{selected:?}");
+
+    let mut page_up = App::new(vec![support::open_fixture("long.rs")]);
+    wrapping(&mut page_up);
+    support::lay_out(&mut page_up, 40, 6);
+    press(&mut page_up, KeyCode::PageDown);
+    press_shift(&mut page_up, KeyCode::PageUp);
+    assert!(
+        page_up
+            .current_buffer()
+            .and_then(|buffer| buffer.selection())
+            .is_some(),
+        "shift page up did not select text"
+    );
+}
+
+/// Nothing to put a cursor in.
+#[test]
+fn an_empty_application_hides_the_cursor() {
+    let mut app = App::new(Vec::new());
+    let dump = support::render(&mut app, 20, 4);
+    assert_eq!(support::cursor_line(&dump), "none", "{dump}");
+}
+
+/// With a picker open the cursor belongs in the prompt, which is where the
+/// keys are going. One cursor, and the terminal moves it.
+#[test]
+fn a_picker_takes_the_cursor_into_its_prompt() {
+    let mut app = app_on_screen(60, 12);
+    support::press_control(&mut app, 'p');
+    let dump = support::render(&mut app, 60, 12);
+
+    // Inside the prompt on the status row, past the padding and the prompt
+    // itself. How wide the prompt is depends on whether it is a glyph or a
+    // `>`, so what is pinned here is that the caret is in it and that it
+    // follows what is typed.
+    let at = |dump: &str| {
+        let (x, y) = support::cursor_line(dump)
+            .split_once(',')
+            .expect("a cursor position");
+        (
+            x.parse::<usize>().expect("a column"),
+            y.parse::<usize>().expect("a row"),
+        )
+    };
+    let (column, row) = at(&dump);
+    assert_eq!(row, 11, "the caret is not on the status row:\n{dump}");
+    assert!(column >= 2, "the caret is in the padding:\n{dump}");
+
+    support::type_text(&mut app, "theme");
+    let dump = support::render(&mut app, 60, 12);
+    assert_eq!(
+        at(&dump),
+        (column + "theme".len(), row),
+        "the caret did not follow the query:\n{dump}"
+    );
+}
+
+/// A wrapped line puts the cursor on the row it actually wrapped onto.
+#[test]
+fn the_cursor_follows_a_wrapped_line_down_its_rows() {
+    let mut app = App::new(vec![support::open_fixture("long.rs")]);
+    support::lay_out(&mut app, 40, 10);
+
+    press(&mut app, KeyCode::Down);
+    let first = support::render(&mut app, 40, 10);
+    assert_eq!(support::cursor_line(&first), "5,1", "{first}");
+
+    press(&mut app, KeyCode::Down);
+    let second = support::render(&mut app, 40, 10);
+    // The second row of the long line, indented to nothing since the line has
+    // no indentation of its own.
+    assert_eq!(support::cursor_line(&second), "5,2", "{second}");
+}
+
+#[test]
+fn home_and_end_move_to_the_ends_of_the_line() {
+    let mut app = app_on_screen(WIDTH, HEIGHT);
+    press(&mut app, KeyCode::Down);
+
+    press(&mut app, KeyCode::End);
+    let cursor = app.current_buffer().expect("a buffer").cursor();
+    // `\tlet greeting = "你好";` is twenty-one characters.
+    assert_eq!(cursor.column, CharColumn::new(21));
+
+    // Home goes to what was written rather than to the margin: this line
+    // begins with a tab, and the first thing on it is `let`.
+    press(&mut app, KeyCode::Home);
+    assert_eq!(
+        app.current_buffer().expect("a buffer").cursor().column,
+        CharColumn::new(1)
+    );
+    // And again for the margin itself.
+    press(&mut app, KeyCode::Home);
+    assert_eq!(
+        app.current_buffer().expect("a buffer").cursor().column,
+        CharColumn::new(0)
+    );
+}
+
+/// Home and End are horizontal, so they replace the column the cursor is
+/// aiming for while moving vertically rather than preserving it.
+#[test]
+fn end_then_down_keeps_the_end_column_it_landed_on() {
+    let mut app = app_on_screen(WIDTH, HEIGHT);
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::End);
+    press(&mut app, KeyCode::Down);
+
+    let cursor = app.current_buffer().expect("a buffer").cursor();
+    assert_eq!(cursor.line, LineNumber::new(2));
+    // Line 2 is longer than line 1, so the remembered cell is line 1's end,
+    // not line 2's.
+    let text = app.current_buffer().expect("a buffer").text();
+    assert!(
+        cursor.column < text.line_length(LineNumber::new(2)),
+        "End moved the aim to the far right rather than to line one's end"
+    );
+}
+
+/// Wrapping is on: a line longer than the screen continues on the next row
+/// rather than running off the edge.
+#[test]
+fn a_long_line_continues_on_the_next_row() {
+    let mut app = App::new(vec![support::open_fixture("long.rs")]);
+    wrapping(&mut app);
+    support::check("long_40x10", &support::render(&mut app, 40, 10));
+}
+
+/// Only the first row of a wrapped line is numbered. Repeating the number on
+/// every row is how a wrapped view stops being readable.
+#[test]
+fn continuation_rows_have_no_line_number() {
+    let mut app = App::new(vec![support::open_fixture("long.rs")]);
+    let dump = support::render(&mut app, 40, 10);
+    let text = support::text_block(&dump);
+
+    // The numbers that appear, in the order they appear. Found by looking
+    // for a number rather than at a fixed column: what is to the left of the
+    // gutter depends on whether Obelus has anything to say about the file,
+    // and how many rows a long line wraps into depends on how wide the text
+    // is -- neither of which this test is about.
+    let numbers: Vec<u32> = text
+        .lines()
+        .filter(|row| !row.is_empty())
+        .filter_map(|row| {
+            row.chars()
+                .skip(3)
+                .take_while(|character| !character.is_alphabetic())
+                .collect::<String>()
+                .trim()
+                .parse::<u32>()
+                .ok()
+        })
+        .collect();
+    let rows = text.lines().filter(|row| !row.is_empty()).count();
+
+    // One number per line, counting from one, and no number repeated: the
+    // rows in between belong to a line that already has its number.
+    assert!(numbers.len() >= 2, "not enough lines to tell:\n{dump}");
+    assert!(
+        numbers.len() < rows - 1,
+        "every row is numbered, so the long line was numbered on each of \
+         its rows:\n{dump}"
+    );
+    assert!(
+        numbers.windows(2).all(|pair| pair[1] > pair[0]),
+        "a number repeated:\n{dump}"
+    );
+    assert_eq!(numbers[0], 1, "{dump}");
+}
+
+/// Down steps one visual row, not one line. With a line many rows tall,
+/// stepping over all of them at once is not what pressing down once looks
+/// like it should do.
+#[test]
+fn down_moves_by_one_visual_row_inside_a_wrapped_line() {
+    let mut app = App::new(vec![support::open_fixture("long.rs")]);
+    wrapping(&mut app);
+    support::lay_out(&mut app, 40, 10);
+
+    press(&mut app, KeyCode::Down);
+    let cursor = app.current_buffer().expect("a buffer").cursor();
+    assert_eq!(cursor.line, LineNumber::new(1), "onto the long line");
+    assert_eq!(cursor.column, CharColumn::new(0), "at its first row");
+
+    press(&mut app, KeyCode::Down);
+    let cursor = app.current_buffer().expect("a buffer").cursor();
+    assert_eq!(
+        cursor.line,
+        LineNumber::new(1),
+        "still on the long line, one row further down"
+    );
+    assert!(
+        cursor.column.get() > 0,
+        "the cursor did not move into the line's second row"
+    );
+}
+
+/// A line taller than the screen has to be scrollable through, which is why
+/// the viewport is anchored to a row and not only to a line.
+#[test]
+fn a_line_taller_than_the_screen_can_be_scrolled_through() {
+    let mut app = App::new(vec![support::open_fixture("long.rs")]);
+    wrapping(&mut app);
+    // Four rows of text, and the long line takes more than that.
+    support::lay_out(&mut app, 20, 5);
+
+    let first = support::render(&mut app, 20, 5);
+    for _ in 0..6 {
+        press(&mut app, KeyCode::Down);
+    }
+    let scrolled = support::render(&mut app, 20, 5);
+
+    let viewport = app.current_buffer().expect("a buffer").viewport();
+    assert_eq!(
+        viewport.top,
+        LineNumber::new(1),
+        "still inside the long line"
+    );
+    assert!(
+        viewport.top_row > 0,
+        "the viewport is still anchored to the line's first row"
+    );
+    assert_ne!(
+        support::text_block(&first),
+        support::text_block(&scrolled),
+        "the screen did not move:\n{scrolled}"
+    );
+}
+
+/// A wrapped statement keeps its indentation, so it still reads as being
+/// inside its block rather than as a new top-level line.
+#[test]
+fn continuation_rows_keep_the_lines_indentation() {
+    let mut app = App::new(vec![support::open_fixture("indented.rs")]);
+    wrapping(&mut app);
+    support::check("indented_46x8", &support::render(&mut app, 46, 8));
+}
+
+/// `ctrl+Home` and `ctrl+End` reach the ends of the document; the plain keys
+/// stay on the line.
+#[test]
+fn control_home_and_end_reach_the_ends_of_the_document() {
+    let mut app = App::new(vec![support::open_fixture("long.rs")]);
+    support::lay_out(&mut app, 40, 6);
+
+    support::press_control_key(&mut app, KeyCode::End);
+    let buffer = app.current_buffer().expect("a buffer");
+    assert_eq!(buffer.cursor().line, buffer.text().last_line());
+    assert_eq!(buffer.cursor().column, CharColumn::new(0));
+
+    support::press_control_key(&mut app, KeyCode::Home);
+    let buffer = app.current_buffer().expect("a buffer");
+    assert_eq!(buffer.cursor().line, LineNumber::new(0));
+    assert_eq!(buffer.cursor().column, CharColumn::new(0));
+}
+
+/// The plain keys stay on the line. If the modifier were ignored, `End` would
+/// leave the line it is on and there would be no way to reach the end of one.
+#[test]
+fn plain_home_and_end_stay_on_the_line() {
+    let mut app = App::new(vec![support::open_fixture("long.rs")]);
+    support::lay_out(&mut app, 40, 6);
+
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::End);
+    let buffer = app.current_buffer().expect("a buffer");
+    assert_eq!(
+        buffer.cursor().line,
+        LineNumber::new(1),
+        "a plain End jumped to the end of the document"
+    );
+    assert!(
+        buffer.cursor().column.get() > 0,
+        "and it moved along the line"
+    );
+}
+
+/// Reaching the end has to bring the screen with it.
+#[test]
+fn the_end_of_the_file_is_on_screen_after_control_end() {
+    let mut app = App::new(vec![support::open_fixture("long.rs")]);
+    // Wrapped, so there is more of this three-line file than fits.
+    wrapping(&mut app);
+    support::lay_out(&mut app, 40, 6);
+
+    support::press_control_key(&mut app, KeyCode::End);
+    let dump = support::render(&mut app, 40, 6);
+
+    assert!(
+        support::text_block(&dump).contains("fn after()"),
+        "the end of the file is not on screen:\n{dump}"
+    );
+    assert!(
+        !support::text_block(&dump).contains("fn before()"),
+        "the screen never moved:\n{dump}"
+    );
+}
+
+/// The keys are right-aligned inside their caps, so the words after them
+/// start together down a column. Invisible with the shipped bindings, which
+/// all happen to be the same width -- and about to matter the moment one of
+/// them is rebound.
+///
+/// Down a *column*: the keys are laid out two to a line now, so the two that
+/// have to line up are the ones above and below each other -- the first and
+/// the third, with the second beside the first.
+#[test]
+fn the_welcome_screen_lines_up_keys_of_different_widths() {
+    use crossterm::event::{KeyCode, KeyModifiers};
+    use obelus_command::Command;
+    use obelus_keymap::{Binding, Context, KeyChord, Keymap};
+
+    let mut app = App::new(Vec::new());
+    app.set_keymap(Keymap::from_bindings(vec![
+        Binding {
+            command: Command::FileOpen,
+            context: Context::Normal,
+            // Eleven characters against four.
+            chord: KeyChord::new(
+                KeyCode::Char('o'),
+                KeyModifiers::CONTROL | KeyModifiers::ALT,
+            ),
+        },
+        // The second row of the first column, which is the one that has to
+        // line up with the first: what sits between them is the other column.
+        Binding {
+            command: Command::FileChanged,
+            context: Context::Normal,
+            chord: KeyChord::new(KeyCode::F(3), KeyModifiers::NONE),
+        },
+        Binding {
+            command: Command::Quit,
+            context: Context::Always,
+            chord: KeyChord::new(KeyCode::Esc, KeyModifiers::NONE),
+        },
+    ]));
+
+    let dump = support::render(&mut app, 64, 20);
+    let text = support::text_block(&dump);
+    // Counted in characters, not bytes: a glyph from the private use area is
+    // four bytes and one column, so byte offsets on two rows with different
+    // numbers of glyphs are not comparable.
+    let column_of = |needle: &str| {
+        text.lines()
+            .find_map(|row| row.find(needle).map(|byte| row[..byte].chars().count()))
+            .unwrap_or_else(|| panic!("{needle:?} is not on screen:\n{dump}"))
+    };
+
+    assert_eq!(
+        column_of("Open a file"),
+        column_of("Leave Obelus"),
+        "the words in one column do not start together:\n{dump}"
+    );
+    // The wider chord's key starts further left inside its cap, which is
+    // what right-aligning them into one means.
+    let wide = KeyChord::new(
+        KeyCode::Char('o'),
+        KeyModifiers::CONTROL | KeyModifiers::ALT,
+    )
+    .label();
+    let narrow = KeyChord::new(KeyCode::Esc, KeyModifiers::NONE).label();
+    assert!(column_of(&narrow) > column_of(&wide), "{dump}");
+}
+
+/// A motion key held with a modifier Obelus has no meaning for does nothing.
+/// Reading it as the plain key would make `super+End` jump somewhere the
+/// reader did not ask to go, and `ctrl+super+Home` leave the file entirely.
+#[test]
+fn a_motion_with_an_unknown_modifier_does_not_move() {
+    use crossterm::event::{KeyEvent, KeyModifiers};
+
+    let mut app = App::new(vec![support::open_fixture("long.rs")]);
+    support::lay_out(&mut app, 40, 6);
+
+    press(&mut app, KeyCode::Down);
+    let buffer = app.current_buffer().expect("a buffer");
+    let (line, column) = (buffer.cursor().line, buffer.cursor().column);
+
+    for (code, modifier) in [
+        (KeyCode::Down, KeyModifiers::SUPER),
+        (KeyCode::End, KeyModifiers::SUPER),
+        (KeyCode::PageDown, KeyModifiers::HYPER),
+        (KeyCode::Home, KeyModifiers::CONTROL | KeyModifiers::SUPER),
+        (KeyCode::End, KeyModifiers::CONTROL | KeyModifiers::META),
+    ] {
+        app.handle(obelus_app::event::Event::Key(KeyEvent::new(code, modifier)));
+        let buffer = app.current_buffer().expect("a buffer");
+        assert_eq!(
+            (buffer.cursor().line, buffer.cursor().column),
+            (line, column),
+            "{code:?} with {modifier:?} moved the cursor"
+        );
+    }
+}
+
+/// Arriving at a place a server named puts it in the middle of the screen.
+/// Scrolling the least amount would leave the definition on the bottom row
+/// with everything above it -- its signature, its doc comment -- off screen,
+/// which is the half the reader came for.
+#[test]
+fn a_jump_lands_in_the_middle_of_the_screen() {
+    use obelus_component::picker::{PickerItem, PickerLayout, PickerValue};
+
+    let path =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/many_lines.rs");
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    support::lay_out(&mut app, 40, 12);
+
+    app.open_picker_for_test(
+        vec![PickerItem {
+            prose: false,
+            marker: None,
+            icon: None,
+            label: "many_lines.rs:31".to_string(),
+            version: None,
+            detail: None,
+            trailing: None,
+            changed: None,
+            value: PickerValue::Place {
+                path,
+                line: 30,
+                character: 10,
+                end_line: 30,
+                end_character: 17,
+            },
+            enabled: true,
+            colours: None,
+            status: None,
+            depth: 0,
+            opens: None,
+            kind: None,
+            tab: None,
+            section: None,
+        }],
+        PickerLayout::FullArea,
+    );
+    press(&mut app, KeyCode::Enter);
+
+    // Eleven rows of text under the status bar, so the middle one is the
+    // sixth: five rows of what leads up to the definition.
+    let dump = support::render(&mut app, 40, 12);
+    assert_eq!(support::cursor_line(&dump), "15,5", "{dump}");
+
+    let rows: Vec<&str> = support::text_block(&dump)
+        .lines()
+        .filter(|row| !row.is_empty())
+        .collect();
+    assert!(
+        rows[5].contains("LINE_30"),
+        "the definition is not there:\n{dump}"
+    );
+    assert!(
+        rows[0].contains("LINE_25"),
+        "what leads up to it is not there:\n{dump}"
+    );
+}
+
+/// Coming back from a jump is arriving too, so the line the reader left gets
+/// the middle of the screen as well. Scrolling the least amount would put it
+/// on the top row, which is the same loss of context the other way up.
+#[test]
+fn a_jump_back_lands_in_the_middle_too() {
+    use crossterm::event::{KeyEvent, KeyModifiers};
+    use obelus_component::picker::{PickerItem, PickerLayout, PickerValue};
+
+    let path =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/many_lines.rs");
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    support::lay_out(&mut app, 40, 12);
+
+    // Away from line one, where centring has nowhere to go and would look
+    // the same as not centring at all. Eight *visual* rows, which is some
+    // line further down: the doc comment at the top wraps, and how many rows
+    // it wraps into depends on the width -- so the line it lands on is read
+    // back rather than assumed.
+    for _ in 0..8 {
+        press(&mut app, KeyCode::Down);
+    }
+    let left_behind = app.current_buffer().expect("a buffer").cursor().line.get();
+    app.open_picker_for_test(
+        vec![PickerItem {
+            prose: false,
+            marker: None,
+            icon: None,
+            label: "many_lines.rs:31".to_string(),
+            version: None,
+            detail: None,
+            trailing: None,
+            changed: None,
+            value: PickerValue::Place {
+                path,
+                line: 30,
+                character: 10,
+                end_line: 30,
+                end_character: 17,
+            },
+            enabled: true,
+            colours: None,
+            status: None,
+            depth: 0,
+            opens: None,
+            kind: None,
+            tab: None,
+            section: None,
+        }],
+        PickerLayout::FullArea,
+    );
+    press(&mut app, KeyCode::Enter);
+
+    app.handle(obelus_app::event::Event::Key(KeyEvent::new(
+        KeyCode::Left,
+        KeyModifiers::ALT,
+    )));
+    let dump = support::render(&mut app, 40, 12);
+    // The middle row of eleven. The column depends on the gutter and on
+    // whether there is a margin, neither of which this test is about.
+    let (_, row) = support::cursor_line(&dump)
+        .split_once(',')
+        .expect("the cursor is on screen");
+    assert_eq!(row.parse::<u16>().expect("a row"), 5, "{dump}");
+
+    let rows: Vec<&str> = support::text_block(&dump)
+        .lines()
+        .filter(|row| !row.is_empty())
+        .collect();
+    // `many_lines.rs` names each line after itself, so the line left behind
+    // says which line it is.
+    let name = format!("LINE_{left_behind:02}");
+    assert!(
+        rows[5].contains(&name),
+        "{name} is not in the middle:\n{dump}"
+    );
+    // And there are rows above it: the least amount of scrolling would have
+    // put it on the top row and thrown them away.
+    assert!(
+        rows[0].contains("LINE_") && !rows[0].contains(&name),
+        "nothing above it:\n{dump}"
+    );
+}
+
+/// The wordmark's colours travel with time. One tick, one step: the ramp runs
+/// out and back over a fixed number of steps, so it slides across the letters
+/// without a seam and comes back to where it began.
+#[test]
+fn the_wordmark_shimmers_and_comes_back_round() {
+    let mut app = App::new(Vec::new());
+    let first = support::render(&mut app, 64, 20);
+
+    app.handle(obelus_app::event::Event::Tick);
+    let moved = support::render(&mut app, 64, 20);
+    // The legend, not the style map: the map's letters are handed out per
+    // distinct style in the order they are met, so a palette that has slid
+    // along one step gets the same letters in the same places and only the
+    // colours behind them differ.
+    assert_ne!(
+        support::legend_block(&moved),
+        support::legend_block(&first),
+        "a tick did not move the colours"
+    );
+    assert_eq!(
+        support::text_block(&moved),
+        support::text_block(&first),
+        "a tick moved something other than the colours"
+    );
+
+    // Round the cycle. Sixteen steps out and back, so the seventeenth frame
+    // is the first one again -- a ramp that wrapped instead would have a
+    // visible edge crossing the letters.
+    for _ in 1..16 {
+        app.handle(obelus_app::event::Event::Tick);
+    }
+    let round = support::render(&mut app, 64, 20);
+    assert_eq!(
+        support::legend_block(&round),
+        support::legend_block(&first),
+        "the cycle does not close"
+    );
+    assert_eq!(support::style_block(&round), support::style_block(&first));
+
+    // Out and back, not round. The ramp runs to its far colour and returns,
+    // so every frame of the cycle is a gradient. Letting the position run
+    // past the end and clamping it there instead would leave whole frames
+    // painted in one flat colour -- which is what a wrapped ramp looks like
+    // from inside.
+    let mut app = App::new(Vec::new());
+    for phase in 0..16 {
+        let dump = support::render(&mut app, 64, 20);
+        let text: Vec<&str> = support::text_block(&dump).lines().collect();
+        let styles: Vec<&str> = support::style_block(&dump).lines().collect();
+        let colours: std::collections::HashSet<char> = text
+            .iter()
+            .zip(&styles)
+            .filter(|(row, _)| row.contains('\u{2588}'))
+            .flat_map(|(row, style)| {
+                // Only the cells the wordmark painted: the rest of the row is
+                // the background, in the background's own style.
+                row.chars()
+                    .zip(style.chars())
+                    .filter(|(character, _)| *character == '\u{2588}')
+                    .map(|(_, letter)| letter)
+            })
+            .collect();
+        assert!(
+            colours.len() > 2,
+            "frame {phase} of the cycle is nearly flat: {colours:?}\n{dump}"
+        );
+        app.handle(obelus_app::event::Event::Tick);
+    }
+}
+
+/// Nothing animates behind an open file. The ticker is dropped when one
+/// opens, and even a tick that arrives before it stops must leave the screen
+/// alone: a redraw a reader did not ask for can only get in the way.
+#[test]
+fn a_tick_changes_nothing_once_a_file_is_open() {
+    let mut app = app();
+    support::lay_out(&mut app, 40, 8);
+    let before = support::render(&mut app, 40, 8);
+
+    for _ in 0..5 {
+        app.handle(obelus_app::event::Event::Tick);
+    }
+    assert_eq!(support::render(&mut app, 40, 8), before);
+}
+
+/// A full-screen page replaces the welcome screen rather than sitting over
+/// it, so its own stillness must stop the welcome screen's clock.
+#[test]
+fn settings_stop_the_welcome_animation() {
+    let mut app = App::new(Vec::new());
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    assert!(
+        app.is_waking(),
+        "the welcome screen did not start its clock"
+    );
+
+    app.open_settings();
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    assert!(
+        !app.is_waking(),
+        "the welcome animation is still waking the settings page"
+    );
+}
+
+/// Paging takes the cursor along, keeping its place *on the screen*: the row
+/// of the window it was on is the row it is on after the page. A cursor left
+/// behind means the next arrow key throws the page away; a cursor dropped at
+/// the top of the new screen loses where on the page you were.
+#[test]
+fn paging_keeps_the_cursor_on_the_same_row_of_the_screen() {
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    support::lay_out(&mut app, 40, 12);
+    // Down to the middle of the screen, so keeping the row is visible.
+    for _ in 0..5 {
+        press(&mut app, KeyCode::Down);
+    }
+
+    let row_of = |dump: &str| {
+        support::cursor_line(dump)
+            .split_once(',')
+            .map(|(_, y)| y.parse::<u16>().expect("a row"))
+            .expect("the cursor is on screen")
+    };
+    let line_of = |app: &App| app.current_buffer().expect("a buffer").cursor().line.get();
+
+    let before = support::render(&mut app, 40, 12);
+    let (row, line) = (row_of(&before), line_of(&app));
+    assert_eq!(row, 5, "not where this test meant to start:\n{before}");
+
+    press(&mut app, KeyCode::PageDown);
+    let after = support::render(&mut app, 40, 12);
+    assert_eq!(
+        row_of(&after),
+        row,
+        "the cursor changed rows on the screen:\n{after}"
+    );
+    assert!(
+        line_of(&app) > line,
+        "the cursor did not come along: {} then {}",
+        line,
+        line_of(&app)
+    );
+    // A screenful further down the file, which is what a page is: the
+    // twelve rows of the screen less the status bar and the rule over it.
+    assert_eq!(line_of(&app) - line, 10, "not a screenful");
+
+    // Where the view cannot go further, the cursor goes instead: otherwise
+    // the last screenful of every file is a key that does nothing, and the
+    // lines past the cursor are reachable one at a time and no other way.
+    for _ in 0..10 {
+        press(&mut app, KeyCode::PageDown);
+    }
+    let bottom = support::render(&mut app, 40, 12);
+    assert_eq!(
+        line_of(&app),
+        app.current_buffer()
+            .expect("a buffer")
+            .text()
+            .last_line()
+            .get(),
+        "paging stopped short of the end of the file:\n{bottom}"
+    );
+    for _ in 0..10 {
+        press(&mut app, KeyCode::PageUp);
+    }
+    let start = support::render(&mut app, 40, 12);
+    assert_eq!(
+        line_of(&app),
+        0,
+        "paging stopped short of the top:\n{start}"
+    );
+    for _ in 0..5 {
+        press(&mut app, KeyCode::Down);
+    }
+    press(&mut app, KeyCode::PageDown);
+
+    // And back, to exactly where it was: a page down and a page up is
+    // nowhere.
+    press(&mut app, KeyCode::PageUp);
+    let back = support::render(&mut app, 40, 12);
+    assert_eq!(line_of(&app), line);
+    assert_eq!(
+        support::text_block(&back),
+        support::text_block(&before),
+        "the screen did not come back"
+    );
+}
+
+/// Paging up at the top of a file, and down at the end, stop there. A page
+/// that ran off would leave a screen of nothing with no way to tell why.
+#[test]
+fn paging_stops_at_both_ends() {
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    support::lay_out(&mut app, 40, 12);
+
+    let start = support::render(&mut app, 40, 12);
+    for _ in 0..3 {
+        press(&mut app, KeyCode::PageUp);
+    }
+    assert_eq!(
+        support::text_block(&support::render(&mut app, 40, 12)),
+        support::text_block(&start),
+        "paging up from the first line moved somewhere"
+    );
+
+    for _ in 0..20 {
+        press(&mut app, KeyCode::PageDown);
+    }
+    let far = support::render(&mut app, 40, 12);
+    assert!(
+        support::text_block(&far).contains("LINE_38"),
+        "paging down ran past the end of the file:\n{far}"
+    );
+}
+
+/// Control and an arrow scroll the file a row and leave the cursor: the
+/// wheel's glance, from the keyboard. A cursor that came along would make it
+/// the arrow again, and a view that moved a screenful would make it paging.
+///
+/// Deliberate break: `editor_scrolling` answering `None` sends the key on to
+/// the motions, which have nothing for it, and the view stays put.
+#[test]
+fn control_and_an_arrow_scroll_the_file_and_leave_the_cursor() {
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    support::lay_out(&mut app, 40, 12);
+    let top = |app: &App| app.current_buffer().expect("a buffer").viewport().top.get();
+    let line = |app: &App| app.current_buffer().expect("a buffer").cursor().line.get();
+    press(&mut app, KeyCode::Down);
+    assert_eq!(
+        (top(&app), line(&app)),
+        (0, 1),
+        "not where this test starts"
+    );
+
+    support::press_control_key(&mut app, KeyCode::Down);
+    support::press_control_key(&mut app, KeyCode::Down);
+    assert_eq!(top(&app), 2, "the view did not move two rows");
+    assert_eq!(line(&app), 1, "the cursor came along");
+
+    support::press_control_key(&mut app, KeyCode::Up);
+    assert_eq!(top(&app), 1, "the view did not come back a row");
+    assert_eq!(line(&app), 1, "the cursor moved on the way back");
+}
+
+/// The thumb reaches the bottom of the track when the last line is on
+/// screen. That is the one position a reader checks it against: a bar that
+/// stops short says there is more below when there is not.
+#[test]
+fn the_scrollbar_reaches_both_ends() {
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    support::lay_out(&mut app, 40, 12);
+
+    // The thumb, wherever the bar is: it is no longer the last column, since
+    // the map of changes has one of its own to the right of it.
+    let thumb_rows = |dump: &str| -> Vec<usize> {
+        support::text_block(dump)
+            .lines()
+            .filter(|row| !row.is_empty())
+            .enumerate()
+            .filter(|(_, row)| row.contains('\u{2588}'))
+            .map(|(index, _)| index)
+            .collect()
+    };
+
+    let top = support::render(&mut app, 40, 12);
+    let at_top = thumb_rows(&top);
+    assert_eq!(
+        at_top.first(),
+        Some(&0),
+        "the thumb is not at the top of the track:\n{top}"
+    );
+
+    // The editor is ten rows tall -- twelve less the status bar and the
+    // rule over it -- so the last of them is row nine.
+    for _ in 0..10 {
+        press(&mut app, KeyCode::PageDown);
+    }
+    let bottom = support::render(&mut app, 40, 12);
+    let at_bottom = thumb_rows(&bottom);
+    assert!(
+        support::text_block(&bottom).contains("LINE_38"),
+        "not actually at the end of the file:\n{bottom}"
+    );
+    assert_eq!(
+        at_bottom.last(),
+        Some(&9),
+        "the thumb stopped short of the bottom:\n{bottom}"
+    );
+}
+
+/// The wheel moves the view, not the cursor. Which is only knowable because
+/// Obelus asks the terminal to report the mouse: without that the wheel
+/// arrives as arrow keys and there is no way to tell it not to.
+#[test]
+fn the_wheel_scrolls_without_moving_the_cursor() {
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    support::lay_out(&mut app, 40, 12);
+
+    let start = support::render(&mut app, 40, 12);
+    let status = |dump: &str| {
+        support::text_block(dump)
+            .lines()
+            .last()
+            .expect("a status row")
+            .to_string()
+    };
+    let before = status(&start);
+
+    app.handle(obelus_app::event::Event::Scroll(3));
+    let scrolled = support::render(&mut app, 40, 12);
+    assert_eq!(
+        status(&scrolled),
+        before,
+        "the wheel moved the cursor:\n{scrolled}"
+    );
+    assert_ne!(
+        support::text_block(&scrolled),
+        support::text_block(&start),
+        "the wheel moved nothing"
+    );
+
+    // Back up, and the screen is where it started: three rows down and three
+    // rows up is nowhere.
+    app.handle(obelus_app::event::Event::Scroll(-3));
+    assert_eq!(
+        support::text_block(&support::render(&mut app, 40, 12)),
+        support::text_block(&start),
+        "rolling back did not come back"
+    );
+
+    // And a cursor move afterwards brings the screen back to the cursor,
+    // like any other detour.
+    app.handle(obelus_app::event::Event::Scroll(9));
+    press(&mut app, KeyCode::Down);
+    let back = support::render(&mut app, 40, 12);
+    assert!(
+        support::cursor_line(&back) != "none",
+        "the cursor is still off screen after moving it:\n{back}"
+    );
+}
+
+/// A list under a wheel scrolls its rows and leaves the selection where it
+/// was: the wheel moves the view and the keys move the choice, in a list as
+/// in a file. With the mouse reported the wheel no longer arrives as arrow
+/// keys, so a picker that ignored it would have lost something.
+///
+/// Deliberate break: `Window::scroll` no longer leaving the focus on a list
+/// that is chosen from (the window settled straight back to the selection,
+/// so nothing moved), and `Picker::scroll` stepping the selection as it
+/// used to (the selection moved).
+#[test]
+fn the_wheel_scrolls_a_list_and_leaves_the_selection() {
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, 60, 20);
+    support::press_control(&mut app, 'p');
+    support::render(&mut app, 60, 20);
+
+    let chosen = |app: &App| {
+        app.picker()
+            .and_then(|picker| picker.selected_item())
+            .map(|item| item.label.clone())
+            .expect("a row")
+    };
+    let top = |app: &App| app.picker().expect("the palette").window().top();
+    let first = chosen(&app);
+
+    app.handle(obelus_app::event::Event::Scroll(3));
+    support::render(&mut app, 60, 20);
+    assert_eq!(chosen(&app), first, "the wheel moved the selection");
+    assert_eq!(top(&app), 3, "the wheel did not move the rows");
+
+    // And it stops at the top: a wheel is rolled without looking.
+    for _ in 0..10 {
+        app.handle(obelus_app::event::Event::Scroll(-3));
+    }
+    support::render(&mut app, 60, 20);
+    assert_eq!(top(&app), 0, "the wheel went past the top of the list");
+
+    // A key moves the choice, and the view goes back to it.
+    app.handle(obelus_app::event::Event::Scroll(9));
+    support::render(&mut app, 60, 20);
+    support::press(&mut app, KeyCode::Down);
+    support::render(&mut app, 60, 20);
+    assert_ne!(chosen(&app), first, "the key did not move the selection");
+    // By the least that puts it on screen, which is with it at the top.
+    let selected = app.picker().expect("the palette").selected();
+    assert_eq!(
+        top(&app),
+        selected,
+        "the view did not go back to the selection"
+    );
+}
+
+/// A markdown file opens as text, like every other file, and the command
+/// turns it into a rendering. The mode is a *reading* of the same bytes, so
+/// it can be turned off again, and the status bar names it while it is on.
+#[test]
+fn markdown_is_a_mode_over_the_same_file() {
+    use obelus_buffer::Mode;
+    use obelus_command::Command;
+
+    let mut app = App::new(vec![support::open_fixture("sample.md")]);
+    support::lay_out(&mut app, 60, 14);
+
+    // Text first: opening a README should show what is in it.
+    let source = support::render(&mut app, 60, 14);
+    assert!(
+        support::text_block(&source).contains("# Title"),
+        "a markdown file did not open as its own text:\n{source}"
+    );
+    assert_eq!(
+        app.current_buffer().expect("a buffer").mode(),
+        Mode::Edit,
+        "a file opened in some mode other than its bytes"
+    );
+
+    obelus_app::app::dispatch::dispatch(&mut app, Command::PreviewToggle);
+    let rendered = support::render(&mut app, 60, 14);
+    let text = support::text_block(&rendered);
+    assert!(text.contains("Title"), "{rendered}");
+    assert!(
+        !text.contains("# Title"),
+        "the hashes are still there, so nothing was rendered:\n{rendered}"
+    );
+    assert!(
+        text.contains('\u{2022}'),
+        "the list has no bullets:\n{rendered}"
+    );
+    // The mode is named, because a screen showing something other than the
+    // file has to say so.
+    assert!(
+        text.contains("preview"),
+        "the status bar does not name the mode:\n{rendered}"
+    );
+    // And no cursor: the rows are not the file's lines, so there is nowhere
+    // in them the cursor honestly is.
+    assert_eq!(support::cursor_line(&rendered), "none", "{rendered}");
+
+    // The same command again puts the file back.
+    obelus_app::app::dispatch::dispatch(&mut app, Command::PreviewToggle);
+    assert_eq!(
+        support::text_block(&support::render(&mut app, 60, 14)),
+        support::text_block(&source),
+        "the file did not come back"
+    );
+}
+
+/// A file that is not markdown gets a note, not a screen of nonsense. By
+/// extension, case-insensitively, because the mode is a reading of the bytes
+/// and a reading that does not fit them produces gibberish.
+#[test]
+fn only_a_markdown_file_can_be_rendered() {
+    use obelus_command::Command;
+
+    let mut app = app();
+    support::lay_out(&mut app, 60, 14);
+    obelus_app::app::dispatch::dispatch(&mut app, Command::PreviewToggle);
+
+    assert_eq!(app.note(), Some("Nothing to preview in this file"));
+
+    // And the extension is read without regard to case: `README.MD` is one.
+    let shouting = std::env::temp_dir().join(format!("obelus-{}-README.MD", std::process::id()));
+    std::fs::write(&shouting, "# Title\n").expect("a file to render");
+    let mut upper = App::new(vec![
+        obelus_buffer::Buffer::open(&shouting).expect("opening it"),
+    ]);
+    support::lay_out(&mut upper, 60, 14);
+    obelus_app::app::dispatch::dispatch(&mut upper, Command::PreviewToggle);
+    assert_eq!(
+        upper.current_buffer().expect("a buffer").mode(),
+        obelus_buffer::Mode::Preview,
+        "an upper-case extension was not recognized"
+    );
+    let _ = std::fs::remove_file(&shouting);
+    let dump = support::render(&mut app, 60, 14);
+    assert!(
+        support::text_block(&dump).contains("fn main"),
+        "the file was replaced anyway:\n{dump}"
+    );
+}
+
+/// The rendering scrolls by rows, with the keys that scroll everything else.
+#[test]
+fn a_rendering_scrolls_by_rows() {
+    use obelus_command::Command;
+
+    let mut app = App::new(vec![support::open_fixture("sample.md")]);
+    support::lay_out(&mut app, 60, 8);
+    obelus_app::app::dispatch::dispatch(&mut app, Command::PreviewToggle);
+
+    let first = support::render(&mut app, 60, 8);
+    assert!(support::text_block(&first).contains("Title"), "{first}");
+
+    press(&mut app, KeyCode::PageDown);
+    let paged = support::render(&mut app, 60, 8);
+    assert!(
+        !support::text_block(&paged).contains("Title"),
+        "paging a rendering moved nothing:\n{paged}"
+    );
+
+    // And the right-hand corner counts rows rather than a cursor that is not
+    // there.
+    assert!(
+        support::text_block(&paged)
+            .lines()
+            .last()
+            .is_some_and(|status| status.contains('/')),
+        "the status bar still reports a cursor:\n{paged}"
+    );
+
+    press(&mut app, KeyCode::PageUp);
+    assert_eq!(
+        support::text_block(&support::render(&mut app, 60, 8)),
+        support::text_block(&first),
+        "paging back did not come back"
+    );
+}
+
+/// Control and an arrow scroll a rendering a row, as they scroll the file:
+/// here the bare arrows do as well, because a rendering has no cursor, and a
+/// key that moved one document and did nothing in the next would be two
+/// rules for one key. A row of the rendering, which is not a line of the
+/// file, so the walk goes far enough down for the two to differ.
+///
+/// Deliberate break: taking the control arms out of `view_step` hands the key
+/// to the file's own scrolling, which steps by lines, and the two part
+/// company by the tenth step.
+#[test]
+fn control_and_an_arrow_scroll_a_rendering() {
+    use obelus_command::Command;
+
+    let rendering = || {
+        let mut app = App::new(vec![support::open_fixture("sample.md")]);
+        support::lay_out(&mut app, 60, 8);
+        obelus_app::app::dispatch::dispatch(&mut app, Command::PreviewToggle);
+        // A frame, which is what lays the rows out: before one there are
+        // no rows to scroll and the arrows go to the file's cursor.
+        support::render(&mut app, 60, 8);
+        app
+    };
+    let mut bare = rendering();
+    let mut control = rendering();
+    let first = support::render(&mut control, 60, 8);
+
+    for step in 1..=10 {
+        press(&mut bare, KeyCode::Down);
+        support::press_control_key(&mut control, KeyCode::Down);
+        let arrow = support::render(&mut bare, 60, 8);
+        assert_eq!(
+            support::text_block(&support::render(&mut control, 60, 8)),
+            support::text_block(&arrow),
+            "control and down {step} times is not the arrow {step} times"
+        );
+    }
+    assert_ne!(
+        support::text_block(&support::render(&mut control, 60, 8)),
+        support::text_block(&first),
+        "not a rendering with anywhere to scroll"
+    );
+    for _ in 1..=10 {
+        support::press_control_key(&mut control, KeyCode::Up);
+    }
+    assert_eq!(
+        support::text_block(&support::render(&mut control, 60, 8)),
+        support::text_block(&first),
+        "control and up did not come back"
+    );
+}
+
+/// The bracket under the cursor is highlighted along with its partner, and a
+/// key goes to it. The highlight is what says which two characters are the
+/// pair; the key is what saves reading down the screen to find out.
+#[test]
+fn a_bracket_pair_is_marked_and_can_be_jumped_between() {
+    use crossterm::event::{KeyEvent, KeyModifiers};
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, 40, 8);
+
+    // `sample.rs` line one is `fn main() {`. Onto the opening bracket.
+    for _ in 0..7 {
+        press(&mut app, KeyCode::Right);
+    }
+    let dump = support::render(&mut app, 40, 8);
+    let rows: Vec<&str> = support::text_block(&dump)
+        .lines()
+        .filter(|row| !row.is_empty())
+        .collect();
+    let styles: Vec<&str> = support::style_block(&dump)
+        .lines()
+        .filter(|row| !row.is_empty())
+        .collect();
+
+    // Both brackets share a *background* nothing else on the row has. The
+    // background is the assertion: a foreground they happen to share is
+    // just the punctuation colour, which they would have anyway.
+    let background = |letter: char| {
+        support::legend_block(&dump)
+            .lines()
+            .find(|line| line.trim_start().starts_with(letter))
+            .and_then(|line| line.split("bg=").nth(1))
+            .map(str::to_string)
+            .unwrap_or_else(|| panic!("no legend for {letter:?}:\n{dump}"))
+    };
+    let letters: Vec<char> = rows[0]
+        .chars()
+        .zip(styles[0].chars())
+        .filter(|(character, _)| *character == '(' || *character == ')')
+        .map(|(_, letter)| letter)
+        .collect();
+    assert_eq!(letters.len(), 2, "{dump}");
+    assert_eq!(letters[0], letters[1], "the pair is not one style:\n{dump}");
+    let plain = rows[0]
+        .chars()
+        .zip(styles[0].chars())
+        .find(|(character, _)| *character == 'm')
+        .map(|(_, letter)| letter)
+        .expect("a letter of the name");
+    assert_ne!(
+        background(letters[0]),
+        background(plain),
+        "the pair has no background of its own:\n{dump}"
+    );
+
+    // And the key goes to the other one.
+    app.handle(obelus_app::event::Event::Key(KeyEvent::new(
+        KeyCode::Char('m'),
+        KeyModifiers::ALT,
+    )));
+    let cursor = app.current_buffer().expect("a buffer").cursor();
+    assert_eq!(cursor.line.get(), 0);
+    assert_eq!(cursor.column.get(), 8, "not on the closing bracket");
+
+    // Back again, because the pair is symmetric.
+    app.handle(obelus_app::event::Event::Key(KeyEvent::new(
+        KeyCode::Char('m'),
+        KeyModifiers::ALT,
+    )));
+    assert_eq!(
+        app.current_buffer()
+            .expect("a buffer")
+            .cursor()
+            .column
+            .get(),
+        7
+    );
+}
+
+/// A cursor that is not on a bracket: the key does nothing and says
+/// nothing, because the command is not offered there at all. The note it
+/// used to write is still reachable from the one case the condition cannot
+/// answer -- a bracket in a string, where the scan finds no partner -- and
+/// that is what the note is for.
+#[test]
+fn nowhere_to_jump_does_nothing() {
+    use crossterm::event::{KeyEvent, KeyModifiers};
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, 40, 8);
+    app.handle(obelus_app::event::Event::Key(KeyEvent::new(
+        KeyCode::Char('m'),
+        KeyModifiers::ALT,
+    )));
+
+    assert_eq!(app.note(), None, "a key that did nothing said so");
+    assert_eq!(
+        app.current_buffer()
+            .expect("a buffer")
+            .cursor()
+            .column
+            .get(),
+        0,
+        "the cursor moved anyway"
+    );
+}
+
+/// The ends of the file are the one place a selection could not reach: the
+/// rule that a modifier Obelus has no meaning for disqualifies the key made
+/// `ctrl+shift+End` do nothing at all rather than extend to the end.
+#[test]
+fn shift_and_control_together_select_to_the_ends_of_the_file() {
+    use crossterm::event::{KeyEvent, KeyModifiers};
+
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    support::lay_out(&mut app, 40, 12);
+    let both = KeyModifiers::CONTROL | KeyModifiers::SHIFT;
+
+    app.handle(obelus_app::event::Event::Key(KeyEvent::new(
+        KeyCode::End,
+        both,
+    )));
+    let buffer = app.current_buffer().expect("a buffer");
+    let selection = buffer.selection().expect("a selection to the end");
+    assert_eq!(selection.line, LineNumber::new(0));
+    assert_eq!(selection.end_line, buffer.text().last_line());
+
+    // And back to the start, which passes through the anchor and comes out
+    // the other side rather than needing a special case.
+    app.handle(obelus_app::event::Event::Key(KeyEvent::new(
+        KeyCode::Home,
+        both,
+    )));
+    let buffer = app.current_buffer().expect("a buffer");
+    assert_eq!(buffer.cursor().line, LineNumber::new(0));
+    assert!(
+        buffer.selection().is_none(),
+        "back at the anchor is nothing selected"
+    );
+}
+
+/// Escape at the file itself gives up on the selection. It reaches the key
+/// table only when no picker and no prompt is open, each of which takes it
+/// first, so there is nothing else there for it to mean.
+#[test]
+fn escape_stops_selecting() {
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    support::lay_out(&mut app, 40, 12);
+
+    support::press_shift(&mut app, KeyCode::Right);
+    support::press_shift(&mut app, KeyCode::Right);
+    assert!(
+        app.current_buffer()
+            .and_then(obelus_buffer::Buffer::selection)
+            .is_some()
+    );
+
+    press(&mut app, KeyCode::Esc);
+    let buffer = app.current_buffer().expect("a buffer");
+    assert!(buffer.selection().is_none(), "escape left it selected");
+    // The cursor stays: giving up on the selection is not going back.
+    assert_eq!(buffer.cursor().column, CharColumn::new(2));
+
+    // And escape still belongs to a picker while one is open.
+    support::press_control(&mut app, 'p');
+    press(&mut app, KeyCode::Esc);
+    assert!(app.picker().is_none(), "escape did not close the palette");
+}
+
+/// The same rule in the rendered view: a rendering that fits has no bar.
+#[test]
+fn a_rendering_with_nowhere_to_scroll_draws_no_bar() {
+    use obelus_app::app::dispatch;
+    use obelus_command::Command;
+
+    // The last column of each row, because a rendered table draws the same
+    // box-drawing character in the middle of a row.
+    let bar = |dump: &str| {
+        support::text_block(dump)
+            .lines()
+            .filter(|row| matches!(row.chars().last(), Some('\u{2502}' | '\u{2588}')))
+            .count()
+    };
+
+    // A tall screen: the whole rendering is on it.
+    let mut app = App::new(vec![support::open_fixture("sample.md")]);
+    support::lay_out(&mut app, 60, 30);
+    dispatch::dispatch(&mut app, Command::PreviewToggle);
+    let whole = support::render(&mut app, 60, 30);
+    assert!(
+        support::text_block(&whole).contains("Title"),
+        "not the rendering:\n{whole}"
+    );
+    assert_eq!(bar(&whole), 0, "a bar with nowhere to scroll:\n{whole}");
+
+    // And a short one: the same rendering, now taller than the screen.
+    support::lay_out(&mut app, 60, 8);
+    let cut = support::render(&mut app, 60, 8);
+    assert!(
+        bar(&cut) > 0,
+        "no bar for a rendering that does not fit:\n{cut}"
+    );
+}
+
+/// A file that fits has nowhere to scroll, so no bar is drawn: a track with
+/// no thumb on it is a control that does not work. The column stays
+/// reserved either way, because handing it back would change the width of
+/// the text -- and with wrapping on, that rewraps every line the moment a
+/// file turns out to be one row too long.
+#[test]
+fn a_view_with_nowhere_to_scroll_draws_no_bar() {
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, 46, 8);
+    let fits = support::render(&mut app, 46, 8);
+    let bar = |dump: &str| {
+        support::text_block(dump)
+            .lines()
+            .filter(|row| matches!(row.trim_end().chars().last(), Some('\u{2502}' | '\u{2588}')))
+            .count()
+    };
+    assert_eq!(bar(&fits), 0, "a bar with nowhere to scroll:\n{fits}");
+
+    // The columns are still there: the text ends where it ended.
+    let ends = |dump: &str| {
+        support::text_block(dump)
+            .lines()
+            .find(|row| row.contains("fn main"))
+            .map(|row| row.trim_end().chars().count())
+            .expect("the first line")
+    };
+
+    let mut long = App::new(vec![support::open_fixture("many_lines.rs")]);
+    support::lay_out(&mut long, 46, 8);
+    let spills = support::render(&mut long, 46, 8);
+    assert!(
+        bar(&spills) > 0,
+        "no bar for a file that does not fit:\n{spills}"
+    );
+    assert_eq!(
+        ends(&fits),
+        ends(&support::render(&mut app, 46, 8)),
+        "the text moved when the bar went away"
+    );
+}
+
+/// Without wrapping, a line runs off the right-hand edge and the view
+/// follows the cursor along it -- one cell at a time, the least that puts
+/// the cursor back on screen, which is the rule the vertical window follows
+/// too.
+#[test]
+fn the_view_follows_the_cursor_along_a_long_line() {
+    let mut app = App::new(vec![support::open_fixture("long.rs")]);
+    support::lay_out(&mut app, 30, 6);
+
+    // Onto the long line, and along it to the end.
+    press(&mut app, KeyCode::Down);
+    let first = support::render(&mut app, 30, 6);
+    let row = |dump: &str| {
+        support::text_block(dump)
+            .lines()
+            .find(|row| row.contains("NAMES") || row.contains("item-"))
+            .expect("the long line")
+            .to_string()
+    };
+    assert!(
+        row(&first).contains("const NAMES"),
+        "not the start of the line:\n{first}"
+    );
+
+    press(&mut app, KeyCode::End);
+    let end = support::render(&mut app, 30, 6);
+    assert!(
+        row(&end).contains("item-11\"];"),
+        "the end of the line is not on screen:\n{end}"
+    );
+    assert!(
+        !row(&end).contains("const NAMES"),
+        "the start of the line is still on screen:\n{end}"
+    );
+
+    // And back: Home brings the view with it.
+    press(&mut app, KeyCode::Home);
+    let home = support::render(&mut app, 30, 6);
+    assert!(
+        row(&home).contains("const NAMES"),
+        "the view did not come back:\n{home}"
+    );
+
+    // One cell at a time at the edge, not a leap: walking right from the
+    // first column, the view stays put until the cursor reaches the last
+    // column and then moves by exactly one.
+    let left = |app: &App| app.current_buffer().expect("a buffer").viewport().left;
+    assert_eq!(left(&app), 0, "Home left the view somewhere else");
+    // Rendered after each step, because the window follows the cursor when
+    // the frame is prepared: a key moves the cursor, and drawing is what
+    // moves the window to it.
+    let width = usize::from(app.text_area().width);
+    for _ in 0..width - 1 {
+        press(&mut app, KeyCode::Right);
+    }
+    let _ = support::render(&mut app, 30, 6);
+    assert_eq!(
+        left(&app),
+        0,
+        "the view moved before the cursor reached the edge"
+    );
+    press(&mut app, KeyCode::Right);
+    let _ = support::render(&mut app, 30, 6);
+    assert_eq!(left(&app), 1, "the view did not move by one cell");
+    press(&mut app, KeyCode::Right);
+    let _ = support::render(&mut app, 30, 6);
+    assert_eq!(left(&app), 2, "the view did not keep up");
+    press(&mut app, KeyCode::Left);
+    let _ = support::render(&mut app, 30, 6);
+    assert_eq!(
+        left(&app),
+        2,
+        "the view moved while the cursor was still on screen"
+    );
+}
+
+/// A wide glyph the left-hand edge cuts in half leaves its cell blank: half
+/// of a wide character is not that character, and drawing it would put the
+/// rest of the row a column out of place. Wrapping never allowed this --
+/// it refuses to break a wide glyph across an edge -- and scrolling
+/// sideways brings the case back.
+#[test]
+fn a_wide_glyph_cut_by_the_edge_leaves_its_cell_blank() {
+    // A wide character early in a long line, so that scrolling along the
+    // line passes over it: in a line that ends soon after one, the edge
+    // never gets that far.
+    let mut app = App::new(vec![support::open_fixture("wide.rs")]);
+    support::lay_out(&mut app, 22, 6);
+    press(&mut app, KeyCode::Down);
+
+    // Walk along the line one column at a time. At one of these positions
+    // the left-hand edge falls between the two cells of the first wide
+    // character, and then that cell is blank and the *second* character is
+    // what follows it -- rather than half of the first.
+    let mut cut = false;
+    for _ in 0..30 {
+        press(&mut app, KeyCode::Right);
+        let dump = support::render(&mut app, 22, 6);
+        let Some(row) = support::text_block(&dump)
+            .lines()
+            .find(|row| row.contains('\u{5b57}'))
+            .map(str::to_string)
+        else {
+            continue;
+        };
+        let characters: Vec<char> = row.chars().collect();
+        let at = characters
+            .iter()
+            .position(|character| *character == '\u{5b57}')
+            .expect("the second wide character");
+        if characters.get(at.wrapping_sub(1)) == Some(&' ') {
+            // The first one is gone rather than half-drawn.
+            assert!(
+                !row.contains('\u{540d}'),
+                "half of a wide character was drawn:\n{dump}"
+            );
+            cut = true;
+        }
+    }
+    assert!(
+        cut,
+        "the edge never fell inside the wide character, so nothing was tested"
+    );
+}
+
+/// A backend that records what a frame did to the caret, in order.
+///
+/// Everything else it delegates to `TestBackend`: the point is the order of
+/// the caret calls around the writes, which nothing else can see.
+struct Recorder {
+    inner: ratatui::backend::TestBackend,
+    calls: Vec<Caret>,
+}
+
+/// One thing a frame did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Caret {
+    /// Cells were written.
+    Wrote,
+    Hidden,
+    Moved,
+    Shown,
+}
+
+impl ratatui::backend::Backend for Recorder {
+    type Error = std::convert::Infallible;
+
+    fn draw<'a, I>(&mut self, content: I) -> Result<(), Self::Error>
+    where
+        I: Iterator<Item = (u16, u16, &'a ratatui::buffer::Cell)>,
+    {
+        self.calls.push(Caret::Wrote);
+        self.inner.draw(content)
+    }
+
+    fn hide_cursor(&mut self) -> Result<(), Self::Error> {
+        self.calls.push(Caret::Hidden);
+        self.inner.hide_cursor()
+    }
+
+    fn show_cursor(&mut self) -> Result<(), Self::Error> {
+        self.calls.push(Caret::Shown);
+        self.inner.show_cursor()
+    }
+
+    fn set_cursor_position<P: Into<ratatui::layout::Position>>(
+        &mut self,
+        position: P,
+    ) -> Result<(), Self::Error> {
+        self.calls.push(Caret::Moved);
+        self.inner.set_cursor_position(position)
+    }
+
+    fn get_cursor_position(&mut self) -> Result<ratatui::layout::Position, Self::Error> {
+        self.inner.get_cursor_position()
+    }
+
+    fn clear(&mut self) -> Result<(), Self::Error> {
+        self.inner.clear()
+    }
+
+    fn clear_region(&mut self, clear_type: ratatui::backend::ClearType) -> Result<(), Self::Error> {
+        self.inner.clear_region(clear_type)
+    }
+
+    fn size(&self) -> Result<ratatui::layout::Size, Self::Error> {
+        self.inner.size()
+    }
+
+    fn window_size(&mut self) -> Result<ratatui::backend::WindowSize, Self::Error> {
+        self.inner.window_size()
+    }
+
+    fn flush(&mut self) -> Result<(), Self::Error> {
+        self.inner.flush()
+    }
+}
+
+/// An ordinary frame leaves the caret alone.
+///
+/// A hide and a show per frame is a caret that visibly blinks, and frames
+/// arrive as fast as a language server reports progress -- so the careful
+/// order that a picture needs (`hide`, write, move, show, because handing a
+/// terminal a sixel makes it repaint mid-write) is used only on the page
+/// that draws pictures. Everywhere else the frame names where the caret
+/// goes and `Terminal::draw` places it.
+#[test]
+fn an_ordinary_frame_does_not_put_the_caret_out() {
+    let mut app = app_on_screen(WIDTH, HEIGHT);
+    let mut terminal = ratatui::Terminal::new(Recorder {
+        inner: ratatui::backend::TestBackend::new(WIDTH, HEIGHT),
+        calls: Vec::new(),
+    })
+    .expect("a terminal");
+    // Twice, because one hide on its own is invisible: it is the hide and
+    // the show *together*, frame after frame, that blinks.
+    obelus_app::app::render(&mut terminal, &mut app).expect("a frame");
+    obelus_app::app::render(&mut terminal, &mut app).expect("another frame");
+
+    let calls = &terminal.backend().calls;
+    assert!(
+        !calls.contains(&Caret::Hidden),
+        "the caret was put out for a frame with no picture in it: {calls:?}"
+    );
+    // And it is still placed: this file has a cursor in it, and a reader
+    // has to be able to see where they are.
+    assert!(
+        calls.contains(&Caret::Moved),
+        "the caret was never placed: {calls:?}"
+    );
+}
+
+/// The caret sits on the character the cursor is on: after the change
+/// margin, and counted from the left edge of what is on screen.
+///
+/// Two things were wrong with it, and both are only visible on a file in a
+/// repository or a line longer than the screen -- which is most files and
+/// most lines. The caret's column came from the gutter alone while the text
+/// is drawn after the margin as well, so it sat one cell to the left of its
+/// character; and the cursor's cell is a cell of the *line*, so on a line
+/// scrolled sideways the caret was drawn far to the right of its character,
+/// or past the edge and not at all.
+#[test]
+fn the_caret_sits_on_its_own_character() {
+    // A file in this repository, so the change margin is there.
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let (column, row) = support::cursor_line(&dump)
+        .split_once(',')
+        .map(|(x, y)| {
+            (
+                x.parse::<usize>().expect("a column"),
+                y.parse::<usize>().expect("a row"),
+            )
+        })
+        .expect("the caret is drawn");
+    let rows: Vec<String> = support::text_block(&dump)
+        .lines()
+        .filter(|row| row.contains('|'))
+        .map(str::to_string)
+        .collect();
+    // The cursor starts on the first character of the file, so that is the
+    // cell the caret is in. Three characters of `NN|` prefix in the dump.
+    assert_eq!(
+        rows.get(row)
+            .and_then(|drawn| drawn.chars().nth(3 + column)),
+        Some('f'),
+        "the caret is not on the first character of `fn main`:\n{dump}"
+    );
+}
+
+/// And the same on a line long enough to be scrolled sideways.
+#[test]
+fn the_caret_follows_a_line_scrolled_sideways() {
+    // A file with a line far longer than the screen. Wrapping off is the
+    // default, so reaching the end of it scrolls the line sideways.
+    let mut app = App::new(vec![support::open_fixture("long.rs")]);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::End);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+
+    let (column, row) = support::cursor_line(&dump)
+        .split_once(',')
+        .map(|(x, y)| {
+            (
+                x.parse::<usize>().expect("a column"),
+                y.parse::<usize>().expect("a row"),
+            )
+        })
+        .expect("the caret is drawn at all");
+    assert!(
+        column < usize::from(WIDTH),
+        "the caret is off the screen:\n{dump}"
+    );
+
+    // The caret is one past the line's last character, because that is
+    // where the end of a line is -- so the cell before it holds that
+    // character.
+    let rows: Vec<String> = support::text_block(&dump)
+        .lines()
+        .filter(|row| row.contains('|'))
+        .map(str::to_string)
+        .collect();
+    let drawn = rows.get(row).cloned().unwrap_or_default();
+    // Three characters of `NN|` prefix in the dump.
+    let before: Option<char> = drawn.chars().nth(3 + column - 1);
+    assert_eq!(
+        before,
+        Some(';'),
+        "the caret is not just after the last character of the line:\n{dump}"
+    );
+}
+
+/// `ctrl+a` takes the whole file, and what it takes is what gets copied.
+///
+/// A file whose last line has text on it, written for this: almost every
+/// file ends in a newline, which leaves an empty last line -- and a
+/// selection that stopped at the start of that line would look right on
+/// every one of them.
+#[test]
+fn control_a_selects_the_whole_file() {
+    let path = std::env::temp_dir().join(format!("obelus-all-{}.rs", std::process::id()));
+    std::fs::write(&path, "fn one() {}\nfn two() {}").expect("a file");
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&path).expect("opening it"),
+    ]);
+    support::lay_out(&mut app, 40, 8);
+    support::press_control(&mut app, 'a');
+    let buffer = app.current_buffer().expect("a file");
+    let selected = buffer.selected_text().expect("a selection");
+    let whole = buffer.text().rope().to_string();
+    assert_eq!(selected, whole, "the selection is not the whole file");
+    // The cursor is the far end of it, which is where a reader who has just
+    // taken all of it is looking.
+    assert_eq!(
+        buffer.cursor().line.get(),
+        buffer.text().line_count() - 1,
+        "the cursor is not at the end of what it selected"
+    );
+    // And the selection is on screen, in the colour every selection has.
+    let dump = support::render(&mut app, 40, 8);
+    let legend = support::legend_block(&dump);
+    let first = support::style_block(&dump)
+        .lines()
+        .nth(1)
+        .and_then(|row| row.split('|').nth(1))
+        .and_then(|cells| cells.chars().nth(6))
+        .expect("a style cell");
+    assert!(
+        legend
+            .lines()
+            .find(|line| line.trim_start().starts_with(first))
+            .is_some_and(|line| !line.contains("bg=#18181b")),
+        "the first line is not drawn as selected:\n{dump}"
+    );
+    let _ = std::fs::remove_file(&path);
+}
+
+/// A screen with no room for the text at all still draws.
+///
+/// One row is all status bar, which leaves the editor none -- and nothing
+/// visible means an empty byte range, which is not a restriction as far as
+/// tree-sitter is concerned: the highlighter asked for a screenful of
+/// nothing and was answered with the whole document, then wrote it into a
+/// slice of length zero. That is a panic at the first frame in a terminal
+/// one row tall.
+#[test]
+fn a_screen_with_no_room_for_the_text_still_draws() {
+    // Narrow as well as short: a screen too narrow for the margin and the
+    // gutter clamps them away, and the caret's own arithmetic does not --
+    // which the editor asserts about, so the disagreement is a panic in a
+    // debug build rather than a caret one cell out in a release one.
+    for (width, height) in [(40, 1), (40, 2), (40, 3), (1, 1), (1, 8), (6, 8), (0, 8)] {
+        let mut app = app();
+        support::lay_out(&mut app, width, height);
+        let dump = support::render(&mut app, width, height);
+        // A screen with no columns has nothing to say about what is on it;
+        // what matters is that asking did not take Obelus down.
+        if width > 0 {
+            assert!(
+                !support::text_block(&dump).is_empty(),
+                "{width}x{height} drew nothing at all"
+            );
+        }
+    }
+}
+
+/// A log reads as a log: columns, and the levels in colour.
+///
+/// Asked for, not applied: a file opens as its bytes, whatever reading it
+/// has, and `ctrl+d` is how to ask for the reading.
+#[test]
+fn a_log_opens_in_its_own_reading() {
+    let path = std::env::temp_dir().join(format!("obelus-reading-{}.log", std::process::id()));
+    std::fs::write(
+        &path,
+        "2026-09-11T02:49:00.854699Z  INFO ob: starting files=1\n\
+         2026-09-11T02:49:02.893231Z  WARN obelus_app::app: watching path=/tmp\n\
+         2026-09-11T02:49:03.001000Z ERROR obelus_logging: panicked\n\
+         \x20 left: 6\n",
+    )
+    .expect("a log");
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&path).expect("opening it"),
+    ]);
+    support::lay_out(&mut app, 76, 10);
+
+    assert_eq!(
+        app.current_buffer().expect("a buffer").mode(),
+        obelus_buffer::Mode::Edit,
+        "a file was put into a reading nobody asked for"
+    );
+    support::press_control(&mut app, 'd');
+    assert_eq!(
+        app.current_buffer().expect("a buffer").mode(),
+        obelus_buffer::Mode::Preview,
+        "the key that asks for the reading did not give one"
+    );
+    let dump = support::render(&mut app, 76, 10);
+    let rows: Vec<&str> = support::text_block(&dump).lines().skip(1).collect();
+    // The clock, without the date: a column of the same date is a column of
+    // noise, and the levels are words of one width.
+    assert!(
+        rows[0].contains("02:49:00.854 info"),
+        "the columns are not there:\n{dump}"
+    );
+    // Every message starts in the same column, which is the whole point.
+    let message = |row: &str| row.find("starting").or_else(|| row.find("watching"));
+    assert_eq!(message(rows[0]), message(rows[1]), "{dump}");
+    // What ran on sits under the message it belongs to.
+    assert_eq!(
+        rows[3].find("left: 6"),
+        rows[2].find("panicked"),
+        "what ran on is not under its message:\n{dump}"
+    );
+    // And the level is in the colour of how much it matters.
+    let theme = obelus_theme::builtin::DARK;
+    let written = |colour: ratatui::style::Color| match colour {
+        ratatui::style::Color::Rgb(red, green, blue) => {
+            format!("fg=#{red:02x}{green:02x}{blue:02x}")
+        }
+        other => panic!("{other:?}"),
+    };
+    let colour_at = |row: usize, word: &str| {
+        let at = rows[row].find(word).expect("the word");
+        let letter = support::style_block(&dump)
+            .lines()
+            .nth(row + 1)
+            .and_then(|styles| styles.chars().nth(at))
+            .expect("a style cell");
+        support::legend_block(&dump)
+            .lines()
+            .find(|line| line.trim_start().starts_with(letter))
+            .and_then(|line| line.split_whitespace().nth(1))
+            .map(str::to_string)
+            .expect("a colour")
+    };
+    assert_eq!(colour_at(2, "error"), written(theme.syntax.error), "{dump}");
+    assert_eq!(
+        colour_at(1, "warn"),
+        written(theme.syntax.warning),
+        "{dump}"
+    );
+    // No cursor in a reading: the rows are not the file's lines.
+    assert_eq!(support::cursor_line(&dump), "none", "{dump}");
+
+    // And `ctrl+d` puts the bytes back, with the caret in them.
+    support::press_control(&mut app, 'd');
+    let text = support::render(&mut app, 76, 10);
+    assert_eq!(
+        app.current_buffer().expect("a buffer").mode(),
+        obelus_buffer::Mode::Edit
+    );
+    assert!(
+        support::text_block(&text).contains("2026-09-11T02:49:00.854699Z"),
+        "the bytes did not come back:\n{text}"
+    );
+    assert_ne!(support::cursor_line(&text), "none", "{text}");
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// And a file with no reading opens as its bytes, whatever its name.
+#[test]
+fn a_file_with_no_reading_opens_as_itself() {
+    let path = std::env::temp_dir().join(format!("obelus-plain-{}.log", std::process::id()));
+    std::fs::write(&path, "fn main() {\n    println!(\"hi\");\n}\n").expect("a file");
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&path).expect("opening it"),
+    ]);
+    app.configure(obelus_config::Config::default(), Vec::new());
+    support::lay_out(&mut app, 60, 8);
+
+    assert_eq!(
+        app.current_buffer().expect("a buffer").mode(),
+        obelus_buffer::Mode::Edit,
+        "a file that is not a log was read as one because of its name"
+    );
+    // And the command says so rather than doing something.
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PreviewToggle);
+    assert_eq!(app.note(), Some("Nothing to preview in this file"));
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// A file opens as its bytes, whatever reading it has.
+///
+/// It used to open *in* the reading when it had one, under a setting that
+/// was on by default. Which reading a file has is the file's own business,
+/// but whether to be shown one instead of the file is the reader's, and a
+/// program whose whole subject is what is in a file should not answer that
+/// for them: the reading is a keystroke away and the bytes are what was
+/// asked for.
+///
+/// Broken deliberately by showing the reading when a buffer is made: the
+/// log came up in columns and this failed on the first assertion.
+#[test]
+fn a_file_with_a_reading_still_opens_as_its_bytes() {
+    let path = std::env::temp_dir().join(format!("obelus-off-{}.log", std::process::id()));
+    std::fs::write(
+        &path,
+        "2026-09-11T02:49:00.854699Z  INFO ob: starting files=1\n\
+         2026-09-11T02:49:02.893231Z  WARN obelus_app::app: watching path=/tmp\n",
+    )
+    .expect("a log");
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&path).expect("opening it"),
+    ]);
+    app.configure(obelus_config::Config::default(), Vec::new());
+    support::lay_out(&mut app, 76, 8);
+
+    assert_eq!(
+        app.current_buffer().expect("a buffer").mode(),
+        obelus_buffer::Mode::Edit,
+        "the reading was shown to a reader who asked for the file"
+    );
+    // Asked for, it is there.
+    support::press_control(&mut app, 'd');
+    assert_eq!(
+        app.current_buffer().expect("a buffer").mode(),
+        obelus_buffer::Mode::Preview
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// The end of a reading is its last screenful, and it can be reached.
+///
+/// A reading has more rows than the file has lines, because it wraps -- and
+/// the viewport's top is a *row* of it while it is showing. The frame used
+/// to run the text's own scrolling over that top and clamp it to the line
+/// count, which put every row past the last line out of reach. What is at
+/// the end is the last screenful rather than the last row alone: a reading
+/// has no cursor to be at the end of, and blank rows under the last one are
+/// a screen saying there is more to come.
+#[test]
+fn the_end_of_a_reading_is_its_last_screenful() {
+    let path = std::env::temp_dir().join(format!("obelus-end-{}.log", std::process::id()));
+    let lines: String = (1..=6)
+        .map(|number| {
+            format!(
+                "2026-09-11T02:49:{number:02}.000000Z  INFO obelus_app::app: entry {number} with a \
+                 message long enough to wrap path=/one/two/three/four\n"
+            )
+        })
+        .collect();
+    std::fs::write(&path, lines).expect("a log");
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&path).expect("opening it"),
+    ]);
+    app.configure(obelus_config::Config::default(), Vec::new());
+    support::lay_out(&mut app, 60, 8);
+    // The reading is asked for: a file opens as its bytes. Drawn again
+    // afterwards, because the rows of a reading are worked out for a frame.
+    support::press_control(&mut app, 'd');
+    support::lay_out(&mut app, 60, 8);
+
+    // The premise: more rows than lines, which is what made the end
+    // unreachable.
+    let lines = app.current_buffer().expect("a buffer").text().line_count();
+    let rows = app.rendered_rows().expect("a reading");
+    assert!(rows > lines, "{rows} rows and {lines} lines proves nothing");
+
+    support::press_control_key(&mut app, KeyCode::End);
+    let dump = support::render(&mut app, 60, 8);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains("entry 6"),
+        "the last entry is not on screen:\n{dump}"
+    );
+    // And the screen is full: the rows above the last one are drawn too,
+    // rather than blanks under a single row.
+    assert!(
+        text.contains("entry 5"),
+        "the end left the screen mostly empty:\n{dump}"
+    );
+
+    // The way back is the same key the other way.
+    support::press_control_key(&mut app, KeyCode::Home);
+    let top = support::render(&mut app, 60, 8);
+    assert!(
+        support::text_block(&top).contains("entry 1"),
+        "the beginning is not reachable either:\n{top}"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// A settings file Obelus cannot make all of, which is what went wrong.
+fn a_settings_file_with_two_mistakes(scratch: &support::Scratch) -> std::path::PathBuf {
+    let file = scratch.join("config.toml");
+    std::fs::write(&file, "theme = \"dark\"\nshrift = 15\nwrapp = true\n")
+        .expect("writing a settings file");
+    file
+}
+
+/// Starts it, the way `main` does once the screen is up.
+fn started(app: &mut App) {
+    let (sender, _events) = std::sync::mpsc::channel();
+    app.start(sender);
+}
+
+/// What went wrong on the way up is a list put up over the welcome screen.
+///
+/// Which is the one place it can be said: a mark on a line of a settings
+/// file is a mark nobody sees until they open it, and the screen that shows
+/// when nothing is open is where a reader is standing when it matters. A
+/// list rather than a block on the screen, because a block was a second
+/// thing there with keys of its own: the list is the one thing on screen
+/// until it is let go.
+///
+/// Deliberate break: taking the `tell_what_went_wrong` out of `App::start`,
+/// and the welcome screen opens with nothing said; and taking the
+/// `is_only_read` branch out of `prompt_row`, and the row under the list is
+/// a box to type into with no word on it of how to leave.
+#[test]
+fn what_went_wrong_is_a_list_over_the_welcome_screen() {
+    let scratch = support::Scratch::new("welcome-told");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.config_file_for_test(a_settings_file_with_two_mistakes(&scratch));
+    started(&mut app);
+    let dump = support::render(&mut app, 76, 26);
+    let text = support::text_block(&dump);
+
+    assert!(text.contains("No setting is called `shrift`"), "{dump}");
+    assert!(text.contains("No setting is called `wrapp`"), "{dump}");
+    // The file and the line it is on, counted the way a reader counts.
+    assert!(text.contains("config.toml:2"), "{dump}");
+    // And what the list is, where a list says what it is -- with the key
+    // that lets it go, since nothing on it can be typed or chosen.
+    assert!(text.contains("What went wrong starting up"), "{dump}");
+    assert!(
+        text.contains("Close"),
+        "nothing says how to let it go:\n{dump}"
+    );
+}
+
+/// And nothing is typed into it, so a window's input method is off over it.
+///
+/// Deliberate break: answering a list with `true` in `App::takes_text`
+/// whether or not it is only read.
+#[test]
+fn what_went_wrong_takes_no_typing() {
+    let scratch = support::Scratch::new("welcome-told-typing");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.config_file_for_test(a_settings_file_with_two_mistakes(&scratch));
+    started(&mut app);
+    assert!(
+        app.picker()
+            .is_some_and(obelus_component::picker::Picker::is_only_read),
+        "no list only read, so this proves nothing"
+    );
+    assert!(!app.takes_text(), "a list only read takes text");
+}
+
+/// The list has the keys until it is let go, and then the screen under it
+/// does.
+///
+/// Deliberate break: for the first half, taking `will_not_give_way` out of
+/// `tell_what_went_wrong` -- a list the reader opened gives way to `f1` (see
+/// `app/switching`), and this one went before it was read. The second half
+/// is broken by having escape leave the list where it is: the welcome
+/// screen's keys never come back.
+#[test]
+fn what_went_wrong_has_the_keys_until_it_is_let_go() {
+    let scratch = support::Scratch::new("welcome-held");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.config_file_for_test(a_settings_file_with_two_mistakes(&scratch));
+    started(&mut app);
+    support::lay_out(&mut app, 76, 26);
+
+    press(&mut app, KeyCode::F(1));
+    let dump = support::render(&mut app, 76, 26);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains("No setting is called `shrift`"),
+        "a key reached the screen under the list:\n{text}"
+    );
+
+    press(&mut app, KeyCode::Esc);
+    let dump = support::render(&mut app, 76, 26);
+    let text = support::text_block(&dump);
+    assert!(
+        !text.contains("No setting is called `shrift`"),
+        "escape did not let it go:\n{text}"
+    );
+    assert!(
+        text.contains(&obelus_keymap::function(1).label()),
+        "the welcome screen's keys did not come back:\n{text}"
+    );
+}
+
+/// The style letters a row of the dump is drawn in, by the row's text.
+fn styles_of_the_row_saying(dump: &str, words: &str) -> String {
+    let text: Vec<&str> = dump
+        .split("-- text --\n")
+        .nth(1)
+        .and_then(|rest| rest.split("-- style --").next())
+        .expect("the text")
+        .lines()
+        .collect();
+    let style: Vec<&str> = dump
+        .split("-- style --\n")
+        .nth(1)
+        .and_then(|rest| rest.split("-- legend --").next())
+        .expect("the style")
+        .lines()
+        .collect();
+    let at = text
+        .iter()
+        .position(|line| line.contains(words))
+        .expect("the row");
+    style[at]
+        .split_once('|')
+        .map_or("", |(_, row)| row)
+        .to_string()
+}
+
+/// No row of it is marked as the reader's, because its rows go nowhere:
+/// the mark behind a row says the keys act on it.
+///
+/// Asked of the rows themselves: the cap at the end of the status row is
+/// one shade off the page as well, and in this theme it is the same shade.
+///
+/// Deliberate break: taking the `is_only_read` out of the picker view's
+/// `selected`, and the first row wears the mark.
+#[test]
+fn no_row_of_what_went_wrong_is_marked_as_the_readers() {
+    let scratch = support::Scratch::new("welcome-unmarked");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.config_file_for_test(a_settings_file_with_two_mistakes(&scratch));
+    started(&mut app);
+    let dump = support::render(&mut app, 76, 26);
+    let ratatui::style::Color::Rgb(red, green, blue) =
+        obelus_ui::Screen::theme(&app).selected_row_background
+    else {
+        panic!("a theme whose rows are not marked in a colour");
+    };
+    let mark = format!("bg=#{red:02x}{green:02x}{blue:02x}");
+    // Which letters of the legend wear it.
+    let marked: Vec<char> = dump
+        .split("-- legend --\n")
+        .nth(1)
+        .expect("the legend")
+        .lines()
+        .filter(|line| line.contains(&mark))
+        .filter_map(|line| line.chars().next())
+        .collect();
+    for words in [
+        "No setting is called `shrift`",
+        "No setting is called `wrapp`",
+    ] {
+        let row = styles_of_the_row_saying(&dump, words);
+        assert!(
+            !row.chars().any(|letter| marked.contains(&letter)),
+            "the row saying {words:?} is marked as the reader's:\n{dump}"
+        );
+    }
+}
+
+/// The ink one cell of the dump is drawn in, at the first of `words`.
+fn ink_of(dump: &str, words: &str) -> String {
+    let text = support::text_block(dump);
+    let line = text
+        .lines()
+        .find(|line| line.contains(words))
+        .expect("the row");
+    let column = line
+        .split_once('|')
+        .map_or("", |(_, row)| row)
+        .find(words)
+        .expect("the words");
+    let column = line.split_once('|').map_or("", |(_, row)| row)[..column]
+        .chars()
+        .count();
+    let letter = styles_of_the_row_saying(dump, words)
+        .chars()
+        .nth(column)
+        .expect("a letter");
+    dump.split("-- legend --\n")
+        .nth(1)
+        .expect("the legend")
+        .lines()
+        .find(|entry| entry.starts_with(letter))
+        .and_then(|entry| entry.split_whitespace().nth(1))
+        .expect("an entry")
+        .to_string()
+}
+
+/// A colour as the dump writes one.
+fn written(colour: ratatui::style::Color) -> String {
+    let ratatui::style::Color::Rgb(red, green, blue) = colour else {
+        panic!("a theme in named colours");
+    };
+    format!("fg=#{red:02x}{green:02x}{blue:02x}")
+}
+
+/// An error and a warning are told apart the way a list of problems tells
+/// them apart: each in the colour it is in the file.
+///
+/// The error is a settings file that will not read, and the warning is
+/// something with no file to be about -- which goes on as a warning, since
+/// Obelus went on without it.
+///
+/// Deliberate break: building the rows without a `kind`, and both are in
+/// the page's own ink.
+#[test]
+fn an_error_and_a_warning_are_told_apart_by_their_colour() {
+    let scratch = support::Scratch::new("welcome-severities");
+    let file = scratch.join("config.toml");
+    std::fs::write(&file, "theme = \"dark\n").expect("half a settings file");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.config_file_for_test(file);
+    app.amiss("The wheel will not be reported, so it moves the cursor");
+    started(&mut app);
+    let dump = support::render(&mut app, 76, 26);
+    let theme = obelus_ui::Screen::theme(&app);
+    let error = written(theme.syntax.colour(obelus_text::kind::SyntaxKind::Error));
+    let warning = written(theme.syntax.colour(obelus_text::kind::SyntaxKind::Warning));
+
+    let said = support::text_block(&dump);
+    let wrong = said
+        .lines()
+        .find(|line| line.contains("config.toml:"))
+        .and_then(|line| line.split_once('|'))
+        .map(|(_, row)| {
+            row.trim()
+                .split("  ")
+                .next()
+                .unwrap_or_default()
+                .to_string()
+        })
+        .expect("the settings file's row");
+    assert_eq!(
+        ink_of(&dump, &wrong),
+        error,
+        "the error is not an error's colour:\n{dump}"
+    );
+    assert_eq!(
+        ink_of(&dump, "The wheel will not be reported"),
+        warning,
+        "the warning is not a warning's colour:\n{dump}"
+    );
+}
+
+/// And a start with nothing wrong puts nothing up.
+///
+/// Almost every start is this one. A list saying nothing happened would be
+/// a key to press on every start for no reason.
+///
+/// Deliberate break: `tell_what_went_wrong` putting its list up whatever it
+/// holds.
+#[test]
+fn a_start_with_nothing_wrong_puts_nothing_up() {
+    let scratch = support::Scratch::new("welcome-quiet");
+    let file = scratch.join("config.toml");
+    std::fs::write(&file, "theme = \"dark\"\n").expect("writing a settings file");
+
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.config_file_for_test(file);
+    started(&mut app);
+    assert!(app.picker().is_none(), "a list was put up over nothing");
+}
+
+/// A start with nothing to go on asks which project, and offers the ones
+/// this reader has had open -- on a screen of its own, with no plate: the
+/// welcome screen comes after, once there is a project to welcome anybody
+/// into.
+///
+/// The rows are the test's own rather than the machine's: reading the real
+/// list would make this grid depend on which projects whoever ran it has
+/// opened, which is the trap the welcome screen's own fixture fell into
+/// with the working directory.
+///
+/// Deliberate break: have `draw` render `WelcomeView` whatever
+/// `ProjectsView::new` answers, and the grid comes back with the plate and
+/// `F1 Open a file` on it -- a key that cannot do anything until this is
+/// answered. And by having `name_of` never find a separator: the rows go
+/// back to whole paths in one ink, with the name at the ragged end of each.
+#[test]
+fn a_start_with_no_project_asks_which_one() {
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.ask_about_these_projects_for_test(vec![
+        obelus_component::chooser::Known {
+            path: std::path::PathBuf::from("/tmp/obelus/work/obelus"),
+            shown: "/tmp/obelus/work/obelus".to_string(),
+            last: None,
+        },
+        obelus_component::chooser::Known {
+            path: std::path::PathBuf::from(
+                "/tmp/obelus/work/something/rather/deeply/nested/indeed",
+            ),
+            shown: "/tmp/obelus/work/something/rather/deeply/nested/indeed".to_string(),
+            last: None,
+        },
+    ]);
+    support::check(
+        "choosing_a_project_64x20",
+        &support::render(&mut app, 64, 20),
+    );
+}
+
+/// Projects enough to fill the page, each named for where it is in the list.
+fn many_projects(how_many: usize) -> Vec<obelus_component::chooser::Known> {
+    (0..how_many)
+        .map(|at| {
+            let path = format!("/tmp/obelus/work/p{at:02}");
+            obelus_component::chooser::Known {
+                path: std::path::PathBuf::from(&path),
+                shown: path,
+                last: None,
+            }
+        })
+        .collect()
+}
+
+/// A list longer than the page scrolls under the reader, and the row that
+/// opens another stays where it is under it.
+///
+/// At 64x14 the page has six rows for projects: twelve for the editor
+/// region, two for the foot, two for the title and its rule, and the
+/// opening row and the blank over it.
+///
+/// Deliberate break: taking the `chooser.settle` out of the frame, and the
+/// window stays on the first six while the reader walks off the bottom of
+/// it (the second assertion); having `laid` place the opening row after
+/// every one of the projects rather than after the ones on the page, with
+/// the `min` that holds it on the page taken out as well, and it goes off
+/// the page (the third) -- with the `min` left in, that break is held at
+/// the very row it would have had, and stays green; and drawing no bar
+/// (the fourth).
+#[test]
+fn a_long_list_of_projects_scrolls_and_the_opening_row_stays() {
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.ask_about_these_projects_for_test(many_projects(20));
+    support::lay_out(&mut app, 64, 14);
+    for _ in 0..8 {
+        press(&mut app, KeyCode::Down);
+    }
+    let dump = support::render(&mut app, 64, 14);
+    let text = support::text_block(&dump);
+
+    assert_eq!(
+        obelus_ui::Screen::choosing(&app).expect("asking").at,
+        8,
+        "the arrows did not walk"
+    );
+    assert!(
+        text.contains("p08"),
+        "the reader walked off the page:\n{dump}"
+    );
+    assert!(
+        text.contains("Open another"),
+        "the opening row went with the projects:\n{dump}"
+    );
+    assert!(
+        // The bar's block, which nothing else on this page is drawn with.
+        text.contains('\u{2588}'),
+        "a list longer than the page does not say so:\n{dump}"
+    );
+}
+
+/// A page key moves by the rows the page has, which is six here.
+///
+/// Deliberate break: `chooser_rows` answering the ten it used to be
+/// hard-wired to, and the reader lands four rows past the page.
+#[test]
+fn a_page_of_projects_is_what_the_page_holds() {
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.ask_about_these_projects_for_test(many_projects(20));
+    support::lay_out(&mut app, 64, 14);
+    press(&mut app, KeyCode::PageDown);
+    assert_eq!(
+        obelus_ui::Screen::choosing(&app).expect("asking").at,
+        6,
+        "a page is not the page"
+    );
+}
+
+/// The foot says what enter does on the row the reader is on, and how to
+/// leave a page that escape cannot leave.
+///
+/// Deliberate break: `hints` saying `Open` whichever row it is (the second
+/// assertion), and leaving the quit key off (the first).
+#[test]
+fn the_foot_says_what_enter_does_here_and_how_to_leave() {
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.ask_about_these_projects_for_test(many_projects(2));
+    let dump = support::render(&mut app, 64, 14);
+    assert!(
+        support::text_block(&dump).contains("Leave"),
+        "the way off the page is not named:\n{dump}"
+    );
+
+    support::press_control_key(&mut app, KeyCode::End);
+    let dump = support::render(&mut app, 64, 14);
+    assert!(
+        support::text_block(&dump).contains("Type a path"),
+        "the foot does not say what enter does on the opening row:\n{dump}"
+    );
+}
+
+/// What went wrong on the way up is put up over the page that asks which
+/// project, too, and the page does not take a key while it is there.
+///
+/// And it is not typed into, so there is no caret on screen at all.
+///
+/// Deliberate break: putting the chooser ahead of the layers in
+/// `App::hearers`, and the letter goes into the projects' filter under the
+/// list (the second assertion); and taking the `is_only_read` out of
+/// `cursor_position`, and a caret stands in a box nothing can be typed into
+/// (the first). The same guard in
+/// `cursor_position`'s turn for the chooser has no break that shows here:
+/// the list is up only at the start, when the page's own filter is empty
+/// and so has no caret of its own either.
+#[test]
+fn what_went_wrong_is_put_over_the_page_that_asks_too() {
+    let scratch = support::Scratch::new("choosing-told");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.config_file_for_test(a_settings_file_with_two_mistakes(&scratch));
+    app.ask_about_these_projects_for_test(many_projects(2));
+    started(&mut app);
+    let dump = support::render(&mut app, 76, 26);
+    assert!(
+        support::text_block(&dump).contains("No setting is called `shrift`"),
+        "{dump}"
+    );
+    assert!(
+        dump.contains("-- cursor --\nnone"),
+        "a caret stands in a list nothing can be typed into:\n{dump}"
+    );
+
+    press(&mut app, KeyCode::Char('p'));
+    assert_eq!(
+        obelus_ui::Screen::choosing(&app).expect("asking").typed,
+        "",
+        "a letter went into the page under the list"
+    );
+
+    press(&mut app, KeyCode::Esc);
+    press(&mut app, KeyCode::Esc);
+    press(&mut app, KeyCode::Char('p'));
+    assert_eq!(
+        obelus_ui::Screen::choosing(&app).expect("asking").typed,
+        "p",
+        "the page did not have the keys back"
+    );
+}
+
+/// The screen that asks which project has no mark on it, so nothing on it
+/// moves and nothing wakes Obelus to draw it again.
+///
+/// Deliberate break: taking `self.chooser.is_none()` out of
+/// `wants_animating`, and the welcome screen's clock runs under a screen
+/// that has no sheen.
+#[test]
+fn asking_which_project_does_not_wake() {
+    let mut app = App::new(Vec::new());
+    app.ask_about_these_projects_for_test(Vec::new());
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    assert!(
+        !app.is_waking(),
+        "the welcome screen's clock is running under the question"
+    );
+}
+
+/// Naming a path puts a list of what could finish it over the welcome
+/// screen.
+///
+/// The ordinary compact list, which is the arrangement the agent's own
+/// commands settled: the rows, the chosen row and the marking of what
+/// matched are the picker's, and the box at the foot owns the keys. So
+/// what is worth asserting here is that it is *there* and that it holds
+/// what the directory holds -- how a compact list looks is already
+/// pinned by the grids of every other one.
+///
+/// No golden grid, because the path in the box is a real directory with
+/// this run's process number in it: a fixture of that would only ever
+/// match the run that wrote it.
+///
+/// Deliberate break: draw the list only when `layers.filling()` is false
+/// *and* a buffer is open, and nothing comes back -- the welcome screen
+/// has no buffer behind it.
+#[test]
+fn naming_a_path_offers_what_could_finish_it() {
+    let scratch = support::Scratch::new("rendering-naming");
+    for name in ["alpha", "beta"] {
+        std::fs::create_dir_all(scratch.path().join(name)).expect("a directory");
+    }
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.ask_about_these_projects_for_test(vec![obelus_component::chooser::Known {
+        path: std::path::PathBuf::from("/tmp/obelus/alpha"),
+        shown: "/tmp/obelus/alpha".to_string(),
+        last: None,
+    }]);
+    // The opening row, which is under the projects.
+    support::press_control_key(&mut app, crossterm::event::KeyCode::End);
+    support::press(&mut app, crossterm::event::KeyCode::Enter);
+    for character in format!("{}/", scratch.path().display()).chars() {
+        support::press(&mut app, crossterm::event::KeyCode::Char(character));
+    }
+
+    let dump = support::render(&mut app, 80, 20);
+    let text = support::text_block(&dump);
+    for name in ["alpha", "beta"] {
+        // With the separator this platform writes onto the end of a
+        // directory's name, which is not the one the path was typed
+        // with: Obelus reads either and writes one.
+        let name = format!("{name}{}", std::path::MAIN_SEPARATOR);
+        assert!(
+            text.contains(&name),
+            "the list does not offer {name}:\n{dump}"
+        );
+    }
+}
+
+/// The status row says which project, in a word and then the path.
+///
+/// Every key on the screen above it is about one project and no other --
+/// `f1` searches that one, `f3` asks git about it, a note and a
+/// conversation are filed under it -- so a reader is told before they
+/// press. It goes on the row rather than on the page because that row is
+/// where Obelus says what is being read: a file's path and its mode go
+/// there, and which project is the same kind of fact one step out.
+/// `ui::welcome`'s own doc had claimed it was on the page for a long
+/// time while nothing drew it anywhere.
+///
+/// Named and not left as a bare path, which is the half a reader needs:
+/// a path alone at the foot of a screen is a thing they have to work
+/// out.
+///
+/// A directory outside `$HOME`, so the `~` it would otherwise be written
+/// with is nobody's and the test holds wherever it is checked out.
+///
+/// Deliberate break: take the `render_project` arm out of the status
+/// row, and the screen offers four keys about a project it does not
+/// name.
+#[test]
+fn the_status_row_says_which_project() {
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+
+    let dump = support::render(&mut app, 64, 20);
+    let text = support::text_block(&dump);
+
+    assert!(
+        text.contains("Project  /tmp/obelus"),
+        "the status row does not say which project, or does not say what it is:\n{dump}"
+    );
+}
+
+/// A character asked to be drawn as a picture is two cells, and its
+/// selector goes in the first of them.
+///
+/// `❤` followed by U+FE0F is a picture every terminal advances two columns
+/// over. In a cell of its own the selector is a cell the terminal does not
+/// advance over, and without it the window has nothing to say this `❤` is
+/// not the one written in a line of text -- so it is drawn in the cell with
+/// the heart, the cell after is the heart's too, and the caret after it is
+/// where the terminal puts the next character.
+///
+/// Deliberate breaks: taking the selector arm out of `cells_of` puts the
+/// caret a column short of the `x`, which is drawn where it always was;
+/// and drawing the editor's glyphs a character at a time with `put` leaves
+/// the heart's cell without its selector.
+#[test]
+fn a_character_asked_to_be_a_picture_is_two_cells_with_its_selector_in_the_first() {
+    let scratch = support::Scratch::new("a-picture-is-two-cells");
+    let path = scratch.write("heart.txt", "\u{2764}\u{fe0f}x\n");
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&path).expect("opening the file"),
+    ]);
+    let cells = support::cells_of(&mut app, WIDTH, HEIGHT);
+    let (x, y) = (0..HEIGHT)
+        .flat_map(|y| (0..WIDTH).map(move |x| (x, y)))
+        .find(|at| cells[*at].symbol().starts_with('\u{2764}'))
+        .expect("the heart is on the screen");
+    assert_eq!(
+        cells[(x, y)].symbol(),
+        "\u{2764}\u{fe0f}",
+        "the selector is not with its heart"
+    );
+    assert_eq!(
+        cells[(x + 1, y)].symbol(),
+        "",
+        "the heart's second cell has something in it"
+    );
+    assert_eq!(cells[(x + 2, y)].symbol(), "x");
+
+    press(&mut app, KeyCode::End);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert_eq!(
+        support::cursor_line(&dump),
+        format!("{},{y}", x + 3),
+        "the caret after the line is not after the x"
+    );
+}
+
+/// A cluster of several pictures is one cell, as wide as the one picture it
+/// is drawn as.
+///
+/// A family joined by U+200D, a keycap and a flag: each is one picture two
+/// columns wide, and each was drawn a character at a time -- the family six
+/// columns of separate people, the keycap's enclosing mark a cell of its
+/// own, the flag two letters a window could not put together. All of a
+/// cluster goes in its first cell, the cell after it is its own, and the
+/// caret at the end of the line is where a terminal puts the next character.
+///
+/// Deliberate breaks: measuring a cluster as the sum of its characters puts
+/// the family in six cells and the caret four columns on; and writing only
+/// the first character of each cluster leaves the man without his family,
+/// the keycap without its frame and the flag half a flag.
+#[test]
+fn a_cluster_of_pictures_is_one_cell_two_wide() {
+    let family = "\u{1f468}\u{200d}\u{1f469}\u{200d}\u{1f467}";
+    let keycap = "1\u{fe0f}\u{20e3}";
+    let flag = "\u{1f1e8}\u{1f1f3}";
+    let scratch = support::Scratch::new("a-cluster-is-one-cell");
+    let path = scratch.write("pictures.txt", &format!("a{family}b{keycap}c{flag}d\n"));
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&path).expect("opening the file"),
+    ]);
+    let cells = support::cells_of(&mut app, WIDTH, HEIGHT);
+    let (x, y) = (0..HEIGHT)
+        .flat_map(|y| (0..WIDTH).map(move |x| (x, y)))
+        .find(|at| cells[*at].symbol().starts_with('\u{1f468}'))
+        .expect("the family is on the screen");
+    assert_eq!(cells[(x - 1, y)].symbol(), "a");
+    let row: Vec<&str> = (x..x + 9).map(|at| cells[(at, y)].symbol()).collect();
+    assert_eq!(
+        row,
+        [family, "", "b", keycap, "", "c", flag, "", "d"],
+        "a cluster is not one cell two wide"
+    );
+
+    press(&mut app, KeyCode::End);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert_eq!(
+        support::cursor_line(&dump),
+        format!("{},{y}", x + 9),
+        "the caret after the line is not after the d"
+    );
+}
+
+/// In a file, backspace and delete take a picture with its selector, and
+/// the arrows step over the pair.
+///
+/// The file's own path through the keys, which is not the one a box takes:
+/// backspace there is a span worked out in `keys`, so the box's tests say
+/// nothing about it.
+///
+/// Deliberate break: backspace's span starting one character back -- the
+/// `saturating_sub(1)` in `indent_back` that it was -- takes the selector
+/// and leaves the heart drawn as text; and delete's ending one character on
+/// takes the heart and leaves its selector.
+#[test]
+fn in_a_file_a_picture_is_taken_and_stepped_over_whole() {
+    let scratch = support::Scratch::new("a-picture-is-taken-whole");
+    let open = |name: &str| {
+        let path = scratch.write(name, "x\u{2764}\u{fe0f}y\n");
+        let mut app = App::new(vec![
+            obelus_buffer::Buffer::open(&path).expect("opening the file"),
+        ]);
+        support::lay_out(&mut app, WIDTH, HEIGHT);
+        app
+    };
+    let said = |app: &App| {
+        let buffer = app.current_buffer().expect("a buffer");
+        buffer.text().line(LineNumber::new(0)).to_string()
+    };
+    let column = |app: &App| {
+        app.current_buffer()
+            .expect("a buffer")
+            .cursor()
+            .column
+            .get()
+    };
+
+    let mut app = open("stepped.txt");
+    press(&mut app, KeyCode::Right);
+    press(&mut app, KeyCode::Right);
+    assert_eq!(column(&app), 3, "right stopped inside the picture");
+    press(&mut app, KeyCode::Left);
+    assert_eq!(column(&app), 1, "left stopped inside the picture");
+    press(&mut app, KeyCode::Delete);
+    assert_eq!(said(&app), "xy", "delete left part of the picture behind");
+
+    let mut app = open("rubbed.txt");
+    press(&mut app, KeyCode::Right);
+    press(&mut app, KeyCode::Right);
+    press(&mut app, KeyCode::Backspace);
+    assert_eq!(
+        said(&app),
+        "xy",
+        "backspace left part of the picture behind"
+    );
+}
