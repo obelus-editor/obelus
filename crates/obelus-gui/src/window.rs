@@ -1200,8 +1200,11 @@ impl ApplicationHandler<Waking> for Showing {
                             // arriving knows that. A frame drawn twice
                             // for some other reason must not read as a
                             // reader scrolling.
-                            let bars: Vec<Bar> = self.barred.iter().map(|(bar, _)| *bar).collect();
-                            self.motion.bars_drawn(&bars, self.pointer, Instant::now());
+                            self.motion.bars_drawn(
+                                self.barred.iter().map(|&(bar, _)| bar),
+                                self.pointer,
+                                Instant::now(),
+                            );
                             self.ruled = std::mem::take(&mut self.ruling);
                             self.linked = std::mem::take(&mut self.linking);
                             // Only where the page still holds it: the

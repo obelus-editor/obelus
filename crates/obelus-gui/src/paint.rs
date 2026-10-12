@@ -205,8 +205,8 @@ pub(crate) struct Painter {
     /// picture is -- see `halved`.
     scratch: wgpu::TextureView,
     scratch_bindings: wgpu::BindGroup,
-    /// And the whole frame as one, which is drawn only while a pane is on
-    /// its way in, with the bindings the two quads that put it back on the
+    /// And the whole frame as one, which is drawn only while something on
+    /// it is moving, with the bindings the pieces that put it back on the
     /// screen read it through.
     ///
     /// There only while something is over the page -- see
@@ -399,13 +399,16 @@ enum Reads {
     Lifted,
 }
 
+/// Runs of quads, each with the pictures it is drawn with.
+type Plan = Vec<(Range<usize>, Reads)>;
+
 /// The quads the screen draws, each with whatever it reads.
 ///
 /// Everything but the glass reads nothing, so it is drawn with whatever the
 /// first glass reads. Each glass reads its own level's pictures, and what
 /// is under each level over the first is that level's picture and not on
 /// the screen at all.
-fn on_the_screen(placed: &Placed) -> Vec<(Range<usize>, Reads)> {
+fn on_the_screen(placed: &Placed) -> Plan {
     let mut plan = Vec::new();
     let mut at = 0;
     for (level, placed) in placed.levels.iter().enumerate() {
@@ -439,18 +442,12 @@ fn on_the_screen(placed: &Placed) -> Vec<(Range<usize>, Reads)> {
 /// not in what is cut -- what moves is what is written on the page, over it
 /// -- and the page there is left clear, to be seen through to the picture
 /// drawn under the pieces.
-fn without_the_picture(
-    plan: Vec<(Range<usize>, Reads)>,
-    hung: usize,
-) -> Vec<(Range<usize>, Reads)> {
+fn without_the_picture(plan: Plan, hung: usize) -> Plan {
     plan.into_iter()
         .map(|(quads, reads)| (quads.start.max(hung)..quads.end, reads))
         .filter(|(quads, _)| !quads.is_empty())
         .collect()
 }
-
-/// Runs of quads, each with the pictures it is drawn with.
-type Plan = Vec<(Range<usize>, Reads)>;
 
 /// A plan cut in two at a quad: what is drawn before it, and from it on.
 ///
@@ -477,7 +474,7 @@ fn parted_at(plan: Plan, at: usize) -> (Plan, Plan) {
 /// this one, then this one's `under`. Never this level's own pictures,
 /// which are what this may be drawing into -- the one thing a pass may not
 /// read.
-fn put_over(levels: &[Level], level: usize) -> Vec<(Range<usize>, Reads)> {
+fn put_over(levels: &[Level], level: usize) -> Plan {
     let mut plan = vec![(levels[0].under.clone(), Reads::Nothing)];
     if level > 0 {
         for (at, placed) in levels[..level].iter().enumerate() {
@@ -497,8 +494,8 @@ fn put_over(levels: &[Level], level: usize) -> Vec<(Range<usize>, Reads)> {
 /// The pieces the screen is put back together from while something on it
 /// is moving, each with whatever it reads: the frame, and the glass where
 /// a list's rows have not arrived -- see `Placed::gaps`.
-fn catching(placed: &Placed) -> Vec<(Range<usize>, Reads)> {
-    let mut reading: Vec<(Range<usize>, Reads)> = placed
+fn catching(placed: &Placed) -> Plan {
+    let mut reading: Plan = placed
         .gaps
         .iter()
         .map(|&(glass, level)| (glass..glass + 1, Reads::Level(level)))
@@ -1519,7 +1516,6 @@ mod tests {
                 drawn: 20,
                 moved: 30,
                 composed: true,
-                arriving: Some(0),
                 lifting: Some(26..27),
                 ..Placed::default()
             };

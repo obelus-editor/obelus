@@ -387,7 +387,8 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
     // The frame was drawn once into a texture of its own, and it is put
     // back on the screen in pieces: the rectangles the thing that is
     // moving is *not* in, each where it belongs, and then that thing,
-    // taken from somewhere else in the same picture. What is under it
+    // taken from somewhere else in the same picture -- or, for what is
+    // written on a pane coming in, from a picture of its own. What is under it
     // where it has not reached is whatever was drawn there before -- the
     // page for a pane, and for a band the page it scrolled off.
     //

@@ -540,7 +540,7 @@ impl Painter {
     ///
     /// Not the pane's while it is still arriving, which is drawn where
     /// the frame is put back together instead. The frame is drawn once
-    /// and put back in two pieces, the pane's own slid up from where it
+    /// and put back in pieces, what is on the pane slid in from where it
     /// set out -- and a shadow is the one part of a pane that falls
     /// *outside* the pane's own room, so it is in the other piece: drawn
     /// here it would stand still at the edge the pane is going to have
