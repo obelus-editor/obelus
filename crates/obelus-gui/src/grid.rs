@@ -645,6 +645,9 @@ pub(crate) struct Sheened {
     pub(crate) from: Color,
     /// And what the light carries it to as it passes.
     pub(crate) to: Color,
+    /// How many panes and boxes had been put over the page when it was
+    /// said -- see `Page::layer`.
+    pub(crate) depth: usize,
 }
 
 impl Sheened {
@@ -668,7 +671,10 @@ impl Sheened {
     /// ramp between the two this was said with, which is what the cells
     /// say about the sheen in their own way -- a step of it per column,
     /// out and back. A cell with nothing in it is one of the gaps in the
-    /// letters and says nothing either way.
+    /// letters and says nothing either way -- so it is asked whose the cell
+    /// is as well: the welcome screen is under the settings and the counts
+    /// too, and a dialog that leaves the plate's rows blank left a light
+    /// running at the frame rate under it, over nothing.
     pub(crate) fn still_said(&self, page: &Page) -> bool {
         let (Color::Rgb(from_r, from_g, from_b), Color::Rgb(to_r, to_g, to_b)) =
             (self.from, self.to)
@@ -680,6 +686,9 @@ impl Sheened {
         let between = |one: u8, other: u8, at: u8| at >= one.min(other) && at <= one.max(other);
         (self.area.top()..self.area.bottom()).all(|y| {
             (self.area.left()..self.area.right()).all(|x| {
+                if page.layer(x, y) > self.depth {
+                    return false;
+                }
                 let look = page.look(x, y);
                 if look.text.trim().is_empty() {
                     return true;
@@ -2017,7 +2026,7 @@ mod tests {
         let to = Color::Rgb(100, 100, 100);
         // Two rows of the plate, in colours along the ramp between them,
         // and a third the list wrote in its own ink.
-        let page = inked(&[
+        let mut page = inked(&[
             ("\u{2588}\u{2588}\u{2588}", Color::Rgb(0, 0, 0)),
             ("\u{2588} \u{2588}", Color::Rgb(60, 60, 60)),
             ("abc", Color::Rgb(220, 30, 30)),
@@ -2031,6 +2040,7 @@ mod tests {
             },
             from,
             to,
+            depth: 0,
         };
         assert!(
             mark(2).still_said(&page),
@@ -2040,6 +2050,12 @@ mod tests {
             !mark(3).still_said(&page),
             "a row of the list is inside the plate and is not the plate"
         );
+        // And a dialog over the whole of it, whatever is in the cells: the
+        // gaps in the plate are blank, and blank is the dialog's here.
+        // Deliberate break: take `page.layer` out of `still_said`, and the
+        // plate's two rows are still lit under it.
+        page.put_over(&[pane(Rect::new(0, 0, 3, 3))]);
+        assert!(!mark(2).still_said(&page), "the plate under a dialog");
     }
 
     /// Rows of text, each in one colour.

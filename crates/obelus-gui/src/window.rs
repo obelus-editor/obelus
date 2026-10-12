@@ -404,9 +404,9 @@ struct Showing {
     /// And on the one being laid out.
     ruling: Vec<Ruled>,
     /// Which cells are the words of a link on the frame being shown.
-    linked: Vec<Rect>,
+    linked: Vec<(Rect, usize)>,
     /// And on the one being laid out.
-    linking: Vec<Rect>,
+    linking: Vec<(Rect, usize)>,
     /// Whether the pointer is a hand, so that it is changed only when
     /// what is under it does.
     pointing: bool,
@@ -1127,7 +1127,12 @@ impl ApplicationHandler<Waking> for Showing {
                             self.parting.push(Parted { area });
                         }
                         Update::Sheened { area, from, to } => {
-                            self.sheening = Some(Sheened { area, from, to });
+                            self.sheening = Some(Sheened {
+                                area,
+                                from,
+                                to,
+                                depth: self.stacking.len(),
+                            });
                         }
                         // Each shape with how much had been put over the
                         // page when it was said, which is whose its cells
@@ -1139,7 +1144,9 @@ impl ApplicationHandler<Waking> for Showing {
                             area,
                             depth: self.stacking.len(),
                         }),
-                        Update::Linked { area } => self.linking.push(area),
+                        Update::Linked { area } => {
+                            self.linking.push((area, self.stacking.len()));
+                        }
                         Update::Stroked { stroke } => {
                             self.stroking.push(Stroked {
                                 stroke,
@@ -1180,6 +1187,9 @@ impl ApplicationHandler<Waking> for Showing {
                                     going: Vec::new(),
                                 });
                             }
+                            // Whose each cell is, before anything below asks
+                            // -- see `Page::layer`.
+                            self.page.put_over(&self.stacking);
                             // The frame is over: what it asked for is what
                             // is on screen until the next one says
                             // otherwise.
@@ -1224,7 +1234,6 @@ impl ApplicationHandler<Waking> for Showing {
                                 .sheen_drawn(self.sheened.is_some(), Instant::now());
                             self.stroked = std::mem::take(&mut self.stroking);
                             self.stack = std::mem::take(&mut self.stacking);
-                            self.page.put_over(&self.stack);
                             self.panes = std::mem::take(&mut self.paning);
                             self.scrolled = std::mem::take(&mut self.scrolling);
                             drew = true;
@@ -1817,14 +1826,13 @@ impl Drop for Finished {
 /// page, and a hand over the list's row would be a promise the row does not
 /// keep. A link's words are underlined, and a cell that is not is somebody
 /// else's.
-fn on_a_link(linked: &[Rect], page: &Page, x: u16, y: u16) -> bool {
-    linked
-        .iter()
-        .any(|area| area.contains(ratatui::layout::Position { x, y }))
-        && page
-            .look(x, y)
-            .modifier
-            .contains(ratatui::style::Modifier::UNDERLINED)
+fn on_a_link(linked: &[(Rect, usize)], page: &Page, x: u16, y: u16) -> bool {
+    linked.iter().any(|&(area, depth)| {
+        area.contains(ratatui::layout::Position { x, y }) && page.layer(x, y) <= depth
+    }) && page
+        .look(x, y)
+        .modifier
+        .contains(ratatui::style::Modifier::UNDERLINED)
 }
 
 /// What this window is called by the thing that manages windows.
@@ -1966,13 +1974,27 @@ mod tests {
                 cell: Box::new(cell),
             });
         }
-        let linked = [Rect::new(0, 0, 4, 1)];
+        let linked = [(Rect::new(0, 0, 4, 1), 0)];
         assert!(on_a_link(&linked, &page, 1, 0), "not a hand over the link");
         assert!(
             !on_a_link(&linked, &page, 3, 0),
             "a hand over a covered link"
         );
         assert!(!on_a_link(&linked, &page, 4, 0), "a hand over a complaint");
+        // And a dialog put over it that underlines words of its own in the
+        // same cells: the welcome screen's link is under the settings.
+        // Deliberate break: take `page.layer` out of `on_a_link`.
+        page.put_over(&[crate::grid::Behind {
+            area: Rect::new(0, 0, 6, 1),
+            joined: obelus_ui::shapes::Joined::Screen,
+            ground: ratatui::style::Color::Reset,
+            cells: Vec::new(),
+            depth: 0,
+        }]);
+        assert!(
+            !on_a_link(&linked, &page, 1, 0),
+            "a hand over a dialog's own words"
+        );
     }
 
     /// A band is matched with the one it was, not with another in the same
