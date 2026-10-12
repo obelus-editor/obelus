@@ -98,11 +98,20 @@ impl App {
     /// looks like other than by using it, and every view already reads its
     /// colours from one place. Cancelling puts the old one back.
     pub(in crate::app) fn preview_theme(&mut self) {
-        let selected = self
-            .picker
-            .as_ref()
-            .and_then(Picker::selected_item)
-            .map(|item| item.value.clone());
+        let Some(picker) = self.picker.as_ref() else {
+            return;
+        };
+        let selected = picker.selected_item().map(|item| item.value.clone());
+        // The row that goes for more themes is not one, and nor is a list
+        // that has nothing left in it: the screen goes back to the theme
+        // the list was opened over, rather than staying in the last one
+        // walked past -- which would be a preview of nothing on screen.
+        if matches!(selected, None | Some(PickerValue::MoreThemes))
+            && let Some((name, before)) = self.theme_before.clone()
+        {
+            self.set_theme(&name, before);
+            return;
+        }
         let called = match &selected {
             Some(PickerValue::Theme(name)) => Some(name.clone()),
             // The same list reached from the settings page, where a theme
@@ -897,6 +906,7 @@ impl App {
             // would change is not worked out until it is chosen.
             | PickerValue::Action(_)
             | PickerValue::Theme(_)
+            | PickerValue::MoreThemes
             | PickerValue::Setting { .. }
             | PickerValue::AgentValue { .. }
             | PickerValue::AgentDefault { .. }

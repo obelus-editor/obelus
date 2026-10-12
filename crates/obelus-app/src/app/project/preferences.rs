@@ -575,6 +575,9 @@ impl App {
                 tab: None,
                 section: None,
             })
+            // And for a theme, the row that goes for more of them -- the
+            // same list as the one opened by its own key, so the same foot.
+            .chain((key == "theme").then(Self::more_themes))
             .collect();
         // Taller for the workflows, whose choices are a few rows each: the
         // list only ever draws a choice whole, so at the ordinary height the
@@ -603,6 +606,10 @@ impl App {
         // on is only in the running program.
         if key == "theme" {
             self.theme_before = Some((self.theme_name().to_string(), self.worn()));
+            picker.otherwise(
+                crate::app::project::themes::NONE_HERE,
+                PickerValue::MoreThemes,
+            );
         }
         self.show_list(picker);
     }

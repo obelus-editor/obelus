@@ -12,9 +12,14 @@
 //! keep; and taking it away is the one thing that cannot be undone from the
 //! page, so it takes the same key twice.
 
+use obelus_component::settings::Page;
 use obelus_themes::{Card, Group, Listed, Status, install::Progress};
 
 use crate::app::*;
+
+/// What a list of themes says where what was typed matches none of them,
+/// and enter takes the words to the themes page.
+pub(in crate::app) const NONE_HERE: &str = "No theme here by that name. Enter looks in More themes";
 
 /// What Obelus knows about the registry's themes.
 #[derive(Debug, Default)]
@@ -141,6 +146,53 @@ impl App {
             }
         }
         cards
+    }
+
+    /// The row at the foot of a list of themes that goes for more of them.
+    ///
+    /// A row like the others, filtered with them, because it is where the
+    /// list's question goes next: a reader typing a name the list does not
+    /// have is a reader on their way to it. One builder for both lists of
+    /// themes, the command's and the setting's, so they cannot come to say
+    /// it differently.
+    pub(in crate::app) fn more_themes() -> PickerItem {
+        PickerItem {
+            prose: false,
+            marker: None,
+            icon: obelus_icons::enabled().then_some(obelus_icons::ui::MORE_THEMES),
+            label: "More themes".to_string(),
+            version: None,
+            detail: None,
+            trailing: None,
+            changed: None,
+            value: PickerValue::MoreThemes,
+            enabled: true,
+            colours: None,
+            status: None,
+            depth: 0,
+            opens: None,
+            kind: None,
+            tab: None,
+            section: None,
+        }
+    }
+
+    /// Goes to the settings' themes page, with `looking_for` in its filter.
+    ///
+    /// The reader's settings: the project's have no themes page, because
+    /// which theme is worn is the reader's alone -- so a list opened over
+    /// those gives way to these.
+    pub(in crate::app) fn show_more_themes(&mut self, looking_for: &str) {
+        if !self
+            .settings
+            .as_ref()
+            .is_some_and(|settings| !settings.on_project())
+        {
+            self.open_settings();
+        }
+        if let Some(settings) = self.settings.as_mut() {
+            settings.go_to(Page::Themes, looking_for);
+        }
     }
 
     /// The cards, where the page is showing them, and none where it is not:

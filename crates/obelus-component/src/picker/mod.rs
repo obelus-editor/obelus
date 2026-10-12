@@ -222,6 +222,9 @@ pub enum PickerValue {
     },
     /// One of the ways out of a question Obelus stopped to ask.
     Answer(crate::question::Answer),
+    /// Go to the settings' themes page, for the themes this machine has not
+    /// got: the row at the foot of every list of themes.
+    MoreThemes,
     /// Nothing. A row that is there to say why the list is short.
     Nothing,
 }
@@ -721,6 +724,9 @@ pub struct Picker {
     /// Whether the empty reason is about the world rather than about there
     /// being nothing to list, and so wins over "No match".
     explains: bool,
+    /// Where else to look when what was typed matches nothing: what the
+    /// list says then, and what enter accepts -- see [`Picker::otherwise`].
+    otherwise: Option<(String, PickerValue)>,
     /// A question this list is the answer to, shown in front of the prompt.
     question: Option<String>,
     /// What typing into this list does, for the row before anything has
@@ -1010,6 +1016,7 @@ impl Picker {
             aligned: None,
             previews: false,
             explains: false,
+            otherwise: None,
             marked: false,
             question: None,
             invitation: None,
@@ -1933,6 +1940,18 @@ impl Picker {
         self.explains = false;
     }
 
+    /// Says where else to look when what was typed matches nothing: the
+    /// list says `line` in place of "No match", and enter accepts `value`.
+    ///
+    /// For a list that is not all there is. A query that found nothing
+    /// among the themes on this machine is still a good question, asked of
+    /// the wrong list, and a key that answers it is a step the reader does
+    /// not have to take by hand -- with their words carried, which only the
+    /// application can do, because only it knows where `value` goes.
+    pub fn otherwise(&mut self, line: &str, value: PickerValue) {
+        self.otherwise = Some((line.to_string(), value));
+    }
+
     /// Sets what the list says when it is empty, whether or not something
     /// has been typed.
     ///
@@ -1954,10 +1973,10 @@ impl Picker {
         if self.match_count() > 0 {
             return None;
         }
-        Some(if self.query.is_empty() || self.explains {
-            &self.empty
-        } else {
-            "No match"
+        Some(match &self.otherwise {
+            _ if self.query.is_empty() || self.explains => &self.empty,
+            Some((line, _)) => line,
+            None => "No match",
         })
     }
 
@@ -2497,6 +2516,13 @@ impl Picker {
                 .filter(|item| item.enabled && self.switches_here())
                 .map_or(PickerOutcome::Consumed, |item| {
                     PickerOutcome::InPlace(item.value.clone())
+                }),
+            // Nothing matched, and the list knows somewhere else to look.
+            KeyCode::Enter if bare && self.matched.is_empty() && !self.query.is_empty() => self
+                .otherwise
+                .as_ref()
+                .map_or(PickerOutcome::Consumed, |(_, value)| {
+                    PickerOutcome::Accepted(value.clone())
                 }),
             KeyCode::Enter if bare || (self.opens && modifiers == KeyModifiers::ALT) => self
                 .matched

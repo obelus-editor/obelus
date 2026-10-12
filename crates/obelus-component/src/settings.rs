@@ -1732,6 +1732,20 @@ impl Settings {
         }
     }
 
+    /// Goes to a page, with `said` in the filter in place of whatever was
+    /// there -- what a list that found nothing hands on.
+    ///
+    /// Nothing, on a page this file has not got.
+    pub fn go_to(&mut self, page: Page, said: &str) {
+        let Some(at) = Page::of(self.whose).iter().position(|on| *on == page) else {
+            return;
+        };
+        self.page = at;
+        self.query = Field::new();
+        self.query.put(said);
+        self.settle(None);
+    }
+
     /// Moves to the next tab, or the previous one, wrapping.
     fn step_tab(&mut self, forward: bool, offering: Option<&Offering>) {
         // Every tab, not every group: the agents are a tab and not a group,

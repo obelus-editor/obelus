@@ -146,6 +146,9 @@ pub mod ui {
     pub const DARK: char = '\u{f0594}';
     /// And one with a light page: the sun.
     pub const LIGHT: char = '\u{f0599}';
+    /// The row at the foot of a list of themes that goes for more of them:
+    /// a download, because what is there is not on this machine yet.
+    pub const MORE_THEMES: char = '\u{f01da}';
     /// The project Obelus is reading, taken as a whole.
     ///
     /// A folder, which is what a tree of files is drawn as everywhere. It

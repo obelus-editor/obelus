@@ -1091,3 +1091,107 @@ fn delete_takes_a_theme_away_but_not_the_one_worn() {
     support::press(&mut app, KeyCode::Delete);
     assert!(!root.join("gone").exists(), "two presses did not take it");
 }
+
+/// Whether the row the list is on is the one that goes for more themes.
+fn on_more_themes(app: &App) -> bool {
+    matches!(
+        app.picker()
+            .and_then(obelus_component::picker::Picker::selected_item)
+            .map(|item| &item.value),
+        Some(obelus_component::picker::PickerValue::MoreThemes)
+    )
+}
+
+/// The list of themes ends in a row that goes for more of them. It is no
+/// theme, so standing on it wears the one the list was opened over rather
+/// than the last one walked past; and enter on it leaves the list for the
+/// settings' themes page, in that same theme, with nothing typed.
+///
+/// Deliberate breaks: the row left off the list (the last row is then a
+/// theme), the preview not going back on it (`theme_name` is then the
+/// theme walked past), and `show_more_themes` not called (no settings).
+#[test]
+fn the_list_of_themes_ends_in_more_themes() {
+    let scratch = reader("more-themes");
+    let mut app = open(&scratch);
+    let worn = app.theme_name().to_string();
+
+    dispatch::dispatch(&mut app, Command::ThemeSelect);
+    // One step to another theme, worn while the list is on it.
+    support::press(&mut app, KeyCode::Down);
+    let _ = support::render(&mut app, 70, 14);
+    assert_ne!(app.theme_name(), worn, "walking did not wear another theme");
+
+    support::press_control_key(&mut app, KeyCode::End);
+    let dump = support::render(&mut app, 70, 14);
+    assert!(
+        on_more_themes(&app),
+        "the last row is not More themes:\n{dump}"
+    );
+    assert!(support::text_block(&dump).contains("More themes"), "{dump}");
+    assert_eq!(
+        app.theme_name(),
+        worn,
+        "standing on More themes wore the theme walked past"
+    );
+
+    support::press(&mut app, KeyCode::Enter);
+    let _ = support::render(&mut app, 70, 14);
+    assert!(app.picker().is_none(), "the list stayed open");
+    let settings = app.settings().expect("the settings");
+    assert!(settings.on_themes(), "not on the themes page");
+    assert_eq!(settings.query(), "");
+    assert_eq!(app.theme_name(), worn);
+}
+
+/// A name the list has not got says where else to look, and enter takes it
+/// there: the themes page opens with the name already in its filter.
+///
+/// Deliberate breaks: the list not told where else to look (it then says
+/// "No match" and enter does nothing), and the words not carried (the page
+/// then opens with nothing typed).
+#[test]
+fn a_name_the_list_has_not_got_is_looked_for_in_more_themes() {
+    let scratch = reader("more-themes-typed");
+    let mut app = open(&scratch);
+
+    dispatch::dispatch(&mut app, Command::ThemeSelect);
+    support::type_text(&mut app, "zzqx");
+    let dump = support::render(&mut app, 70, 14);
+    assert!(
+        support::text_block(&dump).contains("Enter looks in More themes"),
+        "the empty list does not say where else to look:\n{dump}"
+    );
+
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.picker().is_none(), "enter did nothing:\n{dump}");
+    let settings = app.settings().expect("the settings");
+    assert!(settings.on_themes(), "not on the themes page");
+    assert_eq!(settings.query(), "zzqx", "the words were left behind");
+}
+
+/// The theme's own list on the settings page ends in the same row, and it
+/// goes to the themes page of the same settings.
+///
+/// Deliberate break: the row left off the setting's list (its last row is
+/// then a theme, and enter wears it).
+#[test]
+fn the_settings_list_of_themes_ends_in_more_themes() {
+    let scratch = reader("more-themes-settings");
+    let mut app = open(&scratch);
+    dispatch::dispatch(&mut app, Command::ConfigOpen);
+    support::type_text(&mut app, "theme");
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.picker().is_some(), "the theme's choices did not open");
+
+    support::press_control_key(&mut app, KeyCode::End);
+    let dump = support::render(&mut app, 70, 14);
+    assert!(
+        on_more_themes(&app),
+        "the last row is not More themes:\n{dump}"
+    );
+    support::press(&mut app, KeyCode::Enter);
+    let settings = app.settings().expect("the settings");
+    assert!(settings.on_themes(), "not on the themes page");
+    assert_eq!(settings.query(), "", "the setting's filter came along");
+}

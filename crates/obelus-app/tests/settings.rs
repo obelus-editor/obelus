@@ -215,6 +215,8 @@ fn a_choice_opens_the_list_every_other_choice_uses() {
         obelus_theme::builtin::ALL
             .iter()
             .map(|(name, _)| (*name).to_string())
+            // And the row that goes for more of them, at the foot.
+            .chain(std::iter::once("More themes".to_string()))
             .collect::<Vec<_>>(),
         "not the theme's choices"
     );
