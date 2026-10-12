@@ -1543,6 +1543,13 @@ mod tests {
         /// keep `quads.start` in the second, and the glass is in the
         /// pane's own picture and slides with it again, which is the
         /// welcome screen coming down under the files.
+        ///
+        /// What this does not see is the passes that use the two halves,
+        /// because they want a device: the second half drawn into the frame
+        /// only round the pane, and into its own picture only inside it.
+        /// What was checked by hand is a list opened over the welcome
+        /// screen, shot frame by frame: the mark seen through the glass
+        /// stays where it is while the list's rows come down.
         #[test]
         fn a_pane_coming_in_is_cut_from_what_is_written_on_it() {
             let plan = vec![

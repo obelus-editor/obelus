@@ -2084,6 +2084,14 @@ mod tests {
     /// list, the preview and the foot, widening under the pointer -- on a
     /// list of nine rows with nothing to scroll. And take the layer out of
     /// it: the file's bar keeps the list's two rows.
+    ///
+    /// The depths and the page's layers are written here as the window
+    /// would set them, and that setting is not under test: it happens where
+    /// a window takes a frame, which stamps each shape with how many panes
+    /// and boxes were said before it and hands the page the stack at the
+    /// frame's end -- dropping either passes every test here. What was
+    /// checked by hand is that it fails in the window: every bar stamped
+    /// at depth nothing, and a list's own bar is the terminal's block.
     #[test]
     fn a_bar_is_a_bar_only_where_its_cells_still_say_so() {
         // A column the list drew two rows of and the file drew all four:
