@@ -1,7 +1,9 @@
 //! The themes registry: what it lists, and the themes taken from it.
 //!
-//! One document, `index.json`, published with the packages it names by the
-//! `obelus-editor/themes` repository: the themes written for Obelus, and
+//! One document, `themes/index.json`, published with the packages it names
+//! by the `obelus-editor/registry` repository -- which keeps a directory for
+//! each kind of thing it lists, and themes are the first: the themes written
+//! for Obelus, and
 //! omarchy's own, turned into Obelus's by the repository's CI through the
 //! same template omarchy renders Obelus's theme with. Obelus reads that one
 //! document and knows nothing of how either group was made.
@@ -29,7 +31,7 @@ use obelus_sink::Sink;
 use serde_json::Value;
 
 /// Where the index is published.
-pub const URL: &str = "https://obelus-editor.github.io/themes/index.json";
+pub const URL: &str = "https://obelus-editor.github.io/registry/themes/index.json";
 
 /// How long to wait for it.
 ///
