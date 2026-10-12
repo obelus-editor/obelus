@@ -214,6 +214,16 @@ pub(crate) struct Painter {
     /// one most often on the screen, and a picture the size of it is the
     /// memory of a whole window kept for a moment that is not coming.
     picture: Option<Whole>,
+    /// What is written on a pane on its way in, on nothing: its rows, its
+    /// letters, its caret -- everything said over the page after its glass.
+    ///
+    /// Apart from the frame because the two move differently. The glass
+    /// is a slab: it travels, and what shows through it is what is behind
+    /// it where it has got to, which does not travel at all. Cut from one
+    /// picture together, the welcome screen under the files came down
+    /// with them. So the glass is drawn in the frame where it has got to,
+    /// and this is slid over it. There only while a pane is arriving.
+    lifted: Option<Whole>,
     /// The screen as it was when a pane went from it, drawn once at that
     /// moment: the page is what Obelus said, and a pane that has gone is
     /// on no page, so this is the one place it is still to be found -- and
@@ -287,6 +297,12 @@ struct Placed {
     /// that put what is behind the pane back together with the band slid.
     /// See `Painter::sliding_under`.
     under: Option<(Range<usize>, Range<usize>)>,
+    /// Which level is the pane on its way in, where one is: what is said
+    /// after its glass is drawn into a picture of its own rather than
+    /// into the frame -- see `Painter::lifted`.
+    arriving: Option<usize>,
+    /// And the piece that puts that picture back on the screen.
+    lifting: Option<Range<usize>>,
     /// The glass under each list catching up, where its rows have not
     /// arrived yet, with which level's glass it is. On the screen and not
     /// in the frame, so drawn there among the pieces with that level's
@@ -379,6 +395,8 @@ enum Reads {
     Level(usize),
     /// The screen a pane went from.
     Left,
+    /// What is written on a pane on its way in.
+    Lifted,
 }
 
 /// The quads the screen draws, each with whatever it reads.
@@ -431,6 +449,27 @@ fn without_the_picture(
         .collect()
 }
 
+/// Runs of quads, each with the pictures it is drawn with.
+type Plan = Vec<(Range<usize>, Reads)>;
+
+/// A plan cut in two at a quad: what is drawn before it, and from it on.
+///
+/// For a pane on its way in, whose glass is in the first half and what is
+/// written on it in the second -- see `Painter::lifted`.
+fn parted_at(plan: Plan, at: usize) -> (Plan, Plan) {
+    let mut before = Vec::new();
+    let mut after = Vec::new();
+    for (quads, reads) in plan {
+        if quads.start < at {
+            before.push((quads.start..quads.end.min(at), reads));
+        }
+        if quads.end > at {
+            after.push((quads.start.max(at)..quads.end, reads));
+        }
+    }
+    (before, after)
+}
+
 /// What one level was put over, as the screen had it: the picture its
 /// glass reads, and what shows under a pane while it is on its way in.
 ///
@@ -464,6 +503,12 @@ fn catching(placed: &Placed) -> Vec<(Range<usize>, Reads)> {
         .iter()
         .map(|&(glass, level)| (glass..glass + 1, Reads::Level(level)))
         .chain(placed.going.clone().map(|going| (going, Reads::Left)))
+        .chain(
+            placed
+                .lifting
+                .clone()
+                .map(|lifting| (lifting, Reads::Lifted)),
+        )
         .collect();
     reading.sort_by_key(|(quads, _)| quads.start);
     let mut plan = Vec::new();
@@ -1188,7 +1233,7 @@ mod tests {
 
         use super::super::{
             GLASS, HANGING, Level, Placed, Quad, Reads, SOLID, box_of, casts, catching,
-            glass::kept_still, on_the_screen, put_over, uncovered,
+            glass::kept_still, on_the_screen, parted_at, put_over, uncovered,
         };
         use crate::grid::{Behind, Page, Rolled};
 
@@ -1461,6 +1506,66 @@ mod tests {
             );
         }
 
+        /// What is written on a pane on its way in is put back out of its
+        /// own picture, and the rest of the pieces out of the frame's.
+        ///
+        /// Deliberate break: leave `lifting` out of `catching`. The piece
+        /// then reads the frame, which holds the glass where the pane has
+        /// got to and nothing written on it: the pane comes in empty, and
+        /// its glass a second time a little further on.
+        #[test]
+        fn what_is_written_on_a_pane_coming_in_is_its_own_picture() {
+            let placed = Placed {
+                drawn: 20,
+                moved: 30,
+                composed: true,
+                arriving: Some(0),
+                lifting: Some(26..27),
+                ..Placed::default()
+            };
+            assert_eq!(
+                catching(&placed),
+                vec![
+                    (20..26, Reads::Nothing),
+                    (26..27, Reads::Lifted),
+                    (27..30, Reads::Nothing),
+                ]
+            );
+        }
+
+        /// The frame of a pane on its way in is cut where its level ends:
+        /// the glass and everything under it on one side, and what is said
+        /// over the page after it on the other, whatever it reads.
+        ///
+        /// Deliberate breaks: keep `quads.end` whole in the first half, and
+        /// what is written on the pane is drawn into the frame as well --
+        /// standing still under the copy sliding in, every letter twice;
+        /// keep `quads.start` in the second, and the glass is in the
+        /// pane's own picture and slides with it again, which is the
+        /// welcome screen coming down under the files.
+        #[test]
+        fn a_pane_coming_in_is_cut_from_what_is_written_on_it() {
+            let plan = vec![
+                (0..5, Reads::Nothing),
+                (5..6, Reads::Level(0)),
+                (6..12, Reads::Nothing),
+                (12..13, Reads::Level(1)),
+            ];
+            let (glass, written) = parted_at(plan, 8);
+            assert_eq!(
+                glass,
+                vec![
+                    (0..5, Reads::Nothing),
+                    (5..6, Reads::Level(0)),
+                    (6..8, Reads::Nothing),
+                ]
+            );
+            assert_eq!(
+                written,
+                vec![(8..12, Reads::Nothing), (12..13, Reads::Level(1))]
+            );
+        }
+
         /// What a level was put over is the glass of every level under it
         /// and what it was put over -- and never its own picture, which is
         /// the one being drawn into.
@@ -1476,7 +1581,7 @@ mod tests {
                     plan.iter().all(|(_, reads)| match reads {
                         Reads::Nothing => true,
                         Reads::Level(read) => *read < level,
-                        Reads::Left => false,
+                        Reads::Left | Reads::Lifted => false,
                     }),
                     "level {level} reads its own picture or one over it: {plan:?}"
                 );

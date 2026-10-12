@@ -9,7 +9,7 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 use obelus_font::Fonts;
 
-use super::*;
+use super::{glass::tiles, *};
 use crate::{
     grid::{Going, Page, Said, Spelling},
     motion::Moving,
@@ -412,6 +412,7 @@ impl Painter {
             scratch,
             scratch_bindings,
             picture: None,
+            lifted: None,
             left: None,
             gone: Vec::new(),
             plain_bindings,
@@ -527,6 +528,8 @@ impl Painter {
         self.levels = levels;
         (self.scratch, self.scratch_bindings) = (scratch, scratch_bindings);
         self.picture = picture;
+        // Made again by the next frame that wants it, at the new size.
+        self.lifted = None;
         // A picture of the window at its old size is a pane leaving from the
         // wrong place, so what was leaving is simply gone.
         self.left = None;
@@ -558,6 +561,13 @@ impl Painter {
             (false, true) => self.picture = None,
             _ => {}
         }
+        // And what is written on a pane on its way in, only for as long as
+        // one is: a fifth of a second, against a window's worth of memory.
+        match (self.placed.arriving.is_some(), self.lifted.is_some()) {
+            (true, false) => self.lifted = Some(self.whole()),
+            (false, true) => self.lifted = None,
+            _ => {}
+        }
     }
 
     /// Every bind group again, over the same pictures, because the atlas
@@ -572,6 +582,7 @@ impl Painter {
         let scratch = binder.bound(&self.scratch, &self.nothing);
         let showing = (self.picture.as_ref()).map(|whole| binder.bound(&whole.view, &self.nothing));
         let left = (self.left.as_ref()).map(|whole| binder.bound(&whole.view, &self.nothing));
+        let lifted = (self.lifted.as_ref()).map(|whole| binder.bound(&whole.view, &self.nothing));
         let plain = binder.bound(&self.nothing, &self.nothing);
         for (seen, bindings) in self.levels.iter_mut().zip(levels) {
             seen.bindings = bindings;
@@ -581,6 +592,9 @@ impl Painter {
             whole.bindings = bindings;
         }
         if let (Some(whole), Some(bindings)) = (self.left.as_mut(), left) {
+            whole.bindings = bindings;
+        }
+        if let (Some(whole), Some(bindings)) = (self.lifted.as_mut(), lifted) {
             whole.bindings = bindings;
         }
         self.plain_bindings = plain;
@@ -805,7 +819,37 @@ impl Painter {
             // picture stays where it is under it.
             let mut pass = self.cleared(encoder, "obelus frame", &picture.view);
             let plan = without_the_picture(on_the_screen(&placed), placed.hung);
-            self.follow(&mut pass, &plan, &self.levels[0].bindings);
+            match placed.arriving {
+                // A pane on its way in: its glass goes in here, where it has
+                // got to, and what is written on it goes in a picture of its
+                // own and is slid in over the glass -- see `lifted`. So the
+                // frame holds what is said after the glass everywhere but
+                // where the pane is.
+                Some(level) => {
+                    let pane = placed.levels[level].rect;
+                    let (glass, written) = parted_at(plan, placed.levels[level].end);
+                    self.follow(&mut pass, &glass, &self.levels[0].bindings);
+                    for tile in tiles([f32::MIN, f32::MIN, f32::MAX, f32::MAX], &[pane]) {
+                        self.within(&mut pass, tile);
+                        self.follow(&mut pass, &written, &self.levels[0].bindings);
+                    }
+                    drop(pass);
+                    if let Some(lifted) = &self.lifted {
+                        // Cleared to nothing whatever is under the page:
+                        // what is put back from this is only what is
+                        // written, over the glass.
+                        let mut pass = self.pass_on(
+                            encoder,
+                            "obelus lifted",
+                            &lifted.view,
+                            wgpu::Color::TRANSPARENT,
+                        );
+                        self.within(&mut pass, pane);
+                        self.follow(&mut pass, &written, &self.levels[0].bindings);
+                    }
+                }
+                None => self.follow(&mut pass, &plan, &self.levels[0].bindings),
+            }
         }
         {
             // Cleared to black, which is never seen: the first quad of
@@ -991,6 +1035,9 @@ impl Painter {
                 Reads::Nothing => otherwise,
                 Reads::Level(level) => &self.levels[*level].bindings,
                 Reads::Left => self.left.as_ref().map_or(otherwise, |left| &left.bindings),
+                Reads::Lifted => {
+                    (self.lifted.as_ref()).map_or(otherwise, |lifted| &lifted.bindings)
+                }
             };
             pass.set_bind_group(0, bindings, &[]);
             drawing(pass, quads.clone());

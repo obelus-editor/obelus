@@ -355,7 +355,7 @@ impl Painter {
     /// must not take the inner one with it: what it puts back is the
     /// region less the rooms of the bands inside it, and each of those
     /// puts back its own.
-    fn slid_piece(&mut self, piece: [f32; 4], room: [f32; 4], shift: f32, fade: f32) {
+    pub(super) fn slid_piece(&mut self, piece: [f32; 4], room: [f32; 4], shift: f32, fade: f32) {
         let [left, top, far, low] = piece;
         self.quads.push(Quad {
             rect: [left, top, (far - left).max(1.0), (low - top).max(1.0)],
