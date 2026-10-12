@@ -4353,7 +4353,6 @@ dependencies = [
  "agent-client-protocol",
  "base64 0.23.1",
  "dirs",
- "flate2",
  "futures",
  "image",
  "libc",
@@ -4369,13 +4368,10 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "sha2 0.11.0",
- "tar",
  "tokio",
  "toml 1.1.5+spec-1.1.0",
  "tracing",
  "windows-sys 0.61.2",
- "zip",
 ]
 
 [[package]]
@@ -4543,8 +4539,12 @@ dependencies = [
 name = "obelus-download"
 version = "0.12.0"
 dependencies = [
+ "flate2",
  "futures",
  "reqwest",
+ "sha2 0.11.0",
+ "tar",
+ "zip",
 ]
 
 [[package]]

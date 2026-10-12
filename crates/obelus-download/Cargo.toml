@@ -10,5 +10,9 @@ license.workspace = true
 workspace = true
 
 [dependencies]
+flate2.workspace = true
 futures.workspace = true
 reqwest.workspace = true
+sha2.workspace = true
+tar.workspace = true
+zip.workspace = true

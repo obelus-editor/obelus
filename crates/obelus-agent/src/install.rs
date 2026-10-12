@@ -29,57 +29,14 @@
 
 use std::{
     path::{Path, PathBuf},
-    time::{Duration, Instant},
+    time::Instant,
 };
 
+pub use obelus_download::Progress;
 use obelus_sink::Sink;
-use sha2::{Digest, Sha256};
 
 use super::{Agent, Distribution};
 use crate::Event;
-
-/// How often to report progress.
-///
-/// Every chunk would wake the loop hundreds of times a second to redraw a
-/// number that has not visibly changed.
-const REPORT: Duration = Duration::from_millis(120);
-
-/// How far an install has got.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Progress {
-    /// Bytes fetched so far.
-    pub done: u64,
-    /// How many there are, when the server says.
-    pub total: Option<u64>,
-    /// How long it has been running.
-    pub elapsed: Duration,
-}
-
-impl Progress {
-    /// How much longer, if that can be known.
-    ///
-    /// From the rate so far, which is the only honest estimate available:
-    /// nothing here knows the shape of the rest of the download. `None`
-    /// when there is no length to divide by, which is exactly when a
-    /// package manager is doing the work.
-    #[must_use]
-    pub fn remaining(self) -> Option<Duration> {
-        let total = self.total?;
-        if self.done == 0 || total <= self.done {
-            return None;
-        }
-        let rate = self.done as f64 / self.elapsed.as_secs_f64().max(0.001);
-        let left = (total - self.done) as f64 / rate;
-        left.is_finite().then(|| Duration::from_secs_f64(left))
-    }
-
-    /// How far through, from nothing to one.
-    #[must_use]
-    pub fn fraction(self) -> Option<f64> {
-        let total = self.total?;
-        (total > 0).then(|| (self.done as f64 / total as f64).clamp(0.0, 1.0))
-    }
-}
 
 /// Installs an agent on its own thread.
 ///
@@ -238,44 +195,13 @@ async fn download(
     id: &str,
     sender: &impl Sink<Event>,
 ) -> Result<(), String> {
-    // The one part of an install that only waits, so it is the one part
-    // that is awaited: the bytes arrive in chunks, and a chunk is a chance
-    // to say how far along it is.
-    let bytes = {
-        use futures::StreamExt as _;
-
-        let http = reqwest::Client::builder()
-            .user_agent(concat!("obelus/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .map_err(|error| format!("fetching it: {error}"))?;
-        let response = http
-            .get(archive)
-            .send()
-            .await
-            .and_then(reqwest::Response::error_for_status)
-            .map_err(|error| format!("fetching it: {error}"))?;
-        let total = response.content_length();
-
-        let mut bytes: Vec<u8> = Vec::with_capacity(total.unwrap_or(0) as usize);
-        let mut body = response.bytes_stream();
-        let mut said = Instant::now();
-        while let Some(chunk) = body.next().await {
-            let chunk = chunk.map_err(|error| format!("reading it: {error}"))?;
-            bytes.extend_from_slice(&chunk);
-            if said.elapsed() >= REPORT {
-                said = Instant::now();
-                let _ = sender.send(Event::Installing {
-                    id: id.to_string(),
-                    progress: Progress {
-                        done: bytes.len() as u64,
-                        total,
-                        elapsed: started.elapsed(),
-                    },
-                });
-            }
-        }
-        bytes
-    };
+    let bytes = obelus_download::bytes(archive, started, |progress| {
+        let _ = sender.send(Event::Installing {
+            id: id.to_string(),
+            progress,
+        });
+    })
+    .await?;
 
     // Hashing a download and unpacking it are work, not waiting, so they
     // go where work goes. Together, because they are one step: the check
@@ -312,9 +238,7 @@ fn settle(
     id: &str,
 ) -> Result<(), String> {
     if let Some(expected) = sha256 {
-        let digest = Sha256::digest(bytes);
-        let got: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
-        if !got.eq_ignore_ascii_case(expected) {
+        if !obelus_download::hashes_to(bytes, expected) {
             return Err("It is not the file the registry describes".to_string());
         }
     } else {
@@ -328,7 +252,7 @@ fn settle(
     // one leaves both, and the older one's files are not this version.
     let _ = std::fs::remove_dir_all(into);
     std::fs::create_dir_all(into).map_err(|error| format!("{into:?}: {error}"))?;
-    unpack(bytes, archive, into)?;
+    obelus_download::unpack(bytes, archive, into)?;
 
     // Unpacked, and the thing to run has to be there and be runnable: an
     // archive that unpacked to something else is a failure now rather than
@@ -339,28 +263,6 @@ fn settle(
     }
     make_runnable(&program);
     Ok(())
-}
-
-/// Unpacks whichever shape the archive is, by what its name says it is.
-fn unpack(bytes: &[u8], name: &str, into: &Path) -> Result<(), String> {
-    let name = name.rsplit('/').next().unwrap_or(name).to_lowercase();
-    if name.ends_with(".tar.gz") || name.ends_with(".tgz") {
-        let reader = flate2::read::GzDecoder::new(bytes);
-        return tar::Archive::new(reader)
-            .unpack(into)
-            .map_err(|error| format!("unpacking it: {error}"));
-    }
-    if name.ends_with(".zip") {
-        let reader = std::io::Cursor::new(bytes);
-        let mut zip =
-            zip::ZipArchive::new(reader).map_err(|error| format!("unpacking it: {error}"))?;
-        return zip
-            .extract(into)
-            .map_err(|error| format!("unpacking it: {error}"));
-    }
-    // `.tar.bz2` is four of the registry's hundred entries, and a shape
-    // Obelus has no unpacker for. Saying which shape beats saying "failed".
-    Err(format!("Obelus cannot unpack {name}"))
 }
 
 /// Makes an unpacked program executable.
