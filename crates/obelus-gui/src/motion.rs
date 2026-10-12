@@ -304,13 +304,16 @@ const TURN: Duration = Duration::from_millis(900);
 /// How often the mark that turns is drawn again.
 ///
 /// A moment and not a rate, though it is an animation, because of how
-/// long it lasts: a rate was `ControlFlow::Poll` then, and a loop that
-/// polled ran flat out between the frames the screen paced -- which for
-/// the fifth of a second a pane slides is nothing, and for the minutes an
-/// agent works was a whole core, measured at a hundred per cent against
-/// six for this. A rate sleeps between frames now (`window::control_flow`).
-/// Sixty a second is a turn the eye cannot count, which is all the braille
-/// could not be.
+/// long it lasts: a rate is every frame the screen will take, which is a
+/// hundred and forty-four a second on a screen that refreshes that fast
+/// -- nothing for the fifth of a second a pane slides, and the minutes an
+/// agent works drawn at whatever the screen can manage. Sixty a second is
+/// a turn the eye cannot count, which is all the braille could not be.
+///
+/// It was chosen when a rate was `ControlFlow::Poll`, which ran flat out
+/// between frames and held a whole core for those minutes, measured at a
+/// hundred per cent against six for this. A rate sleeps now
+/// (`window::control_flow`), so what is left of that reason is the cap.
 const TURN_STEP: Duration = Duration::from_micros(16_667);
 
 /// And how long the mark rests between passes.
@@ -2053,13 +2056,13 @@ mod tests {
     /// gone or the reader has turned animation off.
     ///
     /// Break: answer `Wake::EveryFrame` while it turns -- the first
-    /// assertion goes, and a window with an agent at work polls a core
-    /// flat out. Or drop `turned` from `advance`, and the third does: the
-    /// moment arrives and nothing is drawn for it. Or take the seconds
-    /// since the window opened as an `f32` in `turn`, and a week on the
-    /// mark is an eighth of a turn from where it should be. Or name
-    /// `next_turn` in `wake` once it has passed, and the loop is woken
-    /// twice for every step.
+    /// assertion goes, and a window with an agent at work draws at the
+    /// screen's rate rather than sixty a second. Or drop `turned` from
+    /// `advance`, and the third does: the moment arrives and nothing is
+    /// drawn for it. Or take the seconds since the window opened as an
+    /// `f32` in `turn`, and a week on the mark is an eighth of a turn from
+    /// where it should be. Or name `next_turn` in `wake` once it has
+    /// passed, and the loop is woken twice for every step.
     #[test]
     fn a_mark_that_turns_is_drawn_at_moments_and_only_while_it_is_there() {
         let mut motion = Motion::new(None);

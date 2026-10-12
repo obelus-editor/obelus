@@ -364,6 +364,10 @@ struct Showing {
     /// drawn on it, and that has to be the page rather than an empty one
     /// on `Reset`.
     shown: bool,
+    /// The system says nobody can see the window: covered, on another
+    /// desktop, minimised. Only macOS and X11 say so; elsewhere this stays
+    /// `false` and the screen is what holds back a frame nobody can see.
+    covered: bool,
     /// How many pixels at the top of the window are the title bar's --
     /// see `title::height`. Measured with the columns and rows, because it
     /// changes when they do: a resize, a screen of another density, and
@@ -510,6 +514,7 @@ impl Showing {
             capping: Vec::new(),
             ground: Color::Reset,
             shown: false,
+            covered: false,
             titled: 0.0,
             holding: (Color::Reset, Color::Reset),
             hung: 0,
@@ -830,25 +835,34 @@ impl Showing {
 /// window saying something is in flight. A pass that wants a rate is a
 /// pass that wants the next frame, and asking for it is what wakes the
 /// loop at all now that it sleeps in between -- see `control_flow`.
-fn wants_a_frame(stepped: bool, wake: Option<Wake>) -> bool {
-    stepped || wake == Some(Wake::EveryFrame)
+///
+/// And no frame at all for a window the system says is `covered`, which
+/// is the one thing that holds a frame back where the screen does not.
+/// macOS hands a covered window no surface to draw on and says so at
+/// once, so a frame asked for there is skipped, asked for again on the
+/// next pass, and skipped again -- the loop going round as fast as it can
+/// for the whole of an animation nobody can see.
+fn wants_a_frame(stepped: bool, wake: Option<Wake>, covered: bool) -> bool {
+    !covered && (stepped || wake == Some(Wake::EveryFrame))
 }
 
 /// How the loop waits after a pass that worked out `wake`.
 ///
-/// Something in flight sleeps as if nothing were, because the frame
-/// `wants_a_frame` has just asked for is what wakes it, and the screen is
-/// what lets that frame through: the surface presented on the vertical
-/// blank, or on Wayland the compositor's frame callback (see `paint`).
-/// That is the rate an animation is meant to run at, and the one number
-/// nobody here has to pick.
+/// Something in flight waits for the frame `wants_a_frame` has just
+/// asked for, and the screen is what lets that frame through: on Wayland
+/// the compositor's frame callback, which the loop sleeps until (see
+/// `paint`), and elsewhere the vertical blank, which the frame is held
+/// at as it is presented. That is the rate an animation is meant to run
+/// at, and the one number nobody here has to pick.
 ///
 /// It was `ControlFlow::Poll`, which never sleeps: the loop ran flat out
-/// between the frames the screen let through, and a compositor lets
-/// through none at all to a window it is not showing. So the welcome
-/// screen left on another workspace held a whole core for the two and a
-/// half seconds of every pass of its light, for hours, with nothing
-/// drawn.
+/// between the frames the screen let through, and a Wayland compositor
+/// lets through none at all to a window it is not showing. So the
+/// welcome screen left on another workspace held a whole core for the two
+/// and a half seconds of every pass of its light, for hours, with nothing
+/// drawn. A window covered on macOS or X11 is the other half, and is
+/// `wants_a_frame`'s; one minimised on Windows, which says nothing about
+/// being covered, is still neither's.
 fn control_flow(wake: Option<Wake>) -> ControlFlow {
     match wake {
         Some(Wake::At(when)) => ControlFlow::WaitUntil(when),
@@ -1487,7 +1501,7 @@ impl ApplicationHandler<Waking> for Showing {
         let now = Instant::now();
         let caret = self.page.caret().is_some();
         let wake = self.motion.wake(now, caret);
-        if wants_a_frame(self.motion.advance(now, caret), wake) {
+        if wants_a_frame(self.motion.advance(now, caret), wake, self.covered) {
             self.redraw();
         }
         events.set_control_flow(control_flow(wake));
@@ -1612,6 +1626,15 @@ impl ApplicationHandler<Waking> for Showing {
             // window it did -- so shift held on the way out was held for
             // good, and every press in a terminal after it took hold of
             // words rather than reaching the program.
+            // Uncovered, the window is drawn as things are now: what moved
+            // while it was covered moved on its clock, and only the frames
+            // were left out -- see `wants_a_frame`.
+            WindowEvent::Occluded(covered) => {
+                self.covered = covered;
+                if !covered {
+                    self.redraw();
+                }
+            }
             WindowEvent::Focused(false) => {
                 if self.modifiers.shift_key() {
                     self.tell(Event::Shifted(false));
@@ -2085,14 +2108,14 @@ mod tests {
     /// about -- in flight, and nothing stepped for it.
     #[test]
     fn a_pass_that_wants_a_rate_asks_for_the_frame_it_wants() {
-        assert!(!wants_a_frame(false, None), "nothing is moving");
-        assert!(wants_a_frame(true, None), "something stepped");
+        assert!(!wants_a_frame(false, None, false), "nothing is moving");
+        assert!(wants_a_frame(true, None, false), "something stepped");
         assert!(
-            wants_a_frame(false, Some(Wake::EveryFrame)),
+            wants_a_frame(false, Some(Wake::EveryFrame), false),
             "in flight, and nothing stepped for it"
         );
         assert!(
-            !wants_a_frame(false, Some(Wake::At(Instant::now()))),
+            !wants_a_frame(false, Some(Wake::At(Instant::now())), false),
             "a moment to come back at is not a rate"
         );
 
@@ -2127,10 +2150,14 @@ mod tests {
         let mut motion = Motion::new(None);
         let now = Instant::now();
         motion.sheen_drawn(true, now);
+        // Asked first, or a light that stopped asking for a rate would pass
+        // the assertion after it for the reason the next one does.
+        let wake = motion.wake(now, false);
+        assert_eq!(wake, Some(Wake::EveryFrame), "the light is out");
         assert_eq!(
-            control_flow(motion.wake(now, false)),
+            control_flow(wake),
             ControlFlow::Wait,
-            "the light is out, and the loop sleeps until its frame"
+            "and the loop sleeps until its frame"
         );
         assert_eq!(control_flow(None), ControlFlow::Wait, "nothing moving");
         let later = now + Duration::from_secs(1);
@@ -2138,6 +2165,39 @@ mod tests {
             control_flow(Some(Wake::At(later))),
             ControlFlow::WaitUntil(later),
             "a moment"
+        );
+    }
+
+    /// A window nobody can see asks for no frame, however much is moving,
+    /// and is drawn again once it can be seen.
+    ///
+    /// The light again, because it is what moves on a screen left alone,
+    /// and a covered window on macOS is told at once that there is nothing
+    /// to draw on: a frame asked for on every pass is a loop going round
+    /// flat out for the whole of every pass of the light.
+    ///
+    /// Deliberate break: drop `!covered &&` from `wants_a_frame`. The
+    /// first assertion goes red. The coming back is not asked here -- it
+    /// is the `Occluded(false)` arm asking for a frame, which needs a
+    /// window to send it.
+    #[test]
+    fn a_window_nobody_can_see_asks_for_no_frame() {
+        let mut motion = Motion::new(None);
+        let now = Instant::now();
+        motion.sheen_drawn(true, now);
+        let wake = motion.wake(now, false);
+        assert_eq!(wake, Some(Wake::EveryFrame), "the light is out");
+        assert!(
+            !wants_a_frame(motion.advance(now, false), wake, true),
+            "and nobody can see it"
+        );
+        assert!(
+            !wants_a_frame(true, None, true),
+            "nor for something that stepped"
+        );
+        assert!(
+            wants_a_frame(motion.advance(now, false), wake, false),
+            "until somebody can"
         );
     }
 
