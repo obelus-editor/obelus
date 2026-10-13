@@ -864,7 +864,8 @@ crates/
                     its way over, the glyphs, the quads, and the one clock
                     the window keeps
                     · Obelus is drawn on two things and the loop knows neither
-                      (main); `App` crosses a thread and stays there, and what
+                      (main); a window started from a terminal gives the
+                      terminal back (leaving); `App` crosses a thread and stays there, and what
                       an input method is spelling is on the page and is not in
                       the file (window); closing the window is the key that
                       leaves, and on macOS command is control (keys); the page

@@ -41,6 +41,8 @@ mod clipboard;
 mod elsewhere;
 mod grid;
 mod keys;
+#[cfg(unix)]
+mod leaving;
 mod motion;
 mod paint;
 mod title;
@@ -76,6 +78,13 @@ fn main() -> Result<()> {
     #[cfg(windows)]
     take_the_console_it_was_started_from();
     let arguments = Arguments::parse();
+    // After the arguments, so that `--help` is said where it was asked for
+    // and the shell waits for it. Before anything else, because what it
+    // starts is this whole program again.
+    #[cfg(unix)]
+    leaving::leave_the_terminal();
+    #[cfg(unix)]
+    let owes_word = leaving::owes_word();
     // Before anything else starts a thread, because changing the
     // environment while another thread reads it is undefined. And before
     // the log, which starts one -- so what happened is said after it.
@@ -114,6 +123,12 @@ fn main() -> Result<()> {
     let mut app = startup::start(&arguments.paths, env!("OBELUS_BUILD"))?;
     if arguments.connect_remote {
         app.remote_at_start();
+    }
+    // Once the paths have read, which is the last thing said on the
+    // terminal rather than in the log.
+    #[cfg(unix)]
+    if owes_word {
+        leaving::up();
     }
     // The window's half of the line `startup::start` just wrote, which is
     // the first thing to suspect when a key or a colour did not do what it
