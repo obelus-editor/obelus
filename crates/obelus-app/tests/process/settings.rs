@@ -5269,6 +5269,9 @@ fn notes_that_will_not_read_are_an_error_on_the_notes_file() {
 /// the shape is drawn from them, a bar with a hole in it stopped being a
 /// bar at all and came out as a column of squares.
 ///
+/// The track is blank now, so what a writer leaves there is anything but
+/// a blank -- and the mark, on the page's first row, which is a heading.
+///
 /// Deliberate break: `..region` in place of `width: room` where the heading
 /// is drawn, or `after + 1` in place of `arrow_at` beside a value.
 #[test]
@@ -5278,13 +5281,20 @@ fn nothing_on_the_page_writes_in_the_column_the_bar_is_in() {
     let file = settings_file(&scratch);
     // A theme whose name is wider than the column a value is given, so the
     // arrow beside it has nowhere of its own left to go.
-    std::fs::write(&file, "theme = \"catppuccin-mocha\"\n").expect("the settings");
+    std::fs::write(&file, "theme = \"catppuccin-mocha-with-a-longer-name\"\n")
+        .expect("the settings");
     let mut app = open(&file);
 
     let dump = support::render(&mut app, 66, 12);
-    for (at, row) in body_of(&dump).iter().enumerate() {
+    let body = body_of(&dump);
+    assert!(
+        body[0].ends_with('\u{2588}'),
+        "the mark is not on the heading's row: {:?}\n{dump}",
+        body[0]
+    );
+    for (at, row) in body.iter().enumerate() {
         assert!(
-            row.ends_with('\u{2588}'),
+            row.ends_with(['\u{2588}', ' ']),
             "row {at} of the body is not the bar's: {row:?}\n{dump}"
         );
     }
@@ -5372,16 +5382,19 @@ fn a_groups_name_is_bold() {
     );
 }
 
-/// Which rows of the last column are a bar's.
+/// Which rows of the last column are a bar's: the nearest one there a
+/// press could take hold of.
+///
+/// Asked of the bars the frame left rather than of the cells, which say
+/// where the mark is and leave the track blank.
 fn bar_rows(app: &mut App, width: u16, height: u16) -> Vec<u16> {
-    let dump = support::render(app, width, height);
-    support::text_block(&dump)
-        .lines()
-        .filter_map(|row| row.split_once('|').map(|(_, cells)| cells.to_string()))
-        .enumerate()
-        .filter(|(_, row)| row.chars().nth(usize::from(width - 1)) == Some('\u{2588}'))
-        .map(|(y, _)| u16::try_from(y).expect("a row"))
-        .collect()
+    support::render(app, width, height);
+    app.bars()
+        .iter()
+        .rev()
+        .find(|drawn| drawn.bar.area.x == width - 1)
+        .map(|drawn| (drawn.bar.area.top()..drawn.bar.area.bottom()).collect())
+        .unwrap_or_default()
 }
 
 /// Drags the bar in the last column from its first row to its last.

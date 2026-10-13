@@ -91,29 +91,25 @@ fn the_counts_page_ends_in_a_row_of_its_own() {
 /// in a window nothing at all on the right to say there was more below.
 ///
 /// Broken deliberately by asking `window.scrollable(region.height)` again
-/// in `SettingsView::column`: the last column is blank.
+/// in `SettingsView::column`: the page has no bar.
 #[test]
 fn a_page_of_settings_longer_than_the_screen_has_a_bar() {
     let mut app = app();
     page(&mut app, "open-settings");
     let dump = support::render(&mut app, 60, 40);
-    let text = support::text_block(&dump);
-    // From the page's first row to its last, which is the one above the
-    // rule over the key at its foot.
-    let page = text.lines().filter_map(|line| {
-        let (number, row) = line.split_once('|')?;
-        let number: u16 = number.trim().parse().ok()?;
-        (2..36).contains(&number).then_some((number, row))
-    });
-    let mut seen = 0;
-    for (number, row) in page {
-        assert!(
-            row.ends_with('\u{2588}'),
-            "row {number} of the page has no bar at its end:\n{dump}"
-        );
-        seen += 1;
-    }
-    assert_eq!(seen, 34, "the page's rows were not found:\n{dump}");
+    // Down the page's last column, from its first row to its last -- the
+    // one above the rule over the key at its foot.
+    let bar = app
+        .bars()
+        .iter()
+        .find(|drawn| drawn.whose == obelus_ui::bars::Whose::Settings)
+        .unwrap_or_else(|| panic!("the page has no bar:\n{dump}"))
+        .bar;
+    assert_eq!(
+        (bar.area.x, bar.area.y, bar.area.height),
+        (59, 2, 34),
+        "{bar:?}\n{dump}"
+    );
 }
 
 /// A setting's value stays in its column when the page stops scrolling.

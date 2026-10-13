@@ -3,7 +3,7 @@
 
 use super::*;
 
-/// The block a bar is drawn with, down the whole of its column.
+/// The block a bar's mark is drawn with.
 ///
 /// A block rather than a line: a line would be a line, and every rule that
 /// crossed it would have to work out whether to join.
@@ -59,16 +59,15 @@ pub(crate) fn divider(cells: &mut CellBuffer, area: Rect, y: u16, theme: &Theme)
 /// both -- how much of this is on screen, and which part -- and two
 /// implementations would answer it in two shapes.
 ///
-/// Only the thumb is seen. The track was a column of blocks a shade off the
-/// page, the length of the region -- the heaviest thing on the screen for
-/// the least it said: how far the thumb can go is already said by the
-/// region it runs beside.
+/// Only the thumb is drawn. The track was a column of blocks a shade off
+/// the page, the length of the region -- the heaviest thing on the screen
+/// for the least it said: how far the thumb can go is already said by the
+/// region it runs beside. Nor is it there unseen, as blocks in the
+/// ground's own colour: a terminal that keeps text readable against its
+/// ground (a minimum contrast) lights them up again.
 ///
-/// It is still written, as blocks in the colour of the ground they are on,
-/// because a column of blocks is how a bar is known for one: the pointer
-/// asks it of these cells (`bars::collect`), and a window of the grid it is
-/// handed (`Barred::holds`), to tell a bar from one something has since
-/// been drawn over. A track of spaces would answer that every bar had been.
+/// So what says something has been drawn over a bar is no longer every
+/// cell of it holding a block: see `bars::collect`.
 ///
 /// `total` is how many rows the whole thing has and `top` which of them is
 /// on the first row.
@@ -106,21 +105,19 @@ pub(crate) fn scrollbar(
     let start = bar_mark(area.height, top, total);
 
     for row in 0..area.height {
-        let y = area.y + row;
         let inside = row >= start && usize::from(row) < usize::from(start) + thumb;
-        let colour = match inside {
-            true => theme.gutter_current,
-            // The ground's own colour, whatever it is here -- a selected
-            // row, a pane -- so the block is not seen. A cell with no colour
-            // of its own is on the page, and a block in no colour is drawn
-            // in the terminal's foreground, which is the one that would be.
-            false => cells
-                .cell((x, y))
-                .map(|cell| cell.bg)
-                .filter(|ground| *ground != ratatui::style::Color::Reset)
-                .unwrap_or(theme.background),
+        // A blank, not nothing: the column is the bar's whether or not the
+        // mark is on this row, and whatever ground is under it stays.
+        match inside {
+            true => put(
+                cells,
+                x,
+                area.y + row,
+                BAR,
+                Style::new().fg(theme.gutter_current),
+            ),
+            false => put(cells, x, area.y + row, ' ', Style::new()),
         };
-        put(cells, x, y, BAR, Style::new().fg(colour));
     }
 
     let bar = shapes::Bar {

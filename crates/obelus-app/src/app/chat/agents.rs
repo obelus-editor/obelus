@@ -433,11 +433,10 @@ impl App {
                     },
                     room,
                 ),
-                // A group of settings is a dozen entries and they all fit
-                // today. It has a window anyway: a group that grows past
-                // the screen should scroll rather than lose its last rows
-                // silently -- and an entry is as tall as what it has to
-                // say, so the window is settled by height like the cards.
+                // A group of settings is a dozen entries, and an entry is as
+                // tall as what it has to say -- so a dozen of them can be
+                // more than the screen, and the window is settled by height
+                // like the cards.
                 false => settings.settle_rows(room, offering.as_ref()),
             }
         }

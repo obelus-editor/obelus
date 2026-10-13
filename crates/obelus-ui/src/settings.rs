@@ -1230,10 +1230,9 @@ impl SettingsView<'_> {
             match &row.aside {
                 Aside::Control(kind, value) => draw_control(
                     cells,
-                    ratatui::layout::Position { x: aside_at, y },
+                    Rect::new(aside_at, y, control, 1),
                     *kind,
                     value,
-                    control,
                     self.theme,
                     background,
                     row.pinned.is_none() && row.scope != Some(Scope::Project),
@@ -2145,18 +2144,18 @@ fn run_of(run: Option<std::ops::Range<usize>>) -> Matched<'static> {
     run.map_or(Matched::Nothing, |run| Matched::Run(run.start, run.end))
 }
 
-/// Writes a control: a switch, or the word a droplist is set to.
+/// Writes a control: a switch, or the word a droplist is set to, in the
+/// row of the control's column it is given.
 fn draw_control(
     cells: &mut CellBuffer,
-    at: ratatui::layout::Position,
+    at: Rect,
     kind: Kind,
     value: &Value,
-    width: u16,
     theme: &Theme,
     background: ratatui::style::Color,
     usable: bool,
 ) {
-    let (x, y) = (at.x, at.y);
+    let (x, y, width) = (at.x, at.y, at.width);
     let style = Style::new().bg(background);
     // A control the reader cannot move is drawn in the dim ink, value and
     // all: what it is set to is still worth seeing -- it is what this project

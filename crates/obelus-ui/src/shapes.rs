@@ -307,9 +307,8 @@ pub trait Shapes: Send + Sync {
     /// their background. Said again here they would be the same colours
     /// from two places, and two places is somewhere for them to differ.
     ///
-    /// A terminal has an answer to all of this already -- a column of full
-    /// blocks, the mark's in its own colour and the rest in the ground's --
-    /// which is the whole
+    /// A terminal has an answer to all of this already -- a run of full
+    /// blocks down an otherwise empty column -- which is the whole
     /// test for whether a thing may be said here.
     fn barred(&self, bar: Bar);
 
@@ -403,9 +402,12 @@ pub fn drawn_by(shapes: Arc<dyn Shapes>) {
 /// Tells whoever is drawing what is under a pane, out of the frame being
 /// laid out.
 ///
-/// Costs a terminal nothing: `DRAWING` is never set there, so the cells
-/// are not even walked.
+/// Costs a terminal next to nothing: `DRAWING` is never set there, so the
+/// cells are not even walked, and all it hears is where.
 pub(crate) fn behind(area: Rect, joined: Joined, ground: Color, cells: &CellBuffer) {
+    // Before asking whether anybody draws shapes: a bar a pane went over
+    // is gone in a terminal as well.
+    crate::bars::put_over(area);
     let Some(shapes) = DRAWING.get() else {
         return;
     };

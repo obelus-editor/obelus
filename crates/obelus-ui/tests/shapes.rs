@@ -419,8 +419,8 @@ fn a_bar_says_where_it_is_and_how_much_of_it_is_the_mark() {
 /// as, and `ob` is back to a column every rule that crosses it has to
 /// decide about. Or drop the `put` and keep the `barred`, and the terminal
 /// has nothing at all -- which is the invariant everything said on this
-/// channel rests on. Or draw the track again, the column's other rows in
-/// a colour a shade off the page rather than the ground's.
+/// channel rests on. Or draw the track again, a block on the column's
+/// other rows.
 ///
 /// The other half of the test above, and each passes with the other
 /// broken: that one holds what was *said* about the mark, this one holds
@@ -433,25 +433,22 @@ fn the_cells_are_the_bar_a_terminal_draws() {
     let (cells, area) = a_long_reading(y, height, 40);
     let x = area.right() - 1;
 
-    // Every row of the column is a full block, which is the shape the
+    // The rows the mark covers are a full block, which is the shape the
     // editor's own note says a bar has to be: a block meets a rule and
-    // needs nothing from it, where a line would have to decide.
-    for row in 0..height {
-        let cell = &cells[(x, y + row)];
-        assert_eq!(cell.symbol(), "\u{2588}", "row {row}: {cell:?}");
-    }
-
-    // And the rows the mark covers are the mark's colour, which is what a
-    // front end that hears nothing has to go on.
+    // needs nothing from it, where a line would have to decide. In the
+    // mark's colour, which is what a front end that hears nothing has to
+    // go on.
     let marked: Vec<u16> = (0..height)
-        .filter(|row| cells[(x, y + row)].fg == DARK.gutter_current)
+        .filter(|row| {
+            let cell = &cells[(x, y + row)];
+            cell.symbol() == "\u{2588}" && cell.fg == DARK.gutter_current
+        })
         .collect();
     assert_eq!(marked, vec![0, 1], "the mark's rows");
-    // And the rest are the ground's, so nothing is seen there: there is
-    // no track.
+    // And nothing on the rest: there is no track.
     for row in 2..height {
         let cell = &cells[(x, y + row)];
-        assert_eq!(cell.fg, cell.bg, "the column at {row}: {cell:?}");
+        assert_eq!(cell.symbol(), " ", "the column at {row}: {cell:?}");
     }
 }
 

@@ -42,10 +42,9 @@
 //! hunk at the cursor" is not the hunk in front of them once they have walked
 //! into it.
 //!
-//! A bar is a block, so no rule has to meet it: a column of blocks with the
-//! thumb in the bright colour and the rest in the ground's, so that only the
-//! thumb is seen -- the region beside it already says how far it can go.
-//! Drawn as a *line* --
+//! A bar is a block, so no rule has to meet it: the thumb is a run of
+//! blocks, and there is no track under it -- the region beside it already
+//! says how far it can go. Drawn as a *line* --
 //! a column of ┃ with the thumb picked out -- it was one more line on a screen
 //! of lines, and every rule that crossed it then had to decide whether to join.
 //!

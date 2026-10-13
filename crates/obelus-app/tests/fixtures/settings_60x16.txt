@@ -3,15 +3,15 @@ screen 60x16  editor 60x14  status 60x1
  0|  Settings  Keys  Remote  Themes  Agents                ⇤ ⇥ 
  1|────────────────────────────────────────────────────────────
  2| Appearance                                                █
- 3|                                                           █
- 4|   Theme                               dark ▸              █
- 5|                                                           █
- 6|   Nerd Font glyphs                    □                   █
- 7|     In lists, on the status bar, and beside a file's      █
- 8|     name -- a terminal without a patched font draws a     █
- 9|     box instead                                           █
-10|                                                           █
-11|   New versions                        ☑                   █
+ 3|                                                            
+ 4|   Theme                               dark ▸               
+ 5|                                                            
+ 6|   Nerd Font glyphs                    □                    
+ 7|     In lists, on the status bar, and beside a file's       
+ 8|     name -- a terminal without a patched font draws a      
+ 9|     box instead                                            
+10|                                                            
+11|   New versions                        ☑                    
 12|────────────────────────────────────────────────────────────
 13|   Enter  Change                                            
 14|────────────────────────────────────────────────────────────
@@ -20,17 +20,17 @@ screen 60x16  editor 60x14  status 60x1
  0|abbbbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  2|cddddddddddcccccccccccccccccccccccccccccccccccccccccccccccce
- 3|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccf
- 4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbgbbbbbbbbbbbbbbf
- 5|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccf
- 6|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccf
- 7|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccf
- 8|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccf
- 9|cccccaaaaaaaaaaacccccccccccccccccccccccccccccccccccccccccccf
-10|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccf
-11|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccf
+ 3|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbfbbbbbbbbbbbbbbc
+ 5|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 6|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 7|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccc
+ 8|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccc
+ 9|cccccaaaaaaaaaaacccccccccccccccccccccccccccccccccccccccccccc
+10|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+11|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 12|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-13|cchhhhhhhcaaaaaacccccccccccccccccccccccccccccccccccccccccccc
+13|ccgggggggcaaaaaacccccccccccccccccccccccccccccccccccccccccccc
 14|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 15|dddaaaaaaaaaaaaaaadddddddddddddddddddddddddddddddddddddddddd
 -- legend --
@@ -39,8 +39,7 @@ b fg=#e4e4e7 bg=#27272a
 c fg=#e4e4e7 bg=#18181b
 d fg=#d4d4d8 bg=#18181b
 e fg=#a1a1aa bg=#18181b
-f fg=#18181b bg=#18181b
-g fg=#52525b bg=#27272a
-h fg=#a1a1aa bg=#27272a
+f fg=#52525b bg=#27272a
+g fg=#a1a1aa bg=#27272a
 -- cursor --
 none

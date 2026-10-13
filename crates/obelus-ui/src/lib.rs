@@ -211,27 +211,6 @@ mod tests {
         assert_eq!(bar_mark(10, 0, 10), 0, "a list that fits");
     }
 
-    /// The rows of a bar the mark is not on are drawn in the colour of the
-    /// ground they are on, so they are not seen -- and where a cell has no
-    /// ground of its own, in the page's.
-    ///
-    /// Deliberate break: take the cell's ground as it is, `Reset` and all.
-    /// A block in no colour is drawn in the terminal's foreground, and the
-    /// track is back as the brightest column on the screen.
-    #[test]
-    fn a_bar_without_a_ground_is_drawn_in_the_pages() {
-        use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Color};
-        let theme = &obelus_theme::builtin::DARK;
-        let area = Rect::new(0, 0, 4, 10);
-        let mut cells = CellBuffer::empty(area);
-        super::scrollbar(&mut cells, area, 0, 40, theme);
-        let x = area.right() - 1;
-        assert_eq!(cells[(x, 0)].fg, theme.gutter_current, "the mark");
-        for y in 2..area.height {
-            assert_eq!(cells[(x, y)].fg, theme.background, "row {y}");
-        }
-    }
-
     /// A control character in what is drawn does not take Obelus down.
     ///
     /// A tab in a tool call's output, a stray escape in what an agent said,

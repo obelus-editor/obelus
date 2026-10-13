@@ -236,7 +236,7 @@ impl Painter {
         // tick, a window turns at whatever rate it draws.
         self.turns(page, said.spun, moving.turn, cell);
         // And so does a bar, for the same reason: what a terminal has for
-        // a bar is a column of full blocks, and a window has a shape.
+        // a mark is a run of full blocks, and a window has a shape.
         self.bars(page, said.barred, cell);
         // And so does a change mark: half a block per row is what a cell
         // has, and a window has one shape however many rows the hunk

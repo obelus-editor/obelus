@@ -2264,7 +2264,7 @@ mod tests {
     /// And the picture of what a pane was opened over leaves it alone too.
     ///
     /// Deliberate break: drop the `barred` clause from `lettered_behind`.
-    /// The block a terminal draws a bar with is then written into the
+    /// The block a terminal draws a mark with is then written into the
     /// picture behind the list as well -- where `letters` never put it --
     /// and a full block's raster is taller than its cell, so the first
     /// row's reached above the grid and came out in the margin round it: a
