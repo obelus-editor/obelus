@@ -304,6 +304,43 @@ fn question_in_front(app: &App) -> bool {
     app.is_asking() && app.card().is_some()
 }
 
+/// Waits as [`pump`] does, with the reader at the keys: `press` every so
+/// often whether or not anything has arrived -- an agent at work sends the
+/// ticks of its turning mark, so "whenever nothing has arrived" may be
+/// never -- so what is waited for comes while they are still at it, however
+/// slowly the agent gets there. `drawn` says whether a frame is laid out
+/// after each event, which a test about what happens between two frames
+/// must not have.
+fn pump_at_the_keys(
+    app: &mut App,
+    events: &Receiver<Event>,
+    what: &str,
+    until: impl Fn(&App) -> bool,
+    drawn: bool,
+    mut press: impl FnMut(&mut App),
+) {
+    let deadline = Instant::now() + patience();
+    let mut pressed = Instant::now();
+    while !until(app) {
+        assert!(Instant::now() < deadline, "gave up waiting for {what}");
+        if let Ok(event) = events.recv_timeout(Duration::from_millis(100)) {
+            app.handle(event);
+        }
+        if pressed.elapsed() >= Duration::from_millis(200) {
+            press(app);
+            pressed = Instant::now();
+        }
+        if drawn {
+            support::lay_out(app, WIDTH, HEIGHT);
+        }
+    }
+}
+
+/// A key that changes nothing: right, in an empty box.
+fn nothing(app: &mut App) {
+    support::press(app, KeyCode::Right);
+}
+
 /// Waits for the fake agent to have been sent a request, handling whatever
 /// arrives meanwhile.
 ///
@@ -5270,8 +5307,8 @@ fn a_question_that_arrives_under_a_list_waits_behind_it() {
 /// first question with the first answer -- which nobody gave.
 ///
 /// The reader starts writing before the question is heard, and keeps on
-/// -- a letter whenever nothing has arrived for a moment -- so it comes
-/// while they are writing however slowly the agent asks.
+/// -- a letter every so often -- so it comes while they are writing
+/// however slowly the agent asks.
 ///
 /// Broken deliberately by never holding the question (`talk.held = false`
 /// in `show_the_question`): the card is in front while the reader is
@@ -5290,18 +5327,16 @@ fn a_question_that_arrives_while_the_reader_writes_waits_behind_the_box() {
     support::type_text(&mut app, "/ask ");
     support::press(&mut app, KeyCode::Enter);
     support::type_text(&mut app, "and");
-    let deadline = Instant::now() + patience();
-    while !app.is_asking() {
-        assert!(
-            Instant::now() < deadline,
-            "gave up waiting for the question"
-        );
-        match events.recv_timeout(Duration::from_millis(200)) {
-            Ok(event) => app.handle(event),
-            Err(_) => support::type_text(&mut app, "a"),
-        }
-        support::lay_out(&mut app, WIDTH, HEIGHT);
-    }
+    pump_at_the_keys(
+        &mut app,
+        &events,
+        "the question",
+        App::is_asking,
+        true,
+        |app| {
+            support::type_text(app, "a");
+        },
+    );
     assert!(
         app.card().is_none(),
         "the question came in front of a reader who was writing"
@@ -5375,7 +5410,14 @@ fn an_enter_to_an_empty_box_does_not_let_the_next_question_in() {
     });
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "the next question", App::is_asking);
+    pump_at_the_keys(
+        &mut app,
+        &events,
+        "the next question",
+        App::is_asking,
+        true,
+        nothing,
+    );
     assert!(
         app.card().is_none(),
         "the question came in front of a reader still pressing enter"
@@ -5401,11 +5443,13 @@ fn a_question_right_after_a_message_is_sent_waits_behind_the_box() {
     });
     support::type_text(&mut app, "what is this file");
     support::press(&mut app, KeyCode::Enter);
-    pump(
+    pump_at_the_keys(
         &mut app,
         &events,
         "the permission request",
         App::is_asking_permission,
+        true,
+        nothing,
     );
     assert!(
         app.card().is_none(),
@@ -5480,18 +5524,16 @@ fn a_question_that_arrives_while_an_input_method_writes_waits_behind_the_box() {
     support::type_text(&mut app, "/ask ");
     support::press(&mut app, KeyCode::Enter);
     app.handle(Event::Paste("\u{518d}".to_string()));
-    let deadline = Instant::now() + patience();
-    while !app.is_asking() {
-        assert!(
-            Instant::now() < deadline,
-            "gave up waiting for the question"
-        );
-        match events.recv_timeout(Duration::from_millis(200)) {
-            Ok(event) => app.handle(event),
-            Err(_) => app.handle(Event::Paste("\u{8bf4}".to_string())),
-        }
-        support::lay_out(&mut app, WIDTH, HEIGHT);
-    }
+    pump_at_the_keys(
+        &mut app,
+        &events,
+        "the question",
+        App::is_asking,
+        true,
+        |app| {
+            app.handle(Event::Paste("\u{8bf4}".to_string()));
+        },
+    );
     // And on, past the time it waits after the last word.
     let writing = Instant::now();
     while writing.elapsed() < Duration::from_millis(2500) {
@@ -5535,17 +5577,16 @@ fn a_press_where_a_held_card_is_about_to_be_does_nothing() {
     support::type_text(&mut app, "/ask ");
     support::press(&mut app, KeyCode::Enter);
     support::type_text(&mut app, "and");
-    let deadline = Instant::now() + patience();
-    while !app.is_asking() {
-        assert!(
-            Instant::now() < deadline,
-            "gave up waiting for the question"
-        );
-        match events.recv_timeout(Duration::from_millis(200)) {
-            Ok(event) => app.handle(event),
-            Err(_) => support::type_text(&mut app, "a"),
-        }
-    }
+    pump_at_the_keys(
+        &mut app,
+        &events,
+        "the question",
+        App::is_asking,
+        false,
+        |app| {
+            support::type_text(app, "a");
+        },
+    );
     let short = 12;
     let dump = support::render(&mut app, WIDTH, short);
     assert!(app.card().is_none(), "the question is not held:\n{dump}");
@@ -5589,22 +5630,19 @@ fn a_question_that_arrives_while_the_reader_chooses_a_command_leaves_the_list() 
     support::type_text(&mut app, "/com");
     support::lay_out(&mut app, WIDTH, HEIGHT);
     assert!(app.slash().is_some(), "the list of commands did not open");
-    // Still writing whenever nothing has arrived for a moment, by a letter
-    // and its rubbing out, so the box says the same and the list with it.
-    let deadline = Instant::now() + patience();
-    while !app.is_asking() {
-        assert!(
-            Instant::now() < deadline,
-            "gave up waiting for the question"
-        );
-        match events.recv_timeout(Duration::from_millis(200)) {
-            Ok(event) => app.handle(event),
-            Err(_) => {
-                support::type_text(&mut app, "x");
-                support::press(&mut app, KeyCode::Backspace);
-            }
-        }
-    }
+    // Still writing, by a letter and its rubbing out, so the box says the
+    // same and the list with it -- and nothing drawn until the enter.
+    pump_at_the_keys(
+        &mut app,
+        &events,
+        "the question",
+        App::is_asking,
+        false,
+        |app| {
+            support::type_text(app, "x");
+            support::press(app, KeyCode::Backspace);
+        },
+    );
     support::press(&mut app, KeyCode::Enter);
     assert_eq!(
         app.chat().map(|chat| chat.writing().text()),
