@@ -2595,6 +2595,53 @@ mod tests {
         assert_eq!(motion.moving(back).pair, Some(still));
     }
 
+    /// Back into a pair going out at the very step another is left, and on
+    /// into a fresh one after: the pair come back to comes on from where
+    /// its light had got to while the one left goes out, and the fresh one
+    /// comes on from nothing.
+    ///
+    /// Break: look for a pair to come back to only when coming from none,
+    /// and stepping straight back from the second pair to the first drops
+    /// the first's light to nothing; keep `pair_from` where a come-back
+    /// left it rather than setting it, and the fresh pair comes on from
+    /// part of the way.
+    #[test]
+    fn back_and_forth_between_two_pairs() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        motion.pairs_drawn([pair(10, 1)].into_iter(), base);
+        let lit = base + LIGHT_UP * 2;
+        motion.advance(lit, true);
+        // To the second pair, and straight back while the first goes out.
+        motion.pairs_drawn([pair(20, 1)].into_iter(), lit);
+        let back = lit + LIGHT_DOWN / 2;
+        let still = motion.fading(pair(10, 1), back).expect("going out");
+        assert!(motion.pairs_drawn([pair(10, 1)].into_iter(), back));
+        assert_eq!(
+            motion.moving(back).pair,
+            Some(still),
+            "came back from nothing"
+        );
+        assert_eq!(
+            motion.fading(pair(10, 1), back),
+            None,
+            "two lights on one pair"
+        );
+        assert!(
+            motion.fading(pair(20, 1), back).is_some(),
+            "the second is not going out"
+        );
+        // And on into a pair nothing was going out from.
+        let fresh = back + LIGHT_DOWN * 2;
+        motion.advance(fresh, true);
+        motion.pairs_drawn([pair(30, 1)].into_iter(), fresh);
+        assert_eq!(
+            motion.moving(fresh).pair,
+            Some(0.0),
+            "a fresh pair from part of the way"
+        );
+    }
+
     /// Break: drop the `self.animates` from `pairs_drawn`, and a reader who
     /// turned animation off still has every pair fade in.
     #[test]
