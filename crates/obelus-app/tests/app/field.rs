@@ -615,6 +615,30 @@ mod in_place {
         );
     }
 
+    /// A paste the line refuses every character of leaves what is held, the
+    /// way a refused key does -- only a paste of nothing at all takes it.
+    ///
+    /// Broken deliberately by cutting what is held in `Field::put` whatever
+    /// the paste turns out to be: the line number went.
+    #[test]
+    fn a_paste_refused_whole_leaves_what_is_held() {
+        let (_scratch, mut app) = open("field-paste-refused");
+        dispatch::dispatch(&mut app, Command::GoLine);
+        support::type_text(&mut app, "120");
+        app.handle(Event::Key(KeyEvent::new(
+            KeyCode::Home,
+            KeyModifiers::SHIFT,
+        )));
+        assert_eq!(app.prompt().expect("the question").held(), Some(0..3));
+
+        app.handle(Event::Paste("abc".to_string()));
+        assert_eq!(
+            app.prompt().expect("the question").text(),
+            "120",
+            "a paste with nothing the line takes took what was held"
+        );
+    }
+
     /// A paste goes where the reader is typing, not into the file behind
     /// whatever is covering it.
     #[test]

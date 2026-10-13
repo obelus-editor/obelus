@@ -133,18 +133,23 @@ impl Field {
     /// there is one line -- so it becomes the blank that a reader pasting a
     /// wrapped path or a line of a log meant by it.
     pub fn put(&mut self, said: &str) {
-        // What is held goes first rather than with the first character
-        // taken, so that it goes where none is: a paste of nothing is what
-        // an input method beginning a word puts over it.
-        let _held = self.writing.cut(ROOM);
-        for character in said.chars() {
-            let character = match character {
+        let taken: Vec<char> = said
+            .chars()
+            .map(|character| match character {
                 '\n' | '\r' | '\t' => ' ',
                 other => other,
-            };
-            if (self.accepts)(character) {
-                self.writing.apply(Typing::Character(character), &(), ROOM);
-            }
+            })
+            .filter(|character| (self.accepts)(*character))
+            .collect();
+        // What is held goes where something takes its place, and where
+        // nothing was put at all -- a paste of nothing is what an input
+        // method beginning a word puts over it. A paste the line refuses
+        // every character of leaves it, as a refused key does.
+        if said.is_empty() || !taken.is_empty() {
+            let _held = self.writing.cut(ROOM);
+        }
+        for character in taken {
+            self.writing.apply(Typing::Character(character), &(), ROOM);
         }
     }
 
