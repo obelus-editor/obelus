@@ -189,7 +189,9 @@ impl App {
         // Only the animation, which is what the ticker is for. Everything
         // else that once rode this question waits on a clock of its own:
         // work that is owed is owed on a machine with nothing moving on it.
-        self.animate(self.wants_animating(doing.is_some()));
+        // Not while a question is held: what that row says is that the
+        // reader is being waited on, and its mark stands still.
+        self.animate(self.wants_animating(doing.is_some() && !held));
         // Which for a tree behind its text is asked from what is true
         // rather than started where a document changes -- the same way the
         // ticker was asked, and what stops a clock outliving its reason.

@@ -332,6 +332,10 @@ pub trait Screen {
     fn names(&self) -> Option<&obelus_component::names::Names>;
     /// The card an agent's question is on, while one is up.
     fn card(&self) -> Option<&Card>;
+    /// Whether the agent in the conversation being read is waiting on an
+    /// answer from the reader -- whether or not its card is in front yet,
+    /// which it is not while the reader is still writing.
+    fn asked(&self) -> bool;
     /// What has changed in the current file, if Obelus can tell.
     fn changes(&self) -> Option<&obelus_git::Changes>;
     /// The one panel beside the caret, where there is one.

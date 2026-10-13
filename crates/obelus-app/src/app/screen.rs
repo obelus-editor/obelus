@@ -41,6 +41,9 @@ impl Screen for App {
     fn card(&self) -> Option<&Card> {
         App::card(self)
     }
+    fn asked(&self) -> bool {
+        self.conversation().is_some_and(|talk| talk.card.is_some())
+    }
     fn changes(&self) -> Option<&obelus_git::Changes> {
         App::changes(self)
     }

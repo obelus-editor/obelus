@@ -641,6 +641,9 @@ pub struct ChatView<'a> {
     focus: Focus,
     /// The card an agent's question is on, while it is waiting on one.
     card: Option<&'a Card>,
+    /// Whether it is waiting on one, which the card does not say while it
+    /// is held behind the box.
+    asked: bool,
     /// Whether nothing is over it, which is whether it may mark where the
     /// keys are -- see [`crate::in_front`].
     in_front: bool,
@@ -702,6 +705,7 @@ impl<'a> ChatView<'a> {
             settings: app.agent_settings(),
             focus: app.shown().chat()?.focus(),
             card: app.card(),
+            asked: app.asked(),
             in_front: crate::in_front(app, None),
             pointer: app.pointer(),
             root: app.working_directory(),
@@ -2133,6 +2137,10 @@ impl ChatView<'_> {
             // The glyph a tool call carries while it is running, for the
             // same reason: this is the row that says something is under
             // way.
+            // Except where what is happening is the reader being waited on:
+            // a question held behind the box until they stop writing, which
+            // is nothing under way.
+            Speaker::Doing if self.held() => (obelus_icons::ui::WAITING, dim),
             Speaker::Doing => (obelus_icons::ui::RUNNING, dim.fg(self.theme.gutter_current)),
             // Its status is its mark, drawn where a speaker's would be, so
             // there is no glyph of its own to give it.
@@ -2192,21 +2200,28 @@ impl ChatView<'_> {
         tail
     }
 
+    /// Whether a question is up and its card is behind the box, because
+    /// the reader is still writing.
+    const fn held(&self) -> bool {
+        self.asked && self.card.is_none()
+    }
+
     /// Whether the mark at the front of a row turns.
     ///
     /// A call waiting turns as well as one running, while the turn is going
-    /// and no card is up. The protocol's `pending` is a call that has not
-    /// started, but Claude's adapter sends nothing else until the call has
-    /// finished -- `in_progress` only on a beat of progress, which a quiet
+    /// and no question is up -- in front of the box or held behind it. The
+    /// protocol's `pending` is a call that has not started, but Claude's
+    /// adapter sends nothing else until the call has finished --
+    /// `in_progress` only on a beat of progress, which a quiet
     /// command never makes -- so a `git push` that took a minute sat still
     /// for all of it, wearing what a call that stopped wears. A card up is
     /// the one time a waiting call is really waiting, and then on the
     /// reader, where a turning mark would say the agent is busy.
     fn turns(&self, row: &Row) -> bool {
         match row.state.as_deref() {
-            _ if row.speaker == Speaker::Doing => true,
+            _ if row.speaker == Speaker::Doing => !self.held(),
             Some(UNDER_WAY) => true,
-            Some(WAITING) => self.state == Talking::Thinking && self.card.is_none(),
+            Some(WAITING) => self.state == Talking::Thinking && !self.asked,
             _ => false,
         }
     }
@@ -2335,6 +2350,7 @@ mod tests {
             settings: &[],
             focus: obelus_component::chat::Focus::Writing,
             card: None,
+            asked: false,
             in_front: true,
             pointer: None,
             root: std::path::Path::new("/"),
@@ -2379,6 +2395,7 @@ mod tests {
             settings: &[],
             focus: obelus_component::chat::Focus::Writing,
             card: None,
+            asked: false,
             in_front: true,
             pointer: None,
             root: std::path::Path::new("/"),
@@ -2428,6 +2445,7 @@ mod tests {
                 settings: &[],
                 focus: obelus_component::chat::Focus::Writing,
                 card: None,
+                asked: false,
                 in_front: true,
                 pointer: None,
                 root: std::path::Path::new("/"),
@@ -2555,7 +2573,7 @@ mod tests {
     }
 
     /// A call the agent has not said is running turns while the turn goes,
-    /// unless a card is up.
+    /// unless a question is up -- in front of the box or held behind it.
     ///
     /// Claude's adapter sends `pending` for a command from the moment it is
     /// asked for until it has finished, so a still mark there was a still
@@ -2563,9 +2581,11 @@ mod tests {
     /// the reader, and with the turn over nothing is running it.
     ///
     /// Broken deliberately by taking the `pending` arm out of `turns`, which
-    /// stops the first case turning; by dropping its `card.is_none()`, which
-    /// turns the second; and by dropping its `Talking::Thinking`, which turns
-    /// the third.
+    /// stops the first case turning; by dropping its `!self.asked`, which
+    /// turns the second and the third -- and by asking `self.card.is_none()`
+    /// there instead, as it did before a question could be held, which
+    /// turns the third; and by dropping its `Talking::Thinking`, which turns
+    /// the last.
     #[test]
     fn a_waiting_call_turns_while_the_turn_goes() {
         let area = ratatui::layout::Rect::new(0, 0, 76, 24);
@@ -2593,7 +2613,9 @@ mod tests {
             }],
             false,
         );
-        let drawn = |state: obelus_agent::Talking, card: Option<&obelus_component::card::Card>| {
+        let drawn = |state: obelus_agent::Talking,
+                     card: Option<&obelus_component::card::Card>,
+                     asked: bool| {
             let view = super::ChatView {
                 chat: &chat,
                 theme: &obelus_theme::builtin::DARK,
@@ -2603,6 +2625,7 @@ mod tests {
                 settings: &[],
                 focus: obelus_component::chat::Focus::Writing,
                 card,
+                asked,
                 in_front: true,
                 pointer: None,
                 root: std::path::Path::new("/"),
@@ -2636,16 +2659,79 @@ mod tests {
         };
 
         assert!(
-            drawn(obelus_agent::Talking::Thinking, None),
+            drawn(obelus_agent::Talking::Thinking, None, false),
             "a command running in a turn that is going stood still"
         );
         assert!(
-            !drawn(obelus_agent::Talking::Thinking, Some(&card)),
+            !drawn(obelus_agent::Talking::Thinking, Some(&card), true),
             "a call waiting on the reader's answer turned as if the agent were busy"
         );
         assert!(
-            !drawn(obelus_agent::Talking::Ready, None),
+            !drawn(obelus_agent::Talking::Thinking, None, true),
+            "a call waiting on a question held behind the box turned"
+        );
+        assert!(
+            !drawn(obelus_agent::Talking::Ready, None, false),
             "a call left waiting by a turn that has ended turned"
+        );
+    }
+
+    /// What is happening says a question is held without a mark that turns:
+    /// the reader is being waited on, and a turning mark says the agent is
+    /// busy. The same row with the card in front, or with no question at
+    /// all, turns as it always has.
+    ///
+    /// Broken deliberately by taking `!self.held()` out of the `Doing` arm of
+    /// `turns`: the held row turns.
+    #[test]
+    fn a_held_question_is_said_without_turning() {
+        let area = ratatui::layout::Rect::new(0, 0, 76, 24);
+        let mut chat = obelus_component::chat::Chat::new();
+        chat.doing(Some("It has a question for when you stop typing"));
+        let card = obelus_component::card::Card::new(Vec::new(), false);
+        let drawn = |card: Option<&obelus_component::card::Card>, asked: bool| {
+            let view = super::ChatView {
+                chat: &chat,
+                theme: &obelus_theme::builtin::DARK,
+                state: obelus_agent::Talking::Thinking,
+                name: None,
+                title: None,
+                settings: &[],
+                focus: obelus_component::chat::Focus::Writing,
+                card,
+                asked,
+                in_front: true,
+                pointer: None,
+                root: std::path::Path::new("/"),
+                phase: 0,
+                branch: None,
+                back_to_the_note: None,
+                note: None,
+                note_is_wrong: false,
+                usage: None,
+                tasks: None,
+                remote: None,
+            };
+            let mut cells = ratatui::buffer::Buffer::empty(area);
+            ratatui::widgets::Widget::render(view, area, &mut cells);
+            (area.y..area.bottom())
+                .map(|y| {
+                    (area.x..area.right())
+                        .map(|x| cells[(x, y)].symbol().to_string())
+                        .collect::<String>()
+                })
+                .find(|row| row.contains("It has a question"))
+                .expect("what is happening is on the screen")
+                .contains(crate::spinning(0))
+        };
+        assert!(
+            !drawn(None, true),
+            "a question held behind the box was said with a mark that turns"
+        );
+        assert!(drawn(None, false), "what is happening stood still");
+        assert!(
+            drawn(Some(&card), true),
+            "what is happening stood still with the card in front"
         );
     }
 
@@ -2675,6 +2761,7 @@ mod tests {
                 settings: &[],
                 focus: chat.focus(),
                 card: None,
+                asked: false,
                 in_front: true,
                 pointer: None,
                 root: std::path::Path::new("/"),
@@ -2853,6 +2940,7 @@ mod caret {
                             },
                         ),
                         card: None,
+                        asked: false,
                         in_front: true,
                         pointer: None,
                         root: std::path::Path::new("/"),

@@ -5263,7 +5263,9 @@ fn a_question_that_arrives_under_a_list_waits_behind_it() {
 /// writing. And with the two assertions that say so taken out, the enter
 /// answers its first question and the last but one fails. And by not
 /// putting the wait back with every key (`holding` in `writing_or_not`):
-/// the card comes in front while the reader is still typing.
+/// the card comes in front while the reader is still typing. And by taking
+/// the `held` arm out of what `frame` says is happening: nothing on the
+/// screen says the agent is waiting on the reader.
 #[test]
 fn a_question_that_arrives_while_the_reader_writes_waits_behind_the_box() {
     let (mut app, events) = talking();
@@ -5288,6 +5290,13 @@ fn a_question_that_arrives_while_the_reader_writes_waits_behind_the_box() {
     assert!(
         app.card().is_none(),
         "the question came in front of a reader who was writing"
+    );
+    // Said where what is happening is said, because the card that would
+    // say the agent is waiting on them is not on the screen.
+    let text = screen(&mut app);
+    assert!(
+        text.contains("It has a question for when you stop typing"),
+        "nothing said a question was waiting:\n{text}"
     );
     // And it stays there while they go on, well past the time it waits
     // after their last key: every key puts the wait back.
@@ -5349,7 +5358,10 @@ fn a_question_that_arrives_while_the_reader_chooses_a_command_leaves_the_list() 
     // and its rubbing out, so the box says the same and the list with it.
     let deadline = Instant::now() + patience();
     while !app.is_asking() {
-        assert!(Instant::now() < deadline, "gave up waiting for the question");
+        assert!(
+            Instant::now() < deadline,
+            "gave up waiting for the question"
+        );
         match events.recv_timeout(Duration::from_millis(200)) {
             Ok(event) => app.handle(event),
             Err(_) => {
