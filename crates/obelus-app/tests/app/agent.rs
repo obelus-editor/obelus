@@ -4463,6 +4463,69 @@ fn a_note_is_said_on_a_conversations_own_row() {
     );
 }
 
+/// A word an input method begins takes what is held in the box a message
+/// is written in, which is where most of the words typed that way go.
+///
+/// Broken deliberately by answering `false` for the box in
+/// `App::holds_text`: nothing is asked to go, and the message keeps its
+/// words.
+#[test]
+fn a_word_begun_in_the_message_box_takes_what_is_held() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "a message I typed");
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    support::press_shift(&mut app, KeyCode::Home);
+    assert_eq!(
+        app.chat()
+            .and_then(|chat| chat.writing().selected())
+            .as_deref(),
+        Some("a message I typed")
+    );
+
+    app.handle(Event::Spelling);
+    assert!(
+        app.chat().is_some_and(|chat| chat.writing().is_blank()),
+        "beginning a word left what was held in the message"
+    );
+}
+
+/// And on a card, whose words cover the box: what is held there goes, and
+/// the message behind it is not touched.
+///
+/// Broken deliberately by answering `false` for a card in
+/// `App::holds_text`: the card keeps its words.
+#[test]
+fn a_word_begun_on_a_card_takes_what_is_held_there() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/pick");
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", App::is_asking);
+    app.handle(Event::Paste("held words".to_string()));
+    support::press_shift(&mut app, KeyCode::Home);
+    assert_eq!(
+        app.card().and_then(Card::selected).as_deref(),
+        Some("held words")
+    );
+
+    app.handle(Event::Spelling);
+    assert_eq!(
+        app.card()
+            .and_then(Card::copied)
+            .map(|(words, _)| words)
+            .as_deref(),
+        Some(""),
+        "beginning a word left what was held on the card"
+    );
+}
+
 /// A paste reaches the card the agent is waiting on an answer from.
 ///
 /// The card covers the box a message is written in, so the box behind it is
