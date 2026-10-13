@@ -611,6 +611,9 @@ impl App {
             self.wrong("Nothing to paste".to_string());
             return;
         };
+        // Not the word a selection was taken out for: that arrives as an
+        // input method's commit, and one given up with escape never does.
+        self.spelled_over = None;
         self.paste_text(&what);
     }
 
@@ -762,6 +765,79 @@ impl App {
         }
     }
 
+    /// An input method has begun spelling a word, and what the reader has
+    /// hold of goes now rather than when the word arrives.
+    ///
+    /// The way every other editor's input method does it: the spelling is
+    /// drawn where the held text was, and a word given up with escape does
+    /// not bring it back. Put in as a paste of nothing, because the word
+    /// arrives as a paste and this is the first half of the same change --
+    /// but only where something is held, because a paste of nothing has a
+    /// paste's other consequences: a card's box opens, a list goes back to
+    /// its top, a terminal's program is sent a paste. A word given up with
+    /// escape never arrives, and those would have happened for nothing.
+    pub(in crate::app) fn spelling_begins(&mut self) {
+        // Where something is typed into, as well as held: a window on X11
+        // leaves its input method on everywhere, and a key being bound has
+        // a filter that holds words and takes none.
+        if !(self.takes_text() && self.holds_text()) {
+            return;
+        }
+        let version = |app: &Self| app.current.zip(app.current_buffer().map(Buffer::version));
+        let before = version(self);
+        self.paste_text("");
+        // A file it changed is one with an undo, and the word joins the step
+        // it took; a box has none.
+        let after = version(self);
+        self.spelled_over = after.filter(|_| after != before);
+    }
+
+    /// Whether whatever a paste would go into has something held in it.
+    ///
+    /// The places in [`App::paste_text`]'s order. Not a terminal's: what is
+    /// held there is the screen's, for copying, and none of the program's
+    /// input.
+    fn holds_text(&self) -> bool {
+        match self.layers().nearest() {
+            Some(Layer::Prompt) => self
+                .prompt
+                .as_ref()
+                .is_some_and(|prompt| prompt.held().is_some()),
+            Some(Layer::Settings) => self
+                .settings
+                .as_ref()
+                .is_some_and(|settings| settings.query_held().is_some()),
+            Some(Layer::Names) => self
+                .names
+                .as_ref()
+                .is_some_and(|(_, names)| names.query().held().is_some()),
+            Some(Layer::Picker) => self
+                .picker
+                .as_ref()
+                .is_some_and(|picker| picker.query_held().is_some()),
+            Some(Layer::Counts | Layer::Gone) => false,
+            None if self.which_project.chooser.is_some() => self
+                .which_project
+                .chooser
+                .as_ref()
+                .is_some_and(|chooser| chooser.typing().held().is_some()),
+            None if self.conversation().is_some() => match self.card() {
+                Some(card) => card.selected().is_some(),
+                None => self
+                    .chat()
+                    .is_some_and(|chat| chat.writing().selected().is_some()),
+            },
+            None if self.notes().is_some() => self
+                .notes()
+                .and_then(|notes| notes.writing())
+                .is_some_and(|writing| writing.selected().is_some()),
+            None if self.terminal().is_some() => false,
+            None => self
+                .current_buffer()
+                .is_some_and(|buffer| buffer.selection().is_some()),
+        }
+    }
+
     pub(in crate::app) fn paste_text(&mut self, what: &str) {
         // Into whatever the reader is writing on, which is the nearest
         // thing over the file -- the same answer a key gets, asked the same
@@ -851,13 +927,19 @@ impl App {
             return;
         };
         let cursor = buffer.cursor();
+        let here = self.current.zip(Some(buffer.version()));
         let span = buffer.selection().unwrap_or(Span {
             line: cursor.line,
             column: cursor.column,
             end_line: cursor.line,
             end_column: cursor.column,
         });
-        self.change(span, what, obelus_buffer::undo::Doing::Whole);
+        // The word a selection was taken out for, with nothing between.
+        let doing = match self.spelled_over.take() {
+            Some(over) if Some(over) == here => obelus_buffer::undo::Doing::Joined,
+            _ => obelus_buffer::undo::Doing::Whole,
+        };
+        self.change(span, what, doing);
     }
 
     /// Puts back what the last change took away.

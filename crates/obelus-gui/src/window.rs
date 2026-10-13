@@ -29,12 +29,14 @@
 //! keypresses that are not characters, and then one character that is. The
 //! window draws that spelling itself, over the cells to the right of the
 //! caret, underlined, in the colours of the place it is going into -- and
-//! the application is never told about it. Not because it could not be:
-//! because what would arrive is half-typed pinyin in a buffer with an undo
-//! history and a file that has changed. What arrives instead, when the
+//! the application is never told what it says. Not because it could not
+//! be: because what would arrive is half-typed pinyin in a buffer with an
+//! undo history and a file that has changed. What arrives instead, when the
 //! input method commits, is a paste -- which is the same question Obelus
 //! already answered about where typed text goes when several things are on
-//! screen.
+//! screen. The application is told only that a word has *begun*, because
+//! what the reader has hold of goes then, as it does in every other
+//! editor, and is not brought back by giving the word up.
 //!
 //! The keys during that spelling belong to the input method, so a plain
 //! character is swallowed while one is being composed: it is arriving
@@ -1689,6 +1691,13 @@ impl ApplicationHandler<Waking> for Showing {
                         // compositor, and a caret drawn in the wrong place
                         // is otherwise a question with no answer to look at.
                         tracing::debug!(?spelling, ?caret, "the input method is spelling");
+                        // A word begun takes what the reader has hold of,
+                        // the way the first letter typed over it would --
+                        // said before the spelling is drawn, so that it is
+                        // drawn where the held text was.
+                        if !self.composing && !spelling.is_empty() {
+                            self.tell(Event::Spelling);
+                        }
                         self.composing = !spelling.is_empty();
                         self.spelling = Spelling::new(spelling, caret);
                         self.point_the_input_method();
