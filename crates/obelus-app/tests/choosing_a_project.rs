@@ -4,6 +4,13 @@
 //! The rows are the test's own rather than the machine's: reading the real
 //! list would make every assertion here depend on which projects whoever
 //! ran it has opened.
+//!
+//! A binary of its own because the list the page keeps is one file for the
+//! process, and asking which project rewrites it: a test anywhere in the
+//! application's binary that asked could put back a list without the row a
+//! test here had just chosen.
+
+mod support;
 
 use crossterm::event::KeyCode;
 use obelus_app::app::App;
@@ -11,8 +18,6 @@ use obelus_command::Command;
 use obelus_component::{chooser::Known, picker::Picker};
 use obelus_ui::Screen as _;
 use support::press;
-
-use crate::support;
 
 /// One row, written the way the screen would write it.
 ///

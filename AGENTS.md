@@ -987,8 +987,10 @@ process has a price the old layout hid: anything one per process is now
 shared with every file, so a test that writes the clipboard or opens a link
 takes `support::clipboard_turn`, a scratch directory's name is unique across
 the binary (`support::Scratch` panics on a second), and a test that reads
-what the process remembers -- the projects it has been in -- says what that
-is rather than reading what its neighbours left there.
+what the process remembers -- the projects chosen on the page that asks --
+says what that is rather than reading what its neighbours left there, or
+stands beside the binary where it asserts on the file itself
+(`choosing_a_project`).
 
 **A test that only passes in one checkout is a broken test, not a rule.** The
 welcome screen prints the working directory, so its fixture once carried

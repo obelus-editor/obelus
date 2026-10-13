@@ -11,7 +11,8 @@
 //! the remote page keeps its secrets in one directory for the process, and
 //! a start applies whatever settings it reads -- the machine's own among
 //! them; a test here drawing a screen while one of those ran would draw it
-//! wrong.
+//! wrong. And the page that asks which project keeps one list for the
+//! process, which every test that asks rewrites.
 //!
 //! What they do share has to be taken in turns across files now, not only
 //! within one: the clipboard and the link opener are one thing for this
@@ -24,7 +25,6 @@ mod agent;
 mod calls;
 mod changing;
 mod choosing_a_keymap;
-mod choosing_a_project;
 mod colour;
 mod complete;
 mod counts;
