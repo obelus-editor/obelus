@@ -993,8 +993,8 @@ takes `support::clipboard_turn`, a scratch directory's name is unique across
 the binary (`support::Scratch` panics on a second), and a test that reads
 what the process remembers -- the projects chosen on the page that asks --
 says what that is rather than reading what its neighbours left there, or
-stands beside the binary where it asserts on the file itself
-(`choosing_a_project`).
+goes where tests take turns when it asserts on the file itself
+(`process/choosing_a_project`).
 
 **A test that only passes in one checkout is a broken test, not a rule.** The
 welcome screen prints the working directory, so its fixture once carried

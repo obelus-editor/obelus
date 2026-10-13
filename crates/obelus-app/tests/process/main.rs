@@ -1,8 +1,9 @@
 //! The tests that set what the whole process reads, in one binary that
 //! takes turns.
 //!
-//! Each of these applies settings or reads a start's: the glyph switch, the
-//! tab width, the remote's secrets. Beside the application's tests they
+//! Each of these applies settings or reads a start's -- the glyph switch, the
+//! tab width, the remote's secrets -- or asserts on the list of projects
+//! that asking which project rewrites. Beside the application's tests they
 //! would move those underneath a screen being drawn, which is why they are
 //! not in its binary -- but they need not have a binary each, at three
 //! hundred and seventy megabytes apiece, when they can share one and take
@@ -15,6 +16,7 @@
 #[path = "../support/mod.rs"]
 mod support;
 
+mod choosing_a_project;
 mod glyphs;
 mod headless;
 mod remote;

@@ -12,7 +12,8 @@
 //! while one of those ran would draw it wrong. Those share `process/`,
 //! whose tests take turns. What sets something and never sets it back is a
 //! file beside both. And the page that asks which project keeps one list
-//! for the process, which every test that asks rewrites.
+//! for the process, which every test that asks rewrites, so the tests that
+//! assert on that list are in `process/` too.
 //!
 //! What they do share has to be taken in turns across files now, not only
 //! within one: the clipboard and the link opener are one thing for this
