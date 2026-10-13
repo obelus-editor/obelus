@@ -52,9 +52,12 @@ const LISTENING: usize = 0x0b31;
 /// the size of the bitmaps the buttons had before DWM drew them.
 const BUTTON: i32 = 46;
 
-/// How wide and tall the mark on a button is at that density, which is the
-/// size of the glyphs the system draws its own in.
-const MARK: f32 = 10.0;
+/// How wide and tall the mark on a button is at that density. Not the size
+/// of the glyphs the system draws its own in, which is ten: that is the
+/// face's em, and the ink inside it is eight -- measured off the system's
+/// own bar at 250%, where it is twenty pixels and ten would have been
+/// twenty-five.
+const MARK: f32 = 8.0;
 
 /// The bar Obelus draws on Windows: what the pointer is doing to its
 /// buttons, which the window's messages say and the frame reads.
@@ -128,7 +131,9 @@ impl Bar {
             reason = "a screen is a few pixels to a point"
         )]
         let scale = window.scale_factor() as f32;
-        let pen = scale.round().max(1.0);
+        // Floored: the system draws its pen two pixels wide at 250%, and
+        // rounded it is three, which is a mark drawn in bold.
+        let pen = scale.floor().max(1.0);
         // The same oddness as the pen, so that a line through the middle
         // of the mark is on whole pixels rather than across two.
         let mut mark = (MARK * scale).round();
