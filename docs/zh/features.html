@@ -297,7 +297,7 @@
       <h2><span class="num">04</span><span>语言服务器</span></h2>
 
       <h3 id="servers">服务器</h3>
-      <p>Obelus 问的是你已经装好、在 <code>PATH</code> 上的语言服务器：<code>rust-analyzer</code>、<code>gopls</code>、<code>clangd</code>、<code>pylsp</code>、<code>typescript-language-server</code>、<code>bash-language-server</code>，以及 VS Code 给 CSS、HTML、YAML 的那几个。它一个也不替你装，也一个都不启动，除非你在设置里打开 <code>language_servers</code>：定义在哪、谁调用了它，agent 已经能告诉你，而服务器是每种语言、每个窗口各一个进程。打开以后，打开项目里某种语言的文件时，对应的服务器就启动；关着的时候，<code>restart-server</code> 照样能给眼前这个文件启动一个。状态行显示它的名字和状态——启动中、就绪、已退出——建索引时转圈。没有服务器也照样有高亮、大纲、折叠和搜索。</p>
+      <p>Obelus 问的是你已经装好、在 <code>PATH</code> 上的语言服务器：<code>rust-analyzer</code>、<code>gopls</code>、<code>clangd</code>、<code>pylsp</code>、<code>typescript-language-server</code>、<code>bash-language-server</code>，以及 VS Code 给 CSS、HTML、YAML 的那几个。它一个也不替你装，也一个都不启动，除非你在设置里打开 <code>language_servers</code>：定义在哪、谁调用了它，agent 已经能告诉你，而服务器是每种语言、每个窗口各一个进程。打开以后，打开项目里某种语言的文件时，对应的服务器就启动；关着的时候，<code>restart-server</code> 照样能启动眼前这个文件所用语言的那个。状态行显示它的名字和状态——启动中、就绪、已退出——建索引时转圈。没有服务器也照样有高亮、大纲、折叠和搜索。</p>
       <p class="how"><span>命令</span><code>restart-server</code> <code>stop-server</code> <code>open-server-log</code><span>设置</span><code>language_servers</code></p>
 
       <h3 id="jumps">定义、引用、实现</h3>

@@ -134,8 +134,9 @@ pub struct Config {
     /// the project the agent has already read -- a gigabyte of
     /// rust-analyzer for a reader who never pressed a key that asks it
     /// anything. Only about starting one: `restart-server` starts one for
-    /// the file in front of the reader whatever this says, and a server
-    /// that is running is told about the next file of its language.
+    /// the language of the file in front of the reader whatever this says,
+    /// and a server that is running is told about the next file of its
+    /// language.
     pub language_servers: bool,
     /// Whether to ask a language server to lay the file out before writing.
     pub format_on_save: bool,
@@ -863,7 +864,7 @@ pub const ALL: &[Setting] = &[
     Setting {
         key: "language_servers",
         name: "Language servers",
-        about: "Start one for a file's language when the file is opened, if it is installed -- rust-analyzer, gopls, clangd and the rest. Off, restart-server still starts one for the file in front of you",
+        about: "Start one for a file's language when the file is opened, if it is installed -- rust-analyzer, gopls, clangd and the rest. Off, restart-server still starts the one for the language of the file in front of you",
         group: Group::Reading,
         // The reader's alone: a server reads a project by building it, and
         // rust-analyzer runs a project's build scripts and macros to do

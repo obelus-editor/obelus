@@ -1005,7 +1005,9 @@ impl App {
         self.editor_area
     }
 
-    /// Starts a language server for the open file, as the loop does.
+    /// Starts a language server for the open file, as the loop does --
+    /// which is only with `language_servers` on, so a test that wants one
+    /// running turns it on first.
     ///
     /// [`App::events_for_test`] deliberately leaves this out -- most tests
     /// want a channel and no subprocesses -- so a test that is about
