@@ -946,7 +946,6 @@ impl ApplicationHandler<Waking> for Showing {
         };
         // The last thing that can stop a start, so the terminal `obg` was
         // typed into is the reader's again -- see `leaving`.
-        #[cfg(unix)]
         crate::leaving::up();
         // Once there is a window, which is the first moment there is a
         // display connection to adopt.

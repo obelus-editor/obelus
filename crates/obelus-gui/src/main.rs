@@ -41,7 +41,6 @@ mod clipboard;
 mod elsewhere;
 mod grid;
 mod keys;
-#[cfg(unix)]
 mod leaving;
 mod motion;
 mod paint;
@@ -81,9 +80,7 @@ fn main() -> Result<()> {
     // After the arguments, so that `--help` is said where it was asked for
     // and the shell waits for it. Before anything else, because what it
     // starts is this whole program again.
-    #[cfg(unix)]
     leaving::leave_the_terminal();
-    #[cfg(unix)]
     leaving::hear_who_waits();
     // Before anything else starts a thread, because changing the
     // environment while another thread reads it is undefined. And before
