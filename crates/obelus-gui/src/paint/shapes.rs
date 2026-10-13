@@ -18,7 +18,7 @@ impl Painter {
     /// quad is placed: the bar is above the grid, so its rows come out
     /// negative.
     pub(super) fn title_bar(&mut self, across: f32, margin: [f32; 2], fonts: &mut Fonts) {
-        let Some(bar) = self.bar else {
+        let Some(bar) = self.bar.filter(|_| !self.bar_left_out) else {
             return;
         };
         let dark = crate::title::dark(ground_of(self.ground));

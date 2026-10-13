@@ -4,7 +4,7 @@
 use obelus_font::Fonts;
 
 use super::{
-    glass::{casting, reached, through as through_the_bar},
+    glass::{casting, from_the_top, reached},
     *,
 };
 use crate::{
@@ -101,28 +101,32 @@ impl Painter {
         // Every pane and box, furthest first, each over the glass of those
         // before it -- see `drawn`, which four passes ask about.
         let stack = drawn(said.stack, page);
-        // A pane hanging from the top of the page and on its way in, under
-        // a bar Obelus draws: it comes down from the top of the window,
-        // through the bar, and the bar is drawn over it at the end rather
-        // than here -- once, over the pane, and not also under it, which
-        // would be every letter of the title twice. Where the window's top
-        // is, in the frame's pixels, if so.
-        let through = self
-            .bar
-            .and(moving.pane)
-            .and_then(|_| stack.iter().rposition(|over| !over.is_a_box()))
-            .filter(|&at| stack[at].joined != Joined::Below && stack[at].area.y == 0)
-            .map(|_| -margin[1]);
-        // And a pane that hung from there going back up through it, the
-        // way it came: the bar over it as well, for the same reason.
-        let over_the_panes = through.is_some()
-            || (self.bar.is_some()
-                && moving.leaving.is_some()
-                && self.gone.iter().any(|&(.., from_the_top)| from_the_top));
+        // Where the bar Obelus draws goes, which is over a pane whose glass
+        // runs up under it -- see `from_the_top` -- and never under one as
+        // well, which would be every letter of the title twice, once seen
+        // through the glass.
+        //
+        // At the end of everything while one is on its way in or out, so
+        // that it is not in what moves; after the panes and before the
+        // pieces where one is simply there; and first, under everything,
+        // where none is.
+        let bar = self.bar.is_some() && !self.bar_left_out;
+        let on_top = stack
+            .iter()
+            .rposition(|over| !over.is_a_box())
+            .is_some_and(|at| from_the_top(bar, stack[at]));
+        let bar_on_top = match (moving.pane.is_some() && on_top, moving.leaving.is_some()) {
+            (true, _) => Some(BarOnTop::Arriving),
+            (false, true) if bar && self.gone.iter().any(|&(.., top)| top) => {
+                Some(BarOnTop::Leaving)
+            }
+            _ if on_top => Some(BarOnTop::Resting),
+            _ => None,
+        };
         // The bar's buttons, on the picture where there is one. With it in
         // the quads every whole screen starts from, because the bar stands
         // still the way the picture does: what slides is the page under it.
-        if !over_the_panes {
+        if bar_on_top.is_none() {
             self.title_bar(across, margin, fonts);
         }
         // Where the picture's quads end, which every whole screen drawn
@@ -313,6 +317,10 @@ impl Painter {
             self.slid(box_of(stack[nearest].area, cell), 0.0, 1.0 - along);
         }
 
+        // The bar over a pane that is simply there -- see `bar_on_top`.
+        if bar_on_top == Some(BarOnTop::Resting) {
+            self.title_bar(across, margin, fonts);
+        }
         // Everything the frame says has been said. What is left is
         // putting it back on the screen in pieces, where a pane is on its
         // way in -- see `paint.wgsl` and `Painter::lifted`.
@@ -351,22 +359,9 @@ impl Painter {
             // The glass coming up where it has reached, over what stands
             // under it in the frame -- and then what is written on it,
             // slid in out of its own picture.
-            //
-            // From the top of the window rather than the top of the
-            // page, where it comes through the bar: what is written on the
-            // pane is drawn from there down, still taken from the pane, so
-            // only the slab is seen on the bar and none of the page. Its
-            // glass on the bar is the glass already drawn on the page,
-            // moved up with it -- not glass of its own, which would read
-            // what is behind the pane where nothing was drawn behind it,
-            // and that is black.
-            let room = through_the_bar(pane, through);
             self.slid_piece(reached(pane, shift), pane, 0.0, along);
-            if let Some(window) = through {
-                self.slid_piece([pane[0], window, pane[2], pane[1]], pane, shift, along);
-            }
             let lifting = self.quads.len();
-            self.slid_piece(room, pane, shift, along);
+            self.slid(pane, shift, along);
             self.placed.lifting = Some(lifting..self.quads.len());
             // And the shadow, here rather than in the frame -- see
             // `shadows`. It falls from the edge the pane has *reached*,
@@ -399,9 +394,8 @@ impl Painter {
         } else {
             self.going(moving.leaving);
         }
-        // The bar over a pane coming down through it or going up through
-        // it -- see `through`.
-        if over_the_panes {
+        // The bar over a pane on its way in or out -- see `bar_on_top`.
+        if matches!(bar_on_top, Some(BarOnTop::Arriving | BarOnTop::Leaving)) {
             let start = self.quads.len();
             self.title_bar(across, margin, fonts);
             self.placed.bar_over = Some(start..self.quads.len());
@@ -491,4 +485,16 @@ impl Painter {
 
         self.levels_for(self.placed.levels.len());
     }
+}
+
+/// Where the bar Obelus draws goes over a pane whose glass runs up under it
+/// -- see `bar_on_top` in `lay`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BarOnTop {
+    /// Over a pane on its way in, after everything that moves.
+    Arriving,
+    /// Over one on its way out, the same.
+    Leaving,
+    /// Over one that is simply there, with the rest of the frame.
+    Resting,
 }
