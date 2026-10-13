@@ -1512,10 +1512,20 @@ mod tests {
         assert!(write(&list, &short), "nothing was written");
         // One list or the other, whole: a torn write reads as neither --
         // nothing at all where one truncated what the other had renamed,
-        // or a file that will not read where one wrote over the other.
-        let whole = || match read() {
-            Reading::Projects(projects) => [1, KEPT].contains(&projects.len()),
-            Reading::Nothing | Reading::Unreadable(_) => false,
+        // or a file that will not parse where one wrote over the other.
+        // Asked of the bytes rather than of `read`, because Windows refuses
+        // to open a file in the moment a rename is replacing it, and a
+        // refusal to open is not a file that is torn.
+        let whole = || {
+            let Ok(text) = std::fs::read_to_string(&list) else {
+                return true;
+            };
+            text.parse::<toml::Table>().is_ok_and(|table| {
+                table
+                    .get("opened")
+                    .and_then(toml::Value::as_array)
+                    .is_some_and(|rows| [1, KEPT].contains(&rows.len()))
+            })
         };
 
         std::thread::scope(|scope| {
