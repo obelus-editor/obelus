@@ -455,7 +455,9 @@ windows-sys = { version = "0.61.2", features = [
     # And the window's title bar, drawn in the page's colour -- and then
     # taken into the page, which is the frame measured, the pointer
     # followed off the page and the window drawn again when it moves: see
-    # `obelus-gui`'s `title/windows.rs`.
+    # `obelus-gui`'s `title/windows.rs`. And what the system fills the
+    # window with before Obelus has drawn it: see `obelus-gui`'s
+    # `window.rs`.
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
     "Win32_UI_HiDpi",
