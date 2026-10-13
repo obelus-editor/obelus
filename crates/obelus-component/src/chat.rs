@@ -523,6 +523,33 @@ impl Row {
             .sum()
     }
 
+    /// The last place on the row a caret may stand, in a transcript whose
+    /// rows are `reading` cells wide.
+    ///
+    /// After its last character, unless the row fills the width: then there
+    /// is no cell after it to draw a caret in -- the next one is the
+    /// scrollbar's -- and the place is before the last character, the way a
+    /// file's wrapped row stops before the character that begins the next
+    /// and leaves the rest to the right arrow. The caret drawn one cell back
+    /// instead was drawn through the middle of a Chinese character ending
+    /// the row, which is two cells and the second of them was that one.
+    #[must_use]
+    pub fn last_stop(&self, reading: u16) -> usize {
+        let text = self.text();
+        let cells: usize = obelus_text::drawn_widths(&text)
+            .map(|(_, wide)| usize::from(wide))
+            .sum();
+        if cells + usize::from(u16::from(self.depth) * DEEPER) < usize::from(reading) {
+            return self.characters();
+        }
+        // The start of the last cluster: the boundary before the end.
+        obelus_text::boundaries(&text)
+            .into_iter()
+            .rev()
+            .nth(1)
+            .unwrap_or(0)
+    }
+
     /// The place in what was said that this row's nth character came from.
     ///
     /// Characters of the row going in and a place in the words coming out,

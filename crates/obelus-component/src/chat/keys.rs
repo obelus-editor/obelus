@@ -400,7 +400,7 @@ impl Chat {
     fn back_into_the_transcript(&self, room: Room) -> Option<Place> {
         let rows = self.rows(room.reading);
         let row = rows.len().checked_sub(1)?;
-        let characters = rows[row].characters();
+        let characters = rows[row].last_stop(room.reading);
         Some(Place {
             row,
             // The row is not the one the column was left in, and even if
@@ -500,7 +500,9 @@ impl Chat {
     /// mean: a reader pressing the right arrow means the next character on
     /// the screen, wherever in the words it happens to come from.
     fn walked(place: Place, key: KeyCode, laid: &[Row], room: Room) -> Option<Place> {
-        let characters = |row: usize| laid.get(row).map_or(0, Row::characters);
+        // As far along a row as a caret may go, which on a row that fills
+        // the width is before its last character -- see `Row::last_stop`.
+        let characters = |row: usize| laid.get(row).map_or(0, |row| row.last_stop(room.reading));
         // Where a caret may stand on a row: between clusters, so that a
         // picture and its selector, or a letter and its accent, are one
         // step -- the same as in a file. See `Text::cluster_before`.
@@ -623,7 +625,10 @@ impl Chat {
                 let last = laid.len().saturating_sub(1);
                 let (row, character) = match key.code {
                     KeyCode::Home => (0, 0),
-                    _ => (last, laid.get(last).map_or(0, Row::characters)),
+                    _ => (
+                        last,
+                        laid.get(last).map_or(0, |row| row.last_stop(room.reading)),
+                    ),
                 };
                 self.let_go();
                 self.focus = Focus::Transcript(Place { row, character });

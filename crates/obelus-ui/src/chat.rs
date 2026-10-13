@@ -897,15 +897,21 @@ fn in_transcript(
     place: obelus_component::chat::Place,
 ) -> Option<ratatui::layout::Position> {
     let band = bands(area, chat, card).transcript;
-    let rows = chat.rows(reading_width(area));
+    let reading = reading_width(area);
+    let rows = chat.rows(reading);
     let row = rows.get(place.row)?;
     let offset = place.row.checked_sub(chat.top())?;
     let y = band.y + u16::try_from(offset).ok()?;
     if y >= band.bottom() {
         return None;
     }
+    // A click can still stand after the last character of a full row,
+    // because a drag from there takes that character with it; the caret is
+    // drawn where the keys would have put it. And never past the words,
+    // for a character wider than the whole row.
+    let character = place.character.min(row.last_stop(reading));
     Some(ratatui::layout::Position {
-        x: cell_at(row, place.character, area).min(words_end(area)),
+        x: cell_at(row, character, area).min(words_end(area)),
         y,
     })
 }
@@ -923,9 +929,10 @@ fn in_transcript(
 /// exactly. The reader pressed up, the caret went into the transcript, and
 /// as far as they could tell it had gone out.
 ///
-/// So the end of a full row draws on its last character rather than after
-/// it. There is no cell after it to draw in, and the reader is at the end
-/// of that row either way.
+/// So the end of a full row is not a place the caret stands, the way it is
+/// not in a file: `Row::last_stop` is before its last character. Drawing
+/// it one cell back instead put it through the middle of a Chinese
+/// character, which is two cells.
 const fn words_end(area: Rect) -> u16 {
     // The scrollbar's column, and then the last one before it.
     area.right().saturating_sub(2)
@@ -2953,6 +2960,85 @@ mod caret {
         // And on the last character of the row, which is as near to after
         // it as there is room for.
         assert_eq!(caret.x, area.right() - 2);
+    }
+
+    /// A row that fills the width has no place after its last character,
+    /// as a wrapped row of a file has none: the caret stops before it, and
+    /// the right arrow goes on to the next row.
+    ///
+    /// Broken deliberately two ways. By drawing the end of a full row one
+    /// cell back, as it was: a row ending in a Chinese character had the
+    /// caret through the middle of it. And by letting `walked` stop after
+    /// the last character: the left arrow from the end then stood where the
+    /// end had been drawn, and the reader pressed it for nothing.
+    #[test]
+    fn the_end_of_a_full_row_is_before_its_last_character() {
+        let area = Rect::new(0, 0, 76, 24);
+        let width = super::reading_width(area);
+        let mut chat = Chat::new();
+        // One letter first where the width is odd, so the Chinese reaches
+        // the edge exactly -- which is the row that shows the fault.
+        let lead = if width % 2 == 1 { "a" } else { "" };
+        let said = format!(
+            "{lead}{}{}",
+            "中".repeat(usize::from(width / 2)),
+            "文".repeat(9)
+        );
+        chat.chunk(Speaker::Agent, &said);
+        let room = Room {
+            transcript: 20,
+            reading: width,
+            writing: super::writing_width(area),
+        };
+        let rows = chat.rows(width);
+        assert_eq!(
+            obelus_text::text_width(&rows[0].text()),
+            usize::from(width),
+            "the first row does not fill the width, so it cannot show the fault"
+        );
+
+        // Standing at the end, the way a click past it does: drawn at the
+        // start of the last character, which takes the two cells before
+        // the scrollbar.
+        chat.stand_in_transcript(obelus_component::chat::Place {
+            row: 0,
+            character: rows[0].characters(),
+        });
+        let caret = super::ChatView::caret(area, &chat, None).expect("a caret in the transcript");
+        assert_eq!(
+            caret.x,
+            area.right() - 3,
+            "the caret is not before the last character"
+        );
+
+        // And the keys agree: end is before the last character, so left
+        // from there is before the one before it.
+        let press = |chat: &mut Chat, code| {
+            chat.handle_key(
+                &KeyEvent::new(code, KeyModifiers::NONE),
+                false,
+                room,
+                &[],
+                false,
+            );
+        };
+        press(&mut chat, KeyCode::End);
+        press(&mut chat, KeyCode::Left);
+        let caret = super::ChatView::caret(area, &chat, None).expect("a caret in the transcript");
+        assert_eq!(
+            caret.x,
+            area.right() - 5,
+            "the left arrow from the end did nothing"
+        );
+        // And right from the last character goes on to the next row.
+        press(&mut chat, KeyCode::Right);
+        press(&mut chat, KeyCode::Right);
+        let next = super::ChatView::caret(area, &chat, None).expect("a caret in the transcript");
+        assert_eq!(
+            (next.x < caret.x, next.y),
+            (true, caret.y + 1),
+            "the right arrow did not go on to the start of the next row"
+        );
     }
 
     /// The offer goes beside the words only where it cannot be drawn over
