@@ -777,7 +777,10 @@ impl App {
     /// its top, a terminal's program is sent a paste. A word given up with
     /// escape never arrives, and those would have happened for nothing.
     pub(in crate::app) fn spelling_begins(&mut self) {
-        if !self.holds_text() {
+        // Where something is typed into, as well as held: a window on X11
+        // leaves its input method on everywhere, and a key being bound has
+        // a filter that holds words and takes none.
+        if !(self.takes_text() && self.holds_text()) {
             return;
         }
         let version = |app: &Self| app.current.zip(app.current_buffer().map(Buffer::version));
