@@ -336,6 +336,7 @@ quit = ""            # taken away</code></pre>
 
       <h3>Themes</h3>
       <p><code>dark</code>, <code>light</code> and a shelf of well-known palettes are built in; <code>choose-theme</code> switches between themes instantly. Any <code>.toml</code> file in <code>~/.config/obelus/themes/</code> is also a theme, named after the file (<code>mine.toml</code> → <code>mine</code>), and so is a directory there holding a <code>theme.toml</code>, named after the directory — which is how a theme keeps a picture beside its colours. A theme of yours by a built-in name comes first. Every colour is optional: anything you leave out comes from the built-in theme yours is based on, so an old theme file keeps working when Obelus adds a colour.</p>
+      <p>Comments are drawn italic. A theme says which kinds of code are slanted under <code>[syntax]</code>, by the names its colours have there: <code>italic = ["comment", "keyword"]</code>, or <code>italic = []</code> for none. A theme that does not say keeps the set of the one it is based on.</p>
       <p>In a window, a theme may carry a wallpaper under the page. The file names it in a table of its own; everything but <code>file</code> may be left out:</p>
       <pre><code>[wallpaper]
 file = "rain.jpg"     # beside theme.toml

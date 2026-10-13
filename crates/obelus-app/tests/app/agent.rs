@@ -15602,7 +15602,9 @@ fn the_list_of_pull_requests_says_why_it_is_empty() {
 /// Broken deliberately two ways. Leaving the number out of the label, as
 /// it was when it sat beside the author: the row no longer starts with it,
 /// which is what fails first, and `124` would match nothing. And leaving
-/// the number's colouring off draws it in the title's ink.
+/// the number's colouring off draws it in the title's ink. And drawing it
+/// as a comment, as it was when the colouring could only name a kind of
+/// code: every built-in theme slants a comment, so the number is slanted.
 #[test]
 fn a_pull_request_is_found_by_its_number() {
     let scratch = support::Scratch::new("agent-pull-request-by-number");
@@ -15622,6 +15624,11 @@ fn a_pull_request_is_found_by_its_number() {
         support::drawn_in(&dump, "#124 "),
         support::drawn_in(&dump, "Pick up the agent"),
         "the number is drawn in the title's ink"
+    );
+    let cells = support::cells_of(&mut app, WIDTH, HEIGHT);
+    assert!(
+        !support::slanted(&cells, "#124 "),
+        "the number is slanted like a comment"
     );
     support::type_text(&mut app, "124");
     let found: Vec<u64> = app

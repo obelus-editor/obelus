@@ -190,6 +190,32 @@ pub(crate) fn cells_of(app: &mut App, width: u16, height: u16) -> CellBuffer {
     cells
 }
 
+/// Where in a drawn screen `word` starts, by its cells.
+pub(crate) fn find(cells: &ratatui::buffer::Buffer, word: &str) -> (u16, u16) {
+    let area = cells.area;
+    for y in area.top()..area.bottom() {
+        let row: String = (area.left()..area.right())
+            .map(|x| cells.cell((x, y)).map_or(" ", |cell| cell.symbol()))
+            .collect::<Vec<_>>()
+            .concat();
+        if let Some(at) = row.find(word) {
+            let x = u16::try_from(row[..at].chars().count()).expect("a column");
+            return (x, y);
+        }
+    }
+    panic!("{word} is not on the screen");
+}
+
+/// Whether the cell `word` starts in is drawn slanted.
+pub(crate) fn slanted(cells: &ratatui::buffer::Buffer, word: &str) -> bool {
+    let (x, y) = find(cells, word);
+    cells
+        .cell((x, y))
+        .expect("a cell")
+        .modifier
+        .contains(ratatui::style::Modifier::ITALIC)
+}
+
 /// Reads one of the sample source files.
 pub(crate) fn open_fixture(name: &str) -> Buffer {
     let path = fixtures().join(name);

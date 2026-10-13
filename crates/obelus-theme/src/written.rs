@@ -17,10 +17,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use obelus_text::kind::SyntaxKind;
 use ratatui::style::Color;
 
 use crate::{
-    SyntaxTheme, Theme, Worn, builtin,
+    Kinds, SyntaxTheme, Theme, Worn, builtin,
     wallpaper::{self, Anchor, Fit, Wallpaper},
 };
 
@@ -401,12 +402,19 @@ fn over_noting(table: &toml::Table) -> (Theme, Noted) {
         read
     };
     let of = |key: &'static str, fallback: Color| read("", Some(table), key).unwrap_or(fallback);
-    let syn = |key: &'static str, fallback: Color| read("syntax", syntax, key).unwrap_or(fallback);
+    // Every kind's name as it is read, which is what a slant asks for a kind
+    // by -- see `slanted`.
+    let named: RefCell<Vec<(&'static str, SyntaxKind)>> = RefCell::new(Vec::new());
+    let syn = |kind: SyntaxKind, fallback: Color| {
+        let key = name_of(kind);
+        named.borrow_mut().push((key, kind));
+        read("syntax", syntax, key).unwrap_or(fallback)
+    };
 
     // A field at a time rather than a loop over names, so a colour added to
     // the theme and not read here does not compile. The same rule the
     // settings follow, and the reason both are this long.
-    let theme = Theme {
+    let mut theme = Theme {
         background: of("background", base.background),
         foreground: of("foreground", base.foreground),
         gutter: of("gutter", base.gutter),
@@ -430,24 +438,25 @@ fn over_noting(table: &toml::Table) -> (Theme, Noted) {
         change_removed_background: of("change_removed_background", base.change_removed_background),
         bracket_background: of("bracket_background", base.bracket_background),
         syntax: SyntaxTheme {
-            attribute: syn("attribute", base.syntax.attribute),
-            boolean: syn("boolean", base.syntax.boolean),
-            comment: syn("comment", base.syntax.comment),
-            constant: syn("constant", base.syntax.constant),
-            constructor: syn("constructor", base.syntax.constructor),
-            escape: syn("escape", base.syntax.escape),
-            function: syn("function", base.syntax.function),
-            keyword: syn("keyword", base.syntax.keyword),
-            label: syn("label", base.syntax.label),
-            number: syn("number", base.syntax.number),
-            operator: syn("operator", base.syntax.operator),
-            property: syn("property", base.syntax.property),
-            punctuation: syn("punctuation", base.syntax.punctuation),
-            string: syn("string", base.syntax.string),
-            type_name: syn("type_name", base.syntax.type_name),
-            variable: syn("variable", base.syntax.variable),
-            error: syn("error", base.syntax.error),
-            warning: syn("warning", base.syntax.warning),
+            attribute: syn(SyntaxKind::Attribute, base.syntax.attribute),
+            boolean: syn(SyntaxKind::Boolean, base.syntax.boolean),
+            comment: syn(SyntaxKind::Comment, base.syntax.comment),
+            constant: syn(SyntaxKind::Constant, base.syntax.constant),
+            constructor: syn(SyntaxKind::Constructor, base.syntax.constructor),
+            escape: syn(SyntaxKind::Escape, base.syntax.escape),
+            function: syn(SyntaxKind::Function, base.syntax.function),
+            keyword: syn(SyntaxKind::Keyword, base.syntax.keyword),
+            label: syn(SyntaxKind::Label, base.syntax.label),
+            number: syn(SyntaxKind::Number, base.syntax.number),
+            operator: syn(SyntaxKind::Operator, base.syntax.operator),
+            property: syn(SyntaxKind::Property, base.syntax.property),
+            punctuation: syn(SyntaxKind::Punctuation, base.syntax.punctuation),
+            string: syn(SyntaxKind::String, base.syntax.string),
+            type_name: syn(SyntaxKind::Type, base.syntax.type_name),
+            variable: syn(SyntaxKind::Variable, base.syntax.variable),
+            error: syn(SyntaxKind::Error, base.syntax.error),
+            warning: syn(SyntaxKind::Warning, base.syntax.warning),
+            italic: base.syntax.italic,
         },
         // What the file names, and what the base names where it does not:
         // a colour left to Obelus stays left, so it is worked out from
@@ -456,6 +465,14 @@ fn over_noting(table: &toml::Table) -> (Theme, Noted) {
             read("terminal", terminal, crate::TERMINAL_NAMES[index]).or(base.terminal[index])
         }),
     };
+    // After the colours, because the names a slant asks for are the names
+    // they were just read under.
+    asked.borrow_mut().insert(("syntax", "italic"));
+    if let Some(said) = syntax.and_then(|table| table.get("italic"))
+        && let Some(kinds) = slanted(said, &named.borrow(), &mut noted.borrow_mut())
+    {
+        theme.syntax.italic = kinds;
+    }
 
     // And what nobody asked for. A line that will not do is a line that did
     // nothing, and is said, rather than the theme thrown away: the rest of
@@ -496,6 +513,78 @@ fn over_noting(table: &toml::Table) -> (Theme, Noted) {
     (theme, noted)
 }
 
+/// The kinds a theme file draws slanted: `italic = ["comment"]`, by the
+/// names the colours are given under -- so `[]` is none at all, and a file
+/// that says nothing keeps its base's.
+///
+/// By the names the colours were read under rather than a list of its own,
+/// for the reason `over_noting` gives: two lists of the names are two
+/// answers to what a kind is called. A word that names no kind is left out
+/// and the list is marked, for the same reason a colour that will not parse
+/// is: the rest of the list is still what the reader asked for. And what is
+/// not a list at all is nothing, so the base's set stands -- as a colour
+/// that will not parse leaves the base's colour, rather than none.
+fn slanted(said: &toml::Value, named: &[(&str, SyntaxKind)], noted: &mut Noted) -> Option<Kinds> {
+    let at = || vec!["syntax".to_string(), "italic".to_string()];
+    let Some(words) = said.as_array() else {
+        noted.push(Note {
+            keys: at(),
+            why: "Not a list of kinds, so it slants what this builds on\nA list is written [\"comment\"]",
+            name: false,
+        });
+        return None;
+    };
+    let mut astray = false;
+    let kinds = words.iter().fold(Kinds::NONE, |kinds, word| {
+        let kind = word
+            .as_str()
+            .and_then(|word| named.iter().find(|(name, _)| *name == word));
+        match kind {
+            Some((_, kind)) => kinds.with(*kind),
+            None => {
+                astray = true;
+                kinds
+            }
+        }
+    });
+    if astray {
+        noted.push(Note {
+            keys: at(),
+            why: "A word here names no colour, so it slants nothing\nA kind is named the way its colour is, like comment or type_name",
+            name: false,
+        });
+    }
+    Some(kinds)
+}
+
+/// What a kind's colour is called in a theme file, and so what a slant asks
+/// for it by.
+///
+/// Every kind and no arm for the rest, so a kind added to the syntax does
+/// not compile until a theme file can name it.
+const fn name_of(kind: SyntaxKind) -> &'static str {
+    match kind {
+        SyntaxKind::Attribute => "attribute",
+        SyntaxKind::Boolean => "boolean",
+        SyntaxKind::Comment => "comment",
+        SyntaxKind::Constant => "constant",
+        SyntaxKind::Constructor => "constructor",
+        SyntaxKind::Escape => "escape",
+        SyntaxKind::Function => "function",
+        SyntaxKind::Keyword => "keyword",
+        SyntaxKind::Label => "label",
+        SyntaxKind::Number => "number",
+        SyntaxKind::Operator => "operator",
+        SyntaxKind::Property => "property",
+        SyntaxKind::Punctuation => "punctuation",
+        SyntaxKind::String => "string",
+        SyntaxKind::Type => "type_name",
+        SyntaxKind::Variable => "variable",
+        SyntaxKind::Error => "error",
+        SyntaxKind::Warning => "warning",
+    }
+}
+
 /// `#rrggbb`, which is how every palette anybody has is written down.
 ///
 /// The three-digit form too, because it is what a person types. Nothing
@@ -532,6 +621,7 @@ pub fn hex(said: &str) -> Option<Color> {
 
 #[cfg(test)]
 mod tests {
+    use obelus_text::kind::SyntaxKind;
     use ratatui::style::Color;
 
     /// A theme on its way in, unpacked under a hidden name beside where it
@@ -606,6 +696,63 @@ mod tests {
         // And what could be used, was.
         assert_eq!(theme.foreground, Color::Rgb(0xab, 0xcd, 0xef));
         assert_eq!(theme.syntax.comment, Color::Rgb(0x65, 0x43, 0x21));
+    }
+
+    /// A slant is asked for by the names the colours have, and is not a
+    /// misspelling of one; a word that names no kind is noted on the list
+    /// and the rest of it still slants, and what is not a list leaves the
+    /// base's set and is noted too. A file that says nothing about it slants
+    /// what its base does, and `[]` slants nothing, quietly.
+    ///
+    /// Deliberate breaks: `italic` not written down as asked (it is noted as
+    /// a colour nobody has), a word that names nothing not noted (the list
+    /// with `keywrd` in it says nothing), `type_name` named as `type` in
+    /// `name_of` (types stay upright, and the list is noted), a file that
+    /// says nothing slanting nothing in place of its base's set (the comment
+    /// is upright), and the list read only when it has something in it (`[]`
+    /// keeps the base's comment), and what is not a list slanting nothing
+    /// (the base's comment is upright).
+    #[test]
+    fn a_slant_is_asked_for_by_the_names_the_colours_have() {
+        let noted_at = |said: &str| {
+            let table: toml::Table = said.parse().expect("a table");
+            let (theme, noted) = super::over_noting(&table);
+            let at: Vec<String> = noted.iter().map(|note| note.keys.join(".")).collect();
+            (theme.syntax.italic, at)
+        };
+
+        let (italic, at) = noted_at("[syntax]\nitalic = [\"keyword\", \"type_name\"]\n");
+        assert!(at.is_empty(), "a list of kinds was noted: {at:?}");
+        assert!(italic.contains(SyntaxKind::Keyword));
+        assert!(italic.contains(SyntaxKind::Type));
+        assert!(
+            !italic.contains(SyntaxKind::Comment),
+            "the base's set was kept"
+        );
+
+        let (italic, at) = noted_at("base = \"light\"\n[syntax]\nkeyword = \"#123456\"\n");
+        assert!(at.is_empty(), "a file that says nothing was noted: {at:?}");
+        assert_eq!(italic, crate::Kinds::COMMENT, "the base's set was not kept");
+
+        let (italic, at) = noted_at("[syntax]\nitalic = []\n");
+        assert!(at.is_empty(), "an empty list was noted: {at:?}");
+        assert_eq!(
+            italic,
+            crate::Kinds::NONE,
+            "an empty list slanted something"
+        );
+
+        let (italic, at) = noted_at("[syntax]\nitalic = [\"keywrd\", \"string\"]\n");
+        assert_eq!(at, ["syntax.italic"]);
+        assert_eq!(italic, crate::Kinds::NONE.with(SyntaxKind::String));
+
+        let (italic, at) = noted_at("[syntax]\nitalic = \"keyword\"\n");
+        assert_eq!(at, ["syntax.italic"]);
+        assert_eq!(
+            italic,
+            crate::Kinds::COMMENT,
+            "what is not a list did not leave the base's"
+        );
     }
 
     /// A terminal colour a file names is the file's, and one it does not is

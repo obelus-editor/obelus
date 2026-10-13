@@ -134,9 +134,10 @@ pub fn write_marked(
             Some((runs, theme)) => match u16::try_from(index).ok().and_then(|at| {
                 runs.iter()
                     .find(|(from, to, _)| at >= *from && at < *to)
-                    .map(|(_, _, kind)| *kind)
+                    .map(|(_, _, tint)| *tint)
             }) {
-                Some(kind) => style.fg(theme.syntax.colour(kind)),
+                Some(Tint::Code(kind)) => style.patch(theme.syntax.style(kind)),
+                Some(Tint::Quiet) => style.fg(theme.syntax.comment),
                 None => style,
             },
             None => style,
@@ -148,4 +149,70 @@ pub fn write_marked(
         column = column.saturating_add(put_cluster(cells, column, y, cluster.text, style));
     }
     column
+}
+
+#[cfg(test)]
+mod tests {
+    use obelus_text::kind::SyntaxKind;
+    use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Modifier};
+
+    use super::{Marked, Style, Tint, write_marked};
+
+    /// A row that quotes a line of code slants what the file slants, so a
+    /// comment found by a search looks like the comment it is in the file.
+    ///
+    /// Deliberate break: taking only the kind's colour, as the row did before
+    /// a kind had a slant (the comment is upright).
+    #[test]
+    fn a_quoted_comment_is_slanted() {
+        let theme = obelus_theme::builtin::by_name("dark").expect("the dark theme");
+        let runs = [
+            (0, 2, Tint::Code(SyntaxKind::Keyword)),
+            (3, 7, Tint::Code(SyntaxKind::Comment)),
+        ];
+        let marked = Marked {
+            syntax: Some((&runs, theme)),
+            ..Marked::plain()
+        };
+        let area = Rect::new(0, 0, 10, 1);
+        let mut cells = CellBuffer::empty(area);
+        write_marked(&mut cells, area, 0, 0, "fn // x", Style::new(), &marked);
+        let slanted = |x: u16| cells[(x, 0)].modifier.contains(Modifier::ITALIC);
+        assert!(slanted(3), "the comment is upright");
+        assert!(!slanted(0), "the keyword is slanted");
+    }
+
+    /// A run said quietly wears a comment's colour and not its slant: the
+    /// number in front of a pull request's title says which one, and is not
+    /// a remark about the code.
+    ///
+    /// Deliberate break: drawing a quiet run as a comment, which is how the
+    /// number was drawn before a run could say it was not code (the number
+    /// is slanted).
+    #[test]
+    fn a_quiet_run_is_a_comments_colour_and_upright() {
+        let theme = obelus_theme::builtin::by_name("dark").expect("the dark theme");
+        let runs = [(0, 3, Tint::Quiet)];
+        let marked = Marked {
+            syntax: Some((&runs, theme)),
+            ..Marked::plain()
+        };
+        let area = Rect::new(0, 0, 12, 1);
+        let mut cells = CellBuffer::empty(area);
+        write_marked(&mut cells, area, 0, 0, "#12 A title", Style::new(), &marked);
+        assert_eq!(
+            cells[(1, 0)].fg,
+            theme.syntax.comment,
+            "the number is not quiet"
+        );
+        assert!(
+            !cells[(1, 0)].modifier.contains(Modifier::ITALIC),
+            "the number is slanted"
+        );
+        assert_eq!(
+            cells[(4, 0)].fg,
+            ratatui::style::Color::Reset,
+            "the title is quiet"
+        );
+    }
 }

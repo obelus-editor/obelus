@@ -64,6 +64,7 @@ pub const DARK: Theme = Theme {
         variable: Color::Rgb(228, 228, 231),
         error: DARK_REMOVED,
         warning: DARK_MODIFIED,
+        italic: crate::Kinds::COMMENT,
     },
     terminal: crate::WORKED_OUT,
 };
@@ -114,6 +115,7 @@ pub const LIGHT: Theme = Theme {
         variable: Color::Rgb(24, 24, 27),
         error: LIGHT_REMOVED,
         warning: LIGHT_MODIFIED,
+        italic: crate::Kinds::COMMENT,
     },
     terminal: crate::WORKED_OUT,
 };
@@ -170,6 +172,7 @@ pub const GRUVBOX_DARK: Theme = Theme {
         variable: Color::Rgb(235, 219, 178),
         error: GRUVBOX_DARK_REMOVED,
         warning: GRUVBOX_DARK_MODIFIED,
+        italic: crate::Kinds::COMMENT,
     },
     terminal: crate::WORKED_OUT,
 };
@@ -222,6 +225,7 @@ pub const GRUVBOX_LIGHT: Theme = Theme {
         variable: Color::Rgb(60, 56, 54),
         error: GRUVBOX_LIGHT_REMOVED,
         warning: GRUVBOX_LIGHT_MODIFIED,
+        italic: crate::Kinds::COMMENT,
     },
     terminal: crate::WORKED_OUT,
 };
@@ -278,6 +282,7 @@ pub const CATPPUCCIN_MOCHA: Theme = Theme {
         variable: Color::Rgb(205, 214, 244),
         error: CATPPUCCIN_MOCHA_REMOVED,
         warning: CATPPUCCIN_MOCHA_MODIFIED,
+        italic: crate::Kinds::COMMENT,
     },
     terminal: crate::WORKED_OUT,
 };
@@ -330,6 +335,7 @@ pub const CATPPUCCIN_LATTE: Theme = Theme {
         variable: Color::Rgb(76, 79, 105),
         error: CATPPUCCIN_LATTE_REMOVED,
         warning: CATPPUCCIN_LATTE_MODIFIED,
+        italic: crate::Kinds::COMMENT,
     },
     terminal: crate::WORKED_OUT,
 };
@@ -386,6 +392,7 @@ pub const NORD: Theme = Theme {
         variable: Color::Rgb(216, 222, 233),
         error: NORD_REMOVED,
         warning: NORD_MODIFIED,
+        italic: crate::Kinds::COMMENT,
     },
     terminal: crate::WORKED_OUT,
 };
@@ -438,6 +445,7 @@ pub const TOKYO_NIGHT: Theme = Theme {
         variable: Color::Rgb(192, 202, 245),
         error: TOKYO_NIGHT_REMOVED,
         warning: TOKYO_NIGHT_MODIFIED,
+        italic: crate::Kinds::COMMENT,
     },
     terminal: crate::WORKED_OUT,
 };
@@ -494,6 +502,7 @@ pub const SOLARIZED_DARK: Theme = Theme {
         variable: Color::Rgb(131, 148, 150),
         error: SOLARIZED_DARK_REMOVED,
         warning: SOLARIZED_DARK_MODIFIED,
+        italic: crate::Kinds::COMMENT,
     },
     terminal: crate::WORKED_OUT,
 };
@@ -546,6 +555,7 @@ pub const SOLARIZED_LIGHT: Theme = Theme {
         variable: Color::Rgb(101, 123, 131),
         error: SOLARIZED_LIGHT_REMOVED,
         warning: SOLARIZED_LIGHT_MODIFIED,
+        italic: crate::Kinds::COMMENT,
     },
     terminal: crate::WORKED_OUT,
 };
@@ -605,6 +615,7 @@ pub const HIGH_CONTRAST: Theme = Theme {
         variable: Color::Rgb(255, 255, 255),
         error: HIGH_CONTRAST_REMOVED,
         warning: HIGH_CONTRAST_MODIFIED,
+        italic: crate::Kinds::COMMENT,
     },
     terminal: crate::WORKED_OUT,
 };

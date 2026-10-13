@@ -141,7 +141,7 @@ use std::ops::Range;
 
 use obelus_component::{
     layers::Layer,
-    picker::{Colouring, Picker},
+    picker::{Colouring, Picker, Tint},
 };
 use obelus_text::{text_width, widths};
 use obelus_theme::Theme;

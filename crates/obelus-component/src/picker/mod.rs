@@ -263,7 +263,19 @@ impl Listing {
 ///
 /// Char offsets into the label, not bytes and not screen columns: the label
 /// is what the row draws, and a run is a claim about its characters.
-pub type Colouring = (u16, u16, obelus_text::kind::SyntaxKind);
+pub type Colouring = (u16, u16, Tint);
+
+/// What a run of a row's characters is drawn as.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tint {
+    /// A piece of code, drawn the way the file draws that kind -- its colour,
+    /// and its slant where the theme gives it one.
+    Code(obelus_text::kind::SyntaxKind),
+    /// Said more quietly than the rest of the row, in a comment's colour and
+    /// nothing else of a comment's: a pull request's number says which one,
+    /// and is not a remark about the code, so it is not slanted like one.
+    Quiet,
+}
 
 /// What a row's mark is saying, which is what it gets drawn in.
 ///

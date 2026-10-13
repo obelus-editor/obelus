@@ -73,6 +73,28 @@ fn a_hint_is_drawn_in_its_own_colour() {
     );
 }
 
+/// Nor is it the kind of code it stands in front of: a hint before a
+/// comment is not slanted the way the comment is.
+///
+/// Deliberate break: a cell the file does not contain taking its style from
+/// the kind of the character after it, which is how it was drawn when a
+/// kind brought only a colour (the hint is slanted).
+#[test]
+fn a_hint_is_not_slanted_like_the_comment_after_it() {
+    let (_scratch, mut app) = coding("hint-upright", "let x /* why */ = compute();\n");
+    app.hints_for_test(json!([{
+        "position": { "line": 0, "character": 6 },
+        "label": ": i32"
+    }]));
+
+    let cells = support::cells_of(&mut app, 76, 18);
+    assert!(support::slanted(&cells, "why"), "the comment is upright");
+    assert!(
+        !support::slanted(&cells, ": i32"),
+        "the hint is slanted like the comment after it"
+    );
+}
+
 /// Nothing in it can be stood on: the caret walks characters, and a hint is
 /// not one.
 ///

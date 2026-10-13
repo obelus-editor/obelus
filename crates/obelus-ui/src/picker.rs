@@ -881,6 +881,9 @@ impl PickerView<'_> {
             // ones too, and a build artefact in the same ink as the source
             // beside it is a list that has stopped saying which is which.
             (Some(FileStatus::Ignored), _) => style.fg(self.theme.gutter),
+            // The kind's colour and not its slant: a problem says its
+            // severity through this too, and a hint's borrows the comment's
+            // -- which would slant a row that is not a comment.
             (None, Some(kind)) => style.fg(self.theme.syntax.colour(kind)),
             (None, None) => style,
         };

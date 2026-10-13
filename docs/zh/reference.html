@@ -336,6 +336,7 @@ quit = ""            # 把这个绑定拿掉</code></pre>
 
       <h3>主题</h3>
       <p>内置 <code>dark</code>、<code>light</code> 和一排常见配色，<code>choose-theme</code> 切换，马上生效。另外，<code>~/.config/obelus/themes/</code> 下的每个 <code>.toml</code> 文件都是一个主题，名字就是文件名（<code>mine.toml</code> → <code>mine</code>）；那里的一个目录只要放了 <code>theme.toml</code>，也是一个主题，名字就是目录名——主题就是这样把一张图片和配色放在一起的。你自己的主题和内置的同名时，用你的。每个颜色都可以不写，没写的沿用它所基于的内置主题——所以以后 Obelus 多了新颜色，你的旧主题文件不用改也能用。</p>
+      <p>注释用斜体显示。哪些种类的代码用斜体，由主题在 <code>[syntax]</code> 下按颜色的名字来写：<code>italic = ["comment", "keyword"]</code>，写 <code>italic = []</code> 就都不用斜体。没写的，沿用它所基于的内置主题。</p>
       <p>在窗口里，主题可以带一张铺在页面下面的壁纸。主题文件里单独写一节，除了 <code>file</code> 都可以不写：</p>
       <pre><code>[wallpaper]
 file = "rain.jpg"     # 和 theme.toml 放在一起

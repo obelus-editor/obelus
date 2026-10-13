@@ -233,8 +233,10 @@ impl App {
                 break;
             };
             match (kind, runs.last_mut()) {
-                (Some(kind), Some(last)) if last.2 == kind && last.1 == column => last.1 += 1,
-                (Some(kind), _) => runs.push((column, column + 1, kind)),
+                (Some(kind), Some(last)) if last.2 == Tint::Code(kind) && last.1 == column => {
+                    last.1 += 1;
+                }
+                (Some(kind), _) => runs.push((column, column + 1, Tint::Code(kind))),
                 (None, _) => {}
             }
         }

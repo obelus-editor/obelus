@@ -600,6 +600,55 @@ fn the_template_for_omarchy_names_colours_obelus_has() {
     }
 }
 
+/// A comment is drawn slanted and code is not, and a theme file can say
+/// otherwise.
+///
+/// The cells rather than the dump: a slant is a modifier, and the dump
+/// names a style by its colours.
+///
+/// Broken deliberately three ways: the editor taking the slant off the
+/// kind's style, as painting the colour alone did (the comment is upright),
+/// `Kinds::with` ignoring its kind (the comment is upright), and `over`
+/// keeping the base's set whatever the file says (the comment stays
+/// slanted and the keyword stays upright under `italic = ["keyword"]`).
+#[test]
+fn a_comment_is_slanted_unless_the_theme_says_otherwise() {
+    let scratch = reader("slant");
+    let path = scratch.join("slanted.rs");
+    std::fs::write(&path, "// a remark\nfn main() {}\n").expect("the file");
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&path).expect("opening it"),
+    ]);
+    app.config_file_for_test(scratch.join("config.toml"));
+    support::lay_out(&mut app, 60, 10);
+
+    let cells = support::cells_of(&mut app, 60, 10);
+    assert!(support::slanted(&cells, "remark"), "the comment is upright");
+    assert!(!support::slanted(&cells, "fn"), "the keyword is slanted");
+    assert!(!support::slanted(&cells, "main"), "the function is slanted");
+
+    // A theme that wants keywords slanted and nothing else.
+    std::fs::write(
+        scratch.join("themes/upright.toml"),
+        "base = \"dark\"\n[syntax]\nitalic = [\"keyword\"]\n",
+    )
+    .expect("the theme");
+    std::fs::write(scratch.join("config.toml"), "theme = \"upright\"\n").expect("the settings");
+    app.handle(Event::Watched(obelus_watch::Changed {
+        path: scratch.join("config.toml"),
+    }));
+    assert_eq!(app.theme_name(), "upright", "the theme was not taken");
+    let cells = support::cells_of(&mut app, 60, 10);
+    assert!(
+        !support::slanted(&cells, "remark"),
+        "the file's list was not taken"
+    );
+    assert!(
+        support::slanted(&cells, "fn"),
+        "the keyword the file named is upright"
+    );
+}
+
 /// A theme that is a directory, with a picture named from inside it.
 fn rain(scratch: &support::Scratch, wallpaper: &str) -> std::path::PathBuf {
     std::fs::create_dir_all(scratch.join("themes/rain")).expect("the directory");

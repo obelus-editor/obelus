@@ -223,7 +223,7 @@ fn style_of(ink: Ink, span: &obelus_row::Span, theme: &Theme, base: Style) -> St
         Ink::Plain => style,
         Ink::Heading(_) => style.fg(theme.syntax.keyword).add_modifier(Modifier::BOLD),
         Ink::Code => style.fg(theme.syntax.string),
-        Ink::Syntax(kind) => style.fg(theme.syntax.colour(kind)),
+        Ink::Syntax(kind) => style.patch(theme.syntax.style(kind)),
         Ink::Aside => style.fg(theme.syntax.comment),
         Ink::Mark => style.fg(theme.gutter),
         Ink::Name => style.fg(theme.syntax.type_name),
@@ -247,7 +247,12 @@ fn style_of(ink: Ink, span: &obelus_row::Span, theme: &Theme, base: Style) -> St
 
 #[cfg(test)]
 mod tests {
-    use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style};
+    use obelus_text::kind::SyntaxKind;
+    use ratatui::{
+        buffer::Buffer as CellBuffer,
+        layout::Rect,
+        style::{Modifier, Style},
+    };
 
     use super::{Drawn, write_spans};
 
@@ -277,5 +282,31 @@ mod tests {
         assert_eq!(cells[(0, 0)].symbol(), "\u{2764}\u{fe0f}");
         assert_eq!(cells[(1, 0)].symbol(), "");
         assert_eq!(cells[(2, 0)].symbol(), "x");
+    }
+
+    /// Code in a reading -- a block in a note, or in what an agent said --
+    /// slants what the file slants.
+    ///
+    /// Deliberate break: taking only the kind's colour, as a reading did
+    /// before a kind had a slant (the comment is upright).
+    #[test]
+    fn a_comment_in_a_reading_is_slanted() {
+        let theme = obelus_theme::builtin::by_name("dark").expect("the dark theme");
+        let drawn = Drawn {
+            base: Style::new(),
+            theme,
+            stop: 10,
+            held: None,
+            linked: &[],
+        };
+        let spans = [
+            obelus_row::Span::new("fn", obelus_row::Ink::Syntax(SyntaxKind::Keyword)),
+            obelus_row::Span::new(" // x", obelus_row::Ink::Syntax(SyntaxKind::Comment)),
+        ];
+        let mut cells = CellBuffer::empty(Rect::new(0, 0, 10, 1));
+        write_spans(&mut cells, 0, 0, &spans, &drawn);
+        let slanted = |x: u16| cells[(x, 0)].modifier.contains(Modifier::ITALIC);
+        assert!(slanted(3), "the comment is upright");
+        assert!(!slanted(0), "the keyword is slanted");
     }
 }
