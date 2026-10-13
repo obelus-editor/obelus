@@ -1830,3 +1830,54 @@ fn the_problems_take_a_view_s_place() {
         "alt+e in the problems did not leave the reader where they were"
     );
 }
+
+/// Turning the language servers off takes what they said off the file, and
+/// leaves what Obelus said.
+///
+/// Nothing is left running to take a mark back, so one left on the file
+/// would stay there, wrong, until the switch went on again.
+///
+/// Broken deliberately three ways: leaving the troubles alone keeps the
+/// server's complaint; clearing every trouble takes Obelus's with it; and
+/// leaving the hints alone keeps the type nobody wrote down.
+#[test]
+fn turning_the_servers_off_takes_what_they_said_away() {
+    let scratch = support::Scratch::new("trouble-switched-off");
+    let path = scratch.path().join("sample.rs");
+    std::fs::write(&path, "fn main() {\n    let x = nmae;\n}\n").expect("writing the file");
+    let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    support::lay_out(&mut app, 60, 16);
+    let servers = |on| obelus_config::Config {
+        language_servers: on,
+        ..obelus_config::Config::default()
+    };
+    app.configure(servers(true), Vec::new());
+
+    app.obelus_says_for_test(
+        &path,
+        obelus_text::coordinates::Span {
+            line: obelus_text::coordinates::LineNumber::new(0),
+            column: obelus_text::coordinates::CharColumn::new(0),
+            end_line: obelus_text::coordinates::LineNumber::new(0),
+            end_column: obelus_text::coordinates::CharColumn::new(2),
+        },
+        obelus_lsp::trouble::Severity::Warning,
+        "Obelus has an opinion",
+    );
+    app.publish_for_test(published(&path, 1, 12, 16, 1));
+    app.hints_for_test(json!([{
+        "position": { "line": 1, "character": 9 },
+        "label": ": i32"
+    }]));
+    assert_eq!(app.problems().count(), 2);
+    assert_eq!(app.hints_for_test_count(), 1);
+
+    app.configure(servers(false), Vec::new());
+    let said: Vec<Option<&str>> = app
+        .problems()
+        .map(|problem| problem.source.as_deref())
+        .collect();
+    assert_eq!(said, [Some("Obelus")], "{said:?}");
+    assert_eq!(app.hints_for_test_count(), 0, "the hints stayed");
+}

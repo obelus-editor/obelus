@@ -545,6 +545,23 @@ impl App {
         for language in running {
             self.stop(language);
         }
+        // And what they said goes with them. Nothing is left to say it
+        // again or take it back, so a mark left here would stay on the
+        // file, wrong, until the reader turned the switch on again.
+        // `stop-server` keeps them because the reader stopped one server
+        // and may want what it said; this is the reader saying they want
+        // none. What Obelus said itself is not a server's, and stays.
+        for troubles in self.troubles.values_mut() {
+            troubles.retain(|trouble| trouble.source.as_deref() == Some(OBELUS));
+        }
+        self.troubles.retain(|_, troubles| !troubles.is_empty());
+        self.reported.clear();
+        self.lsp.tokens.clear();
+        self.lsp.colours.clear();
+        self.lsp.hints.clear();
+        for id in (0..self.documents.len()).map(DocumentId::new) {
+            self.redraw_cells(id);
+        }
     }
 
     /// Takes the reader's answer about hints to the screen.
