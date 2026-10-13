@@ -5,12 +5,11 @@
 //! list would make every assertion here depend on which projects whoever
 //! ran it has opened.
 //!
-//! A binary of its own because the list the page keeps is one file for the
-//! process, and asking which project rewrites it: a test anywhere in the
-//! application's binary that asked could put back a list without the row a
-//! test here had just chosen.
-
-mod support;
+//! Not in the application's binary because the list the page keeps is one
+//! file for the process, and asking which project rewrites it: a test
+//! anywhere in that binary that asked could put back a list without the row
+//! a test here had just chosen. Here every test takes turns, and that is
+//! the turn the list wants.
 
 use crossterm::event::KeyCode;
 use obelus_app::app::App;
@@ -18,6 +17,8 @@ use obelus_command::Command;
 use obelus_component::{chooser::Known, picker::Picker};
 use obelus_ui::Screen as _;
 use support::press;
+
+use crate::support;
 
 /// One row, written the way the screen would write it.
 ///
@@ -67,6 +68,7 @@ fn open_another(app: &mut App) {
 /// `App::offers`: every one of these comes back offered.
 #[test]
 fn nothing_about_a_project_is_offered_until_there_is_one() {
+    let _turn = crate::turn();
     let app = asking();
 
     for command in [
@@ -102,6 +104,7 @@ fn nothing_about_a_project_is_offered_until_there_is_one() {
 /// the one key out of this screen goes dim.
 #[test]
 fn leaving_is_still_offered() {
+    let _turn = crate::turn();
     let app = asking();
 
     for command in [Command::Quit, Command::ThemeSelect, Command::ConfigOpen] {
@@ -120,6 +123,7 @@ fn leaving_is_still_offered() {
 /// project wears the list's own mark beside it.
 #[test]
 fn the_row_under_a_list_is_not_lit() {
+    let _turn = crate::turn();
     let mut app = asking();
     let row = "alpha";
     let dump = support::render(&mut app, 60, 20);
@@ -157,6 +161,7 @@ fn the_row_under_a_list_is_not_lit() {
 /// `Chooser::new`: the reader opens on the row under the projects.
 #[test]
 fn it_opens_on_the_newest_project() {
+    let _turn = crate::turn();
     let app = asking();
     let choosing = app.choosing().expect("being asked");
 
@@ -175,6 +180,7 @@ fn it_opens_on_the_newest_project() {
 /// to: enter turns the foot into a path box instead.
 #[test]
 fn enter_opens_the_newest_project() {
+    let _turn = crate::turn();
     let scratch = support::Scratch::new("choosing-newest");
     let mut app = App::new(Vec::new());
     app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
@@ -212,6 +218,7 @@ fn enter_opens_the_newest_project() {
 /// nothing at all.
 #[test]
 fn the_filter_cannot_hide_the_way_out() {
+    let _turn = crate::turn();
     let mut app = asking();
     for character in "zzzz".chars() {
         press(&mut app, KeyCode::Char(character));
@@ -239,6 +246,7 @@ fn the_filter_cannot_hide_the_way_out() {
 /// means changes under them.
 #[test]
 fn typing_moves_the_reader_off_a_row_that_has_changed() {
+    let _turn = crate::turn();
     let mut app = asking();
     press(&mut app, KeyCode::Down);
     press(&mut app, KeyCode::Down);
@@ -264,6 +272,7 @@ fn typing_moves_the_reader_off_a_row_that_has_changed() {
 /// told.
 #[test]
 fn escape_clears_the_filter_and_never_leaves() {
+    let _turn = crate::turn();
     let mut app = asking();
     press(&mut app, KeyCode::Char('a'));
     assert_eq!(app.choosing().expect("asking").typed, "a", "no filter");
@@ -289,6 +298,7 @@ fn escape_clears_the_filter_and_never_leaves() {
 /// the filter's word.
 #[test]
 fn naming_a_path_starts_from_nothing() {
+    let _turn = crate::turn();
     let mut app = asking();
     press(&mut app, KeyCode::Char('a'));
     open_another(&mut app);
@@ -312,6 +322,7 @@ fn naming_a_path_starts_from_nothing() {
 /// project.
 #[test]
 fn escape_comes_back_out_of_the_path_box() {
+    let _turn = crate::turn();
     let mut app = asking();
     open_another(&mut app);
     assert!(app.choosing().expect("asking").naming, "not naming");
@@ -343,6 +354,7 @@ fn escape_comes_back_out_of_the_path_box() {
 /// still the directory above.
 #[test]
 fn enter_puts_the_chosen_row_in_the_box() {
+    let _turn = crate::turn();
     let scratch = support::Scratch::new("choosing-enter");
     std::fs::create_dir_all(scratch.path().join("alpha").join("inner")).expect("directories");
     let mut app = asking();
@@ -392,7 +404,7 @@ fn enter_puts_the_chosen_row_in_the_box() {
 /// frame puts the list back and the second enter fills the box again.
 #[test]
 fn a_project_chosen_from_the_list_is_where_the_walk_stops() {
-    let _list = the_list();
+    let _turn = crate::turn();
     let scratch = support::Scratch::new("choosing-stops-at-a-project");
     let project = scratch.path().join("alpha");
     std::fs::create_dir_all(project.join("inner")).expect("directories");
@@ -438,6 +450,7 @@ fn a_project_chosen_from_the_list_is_where_the_walk_stops() {
 /// `naming_list_key`: the second enter fills the box rather than opening.
 #[test]
 fn a_file_chosen_from_the_list_opens_on_the_next_enter() {
+    let _turn = crate::turn();
     let scratch = support::Scratch::new("choosing-a-file");
     let file = scratch.write("notes.md", "# Notes\n");
     let mut app = asking();
@@ -476,6 +489,7 @@ fn a_file_chosen_from_the_list_opens_on_the_next_enter() {
 /// the directory is read and nothing is offered from it.
 #[test]
 fn a_separator_after_a_project_walks_on_into_it() {
+    let _turn = crate::turn();
     let scratch = support::Scratch::new("choosing-walks-on");
     let project = scratch.path().join("alpha");
     std::fs::create_dir_all(project.join("inner")).expect("directories");
@@ -516,6 +530,7 @@ fn a_separator_after_a_project_walks_on_into_it() {
 /// so every directory that is there turns green.
 #[test]
 fn a_box_that_names_a_project_is_drawn_in_the_green() {
+    let _turn = crate::turn();
     let scratch = support::Scratch::new("choosing-green");
     let project = scratch.path().join("alpha");
     std::fs::create_dir_all(&project).expect("a directory");
@@ -589,6 +604,7 @@ fn a_box_that_names_a_project_is_drawn_in_the_green() {
 /// box closes, and the reader is back on the list of projects.
 #[test]
 fn escape_shuts_the_list_and_then_enter_opens_what_is_typed() {
+    let _turn = crate::turn();
     let scratch = support::Scratch::new("choosing-escape-list");
     std::fs::create_dir_all(scratch.path().join("alpha")).expect("a directory");
     let mut app = asking();
@@ -628,6 +644,7 @@ fn escape_shuts_the_list_and_then_enter_opens_what_is_typed() {
 /// on, and every command stays dim.
 #[test]
 fn choosing_a_project_settles_it() {
+    let _turn = crate::turn();
     let scratch = support::Scratch::new("choosing-settles");
     let mut app = asking();
     open_another(&mut app);
@@ -649,24 +666,6 @@ fn choosing_a_project_settles_it() {
     );
 }
 
-/// Taken by every test here that writes the list of projects or asks
-/// what is on it.
-///
-/// One file for the whole binary, written read-modify-write and without a
-/// lock -- a choice `projects::remember` makes for Obelus -- so two tests
-/// writing it at once can each put back a list without the other's row:
-/// choosing a project remembers it, and asking which project forgets any
-/// scratch directory that has gone since. The unit tests beside the list
-/// take turns for the same reason.
-static THE_LIST: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-/// A turn at the list, held for as long as the test runs.
-fn the_list() -> std::sync::MutexGuard<'static, ()> {
-    THE_LIST
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-}
-
 /// A project chosen on the page goes on the page's list.
 ///
 /// The one way onto it: the list is of the answers this page was given.
@@ -675,7 +674,7 @@ fn the_list() -> std::sync::MutexGuard<'static, ()> {
 /// project is opened and the file never hears of it.
 #[test]
 fn choosing_a_project_remembers_it() {
-    let _list = the_list();
+    let _turn = crate::turn();
     let scratch = support::Scratch::new("choosing-remembers");
     gix::init(scratch.path()).expect("a repository");
     let mut app = asking();
@@ -704,7 +703,7 @@ fn choosing_a_project_remembers_it() {
 /// been asked.
 #[test]
 fn a_project_not_chosen_on_the_page_is_not_remembered() {
-    let _list = the_list();
+    let _turn = crate::turn();
     let scratch = support::Scratch::new("started-in-it");
     gix::init(scratch.path()).expect("a repository");
     let mut app = App::new(Vec::new());
@@ -734,6 +733,7 @@ fn a_project_not_chosen_on_the_page_is_not_remembered() {
 /// there while staying green here.
 #[test]
 fn a_path_typed_with_forward_slashes_is_still_a_path() {
+    let _turn = crate::turn();
     let scratch = support::Scratch::new("choosing-slashes");
     std::fs::create_dir_all(scratch.path().join("inside")).expect("a directory");
     // Written with forward slashes whatever this platform writes, which
@@ -772,6 +772,7 @@ fn a_path_typed_with_forward_slashes_is_still_a_path() {
 /// moves: the list never comes back and escape is final.
 #[test]
 fn a_list_that_was_shut_comes_back_on_the_next_letter() {
+    let _turn = crate::turn();
     let scratch = support::Scratch::new("choosing-reopen");
     std::fs::create_dir_all(scratch.path().join("alpha")).expect("a directory");
     let mut app = asking();
@@ -802,6 +803,7 @@ fn a_list_that_was_shut_comes_back_on_the_next_letter() {
 /// naming a real directory with nothing offered.
 #[test]
 fn a_list_that_matched_nothing_comes_back_when_the_letter_goes() {
+    let _turn = crate::turn();
     let scratch = support::Scratch::new("choosing-backspace");
     std::fs::create_dir_all(scratch.path().join("alpha")).expect("a directory");
     let mut app = asking();
@@ -837,6 +839,7 @@ fn a_list_that_matched_nothing_comes_back_when_the_letter_goes() {
 /// directory it used to name.
 #[test]
 fn rubbing_the_box_out_closes_the_list() {
+    let _turn = crate::turn();
     let scratch = support::Scratch::new("choosing-emptied");
     std::fs::create_dir_all(scratch.path().join("alpha")).expect("a directory");
     let mut app = asking();
@@ -873,6 +876,7 @@ fn rubbing_the_box_out_closes_the_list() {
 /// in `look_in`: the rows are still the child's.
 #[test]
 fn rubbing_back_past_a_separator_moves_the_list_up() {
+    let _turn = crate::turn();
     let scratch = support::Scratch::new("choosing-back-up");
     std::fs::create_dir_all(scratch.path().join("alpha").join("inner")).expect("directories");
     let mut app = asking();
@@ -916,6 +920,7 @@ fn rubbing_back_past_a_separator_moves_the_list_up() {
 /// directory the box's path happened to sit in.
 #[test]
 fn a_path_that_is_not_there_is_refused() {
+    let _turn = crate::turn();
     let scratch = support::Scratch::new("choosing-unreal");
     let mut app = asking();
     let before = app.working_directory().to_path_buf();
@@ -958,6 +963,7 @@ fn a_path_that_is_not_there_is_refused() {
 /// stays and enter on it does nothing, for ever.
 #[test]
 fn a_remembered_project_that_has_gone_is_dropped() {
+    let _turn = crate::turn();
     let mut app = App::new(Vec::new());
     app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
     app.ask_about_these_projects_for_test(vec![known(
@@ -993,6 +999,7 @@ fn a_remembered_project_that_has_gone_is_dropped() {
 /// and answering `None` for the range, so nothing is marked.
 #[test]
 fn the_filter_marks_what_it_matched_on_the_row_as_shown() {
+    let _turn = crate::turn();
     let mut app = App::new(Vec::new());
     app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
     app.ask_about_these_projects_for_test(vec![Known {
@@ -1044,6 +1051,7 @@ fn the_filter_marks_what_it_matched_on_the_row_as_shown() {
 /// never complains at all.
 #[test]
 fn a_path_that_goes_nowhere_says_so_once_nothing_is_left_to_suggest() {
+    let _turn = crate::turn();
     let scratch = support::Scratch::new("choosing-nowhere");
     std::fs::create_dir_all(scratch.path().join("alpha")).expect("a directory");
     let mut app = asking();
@@ -1087,6 +1095,7 @@ fn a_path_that_goes_nowhere_says_so_once_nothing_is_left_to_suggest() {
 /// of the branch that handles the list's keys.
 #[test]
 fn choosing_from_the_list_leaves_the_row_telling_the_truth() {
+    let _turn = crate::turn();
     let scratch = support::Scratch::new("choosing-stale-ink");
     std::fs::create_dir_all(scratch.path().join("alpha")).expect("a directory");
     let mut app = asking();
@@ -1131,6 +1140,7 @@ fn choosing_from_the_list_leaves_the_row_telling_the_truth() {
 /// anybody has named a project.
 #[test]
 fn nothing_about_the_project_is_started_until_there_is_one() {
+    let _turn = crate::turn();
     let scratch = support::Scratch::new("choosing-starting");
     let mut app = asking();
     let (sender, _events) = std::sync::mpsc::channel();
@@ -1166,6 +1176,7 @@ fn nothing_about_the_project_is_started_until_there_is_one() {
 /// the chooser with `false` in `App::takes_text`.
 #[test]
 fn a_paste_goes_into_the_box_the_page_is_showing() {
+    let _turn = crate::turn();
     let mut app = asking();
     assert!(app.takes_text(), "the filter is said to take nothing");
     app.handle(obelus_app::event::Event::Paste("文档".to_string()));
@@ -1200,6 +1211,7 @@ fn a_paste_goes_into_the_box_the_page_is_showing() {
 /// its arm out of `App::copy_selection`, and the copy finds nothing to copy.
 #[test]
 fn a_copy_a_cut_and_a_paste_work_in_the_page_that_asks() {
+    let _turn = crate::turn();
     let _turn = support::clipboard_turn();
     obelus_clipboard::use_provider_for_test(obelus_clipboard::Provider::Kept);
     let mut app = asking();
@@ -1234,7 +1246,7 @@ fn a_copy_a_cut_and_a_paste_work_in_the_page_that_asks() {
 /// the project, and the one after the write does).
 #[test]
 fn closing_the_project_asks_about_what_is_unwritten_and_then_which_project() {
-    let _list = the_list();
+    let _turn = crate::turn();
     let scratch = support::Scratch::new("closing-asks");
     let file = scratch.join("file.rs");
     std::fs::write(&file, "fn main() {}\n").expect("a file");
@@ -1284,7 +1296,7 @@ fn closing_the_project_asks_about_what_is_unwritten_and_then_which_project() {
 /// one there was in `App::leave_the_project`: the file is still open.
 #[test]
 fn closing_a_project_with_nothing_unwritten_goes_straight_to_asking() {
-    let _list = the_list();
+    let _turn = crate::turn();
     let scratch = support::Scratch::new("closing-clean");
     let file = scratch.join("file.rs");
     std::fs::write(&file, "fn main() {}\n").expect("a file");
@@ -1307,7 +1319,7 @@ fn closing_a_project_with_nothing_unwritten_goes_straight_to_asking() {
 /// `App::answered`: Obelus stays on the project.
 #[test]
 fn closing_without_saving_leaves_the_file_as_it_was() {
-    let _list = the_list();
+    let _turn = crate::turn();
     let scratch = support::Scratch::new("closing-discards");
     let file = scratch.join("file.rs");
     std::fs::write(&file, "fn main() {}\n").expect("a file");
@@ -1336,6 +1348,7 @@ fn closing_without_saving_leaves_the_file_as_it_was() {
 /// dropping the second press's enter, which leaves them being asked.
 #[test]
 fn a_press_stands_on_a_project_and_a_second_opens_it() {
+    let _turn = crate::turn();
     let scratch = support::Scratch::new("choosing-double-click");
     let mut app = App::new(Vec::new());
     app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
@@ -1386,6 +1399,7 @@ fn a_press_stands_on_a_project_and_a_second_opens_it() {
 /// box keeps what was typed.
 #[test]
 fn a_double_click_on_what_could_finish_a_path_puts_it_in_the_box() {
+    let _turn = crate::turn();
     let scratch = support::Scratch::new("choosing-double-click-path");
     std::fs::create_dir_all(scratch.path().join("alpha")).expect("directories");
     std::fs::create_dir_all(scratch.path().join("beta")).expect("directories");
@@ -1436,6 +1450,7 @@ fn a_double_click_on_what_could_finish_a_path_puts_it_in_the_box() {
 /// puts the candidate the list is on into it.
 #[test]
 fn a_double_click_on_a_project_while_naming_a_path_does_nothing() {
+    let _turn = crate::turn();
     let scratch = support::Scratch::new("choosing-double-click-naming");
     std::fs::create_dir_all(scratch.path().join("inner")).expect("directories");
     let mut app = asking();

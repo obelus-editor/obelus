@@ -908,10 +908,11 @@ crates/
   */tests/          integration tests, most of them `obelus-app`'s, plus
                     obelus-app/tests/fixtures/*.txt golden grids
                     · every file is a binary linked with all of Obelus, so
-                      the application's share one, and a file beside it
-                      sets something the whole process reads
-                      (obelus-app/tests/app/main); why the fake agent is
-                      `sh`, and what it checks back
+                      the application's share one, those that set what the
+                      process reads share another and take turns, and a
+                      file beside both sets something for good
+                      (obelus-app/tests/app/main, process/main); why the
+                      fake agent is `sh`, and what it checks back
                       (obelus-app/tests/app/agent); a test whose input is the
                       checkout's own history only passes at one moment
                       (obelus-app/tests/app/git)
@@ -979,18 +980,21 @@ and a surprising way to see it.
 all: `obelus-app`'s sixty were most of the 63G one checkout's `target`
 held after a run of the suite. So the
 application's tests are one binary, `obelus-app/tests/app/main.rs`, and a new
-file goes in that directory with a `mod` line there. A file stands beside it
-only when its tests set something the whole process reads and do not set it
-back -- the glyph switch, the tab width, a start that applies the settings
--- and it says so at its top, `A binary of its own because ...`. Sharing a
+file goes in that directory with a `mod` line there. A file whose tests
+set something the whole process reads -- the glyph switch, the tab width, a
+start that applies the settings -- goes in the other one,
+`obelus-app/tests/process/main.rs`, where every test holds `crate::turn`
+for as long as it runs. A file stands beside both only when it can share
+neither -- what it sets is never set back, say -- and it says so at its
+top, `A binary of its own because ...`. Sharing a
 process has a price the old layout hid: anything one per process is now
 shared with every file, so a test that writes the clipboard or opens a link
 takes `support::clipboard_turn`, a scratch directory's name is unique across
 the binary (`support::Scratch` panics on a second), and a test that reads
 what the process remembers -- the projects chosen on the page that asks --
 says what that is rather than reading what its neighbours left there, or
-stands beside the binary where it asserts on the file itself
-(`choosing_a_project`).
+goes where tests take turns when it asserts on the file itself
+(`process/choosing_a_project`).
 
 **A test that only passes in one checkout is a broken test, not a rule.** The
 welcome screen prints the working directory, so its fixture once carried

@@ -1,15 +1,16 @@
 //! How wide a tab is, which is two things that have to agree.
 //!
-//! Their own binary because the width is one thing for the whole process --
+//! Not in the application's binary because the width is one thing for the
+//! whole process --
 //! a drawing decision the program shares, the way the glyph switch is --
 //! and a test beside them that set a config would move it underneath.
-
-mod support;
 
 use crossterm::event::KeyCode;
 use obelus_app::app::App;
 use obelus_buffer::Buffer;
 use obelus_text::{Text, coordinates::LineNumber};
+
+use crate::support;
 
 fn reading(name: &str, contents: &str, width: usize) -> (support::Scratch, App) {
     let scratch = support::Scratch::new(name);
@@ -28,14 +29,9 @@ fn reading(name: &str, contents: &str, width: usize) -> (support::Scratch, App) 
     (scratch, app)
 }
 
-/// The tabs tests share one global, so they take turns.
-static TABS: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
 #[test]
 fn the_tab_key_puts_in_as_many_spaces_as_the_setting_says() {
-    let _turn = TABS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let (_scratch, mut app) = reading("tabs-typed", "x\n", 2);
     support::press(&mut app, KeyCode::Tab);
     assert_eq!(
@@ -64,9 +60,7 @@ fn the_tab_key_puts_in_as_many_spaces_as_the_setting_says() {
 /// key puts in does not line up with what is there.
 #[test]
 fn a_tab_in_the_file_is_laid_out_at_the_same_width() {
-    let _turn = TABS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let text = Text::from_string("\tx\n");
 
     obelus_text::lay_tabs_at(2);
@@ -84,9 +78,7 @@ fn a_tab_in_the_file_is_laid_out_at_the_same_width() {
 /// can step over.
 #[test]
 fn a_width_of_nothing_is_not_taken() {
-    let _turn = TABS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     obelus_text::lay_tabs_at(0);
     assert!(obelus_text::tab_width() >= 1);
     obelus_text::lay_tabs_at(obelus_text::TAB_WIDTH);

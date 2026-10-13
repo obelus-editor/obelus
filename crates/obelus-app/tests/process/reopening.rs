@@ -6,11 +6,9 @@
 //! is said in the tree's own `.obelus/config.toml`, so the answer does not
 //! hang on the settings of the machine the suite runs on.
 //!
-//! A binary of its own for the reason `starting` is: a start applies the
-//! settings to the whole process -- the glyph switch among them, which is
-//! the machine's and not the tree's.
-
-mod support;
+//! Not in the application's binary, for the reason `starting` is not: a start
+//! applies the settings to the whole process -- the glyph switch among them,
+//! which is the machine's and not the tree's.
 
 use std::path::Path;
 
@@ -20,6 +18,8 @@ use obelus_app::{
     startup,
 };
 use obelus_buffer::DocumentId;
+
+use crate::support;
 
 /// What the binary would hand in, standing in for a commit nobody built.
 const BUILT: &str = "abc1234";
@@ -128,6 +128,7 @@ fn read_down_b(app: &mut App, root: &Path) {
 /// `b.rs`'s caret on its first line.
 #[test]
 fn the_files_come_back_with_their_carets() {
+    let _turn = crate::turn();
     let scratch = tree("reopening-files", true);
     let root = scratch.path();
 
@@ -156,6 +157,7 @@ fn the_files_come_back_with_their_carets() {
 /// not anything was named: the reader landed on `b.rs`.
 #[test]
 fn a_file_named_is_where_the_reader_lands() {
+    let _turn = crate::turn();
     let scratch = tree("reopening-named", true);
     let root = scratch.path();
     let c = root.join("c.rs");
@@ -194,6 +196,7 @@ fn a_file_named_is_where_the_reader_lands() {
 /// file was read again.
 #[test]
 fn the_notes_come_back_on_the_note_the_reader_was_on() {
+    let _turn = crate::turn();
     let scratch = tree("reopening-notes", true);
     let root = scratch.path();
     support::make_room_for_notes(root);
@@ -244,6 +247,7 @@ fn the_notes_come_back_on_the_note_the_reader_was_on() {
 /// it took the reader off `c.rs`.
 #[test]
 fn the_files_are_read_after_the_first_screen() {
+    let _turn = crate::turn();
     let scratch = tree("reopening-later", true);
     let root = scratch.path();
     let c = root.join("c.rs");
@@ -288,6 +292,7 @@ fn the_files_are_read_after_the_first_screen() {
 /// record of the removed tree was still there.
 #[test]
 fn a_tree_that_has_gone_takes_its_record_with_it() {
+    let _turn = crate::turn();
     let gone = tree("reopening-removed", true);
     let mut first = startup::start(&[gone.path().join("a.rs")], BUILT).expect("starting");
     frame(&mut first);
@@ -312,6 +317,7 @@ fn a_tree_that_has_gone_takes_its_record_with_it() {
 /// `reopen_what_was_open`: both files came back.
 #[test]
 fn switched_off_nothing_comes_back() {
+    let _turn = crate::turn();
     let scratch = tree("reopening-off", true);
     let root = scratch.path();
 
@@ -334,6 +340,7 @@ fn switched_off_nothing_comes_back() {
 /// back with its caret on the first line.
 #[test]
 fn leaving_says_where_the_caret_is() {
+    let _turn = crate::turn();
     let scratch = tree("reopening-leaving", true);
     let root = scratch.path();
 
@@ -361,6 +368,7 @@ fn leaving_says_where_the_caret_is() {
 /// the third window opened on `a.rs` alone.
 #[test]
 fn the_last_window_to_change_wins() {
+    let _turn = crate::turn();
     let scratch = tree("reopening-two", true);
     let root = scratch.path();
 
@@ -396,6 +404,7 @@ fn the_last_window_to_change_wins() {
 /// put it in the third window while the second still had it.
 #[test]
 fn a_conversation_comes_back_unless_another_window_has_it() {
+    let _turn = crate::turn();
     let scratch = tree("reopening-conversation", true);
     let root = scratch.path();
     let note = obelus_todo::NoteId::read("0123456R").expect("a name");
@@ -491,6 +500,7 @@ fn a_conversation_comes_back_unless_another_window_has_it() {
 /// `conversation_title`: the row said what the note says instead.
 #[test]
 fn a_conversation_that_comes_back_keeps_its_name() {
+    let _turn = crate::turn();
     let scratch = tree("reopening-conversation-name", true);
     let root = scratch.path();
     let note = obelus_todo::NoteId::read("0123456R").expect("a name");
@@ -587,6 +597,7 @@ fn leave(app: &mut App) {
 /// alone in `conversation_open`, the way it was: the row is locked.
 #[test]
 fn a_loose_conversation_put_back_is_listed_as_this_windows() {
+    let _turn = crate::turn();
     let scratch = tree("reopening-loose-listed", true);
     let root = scratch.path();
     let which = obelus_agent::chats::ChatId::Loose("s-9".to_string());

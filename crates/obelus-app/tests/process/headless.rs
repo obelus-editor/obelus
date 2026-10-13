@@ -2,16 +2,16 @@
 //! it stops on, and what of the reader's it leaves alone.
 //!
 //! What it needs of the chat, and the chat going wrong under it, are in
-//! `tests/remote.rs` beside the fake platform.
+//! `remote.rs` beside the fake platform.
 //!
-//! A binary of its own for the reason `starting` is: a start applies the
-//! settings to the whole process.
-
-mod support;
+//! Not in the application's binary, for the reason `starting` is not: a start
+//! applies the settings to the whole process.
 
 use std::path::Path;
 
 use obelus_app::{app::App, event::Event, startup};
+
+use crate::support;
 
 /// What the binary would hand in, standing in for a commit nobody built.
 const BUILT: &str = "abc1234";
@@ -23,6 +23,7 @@ const BUILT: &str = "abc1234";
 /// start went on, and stopped on something else.
 #[test]
 fn headless_opens_no_file() {
+    let _turn = crate::turn();
     let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sample.rs");
     let outcome = startup::start_headless(&[file], BUILT);
     let Err(error) = outcome else {
@@ -41,6 +42,7 @@ fn headless_opens_no_file() {
 /// unwritten file was asked about and the loop went on.
 #[test]
 fn told_to_stop_it_stops_without_asking() {
+    let _turn = crate::turn();
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     support::lay_out(&mut app, 80, 24);
     support::type_text(&mut app, "unwritten");
@@ -64,6 +66,7 @@ fn told_to_stop_it_stops_without_asking() {
 #[cfg(unix)]
 #[test]
 fn a_kill_is_heard_as_being_told_to_stop() {
+    let _turn = crate::turn();
     let (sender, events) = obelus_app::event::channel();
     obelus_app::event::stop_when_told(sender);
     let sent = std::process::Command::new("kill")
@@ -84,6 +87,7 @@ fn a_kill_is_heard_as_being_told_to_stop() {
 /// `App::the_tree_has_gone`: the page went up and nothing ended.
 #[test]
 fn the_tree_going_ends_it() {
+    let _turn = crate::turn();
     let tree = std::env::temp_dir().join(format!("obelus-headless-gone-{}", std::process::id()));
     std::fs::create_dir_all(&tree).expect("a tree");
     let mut app = App::new(Vec::new());
@@ -162,6 +166,7 @@ fn a_window(root: &Path) -> App {
 /// one had open.
 #[test]
 fn what_a_window_had_open_is_left_alone() {
+    let _turn = crate::turn();
     let scratch = tree("headless-reopening");
     let root = scratch.path();
 
