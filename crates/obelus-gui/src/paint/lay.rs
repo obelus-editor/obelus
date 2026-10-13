@@ -4,7 +4,7 @@
 use obelus_font::Fonts;
 
 use super::{
-    glass::{casting, reached},
+    glass::{casting, reached, through as through_the_bar},
     *,
 };
 use crate::{
@@ -113,10 +113,16 @@ impl Painter {
             .and_then(|_| stack.iter().rposition(|over| !over.is_a_box()))
             .filter(|&at| stack[at].joined != Joined::Below && stack[at].area.y == 0)
             .map(|_| -margin[1]);
+        // And a pane that hung from there going back up through it, the
+        // way it came: the bar over it as well, for the same reason.
+        let over_the_panes = through.is_some()
+            || (self.bar.is_some()
+                && moving.leaving.is_some()
+                && self.gone.iter().any(|&(.., from_the_top)| from_the_top));
         // The bar's buttons, on the picture where there is one. With it in
         // the quads every whole screen starts from, because the bar stands
         // still the way the picture does: what slides is the page under it.
-        if through.is_none() {
+        if !over_the_panes {
             self.title_bar(across, margin, fonts);
         }
         // Where the picture's quads end, which every whole screen drawn
@@ -354,7 +360,7 @@ impl Painter {
             // moved up with it -- not glass of its own, which would read
             // what is behind the pane where nothing was drawn behind it,
             // and that is black.
-            let room = through.map_or(pane, |window| [pane[0], window, pane[2], pane[3]]);
+            let room = through_the_bar(pane, through);
             self.slid_piece(reached(pane, shift), pane, 0.0, along);
             if let Some(window) = through {
                 self.slid_piece([pane[0], window, pane[2], pane[1]], pane, shift, along);
@@ -393,12 +399,15 @@ impl Painter {
         } else {
             self.going(moving.leaving);
         }
+        // The bar over a pane coming down through it or going up through
+        // it -- see `through`.
+        if over_the_panes {
+            let start = self.quads.len();
+            self.title_bar(across, margin, fonts);
+            self.placed.bar_over = Some(start..self.quads.len());
+        }
         // Last, because none of it is drawn on the screen: the blurs are
         // passes of their own, before any of the above.
-        // The bar over a pane coming down through it -- see `through`.
-        if through.is_some() {
-            self.title_bar(across, margin, fonts);
-        }
         self.placed.moved = self.quads.len();
         for at in 0..self.placed.levels.len() {
             self.placed.levels[at].blur = self.blurs_over(self.placed.levels[at].rect);

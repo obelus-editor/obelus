@@ -320,15 +320,23 @@ impl Painter {
         let Some(along) = along else {
             return;
         };
-        let shifts: Vec<([f32; 4], f32)> = self
+        // From the top of the window where it hung from the top of the
+        // page under a bar Obelus draws: it goes up through the bar the
+        // way it came down through it -- see `through` in `lay`.
+        let window = self.bar.map(|_| -self.margin[1]);
+        let shifts: Vec<([f32; 4], f32, Option<f32>)> = self
             .gone
             .iter()
-            .map(|&(pane, joined)| {
+            .map(|&(pane, joined, from_the_top)| {
                 let toward = match joined {
                     Joined::Below => 1.0,
                     _ => -1.0,
                 };
-                (pane, toward * along * (pane[3] - pane[1]) * TRAVEL)
+                (
+                    pane,
+                    toward * along * (pane[3] - pane[1]) * TRAVEL,
+                    window.filter(|_| from_the_top),
+                )
             })
             .collect();
         let start = self.quads.len();
@@ -342,19 +350,29 @@ impl Painter {
             // is cut straight rather than rounded and lit -- for the fifth
             // of a second it takes to fade.
             Some(_) => {
-                for &(pane, shift) in &shifts {
+                for &(pane, shift, window) in &shifts {
                     self.slid_piece(reached(pane, shift), pane, 0.0, 1.0 - along);
+                    // Its glass on the bar is the glass it left on the page,
+                    // moved up with it -- see `through` in `lay`.
+                    if let Some(window) = window {
+                        self.slid_piece(
+                            [pane[0], window, pane[2], pane[1]],
+                            pane,
+                            shift,
+                            1.0 - along,
+                        );
+                    }
                 }
                 let lifted = self.quads.len();
-                for &(pane, shift) in &shifts {
-                    self.slid(pane, shift, 1.0 - along);
+                for &(pane, shift, window) in &shifts {
+                    self.slid_piece(through(pane, window), pane, shift, 1.0 - along);
                 }
                 self.placed.going_lifted = Some(lifted..self.quads.len());
                 self.placed.going = Some(start..lifted);
             }
             None => {
-                for &(pane, shift) in &shifts {
-                    self.slid(pane, shift, 1.0 - along);
+                for &(pane, shift, window) in &shifts {
+                    self.slid_piece(through(pane, window), pane, shift, 1.0 - along);
                 }
                 self.placed.going = Some(start..self.quads.len());
             }
@@ -1022,6 +1040,12 @@ fn cut(piece: [f32; 4], room: [f32; 4], into: &mut Vec<[f32; 4]>) {
     if room[2] < far {
         into.push([room[2], over, far, under]);
     }
+}
+
+/// The room a pane is drawn in while it slides: its own, or from the top
+/// of the window down where it goes through a bar Obelus draws.
+pub(super) fn through(pane: [f32; 4], window: Option<f32>) -> [f32; 4] {
+    window.map_or(pane, |window| [pane[0], window, pane[2], pane[3]])
 }
 
 /// How much of a pane a slide has let through, which is the room its

@@ -240,7 +240,10 @@ pub(crate) struct Painter {
     left_lifted: Option<Whole>,
     /// Where each pane that went stood in it -- its glass, which is where
     /// it was cut from the screen under it -- and the edge it goes along.
-    gone: Vec<([f32; 4], Joined)>,
+    /// And whether it hung from the top of the page, which under a bar
+    /// Obelus draws is a pane that goes up through the bar -- see
+    /// `Painter::going`.
+    gone: Vec<([f32; 4], Joined, bool)>,
     /// The same bindings with something else in the backdrop's place, for
     /// the pass that *draws* it: a texture cannot be read and written in
     /// one pass, and what goes in the slot is never sampled there.
@@ -320,6 +323,11 @@ struct Placed {
     kept_from: Option<usize>,
     /// And the pieces that put what was written on them back.
     going_lifted: Option<Range<usize>>,
+    /// The bar Obelus draws, laid over a pane coming in or going out
+    /// through it rather than under it -- see `through` in `lay`. Among
+    /// the pieces where the screen is composed; drawn on its own after
+    /// the panes that went where it is not.
+    bar_over: Option<Range<usize>>,
     /// And its glass where the pane has got to: a copy, drawn in the frame
     /// in the place of the glass every other picture reads -- see
     /// `in_place_of`.

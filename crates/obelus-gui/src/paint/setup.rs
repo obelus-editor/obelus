@@ -762,6 +762,7 @@ impl Painter {
                 (
                     level.map_or_else(|| box_of(gone.area, cell), |level| level.rect),
                     gone.joined,
+                    gone.area.y == 0 && gone.joined != Joined::Below,
                 )
             })
             .collect();
@@ -934,7 +935,7 @@ impl Painter {
                 None if let Some(from) = placed.kept_from => {
                     let (glass, written) = parted_at(on_the_screen(&placed), from);
                     self.follow(&mut pass, &glass, &self.levels[0].bindings);
-                    let gone: Vec<[f32; 4]> = self.gone.iter().map(|&(pane, _)| pane).collect();
+                    let gone: Vec<[f32; 4]> = self.gone.iter().map(|&(pane, ..)| pane).collect();
                     for tile in tiles([f32::MIN, f32::MIN, f32::MAX, f32::MAX], &gone) {
                         self.within(&mut pass, tile);
                         self.follow(&mut pass, &written, &self.levels[0].bindings);
@@ -967,6 +968,11 @@ impl Painter {
                     {
                         pass.set_bind_group(0, &lifted.bindings, &[]);
                         drawing(&mut pass, going);
+                    }
+                    // And the bar, over the panes going up through it.
+                    if let Some(bar) = placed.bar_over {
+                        pass.set_bind_group(0, &self.plain_bindings, &[]);
+                        drawing(&mut pass, bar);
                     }
                 }
             }
