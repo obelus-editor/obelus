@@ -5248,6 +5248,101 @@ fn a_question_that_arrives_under_a_list_waits_behind_it() {
     );
 }
 
+/// A question that arrives while the reader is writing waits behind the
+/// box, and the enter they were already pressing sends what they wrote.
+///
+/// The card used to come in front at once, and that enter answered its
+/// first question with the first answer -- which nobody gave.
+///
+/// The reader starts writing before the question is heard, and keeps on
+/// -- a letter whenever nothing has arrived for a moment -- so it comes
+/// while they are writing however slowly the agent asks.
+///
+/// Broken deliberately by never holding the question (`talk.held = false`
+/// in `show_the_question`): the card is in front while the reader is
+/// writing. And with the two assertions that say so taken out, the enter
+/// answers its first question and the last but one fails.
+#[test]
+fn a_question_that_arrives_while_the_reader_writes_waits_behind_the_box() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/ask ");
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "and");
+    let deadline = Instant::now() + patience();
+    while !app.is_asking() {
+        assert!(
+            Instant::now() < deadline,
+            "gave up waiting for the question"
+        );
+        match events.recv_timeout(Duration::from_millis(200)) {
+            Ok(event) => app.handle(event),
+            Err(_) => support::type_text(&mut app, "a"),
+        }
+        support::lay_out(&mut app, WIDTH, HEIGHT);
+    }
+    assert!(
+        app.card().is_none(),
+        "the question came in front of a reader who was writing"
+    );
+    support::type_text(&mut app, " next");
+    support::press(&mut app, KeyCode::Enter);
+    assert!(
+        app.card().is_none(),
+        "the question came in front while the reader was still pressing keys"
+    );
+    pump(&mut app, &events, "the question in front", |app| {
+        app.card().is_some()
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Carefully"),
+        "the enter meant for the box answered the question:\n{text}"
+    );
+    assert!(
+        said_in_transcript(&app, "next"),
+        "what the reader was writing was not sent:\n{text}"
+    );
+}
+
+/// The enter that answered one question does not answer the next: a reader
+/// pressing it twice meant the first, and the second card waits until they
+/// have stopped.
+///
+/// Broken deliberately by leaving a key to a card out of what counts as
+/// writing (the `carded` arm in `chat_key`): the second enter answers the
+/// second question too.
+#[test]
+fn the_enter_that_answered_one_question_does_not_answer_the_next() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/pair");
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "both questions", |app| {
+        app.card().is_some() && said_in_transcript(app, "Read the second file")
+    });
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    assert!(
+        app.is_asking_permission(),
+        "the second enter answered the second question"
+    );
+    pump(&mut app, &events, "the second question in front", |app| {
+        app.card().is_some()
+    });
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the second answer", |app| {
+        said_in_transcript(app, "the second was")
+    });
+    assert!(said_in_transcript(&app, "the first was [once]"));
+    assert!(said_in_transcript(&app, "the second was [once]"));
+}
+
 /// What a short list leaves showing of a conversation is drawn and not
 /// marked: the card's row and the list of commands' row are where they were,
 /// and neither says the keys are on it while the list has them.
@@ -13551,6 +13646,11 @@ fn two_questions_at_once_are_put_one_after_the_other() {
         app.is_asking_permission(),
         "the second question never went up"
     );
+    // In front once the reader has stopped, which the enter that answered
+    // the first says they had not.
+    pump(&mut app, &events, "the second question in front", |app| {
+        app.card().is_some()
+    });
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the second answer", |app| {
         said_in_transcript(app, "the second was")

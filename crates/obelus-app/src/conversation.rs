@@ -311,6 +311,24 @@ pub struct Conversation {
     /// thing: what it wants to know, what the answers are, and room to say
     /// one in your own words where it will take those.
     pub card: Option<Card>,
+    /// Whether the card is behind the box rather than over it, because the
+    /// reader was writing when the question came.
+    ///
+    /// The card is up all the same -- the row in the list of open documents
+    /// and a chat both say there is a question -- but the keys go where the
+    /// reader was sending them. A question arriving under a key already on
+    /// its way down took that key: the enter that was to send a message
+    /// answered the card with its first answer, which is an answer nobody
+    /// gave. It comes in front once the reader has stopped
+    /// (`App::let_the_question_in`).
+    pub held: bool,
+    /// The clock that lets it in, put back with every key while it is held.
+    pub holding: Option<crate::event::Pause>,
+    /// When the reader last pressed a key that left them writing here: words
+    /// in the box, or any key to a card -- answering one is what puts up
+    /// the next question, and the enter that answered it may be on its way
+    /// down again.
+    pub typed: Option<std::time::Instant>,
     /// The permission request waiting on the reader.
     pub permission: Option<Permission>,
     /// Somewhere the agent wants the reader to go, while they have not
@@ -412,6 +430,21 @@ impl Conversation {
     pub fn has_the_readers_words(&self) -> bool {
         let writing = self.chat.writing();
         !writing.is_blank() || writing.has_pictures() || !self.chat.unsent().is_empty()
+    }
+
+    /// The card, where it is in front of the box.
+    ///
+    /// What the screen and the keys ask, where [`Conversation::card`] is what
+    /// is being asked: while a card is held, the box is drawn and takes the
+    /// keys as though there were none.
+    #[must_use]
+    pub fn card_in_front(&self) -> Option<&Card> {
+        self.card.as_ref().filter(|_| !self.held)
+    }
+
+    /// The same, to change.
+    pub fn card_in_front_mut(&mut self) -> Option<&mut Card> {
+        self.card.as_mut().filter(|_| !self.held)
     }
 
     /// Whether the agent is waiting on the reader in this one.

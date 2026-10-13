@@ -168,7 +168,14 @@ impl App {
         // What the conversation says is happening, read off the state
         // rather than remembered: a row that is worked out every frame
         // cannot be left saying something that stopped being true.
+        //
+        // A question held behind the box first: the agent is waiting on the
+        // reader, and the card that would say so is not in front yet.
+        let held = self
+            .conversation()
+            .is_some_and(|talk| talk.held && talk.card.is_some());
         let doing = match self.talking() {
+            _ if held => Some("It has a question for when you stop typing"),
             Talking::Starting => Some("Starting\u{2026}"),
             Talking::Thinking => Some("Thinking\u{2026}"),
             Talking::Nobody | Talking::Idle | Talking::Ready | Talking::Gone => None,

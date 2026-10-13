@@ -818,7 +818,11 @@ fn a_sign_in_that_fails_stays_to_be_read() {
     press(&mut app, KeyCode::Left, KeyModifiers::ALT);
     assert!(app.chat().is_some(), "not in the conversation");
     assert!(said_in_transcript(&app, "Signing in did not finish"));
-    assert!(app.card().is_some(), "the question did not go back up");
+    // In front once the reader has stopped: the key that chose on the card
+    // was a moment ago.
+    pump(&mut app, &events, "the question to go back up", |app| {
+        app.card().is_some()
+    });
 }
 
 /// A conversation taken up again that the agent cannot take up, and whose
@@ -1048,10 +1052,15 @@ fn leaving_says_what_is_running_beside_what_is_unwritten() {
 #[test]
 fn a_sign_in_that_will_not_start_asks_again() {
     let marker = marker("missing");
-    let (mut app, _events) = asked_to_sign_in(&marker);
+    let (mut app, events) = asked_to_sign_in(&marker);
     choose(&mut app, "Run what is not there");
     assert!(app.terminal().is_none(), "a terminal opened for nothing");
     assert!(said_in_transcript(&app, "The sign-in would not start"));
+    // In front once the reader has stopped, as the enter that chose is the
+    // one that put it back.
+    pump(&mut app, &events, "the question to go back up", |app| {
+        app.card().is_some()
+    });
     assert!(
         app.card().is_some_and(|card| card
             .choices()

@@ -244,6 +244,7 @@ impl App {
             }
             // The notes, once the reader has stopped typing into them.
             Event::NotesSettled => self.settle_notes(),
+            Event::StoppedWriting(id) => self.let_the_question_in(id),
             Event::SyntaxSettled => {
                 // Let go of first: `catch_up_soon` starts another only when
                 // there is none, and one held after it has fired is a tree

@@ -136,6 +136,9 @@ pub enum Event {
     Tick,
     /// The pause after typing into the notes ran out.
     NotesSettled,
+    /// The reader has stopped writing in a conversation a question was
+    /// held behind the box of.
+    StoppedWriting(obelus_buffer::DocumentId),
     /// Long enough since a tree was left behind its text to catch it up.
     ///
     /// A grammar too slow to keep up with typing owes an answer, and this
@@ -269,6 +272,7 @@ impl Event {
             Self::Dropped(_) => "Dropped",
             Self::Tick => "Tick",
             Self::NotesSettled => "NotesSettled",
+            Self::StoppedWriting(_) => "StoppedWriting",
             Self::SyntaxSettled => "SyntaxSettled",
             Self::ChangesSettled => "ChangesSettled",
             Self::SignatureSettled => "SignatureSettled",
