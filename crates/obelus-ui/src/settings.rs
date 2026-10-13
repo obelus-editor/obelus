@@ -25,15 +25,40 @@ use crate::{
     Hint, Marked, Matched, Screen, fill, put, rule, truncate_from_right, write, write_marked,
 };
 
-/// How wide a control's column is.
+/// How narrow a control's column may be.
 ///
-/// Fixed, so the controls line up down the screen: a column of `on` and
-/// `off` and theme names at ragged left edges is three columns pretending to
-/// be one. Wide enough for `Feature branch` with a gap before its arrow and
-/// one after it, because a word and an arrow up against the page's edge
-/// read as cut off; what is longer than that -- a theme the reader named,
-/// the machine's own face -- is cut off the way it always was.
+/// Wide enough for `Feature branch` with a gap before its arrow and one
+/// after it, because a word and an arrow up against the page's edge read as
+/// cut off.
 const CONTROL_WIDTH: u16 = 16;
+
+/// Where a control's column starts on a page in this region, and how wide
+/// it is.
+///
+/// One answer for the whole page, so the controls line up down the screen:
+/// a column of `on` and `off` and theme names at ragged left edges is three
+/// columns pretending to be one. But a share of the page rather than the
+/// narrowest it may be, because what is longer than `Feature branch` -- a
+/// theme the reader named, the machine's own face, a list of faces -- was
+/// cut off on a page with room to spare. Never more than twice the least,
+/// because the names and what each one does are what the page is for.
+///
+/// The keys page keeps the least: what goes there is a key, and a key is
+/// short, so a wider column is taken from what each command does and
+/// given to nothing.
+///
+/// Measured as if the page always had a bar, whether or not this one does:
+/// a tab that scrolls and one that does not, or a query narrowing a page
+/// until it fits, would otherwise move the column a cell or two under the
+/// reader's eye.
+fn control_column(region: Rect, keys: bool) -> (u16, u16) {
+    let room = region.width.saturating_sub(crate::editor::SCROLLBAR_WIDTH);
+    let width = match keys {
+        true => CONTROL_WIDTH,
+        false => (room / 3).clamp(CONTROL_WIDTH, CONTROL_WIDTH * 2),
+    };
+    (region.x + room.saturating_sub(width + 1), width)
+}
 
 /// Where the arrow beside a value goes: after it, and never past the
 /// column's own last cell.
@@ -45,8 +70,8 @@ const CONTROL_WIDTH: u16 = 16;
 /// one came out as a row of squares. The fonts setting did worse without
 /// the arrow's help, being a list of names joined with commas and written
 /// out to whatever the row had.
-fn arrow_at(x: u16, after: u16) -> u16 {
-    after.saturating_add(1).min(x + CONTROL_WIDTH)
+fn arrow_at(x: u16, after: u16, width: u16) -> u16 {
+    after.saturating_add(1).min(x + width)
 }
 
 /// What the agent's heading says under its name.
@@ -419,6 +444,15 @@ fn rows_above(rows: &[Row], first: usize) -> usize {
         .sum()
 }
 
+/// Whether a page's rows are more than the screen has, which is whether it
+/// has a bar and gives that column up to it.
+///
+/// Asked in rows and not of the window, which counts entries: an entry here
+/// is as tall as what it says.
+fn scrolls(rows: &[Row], height: u16) -> bool {
+    rows_above(rows, rows.len()) > usize::from(height)
+}
+
 fn placed(region: Rect, rows: &[Row], window: &obelus_component::window::Window) -> Vec<Placed> {
     let mut placed = Vec::new();
     let mut y = region.y;
@@ -487,11 +521,11 @@ impl SettingsView<'_> {
         let found = placed(region, &rows, window)
             .into_iter()
             .find(|placed| y >= placed.area.y && y < placed.area.y + placed.area.height)?;
-        let room = match window.scrollable(region.height) {
+        let room = match scrolls(&rows, region.height) {
             true => region.width.saturating_sub(crate::editor::SCROLLBAR_WIDTH),
             false => region.width,
         };
-        let aside = region.x + room.saturating_sub(CONTROL_WIDTH + 1);
+        let (aside, _) = control_column(region, self.settings.on_keys());
         Some((found.at, x >= aside && x < region.x + room))
     }
 }
@@ -981,19 +1015,27 @@ impl SettingsView<'_> {
         }
 
         // The same bar every other list has when there is more of it than
-        // there is screen.
+        // there is screen -- measured in rows, as the page of cards is: an
+        // entry is as tall as what it says, so a page of a dozen of them can
+        // be twice the screen, and one measured in entries was a page that
+        // fitted, with no bar and nothing kept out of the bar's column.
         let window = self.settings.window();
-        let scrolling = window.scrollable(region.height);
+        let first = window.top().min(rows.len());
+        let above = rows_above(rows, first);
+        let scrolling = scrolls(rows, region.height);
         let bar = scrolling
-            .then(|| crate::scrollbar(cells, region, window.top(), rows.len(), self.theme))
+            .then(|| {
+                let total = rows_above(rows, rows.len());
+                let bar = crate::scrollbar(cells, region, above, total, self.theme);
+                // And what the window is moved by is the entry.
+                let heights: Vec<u16> = rows.iter().map(entry_rows).collect();
+                crate::bars::in_items(bar, &heights);
+                bar
+            })
             .flatten();
         // And where the list has got to, for a front end that can draw it
-        // arriving rather than simply being there -- in rows of the
-        // screen, which on this page is not the entry the window is on:
-        // see `entry_rows`. The bar above is the other question and takes
-        // the entry, because what it says is a proportion.
-        let first = window.top().min(rows.len());
-        if let Ok(top) = i64::try_from(rows_above(rows, first)) {
+        // arriving rather than simply being there, in the same rows.
+        if let Ok(top) = i64::try_from(above) {
             crate::shapes::scrolled(
                 Rect {
                     width: region.width.saturating_sub(crate::editor::SCROLLBAR_WIDTH),
@@ -1007,7 +1049,7 @@ impl SettingsView<'_> {
             true => region.width.saturating_sub(crate::editor::SCROLLBAR_WIDTH),
             false => region.width,
         };
-        let aside_at = region.x + room.saturating_sub(CONTROL_WIDTH + 1);
+        let (aside_at, control) = control_column(region, self.settings.on_keys());
         // Where a name starts: in from the group's heading on the settings
         // page, and hard against the edge on the keys page, which has no
         // groups to be in.
@@ -1188,7 +1230,7 @@ impl SettingsView<'_> {
             match &row.aside {
                 Aside::Control(kind, value) => draw_control(
                     cells,
-                    ratatui::layout::Position { x: aside_at, y },
+                    Rect::new(aside_at, y, control, 1),
                     *kind,
                     value,
                     self.theme,
@@ -1196,11 +1238,11 @@ impl SettingsView<'_> {
                     row.pinned.is_none() && row.scope != Some(Scope::Project),
                 ),
                 Aside::Words(words) => {
-                    let keys = truncate_from_right(words, usize::from(CONTROL_WIDTH));
+                    let keys = truncate_from_right(words, usize::from(control));
                     // Against the column's right edge, so a command's keys,
                     // one to a row, end in a line however long each is.
-                    let width = u16::try_from(text_width(&keys)).unwrap_or(CONTROL_WIDTH);
-                    let key_at = aside_at + CONTROL_WIDTH.saturating_sub(width);
+                    let width = u16::try_from(text_width(&keys)).unwrap_or(control);
+                    let key_at = aside_at + control.saturating_sub(width);
                     write(
                         cells,
                         key_at,
@@ -1237,14 +1279,14 @@ impl SettingsView<'_> {
                         cells,
                         aside_at,
                         y,
-                        &truncate_from_right(word, usize::from(CONTROL_WIDTH)),
+                        &truncate_from_right(word, usize::from(control)),
                         plain.fg(ink).bg(background),
                     );
                     // Pointing right, at the value, the way every other
                     // list on this page does.
                     put(
                         cells,
-                        arrow_at(aside_at, after),
+                        arrow_at(aside_at, after, control),
                         y,
                         '\u{25b8}',
                         plain.fg(self.theme.gutter).bg(background),
@@ -1255,7 +1297,7 @@ impl SettingsView<'_> {
                         cells,
                         aside_at,
                         y,
-                        &truncate_from_right(word, usize::from(CONTROL_WIDTH)),
+                        &truncate_from_right(word, usize::from(control)),
                         plain
                             .fg(match usable {
                                 true => self.theme.foreground,
@@ -1265,7 +1307,7 @@ impl SettingsView<'_> {
                     );
                     put(
                         cells,
-                        arrow_at(aside_at, after),
+                        arrow_at(aside_at, after, control),
                         y,
                         '\u{25b8}',
                         plain.fg(self.theme.gutter).bg(background),
@@ -2102,17 +2144,18 @@ fn run_of(run: Option<std::ops::Range<usize>>) -> Matched<'static> {
     run.map_or(Matched::Nothing, |run| Matched::Run(run.start, run.end))
 }
 
-/// Writes a control: a switch, or the word a droplist is set to.
+/// Writes a control: a switch, or the word a droplist is set to, in the
+/// row of the control's column it is given.
 fn draw_control(
     cells: &mut CellBuffer,
-    at: ratatui::layout::Position,
+    at: Rect,
     kind: Kind,
     value: &Value,
     theme: &Theme,
     background: ratatui::style::Color,
     usable: bool,
 ) {
-    let (x, y) = (at.x, at.y);
+    let (x, y, width) = (at.x, at.y, at.width);
     let style = Style::new().bg(background);
     // A control the reader cannot move is drawn in the dim ink, value and
     // all: what it is set to is still worth seeing -- it is what this project
@@ -2135,7 +2178,7 @@ fn draw_control(
             let after = write(cells, x, y, &count.to_string(), style.fg(ink));
             put(
                 cells,
-                arrow_at(x, after),
+                arrow_at(x, after, width),
                 y,
                 '\u{25b8}',
                 style.fg(theme.gutter),
@@ -2156,12 +2199,12 @@ fn draw_control(
                 cells,
                 x,
                 y,
-                &truncate_from_right(&said, usize::from(CONTROL_WIDTH)),
+                &truncate_from_right(&said, usize::from(width)),
                 style.fg(ink),
             );
             put(
                 cells,
-                arrow_at(x, after),
+                arrow_at(x, after, width),
                 y,
                 '\u{25b8}',
                 style.fg(theme.gutter),
@@ -2174,7 +2217,7 @@ fn draw_control(
                 cells,
                 x,
                 y,
-                &truncate_from_right(said, usize::from(CONTROL_WIDTH)),
+                &truncate_from_right(said, usize::from(width)),
                 style.fg(ink),
             );
         }
@@ -2183,7 +2226,7 @@ fn draw_control(
                 cells,
                 x,
                 y,
-                &truncate_from_right(word, usize::from(CONTROL_WIDTH)),
+                &truncate_from_right(word, usize::from(width)),
                 style.fg(ink),
             );
             // Pointing right, at the value: the list it opens is the
@@ -2192,7 +2235,7 @@ fn draw_control(
             // to be under this row.
             put(
                 cells,
-                arrow_at(x, after),
+                arrow_at(x, after, width),
                 y,
                 '\u{25b8}',
                 style.fg(theme.gutter),

@@ -80,3 +80,74 @@ fn the_counts_page_ends_in_a_row_of_its_own() {
     );
     support::check("counts_60x16", &dump);
 }
+
+/// A page of settings longer than the screen has a bar, however few
+/// settings it is.
+///
+/// Forty rows hold every setting's name but not what each one says: there
+/// are fewer entries than rows, and more rows than the screen. Whether
+/// the page scrolled was asked of the window, which counts entries, so
+/// this page said it fitted -- no bar, the rows drawn into its column, and
+/// in a window nothing at all on the right to say there was more below.
+///
+/// Broken deliberately by asking `window.scrollable(region.height)` again
+/// in `SettingsView::column`: the page has no bar.
+#[test]
+fn a_page_of_settings_longer_than_the_screen_has_a_bar() {
+    let mut app = app();
+    page(&mut app, "open-settings");
+    let dump = support::render(&mut app, 60, 40);
+    // Down the page's last column, from its first row to its last -- the
+    // one above the rule over the key at its foot.
+    let bar = app
+        .bars()
+        .iter()
+        .find(|drawn| drawn.whose == obelus_ui::bars::Whose::Settings)
+        .unwrap_or_else(|| panic!("the page has no bar:\n{dump}"))
+        .bar;
+    assert_eq!(
+        (bar.area.x, bar.area.y, bar.area.height),
+        (59, 2, 34),
+        "{bar:?}\n{dump}"
+    );
+}
+
+/// A setting's value stays in its column when the page stops scrolling.
+///
+/// The column is measured as if there were always a bar, so a query that
+/// narrows a long page until it fits -- and gives the bar's column back to
+/// the rows -- leaves every value where the reader's eye already is.
+///
+/// Broken deliberately by measuring `control_column` from the room the
+/// page has now, bar or no bar: the value moves a cell to the right.
+#[test]
+fn a_value_stays_in_its_column_when_the_page_stops_scrolling() {
+    let mut app = app();
+    page(&mut app, "open-settings");
+    let column_of = |dump: &str| {
+        let text = support::text_block(dump);
+        let row = text
+            .lines()
+            .find(|line| line.contains(" Theme "))
+            .expect("the theme's row");
+        let (_, row) = row.split_once('|').expect("a numbered row");
+        let at = row.find("dark").expect("the theme's value");
+        row[..at].chars().count()
+    };
+    let long = support::render(&mut app, 100, 30);
+    assert!(
+        support::text_block(&long)
+            .lines()
+            .any(|line| line.ends_with('\u{2588}')),
+        "the whole page fits, so it says nothing about a bar going:\n{long}"
+    );
+    type_text(&mut app, "theme");
+    let short = support::render(&mut app, 100, 30);
+    assert!(
+        !support::text_block(&short)
+            .lines()
+            .any(|line| line.ends_with('\u{2588}')),
+        "the narrowed page still scrolls:\n{short}"
+    );
+    assert_eq!(column_of(&long), column_of(&short), "{long}\n{short}");
+}

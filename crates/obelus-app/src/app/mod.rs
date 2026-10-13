@@ -219,6 +219,14 @@ pub struct App {
     /// the list without choosing has to put the view back *exactly*, and
     /// this is the only thing that knows where exactly was.
     looked_from: Option<(DocumentId, obelus_buffer::Viewport)>,
+    /// The document a word being spelled took a selection out of, and the
+    /// version that left it at.
+    ///
+    /// So that the word, when it arrives, is one step back together with
+    /// what it replaced -- which it was when the word arrived alone and
+    /// replaced the selection itself. The version is what says nothing came
+    /// between them.
+    spelled_over: Option<(DocumentId, i32)>,
     /// The colours in force, and the name they answer to.
     ///
     /// Owned rather than borrowed from the built-in ones, because a theme
@@ -247,6 +255,13 @@ pub struct App {
     /// and a reader who stopped rust-analyzer because it was eating the
     /// machine would find it back a moment later with nothing saying why.
     stopped: HashSet<LanguageId>,
+    /// What `language_servers` said when it was last applied.
+    ///
+    /// The settings are applied after every change to any of them, and the
+    /// switch acts only when it moves: the servers are stopped when it is
+    /// turned off, not each time a theme is chosen with it off -- which
+    /// would take away the one a reader started by hand.
+    servers_on: bool,
     /// What each question that is still out was about.
     ///
     /// Kept here rather than in the client because the answer arrives after
@@ -568,6 +583,7 @@ impl App {
             viewport_was: None,
             travelled: 0,
             looked_from: None,
+            spelled_over: None,
             keymap: Keymap::new(),
             documents,
             current,
@@ -577,6 +593,7 @@ impl App {
             picker: None,
             servers: HashMap::new(),
             stopped: HashSet::new(),
+            servers_on: false,
             asked: HashMap::new(),
             troubles: HashMap::new(),
             reported: HashMap::new(),
@@ -997,7 +1014,9 @@ impl App {
         self.editor_area
     }
 
-    /// Starts a language server for the open file, as the loop does.
+    /// Starts a language server for the open file, as the loop does --
+    /// which is only with `language_servers` on, so a test that wants one
+    /// running turns it on first.
     ///
     /// [`App::events_for_test`] deliberately leaves this out -- most tests
     /// want a channel and no subprocesses -- so a test that is about

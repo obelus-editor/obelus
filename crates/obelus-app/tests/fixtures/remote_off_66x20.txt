@@ -4,7 +4,7 @@ screen 66x20  editor 66x18  status 66x1
  1|──────────────────────────────────────────────────────────────────
  2| Remote                                                           
  3|                                                                  
- 4|   Platform                                      Off ▸            
+ 4|   Platform                                Off ▸                  
  5|     Which chat a note can be worked on from                      
  6|                                                                  
  7|                                                                  
@@ -25,7 +25,7 @@ screen 66x20  editor 66x18  status 66x1
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  2|cddddddccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  3|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
- 4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbebbbbbbbbbbbb
+ 4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbebbbbbbbbbbbbbbbbbb
  5|bbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebbbbbbbbbbbbbbbbbbbbbb
  6|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  7|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc

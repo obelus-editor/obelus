@@ -308,6 +308,7 @@
           <tr><td><code>font_size</code></td><td><code>14</code></td><td><em>只对窗口版。</em>字号，单位 point。终端版用的是终端自己的字号</td></tr>
           <tr><td><code>hover_delay</code></td><td><code>400</code></td><td>鼠标在一个词上停多少毫秒，才显示它是什么；<code>0</code> 表示只在按键时显示</td></tr>
           <tr><td><code>read_only</code></td><td><code>false</code></td><td>你自己的按键不能改文件：在文件里打字、粘贴、剪切、撤销和改行的命令都不起作用。agent 的修改照样写进去，保存照样能存；给 agent 发消息、搜索框、笔记这些输入框不算文件，照常能打字</td></tr>
+          <tr><td><code>language_servers</code></td><td><code>false</code></td><td>打开某种语言的文件时启动它的语言服务器。默认关：服务器能答的大多 agent 也能答，而服务器是每种语言、每个窗口各一个进程。不管这项怎么设，<code>restart-server</code> 都能启动一个。只有你能设：项目不能打开它，因为服务器要构建项目才读得懂它</td></tr>
           <tr><td><code>format_on_save</code></td><td><code>false</code></td><td>保存前让语言服务器格式化一遍。默认关：没人要求就格式化，会把一个只是打开来看的文件改掉，而你要到看 diff 时才发现</td></tr>
           <tr><td><code>code_actions_on_save</code></td><td><code>false</code></td><td>保存前执行服务器提供的整文件修复（比如整理 import）。默认关，理由同上</td></tr>
           <tr><td><code>inlay_hints</code></td><td><code>true</code></td><td>显示服务器推导出的类型和参数名。它们不在文件里，关掉后每一列都回到文件里真实的位置</td></tr>

@@ -115,7 +115,8 @@ obg ../another-repo  # a directory: that is the project
 ob src/main.rs       # the same file, in the terminal instead
 ```
 
-A language server is optional, and without one reading still works. A Nerd
+A language server is optional, and without one reading still works; Obelus
+starts none until `language_servers` is turned on in the settings. A Nerd
 Font matters only in the terminal — `obg` carries the marks in the binary,
 so it never asks.
 

@@ -4901,7 +4901,8 @@ fn what_an_agent_calls_itself_is_typed() {
 /// `value_of` handing back the word, which leaves `feature-branch` on the
 /// page; `prefer` given the word, which opens the list on the first row
 /// rather than on the one in force; `CONTROL_WIDTH` at 14, which puts
-/// the arrow against the title and the title against the edge; and the
+/// the arrow against the title and the title against the edge -- on a
+/// page narrow enough that the column is the least it may be; and the
 /// file given the title, which writes `No workflow`.
 #[test]
 fn a_workflow_is_called_by_its_title_and_written_by_its_name() {
@@ -4911,7 +4912,9 @@ fn a_workflow_is_called_by_its_title_and_written_by_its_name() {
     let mut app = open(&file);
     support::type_text(&mut app, "workflow");
 
-    let dump = support::render(&mut app, 100, 24);
+    // Narrow enough that the column is the least it may be, which is the
+    // width this is about: a wider page gives the title room to spare.
+    let dump = support::render(&mut app, 40, 24);
     let text = support::text_block(&dump);
     assert!(
         text.contains("Feature branch"),
@@ -4925,7 +4928,7 @@ fn a_workflow_is_called_by_its_title_and_written_by_its_name() {
     // put the arrow against the word and the word against the edge.
     assert!(
         text.lines()
-            .any(|row| row.ends_with("Feature branch \u{25b8} ")),
+            .any(|row| row.contains("Feature branch \u{25b8} ")),
         "the row has no room round its arrow:\n{dump}"
     );
 
@@ -5266,6 +5269,9 @@ fn notes_that_will_not_read_are_an_error_on_the_notes_file() {
 /// the shape is drawn from them, a bar with a hole in it stopped being a
 /// bar at all and came out as a column of squares.
 ///
+/// The track is blank now, so what a writer leaves there is anything but
+/// a blank -- and the mark, on the page's first row, which is a heading.
+///
 /// Deliberate break: `..region` in place of `width: room` where the heading
 /// is drawn, or `after + 1` in place of `arrow_at` beside a value.
 #[test]
@@ -5275,13 +5281,20 @@ fn nothing_on_the_page_writes_in_the_column_the_bar_is_in() {
     let file = settings_file(&scratch);
     // A theme whose name is wider than the column a value is given, so the
     // arrow beside it has nowhere of its own left to go.
-    std::fs::write(&file, "theme = \"catppuccin-mocha\"\n").expect("the settings");
+    std::fs::write(&file, "theme = \"catppuccin-mocha-with-a-longer-name\"\n")
+        .expect("the settings");
     let mut app = open(&file);
 
     let dump = support::render(&mut app, 66, 12);
-    for (at, row) in body_of(&dump).iter().enumerate() {
+    let body = body_of(&dump);
+    assert!(
+        body[0].ends_with('\u{2588}'),
+        "the mark is not on the heading's row: {:?}\n{dump}",
+        body[0]
+    );
+    for (at, row) in body.iter().enumerate() {
         assert!(
-            row.ends_with('\u{2588}'),
+            row.ends_with(['\u{2588}', ' ']),
             "row {at} of the body is not the bar's: {row:?}\n{dump}"
         );
     }
@@ -5369,16 +5382,19 @@ fn a_groups_name_is_bold() {
     );
 }
 
-/// Which rows of the last column are a bar's.
+/// Which rows of the last column are a bar's: the nearest one there a
+/// press could take hold of.
+///
+/// Asked of the bars the frame left rather than of the cells, which say
+/// where the mark is and leave the track blank.
 fn bar_rows(app: &mut App, width: u16, height: u16) -> Vec<u16> {
-    let dump = support::render(app, width, height);
-    support::text_block(&dump)
-        .lines()
-        .filter_map(|row| row.split_once('|').map(|(_, cells)| cells.to_string()))
-        .enumerate()
-        .filter(|(_, row)| row.chars().nth(usize::from(width - 1)) == Some('\u{2588}'))
-        .map(|(y, _)| u16::try_from(y).expect("a row"))
-        .collect()
+    support::render(app, width, height);
+    app.bars()
+        .iter()
+        .rev()
+        .find(|drawn| drawn.bar.area.x == width - 1)
+        .map(|drawn| (drawn.bar.area.top()..drawn.bar.area.bottom()).collect())
+        .unwrap_or_default()
 }
 
 /// Drags the bar in the last column from its first row to its last.
@@ -5425,6 +5441,45 @@ fn the_settings_go_where_their_bar_is_dragged() {
     };
     assert_ne!(rows(&before), rows(&after), "the rows stayed put:\n{after}");
     assert_eq!(app.settings().expect("the settings").focus(), 0);
+}
+
+/// A press half way down the page's bar goes half way down the page, in
+/// entries -- not to the end.
+///
+/// The bar is measured in rows and the window moves by the entry, and an
+/// entry is several rows: a row half way down the bar, taken for an entry,
+/// is an entry past the last, and the page went to its end wherever the
+/// bar was pressed. The drag to the foot, which is the other test here,
+/// cannot tell: the foot is the end either way.
+///
+/// Deliberate break: take `bars::in_items` out of `SettingsView::column`.
+/// The press half way down shows the last screenful.
+#[test]
+fn a_press_half_way_down_the_settings_bar_goes_half_way() {
+    let _turn = crate::turn();
+    let scratch = temporary("pressed-half-way");
+    let mut app = open(&settings_file(&scratch));
+    let rows = bar_rows(&mut app, 66, 12);
+    let middle = rows[rows.len() / 2];
+    for kind in [
+        obelus_app::event::Pointer::Pressed,
+        obelus_app::event::Pointer::Released,
+    ] {
+        app.handle(Event::Pointer {
+            kind,
+            x: 65,
+            y: middle,
+        });
+        support::lay_out(&mut app, 66, 12);
+    }
+    let half_way = app.settings().expect("the settings").top();
+
+    drag_the_bar_down(&mut app, 66, 12);
+    let end = app.settings().expect("the settings").top();
+    assert!(
+        half_way > 0 && half_way < end,
+        "half way down the bar is entry {half_way}, and the end is {end}"
+    );
 }
 
 /// And the agents page, whose cards are as tall as they need: dragged to

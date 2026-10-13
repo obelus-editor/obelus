@@ -42,9 +42,9 @@
 //! hunk at the cursor" is not the hunk in front of them once they have walked
 //! into it.
 //!
-//! A bar is a block, so no rule has to meet it. The track is a block a
-//! shade off the page and the thumb the same block brighter: a surface with
-//! something sliding on it, which is what a scrollbar is. Drawn as a *line* --
+//! A bar is a block, so no rule has to meet it: the thumb is a run of
+//! blocks, and there is no track under it -- the region beside it already
+//! says how far it can go. Drawn as a *line* --
 //! a column of ┃ with the thumb picked out -- it was one more line on a screen
 //! of lines, and every rule that crossed it then had to decide whether to join.
 //!
@@ -61,7 +61,7 @@
 //!
 //! So the shape of the thing says what it is, and nothing reads the grid back.
 //! A rule runs its whole width in one glyph; a block column meets it and needs
-//! nothing from it. The one row of the block that the rule takes is the
+//! nothing from it. The one row of the column that the rule takes is the
 //! boundary between two bars -- a list's and its preview's -- which are two
 //! controls over two different things, and reading as two is right.
 //!
@@ -356,7 +356,7 @@ const MAP_MARK: char = '\u{258c}';
 /// The column the scrollbar takes, on the right.
 ///
 /// Always reserved, even for a file that fits: a column that came and went
-/// would rewrap the text as files were opened, and an empty track is itself
+/// would rewrap the text as files were opened, and an empty column is itself
 /// an answer -- it says that what is on screen is all there is.
 pub const SCROLLBAR_WIDTH: u16 = 1;
 

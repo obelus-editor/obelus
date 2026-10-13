@@ -29,12 +29,14 @@
 //! keypresses that are not characters, and then one character that is. The
 //! window draws that spelling itself, over the cells to the right of the
 //! caret, underlined, in the colours of the place it is going into -- and
-//! the application is never told about it. Not because it could not be:
-//! because what would arrive is half-typed pinyin in a buffer with an undo
-//! history and a file that has changed. What arrives instead, when the
+//! the application is never told what it says. Not because it could not
+//! be: because what would arrive is half-typed pinyin in a buffer with an
+//! undo history and a file that has changed. What arrives instead, when the
 //! input method commits, is a paste -- which is the same question Obelus
 //! already answered about where typed text goes when several things are on
-//! screen.
+//! screen. The application is told only that a word has *begun*, because
+//! what the reader has hold of goes then, as it does in every other
+//! editor, and is not brought back by giving the word up.
 //!
 //! The keys during that spelling belong to the input method, so a plain
 //! character is swallowed while one is being composed: it is arriving
@@ -1135,9 +1137,13 @@ impl ApplicationHandler<Waking> for Showing {
                                 painter.carries(id, focused, svg, palette);
                             }
                         }
-                        Update::Marked { id, focused, x, y } => {
-                            self.marking.push(Marked { id, focused, x, y })
-                        }
+                        Update::Marked { id, focused, x, y } => self.marking.push(Marked {
+                            id,
+                            focused,
+                            x,
+                            y,
+                            depth: self.stacking.len(),
+                        }),
                         // Every one said is kept, in the order it was
                         // said, which is the order they are stacked in: a
                         // setting's choices open over the settings. Each is
@@ -1181,9 +1187,16 @@ impl ApplicationHandler<Waking> for Showing {
                             });
                         }
                         Update::Ticked { area, on } => {
-                            self.ticking.push(Ticked { area, on });
+                            self.ticking.push(Ticked {
+                                area,
+                                on,
+                                depth: self.stacking.len(),
+                            });
                         }
-                        Update::Spun { area } => self.spinning.push(Spun { area }),
+                        Update::Spun { area } => self.spinning.push(Spun {
+                            area,
+                            depth: self.stacking.len(),
+                        }),
                         Update::Parted { area } => {
                             self.parting.push(Parted { area });
                         }
@@ -1264,12 +1277,14 @@ impl ApplicationHandler<Waking> for Showing {
                             self.marked = std::mem::take(&mut self.marking);
                             self.capped = std::mem::take(&mut self.capping);
                             self.ticked = std::mem::take(&mut self.ticking);
-                            // Only the ones the page still holds, for the
+                            // Only the ones still on screen, for the
                             // light's reason: whether anything here turns
-                            // is what decides the frames, and a mark a list
-                            // was opened over is not turning on screen.
-                            self.spun = std::mem::take(&mut self.spinning);
-                            self.spun.retain(|mark| mark.round(&self.page).is_some());
+                            // is what decides the frames -- see `turning`.
+                            self.spun = turning(
+                                std::mem::take(&mut self.spinning),
+                                &self.page,
+                                &self.stacking,
+                            );
                             self.motion.spin_drawn(!self.spun.is_empty());
                             self.barred = std::mem::take(&mut self.barring_up);
                             // Said here and not at the drawing: what
@@ -1714,6 +1729,13 @@ impl ApplicationHandler<Waking> for Showing {
                         // compositor, and a caret drawn in the wrong place
                         // is otherwise a question with no answer to look at.
                         tracing::debug!(?spelling, ?caret, "the input method is spelling");
+                        // A word begun takes what the reader has hold of,
+                        // the way the first letter typed over it would --
+                        // said before the spelling is drawn, so that it is
+                        // drawn where the held text was.
+                        if !self.composing && !spelling.is_empty() {
+                            self.tell(Event::Spelling);
+                        }
                         self.composing = !spelling.is_empty();
                         self.spelling = Spelling::new(spelling, caret);
                         self.point_the_input_method();
@@ -1949,6 +1971,29 @@ fn on_a_link(linked: &[(Rect, usize)], page: &Page, x: u16, y: u16) -> bool {
         .contains(ratatui::style::Modifier::UNDERLINED)
 }
 
+/// The marks that turn which are still on screen: on the page, or in
+/// the picture of what a pane or a box was put over, where that picture is
+/// drawn at all -- see `paint::drawn`.
+///
+/// The second half because the glass shows that picture. A transcript an
+/// agent was writing in, with a file picker opened over it, is still seen
+/// through the picker -- and a mark dropped here for not being on the page
+/// was the braille the window draws instead of, and stood still: in a
+/// window the application leaves the turning to this clock, which a mark
+/// nobody kept never started. A mark that stands still says nothing is
+/// happening.
+fn turning(spinning: Vec<Spun>, page: &Page, stack: &[Behind]) -> Vec<Spun> {
+    spinning
+        .into_iter()
+        .filter(|mark| {
+            mark.round(page).is_some()
+                || crate::paint::drawn(stack, page)
+                    .iter()
+                    .any(|over| mark.behind(over).is_some())
+        })
+        .collect()
+}
+
 /// What this window is called by the thing that manages windows.
 ///
 /// Not the title, which is what the reader sees: this is the name a
@@ -2057,9 +2102,9 @@ mod tests {
     use ratatui::layout::Rect;
     use winit::event_loop::ControlFlow;
 
-    use super::{MARK, Rolling, control_flow, on_a_link, pairs_arrived, wants_a_frame};
+    use super::{MARK, Rolling, control_flow, on_a_link, pairs_arrived, turning, wants_a_frame};
     use crate::{
-        grid::{Page, Update},
+        grid::{Behind, Page, Spun, Update},
         motion::{Motion, Wake},
     };
 
@@ -2142,6 +2187,70 @@ mod tests {
                 .is_empty(),
             "kept after it went out"
         );
+    }
+
+    /// A mark that turns is kept while the page holds it or a pane's
+    /// picture does, and not otherwise.
+    ///
+    /// Deliberate break: keep only `mark.round(page)`, which is what this
+    /// was -- and the transcript's mark behind a file picker went back to
+    /// braille, though the picture under the glass knew how to draw it.
+    #[test]
+    fn a_mark_behind_the_glass_is_still_turning() {
+        let frame = |text: &str| {
+            let mut cell = ratatui::buffer::Cell::default();
+            cell.set_symbol(text);
+            cell
+        };
+        let mut page = Page::default();
+        page.resized(3, 1);
+        // The page has the mark in its first cell, and a list's letters
+        // where the second and third were.
+        for (x, text) in ["\u{2819}", "a", "b"].into_iter().enumerate() {
+            page.apply(Update::Cell {
+                x: u16::try_from(x).expect("three"),
+                y: 0,
+                cell: Box::new(frame(text)),
+            });
+        }
+        // And what the list was put over: the transcript's mark in the
+        // second, and a letter in the third.
+        let behind = Behind {
+            area: Rect::new(1, 0, 2, 1),
+            joined: obelus_ui::shapes::Joined::Below,
+            ground: ratatui::style::Color::Reset,
+            cells: vec![frame("\u{2819}"), frame("c")],
+            depth: 0,
+        };
+        let one = |x| Spun {
+            area: Rect::new(x, 0, 1, 1),
+            depth: 0,
+        };
+        let kept: Vec<u16> = turning(
+            vec![one(0), one(1), one(2)],
+            &page,
+            std::slice::from_ref(&behind),
+        )
+        .iter()
+        .map(|mark| mark.area.x)
+        .collect();
+        assert_eq!(kept, vec![0, 1], "on the page, and behind the glass");
+
+        // And a second pane over the whole of the first, which makes the
+        // first a picture nobody sees: its mark is not on screen.
+        //
+        // Deliberate break: ask `stack` rather than `paint::drawn(stack,
+        // page)` in `turning`, and the hidden mark keeps the window drawing.
+        let over = Behind {
+            cells: vec![frame("d"), frame("e")],
+            depth: 1,
+            ..behind.clone()
+        };
+        let kept: Vec<u16> = turning(vec![one(0), one(1), one(2)], &page, &[behind, over])
+            .iter()
+            .map(|mark| mark.area.x)
+            .collect();
+        assert_eq!(kept, vec![0], "only on the page");
     }
 
     /// The pointer is a hand over the cells of a link the frame said, while

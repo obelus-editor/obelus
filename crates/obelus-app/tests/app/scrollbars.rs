@@ -55,14 +55,19 @@ fn screen(app: &mut App) -> Vec<Vec<char>> {
         .collect()
 }
 
-/// Which rows of a column are a bar's, top to bottom.
+/// Which rows of a column are a bar's, top to bottom: the nearest one in
+/// it a press could take hold of, and none where there is none.
+///
+/// Asked of the bars the frame left rather than of the cells, which say
+/// where the mark is and leave the track blank.
 fn bar_rows(app: &mut App, x: u16) -> Vec<u16> {
-    screen(app)
+    support::lay_out(app, WIDTH, HEIGHT);
+    app.bars()
         .iter()
-        .enumerate()
-        .filter(|(_, row)| row.get(usize::from(x)) == Some(&'\u{2588}'))
-        .map(|(y, _)| u16::try_from(y).expect("a row"))
-        .collect()
+        .rev()
+        .find(|drawn| drawn.bar.area.x == x)
+        .map(|drawn| (drawn.bar.area.top()..drawn.bar.area.bottom()).collect())
+        .unwrap_or_default()
 }
 
 fn top_line(app: &App) -> usize {
@@ -340,16 +345,20 @@ fn a_list_open_over_the_file_keeps_its_bar() {
     let height = 30;
     let dump = support::render(&mut app, WIDTH, height);
     let x = WIDTH - 1;
-    let above: Vec<u16> = support::text_block(&dump)
+    // The file's bar, in the rows above the list: its mark is on the
+    // first of them, and the rest are its track.
+    let rows: Vec<String> = support::text_block(&dump)
         .lines()
         .filter_map(|row| row.split_once('|').map(|(_, cells)| cells.to_string()))
-        .take_while(|row| !row.starts_with('\u{2500}'))
-        .enumerate()
-        .filter(|(_, row)| row.chars().nth(usize::from(x)) == Some('\u{2588}'))
-        .map(|(y, _)| u16::try_from(y).expect("a row"))
         .collect();
+    let rule = rows
+        .iter()
+        .position(|row| row.starts_with('\u{2500}'))
+        .and_then(|at| u16::try_from(at).ok())
+        .expect("the rule over the list");
+    let above: Vec<u16> = (0..rule).collect();
     assert!(
-        above.len() > 2,
+        above.len() > 2 && rows[0].chars().nth(usize::from(x)) == Some('\u{2588}'),
         "no bar of the file's above the list:\n{dump}"
     );
 

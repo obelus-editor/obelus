@@ -107,14 +107,8 @@ impl Painter {
             0
         };
         // Every pane and box, furthest first, each over the glass of those
-        // before it. A box is one only while its frame is still there to
-        // hold it -- see `Behind::framed` -- which four passes ask about.
-        let stack = uncovered(
-            said.stack
-                .iter()
-                .filter(|over| !over.is_a_box() || over.framed(page))
-                .collect(),
-        );
+        // before it -- see `drawn`, which four passes ask about.
+        let stack = drawn(said.stack, page);
         // The pane on top, which is the one that arrives: a list opened
         // over the settings comes up over a page that was already there.
         let top = stack.iter().rposition(|over| !over.is_a_box());
@@ -135,8 +129,15 @@ impl Painter {
                 _ => self.quads.len(),
             };
             match (at, over.is_a_box()) {
-                (0, false) => self.pane_under(over, said.barred, said.capped, fonts),
-                _ => self.seen_under(over, lower, fonts),
+                (0, false) => self.pane_under(
+                    over,
+                    said.barred,
+                    said.capped,
+                    said.spun,
+                    moving.turn,
+                    fonts,
+                ),
+                _ => self.seen_under(over, lower, said.spun, moving.turn, fonts),
             }
             let under = start..self.quads.len();
             let (glass, rect) = match over.is_a_box() {
@@ -167,9 +168,10 @@ impl Painter {
         //
         // A bar is not among them, and answers the same question finer:
         // where a switch and a mark are one cell and a run of them either
-        // is or is not still there, a bar is a column and the thing over
-        // it may take the middle of it -- so it is asked row by row, at
-        // the two places it matters, and `Barred::runs` is that answer.
+        // is or is not still there, a bar's mark is a run of rows and the
+        // thing over it may take the middle of it -- so it is asked row by
+        // row, at the two places it matters, and `Barred::runs` is that
+        // answer.
         let ticked: Vec<Ticked> = said
             .ticked
             .iter()
@@ -245,7 +247,7 @@ impl Painter {
         // tick, a window turns at whatever rate it draws.
         self.turns(page, said.spun, moving.turn, cell);
         // And so does a bar, for the same reason: what a terminal has for
-        // a track is a column of full blocks, and a window has a shape.
+        // a mark is a run of full blocks, and a window has a shape.
         self.bars(page, said.barred, cell);
         // And so does a change mark: half a block per row is what a cell
         // has, and a window has one shape however many rows the hunk

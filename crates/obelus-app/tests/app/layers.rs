@@ -66,6 +66,36 @@ fn open(app: &mut App, layer: Layer) {
     }
 }
 
+/// A word begun where nothing typed goes takes nothing, even with
+/// something held there: a key being bound takes the next key and not a
+/// letter, and an X11 window leaves its input method on anyway -- so a
+/// word begun and given up took the filter's held words for nothing.
+///
+/// Broken deliberately by not asking `App::takes_text` in
+/// `App::spelling_begins`: the filter lost what it held.
+#[test]
+fn a_word_begun_where_nothing_is_typed_takes_nothing() {
+    let mut app = reading();
+    open(&mut app, Layer::Settings);
+    press(&mut app, KeyCode::Tab);
+    support::type_text(&mut app, "choose-theme");
+    support::press_shift(&mut app, KeyCode::Home);
+    support::press_control_key(&mut app, KeyCode::Enter);
+    let settings = app.settings().expect("the settings");
+    assert!(settings.binding().is_some(), "no key is being bound");
+    assert!(
+        settings.query_held().is_some(),
+        "nothing is held in the filter"
+    );
+
+    app.handle(obelus_app::event::Event::Spelling);
+    assert_eq!(
+        app.settings().expect("the settings").query(),
+        "choose-theme",
+        "a word begun while a key is bound took what the filter held"
+    );
+}
+
 /// What a reader is in, after opening one of them.
 ///
 /// The derivation and the opening have to agree, and this is the only test
