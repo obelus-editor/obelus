@@ -606,7 +606,17 @@ mod against_a_real_server {
         app.working_directory_for_test(root);
         let (sender, events) = mpsc::channel();
         app.events_for_test(sender);
-        app.serve_for_test();
+        // Off by default, and off it starts nothing; turned on, it starts
+        // the server for what is open, as a reader turning it on does.
+        // Broken deliberately by leaving this out: every test here waits
+        // for a handshake that never comes.
+        app.configure(
+            obelus_config::Config {
+                language_servers: true,
+                ..obelus_config::Config::default()
+            },
+            Vec::new(),
+        );
         support::lay_out(&mut app, 80, 24);
         Some((app, events))
     }
