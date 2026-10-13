@@ -334,12 +334,6 @@ impl Painter {
             let [left, top_edge, wide, tall] = glass.rect;
             so_far = Some(Quad {
                 rect: [left, top_edge + shift, wide, tall],
-                // Through the bar, where it comes from the top of the
-                // window: what it reads is still the page, cut off there.
-                uv: match through {
-                    Some(window) => [glass.uv[0], window, glass.uv[2], glass.uv[3]],
-                    None => glass.uv,
-                },
                 ..glass
             });
             self.placed.arriving = Some(top);
@@ -353,12 +347,18 @@ impl Painter {
             // slid in out of its own picture.
             //
             // From the top of the window rather than the top of the
-            // page, where it comes through the bar: the room the pieces
-            // are drawn in starts there, and what is written on the pane
-            // is still taken from the pane, so only the slab is seen
-            // there and none of the page.
+            // page, where it comes through the bar: what is written on the
+            // pane is drawn from there down, still taken from the pane, so
+            // only the slab is seen on the bar and none of the page. Its
+            // glass on the bar is the glass already drawn on the page,
+            // moved up with it -- not glass of its own, which would read
+            // what is behind the pane where nothing was drawn behind it,
+            // and that is black.
             let room = through.map_or(pane, |window| [pane[0], window, pane[2], pane[3]]);
-            self.slid_piece(reached(room, shift), room, 0.0, along);
+            self.slid_piece(reached(pane, shift), pane, 0.0, along);
+            if let Some(window) = through {
+                self.slid_piece([pane[0], window, pane[2], pane[1]], pane, shift, along);
+            }
             let lifting = self.quads.len();
             self.slid_piece(room, pane, shift, along);
             self.placed.lifting = Some(lifting..self.quads.len());
