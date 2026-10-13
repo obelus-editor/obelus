@@ -395,11 +395,16 @@ pub(crate) struct Moving {
     /// And how much of the box with a frame round it is there, or `None`
     /// for one that is simply there. The same reason for the same shape.
     pub(crate) card: Option<f32>,
-    /// And how far the light round the cursor's pair of brackets has come
-    /// on, or `None` for one that is simply lit.
+    /// And how bright the light round the cursor's pair of brackets is
+    /// while it comes on, from nothing to all of it, or `None` for one
+    /// that is simply lit.
+    ///
+    /// How bright rather than how far along, unlike a box's: a pair can
+    /// set out from part of the way, where the caret came back to it while
+    /// its light was still going out.
     pub(crate) pair: Option<f32>,
-    /// And how far the light round the pair that was has gone out, or
-    /// `None` where there is none going.
+    /// And how bright the light round the pair that was still is while it
+    /// goes out, or `None` where there is none going.
     pub(crate) unpair: Option<f32>,
     /// Where the light on the welcome screen's mark has got to, as a part
     /// of the mark's own width, or `None` while it is resting between
@@ -836,11 +841,20 @@ pub(crate) struct Motion {
     card: Arriving,
     /// The light round the cursor's pair of brackets, coming on.
     pair: Arriving,
+    /// And how bright it was when it set out.
+    pair_from: f32,
     /// And round the pair it was in before, going out.
     unpair: Arriving,
+    /// And how bright that one was when the caret left it, which is where
+    /// it goes out from: a pair left before it had come all the way on
+    /// that went out from all of it would flash at the place the caret
+    /// had just left.
+    unpair_from: f32,
     /// Which pairs the last frame drew, which is what says the next one's
     /// are other ones -- see `pairs_drawn`.
     pairs: Vec<Pair>,
+    /// And which pairs are going out.
+    gone: Vec<Pair>,
     bands: Bands,
     bars: Bars,
     /// When the mark the light runs across last arrived, which is what
@@ -894,11 +908,14 @@ impl Motion {
                 opened: None,
                 takes: LIGHT_UP,
             },
+            pair_from: 0.0,
             unpair: Arriving {
                 opened: None,
                 takes: LIGHT_DOWN,
             },
+            unpair_from: 1.0,
             pairs: Vec::new(),
+            gone: Vec::new(),
             bands: Bands::default(),
             bars: Bars::default(),
             since: now,
@@ -1185,8 +1202,8 @@ impl Motion {
             pane: self.pane.along(now),
             leaving: self.leaving.along(now),
             card: self.card.along(now),
-            pair: self.pair.along(now),
-            unpair: self.unpair.along(now),
+            pair: self.pair_lit(now),
+            unpair: self.unpair_lit(now),
             sheen: self.sheen(now),
             turn: self.turn(now),
         }
@@ -1226,30 +1243,58 @@ impl Motion {
                 .map(|pair| (pair.document, pair.open))
                 .collect()
         };
-        if place(&drawn) != place(&self.pairs) {
-            let edited = !drawn.is_empty()
-                && drawn.iter().all(|now| {
-                    self.pairs
-                        .iter()
-                        .any(|was| was.document == now.document && was.version != now.version)
-                });
-            if drawn.is_empty() {
-                self.pair.opened = None;
-            } else if self.animates && !edited {
-                self.pair.opened = Some(now);
-            }
-            // Started, and never stopped here: a pair that came on from
-            // none is no reason for the last one to stop going out, which
-            // is the caret crossing the space between `(a) (b)`.
-            let went = self.animates && !edited && !self.pairs.is_empty();
-            if went {
-                self.unpair.opened = Some(now);
-            }
+        if place(&drawn) == place(&self.pairs) {
             self.pairs = drawn;
-            return went;
+            return false;
+        }
+        let edited = !drawn.is_empty()
+            && drawn.iter().all(|now| {
+                self.pairs
+                    .iter()
+                    .any(|was| was.document == now.document && was.version != now.version)
+            });
+        // Asked before anything moves: how bright the pair being left is,
+        // and the one going out.
+        let lit = self.pair_lit(now).unwrap_or(1.0);
+        let ghost = self.unpair_lit(now);
+        // Back into the pair whose light is going out: it comes on again
+        // from where it had got to, and stops going out -- two lights on
+        // one bracket would be brighter than either.
+        let back = ghost.filter(|_| {
+            let gone = place(&self.gone);
+            place(&drawn).iter().any(|pair| gone.contains(pair))
+        });
+        // Started, and never stopped here but by coming back: a pair that
+        // came on from none is no reason for the last one to stop going
+        // out, which is the caret crossing the space between `(a) (b)`.
+        let went = self.animates && !edited && !self.pairs.is_empty();
+        if went {
+            self.unpair.opened = Some(now);
+            self.unpair_from = lit;
+            self.gone = std::mem::take(&mut self.pairs);
+        } else if back.is_some() {
+            self.unpair.opened = None;
+        }
+        if drawn.is_empty() {
+            self.pair.opened = None;
+        } else if self.animates && !edited {
+            self.pair.opened = Some(now);
+            self.pair_from = back.unwrap_or(0.0);
         }
         self.pairs = drawn;
-        false
+        went
+    }
+
+    /// How bright the cursor's pair is while it comes on.
+    fn pair_lit(&self, now: Instant) -> Option<f32> {
+        let along = self.pair.along(now)?;
+        Some((1.0 - self.pair_from).mul_add(along, self.pair_from))
+    }
+
+    /// And the pair that was, while it goes out.
+    fn unpair_lit(&self, now: Instant) -> Option<f32> {
+        let along = self.unpair.along(now)?;
+        Some(self.unpair_from * (1.0 - along))
     }
 
     /// The frame drew a mark that turns, or it did not.
@@ -2423,9 +2468,12 @@ mod tests {
         // The first pair has nothing before it to go out.
         assert!(!motion.pairs_drawn([pair(10, 1)].into_iter(), base));
         assert_eq!(motion.moving(base).unpair, None);
-        // Into another: the first goes out while the second comes on.
+        // Into another, once the first is all the way on: the first goes
+        // out from all of it while the second comes on.
+        let base = base + LIGHT_UP * 2;
+        motion.advance(base, true);
         assert!(motion.pairs_drawn([pair(42, 1)].into_iter(), base));
-        assert_eq!(motion.moving(base).unpair, Some(0.0));
+        assert_eq!(motion.moving(base).unpair, Some(1.0));
         assert_eq!(motion.wake(base, true), Some(Wake::EveryFrame));
         let half = motion
             .moving(base + LIGHT_DOWN / 2)
@@ -2461,6 +2509,33 @@ mod tests {
             None,
             "a keystroke left a light"
         );
+    }
+
+    /// A pair goes out from as bright as it had got, and one the caret
+    /// comes back to comes on again from as bright as it still was.
+    ///
+    /// Break: set `unpair_from` to all of it, and a pair left half way on
+    /// flashes before it goes; set `pair_from` to nothing, and coming back
+    /// drops the light to nothing first; leave `unpair` running on coming
+    /// back, and the bracket wears two lights.
+    #[test]
+    fn a_light_goes_from_where_it_had_got_to() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        motion.pairs_drawn([pair(10, 1)].into_iter(), base);
+        // Left a quarter of the way through coming on.
+        let early = base + LIGHT_UP / 4;
+        let reached = motion.moving(early).pair.expect("coming on");
+        assert!(reached > 0.0 && reached < 1.0, "{reached}");
+        assert!(motion.pairs_drawn(std::iter::empty(), early));
+        assert_eq!(motion.moving(early).unpair, Some(reached));
+        // And back while it is still going out.
+        let back = early + LIGHT_DOWN / 2;
+        let still = motion.moving(back).unpair.expect("going out");
+        assert!(still > 0.0 && still < reached, "{still}");
+        assert!(!motion.pairs_drawn([pair(10, 1)].into_iter(), back));
+        assert_eq!(motion.moving(back).unpair, None, "two lights on one pair");
+        assert_eq!(motion.moving(back).pair, Some(still));
     }
 
     /// Break: drop the `self.animates` from `pairs_drawn`, and a reader who

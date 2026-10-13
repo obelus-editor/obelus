@@ -269,14 +269,14 @@ impl Painter {
     /// choose -- only lifted, the way a lit thing is lighter than the same
     /// thing in shade.
     ///
-    /// `along` is how far it has come on, and the whole of it comes on
-    /// together: the plate from nothing, and the light from close in to
+    /// `along` is how bright it is while it comes on, and the whole of it comes
+    /// on together: the plate from nothing, and the light from close in to
     /// its full reach. A plate at full strength under a light still coming
     /// on is a square that appears and then glows, which is two things
     /// happening where the reader should see one. `unpaired` is the pair
-    /// the caret was in before, going out the same way backwards while
-    /// `gone` says how far it has got -- in the ground it wore when it was
-    /// lit, because its cells have the page's back.
+    /// the caret was in before, going out the same way backwards at the
+    /// brightness `gone` says -- in the ground it wore when it was lit,
+    /// because its cells have the page's back.
     #[expect(
         clippy::too_many_arguments,
         reason = "the two pairs and their two clocks are one picture"
@@ -297,7 +297,7 @@ impl Painter {
         // draw, whatever the window still keeps.
         let going = gone
             .into_iter()
-            .flat_map(|gone| unpaired.iter().map(move |half| (half, 1.0 - gone)));
+            .flat_map(|gone| unpaired.iter().map(move |half| (half, gone)));
         let halves: Vec<Lit> = lit
             .chain(going)
             .map(|(half, strength)| {
