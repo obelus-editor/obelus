@@ -602,7 +602,7 @@ impl App {
             // each of which the reader fixes by getting to the box. "Nothing
             // to paste" sent a reader to look at their clipboard, which is
             // the one place the answer is not.
-            if obelus_clipboard::picture().is_some() {
+            if obelus_clipboard::holds_a_picture() {
                 self.wrong(match self.box_takes_a_picture() {
                     // Only reachable once the agent has said so: while
                     // nobody has asked it, a picture is taken.

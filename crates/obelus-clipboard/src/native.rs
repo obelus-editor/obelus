@@ -204,22 +204,20 @@ mod cocoa {
     /// it is made a PNG here rather than sent on: an agent is not obliged
     /// to read one.
     fn picture() -> Option<Vec<u8>> {
-        // Safety: the general pasteboard is a singleton that exists for
-        // the life of the process, and the data is copied out before it
-        // is dropped.
-        let (png, tiff) = unsafe {
-            let pasteboard = NSPasteboard::generalPasteboard();
-            (
-                pasteboard.dataForType(NSPasteboardTypePNG),
-                pasteboard.dataForType(NSPasteboardTypeTIFF),
-            )
-        };
-        if let Some(png) = png.map(|png| png.to_vec())
+        // The TIFF is asked for only where there is no PNG, because a
+        // program may make a shape only when it is asked for, and one
+        // asked for and thrown away is a picture encoded for nobody.
+        //
+        // Safety, in each block: the names are statics AppKit defines,
+        // and the data is copied out before it is dropped.
+        let pasteboard = NSPasteboard::generalPasteboard();
+        if let Some(png) =
+            unsafe { pasteboard.dataForType(NSPasteboardTypePNG) }.map(|png| png.to_vec())
             && !png.is_empty()
         {
             return Some(png);
         }
-        let tiff = tiff?.to_vec();
+        let tiff = unsafe { pasteboard.dataForType(NSPasteboardTypeTIFF) }?.to_vec();
         match image::load_from_memory_with_format(&tiff, image::ImageFormat::Tiff) {
             Ok(picture) => super::as_png(&picture),
             Err(error) => {
@@ -367,6 +365,11 @@ mod win32 {
 
     /// One shape, as bytes.
     pub(crate) fn paste_as(mime: &str) -> Option<Vec<u8>> {
+        // Before the clipboard is opened, because a picture opens it
+        // itself, and lets it go before it is made a PNG.
+        if mime == super::PICTURE {
+            return picture();
+        }
         let _open = Open::taken()?;
         if mime == super::super::FILES {
             let list: Vec<String> = dropped()
@@ -374,9 +377,6 @@ mod win32 {
                 .map(|path| format!("file://{}", path.display().to_string().replace('\\', "/")))
                 .collect();
             return (!list.is_empty()).then(|| list.join("\r\n").into_bytes());
-        }
-        if mime == super::PICTURE {
-            return picture();
         }
         if mime.starts_with("text/") {
             return text().map(String::into_bytes);
@@ -401,15 +401,24 @@ mod win32 {
     ///
     /// The PNG where one was put down, and otherwise the DIB made one --
     /// which is the only shape a screenshot taken with the system's own
-    /// tool is in, and the one every picture is, because Windows makes it
-    /// out of any other bitmap that is copied.
+    /// tool is in, and the one Windows makes out of any other bitmap that
+    /// is copied. Not out of a PNG: a program that put down only that has
+    /// no DIB, which is why it is asked for first.
+    ///
+    /// The DIB is copied out and the clipboard let go before it is made
+    /// one: nothing else on the machine can copy or paste while it is
+    /// open, and a screenshot's DIB is tens of megabytes to encode.
     fn picture() -> Option<Vec<u8>> {
-        if let Some(png) = held(png())
-            && !png.is_empty()
-        {
-            return Some(png);
-        }
-        png_of_dib(&held(CF_DIB as u32)?)
+        let dib = {
+            let _open = Open::taken()?;
+            if let Some(png) = held(png())
+                && !png.is_empty()
+            {
+                return Some(png);
+            }
+            held(CF_DIB as u32)?
+        };
+        png_of_dib(&dib)
     }
 
     /// A DIB -- a bitmap file without the file's own header, which is how
@@ -658,8 +667,12 @@ mod win32 {
         /// screenshot: thirty-two bits with the three masks after the
         /// header, which say where each colour is in a pixel.
         ///
-        /// Deliberate break: the masks left out of the DIB, which reads
-        /// the pixels as masks and the picture as nothing.
+        /// Obelus's own path through this is the one the test above
+        /// covers; what this one holds is the decoder's reading of the
+        /// masks, which is `image`'s and could change under an upgrade.
+        /// So its deliberate break is in the input rather than in Obelus:
+        /// the masks left out of the DIB, which reads the pixels as masks
+        /// and the picture as nothing.
         #[test]
         fn a_dib_with_masks_is_made_a_png() {
             let mut dib = header(32, 3);
