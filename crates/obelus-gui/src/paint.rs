@@ -2277,17 +2277,51 @@ mod tests {
             under: 0.0,
         }];
         assert!(
-            !lettered_behind(page.look(0, 0), &barred, 0, 0),
+            !lettered_behind(page.look(0, 0), &barred, &[], 0, 0),
             "the block the bar is drawn with"
         );
         assert!(
-            lettered_behind(page.look(1, 0), &barred, 1, 0),
+            lettered_behind(page.look(1, 0), &barred, &[], 1, 0),
             "and the file's own letter beside it, which nothing else draws"
         );
         assert!(
-            !lettered_behind(page.look(2, 0), &barred, 2, 0),
+            !lettered_behind(page.look(2, 0), &barred, &[], 2, 0),
             "nor a cell with nothing in it"
         );
+    }
+
+    /// And the mark that turns, which the picture behind a list draws as
+    /// the arc the page does -- a transcript seen through the glass of a
+    /// file picker had its spinner back in braille.
+    ///
+    /// Deliberate break: drop the `turns_at` clause from `lettered_behind`,
+    /// and the braille is written into the picture under the arc; or have
+    /// `Spun::behind` answer for any cell, and a letter the list's own mark
+    /// happens to sit over is taken for one.
+    #[test]
+    fn the_mark_that_turns_is_an_arc_behind_a_pane_too() {
+        let behind = behind("ab\u{2819}\u{2819}");
+        let one = |x: u16| Spun {
+            area: ratatui::layout::Rect {
+                x,
+                y: 0,
+                width: 1,
+                height: 1,
+            },
+        };
+        let spun = [one(1), one(2)];
+        let (_, lettered) = behind_row(&behind, &[], &spun, 0);
+        assert_eq!(
+            lettered,
+            vec![0, 1, 3],
+            "the mark said to be there is left to the arc, and nothing else is"
+        );
+        assert!(one(2).behind(&behind).is_some(), "its cell is the arc's");
+        assert!(
+            one(1).behind(&behind).is_none(),
+            "a letter is not the mark, whatever was said about its cell"
+        );
+        assert!(one(20).behind(&behind).is_none(), "nor a cell it never had");
     }
 
     /// A glyph is cut back to the grid, and its picture with it.
@@ -2661,7 +2695,7 @@ mod tests {
     #[test]
     fn so_does_the_picture_a_panes_glass_reads() {
         let behind = behind("\u{4e2d}\u{6587}");
-        let (grounds, lettered) = behind_row(&behind, &[], 0);
+        let (grounds, lettered) = behind_row(&behind, &[], &[], 0);
 
         // Both characters under one run of their own colour: nothing of
         // the reset cells is left to be drawn over a glyph.
