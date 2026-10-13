@@ -2876,7 +2876,11 @@ mod caret {
                         // that column is a row written over it -- a glyph, or
                         // a blank on a ground of its own, which is what the
                         // space in front of a fold's mark leaves, and what a
-                        // tint leaves behind it.
+                        // tint leaves behind it. What it cannot see is a row
+                        // writing a blank on the page's own ground over the
+                        // track, which is a blank over a blank: nothing on
+                        // screen, and the thumb's rows still say whether a
+                        // row reached the column at all.
                         let cell = &cells[(bar, y)];
                         let thumb = cell.symbol() == "\u{2588}";
                         let empty = cell.symbol() == " "

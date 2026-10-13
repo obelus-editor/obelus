@@ -588,15 +588,18 @@ pub(crate) struct Barred {
 }
 
 impl Barred {
-    /// Whether this row of the column is still the bar's.
+    /// Whether this row of the column is still the bar's mark.
     ///
-    /// A cell holding anything but the block a terminal draws a bar with
-    /// is somebody else's by now -- the same question a rule asks of each
-    /// of its cells, and a cap of the ones its key sits in.
+    /// The mark is the one part of a bar a terminal draws, a block, and
+    /// the track is blank: so a cell holding anything but the block is not
+    /// the mark's -- the mark is not on this row, or something has been
+    /// written over it. Whether something has been put *over* the bar is
+    /// the layer's to say, as it is a rule's and a cap's: a list over the
+    /// file writes its own bar's block in the same column.
     ///
-    /// Which a bar had no answer to, and it is drawn late: a card goes
-    /// over the page before the backgrounds, the letters and this, so a
-    /// panel as wide as the editor puts its own right-hand edge in the
+    /// The glyph was a bar's only answer once, and it is drawn late: a card
+    /// goes over the page before the backgrounds, the letters and this, so
+    /// a panel as wide as the editor puts its own right-hand edge in the
     /// scrollbar's column -- and the capsule was painted over it. A
     /// terminal never had the bug, because there the panel simply writes
     /// `\u{2502}` into the cell and the bar is gone.
@@ -605,11 +608,11 @@ impl Barred {
             && page.layer(self.bar.area.x, y) <= self.depth
     }
 
-    /// The rows of it that are still its own, as runs: where each starts
-    /// and how many rows it is.
+    /// The rows of its mark that are still its own, as runs: where each
+    /// starts and how many rows it is.
     ///
-    /// A column cut in half by something drawn over its middle is two
-    /// bars, for the reason a rule covered in the middle is two lines.
+    /// A mark cut in half by something drawn over its middle is two
+    /// pieces, for the reason a rule covered in the middle is two lines.
     pub(crate) fn runs(&self, page: &Page) -> Vec<(u16, u16)> {
         let mut runs: Vec<(u16, u16)> = Vec::new();
         for y in self.bar.area.top()..self.bar.area.bottom() {
@@ -624,7 +627,7 @@ impl Barred {
         runs
     }
 
-    /// Whether this cell is the bar's and still holds it.
+    /// Whether this cell is the bar's mark and still holds it.
     pub(crate) fn covers(&self, page: &Page, x: u16, y: u16) -> bool {
         x == self.bar.area.x
             && (self.bar.area.top()..self.bar.area.bottom()).contains(&y)
@@ -2188,11 +2191,13 @@ mod tests {
     /// nothing put over the page after it was said is.
     ///
     /// Row by row, which is what a column needs and a cell does not: the
-    /// thing drawn over a bar may take the middle of it, so what is left
+    /// thing drawn over a mark may take the middle of it, so what is left
     /// is runs rather than an answer about the whole. The file's own bar
     /// under a list keeps none of the rows the list wrote its own bar
     /// into: the block there is the list's, and the file's mark drawn on
-    /// it was a second thumb that stayed where the file was.
+    /// it was a second thumb that stayed where the file was. The track is
+    /// blank, so it is never among the runs -- and a blank over it says
+    /// nothing either way.
     ///
     /// Deliberate break: have `holds` answer `true`. The file's own bar is
     /// then drawn down the side of the list opened over it -- past the
@@ -2209,46 +2214,49 @@ mod tests {
     /// at depth nothing, and a list's own bar is the terminal's block.
     #[test]
     fn a_bar_is_a_bar_only_where_its_cells_still_say_so() {
-        // A column the list drew two rows of and the file drew all four:
-        // the blank and the rule are the list's foot, over the file's bar.
-        let mut page = written(&["\u{2588}", "\u{2588}", " ", "\u{2500}"]);
         let area = |y: u16, height: u16| Rect {
             x: 0,
             y,
             width: 1,
             height,
         };
-        let showing = |y: u16, height: u16, depth: usize| Barred {
+        let showing = |y: u16, height: u16, thumb: u16, depth: usize| Barred {
             bar: Bar {
                 area: area(y, height),
                 mark: 0,
-                thumb: 1,
+                thumb,
             },
             depth,
             shown: 1.0,
             under: 0.0,
         };
+        // The file's bar alone: its mark on the first row, the track blank.
+        let page = written(&["\u{2588}", " ", " ", " "]);
         assert_eq!(
-            showing(0, 4, 0).runs(&page),
-            vec![(0, 2)],
-            "the file's alone, which reaches past what is still its own"
+            showing(0, 4, 1, 0).runs(&page),
+            vec![(0, 1)],
+            "the mark's row, and none of the track's"
         );
+        // A list over the file, which drew a bar of two rows' mark in the
+        // same column and its foot under it.
+        let mut page = written(&["\u{2588}", "\u{2588}", " ", "\u{2500}"]);
         page.put_over(&[pane(area(0, 4))]);
         assert_eq!(
-            showing(0, 2, 1).runs(&page),
+            showing(0, 2, 2, 1).runs(&page),
             vec![(0, 2)],
             "the list's own, said over the list"
         );
         assert_eq!(
-            showing(0, 4, 0).runs(&page),
+            showing(0, 4, 1, 0).runs(&page),
             Vec::new(),
             "and the file's under the list, whose rows those are"
         );
         // A pane put over somewhere else takes nothing from it.
+        let mut page = written(&["\u{2588}", " ", " ", " "]);
         page.put_over(&[pane(Rect { x: 1, ..area(0, 4) })]);
         assert_eq!(
-            showing(0, 4, 0).runs(&page),
-            vec![(0, 2)],
+            showing(0, 4, 1, 0).runs(&page),
+            vec![(0, 1)],
             "a pane beside the column took rows from it"
         );
     }

@@ -168,9 +168,10 @@ impl Painter {
         //
         // A bar is not among them, and answers the same question finer:
         // where a switch and a mark are one cell and a run of them either
-        // is or is not still there, a bar is a column and the thing over
-        // it may take the middle of it -- so it is asked row by row, at
-        // the two places it matters, and `Barred::runs` is that answer.
+        // is or is not still there, a bar's mark is a run of rows and the
+        // thing over it may take the middle of it -- so it is asked row by
+        // row, at the two places it matters, and `Barred::runs` is that
+        // answer.
         let ticked: Vec<Ticked> = said
             .ticked
             .iter()
