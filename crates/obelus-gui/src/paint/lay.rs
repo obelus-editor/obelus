@@ -98,10 +98,27 @@ impl Painter {
             let veil = self.veil();
             self.block(left, top, wide, tall, veil);
         }
+        // Every pane and box, furthest first, each over the glass of those
+        // before it -- see `drawn`, which four passes ask about.
+        let stack = drawn(said.stack, page);
+        // A pane hanging from the top of the page and on its way in, under
+        // a bar Obelus draws: it comes down from the top of the window,
+        // through the bar, and the bar is drawn over it at the end rather
+        // than here -- once, over the pane, and not also under it, which
+        // would be every letter of the title twice. Where the window's top
+        // is, in the frame's pixels, if so.
+        let through = self
+            .bar
+            .and(moving.pane)
+            .and_then(|_| stack.iter().rposition(|over| !over.is_a_box()))
+            .filter(|&at| stack[at].joined != Joined::Below && stack[at].area.y == 0)
+            .map(|_| -margin[1]);
         // The bar's buttons, on the picture where there is one. With it in
         // the quads every whole screen starts from, because the bar stands
         // still the way the picture does: what slides is the page under it.
-        self.title_bar(across, margin, fonts);
+        if through.is_none() {
+            self.title_bar(across, margin, fonts);
+        }
         // Where the picture's quads end, which every whole screen drawn
         // from this frame draws first -- and the one picture of the frame
         // that is cut into moving pieces leaves out (see `encode`).
@@ -110,9 +127,6 @@ impl Painter {
         } else {
             0
         };
-        // Every pane and box, furthest first, each over the glass of those
-        // before it -- see `drawn`, which four passes ask about.
-        let stack = drawn(said.stack, page);
         // The pane on top, which is the one that arrives: a list opened
         // over the settings comes up over a page that was already there.
         let top = stack.iter().rposition(|over| !over.is_a_box());
@@ -320,6 +334,12 @@ impl Painter {
             let [left, top_edge, wide, tall] = glass.rect;
             so_far = Some(Quad {
                 rect: [left, top_edge + shift, wide, tall],
+                // Through the bar, where it comes from the top of the
+                // window: what it reads is still the page, cut off there.
+                uv: match through {
+                    Some(window) => [glass.uv[0], window, glass.uv[2], glass.uv[3]],
+                    None => glass.uv,
+                },
                 ..glass
             });
             self.placed.arriving = Some(top);
@@ -331,9 +351,16 @@ impl Painter {
             // The glass coming up where it has reached, over what stands
             // under it in the frame -- and then what is written on it,
             // slid in out of its own picture.
-            self.slid_piece(reached(pane, shift), pane, 0.0, along);
+            //
+            // From the top of the window rather than the top of the
+            // page, where it comes through the bar: the room the pieces
+            // are drawn in starts there, and what is written on the pane
+            // is still taken from the pane, so only the slab is seen
+            // there and none of the page.
+            let room = through.map_or(pane, |window| [pane[0], window, pane[2], pane[3]]);
+            self.slid_piece(reached(room, shift), room, 0.0, along);
             let lifting = self.quads.len();
-            self.slid(pane, shift, along);
+            self.slid_piece(room, pane, shift, along);
             self.placed.lifting = Some(lifting..self.quads.len());
             // And the shadow, here rather than in the frame -- see
             // `shadows`. It falls from the edge the pane has *reached*,
@@ -368,6 +395,10 @@ impl Painter {
         }
         // Last, because none of it is drawn on the screen: the blurs are
         // passes of their own, before any of the above.
+        // The bar over a pane coming down through it -- see `through`.
+        if through.is_some() {
+            self.title_bar(across, margin, fonts);
+        }
         self.placed.moved = self.quads.len();
         for at in 0..self.placed.levels.len() {
             self.placed.levels[at].blur = self.blurs_over(self.placed.levels[at].rect);
