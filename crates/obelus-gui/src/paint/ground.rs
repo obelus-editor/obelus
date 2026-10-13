@@ -273,22 +273,34 @@ impl Painter {
     /// together: the plate from nothing, and the light from close in to
     /// its full reach. A plate at full strength under a light still coming
     /// on is a square that appears and then glows, which is two things
-    /// happening where the reader should see one.
+    /// happening where the reader should see one. `unpaired` is the pair
+    /// the caret was in before, going out the same way backwards while
+    /// `gone` says how far it has got -- in the ground it wore when it was
+    /// lit, because its cells have the page's back.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the two pairs and their two clocks are one picture"
+    )]
     pub(super) fn pairs(
         &mut self,
         page: &Page,
         paired: &[Paired],
+        unpaired: &[Paired],
         panes: &[&Behind],
         framed: &[&Behind],
-        along: Option<f32>,
+        (along, gone): (Option<f32>, Option<f32>),
         cell: CellSize,
     ) {
-        let along = along.unwrap_or(1.0);
         let corner = (cell.height * HELD_CORNER).min(cell.width / 2.0);
-        let reach = cell.height * PAIR_REACH * PAIR_REACH_FROM.mul_add(1.0 - along, along);
-        let halves: Vec<([f32; 4], [f32; 4], Option<usize>)> = paired
-            .iter()
-            .map(|half| {
+        let lit = paired.iter().map(|half| (half, along.unwrap_or(1.0)));
+        // Only while it is going: once it has gone there is nothing to
+        // draw, whatever the window still keeps.
+        let going = gone
+            .into_iter()
+            .flat_map(|gone| unpaired.iter().map(move |half| (half, 1.0 - gone)));
+        let halves: Vec<Lit> = lit
+            .chain(going)
+            .map(|(half, strength)| {
                 let (x, y) = (half.area.x, half.area.y);
                 let rect = [
                     f32::from(x) * cell.width,
@@ -296,19 +308,35 @@ impl Painter {
                     cell.width,
                     cell.height,
                 ];
-                let ink = rgba(page.look(x, y).background, Ink::Background);
+                let ground = half
+                    .held
+                    .map_or_else(|| page.look(x, y).background, |(_, ground)| ground);
+                let ink = rgba(ground, Ink::Background);
                 // The pane or box the bracket is drawn in, nearest the
                 // reader first, the way a hold's is found.
                 let pane = panes.iter().rposition(|pane| {
                     (pane.area.left()..pane.area.right()).contains(&x)
                         && (pane.area.top()..pane.area.bottom()).contains(&y)
                 });
-                (rect, away(self.under(panes, framed, x, y), ink), pane)
+                Lit {
+                    rect,
+                    colour: away(self.under(panes, framed, x, y), ink),
+                    pane,
+                    strength,
+                }
             })
             .collect();
         // Every light under every plate, so the light round one half does
         // not lie over the other where the two are side by side: `()`.
-        for &([left, top, width, height], lit, pane) in &halves {
+        for &Lit {
+            rect: [left, top, width, height],
+            colour: lit,
+            pane,
+            strength,
+        } in &halves
+        {
+            let reach =
+                cell.height * PAIR_REACH * PAIR_REACH_FROM.mul_add(1.0 - strength, strength);
             let glow = [
                 left - reach,
                 top - reach,
@@ -327,7 +355,7 @@ impl Painter {
                 self.quads.push(Quad {
                     rect,
                     uv: [left, top, left + width, top + height],
-                    colour: [lit[0], lit[1], lit[2], PAIR_LIGHT * along],
+                    colour: [lit[0], lit[1], lit[2], PAIR_LIGHT * strength],
                     flags: SHADOW,
                     radius: corner,
                     layer: 0,
@@ -337,14 +365,20 @@ impl Painter {
                 });
             }
         }
-        for &([left, top, width, height], lit, _) in &halves {
+        for &Lit {
+            rect: [left, top, width, height],
+            colour: lit,
+            strength,
+            ..
+        } in &halves
+        {
             self.rounded(
                 left,
                 top,
                 width,
                 height,
                 corner,
-                [lit[0], lit[1], lit[2], along],
+                [lit[0], lit[1], lit[2], strength],
             );
         }
     }
@@ -851,6 +885,19 @@ fn lights(
             })
         })
         .collect()
+}
+
+/// Half a pair of brackets, as `pairs` draws it.
+#[derive(Clone, Copy)]
+struct Lit {
+    /// Its cell, in pixels: left, top, width, height.
+    rect: [f32; 4],
+    /// What its plate and its light are drawn in.
+    colour: [f32; 4],
+    /// The pane or box it is drawn in, or `None` for the page.
+    pane: Option<usize>,
+    /// How much of it there is: coming on, going out, or all of it.
+    strength: f32,
 }
 
 /// Where the light round a bracket may fall: `glow` -- left, top, right,

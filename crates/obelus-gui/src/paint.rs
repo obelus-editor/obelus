@@ -2172,6 +2172,7 @@ mod tests {
             parted: &[],
             stroked: &[],
             paired: &[],
+            unpaired: &[],
             stack: &[],
             bands: &[],
         };
@@ -2230,6 +2231,7 @@ mod tests {
             parted: &[],
             stroked: &[],
             paired: &[],
+            unpaired: &[],
             stack: &[],
             bands: &[],
         };
@@ -2544,6 +2546,7 @@ mod tests {
             ruled: &[],
             stroked: &stroked,
             paired: &[],
+            unpaired: &[],
             sheened: None,
             parted: &[],
             stack: &[],

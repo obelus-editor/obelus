@@ -295,6 +295,8 @@ pub(crate) struct Said<'a> {
     pub(crate) stroked: &'a [Stroked],
     /// And which cells are the cursor's pair of brackets.
     pub(crate) paired: &'a [Paired],
+    /// And the pair that was, where its light is still going out.
+    pub(crate) unpaired: &'a [Paired],
     /// And what is under each pane and each box, furthest first: each is
     /// glass over everything before it.
     pub(crate) stack: &'a [Behind],
@@ -532,6 +534,15 @@ pub(crate) struct Paired {
     /// How many panes and boxes had been put over the page when it was
     /// said -- see `Page::layer`.
     pub(crate) depth: usize,
+    /// Which bracket the cell held when the frame that said it arrived,
+    /// and the ground it wore, or `None` before then.
+    ///
+    /// What lets a pair that has gone go on being drawn while its light
+    /// goes out: nothing says it any more, so the one thing that can say
+    /// the cell is still that bracket is the bracket -- see
+    /// [`Self::still_there`] -- and the cell has the page's ground back,
+    /// so what the light was made of has to be kept as well.
+    pub(crate) held: Option<(char, Color)>,
 }
 
 impl Paired {
@@ -542,13 +553,36 @@ impl Paired {
     /// the file in the same frame, and a light left where the file's
     /// bracket was would be shining on a row of the list.
     pub(crate) fn still_said(&self, page: &Page) -> bool {
+        self.bracket(page).is_some()
+    }
+
+    /// Whether a pair that has gone is still where its light is going
+    /// out: the same bracket in the same cell, with nothing over it.
+    ///
+    /// The page moves on under it. A key that took the caret out of the
+    /// pair may have scrolled the file as well, and then the cell holds
+    /// something else -- or another bracket, which a light going out on
+    /// would be a light on a bracket nobody was in.
+    pub(crate) fn still_there(&self, page: &Page) -> bool {
+        self.held
+            .is_some_and(|(held, _)| self.bracket(page) == Some(held))
+    }
+
+    /// Writes down what the cell holds, as the frame that said it arrives.
+    pub(crate) fn hold(&mut self, page: &Page) {
+        self.held = self
+            .bracket(page)
+            .map(|bracket| (bracket, page.look(self.area.x, self.area.y).background));
+    }
+
+    /// The bracket in the cell, where it is one and nothing is over it.
+    fn bracket(&self, page: &Page) -> Option<char> {
         let (x, y) = (self.area.x, self.area.y);
         let mut text = page.look(x, y).text.chars();
-        page.layer(x, y) <= self.depth
-            && text.next().is_some_and(|c| {
-                obelus_syntax::brackets::opens(c) || obelus_syntax::brackets::closes(c)
-            })
-            && text.next().is_none()
+        let bracket = text
+            .next()
+            .filter(|&c| obelus_syntax::brackets::opens(c) || obelus_syntax::brackets::closes(c))?;
+        (page.layer(x, y) <= self.depth && text.next().is_none()).then_some(bracket)
     }
 }
 
@@ -2247,11 +2281,49 @@ mod tests {
                 open: 0,
             },
             depth,
+            held: None,
         };
         assert!(half(0, 0).still_said(&page), "the file's own bracket");
         assert!(!half(1, 0).still_said(&page), "a letter is no bracket");
         assert!(!half(3, 0).still_said(&page), "the pane's cell");
         assert!(half(3, 1).still_said(&page), "said by the pane itself");
+    }
+
+    /// A pair that has gone is drawn going out only while its cell is the
+    /// bracket it was, in the ground it wore then.
+    ///
+    /// The key that took the caret out may have scrolled the file too, and
+    /// then the cell holds another character -- or another bracket.
+    ///
+    /// Deliberate break: answer `still_said` in `still_there`, and the
+    /// light goes out on the `]` that scrolled into the `(`'s cell.
+    #[test]
+    fn a_pair_going_out_is_where_its_bracket_still_is() {
+        let mut page = written(&["(a)"]);
+        let mut half = Paired {
+            area: Rect::new(0, 0, 1, 1),
+            pair: Pair {
+                document: 0,
+                version: 0,
+                open: 0,
+            },
+            depth: 0,
+            held: None,
+        };
+        assert!(!half.still_there(&page), "nothing held yet");
+        half.hold(&page);
+        assert_eq!(half.held.map(|(bracket, _)| bracket), Some('('));
+        assert!(half.still_there(&page), "the same bracket");
+        // Scrolled: another bracket in the cell.
+        let mut cell = Cell::default();
+        cell.set_symbol("]");
+        page.apply(Update::Cell {
+            x: 0,
+            y: 0,
+            cell: Box::new(cell),
+        });
+        assert!(half.still_said(&page), "it is a bracket");
+        assert!(!half.still_there(&page), "but not that one");
     }
 
     /// A change mark under a pane keeps only the rows the pane is not on.

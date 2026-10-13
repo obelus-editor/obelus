@@ -213,7 +213,15 @@ impl Painter {
         // holding.
         self.holdings(page, panes, &framed, &capped, cell);
         // And the cursor's brackets, which are a ground of the same kind.
-        self.pairs(page, said.paired, panes, &framed, moving.pair, cell);
+        self.pairs(
+            page,
+            said.paired,
+            said.unpaired,
+            panes,
+            &framed,
+            (moving.pair, moving.unpair),
+            cell,
+        );
         self.rules(page, said.ruled, cell);
         // The boundaries with no row to be on, which go where there is no
         // cell: the pixel between one row and the one above it. Under the

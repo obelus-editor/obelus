@@ -171,6 +171,7 @@ impl Left {
             parted: &self.parted,
             stroked: &self.stroked,
             paired: &self.paired,
+            unpaired: &[],
             stack: &self.stack,
             bands: &[],
         }
@@ -426,6 +427,8 @@ struct Showing {
     paired: Vec<Paired>,
     /// And on the one being laid out.
     pairing: Vec<Paired>,
+    /// And the pair the caret was in before, while its light goes out.
+    unpaired: Vec<Paired>,
     /// Which bands of rows are lists, how far down each has got and what
     /// bar says so, on the frame being shown.
     ///
@@ -541,6 +544,7 @@ impl Showing {
             stroking: Vec::new(),
             paired: Vec::new(),
             pairing: Vec::new(),
+            unpaired: Vec::new(),
             ruling: Vec::new(),
             linked: Vec::new(),
             linking: Vec::new(),
@@ -1208,6 +1212,7 @@ impl ApplicationHandler<Waking> for Showing {
                             area,
                             pair,
                             depth: self.stacking.len(),
+                            held: None,
                         }),
                         Update::Stroked { stroke } => {
                             self.stroking.push(Stroked {
@@ -1301,12 +1306,25 @@ impl ApplicationHandler<Waking> for Showing {
                             // the pair is another one than the last frame
                             // drew is what starts it coming up, and only
                             // the frame arriving knows that.
-                            self.paired = std::mem::take(&mut self.pairing);
+                            let was = std::mem::replace(
+                                &mut self.paired,
+                                std::mem::take(&mut self.pairing),
+                            );
                             self.paired.retain(|half| half.still_said(&self.page));
-                            self.motion.pairs_drawn(
+                            for half in &mut self.paired {
+                                half.hold(&self.page);
+                            }
+                            // And the pair it was, where the caret left it
+                            // rather than the text moving it, kept for its
+                            // light to go out on -- and only while the cell
+                            // is still that bracket.
+                            if self.motion.pairs_drawn(
                                 self.paired.iter().map(|half| half.pair),
                                 Instant::now(),
-                            );
+                            ) {
+                                self.unpaired = was;
+                            }
+                            self.unpaired.retain(|half| half.still_there(&self.page));
                             self.stack = std::mem::take(&mut self.stacking);
                             self.panes = std::mem::take(&mut self.paning);
                             self.scrolled = std::mem::take(&mut self.scrolling);
@@ -1640,6 +1658,7 @@ impl ApplicationHandler<Waking> for Showing {
                         parted: &self.parted,
                         stroked: &self.stroked,
                         paired: &self.paired,
+                        unpaired: &self.unpaired,
                         stack: &self.stack,
                         bands: &rolled,
                     },

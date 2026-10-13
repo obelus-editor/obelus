@@ -72,6 +72,14 @@ const FADE: Duration = Duration::from_millis(120);
 /// would otherwise keep it coming on for ever.
 const LIGHT_UP: Duration = Duration::from_millis(160);
 
+/// And how long it takes to go out.
+///
+/// Slower than it came on, for the bar's reason: arriving is news and
+/// going is not, so going is the half that may take its time -- and a
+/// light that went as fast as it came would be a blink at the place the
+/// caret has just left.
+const LIGHT_DOWN: Duration = Duration::from_millis(260);
+
 /// How long a band takes to catch up with where it has got to.
 ///
 /// Shorter than a pane arriving and longer than the caret's flight. What
@@ -390,6 +398,9 @@ pub(crate) struct Moving {
     /// And how far the light round the cursor's pair of brackets has come
     /// on, or `None` for one that is simply lit.
     pub(crate) pair: Option<f32>,
+    /// And how far the light round the pair that was has gone out, or
+    /// `None` where there is none going.
+    pub(crate) unpair: Option<f32>,
     /// Where the light on the welcome screen's mark has got to, as a part
     /// of the mark's own width, or `None` while it is resting between
     /// passes -- and on a screen with no mark on it.
@@ -424,6 +435,7 @@ impl Moving {
             leaving: None,
             card: None,
             pair: None,
+            unpair: None,
             sheen: None,
             turn: None,
             drift: (0.0, 0.0),
@@ -824,6 +836,8 @@ pub(crate) struct Motion {
     card: Arriving,
     /// The light round the cursor's pair of brackets, coming on.
     pair: Arriving,
+    /// And round the pair it was in before, going out.
+    unpair: Arriving,
     /// Which pairs the last frame drew, which is what says the next one's
     /// are other ones -- see `pairs_drawn`.
     pairs: Vec<Pair>,
@@ -880,6 +894,10 @@ impl Motion {
                 opened: None,
                 takes: LIGHT_UP,
             },
+            unpair: Arriving {
+                opened: None,
+                takes: LIGHT_DOWN,
+            },
             pairs: Vec::new(),
             bands: Bands::default(),
             bars: Bars::default(),
@@ -904,6 +922,7 @@ impl Motion {
             self.leaving.opened = None;
             self.card.opened = None;
             self.pair.opened = None;
+            self.unpair.opened = None;
             self.bands.seen.clear();
         }
     }
@@ -1052,6 +1071,7 @@ impl Motion {
         let left = self.leaving.settle(now);
         let faded = self.card.settle(now);
         let lit = self.pair.settle(now);
+        let unlit = self.unpair.settle(now);
         let blinked = self.blink.advance(now, caret);
         // A step, which `advance` speaks for, because nothing else would
         // ask for the frame: the turn is a moment to `wake`, and a moment
@@ -1060,7 +1080,7 @@ impl Motion {
         if turned {
             self.next_turn = now + TURN_STEP;
         }
-        flew || caught || slid || left || faded || lit || blinked || turned
+        flew || caught || slid || left || faded || lit || unlit || blinked || turned
     }
 
     /// When the window wants the loop back, or `None` for nothing moving.
@@ -1073,6 +1093,7 @@ impl Motion {
             || self.leaving.moving(now)
             || self.card.moving(now)
             || self.pair.moving(now)
+            || self.unpair.moving(now)
             || self.bands.moving(now)
             || (self.animates && self.bars.moving(now))
             // The light wants a rate while it is out, and between passes
@@ -1165,6 +1186,7 @@ impl Motion {
             leaving: self.leaving.along(now),
             card: self.card.along(now),
             pair: self.pair.along(now),
+            unpair: self.unpair.along(now),
             sheen: self.sheen(now),
             turn: self.turn(now),
         }
@@ -1190,8 +1212,11 @@ impl Motion {
     /// is there without coming on -- and their hands made it, so nothing
     /// arrived.
     ///
-    /// Gone is not news either: the light simply is not drawn.
-    pub(crate) fn pairs_drawn(&mut self, pairs: impl Iterator<Item = Pair>, now: Instant) {
+    /// And the pair that was goes out, where it went rather than moved:
+    /// the caret left it, for another pair or for none. Answers whether
+    /// it did, so the window keeps where it was for the light to go out
+    /// on -- the page no longer says.
+    pub(crate) fn pairs_drawn(&mut self, pairs: impl Iterator<Item = Pair>, now: Instant) -> bool {
         let mut drawn: Vec<Pair> = pairs.collect();
         drawn.sort_unstable();
         drawn.dedup();
@@ -1213,8 +1238,13 @@ impl Motion {
             } else if self.animates && !edited {
                 self.pair.opened = Some(now);
             }
+            let went = self.animates && !edited && !self.pairs.is_empty();
+            self.unpair.opened = went.then_some(now);
+            self.pairs = drawn;
+            return went;
         }
         self.pairs = drawn;
+        false
     }
 
     /// The frame drew a mark that turns, or it did not.
@@ -2373,6 +2403,47 @@ mod tests {
         assert_eq!(motion.moving(later).pair, Some(0.0), "another file's pair");
     }
 
+    /// The pair the caret left goes out, and one the text moved does not.
+    ///
+    /// Break: start `unpair` whatever changed -- drop the `!edited` from
+    /// `went` -- and a key typed in front of a bracket leaves a light
+    /// going out a cell behind it; leave `unpair` out of `Motion::wake`
+    /// and the light goes out at whatever rate the blink wants.
+    #[test]
+    fn a_pair_the_caret_left_goes_out() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        // The first pair has nothing before it to go out.
+        assert!(!motion.pairs_drawn([pair(10, 1)].into_iter(), base));
+        assert_eq!(motion.moving(base).unpair, None);
+        // Into another: the first goes out while the second comes on.
+        assert!(motion.pairs_drawn([pair(42, 1)].into_iter(), base));
+        assert_eq!(motion.moving(base).unpair, Some(0.0));
+        assert_eq!(motion.wake(base, true), Some(Wake::EveryFrame));
+        let half = motion
+            .moving(base + LIGHT_DOWN / 2)
+            .unpair
+            .expect("still going out");
+        assert!(half > 0.0 && half < 1.0, "{half}");
+        // Slower than it came on, and still asking for frames once the
+        // new pair is lit -- which is the moment only it is moving.
+        assert!(motion.moving(base + LIGHT_UP).unpair.is_some());
+        assert_eq!(motion.wake(base + LIGHT_UP, true), Some(Wake::EveryFrame));
+        assert_eq!(motion.moving(base + LIGHT_DOWN).unpair, None, "gone");
+        // Out of every pair: that one goes out too.
+        let later = base + LIGHT_DOWN * 2;
+        motion.advance(later, true);
+        assert!(motion.pairs_drawn(std::iter::empty(), later));
+        // And a pair the text moved does not go out.
+        motion.pairs_drawn([pair(10, 1)].into_iter(), later);
+        assert!(!motion.pairs_drawn([pair(11, 2)].into_iter(), later));
+        assert_eq!(
+            motion.moving(later).unpair,
+            None,
+            "a keystroke left a light"
+        );
+    }
+
     /// Break: drop the `self.animates` from `pairs_drawn`, and a reader who
     /// turned animation off still has every pair fade in.
     #[test]
@@ -2382,5 +2453,8 @@ mod tests {
         motion.animates(false);
         motion.pairs_drawn([pair(10, 1)].into_iter(), base);
         assert_eq!(motion.moving(base).pair, None);
+        // Nor goes out: it is simply gone.
+        assert!(!motion.pairs_drawn([pair(42, 1)].into_iter(), base));
+        assert_eq!(motion.moving(base).unpair, None);
     }
 }
