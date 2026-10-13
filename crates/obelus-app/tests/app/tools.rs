@@ -252,6 +252,142 @@ fn what_an_agent_writes_down_is_in_the_file() {
     assert!(!todo.notes[1].done, "it ticked one nobody asked it to");
 }
 
+/// Notes go in front of a note or after it, beside it, and neither takes
+/// a child from it.
+///
+/// `under` alone could only add to the end of what hangs under a note, so a
+/// step that belonged between two others went at the bottom. In front of a
+/// note is in front of it and not inside it, and after a note is after
+/// what hangs under it too -- the one place in between would hand its
+/// children to the batch, or the batch to its children. And the first of
+/// a batch is beside the note whatever depth it was given, or it hangs
+/// under a neighbour nobody named.
+///
+/// Broken deliberately four ways, each failing the order: `after` straight
+/// after the note, without its children; `before` past the note's
+/// children; `before` one level deeper than the note, which the second one
+/// catches because a sibling above it would take the batch in; and the
+/// first note's own depth kept, which hangs it under the note above. And
+/// once more by taking an empty name for a name, which refuses the last
+/// call as two places and leaves the loop waiting for it.
+#[test]
+fn notes_go_before_or_after_a_note_beside_it() {
+    use obelus_app::app::App;
+
+    let scratch = support::Scratch::new("tools-beside");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
+        "[[todo]]\nid = \"AAAAAAAA\"\nsaid = \"first\"\ndone = false\n\n\
+         [[todo]]\nid = \"CCCCCCCC\"\nsaid = \"its child\"\ndone = false\ndepth = 1\n\n\
+         [[todo]]\nid = \"BBBBBBBB\"\nsaid = \"second\"\ndone = false\n\n\
+         [[todo]]\nid = \"DDDDDDDD\"\nsaid = \"the second's child\"\ndone = false\ndepth = 1\n",
+    )
+    .expect("the notes");
+
+    let (sender, events) = channel::<obelus_app::event::Event>();
+    let url = served(scratch.path(), sender);
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(scratch.path().to_path_buf());
+
+    let asking = std::thread::spawn({
+        let url = url.clone();
+        move || {
+            let (_, session) = ask(
+                &url,
+                None,
+                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"a test","version":"0"}}}"#,
+            );
+            let session = session.expect("a session of its own");
+            [
+                r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"todo_add","arguments":{"before":"CCCCCCCC","notes":[{"said":"ahead of the child"}]}}}"#,
+                r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"todo_add","arguments":{"after":"AAAAAAAA","notes":[{"said":"after the first"}]}}}"#,
+                // A depth on the first, which would hang it under the note
+                // just written; the second counts from the first.
+                r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"todo_add","arguments":{"before":"BBBBBBBB","notes":[{"said":"ahead of the second","depth":1},{"said":"and its step","depth":1}]}}}"#,
+                // Every field filled in, two of them with nothing: one place.
+                r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"todo_add","arguments":{"under":"","before":"","after":"DDDDDDDD","notes":[{"said":"last of all"}]}}}"#,
+            ]
+            .map(|call| ask(&url, Some(&session), call).0)
+        }
+    });
+
+    for _ in 0..4 {
+        let event = events
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("the server asked the loop for something");
+        app.handle(event);
+    }
+    let said = asking.join().expect("the agent's side");
+    for (said, how_many) in said.iter().zip([1, 1, 2, 1]) {
+        assert!(
+            said.contains(&format!("written down: {how_many}")),
+            "it did not say so: {said}"
+        );
+    }
+
+    let todo = obelus_todo::read(scratch.path())
+        .notes()
+        .expect("the notes");
+    let said: Vec<(&str, u16)> = todo
+        .notes
+        .iter()
+        .map(|note| (note.said.as_str(), note.depth))
+        .collect();
+    assert_eq!(
+        said,
+        vec![
+            ("first", 0),
+            ("ahead of the child", 1),
+            ("its child", 1),
+            ("after the first", 0),
+            ("ahead of the second", 0),
+            ("and its step", 1),
+            ("second", 0),
+            ("the second's child", 1),
+            ("last of all", 1),
+        ]
+    );
+}
+
+/// Two places at once are refused, and nothing is written.
+///
+/// A batch both under one note and after another could only land by
+/// Obelus choosing which was meant. Nobody is listening for the loop here,
+/// so a call that got as far as asking it would come back with no answer
+/// rather than the refusal.
+///
+/// Broken deliberately by letting `under` win whatever else is given.
+#[test]
+fn notes_are_refused_two_places_at_once() {
+    let scratch = support::Scratch::new("tools-two-places");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
+        "[[todo]]\nid = \"AAAAAAAA\"\nsaid = \"first\"\ndone = false\n",
+    )
+    .expect("the notes");
+
+    let (sender, events) = channel::<obelus_app::event::Event>();
+    drop(events);
+    let url = served(scratch.path(), sender);
+    let (_, session) = ask(
+        &url,
+        None,
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"a test","version":"0"}}}"#,
+    );
+    let session = session.expect("a session of its own");
+    let (both, _) = ask(
+        &url,
+        Some(&session),
+        r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"todo_add","arguments":{"under":"AAAAAAAA","after":"AAAAAAAA","notes":[{"said":"nowhere"}]}}}"#,
+    );
+    assert!(
+        both.contains("one of `under`, `before` and `after`"),
+        "two places at once were not refused: {both}"
+    );
+}
+
 /// A note that is a paragraph is still one note in the listing.
 ///
 /// The list says a line beginning with a name is a note, and printing the

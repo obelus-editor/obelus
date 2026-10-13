@@ -11260,7 +11260,7 @@ fn an_agents_tool_is_refused_a_note_another_obelus_is_talking_about() {
         &mut app,
         obelus_todo::Doing::Add {
             notes: vec![("a new one".to_string(), 0)],
-            under: Some(theirs.clone()),
+            place: Some(obelus_todo::Place::Under(theirs.clone())),
         },
     );
     assert!(

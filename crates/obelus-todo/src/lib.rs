@@ -257,12 +257,9 @@ pub enum Doing {
         /// agent knows the shape of what it is writing and not where in
         /// somebody else's list it will land.
         notes: Vec<(String, u16)>,
-        /// The note they hang under, if they hang under one.
-        ///
-        /// They go after the whole of what is already under it, which is
-        /// where the key that starts a note puts one: between a note and
-        /// its children is a place that adopts what is put there.
-        under: Option<NoteId>,
+        /// Where they go, by a note already there; left out, at the end
+        /// of the list at the top level.
+        place: Option<Place>,
     },
     /// Tick this one off, by the name it answers to.
     Finish(NoteId),
@@ -274,10 +271,40 @@ pub enum Doing {
         /// and an agent rewording one has said nothing about any of them.
         note: NoteId,
         /// The whole of what it says from now on, in place of what it
-        /// says. Not a line to add: `Add` with `under` is how something
+        /// says. Not a line to add: `Add` under the note is how something
         /// gets added.
         said: String,
     },
+}
+
+/// Where notes an agent writes down go, by a note that is already there.
+///
+/// One of the three and never two, which is why it is one value here even
+/// though the tool takes three fields: a batch both under one note and
+/// before another is a place nobody could say where it was.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Place {
+    /// Beneath it, after the whole of what is already under it, which is
+    /// where the key that starts a note puts one: between a note and its
+    /// children is a place that adopts what is put there.
+    Under(NoteId),
+    /// Beside it and ahead of it, at its depth. What hangs under it stays
+    /// under it, because the batch goes in front of the note and not
+    /// between the note and its children.
+    Before(NoteId),
+    /// Beside it and after it, at its depth -- after what hangs under it
+    /// too, or the batch would take its last children from it.
+    After(NoteId),
+}
+
+impl Place {
+    /// The note the place is found by.
+    #[must_use]
+    pub fn note(&self) -> &NoteId {
+        match self {
+            Self::Under(note) | Self::Before(note) | Self::After(note) => note,
+        }
+    }
 }
 
 /// One thing done to the notes, said so that it still means what it meant

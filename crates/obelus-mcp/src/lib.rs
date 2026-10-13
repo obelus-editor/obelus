@@ -210,10 +210,22 @@ pub struct Proposed {
     pub notes: Vec<Offered>,
     /// The note they all go under, by the name `todo_list` gives it.
     ///
-    /// Left out, they go at the end of the list at the top level. A
-    /// conversation opened on a note is told that note's name in its first
-    /// message, and that is usually the one they belong under.
+    /// Left out, and `before` and `after` with it, they go at the end of the
+    /// list at the top level. A conversation opened on a note is told that
+    /// note's name in its first message, and that is usually the one they
+    /// belong under.
     pub under: Option<String>,
+    /// The note they go in front of, beside it at its depth -- the first
+    /// of them whatever depth it is given, and the rest counted from it.
+    ///
+    /// Not with `under` or `after`: one place, by one note.
+    pub before: Option<String>,
+    /// The note they go after, beside it at its depth and after what hangs
+    /// under it -- the first of them whatever depth it is given, and the
+    /// rest counted from it.
+    ///
+    /// Not with `under` or `before`: one place, by one note.
+    pub after: Option<String>,
 }
 
 /// One note an agent is writing down.
@@ -451,11 +463,17 @@ impl Obelus {
         somebody would want to come back to, not a summary of what you just \
         did. From any conversation: what is worth writing down usually \
         turns up while doing something else. Give `under` a note's name to \
-        hang them beneath it, and a note a `depth` to hang it beneath the \
-        one before it.")]
+        hang them beneath it, or `before` or `after` one to put them beside \
+        it -- one of the three at most -- and a note a `depth` to hang it \
+        beneath the one before it.")]
     async fn todo_add(
         &self,
-        Parameters(Proposed { notes, under }): Parameters<Proposed>,
+        Parameters(Proposed {
+            notes,
+            under,
+            before,
+            after,
+        }): Parameters<Proposed>,
     ) -> Result<CallToolResult, ErrorData> {
         tracing::info!(offered = notes.len(), "an agent is writing notes down");
         if notes.is_empty() {
@@ -463,15 +481,29 @@ impl Obelus {
                 "there is nothing there to write down",
             )]));
         }
-        let beneath = match under.as_deref() {
-            Some(name) => match todo::NoteId::read(name) {
-                Some(id) => Some(id),
-                None => {
-                    return Ok(CallToolResult::error(vec![ContentBlock::text(
-                        "that is not a note's name; `todo_list` gives them",
-                    )]));
-                }
-            },
+        // Two places is no place: a batch both under one note and before
+        // another could only land by Obelus choosing which was meant. An
+        // empty name is none at all, because an agent that fills in every
+        // field it is offered has said nothing with the two it left blank.
+        let given = |name: Option<String>| name.filter(|name| !name.trim().is_empty());
+        let place = match (given(under), given(before), given(after)) {
+            (None, None, None) => None,
+            (Some(name), None, None) => Some(todo::NoteId::read(&name).map(todo::Place::Under)),
+            (None, Some(name), None) => Some(todo::NoteId::read(&name).map(todo::Place::Before)),
+            (None, None, Some(name)) => Some(todo::NoteId::read(&name).map(todo::Place::After)),
+            _ => {
+                return Ok(CallToolResult::error(vec![ContentBlock::text(
+                    "one of `under`, `before` and `after` at most: they are one place",
+                )]));
+            }
+        };
+        let place = match place {
+            Some(Some(place)) => Some(place),
+            Some(None) => {
+                return Ok(CallToolResult::error(vec![ContentBlock::text(
+                    "that is not a note's name; `todo_list` gives them",
+                )]));
+            }
             None => None,
         };
         let notes = notes
@@ -479,11 +511,8 @@ impl Obelus {
             .map(|note| (note.said, note.depth.unwrap_or(0)))
             .collect();
         Ok(said(
-            self.told(Wanted::Notes(todo::Doing::Add {
-                notes,
-                under: beneath,
-            }))
-            .await,
+            self.told(Wanted::Notes(todo::Doing::Add { notes, place }))
+                .await,
         ))
     }
 
@@ -615,8 +644,9 @@ impl ServerHandler for Obelus {
              one at them asks them to look up something they have no way to \
              look up.\n\n\
              Work that belongs to a note goes under it: `todo_add` takes \
-             `under`, a note's name, and puts them beneath it. A note's own \
-             `depth` puts it beneath the note before it.\n\n\
+             `under`, a note's name, and puts them beneath it, or `before` \
+             or `after` one to put them beside it. A note's own `depth` puts \
+             it beneath the note before it.\n\n\
              From any conversation. One about a note says so in its first \
              message; otherwise `todo_list`. `todo_read` is one note by its \
              name and what hangs under it, for when the list is long."

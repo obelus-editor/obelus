@@ -2900,6 +2900,7 @@ mod caret {
             settings: &[],
             focus: chat.focus(),
             card: None,
+            asked: false,
             in_front: true,
             pointer: None,
             root: std::path::Path::new("/"),
