@@ -190,3 +190,95 @@ fn a_language_server_is_told_where_the_pool_of_build_jobs_is() {
         "the server was not told where this pool is: {told:?}"
     );
 }
+
+/// The settings with the language servers switched as `on` says.
+fn servers(on: bool) -> obelus_config::Config {
+    obelus_config::Config {
+        language_servers: on,
+        ..obelus_config::Config::default()
+    }
+}
+
+/// Turning the switch off stops what is running, and a change to any other
+/// setting with it off leaves alone a server the reader started by hand.
+///
+/// The settings are applied after every change to any of them, so the
+/// second half is the one that is easy to lose: a theme chosen with the
+/// switch off would take `restart-server`'s answer away again.
+///
+/// Broken deliberately two ways. Taking out the loop that stops them when
+/// the switch goes off leaves the server running at the end. And acting on
+/// what the switch *says* rather than on its moving -- dropping the
+/// `on == self.servers_on` return -- stops the hand-started one the moment
+/// another setting changes.
+#[test]
+fn turning_the_servers_off_stops_them_and_nothing_else_does() {
+    let (_scratch, mut app) = reading("switched");
+    app.configure(servers(false), Vec::new());
+    assert!(
+        app.server_state().is_some(),
+        "a change to the settings that left the switch where it was stopped the server"
+    );
+
+    app.configure(servers(true), Vec::new());
+    assert!(app.server_state().is_some(), "turning them on stopped one");
+    app.configure(servers(false), Vec::new());
+    assert!(
+        app.server_state().is_none(),
+        "the switch is off and the server is still running"
+    );
+}
+
+/// The whole way round against a real server, because what is being said
+/// is which program Obelus *starts*: off, opening a file starts nothing;
+/// on, the open files get their server; and `restart-server` starts one
+/// with the switch off, because the reader asked for that one.
+///
+/// Skipped where rust-analyzer is not installed, like the other tests that
+/// need the real thing. Broken deliberately three ways: `serve` asked to
+/// start whatever the switch says, which starts one with it off; the
+/// switch's turning on starting nothing for what is already open; and
+/// `restart-server` going through `serve`, which starts nothing with the
+/// switch off.
+#[test]
+fn the_switch_says_whether_opening_a_file_starts_a_server() {
+    if !obelus_lsp::on_path("rust-analyzer") {
+        eprintln!("skipped: rust-analyzer is not on PATH");
+        return;
+    }
+    let scratch = support::Scratch::new("serving-the-switch");
+    let path = scratch.path().join("main.rs");
+    std::fs::write(&path, "fn main() {}\n").expect("the file");
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&path).expect("opening it"),
+    ]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    let (sender, _events) = std::sync::mpsc::channel();
+    app.events_for_test(sender);
+    support::lay_out(&mut app, 100, 12);
+
+    app.serve_for_test();
+    assert!(
+        app.server_state().is_none(),
+        "a server started with the switch off"
+    );
+
+    app.configure(servers(true), Vec::new());
+    assert!(
+        app.server_state().is_some(),
+        "turning the switch on started nothing for the file that is open"
+    );
+
+    app.configure(servers(false), Vec::new());
+    assert!(
+        app.server_state().is_none(),
+        "turning it off stopped nothing"
+    );
+    app.restart_server();
+    assert!(
+        app.server_state().is_some(),
+        "restart-server started nothing with the switch off"
+    );
+    app.configure(servers(true), Vec::new());
+    app.configure(servers(false), Vec::new());
+}

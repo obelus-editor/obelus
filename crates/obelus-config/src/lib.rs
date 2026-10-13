@@ -44,7 +44,9 @@
 //! downloaded project would most like to write. VS Code learned this one the
 //! same way and calls it `machine` scope. `environment` is the reader's for the
 //! first reason as well: what an agent is started with can point it at
-//! somebody else's server. `remote` and `remotes` are the
+//! somebody else's server, and `language_servers` is the same decision as
+//! `agent` in another costume: a server reads a project by building it, and
+//! building one runs its code. `remote` and `remotes` are the
 //! reader's for a reason of their own: they say who may talk to this machine
 //! from a chat, and a project that could name a person there could hand a
 //! stranger the agent. And `theme` is the reader's because what it names is
@@ -123,6 +125,18 @@ pub struct Config {
     /// gets changed at all -- and not about saving, because what an agent
     /// wrote into an open file reaches the disk by being saved.
     pub read_only: bool,
+    /// Whether a file being opened starts a language server for its
+    /// language.
+    ///
+    /// Off by default. A reader whose code is written and changed by an
+    /// agent asks the agent where a thing is defined and what calls it, and
+    /// a server is a second process per language and per window, indexing
+    /// the project the agent has already read -- a gigabyte of
+    /// rust-analyzer for a reader who never pressed a key that asks it
+    /// anything. Only about starting one: `restart-server` starts one for
+    /// the file in front of the reader whatever this says, and a server
+    /// that is running is told about the next file of its language.
+    pub language_servers: bool,
     /// Whether to ask a language server to lay the file out before writing.
     pub format_on_save: bool,
     /// Whether to make the server's whole-file fixes before writing.
@@ -352,6 +366,7 @@ impl Default for Config {
             fonts: Vec::new(),
             font_size: DEFAULT_FONT_SIZE,
             read_only: false,
+            language_servers: false,
             // Off: a formatter that ran without being asked would rewrite
             // a file somebody opened to read, and the first they would know
             // of it is the diff.
@@ -846,6 +861,19 @@ pub const ALL: &[Setting] = &[
         drawn: Drawn::Anywhere,
     },
     Setting {
+        key: "language_servers",
+        name: "Language servers",
+        about: "Start one for a file's language when the file is opened, if it is installed -- rust-analyzer, gopls, clangd and the rest. Off, restart-server still starts one for the file in front of you",
+        group: Group::Reading,
+        // The reader's alone: a server reads a project by building it, and
+        // rust-analyzer runs a project's build scripts and macros to do
+        // that, so a downloaded project that could turn this on would be a
+        // file deciding that its own code runs.
+        reach: Reach::ReaderOnly,
+        kind: Kind::Switch,
+        drawn: Drawn::Anywhere,
+    },
+    Setting {
         key: "format_on_save",
         name: "Formatting",
         about: "Ask the language server to lay the file out before writing it",
@@ -1001,6 +1029,7 @@ impl Config {
             "conversation_days" => Some(Value::Count(self.conversation_days)),
             "animation" => Some(Value::Switch(self.animation)),
             "read_only" => Some(Value::Switch(self.read_only)),
+            "language_servers" => Some(Value::Switch(self.language_servers)),
             "format_on_save" => Some(Value::Switch(self.format_on_save)),
             "code_actions_on_save" => Some(Value::Switch(self.code_actions_on_save)),
             "inlay_hints" => Some(Value::Switch(self.inlay_hints)),
@@ -1035,6 +1064,7 @@ impl Config {
             ("fonts", Value::Names(names)) => self.fonts = names.clone(),
             ("animation", Value::Switch(on)) => self.animation = *on,
             ("read_only", Value::Switch(on)) => self.read_only = *on,
+            ("language_servers", Value::Switch(on)) => self.language_servers = *on,
             ("format_on_save", Value::Switch(on)) => self.format_on_save = *on,
             ("code_actions_on_save", Value::Switch(on)) => self.code_actions_on_save = *on,
             ("inlay_hints", Value::Switch(on)) => self.inlay_hints = *on,
@@ -1599,6 +1629,11 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
     {
         config.read_only = on;
     }
+    if let Some(on) = table.get("language_servers").and_then(toml::Value::as_bool)
+        && allowed("language_servers")
+    {
+        config.language_servers = on;
+    }
     if let Some(on) = table.get("format_on_save").and_then(toml::Value::as_bool)
         && allowed("format_on_save")
     {
@@ -2000,6 +2035,11 @@ fn lay(existing: &str, config: &Config, every: bool) -> String {
         "read_only",
         config.read_only != default.read_only,
         toml_edit::value(config.read_only),
+    );
+    put(
+        "language_servers",
+        config.language_servers != default.language_servers,
+        toml_edit::value(config.language_servers),
     );
     put(
         "format_on_save",
@@ -2840,6 +2880,31 @@ mod tests {
         );
     }
 
+    /// A project cannot turn the language servers on: one reads a project
+    /// by building it, which runs the project's own code.
+    ///
+    /// Broken deliberately by giving `language_servers` `Reach::Anywhere`.
+    #[test]
+    fn a_project_may_not_start_the_language_servers() {
+        let mut config = Config::default();
+        assert!(!config.language_servers, "on before anybody said so");
+        let table: toml::Table = "language_servers = true".parse().expect("toml");
+        let applied = apply(&mut config, &table, Whose::Project);
+        assert!(!config.language_servers);
+        assert_eq!(
+            applied.ignored,
+            vec![super::Ignored {
+                key: "language_servers".to_string(),
+                why: super::Why::NotForAProject,
+                at: None,
+            }]
+        );
+
+        let applied = apply(&mut config, &table, Whose::Reader);
+        assert!(config.language_servers);
+        assert!(applied.ignored.is_empty(), "{:?}", applied.ignored);
+    }
+
     /// How many build jobs the machine runs is the reader's, and a project
     /// naming it is told so rather than obeyed.
     ///
@@ -2904,6 +2969,7 @@ mod tests {
             hover_delay: 800,
             conversation_days: 90,
             read_only: true,
+            language_servers: true,
             format_on_save: true,
             code_actions_on_save: true,
             inlay_hints: true,

@@ -247,6 +247,13 @@ pub struct App {
     /// and a reader who stopped rust-analyzer because it was eating the
     /// machine would find it back a moment later with nothing saying why.
     stopped: HashSet<LanguageId>,
+    /// What `language_servers` said when it was last applied.
+    ///
+    /// The settings are applied after every change to any of them, and the
+    /// switch acts only when it moves: the servers are stopped when it is
+    /// turned off, not each time a theme is chosen with it off -- which
+    /// would take away the one a reader started by hand.
+    servers_on: bool,
     /// What each question that is still out was about.
     ///
     /// Kept here rather than in the client because the answer arrives after
@@ -577,6 +584,7 @@ impl App {
             picker: None,
             servers: HashMap::new(),
             stopped: HashSet::new(),
+            servers_on: false,
             asked: HashMap::new(),
             troubles: HashMap::new(),
             reported: HashMap::new(),

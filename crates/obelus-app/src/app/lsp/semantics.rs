@@ -73,12 +73,24 @@ impl App {
     }
 
     /// Starts a server for a buffer's language, if there is one to start and
-    /// it is not already running.
+    /// it is not already running, and tells it about the buffer.
+    ///
+    /// Starting one is the reader's to switch on (`language_servers`).
+    /// Telling one that is already running is not: a server the reader
+    /// started by hand with the switch off has been asked for, and one that
+    /// had not heard of the next file of its language would answer nothing
+    /// about it.
     ///
     /// Only for files under the root. A server is rooted at the working
     /// directory, and asking it about a file outside its own project gets
     /// answers about a project it cannot see.
     pub(in crate::app) fn serve(&mut self, index: usize) {
+        self.serve_starting(index, self.settled.config.language_servers);
+    }
+
+    /// [`App::serve`], saying whether a server that is not running may be
+    /// started for it.
+    fn serve_starting(&mut self, index: usize, start: bool) {
         let Some(buffer) = file_in(&self.documents, DocumentId::new(index)) else {
             return;
         };
@@ -104,31 +116,37 @@ impl App {
             return;
         }
 
-        if !self.servers.contains_key(&language) {
-            let Some(server) = obelus_lsp::server_for(language) else {
-                return;
-            };
-            let command = server.command;
-            if !obelus_lsp::on_path(command) {
-                tracing::info!(%command, "not on PATH, so no server for {}", language.name());
-                return;
-            }
-            let Some(sender) = self.events.clone() else {
-                return;
-            };
-            match Client::start(language, server, &self.working_directory, sender) {
-                Ok(client) => {
-                    tracing::info!(%command, "started");
-                    self.servers.insert(language, client);
-                }
-                Err(error) => {
-                    tracing::warn!(%error, %command, "could not start");
-                    return;
-                }
-            }
+        if !self.servers.contains_key(&language) && !(start && self.start_server(language)) {
+            return;
         }
 
         self.open_document(index);
+    }
+
+    /// Starts the server for a language, and says whether one is running.
+    fn start_server(&mut self, language: LanguageId) -> bool {
+        let Some(server) = obelus_lsp::server_for(language) else {
+            return false;
+        };
+        let command = server.command;
+        if !obelus_lsp::on_path(command) {
+            tracing::info!(%command, "not on PATH, so no server for {}", language.name());
+            return false;
+        }
+        let Some(sender) = self.events.clone() else {
+            return false;
+        };
+        match Client::start(language, server, &self.working_directory, sender) {
+            Ok(client) => {
+                tracing::info!(%command, "started");
+                self.servers.insert(language, client);
+                true
+            }
+            Err(error) => {
+                tracing::warn!(%error, %command, "could not start");
+                false
+            }
+        }
     }
 
     /// Tells the server about a document.
@@ -495,6 +513,26 @@ impl App {
             .collect();
         for index in indices {
             self.ask_standing_questions(index);
+        }
+    }
+
+    /// Starts the servers for what is open when the switch is turned on,
+    /// and stops every one when it is turned off.
+    pub(in crate::app) fn servers_switched(&mut self) {
+        let on = self.settled.config.language_servers;
+        if on == self.servers_on {
+            return;
+        }
+        self.servers_on = on;
+        if on {
+            for index in 0..self.documents.len() {
+                self.serve(index);
+            }
+            return;
+        }
+        let running: Vec<LanguageId> = self.servers.keys().copied().collect();
+        for language in running {
+            self.stop(language);
         }
     }
 
@@ -1102,6 +1140,9 @@ impl App {
     pub(in crate::app) fn why_not_asking(&self, language: LanguageId) -> Option<String> {
         let Some(client) = self.servers.get(&language) else {
             return Some(match obelus_lsp::command_for(language) {
+                Some(_) if !self.settled.config.language_servers => {
+                    "Language servers are off in the settings".to_string()
+                }
                 Some(command) if !obelus_lsp::on_path(command) => {
                     format!("{command} is not installed")
                 }
@@ -1358,8 +1399,10 @@ impl App {
                     .is_some_and(|of| of == language)
             })
             .collect();
+        // Started whatever the switch says: a reader who has turned the
+        // servers off and asks for this one has asked for this one.
         for index in indices {
-            self.serve(index);
+            self.serve_starting(index, true);
         }
 
         match obelus_lsp::command_for(language) {
