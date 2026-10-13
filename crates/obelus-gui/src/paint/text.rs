@@ -169,7 +169,9 @@ impl Painter {
         for mark in marked {
             let key = (mark.id.clone(), mark.focused);
             let spot = match self.atlas.mark(&key) {
-                Some(spot) => spot,
+                Some(Some(spot)) => spot,
+                // Tried, and it would not draw.
+                Some(None) => continue,
                 None => {
                     let (Some(svg), Some(palette)) = (self.drawings.get(&key), self.palette) else {
                         // Asked for before it was carried, which the view

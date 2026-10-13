@@ -34,7 +34,7 @@ impl Painter {
         let baseline = (middle + bar.words * 0.39).round();
         let start = bar.inset + bar.icon + (bar.words * 0.44).round() - margin[0];
         let ink = crate::title::title_ink(&bar, dark);
-        let placed = fonts.caption("Obelus", bar.words).to_vec();
+        let placed = fonts.caption(crate::title::TITLE, bar.words).to_vec();
         for glyph in placed {
             let Some(spot) = self.atlas.spot(fonts, glyph.key) else {
                 continue;
@@ -103,7 +103,9 @@ impl Painter {
         let pixels = side as u32;
         let key = (format!("the window's icon at {pixels}"), false);
         let spot = match self.atlas.mark(&key) {
-            Some(spot) => spot,
+            Some(Some(spot)) => spot,
+            // Tried, and it would not draw.
+            Some(None) => return,
             None => {
                 let Some(icon) = crate::window::icon(pixels) else {
                     self.atlas.no_mark(key);

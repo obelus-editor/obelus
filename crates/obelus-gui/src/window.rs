@@ -935,7 +935,7 @@ impl ApplicationHandler<Waking> for Showing {
             events,
             crate::title::asked_for(marked(named(hidden(
                 Window::default_attributes()
-                    .with_title("Obelus")
+                    .with_title(crate::title::TITLE)
                     .with_inner_size(LogicalSize::new(1100.0, 720.0)),
             )))),
         );
@@ -1784,11 +1784,6 @@ impl ApplicationHandler<Waking> for Showing {
                 self.scale = scale_factor;
                 self.redraw_at(self.points);
             }
-            // A window losing the reader takes what they were holding with
-            // it: the key comes up somewhere else, and nothing tells this
-            // window it did -- so shift held on the way out was held for
-            // good, and every press in a terminal after it took hold of
-            // words rather than reaching the program.
             // Uncovered, the window is drawn as things are now: what moved
             // while it was covered moved on its clock, and only the frames
             // were left out -- see `wants_a_frame`.
@@ -1806,6 +1801,11 @@ impl ApplicationHandler<Waking> for Showing {
                     self.redraw();
                 }
             }
+            // A window losing the reader takes what they were holding with
+            // it: the key comes up somewhere else, and nothing tells this
+            // window it did -- so shift held on the way out was held for
+            // good, and every press in a terminal after it took hold of
+            // words rather than reaching the program.
             WindowEvent::Focused(false) => {
                 self.active = false;
                 if self.bar.is_some() {

@@ -56,6 +56,10 @@ use ratatui::style::Color;
 pub(crate) use windows::{Bar, drawn};
 use winit::window::{Theme, Window, WindowAttributes};
 
+/// What the window is called, which is what the bar says: the system's bar
+/// on the other two, and the one Obelus draws on Windows.
+pub(crate) const TITLE: &str = "Obelus";
+
 /// The window as it is asked for, with the page running up under the title
 /// bar where the platform allows it.
 pub(crate) fn asked_for(attributes: WindowAttributes) -> WindowAttributes {

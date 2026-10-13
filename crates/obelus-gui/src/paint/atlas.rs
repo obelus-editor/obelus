@@ -62,9 +62,10 @@ impl Atlas {
     }
 
     /// Where a mark is, if it has been drawn at this size and in these
-    /// colours.
-    pub(super) fn mark(&self, key: &(String, bool)) -> Option<Spot> {
-        self.marks.get(key).copied().flatten()
+    /// colours -- `Some(None)` for one that was tried and would not draw,
+    /// which is not to be tried again on every frame after.
+    pub(super) fn mark(&self, key: &(String, bool)) -> Option<Option<Spot>> {
+        self.marks.get(key).copied()
     }
 
     /// Remembers where one landed.
