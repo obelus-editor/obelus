@@ -140,6 +140,9 @@ impl Drawn {
 thread_local! {
     /// The bars drawn so far this frame, while a frame is listening.
     static SAID: RefCell<Option<Vec<Drawn>>> = const { RefCell::new(None) };
+    /// Where a pane or a box has been put over the page this frame, and
+    /// how many bars had been said when it was.
+    static OVER: RefCell<Vec<(usize, Rect)>> = const { RefCell::new(Vec::new()) };
     /// Whose bar the view being drawn would draw.
     static WHOSE: Cell<Option<Whose>> = const { Cell::new(None) };
 }
@@ -148,32 +151,44 @@ thread_local! {
 ///
 /// Left on it, not drawn: a view drawn over inside the one frame has
 /// already drawn its bar, and a press there lands on whatever covered it.
-/// So a bar counts only where every row of it is still a bar's -- the
-/// question the window asks before drawing one (`Barred::still_said`),
-/// and the reason it has to be every row: a list's bar can be in the same
-/// column as the file's, and what says the file's is gone is the rows
-/// outside the list.
+/// So a bar counts only where nothing has been put over any of it -- and
+/// it has to be any of it: a list's bar can be in the same column as the
+/// file's, and what says the file's is gone is the rows outside the list.
+///
+/// Asked of what was put over the page ([`put_over`]), which is what a
+/// window's layers are made of too, and not of the cells. It was the cells
+/// once -- every row of the column still a block -- but the track is blank
+/// now, and a list's blank written over the track's says nothing.
 pub(crate) fn collect(cells: &mut CellBuffer, draw: impl FnOnce(&mut CellBuffer)) -> Vec<Drawn> {
     SAID.with(|said| *said.borrow_mut() = Some(Vec::new()));
+    OVER.with(|over| over.borrow_mut().clear());
     draw(cells);
     let drawn = SAID
         .with(|said| said.borrow_mut().take())
         .unwrap_or_default();
+    let over = OVER.with(|over| std::mem::take(&mut *over.borrow_mut()));
     drawn
         .into_iter()
-        .filter(|drawn| still_a_bar(cells, drawn.bar.area))
+        .enumerate()
+        .filter(|(at, drawn)| {
+            let area = drawn.bar.area;
+            !over
+                .iter()
+                .any(|(after, put)| after > at && !put.intersection(area).is_empty())
+        })
+        .map(|(_, drawn)| drawn)
         .collect()
 }
 
-/// Whether every cell of a column still holds what a bar is drawn with.
-fn still_a_bar(cells: &CellBuffer, area: Rect) -> bool {
-    let mut bar = [0; 4];
-    let bar: &str = crate::BAR.encode_utf8(&mut bar);
-    (area.top()..area.bottom()).all(|y| {
-        cells
-            .cell((area.x, y))
-            .is_some_and(|cell| cell.symbol() == bar)
-    })
+/// A pane or a box went over the page here.
+///
+/// Heard whether or not anything is listening for bars: it is cleared at
+/// the start of every frame that is.
+pub(crate) fn put_over(area: Rect) {
+    let after = SAID.with(|said| said.borrow().as_ref().map(Vec::len));
+    if let Some(after) = after {
+        OVER.with(|over| over.borrow_mut().push((after, area)));
+    }
 }
 
 /// Draws something whose bar is this one's.
@@ -312,6 +327,51 @@ mod tests {
         bar.starts = (0..30).map(|item| item * 3).collect();
         assert_eq!(bar.top_for(2 + 5, 0), Some(14), "half way, in items");
         assert_eq!(bar.top_for(2 + 9, 0), Some(29), "the foot is the last");
+    }
+
+    /// A bar something was put over afterwards is not taken hold of, even
+    /// where only its track is covered -- and one drawn on what was put
+    /// over the page is.
+    ///
+    /// The track is blanks, so a list over the track's rows writes blanks
+    /// over blanks and the cells cannot say so: what was put over the page
+    /// has to. Deliberate break: leave `over` out of `collect`. The file's
+    /// bar is then still a bar under the list, and a press on the list's
+    /// rows drags the file.
+    #[test]
+    fn a_bar_something_was_put_over_is_not_one() {
+        let area = Rect::new(0, 0, 10, 10);
+        let drawn = |list: Option<Rect>, on_the_list: bool| {
+            let mut cells = CellBuffer::empty(area);
+            collect(&mut cells, |cells| {
+                if on_the_list && let Some(list) = list {
+                    put_over(list);
+                }
+                of(Whose::Document, || {
+                    crate::scrollbar(cells, area, 0, 50, &obelus_theme::builtin::DARK)
+                });
+                if !on_the_list && let Some(list) = list {
+                    put_over(list);
+                }
+            })
+        };
+        assert_eq!(drawn(None, false).len(), 1, "a bar with nothing over it");
+        // Over the rows below the mark, which are the track's: blanks.
+        let list = Rect::new(0, 6, 10, 4);
+        assert!(
+            drawn(Some(list), false).is_empty(),
+            "the track was put over"
+        );
+        assert_eq!(
+            drawn(Some(list), true).len(),
+            1,
+            "a bar drawn after what was put over"
+        );
+        assert_eq!(
+            drawn(Some(Rect::new(0, 6, 9, 4)), false).len(),
+            1,
+            "a list beside the bar and not over it"
+        );
     }
 
     /// Items go on the bar that was drawn for them, and on no other.

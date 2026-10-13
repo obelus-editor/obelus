@@ -873,6 +873,16 @@ impl App {
         }
     }
 
+    /// The bars the last frame left on the page, nearest the reader last:
+    /// the ones a press can take hold of.
+    ///
+    /// Asked by whoever needs to know where a bar runs, because the cells
+    /// only say where its mark is -- the track is drawn as nothing.
+    #[must_use]
+    pub fn bars(&self) -> &[obelus_ui::bars::Drawn] {
+        &self.pointing.bars
+    }
+
     /// Whether a press may take hold of this bar, with what is showing.
     ///
     /// What is showing owns the pointer as it owns the keys: with a list or

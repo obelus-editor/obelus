@@ -29,12 +29,14 @@
 //! keypresses that are not characters, and then one character that is. The
 //! window draws that spelling itself, over the cells to the right of the
 //! caret, underlined, in the colours of the place it is going into -- and
-//! the application is never told about it. Not because it could not be:
-//! because what would arrive is half-typed pinyin in a buffer with an undo
-//! history and a file that has changed. What arrives instead, when the
+//! the application is never told what it says. Not because it could not
+//! be: because what would arrive is half-typed pinyin in a buffer with an
+//! undo history and a file that has changed. What arrives instead, when the
 //! input method commits, is a paste -- which is the same question Obelus
 //! already answered about where typed text goes when several things are on
-//! screen.
+//! screen. The application is told only that a word has *begun*, because
+//! what the reader has hold of goes then, as it does in every other
+//! editor, and is not brought back by giving the word up.
 //!
 //! The keys during that spelling belong to the input method, so a plain
 //! character is swallowed while one is being composed: it is arriving
@@ -1122,9 +1124,13 @@ impl ApplicationHandler<Waking> for Showing {
                                 painter.carries(id, focused, svg, palette);
                             }
                         }
-                        Update::Marked { id, focused, x, y } => {
-                            self.marking.push(Marked { id, focused, x, y })
-                        }
+                        Update::Marked { id, focused, x, y } => self.marking.push(Marked {
+                            id,
+                            focused,
+                            x,
+                            y,
+                            depth: self.stacking.len(),
+                        }),
                         // Every one said is kept, in the order it was
                         // said, which is the order they are stacked in: a
                         // setting's choices open over the settings. Each is
@@ -1168,9 +1174,16 @@ impl ApplicationHandler<Waking> for Showing {
                             });
                         }
                         Update::Ticked { area, on } => {
-                            self.ticking.push(Ticked { area, on });
+                            self.ticking.push(Ticked {
+                                area,
+                                on,
+                                depth: self.stacking.len(),
+                            });
                         }
-                        Update::Spun { area } => self.spinning.push(Spun { area }),
+                        Update::Spun { area } => self.spinning.push(Spun {
+                            area,
+                            depth: self.stacking.len(),
+                        }),
                         Update::Parted { area } => {
                             self.parting.push(Parted { area });
                         }
@@ -1678,6 +1691,13 @@ impl ApplicationHandler<Waking> for Showing {
                         // compositor, and a caret drawn in the wrong place
                         // is otherwise a question with no answer to look at.
                         tracing::debug!(?spelling, ?caret, "the input method is spelling");
+                        // A word begun takes what the reader has hold of,
+                        // the way the first letter typed over it would --
+                        // said before the spelling is drawn, so that it is
+                        // drawn where the held text was.
+                        if !self.composing && !spelling.is_empty() {
+                            self.tell(Event::Spelling);
+                        }
                         self.composing = !spelling.is_empty();
                         self.spelling = Spelling::new(spelling, caret);
                         self.point_the_input_method();
@@ -2054,6 +2074,7 @@ mod tests {
         };
         let one = |x| Spun {
             area: Rect::new(x, 0, 1, 1),
+            depth: 0,
         };
         let kept: Vec<u16> = turning(
             vec![one(0), one(1), one(2)],

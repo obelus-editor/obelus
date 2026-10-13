@@ -580,6 +580,65 @@ mod in_place {
         );
     }
 
+    /// A word an input method has begun takes what is held in a query, the
+    /// way the first letter typed over it would.
+    ///
+    /// Broken deliberately by taking the cut out of `Field::put`: a paste
+    /// of nothing puts no character, and the held word stayed.
+    #[test]
+    fn a_word_begun_in_a_box_takes_what_is_held() {
+        let (_scratch, mut app) = open("field-spelling");
+        dispatch::dispatch(&mut app, Command::SearchFile);
+        support::type_text(&mut app, "hello world");
+        for _ in 0..5 {
+            app.handle(Event::Key(KeyEvent::new(
+                KeyCode::Left,
+                KeyModifiers::SHIFT,
+            )));
+        }
+        assert_eq!(app.picker().expect("the list").query_held(), Some(6..11));
+
+        app.handle(Event::Spelling);
+        assert_eq!(
+            app.picker().expect("the list").query(),
+            "hello ",
+            "beginning a word left what was held in the query"
+        );
+        assert_eq!(
+            app.current_buffer()
+                .expect("a file")
+                .text()
+                .rope()
+                .to_string(),
+            "fn main() {}\n",
+            "beginning a word reached the file behind the list"
+        );
+    }
+
+    /// A paste the line refuses every character of leaves what is held, the
+    /// way a refused key does -- only a paste of nothing at all takes it.
+    ///
+    /// Broken deliberately by cutting what is held in `Field::put` whatever
+    /// the paste turns out to be: the line number went.
+    #[test]
+    fn a_paste_refused_whole_leaves_what_is_held() {
+        let (_scratch, mut app) = open("field-paste-refused");
+        dispatch::dispatch(&mut app, Command::GoLine);
+        support::type_text(&mut app, "120");
+        app.handle(Event::Key(KeyEvent::new(
+            KeyCode::Home,
+            KeyModifiers::SHIFT,
+        )));
+        assert_eq!(app.prompt().expect("the question").held(), Some(0..3));
+
+        app.handle(Event::Paste("abc".to_string()));
+        assert_eq!(
+            app.prompt().expect("the question").text(),
+            "120",
+            "a paste with nothing the line takes took what was held"
+        );
+    }
+
     /// A paste goes where the reader is typing, not into the file behind
     /// whatever is covering it.
     #[test]

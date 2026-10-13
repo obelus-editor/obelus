@@ -650,7 +650,9 @@ fn wrapped(spans: Vec<Span>, width: u16, columns: usize) -> Vec<Row> {
         let mut text = span.text.as_ref();
         loop {
             let left = room.saturating_sub(filled);
-            let wide = text.chars().count();
+            // Cells, not characters: a line of Chinese counted a character
+            // to a cell was drawn twice as wide as the screen.
+            let wide = obelus_text::text_width(text);
             // Moved to the next row whole, when it would fit on one: a path
             // or a value cut down the middle is one nobody recognises, and
             // this is the common case -- a field at the edge of the screen.
@@ -660,25 +662,30 @@ fn wrapped(spans: Vec<Span>, width: u16, columns: usize) -> Vec<Row> {
                 filled = indent;
                 continue;
             }
-            let mut taken = wide.min(room.saturating_sub(filled));
+            // In bytes, as much as fits: none, when what comes first is a
+            // character wider than what is left of the row.
+            let first = obelus_text::broken_at(text, left)[0].end;
+            let mut taken = match obelus_text::text_width(&text[..first]) <= left {
+                true => first,
+                false => 0,
+            };
             // On a blank where there is one: a path cut in the middle is a
             // path a reader cannot recognise, and the message is the part
             // of a log line that is read as words.
-            if taken < text.chars().count() {
-                let head: String = text.chars().take(taken + 1).collect();
-                if let Some(blank) = head.rfind(' ').filter(|at| *at > 0) {
-                    taken = head[..blank].chars().count();
+            if taken < text.len() {
+                let next = text[taken..]
+                    .chars()
+                    .next()
+                    .map_or(taken, |character| taken + character.len_utf8());
+                if let Some(blank) = text[..next].rfind(' ').filter(|at| *at > 0) {
+                    taken = blank;
                 }
             }
             if taken > 0 {
-                let head: String = text.chars().take(taken).collect();
-                filled += taken;
-                row.push(Span::new(head, span.ink));
-                text = text[text
-                    .char_indices()
-                    .nth(taken)
-                    .map_or(text.len(), |(at, _)| at)..]
-                    .trim_start_matches(' ');
+                let head = &text[..taken];
+                filled += obelus_text::text_width(head);
+                row.push(Span::new(head.to_string(), span.ink));
+                text = text[taken..].trim_start_matches(' ');
             }
             if text.is_empty() {
                 break;
@@ -754,6 +761,37 @@ mod tests {
             message,
             "what wrapped is not under the message: {ran_on:?}"
         );
+    }
+
+    /// A message in Chinese wraps at the screen's edge, not at twice it.
+    ///
+    /// Deliberate break: counting the message's characters rather than its
+    /// cells, which drew each row of it twice as wide as the screen.
+    #[test]
+    fn a_wide_message_wraps_by_its_cells() {
+        let said = "这是一条很长的中文日志消息用来确认宽字符按格数折行而不会伸出屏幕之外";
+        // Two lines, because one is not enough to say a file is a log.
+        let source = format!(
+            "2026-09-11T02:49:00.854699Z  INFO obelus::buffer: {said}\n\
+             2026-09-11T02:49:01.000000Z  INFO obelus::buffer: short\n"
+        );
+        let rows = render(&source, 60);
+        let drawn: Vec<String> = rows
+            .iter()
+            .map(|row| row.spans.iter().map(|span| &*span.text).collect())
+            .collect();
+        assert!(drawn.len() > 1, "nothing wrapped: {drawn:?}");
+        for row in &drawn {
+            assert!(
+                obelus_text::text_width(row) <= 60,
+                "a row is wider than the screen: {row:?} in {drawn:#?}"
+            );
+        }
+        let kept: String = drawn[..drawn.len() - 1]
+            .iter()
+            .map(|row| row.trim_start())
+            .collect();
+        assert!(kept.ends_with(said), "some of it is lost: {drawn:#?}");
     }
 
     /// A line that ran on sits under the message it belongs to, and a

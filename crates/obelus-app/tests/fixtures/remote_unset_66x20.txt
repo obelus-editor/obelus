@@ -2,18 +2,18 @@ screen 66x20  editor 66x18  status 66x1
 -- text --
  0|  Settings  Keys  Remote  Themes  Agents                      ⇤ ⇥ 
  1|──────────────────────────────────────────────────────────────────
- 2| Slack                                                            
- 3|                                                                  
- 4|   Platform                                      Slack ▸          
- 5|     Which chat a note can be worked on from                      
- 6|                                                                  
- 7|   App token                                     Not set ▸        
- 8|     Socket Mode's token, from Basic Information                  
- 9|                                                                  
-10|   Bot token                                     Not set ▸        
+ 2| Slack                                                           █
+ 3|                                                                 █
+ 4|   Platform                                Slack ▸               █
+ 5|     Which chat a note can be worked on from                     █
+ 6|                                                                 █
+ 7|   App token                               Not set ▸             █
+ 8|     Socket Mode's token, from Basic Information                 █
+ 9|                                                                 █
+10|   Bot token                               Not set ▸             █
 11|     From OAuth & Permissions, once the app is installed          
 12|                                                                  
-13|   People                                        Nobody ▸         
+13|   People                                  Nobody ▸               
 14|     Who may talk to this machine through it                      
 15|                                                                  
 16|──────────────────────────────────────────────────────────────────
@@ -23,22 +23,22 @@ screen 66x20  editor 66x18  status 66x1
 -- style --
  0|aaaaaaaaaaaaaaaaabbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 2|cdddddcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
- 3|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
- 4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbebbbbbbbbbb
- 5|bbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebbbbbbbbbbbbbbbbbbbbbb
- 6|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
- 7|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccacccccccc
- 8|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccccccccccccccc
- 9|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-10|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccacccccccc
+ 2|cdddddccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
+ 3|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
+ 4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbfbbbbbbbbbbbbbbbe
+ 5|bbbbbfffffffffffffffffffffffffffffffffffffffbbbbbbbbbbbbbbbbbbbbbe
+ 6|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
+ 7|cccccccccccccccccccccccccccccccccccccccccccccccccccaccccccccccccce
+ 8|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccccccce
+ 9|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
+10|cccccccccccccccccccccccccccccccccccccccccccccccccccaccccccccccccce
 11|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccccccc
 12|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-13|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccaccccccccc
+13|ccccccccccccccccccccccccccccccccccccccccccccccccccaccccccccccccccc
 14|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccccccccccccccccccc
 15|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 16|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-17|ccfffffffcaaaaaacccccccccccccccccccccccccccccccccccccccccccccccccc
+17|ccgggggggcaaaaaacccccccccccccccccccccccccccccccccccccccccccccccccc
 18|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 19|dddaaaaaaaaaaaaaaaaaaaaaaddddddddddddddddddddddddddddddddddddddddd
 -- legend --
@@ -46,7 +46,8 @@ a fg=#52525b bg=#18181b
 b fg=#e4e4e7 bg=#27272a
 c fg=#e4e4e7 bg=#18181b
 d fg=#d4d4d8 bg=#18181b
-e fg=#52525b bg=#27272a
-f fg=#a1a1aa bg=#27272a
+e fg=#a1a1aa bg=#18181b
+f fg=#52525b bg=#27272a
+g fg=#a1a1aa bg=#27272a
 -- cursor --
 none

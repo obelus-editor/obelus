@@ -2958,18 +2958,28 @@ mod caret {
 
                     let bar = area.right() - 1;
                     for y in band.y..band.bottom() {
-                        // Every row of a band that scrolls carries the bar, in
-                        // the thumb's colour or the track's. Anything else in
-                        // that column is a row written over it -- a blank
-                        // included, which is what the space in front of a
-                        // fold's mark leaves, and what a tint leaves behind it.
-                        assert_eq!(
-                            cells[(bar, y)].symbol(),
-                            "\u{2588}",
+                        // Every row of a band that scrolls carries the bar:
+                        // the thumb's block, or the blank on the page's own
+                        // ground that the rest of it is. Anything else in
+                        // that column is a row written over it -- a glyph, or
+                        // a blank on a ground of its own, which is what the
+                        // space in front of a fold's mark leaves, and what a
+                        // tint leaves behind it. What it cannot see is a row
+                        // writing a blank on the page's own ground over the
+                        // track, which is a blank over a blank: nothing on
+                        // screen, and the thumb's rows still say whether a
+                        // row reached the column at all.
+                        let cell = &cells[(bar, y)];
+                        let thumb = cell.symbol() == "\u{2588}";
+                        let empty = cell.symbol() == " "
+                            && cell.bg == obelus_theme::builtin::DARK.background;
+                        assert!(
+                            thumb || empty,
                             "a {status} title {short} short of the width, {}changing anything: \
-                         row {y} wrote {:?} over the scrollbar in column {bar}",
+                         row {y} wrote {:?} on {:?} over the scrollbar in column {bar}",
                             if changing { "" } else { "not " },
-                            cells[(bar, y)].symbol()
+                            cell.symbol(),
+                            cell.bg
                         );
                     }
                 }

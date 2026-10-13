@@ -3,11 +3,10 @@
 
 use super::*;
 
-/// The block a bar is drawn with, track and thumb alike.
+/// The block a bar's mark is drawn with.
 ///
-/// One glyph in two colours rather than a line and a block: a bar is a
-/// surface with something sliding on it, and it is the *shade* that says
-/// which part of it the reader is looking at.
+/// A block rather than a line: a line would be a line, and every rule that
+/// crossed it would have to work out whether to join.
 pub(crate) const BAR: char = '\u{2588}';
 
 /// One row of rule, saying that what is above it and what is below it are
@@ -60,9 +59,15 @@ pub(crate) fn divider(cells: &mut CellBuffer, area: Rect, y: u16, theme: &Theme)
 /// both -- how much of this is on screen, and which part -- and two
 /// implementations would answer it in two shapes.
 ///
-/// Drawn as a block in two shades: the track a shade off the page and the
-/// thumb the brighter one. A line would be a line, and every rule that
-/// crossed it would have to work out whether to join.
+/// Only the thumb is drawn. The track was a column of blocks a shade off
+/// the page, the length of the region -- the heaviest thing on the screen
+/// for the least it said: how far the thumb can go is already said by the
+/// region it runs beside. Nor is it there unseen, as blocks in the
+/// ground's own colour: a terminal that keeps text readable against its
+/// ground (a minimum contrast) lights them up again.
+///
+/// So what says something has been drawn over a bar is no longer every
+/// cell of it holding a block: see `bars::collect`.
 ///
 /// `total` is how many rows the whole thing has and `top` which of them is
 /// on the first row.
@@ -101,12 +106,18 @@ pub(crate) fn scrollbar(
 
     for row in 0..area.height {
         let inside = row >= start && usize::from(row) < usize::from(start) + thumb;
-        let colour = if inside {
-            theme.gutter_current
-        } else {
-            theme.scrollbar_track
+        // A blank, not nothing: the column is the bar's whether or not the
+        // mark is on this row, and whatever ground is under it stays.
+        match inside {
+            true => put(
+                cells,
+                x,
+                area.y + row,
+                BAR,
+                Style::new().fg(theme.gutter_current),
+            ),
+            false => put(cells, x, area.y + row, ' ', Style::new()),
         };
-        put(cells, x, area.y + row, BAR, Style::new().fg(colour));
     }
 
     let bar = shapes::Bar {

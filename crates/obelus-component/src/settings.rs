@@ -1162,8 +1162,9 @@ impl Settings {
         self.window.top()
     }
 
-    /// The window itself, for the view: what is on screen, and whether
-    /// there is more of it than there is screen.
+    /// The window itself, for the view: what is on screen. Not whether there
+    /// is more of it than there is screen -- it counts entries, and an entry
+    /// on the settings page is several rows.
     #[must_use]
     pub const fn window(&self) -> &Window {
         &self.window

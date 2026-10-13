@@ -175,6 +175,33 @@ fn a_tables_borders_line_up() {
     assert_eq!(bars, crossings, "{row:?} against {rule:?}");
 }
 
+/// A line of code too long for its box goes on underneath, inside it.
+///
+/// Broken deliberately by putting back the old cut -- each row the next
+/// `room` characters -- which drew the Chinese comment twice as wide as the
+/// box and pushed its right side off the row.
+#[test]
+fn a_line_of_wide_code_stays_inside_its_box() {
+    let comment = "// 意思是：LimitedApi 对外有一个 handle 端口，实际交给内部的 api 实例处理";
+    let rows = render(&format!("```\n{comment}\n```\n"), 40);
+    let drawn: Vec<String> = rows.iter().map(text).collect();
+    let wide = obelus_text::text_width(&drawn[0]);
+    assert!(wide <= 40, "the box is wider than its room: {drawn:#?}");
+    for row in &drawn {
+        assert_eq!(
+            obelus_text::text_width(row),
+            wide,
+            "a row pokes out of the box: {row:?} in {drawn:#?}"
+        );
+    }
+    // And nothing of the line is lost on the way.
+    let said: String = drawn[1..drawn.len() - 1]
+        .iter()
+        .map(|row| row.trim_matches('\u{2502}').trim_end())
+        .collect();
+    assert_eq!(said, comment);
+}
+
 /// A cell too long for its column goes on underneath, inside its borders.
 ///
 /// Broken deliberately by putting back the old cut -- each cell drawn on one

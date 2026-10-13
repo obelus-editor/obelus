@@ -792,21 +792,16 @@ const ABOVE: f32 = 0.05;
 /// button rather than as a mark beside a word.
 const RING: f32 = 0.9;
 
-/// How wide a bar's track is drawn, as a part of the cell it sits in.
+/// How wide a bar's mark is drawn, as a part of the cell it sits in.
 ///
-/// A third, which is what leaves the column reading as a margin with
-/// something in it rather than as a wall. The cell stays the cell: what
-/// the view reserved is a column, and narrowing the ink inside it is the
-/// front end saying what that column looks like, not the application
-/// giving back a column it told the text it had taken.
-const BAR_TRACK: f32 = 0.32;
-
-/// And how wide its mark is.
+/// Half, which leaves the column reading as a margin with something in it
+/// rather than as a wall. The cell stays the cell: what the view reserved
+/// is a column, and narrowing the ink inside it is the front end saying
+/// what that column looks like, not the application giving back a column
+/// it told the text it had taken.
 ///
-/// Wider than the track, because the mark is the part that is doing the
-/// telling and the track is only there to say how far it can go. Two
-/// capsules about one centre line, which is the same figure a terminal
-/// draws in one column of blocks and two colours.
+/// The mark alone, with no track under it: how far it can go is said by
+/// the region it runs beside, the same as in a terminal.
 const BAR_MARK: f32 = 0.5;
 
 /// How wide the mark is once it has settled.
@@ -860,11 +855,11 @@ fn on_wayland(window: &Window) -> bool {
 
 /// How wide a stroke is drawn, as a part of the cell it sits in.
 ///
-/// The same as a bar's track, because the map and the bar are next to each
-/// other and what they say is one picture: a stroke a different weight
-/// from the bar beside it would read as two columns that happened to line
-/// up. A terminal has half a cell for both, which is the only stroke a
-/// cell can draw.
+/// The same as a settled bar's mark, near enough, because the map and the
+/// bar are next to each other and what they say is one picture: a stroke a
+/// different weight from the bar beside it would read as two columns that
+/// happened to line up. A terminal has half a cell for both, which is the
+/// only stroke a cell can draw.
 const STROKE: f32 = 0.32;
 
 /// How far the arrow on a seam reaches across its cell.
@@ -2153,6 +2148,7 @@ mod tests {
                 width: 1,
                 height: 1,
             },
+            depth: 0,
         };
         let spun = [one(2)];
         let said = Said {
@@ -2266,10 +2262,11 @@ mod tests {
         );
     }
 
-    /// And the picture of what a pane was opened over leaves it alone too.
+    /// And the picture of what a pane was opened over leaves it alone too
+    /// -- but only a bar said before the pane, which is the only one in it.
     ///
     /// Deliberate break: drop the `barred` clause from `lettered_behind`.
-    /// The block a terminal draws a track with is then written into the
+    /// The block a terminal draws a mark with is then written into the
     /// picture behind the list as well -- where `letters` never put it --
     /// and a full block's raster is taller than its cell, so the first
     /// row's reached above the grid and came out in the margin round it: a
@@ -2278,32 +2275,43 @@ mod tests {
     #[test]
     fn nor_into_the_picture_behind_a_pane() {
         let page = page("\u{2588}a");
-        let barred = [Barred {
-            bar: obelus_ui::shapes::Bar {
-                area: ratatui::layout::Rect {
-                    x: 0,
-                    y: 0,
-                    width: 1,
-                    height: 1,
+        let barred = |depth: usize| {
+            [Barred {
+                bar: obelus_ui::shapes::Bar {
+                    area: ratatui::layout::Rect {
+                        x: 0,
+                        y: 0,
+                        width: 1,
+                        height: 1,
+                    },
+                    mark: 0,
+                    thumb: 1,
                 },
-                mark: 0,
-                thumb: 1,
-            },
-            depth: 0,
-            shown: 1.0,
-            under: 0.0,
-        }];
+                depth,
+                shown: 1.0,
+                under: 0.0,
+            }]
+        };
         assert!(
-            !lettered_behind(page.look(0, 0), &barred, &[], 0, 0),
+            !lettered_behind(page.look(0, 0), &barred(0), &[], 0, 0, 0),
             "the block the bar is drawn with"
         );
         assert!(
-            lettered_behind(page.look(1, 0), &barred, &[], 1, 0),
+            lettered_behind(page.look(1, 0), &barred(0), &[], 0, 1, 0),
             "and the file's own letter beside it, which nothing else draws"
         );
         assert!(
-            !lettered_behind(page.look(2, 0), &barred, &[], 2, 0),
+            !lettered_behind(page.look(2, 0), &barred(0), &[], 0, 2, 0),
             "nor a cell with nothing in it"
+        );
+        // A bar said on the pane, whose column the picture under it has
+        // its own letter in.
+        //
+        // Deliberate break: drop `showing.depth <= depth`. The file's
+        // letter under the list's bar is left out of the picture.
+        assert!(
+            lettered_behind(page.look(0, 0), &barred(1), &[], 0, 0, 0),
+            "under a bar said over the picture"
         );
     }
 
@@ -2328,6 +2336,7 @@ mod tests {
                 width: 1,
                 height: 1,
             },
+            depth: 0,
         };
         let spun = [one(1), one(2)];
         let (_, lettered) = behind_row(&behind, &[], &spun, 0);
@@ -2342,6 +2351,19 @@ mod tests {
             "a letter is not the mark, whatever was said about its cell"
         );
         assert!(one(20).behind(&behind).is_none(), "nor a cell it never had");
+        // Nor one said on the pane, which is not in the picture under it.
+        //
+        // Deliberate break: drop the depth from `Spun::behind`.
+        let on_the_pane = Spun { depth: 1, ..one(2) };
+        assert!(
+            on_the_pane.behind(&behind).is_none(),
+            "a mark said after it"
+        );
+        // And its cell is the picture's letter, then: there is no arc there.
+        //
+        // Deliberate break: drop the depth from `turns_at`.
+        let (_, lettered) = behind_row(&behind, &[], &[on_the_pane], 0);
+        assert_eq!(lettered, vec![0, 1, 2, 3], "the picture's own braille");
     }
 
     /// A glyph is cut back to the grid, and its picture with it.
