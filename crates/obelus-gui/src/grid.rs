@@ -527,6 +527,18 @@ impl Spun {
     pub(crate) fn round(&self, page: &Page) -> Option<f32> {
         obelus_ui::how_far_round(page.look(self.area.x, self.area.y).text)
     }
+
+    /// Its cell in the picture of what a pane was put over, where that
+    /// still holds a frame of the turn.
+    ///
+    /// The other half, as `Capped::still_behind` is: a transcript a list
+    /// was opened over is seen through the glass, and asked only of the
+    /// page its mark was the braille the window draws instead of.
+    pub(crate) fn behind<'a>(&self, behind: &'a Behind) -> Option<Look<'a>> {
+        behind
+            .look(self.area.x, self.area.y)
+            .filter(|look| obelus_ui::how_far_round(look.text).is_some())
+    }
 }
 
 /// A bar in the frame being drawn, and how the window is showing it.

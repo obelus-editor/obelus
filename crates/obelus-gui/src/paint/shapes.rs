@@ -543,30 +543,35 @@ impl Painter {
     /// its cell -- which still turns, a step a tick, on the application's.
     pub(super) fn turns(&mut self, page: &Page, spun: &[Spun], turn: Option<f32>, cell: CellSize) {
         for mark in spun {
-            let Some(round) = turn.or_else(|| mark.round(page)) else {
-                continue;
-            };
-            let look = page.look(mark.area.x, mark.area.y);
-            let side = (cell.width.min(cell.height) * RING).round().max(3.0);
-            let left = f32::from(mark.area.x) * cell.width;
-            let top = f32::from(mark.area.y) * cell.height;
-            // Where a switch's box sits, and for its reason: the middle of
-            // the writing is a shade above the middle of the cell.
-            self.quads.push(Quad {
-                rect: [
-                    left + (cell.width - side) / 2.0,
-                    (top + (cell.height - side) / 2.0 - cell.height * ABOVE).round(),
-                    side,
-                    side,
-                ],
-                uv: self.atlas.white,
-                colour: rgba(look.foreground, Ink::Foreground),
-                flags: TURNING,
-                radius: round,
-                layer: 0,
-                lower: 0.0,
-            });
+            self.turn(mark, page.look(mark.area.x, mark.area.y), turn, cell);
         }
+    }
+
+    /// One of them, from what its cell holds -- on the page, or in the
+    /// picture of what a pane was put over.
+    pub(super) fn turn(&mut self, mark: &Spun, look: Look<'_>, turn: Option<f32>, cell: CellSize) {
+        let Some(round) = turn.or_else(|| obelus_ui::how_far_round(look.text)) else {
+            return;
+        };
+        let side = (cell.width.min(cell.height) * RING).round().max(3.0);
+        let left = f32::from(mark.area.x) * cell.width;
+        let top = f32::from(mark.area.y) * cell.height;
+        // Where a switch's box sits, and for its reason: the middle of
+        // the writing is a shade above the middle of the cell.
+        self.quads.push(Quad {
+            rect: [
+                left + (cell.width - side) / 2.0,
+                (top + (cell.height - side) / 2.0 - cell.height * ABOVE).round(),
+                side,
+                side,
+            ],
+            uv: self.atlas.white,
+            colour: rgba(look.foreground, Ink::Foreground),
+            flags: TURNING,
+            radius: round,
+            layer: 0,
+            lower: 0.0,
+        });
     }
 
     /// The caps the keys at the foot of a view are drawn in.

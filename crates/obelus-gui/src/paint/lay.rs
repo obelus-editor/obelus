@@ -107,14 +107,8 @@ impl Painter {
             0
         };
         // Every pane and box, furthest first, each over the glass of those
-        // before it. A box is one only while its frame is still there to
-        // hold it -- see `Behind::framed` -- which four passes ask about.
-        let stack = uncovered(
-            said.stack
-                .iter()
-                .filter(|over| !over.is_a_box() || over.framed(page))
-                .collect(),
-        );
+        // before it -- see `drawn`, which four passes ask about.
+        let stack = drawn(said.stack, page);
         // The pane on top, which is the one that arrives: a list opened
         // over the settings comes up over a page that was already there.
         let top = stack.iter().rposition(|over| !over.is_a_box());
@@ -135,8 +129,15 @@ impl Painter {
                 _ => self.quads.len(),
             };
             match (at, over.is_a_box()) {
-                (0, false) => self.pane_under(over, said.barred, said.capped, fonts),
-                _ => self.seen_under(over, lower, fonts),
+                (0, false) => self.pane_under(
+                    over,
+                    said.barred,
+                    said.capped,
+                    said.spun,
+                    moving.turn,
+                    fonts,
+                ),
+                _ => self.seen_under(over, lower, said.spun, moving.turn, fonts),
             }
             let under = start..self.quads.len();
             let (glass, rect) = match over.is_a_box() {
