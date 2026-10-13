@@ -1147,6 +1147,14 @@ impl ApplicationHandler<Waking> for Showing {
                                 self.hung = number;
                                 let now = Instant::now();
                                 match hung {
+                                    // Already going: what comes after it is
+                                    // none now, and it goes on going from where
+                                    // it is. Asked again, it was a picture
+                                    // already gone into the page come back at
+                                    // all of itself to go a second time.
+                                    None if self.after_the_veil.is_some() => {
+                                        self.after_the_veil = Some(None);
+                                    }
                                     // Going, and down into the page's colour
                                     // first: the window waits for it before
                                     // hanging whatever comes next.
