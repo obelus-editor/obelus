@@ -133,6 +133,10 @@ impl Field {
     /// there is one line -- so it becomes the blank that a reader pasting a
     /// wrapped path or a line of a log meant by it.
     pub fn put(&mut self, said: &str) {
+        // What is held goes first rather than with the first character
+        // taken, so that it goes where none is: a paste of nothing is what
+        // an input method beginning a word puts over it.
+        let _held = self.writing.cut(ROOM);
         for character in said.chars() {
             let character = match character {
                 '\n' | '\r' | '\t' => ' ',

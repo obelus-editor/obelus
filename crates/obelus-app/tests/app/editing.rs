@@ -666,6 +666,28 @@ mod keys {
         assert_eq!(text(&app), "abcfn main() {}\n");
     }
 
+    /// A word an input method has begun takes what is held, before the
+    /// word arrives: escape gives the word up and does not bring it back,
+    /// which is what every other editor's input method does.
+    ///
+    /// Broken deliberately by taking `Event::Spelling`'s arm out of
+    /// `App::handle`: the selection is still there when the word begins.
+    #[test]
+    fn a_word_begun_takes_what_is_held() {
+        let (_scratch, mut app) = reading("keys-spelling", "fn main() {}\n");
+        for _ in 0..2 {
+            support::press_shift(&mut app, KeyCode::Right);
+        }
+        app.handle(obelus_app::event::Event::Spelling);
+        assert_eq!(
+            text(&app),
+            " main() {}\n",
+            "beginning a word left what was held in the file"
+        );
+        app.handle(obelus_app::event::Event::Paste("函数".to_string()));
+        assert_eq!(text(&app), "函数 main() {}\n");
+    }
+
     /// A pasted function is one change, however many lines it is.
     #[test]
     fn what_the_terminal_pastes_arrives_as_one_change() {
