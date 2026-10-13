@@ -1,23 +1,22 @@
-//! The strip along the top of the window, where the platform writes the
-//! title.
+//! The strip along the top of the window, where the title goes.
 //!
-//! The title is the platform's to write and Obelus says nothing there of its
-//! own: a terminal has no title bar, so anything written in one would be
-//! something `ob` does not say, and the file being read is on the status row
-//! already. What is Obelus's is the strip's *colour* -- a grey bar across the
-//! top of a page drawn in a theme is a frame round the theme in somebody
-//! else's colours.
+//! The title says nothing of Obelus's own: a terminal has no title bar, so
+//! anything written in one would be something `ob` does not say, and the
+//! file being read is on the status row already. It is "Obelus", which is
+//! what every platform would write there anyway. What is Obelus's is what
+//! is *under* it -- a grey bar across the top of a page drawn in a theme is
+//! a frame round the theme in somebody else's colours, and a picture under
+//! the page stopping short of the top of the window is the same frame.
 //!
-//! Which each platform answers differently, and neither by Obelus drawing a
-//! title bar of its own. macOS lets the page run up under a transparent
-//! title bar, so the ground the painter lays under everything is what shows
-//! there, and the buttons, the dragging and full screen are all still the
-//! system's. The double click is not: the page's own view is under the bar,
-//! and the press goes to it rather than to the bar, so AppKit never sees a
-//! second one and the window neither zooms nor goes to the Dock. Obelus
-//! answers it instead, the way the reader has told the system to (`Presses`)
-//! -- and keeps the press off the page, or a double click on the bar would
-//! be one on whatever row is under it.
+//! Which each platform answers differently. macOS lets the page run up
+//! under a transparent title bar, so the ground the painter lays under
+//! everything is what shows there, and the buttons, the dragging and full
+//! screen are all still the system's. The double click is not: the page's
+//! own view is under the bar, and the press goes to it rather than to the
+//! bar, so AppKit never sees a second one and the window neither zooms nor
+//! goes to the Dock. Obelus answers it instead, the way the reader has told
+//! the system to (`Presses`) -- and keeps the press off the page, or a
+//! double click on the bar would be one on whatever row is under it.
 //!
 //! Windows has no transparent bar to run the page up under: what it lets an
 //! application do is paint its bar one colour, which is the picture under
