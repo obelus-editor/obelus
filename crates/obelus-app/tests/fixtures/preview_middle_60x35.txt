@@ -81,7 +81,7 @@ f fg=#c084fc bg=#18181b
 g fg=#fbbf24 bg=#18181b
 h fg=#a1a1aa bg=#18181b
 i fg=#f472b6 bg=#18181b
-j fg=#404047 bg=#18181b
+j fg=#18181b bg=#18181b
 k fg=#fbbf24 bg=#1e3a5f
 l fg=#d4d4d8 bg=#18181b
 -- cursor --

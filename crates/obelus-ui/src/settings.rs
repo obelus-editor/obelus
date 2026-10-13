@@ -25,15 +25,40 @@ use crate::{
     Hint, Marked, Matched, Screen, fill, put, rule, truncate_from_right, write, write_marked,
 };
 
-/// How wide a control's column is.
+/// How narrow a control's column may be.
 ///
-/// Fixed, so the controls line up down the screen: a column of `on` and
-/// `off` and theme names at ragged left edges is three columns pretending to
-/// be one. Wide enough for `Feature branch` with a gap before its arrow and
-/// one after it, because a word and an arrow up against the page's edge
-/// read as cut off; what is longer than that -- a theme the reader named,
-/// the machine's own face -- is cut off the way it always was.
+/// Wide enough for `Feature branch` with a gap before its arrow and one
+/// after it, because a word and an arrow up against the page's edge read as
+/// cut off.
 const CONTROL_WIDTH: u16 = 16;
+
+/// Where a control's column starts on a page in this region, and how wide
+/// it is.
+///
+/// One answer for the whole page, so the controls line up down the screen:
+/// a column of `on` and `off` and theme names at ragged left edges is three
+/// columns pretending to be one. But a share of the page rather than the
+/// narrowest it may be, because what is longer than `Feature branch` -- a
+/// theme the reader named, the machine's own face, a list of faces -- was
+/// cut off on a page with room to spare. Never more than twice the least,
+/// because the names and what each one does are what the page is for.
+///
+/// The keys page keeps the least: what goes there is a key, and a key is
+/// short, so a wider column is taken from what each command does and
+/// given to nothing.
+///
+/// Measured as if the page always had a bar, whether or not this one does:
+/// a tab that scrolls and one that does not, or a query narrowing a page
+/// until it fits, would otherwise move the column a cell or two under the
+/// reader's eye.
+fn control_column(region: Rect, keys: bool) -> (u16, u16) {
+    let room = region.width.saturating_sub(crate::editor::SCROLLBAR_WIDTH);
+    let width = match keys {
+        true => CONTROL_WIDTH,
+        false => (room / 3).clamp(CONTROL_WIDTH, CONTROL_WIDTH * 2),
+    };
+    (region.x + room.saturating_sub(width + 1), width)
+}
 
 /// Where the arrow beside a value goes: after it, and never past the
 /// column's own last cell.
@@ -45,8 +70,8 @@ const CONTROL_WIDTH: u16 = 16;
 /// one came out as a row of squares. The fonts setting did worse without
 /// the arrow's help, being a list of names joined with commas and written
 /// out to whatever the row had.
-fn arrow_at(x: u16, after: u16) -> u16 {
-    after.saturating_add(1).min(x + CONTROL_WIDTH)
+fn arrow_at(x: u16, after: u16, width: u16) -> u16 {
+    after.saturating_add(1).min(x + width)
 }
 
 /// What the agent's heading says under its name.
@@ -500,7 +525,7 @@ impl SettingsView<'_> {
             true => region.width.saturating_sub(crate::editor::SCROLLBAR_WIDTH),
             false => region.width,
         };
-        let aside = region.x + room.saturating_sub(CONTROL_WIDTH + 1);
+        let (aside, _) = control_column(region, self.settings.on_keys());
         Some((found.at, x >= aside && x < region.x + room))
     }
 }
@@ -1024,7 +1049,7 @@ impl SettingsView<'_> {
             true => region.width.saturating_sub(crate::editor::SCROLLBAR_WIDTH),
             false => region.width,
         };
-        let aside_at = region.x + room.saturating_sub(CONTROL_WIDTH + 1);
+        let (aside_at, control) = control_column(region, self.settings.on_keys());
         // Where a name starts: in from the group's heading on the settings
         // page, and hard against the edge on the keys page, which has no
         // groups to be in.
@@ -1208,16 +1233,17 @@ impl SettingsView<'_> {
                     ratatui::layout::Position { x: aside_at, y },
                     *kind,
                     value,
+                    control,
                     self.theme,
                     background,
                     row.pinned.is_none() && row.scope != Some(Scope::Project),
                 ),
                 Aside::Words(words) => {
-                    let keys = truncate_from_right(words, usize::from(CONTROL_WIDTH));
+                    let keys = truncate_from_right(words, usize::from(control));
                     // Against the column's right edge, so a command's keys,
                     // one to a row, end in a line however long each is.
-                    let width = u16::try_from(text_width(&keys)).unwrap_or(CONTROL_WIDTH);
-                    let key_at = aside_at + CONTROL_WIDTH.saturating_sub(width);
+                    let width = u16::try_from(text_width(&keys)).unwrap_or(control);
+                    let key_at = aside_at + control.saturating_sub(width);
                     write(
                         cells,
                         key_at,
@@ -1254,14 +1280,14 @@ impl SettingsView<'_> {
                         cells,
                         aside_at,
                         y,
-                        &truncate_from_right(word, usize::from(CONTROL_WIDTH)),
+                        &truncate_from_right(word, usize::from(control)),
                         plain.fg(ink).bg(background),
                     );
                     // Pointing right, at the value, the way every other
                     // list on this page does.
                     put(
                         cells,
-                        arrow_at(aside_at, after),
+                        arrow_at(aside_at, after, control),
                         y,
                         '\u{25b8}',
                         plain.fg(self.theme.gutter).bg(background),
@@ -1272,7 +1298,7 @@ impl SettingsView<'_> {
                         cells,
                         aside_at,
                         y,
-                        &truncate_from_right(word, usize::from(CONTROL_WIDTH)),
+                        &truncate_from_right(word, usize::from(control)),
                         plain
                             .fg(match usable {
                                 true => self.theme.foreground,
@@ -1282,7 +1308,7 @@ impl SettingsView<'_> {
                     );
                     put(
                         cells,
-                        arrow_at(aside_at, after),
+                        arrow_at(aside_at, after, control),
                         y,
                         '\u{25b8}',
                         plain.fg(self.theme.gutter).bg(background),
@@ -2125,6 +2151,7 @@ fn draw_control(
     at: ratatui::layout::Position,
     kind: Kind,
     value: &Value,
+    width: u16,
     theme: &Theme,
     background: ratatui::style::Color,
     usable: bool,
@@ -2152,7 +2179,7 @@ fn draw_control(
             let after = write(cells, x, y, &count.to_string(), style.fg(ink));
             put(
                 cells,
-                arrow_at(x, after),
+                arrow_at(x, after, width),
                 y,
                 '\u{25b8}',
                 style.fg(theme.gutter),
@@ -2173,12 +2200,12 @@ fn draw_control(
                 cells,
                 x,
                 y,
-                &truncate_from_right(&said, usize::from(CONTROL_WIDTH)),
+                &truncate_from_right(&said, usize::from(width)),
                 style.fg(ink),
             );
             put(
                 cells,
-                arrow_at(x, after),
+                arrow_at(x, after, width),
                 y,
                 '\u{25b8}',
                 style.fg(theme.gutter),
@@ -2191,7 +2218,7 @@ fn draw_control(
                 cells,
                 x,
                 y,
-                &truncate_from_right(said, usize::from(CONTROL_WIDTH)),
+                &truncate_from_right(said, usize::from(width)),
                 style.fg(ink),
             );
         }
@@ -2200,7 +2227,7 @@ fn draw_control(
                 cells,
                 x,
                 y,
-                &truncate_from_right(word, usize::from(CONTROL_WIDTH)),
+                &truncate_from_right(word, usize::from(width)),
                 style.fg(ink),
             );
             // Pointing right, at the value: the list it opens is the
@@ -2209,7 +2236,7 @@ fn draw_control(
             // to be under this row.
             put(
                 cells,
-                arrow_at(x, after),
+                arrow_at(x, after, width),
                 y,
                 '\u{25b8}',
                 style.fg(theme.gutter),

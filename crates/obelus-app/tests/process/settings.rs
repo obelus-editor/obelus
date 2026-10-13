@@ -4901,7 +4901,8 @@ fn what_an_agent_calls_itself_is_typed() {
 /// `value_of` handing back the word, which leaves `feature-branch` on the
 /// page; `prefer` given the word, which opens the list on the first row
 /// rather than on the one in force; `CONTROL_WIDTH` at 14, which puts
-/// the arrow against the title and the title against the edge; and the
+/// the arrow against the title and the title against the edge -- on a
+/// page narrow enough that the column is the least it may be; and the
 /// file given the title, which writes `No workflow`.
 #[test]
 fn a_workflow_is_called_by_its_title_and_written_by_its_name() {
@@ -4911,7 +4912,9 @@ fn a_workflow_is_called_by_its_title_and_written_by_its_name() {
     let mut app = open(&file);
     support::type_text(&mut app, "workflow");
 
-    let dump = support::render(&mut app, 100, 24);
+    // Narrow enough that the column is the least it may be, which is the
+    // width this is about: a wider page gives the title room to spare.
+    let dump = support::render(&mut app, 40, 24);
     let text = support::text_block(&dump);
     assert!(
         text.contains("Feature branch"),
@@ -4925,7 +4928,7 @@ fn a_workflow_is_called_by_its_title_and_written_by_its_name() {
     // put the arrow against the word and the word against the edge.
     assert!(
         text.lines()
-            .any(|row| row.ends_with("Feature branch \u{25b8} ")),
+            .any(|row| row.contains("Feature branch \u{25b8} ")),
         "the row has no room round its arrow:\n{dump}"
     );
 

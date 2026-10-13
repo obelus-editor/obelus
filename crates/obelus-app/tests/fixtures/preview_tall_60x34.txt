@@ -73,7 +73,7 @@ screen 60x34  editor 60x32  status 60x1
 a fg=#e4e4e7 bg=#27272a
 b fg=#a1a1aa bg=#18181b
 c fg=#e4e4e7 bg=#18181b
-d fg=#404047 bg=#18181b
+d fg=#18181b bg=#18181b
 e fg=#52525b bg=#18181b
 f fg=#c084fc bg=#18181b
 g fg=#fbbf24 bg=#18181b

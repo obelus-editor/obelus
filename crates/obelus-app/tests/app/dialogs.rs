@@ -115,3 +115,43 @@ fn a_page_of_settings_longer_than_the_screen_has_a_bar() {
     }
     assert_eq!(seen, 34, "the page's rows were not found:\n{dump}");
 }
+
+/// A setting's value stays in its column when the page stops scrolling.
+///
+/// The column is measured as if there were always a bar, so a query that
+/// narrows a long page until it fits -- and gives the bar's column back to
+/// the rows -- leaves every value where the reader's eye already is.
+///
+/// Broken deliberately by measuring `control_column` from the room the
+/// page has now, bar or no bar: the value moves a cell to the right.
+#[test]
+fn a_value_stays_in_its_column_when_the_page_stops_scrolling() {
+    let mut app = app();
+    page(&mut app, "open-settings");
+    let column_of = |dump: &str| {
+        let text = support::text_block(dump);
+        let row = text
+            .lines()
+            .find(|line| line.contains(" Theme "))
+            .expect("the theme's row");
+        let (_, row) = row.split_once('|').expect("a numbered row");
+        let at = row.find("dark").expect("the theme's value");
+        row[..at].chars().count()
+    };
+    let long = support::render(&mut app, 100, 30);
+    assert!(
+        support::text_block(&long)
+            .lines()
+            .any(|line| line.ends_with('\u{2588}')),
+        "the whole page fits, so it says nothing about a bar going:\n{long}"
+    );
+    type_text(&mut app, "theme");
+    let short = support::render(&mut app, 100, 30);
+    assert!(
+        !support::text_block(&short)
+            .lines()
+            .any(|line| line.ends_with('\u{2588}')),
+        "the narrowed page still scrolls:\n{short}"
+    );
+    assert_eq!(column_of(&long), column_of(&short), "{long}\n{short}");
+}
