@@ -425,19 +425,19 @@ impl Laying<'_> {
         self.row(prefix, vec![mark(across(room, true))]);
         for line in gathered.text.lines() {
             let at = offset_in(&gathered.text, line);
-            let mut taken = 0usize;
-            loop {
-                let rest: String = line.chars().skip(taken).take(room).collect();
-                let from = at + character_offset(line, taken);
+            for piece in obelus_text::broken_at(line, room) {
+                let rest = &line[piece.clone()];
                 let mut spans = vec![mark("\u{2502}")];
-                spans.extend(coloured(&rest, from, &gathered, &self.highlights, named));
-                spans.push(room_for(room.saturating_sub(text_width(&rest))));
+                spans.extend(coloured(
+                    rest,
+                    at + piece.start,
+                    &gathered,
+                    &self.highlights,
+                    named,
+                ));
+                spans.push(room_for(room.saturating_sub(text_width(rest))));
                 spans.push(mark("\u{2502}"));
                 self.row(prefix, spans);
-                taken += room;
-                if taken >= line.chars().count() {
-                    break;
-                }
             }
         }
         self.row(prefix, vec![mark(across(room, false))]);
@@ -1046,11 +1046,4 @@ fn offset_in(whole: &str, part: &str) -> usize {
 /// the end of this line is mine, keep it".
 fn ends_hard(line: &str) -> bool {
     line.ends_with("  ") || line.ends_with('\\')
-}
-
-/// Where a character offset into a line is, in bytes.
-fn character_offset(line: &str, characters: usize) -> usize {
-    line.char_indices()
-        .nth(characters)
-        .map_or(line.len(), |(byte, _)| byte)
 }

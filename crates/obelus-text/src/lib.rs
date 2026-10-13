@@ -1451,6 +1451,32 @@ pub fn wrapped_from(prose: &str, width: u16) -> Vec<(String, std::ops::Range<usi
     rows
 }
 
+/// Breaks a line into the pieces it takes at this width, wherever a
+/// cluster ends rather than at a space.
+///
+/// For a line with no words to respect -- a line of code. The pieces are
+/// byte ranges of the line, each as many *cells* as fit: a piece counted in
+/// characters drew a line of Chinese twice as wide as its room, over the
+/// border of the box it was in. A cluster wider than the width on its own
+/// is a piece of its own rather than nowhere, and an empty line is one
+/// empty piece, because it is still a row.
+#[must_use]
+pub fn broken_at(line: &str, width: usize) -> Vec<std::ops::Range<usize>> {
+    let mut pieces = Vec::new();
+    let (mut start, mut at, mut cells) = (0usize, 0usize, 0usize);
+    for cluster in clusters(line) {
+        if cells + cluster.cells > width && at > start {
+            pieces.push(start..at);
+            start = at;
+            cells = 0;
+        }
+        cells += cluster.cells;
+        at += cluster.text.len();
+    }
+    pieces.push(start..at);
+    pieces
+}
+
 /// Where a range of `text`'s bytes is, in the document's own counts.
 ///
 /// Through [`Text`], which is where every conversion between
