@@ -684,7 +684,9 @@ impl Painter {
                     let held = as_held(under.background, self.holding, ground);
                     self.ground_back([left, top, cell.width, cell.height], under.background, held);
                 }
-                if !under.text.trim().is_empty() && !turns_at(under, spun, x, y) {
+                // No bars: a picture this far up draws a bar's block as a
+                // letter, the way the page it was taken from did.
+                if lettered_behind(under, &[], spun, x, y) {
                     let ink = rgba(under.foreground, Ink::Foreground);
                     self.glyphs_at((left, top), under, ink, 0, fonts, Size::Cell);
                 }

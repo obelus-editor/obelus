@@ -1869,18 +1869,24 @@ fn on_a_link(linked: &[(Rect, usize)], page: &Page, x: u16, y: u16) -> bool {
 }
 
 /// The marks that turn which are still on screen: on the page, or in
-/// the picture of what a pane or a box was put over.
+/// the picture of what a pane or a box was put over, where that picture is
+/// drawn at all -- see `paint::drawn`.
 ///
 /// The second half because the glass shows that picture. A transcript an
 /// agent was writing in, with a file picker opened over it, is still seen
 /// through the picker -- and a mark dropped here for not being on the page
-/// was the braille the window draws instead of, turning behind the glass a
-/// frame a tick.
+/// was the braille the window draws instead of, and stood still: in a
+/// window the application leaves the turning to this clock, which a mark
+/// nobody kept never started. A mark that stands still says nothing is
+/// happening.
 fn turning(spinning: Vec<Spun>, page: &Page, stack: &[Behind]) -> Vec<Spun> {
     spinning
         .into_iter()
         .filter(|mark| {
-            mark.round(page).is_some() || stack.iter().any(|over| mark.behind(over).is_some())
+            mark.round(page).is_some()
+                || crate::paint::drawn(stack, page)
+                    .iter()
+                    .any(|over| mark.behind(over).is_some())
         })
         .collect()
 }
@@ -2035,11 +2041,31 @@ mod tests {
         let one = |x| Spun {
             area: Rect::new(x, 0, 1, 1),
         };
-        let kept: Vec<u16> = turning(vec![one(0), one(1), one(2)], &page, &[behind])
+        let kept: Vec<u16> = turning(
+            vec![one(0), one(1), one(2)],
+            &page,
+            std::slice::from_ref(&behind),
+        )
+        .iter()
+        .map(|mark| mark.area.x)
+        .collect();
+        assert_eq!(kept, vec![0, 1], "on the page, and behind the glass");
+
+        // And a second pane over the whole of the first, which makes the
+        // first a picture nobody sees: its mark is not on screen.
+        //
+        // Deliberate break: ask `stack` rather than `paint::drawn(stack,
+        // page)` in `turning`, and the hidden mark keeps the window drawing.
+        let over = Behind {
+            cells: vec![frame("d"), frame("e")],
+            depth: 1,
+            ..behind.clone()
+        };
+        let kept: Vec<u16> = turning(vec![one(0), one(1), one(2)], &page, &[behind, over])
             .iter()
             .map(|mark| mark.area.x)
             .collect();
-        assert_eq!(kept, vec![0, 1], "on the page, and behind the glass");
+        assert_eq!(kept, vec![0], "only on the page");
     }
 
     /// The pointer is a hand over the cells of a link the frame said, while

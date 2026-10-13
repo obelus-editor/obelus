@@ -369,6 +369,23 @@ impl Placed {
     }
 }
 
+/// The panes and boxes that are drawn, furthest first: a box only while
+/// its frame is still there to hold it -- see `Behind::framed` -- and no
+/// pane a later pane is over the whole of.
+///
+/// One answer for the painting and for the window, which asks it whether
+/// a mark behind the glass is still on screen to turn (`turning`): asked
+/// of the whole stack there, a mark only a hidden picture held kept the
+/// window drawing at its full rate with nothing on screen moving.
+pub(crate) fn drawn<'a>(stack: &'a [Behind], page: &crate::grid::Page) -> Vec<&'a Behind> {
+    uncovered(
+        stack
+            .iter()
+            .filter(|over| !over.is_a_box() || over.framed(page))
+            .collect(),
+    )
+}
+
 /// The stack less every pane a later pane is over the whole of.
 ///
 /// What such a pane was is in the picture of the one over it already --
@@ -2292,14 +2309,17 @@ mod tests {
 
     /// And the mark that turns, which the picture behind a list draws as
     /// the arc the page does -- a transcript seen through the glass of a
-    /// file picker had its spinner back in braille.
+    /// file picker had its spinner back in braille. What is asked here is
+    /// which cells are left to the arc; the arc itself is drawn by the
+    /// loops at the end of `pane_under` and `seen_under`, which need a
+    /// `Painter` and are not.
     ///
     /// Deliberate break: drop the `turns_at` clause from `lettered_behind`,
     /// and the braille is written into the picture under the arc; or have
     /// `Spun::behind` answer for any cell, and a letter the list's own mark
     /// happens to sit over is taken for one.
     #[test]
-    fn the_mark_that_turns_is_an_arc_behind_a_pane_too() {
+    fn a_mark_that_turns_is_left_out_of_the_letters_behind_a_pane() {
         let behind = behind("ab\u{2819}\u{2819}");
         let one = |x: u16| Spun {
             area: ratatui::layout::Rect {
