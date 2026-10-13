@@ -396,16 +396,16 @@ pub(crate) struct Moving {
     /// for one that is simply there. The same reason for the same shape.
     pub(crate) card: Option<f32>,
     /// And how bright the light round the cursor's pair of brackets is
-    /// while it comes on, from nothing to all of it, or `None` for one
-    /// that is simply lit.
+    /// while it comes on, up to all of it, or `None` for one that is simply
+    /// lit.
     ///
-    /// How bright rather than how far along, unlike a box's: a pair can
-    /// set out from part of the way, where the caret came back to it while
-    /// its light was still going out.
+    /// How bright rather than how far along, unlike a box's: a pair sets
+    /// out from nothing, or from part of the way where the caret came back
+    /// to it while its light was still going out.
+    ///
+    /// The pairs going out are not here: there can be several, each on a
+    /// clock of its own -- see [`Motion::fading`].
     pub(crate) pair: Option<f32>,
-    /// And how bright the light round the pair that was still is while it
-    /// goes out, or `None` where there is none going.
-    pub(crate) unpair: Option<f32>,
     /// Where the light on the welcome screen's mark has got to, as a part
     /// of the mark's own width, or `None` while it is resting between
     /// passes -- and on a screen with no mark on it.
@@ -440,7 +440,6 @@ impl Moving {
             leaving: None,
             card: None,
             pair: None,
-            unpair: None,
             sheen: None,
             turn: None,
             drift: (0.0, 0.0),
@@ -720,18 +719,14 @@ impl Arriving {
 
     /// How far along it is, or `None` for one that is simply there.
     fn along(&self, now: Instant) -> Option<f32> {
-        let gone = self.gone(now)?;
+        let opened = self.opened?;
+        let gone = now.duration_since(opened).as_secs_f32() / self.takes.as_secs_f32();
+        if gone >= 1.0 {
+            return None;
+        }
         // Slowest into its place, fastest leaving the top: a thing that
         // arrives somewhere settles into it.
         Some(1.0 - (1.0 - gone).powi(3))
-    }
-
-    /// The share of its time that has gone, evenly, or `None` for one
-    /// that is simply there.
-    fn gone(&self, now: Instant) -> Option<f32> {
-        let opened = self.opened?;
-        let gone = now.duration_since(opened).as_secs_f32() / self.takes.as_secs_f32();
-        (gone < 1.0).then_some(gone)
     }
 
     /// Moves it on, and says whether what is drawn changed.
@@ -743,6 +738,32 @@ impl Arriving {
             self.opened = None;
         }
         true
+    }
+}
+
+/// A pair the caret has left, and its light going out.
+#[derive(Clone, Copy, Debug)]
+struct Fading {
+    /// Which pair.
+    pair: Pair,
+    /// How bright it was when the caret left it, which is where it goes
+    /// out from: a pair left before it had come all the way on that went
+    /// out from all of it would flash at the place the caret had just left.
+    from: f32,
+    /// When the caret left it.
+    since: Instant,
+}
+
+impl Fading {
+    /// How bright it is, or `None` once it has gone out.
+    ///
+    /// Slowest at first, the other way round from coming on: a light that
+    /// went out the way a thing arrives would be half gone a fifth of the
+    /// way through, and `LIGHT_DOWN` being the longer of the two would be
+    /// a number and not something anybody saw.
+    fn lit(&self, now: Instant) -> Option<f32> {
+        let share = now.duration_since(self.since).as_secs_f32() / LIGHT_DOWN.as_secs_f32();
+        (share < 1.0).then(|| self.from * share.mul_add(-share, 1.0))
     }
 }
 
@@ -847,18 +868,18 @@ pub(crate) struct Motion {
     pair: Arriving,
     /// And how bright it was when it set out.
     pair_from: f32,
-    /// And round the pair it was in before, going out.
-    unpair: Arriving,
-    /// And how bright that one was when the caret left it, which is where
-    /// it goes out from: a pair left before it had come all the way on
-    /// that went out from all of it would flash at the place the caret
-    /// had just left.
-    unpair_from: f32,
     /// Which pairs the last frame drew, which is what says the next one's
     /// are other ones -- see `pairs_drawn`.
     pairs: Vec<Pair>,
-    /// And which pairs are going out.
-    gone: Vec<Pair>,
+    /// And the pairs the caret has left whose light is still going out.
+    ///
+    /// Several, each on its own clock, rather than one: a reader walking
+    /// through `f(a) g(b)` with an arrow key leaves a pair every few
+    /// presses, and with one clock to go out on the newest took it from
+    /// the one before, which went from nearly all of its light to none in
+    /// a frame -- the blink at the place the caret has just left that
+    /// going out is there to prevent.
+    fading: Vec<Fading>,
     bands: Bands,
     bars: Bars,
     /// When the mark the light runs across last arrived, which is what
@@ -913,13 +934,8 @@ impl Motion {
                 takes: LIGHT_UP,
             },
             pair_from: 0.0,
-            unpair: Arriving {
-                opened: None,
-                takes: LIGHT_DOWN,
-            },
-            unpair_from: 1.0,
             pairs: Vec::new(),
-            gone: Vec::new(),
+            fading: Vec::new(),
             bands: Bands::default(),
             bars: Bars::default(),
             since: now,
@@ -943,7 +959,7 @@ impl Motion {
             self.leaving.opened = None;
             self.card.opened = None;
             self.pair.opened = None;
-            self.unpair.opened = None;
+            self.fading.clear();
             self.bands.seen.clear();
         }
     }
@@ -1092,7 +1108,10 @@ impl Motion {
         let left = self.leaving.settle(now);
         let faded = self.card.settle(now);
         let lit = self.pair.settle(now);
-        let unlit = self.unpair.settle(now);
+        // Drawn differently while any is going out, and once the last has
+        // gone out -- which is the frame that takes it off the screen.
+        let unlit = !self.fading.is_empty();
+        self.fading.retain(|fading| fading.lit(now).is_some());
         let blinked = self.blink.advance(now, caret);
         // A step, which `advance` speaks for, because nothing else would
         // ask for the frame: the turn is a moment to `wake`, and a moment
@@ -1114,7 +1133,7 @@ impl Motion {
             || self.leaving.moving(now)
             || self.card.moving(now)
             || self.pair.moving(now)
-            || self.unpair.moving(now)
+            || self.fading.iter().any(|fading| fading.lit(now).is_some())
             || self.bands.moving(now)
             || (self.animates && self.bars.moving(now))
             // The light wants a rate while it is out, and between passes
@@ -1207,7 +1226,6 @@ impl Motion {
             leaving: self.leaving.along(now),
             card: self.card.along(now),
             pair: self.pair_lit(now),
-            unpair: self.unpair_lit(now),
             sheen: self.sheen(now),
             turn: self.turn(now),
         }
@@ -1257,27 +1275,27 @@ impl Motion {
                     .iter()
                     .any(|was| was.document == now.document && was.version != now.version)
             });
-        // Asked before anything moves: how bright the pair being left is,
-        // and the one going out.
+        // Asked before anything moves: how bright the pair being left is.
         let lit = self.pair_lit(now).unwrap_or(1.0);
-        let ghost = self.unpair_lit(now);
-        // Back into the pair whose light is going out: it comes on again
+        // Back into a pair whose light is going out: it comes on again
         // from where it had got to, and stops going out -- two lights on
         // one bracket would be brighter than either.
-        let back = ghost.filter(|_| {
-            let gone = place(&self.gone);
-            place(&drawn).iter().any(|pair| gone.contains(pair))
-        });
-        // Started, and never stopped here but by coming back: a pair that
-        // came on from none is no reason for the last one to stop going
-        // out, which is the caret crossing the space between `(a) (b)`.
+        let back = self
+            .fading
+            .iter()
+            .position(|fading| place(&drawn).contains(&(fading.pair.document, fading.pair.open)))
+            .and_then(|at| self.fading.remove(at).lit(now));
+        // Started, and never stopped but by coming back: a pair that came
+        // on from none is no reason for the last one to stop going out,
+        // which is the caret crossing the space between `(a) (b)` -- and
+        // nor is another pair going out, which is the caret walking on.
         let went = self.animates && !edited && !self.pairs.is_empty();
         if went {
-            self.unpair.opened = Some(now);
-            self.unpair_from = lit;
-            self.gone = std::mem::take(&mut self.pairs);
-        } else if back.is_some() {
-            self.unpair.opened = None;
+            self.fading.extend(self.pairs.iter().map(|&pair| Fading {
+                pair,
+                from: lit,
+                since: now,
+            }));
         }
         if drawn.is_empty() {
             self.pair.opened = None;
@@ -1295,15 +1313,17 @@ impl Motion {
         Some((1.0 - self.pair_from).mul_add(along, self.pair_from))
     }
 
-    /// And the pair that was, while it goes out.
+    /// How bright a pair the caret has left still is, or `None` for one
+    /// whose light is not going out -- it has gone out, or was never lit.
     ///
-    /// Slowest at first, the other way round from coming on: a light that
-    /// went out the way a thing arrives would be half gone a fifth of the
-    /// way through, and `LIGHT_DOWN` being the longer of the two would be
-    /// a number and not something anybody saw.
-    fn unpair_lit(&self, now: Instant) -> Option<f32> {
-        let gone = self.unpair.gone(now)?;
-        Some(self.unpair_from * gone.mul_add(-gone, 1.0))
+    /// By place rather than by version, the way the window keeps what it
+    /// has drawn: what it asks about is a pair it kept, which is a pair
+    /// this was told about.
+    pub(crate) fn fading(&self, pair: Pair, now: Instant) -> Option<f32> {
+        self.fading
+            .iter()
+            .find(|fading| (fading.pair.document, fading.pair.open) == (pair.document, pair.open))
+            .and_then(|fading| fading.lit(now))
     }
 
     /// The frame drew a mark that turns, or it did not.
@@ -2464,78 +2484,93 @@ mod tests {
 
     /// The pair the caret left goes out, and one the text moved does not.
     ///
-    /// Break: start `unpair` whatever changed -- drop the `!edited` from
-    /// `went` -- and a key typed in front of a bracket leaves a light
-    /// going out a cell behind it; leave `unpair` out of `Motion::wake`
-    /// and the light goes out at whatever rate the blink wants; set it to
-    /// `went` whatever it was, and crossing from one pair to the next
-    /// through the space between puts the first light out at once; go out
-    /// on `along`'s curve, and most of the light is gone a quarter of the
-    /// way through.
+    /// Break: drop the `!edited` from `went`, and a key typed in front of a
+    /// bracket leaves a light going out a cell behind it; leave the pairs
+    /// going out of `Motion::wake`, and the light goes out at whatever rate
+    /// the blink wants; go out on `along`'s curve, and most of the light is
+    /// gone a quarter of the way through.
     #[test]
     fn a_pair_the_caret_left_goes_out() {
         let base = Instant::now();
         let mut motion = Motion::new(None);
         // The first pair has nothing before it to go out.
         assert!(!motion.pairs_drawn([pair(10, 1)].into_iter(), base));
-        assert_eq!(motion.moving(base).unpair, None);
+        assert_eq!(motion.fading(pair(10, 1), base), None);
         // Into another, once the first is all the way on: the first goes
         // out from all of it while the second comes on.
         let base = base + LIGHT_UP * 2;
         motion.advance(base, true);
         assert!(motion.pairs_drawn([pair(42, 1)].into_iter(), base));
-        assert_eq!(motion.moving(base).unpair, Some(1.0));
+        assert_eq!(motion.fading(pair(10, 1), base), Some(1.0));
         assert_eq!(motion.wake(base, true), Some(Wake::EveryFrame));
         let half = motion
-            .moving(base + LIGHT_DOWN / 2)
-            .unpair
+            .fading(pair(10, 1), base + LIGHT_DOWN / 2)
             .expect("still going out");
         assert!(half > 0.0 && half < 1.0, "{half}");
         // Most of it still there a quarter of the way through: it goes
         // slowly first.
         let quarter = motion
-            .moving(base + LIGHT_DOWN / 4)
-            .unpair
+            .fading(pair(10, 1), base + LIGHT_DOWN / 4)
             .expect("going out");
         assert!(quarter > 0.9, "gone too fast: {quarter}");
         // Slower than it came on, and still asking for frames once the
         // new pair is lit -- which is the moment only it is moving.
-        assert!(motion.moving(base + LIGHT_UP).unpair.is_some());
+        assert!(motion.fading(pair(10, 1), base + LIGHT_UP).is_some());
         assert_eq!(motion.wake(base + LIGHT_UP, true), Some(Wake::EveryFrame));
-        assert_eq!(motion.moving(base + LIGHT_DOWN).unpair, None, "gone");
-        // Out of every pair: that one goes out too.
+        assert_eq!(motion.fading(pair(10, 1), base + LIGHT_DOWN), None, "gone");
+        // And a pair the text moved does not go out.
         let later = base + LIGHT_DOWN * 2;
         motion.advance(later, true);
-        assert!(motion.pairs_drawn(std::iter::empty(), later));
-        // And going into the next pair from none does not stop it going
-        // out: the space between `(a) (b)`.
-        motion.pairs_drawn([pair(50, 1)].into_iter(), later);
-        assert!(
-            motion.moving(later + LIGHT_UP).unpair.is_some(),
-            "crossing the space put the last light out"
-        );
-        let later = later + LIGHT_DOWN * 2;
-        motion.advance(later, true);
-        // And a pair the text moved does not go out -- asked once the
-        // light the step into it put out has gone.
-        motion.pairs_drawn([pair(10, 1)].into_iter(), later);
-        let later = later + LIGHT_DOWN * 2;
-        motion.advance(later, true);
-        assert!(!motion.pairs_drawn([pair(11, 2)].into_iter(), later));
+        assert!(!motion.pairs_drawn([pair(43, 2)].into_iter(), later));
         assert_eq!(
-            motion.moving(later).unpair,
+            motion.fading(pair(42, 1), later),
             None,
             "a keystroke left a light"
         );
     }
 
+    /// Every pair the caret leaves goes out on its own clock, and none is
+    /// put out by another coming on or going.
+    ///
+    /// Break: let `went` replace what is going out rather than add to it,
+    /// and walking on from the second pair puts the first out at once;
+    /// clear what is going out when a pair comes on from none, and so does
+    /// crossing the space between `(a) (b)`.
+    #[test]
+    fn every_pair_left_goes_out_on_its_own_clock() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        motion.pairs_drawn([pair(10, 1)].into_iter(), base);
+        let lit = base + LIGHT_UP * 2;
+        motion.advance(lit, true);
+        // Out of the first, across the space, into the second.
+        let left = lit;
+        assert!(motion.pairs_drawn(std::iter::empty(), left));
+        let across = left + LIGHT_DOWN / 8;
+        motion.pairs_drawn([pair(20, 1)].into_iter(), across);
+        assert!(
+            motion.fading(pair(10, 1), across).is_some(),
+            "crossing the space put the last light out"
+        );
+        // And on out of the second while the first is still going.
+        let on = across + LIGHT_DOWN / 8;
+        assert!(motion.pairs_drawn([pair(30, 1)].into_iter(), on));
+        let first = motion.fading(pair(10, 1), on).expect("the first put out");
+        assert!(first > 0.5, "{first}");
+        assert!(motion.fading(pair(20, 1), on).is_some(), "the second");
+        // Each goes out when its own time is up.
+        let first_done = left + LIGHT_DOWN;
+        assert_eq!(motion.fading(pair(10, 1), first_done), None);
+        assert!(motion.fading(pair(20, 1), first_done).is_some());
+    }
+
     /// A pair goes out from as bright as it had got, and one the caret
     /// comes back to comes on again from as bright as it still was.
     ///
-    /// Break: set `unpair_from` to all of it, and a pair left half way on
-    /// flashes before it goes; set `pair_from` to nothing, and coming back
-    /// drops the light to nothing first; leave `unpair` running on coming
-    /// back, and the bracket wears two lights.
+    /// Break: go out from all of it whatever had been reached, and a pair
+    /// left half way on flashes before it goes; set `pair_from` to nothing,
+    /// and coming back drops the light to nothing first; leave the pair
+    /// going out on coming back, and the bracket wears two lights.
     #[test]
     fn a_light_goes_from_where_it_had_got_to() {
         let base = Instant::now();
@@ -2546,13 +2581,17 @@ mod tests {
         let reached = motion.moving(early).pair.expect("coming on");
         assert!(reached > 0.0 && reached < 1.0, "{reached}");
         assert!(motion.pairs_drawn(std::iter::empty(), early));
-        assert_eq!(motion.moving(early).unpair, Some(reached));
+        assert_eq!(motion.fading(pair(10, 1), early), Some(reached));
         // And back while it is still going out.
         let back = early + LIGHT_DOWN / 2;
-        let still = motion.moving(back).unpair.expect("going out");
+        let still = motion.fading(pair(10, 1), back).expect("going out");
         assert!(still > 0.0 && still < reached, "{still}");
         assert!(!motion.pairs_drawn([pair(10, 1)].into_iter(), back));
-        assert_eq!(motion.moving(back).unpair, None, "two lights on one pair");
+        assert_eq!(
+            motion.fading(pair(10, 1), back),
+            None,
+            "two lights on one pair"
+        );
         assert_eq!(motion.moving(back).pair, Some(still));
     }
 
@@ -2567,6 +2606,6 @@ mod tests {
         assert_eq!(motion.moving(base).pair, None);
         // Nor goes out: it is simply gone.
         assert!(!motion.pairs_drawn([pair(42, 1)].into_iter(), base));
-        assert_eq!(motion.moving(base).unpair, None);
+        assert_eq!(motion.fading(pair(10, 1), base), None);
     }
 }

@@ -273,34 +273,28 @@ impl Painter {
     /// on together: the plate from nothing, and the light from close in to
     /// its full reach. A plate at full strength under a light still coming
     /// on is a square that appears and then glows, which is two things
-    /// happening where the reader should see one. `unpaired` is the pair
-    /// the caret was in before, going out the same way backwards at the
-    /// brightness `gone` says -- in the ground it wore when it was lit,
+    /// happening where the reader should see one. `fading` is the pairs
+    /// the caret was in before, going out the same way backwards, each at
+    /// the brightness beside it -- in the ground it wore when it was lit,
     /// because its cells have the page's back.
     #[expect(
         clippy::too_many_arguments,
-        reason = "the two pairs and their two clocks are one picture"
+        reason = "the pair coming on and the pairs going out are one picture"
     )]
     pub(super) fn pairs(
         &mut self,
         page: &Page,
         paired: &[Paired],
-        unpaired: &[Paired],
+        fading: &[(Paired, f32)],
         panes: &[&Behind],
         framed: &[&Behind],
-        (along, gone): (Option<f32>, Option<f32>),
+        along: Option<f32>,
         cell: CellSize,
     ) {
         let corner = (cell.height * HELD_CORNER).min(cell.width / 2.0);
-        let halves = lit_halves(
-            page,
-            paired,
-            unpaired,
-            panes,
-            (along, gone),
-            cell,
-            |x, y| self.under(panes, framed, x, y),
-        );
+        let halves = lit_halves(page, paired, fading, panes, along, cell, |x, y| {
+            self.under(panes, framed, x, y)
+        });
         // Every light under every plate, so the light round one half does
         // not lie over the other where the two are side by side: `()`.
         for &Lit {
@@ -862,9 +856,9 @@ fn lights(
         .collect()
 }
 
-/// Every half `pairs` draws: the cursor's pair at `along`, and the pair
-/// that was at `gone` while there is one going out -- each with what it
-/// is drawn in and how bright.
+/// Every half `pairs` draws: the cursor's pair at `along`, and each pair
+/// that was at the brightness beside it -- each with what it is drawn in
+/// and how bright.
 ///
 /// Apart from the painter so that what the reader sees can be checked
 /// without a device: a light going out in the page's own ground is a
@@ -873,18 +867,14 @@ fn lights(
 fn lit_halves(
     page: &Page,
     paired: &[Paired],
-    unpaired: &[Paired],
+    fading: &[(Paired, f32)],
     panes: &[&Behind],
-    (along, gone): (Option<f32>, Option<f32>),
+    along: Option<f32>,
     cell: CellSize,
     under: impl Fn(u16, u16) -> [f32; 4],
 ) -> Vec<Lit> {
     let lit = paired.iter().map(|half| (half, along.unwrap_or(1.0)));
-    // Only while it is going: once it has gone there is nothing to draw,
-    // whatever the window still keeps.
-    let going = gone
-        .into_iter()
-        .flat_map(|gone| unpaired.iter().map(move |half| (half, gone)));
+    let going = fading.iter().map(|(half, lit)| (half, *lit));
     lit.chain(going)
         .map(|(half, strength)| {
             let (x, y) = (half.area.x, half.area.y);
@@ -1101,12 +1091,11 @@ mod tests {
     }
 
     /// The pair that was is drawn in what it wore when it was lit, at the
-    /// brightness the clock says it has got down to, and not at all once
-    /// it has gone out.
+    /// brightness its own clock says it has got down to.
     ///
     /// Deliberate breaks: read the cell's ground instead of `held`, and
     /// the light goes out in the page's own colour, which is nothing; draw
-    /// it at `1.0 - gone`, and it goes out backwards.
+    /// it at all of it, and it does not go out at all.
     #[test]
     fn the_pair_that_was_goes_out_in_what_it_wore() {
         let cell = CellSize {
@@ -1131,15 +1120,7 @@ mod tests {
             held: Some(('(', wore)),
         };
         let under = [0.1, 0.1, 0.1, 1.0];
-        let lit = lit_halves(
-            &page,
-            &[],
-            &[ghost],
-            &[],
-            (None, Some(0.25)),
-            cell,
-            |_, _| under,
-        );
+        let lit = lit_halves(&page, &[], &[(ghost, 0.25)], &[], None, cell, |_, _| under);
         assert_eq!(lit.len(), 1);
         assert!(
             (lit[0].strength - 0.25).abs() < f32::EPSILON,
@@ -1150,9 +1131,6 @@ mod tests {
             lit[0].colour,
             lifted(under, rgba(wore, Ink::Background), PAIR_LIFT)
         );
-        // Gone out: nothing.
-        let none = lit_halves(&page, &[], &[ghost], &[], (None, None), cell, |_, _| under);
-        assert!(none.is_empty());
     }
 
     /// The light round a bracket falls on its own layer and on nothing put

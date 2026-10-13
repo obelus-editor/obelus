@@ -216,10 +216,10 @@ impl Painter {
         self.pairs(
             page,
             said.paired,
-            said.unpaired,
+            said.fading,
             panes,
             &framed,
-            (moving.pair, moving.unpair),
+            moving.pair,
             cell,
         );
         self.rules(page, said.ruled, cell);

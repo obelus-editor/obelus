@@ -295,8 +295,9 @@ pub(crate) struct Said<'a> {
     pub(crate) stroked: &'a [Stroked],
     /// And which cells are the cursor's pair of brackets.
     pub(crate) paired: &'a [Paired],
-    /// And the pair that was, where its light is still going out.
-    pub(crate) unpaired: &'a [Paired],
+    /// And the pairs that were, where their light is still going out, each
+    /// with how bright it still is.
+    pub(crate) fading: &'a [(Paired, f32)],
     /// And what is under each pane and each box, furthest first: each is
     /// glass over everything before it.
     pub(crate) stack: &'a [Behind],

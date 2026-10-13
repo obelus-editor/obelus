@@ -171,7 +171,7 @@ impl Left {
             parted: &self.parted,
             stroked: &self.stroked,
             paired: &self.paired,
-            unpaired: &[],
+            fading: &[],
             stack: &self.stack,
             bands: &[],
         }
@@ -427,7 +427,7 @@ struct Showing {
     paired: Vec<Paired>,
     /// And on the one being laid out.
     pairing: Vec<Paired>,
-    /// And the pair the caret was in before, while its light goes out.
+    /// And the pairs the caret was in before, while their light goes out.
     unpaired: Vec<Paired>,
     /// Which bands of rows are lists, how far down each has got and what
     /// bar says so, on the frame being shown.
@@ -1626,11 +1626,19 @@ impl ApplicationHandler<Waking> for Showing {
                 if let Some(left) = self.left.take() {
                     painter.keep(&left.page, fonts, left.said(), &left.going);
                 }
+                // One moment for the whole frame, so each pair going out
+                // is as far out as the clock that says how far the rest is.
+                let now = Instant::now();
+                let fading: Vec<(Paired, f32)> = self
+                    .unpaired
+                    .iter()
+                    .filter_map(|half| self.motion.fading(half.pair, now).map(|lit| (*half, lit)))
+                    .collect();
                 if let Err(error) = painter.paint(
                     &self.page,
                     fonts,
                     self.spelling.as_ref(),
-                    self.motion.moving(Instant::now()),
+                    self.motion.moving(now),
                     Said {
                         marked: &self.marked,
                         capped: &self.capped,
@@ -1642,7 +1650,7 @@ impl ApplicationHandler<Waking> for Showing {
                         parted: &self.parted,
                         stroked: &self.stroked,
                         paired: &self.paired,
-                        unpaired: &self.unpaired,
+                        fading: &fading,
                         stack: &self.stack,
                         bands: &rolled,
                     },
@@ -1895,14 +1903,16 @@ impl Drop for Finished {
 
 /// What a frame said about the cursor's pair of brackets, taken as the
 /// frame arrives: the pair it said, where the page still holds it, and
-/// the pair that was, kept for its light to go out on.
+/// the pairs that were, kept for their light to go out on.
 ///
 /// Said here rather than at the drawing, for the light's reason: whether
 /// the pair is another one than the last frame drew is what starts it
 /// coming on or going out, and only the frame arriving knows that. And
 /// kept only where the caret left it rather than the text moving it, only
 /// while the cell is still that bracket, and not once it has gone out --
-/// so what is kept is what is going rather than what once went.
+/// so what is kept is what is going rather than what once went. Added to
+/// rather than replaced, because each goes out on its own clock: the
+/// pair left two presses ago is still going out when the next one goes.
 fn pairs_arrived(
     said: Vec<Paired>,
     paired: &mut Vec<Paired>,
@@ -1917,12 +1927,9 @@ fn pairs_arrived(
         half.hold(page);
     }
     if motion.pairs_drawn(paired.iter().map(|half| half.pair), now) {
-        *unpaired = was;
+        unpaired.extend(was);
     }
-    unpaired.retain(|half| half.still_there(page));
-    if motion.moving(now).unpair.is_none() {
-        unpaired.clear();
-    }
+    unpaired.retain(|half| half.still_there(page) && motion.fading(half.pair, now).is_some());
 }
 
 /// Whether a cell is among the words of a link the frame said, and still
@@ -2059,10 +2066,11 @@ mod tests {
     /// The pair the caret left is kept for its light to go out on, while
     /// its cell is still that bracket, and let go of once it has gone out.
     ///
-    /// Deliberate breaks: drop the `*unpaired = was` and there is nothing
-    /// to go out; drop the `still_there` and the light goes out on the `x`
-    /// the file scrolled into the `(`'s cell; drop the clearing and what
-    /// went out is kept for good.
+    /// Deliberate breaks: drop the `unpaired.extend(was)` and there is
+    /// nothing to go out, or replace with it and the pair left first is
+    /// put out by the next; drop the `still_there` and the light goes out
+    /// on the `x` the file scrolled into the `(`'s cell; drop the `fading`
+    /// and what went out is kept for good.
     #[test]
     fn the_pair_the_caret_left_is_kept_while_it_goes_out() {
         let write = |page: &mut Page, x: u16, text: &str| {
@@ -2075,16 +2083,16 @@ mod tests {
             });
         };
         let mut page = Page::default();
-        page.resized(3, 1);
-        for (x, text) in [(0, "("), (1, "a"), (2, ")")] {
+        page.resized(6, 1);
+        for (x, text) in [(0, "("), (1, "a"), (2, ")"), (3, "("), (4, "b"), (5, ")")] {
             write(&mut page, x, text);
         }
-        let half = |x| crate::grid::Paired {
+        let half = |x, open| crate::grid::Paired {
             area: Rect::new(x, 0, 1, 1),
             pair: obelus_ui::shapes::Pair {
                 document: 1,
                 version: 1,
-                open: 0,
+                open,
             },
             depth: 0,
             held: None,
@@ -2094,56 +2102,46 @@ mod tests {
         };
         let mut motion = Motion::new(None);
         let (mut paired, mut unpaired) = (Vec::new(), Vec::new());
+        let mut arrive = |said, page: &Page, at| {
+            pairs_arrived(said, &mut paired, &mut unpaired, page, &mut motion, at);
+            (xs(&paired), xs(&unpaired))
+        };
         let base = Instant::now();
-        pairs_arrived(
-            vec![half(0), half(2)],
-            &mut paired,
-            &mut unpaired,
-            &page,
-            &mut motion,
-            base,
+        assert_eq!(
+            arrive(vec![half(0, 0), half(2, 0)], &page, base),
+            (vec![0, 2], vec![])
         );
-        assert_eq!(xs(&paired), vec![0, 2]);
-        assert!(unpaired.is_empty(), "nothing went");
 
-        // The caret leaves it.
+        // Into the second pair: the first is kept to go out.
         let later = base + Duration::from_millis(500);
-        motion.advance(later, true);
-        pairs_arrived(
-            Vec::new(),
-            &mut paired,
-            &mut unpaired,
-            &page,
-            &mut motion,
-            later,
+        assert_eq!(
+            arrive(vec![half(3, 3), half(5, 3)], &page, later),
+            (vec![3, 5], vec![0, 2]),
+            "nothing kept to go out"
         );
-        assert!(paired.is_empty());
-        assert_eq!(xs(&unpaired), vec![0, 2], "nothing kept to go out");
+        // And out of it while the first is still going: both are kept.
+        let on = later + Duration::from_millis(30);
+        assert_eq!(
+            arrive(Vec::new(), &page, on),
+            (vec![], vec![0, 2, 3, 5]),
+            "the first was put out by the second"
+        );
 
-        // The file scrolled under the `(`.
+        // The file scrolled under the first `(`.
         write(&mut page, 0, "x");
-        pairs_arrived(
-            Vec::new(),
-            &mut paired,
-            &mut unpaired,
-            &page,
-            &mut motion,
-            later,
+        assert_eq!(
+            arrive(Vec::new(), &page, on).1,
+            vec![2, 3, 5],
+            "a light on what scrolled in"
         );
-        assert_eq!(xs(&unpaired), vec![2], "a light on what scrolled in");
 
-        // And once it has gone out, nothing is kept.
-        let after = later + Duration::from_secs(1);
-        motion.advance(after, true);
-        pairs_arrived(
-            Vec::new(),
-            &mut paired,
-            &mut unpaired,
-            &page,
-            &mut motion,
-            after,
+        // And once they have gone out, nothing is kept.
+        assert!(
+            arrive(Vec::new(), &page, on + Duration::from_secs(1))
+                .1
+                .is_empty(),
+            "kept after it went out"
         );
-        assert!(unpaired.is_empty(), "kept after it went out");
     }
 
     /// The pointer is a hand over the cells of a link the frame said, while
