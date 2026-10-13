@@ -312,7 +312,7 @@ pub struct Conversation {
     /// one in your own words where it will take those.
     pub card: Option<Card>,
     /// Whether the card is behind the box rather than over it, because the
-    /// reader was writing when the question came.
+    /// reader was pressing keys here when the question came.
     ///
     /// The card is up all the same -- the row in the list of open documents
     /// and a chat both say there is a question -- but the keys go where the
@@ -324,10 +324,9 @@ pub struct Conversation {
     pub held: bool,
     /// The clock that lets it in, put back with every key while it is held.
     pub holding: Option<crate::event::Pause>,
-    /// When the reader last pressed a key that left them writing here: words
-    /// in the box, or any key to a card -- answering one is what puts up
-    /// the next question, and the enter that answered it may be on its way
-    /// down again.
+    /// When the reader last pressed a key here, whatever it was for: the
+    /// question waits for the keys to stop, not for the box to have words
+    /// in it.
     pub typed: Option<std::time::Instant>,
     /// The permission request waiting on the reader.
     pub permission: Option<Permission>,

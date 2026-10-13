@@ -2522,35 +2522,20 @@ impl App {
     /// then the conversation itself -- the transcript, the box, and the row
     /// of settings under it.
     pub(in crate::app) fn chat_key(&mut self, key: &crossterm::event::KeyEvent) -> bool {
-        // A key to a card is the reader at work before the card has it,
-        // because answering it is what puts up the question behind it -- and
-        // the enter that answered one may be on its way down again.
-        let carded = self.card().is_some();
-        if carded && let Some(talk) = self.conversation_mut() {
-            talk.typed = Some(std::time::Instant::now());
-        }
-        let blank = self.chat().is_none_or(|chat| chat.writing().is_blank());
-        let took = self.offer_to_the_conversation(key);
-        if !carded {
-            self.writing_or_not(blank);
-        }
-        took
+        // Every key here is the reader at work, and is counted before
+        // anything has it: answering a card is what puts up the question
+        // behind it, and the enter that sends a message is often followed
+        // by the first letter of the next -- either may already be on its
+        // way down when a question comes.
+        self.at_work();
+        self.offer_to_the_conversation(key)
     }
 
-    /// Says whether the reader is in the middle of writing, after a key
-    /// that went to anything here but a card: whether there are words in
-    /// the box.
+    /// Says the reader pressed a key here just now.
     ///
-    /// Only the key that empties the box says they have stopped -- the one
-    /// that sends, or rubs out the last of it. A key to a box that was
-    /// empty already says nothing either way, or the second of two enters
-    /// that answered a card would wipe out the first, and the question the
-    /// answer let through would come in front of the third.
-    ///
-    /// And while a question is held, puts back the clock that lets it in --
-    /// whatever the key was, because a reader pressing keys is a reader who
-    /// has not stopped.
-    fn writing_or_not(&mut self, was_blank: bool) {
+    /// And while a question is held, puts back the clock that lets it in,
+    /// because a reader pressing keys is a reader who has not stopped.
+    fn at_work(&mut self) {
         let id = self.current;
         let held = self.conversation().is_some_and(|talk| talk.held);
         let holding = match (held, id) {
@@ -2560,11 +2545,7 @@ impl App {
         let Some(talk) = self.conversation_mut() else {
             return;
         };
-        if !talk.chat.writing().is_blank() {
-            talk.typed = Some(std::time::Instant::now());
-        } else if !was_blank {
-            talk.typed = None;
-        }
+        talk.typed = Some(std::time::Instant::now());
         if held {
             talk.holding = holding;
         }
@@ -2749,21 +2730,27 @@ impl App {
     /// the region, and the enter a reader pressed on a row of the list it
     /// closed under them answered the card with its first answer.
     ///
-    /// Nor does it come in front of a reader who is writing. It waits
-    /// behind the box until they stop, because the key already on its way
-    /// down was meant for the box: an enter that was to send a message, or
-    /// to pick from the list of the agent's commands, answered the card
-    /// with its first answer instead.
+    /// Nor does it come in front of a reader who is pressing keys here. It
+    /// waits behind the box until they stop, because the key already on its
+    /// way down was meant for something else: an enter that was to send a
+    /// message, or to pick from the list of the agent's commands, answered
+    /// the card with its first answer instead -- and so did the one after
+    /// the first letters of the next message, typed the moment the last
+    /// was sent.
     fn show_the_question(&mut self, whose: Whose) {
-        let writing = self
-            .talk_of(whose)
-            .and_then(|talk| talk.typed)
-            .map(|at| STILL_WRITING.saturating_sub(at.elapsed()))
-            .filter(|left| !left.is_zero());
         let id = match whose {
             Whose::One(id) => Some(id),
             Whose::Whoever => self.current,
         };
+        // Only in the conversation on the screen, which is the one the keys
+        // go to: a reader who has walked away from this one is pressing
+        // keys somewhere else, and comes back to the card.
+        let writing = self
+            .talk_of(whose)
+            .and_then(|talk| talk.typed)
+            .filter(|_| id.is_some() && id == self.current)
+            .map(|at| STILL_WRITING.saturating_sub(at.elapsed()))
+            .filter(|left| !left.is_zero());
         let holding = writing
             .zip(id)
             .and_then(|(left, id)| self.come_back_in(left, Event::StoppedWriting(id)));
