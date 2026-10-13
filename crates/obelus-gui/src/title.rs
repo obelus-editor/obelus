@@ -215,10 +215,6 @@ pub(crate) fn button_at(which: Button, width: f32, titled: f32, button: f32) -> 
 /// system's bar, which the bar then hands back to the page. Asked for as it
 /// is, the page came out a bar taller at every move between two screens,
 /// and the bar is already in the old page being scaled.
-#[cfg_attr(
-    not(any(windows, test)),
-    expect(dead_code, reason = "only Windows asks")
-)]
 pub(crate) fn rescaled(old: (u32, u32), from: f64, to: f64, titled: f32) -> (u32, u32) {
     let scaled = |pixels: u32| (f64::from(pixels) / from * to).round();
     #[expect(
@@ -236,10 +232,6 @@ pub(crate) fn rescaled(old: (u32, u32), from: f64, to: f64, titled: f32) -> (u32
 /// How the bar is to be drawn on this frame: what of it is the system's to
 /// measure and what the pointer is doing to it.
 #[derive(Clone, Copy, Debug, PartialEq)]
-#[cfg_attr(
-    not(any(windows, test)),
-    expect(dead_code, reason = "only Windows draws it")
-)]
 pub(crate) struct Drawn {
     /// How wide each button is, in pixels.
     pub(crate) button: f32,
