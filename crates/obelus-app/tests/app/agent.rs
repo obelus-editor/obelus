@@ -4533,7 +4533,7 @@ fn a_word_begun_on_a_card_takes_what_is_held_there() {
     support::lay_out(&mut app, WIDTH, HEIGHT);
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "the question", App::is_asking);
+    pump(&mut app, &events, "the question", question_in_front);
     app.handle(Event::Paste("held words".to_string()));
     support::press_shift(&mut app, KeyCode::Home);
     assert_eq!(
