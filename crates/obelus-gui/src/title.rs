@@ -204,6 +204,32 @@ pub(crate) fn button_at(which: Button, width: f32, titled: f32, button: f32) -> 
     [width - which.places_in() * button, 0.0, button, titled]
 }
 
+/// How tall to ask for the page to be on a screen of another density, where
+/// the bar is the page's: what winit would have asked, less the bar.
+///
+/// winit keeps the window's size in points across the move by asking for the
+/// old page scaled -- and the frame round it measured as a window with the
+/// system's bar, which the bar then hands back to the page. Asked for as it
+/// is, the page came out a bar taller at every move between two screens,
+/// and the bar is already in the old page being scaled.
+#[cfg_attr(
+    not(any(windows, test)),
+    expect(dead_code, reason = "only Windows asks")
+)]
+pub(crate) fn rescaled(old: (u32, u32), from: f64, to: f64, titled: f32) -> (u32, u32) {
+    let scaled = |pixels: u32| (f64::from(pixels) / from * to).round();
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "a window is thousands of pixels, and never fewer than none"
+    )]
+    let size = (
+        scaled(old.0) as u32,
+        (scaled(old.1) - f64::from(titled)).max(1.0) as u32,
+    );
+    size
+}
+
 /// How the bar is to be drawn on this frame: what of it is the system's to
 /// measure and what the pointer is doing to it.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -689,5 +715,19 @@ mod tests {
         let (_, awake) = inks(&drawn(None, None, true), Button::Maximise, true);
         let (_, asleep) = inks(&drawn(None, None, false), Button::Maximise, true);
         assert!(asleep[3] < awake[3], "fainter without the keys");
+    }
+
+    /// On a screen of another density the page is asked for as winit
+    /// would ask, less the bar: the frame winit measures round it has a
+    /// bar of its own, which goes to the page.
+    ///
+    /// Deliberate break: leave `titled` out. The page asked for is then the
+    /// old page scaled, the frame adds a bar, the bar goes to the page --
+    /// and the window is a bar taller after every move between screens.
+    #[test]
+    fn a_page_on_another_screen_is_asked_for_less_the_bar() {
+        assert_eq!(rescaled((1000, 800), 1.0, 1.5, 47.0), (1500, 1153));
+        assert_eq!(rescaled((1500, 1153), 1.5, 1.0, 31.0), (1000, 738));
+        assert_eq!(rescaled((10, 10), 1.0, 1.0, 31.0).1, 1, "never nothing");
     }
 }

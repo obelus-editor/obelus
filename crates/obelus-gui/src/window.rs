@@ -314,6 +314,9 @@ struct Showing {
     title_presses: crate::title::Presses,
     /// The bar along the top, where Obelus draws it -- see `title::Bar`.
     bar: Option<crate::title::Bar>,
+    /// How many pixels to a point the screen the window is on has, as it
+    /// was last said -- which a change of screen is measured from.
+    scale: f64,
     /// Whether the window has the reader's keys, which a bar Obelus draws
     /// says the way the system's would.
     active: bool,
@@ -523,6 +526,7 @@ impl Showing {
             pressed_on_the_title: false,
             title_presses: crate::title::Presses::default(),
             bar: None,
+            scale: 1.0,
             active: true,
             rolled: 0.0,
             composing: false,
@@ -986,6 +990,7 @@ impl ApplicationHandler<Waking> for Showing {
         // Before the first measuring, which leaves the bar's room above the
         // grid once the bar is the page's.
         self.bar = crate::title::drawn(&window);
+        self.scale = window.scale_factor();
         self.window = Some(Arc::clone(&window));
         self.fonts = Some(fonts);
         self.painter = Some(painter);
@@ -1748,7 +1753,29 @@ impl ApplicationHandler<Waking> for Showing {
             // a different number of pixels. Which is the same work as the
             // reader choosing another size, and the window asks its own
             // scale on the way through.
-            WindowEvent::ScaleFactorChanged { .. } => self.redraw_at(self.points),
+            WindowEvent::ScaleFactorChanged {
+                scale_factor,
+                mut inner_size_writer,
+            } => {
+                // The page asked for less the bar, where the bar is the
+                // page's -- see `title::rescaled`. Not when maximised,
+                // which winit leaves the size of and the screen decides.
+                if let (Some(bar), Some(window)) = (self.bar.as_ref(), self.window.as_ref())
+                    && !window.is_maximized()
+                {
+                    let old = window.inner_size();
+                    let (width, height) = crate::title::rescaled(
+                        (old.width, old.height),
+                        self.scale,
+                        scale_factor,
+                        bar.height(window),
+                    );
+                    let _ = inner_size_writer
+                        .request_inner_size(winit::dpi::PhysicalSize::new(width, height));
+                }
+                self.scale = scale_factor;
+                self.redraw_at(self.points);
+            }
             // A window losing the reader takes what they were holding with
             // it: the key comes up somewhere else, and nothing tells this
             // window it did -- so shift held on the way out was held for
