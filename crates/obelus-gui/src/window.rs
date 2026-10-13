@@ -1230,12 +1230,14 @@ impl ApplicationHandler<Waking> for Showing {
                             self.marked = std::mem::take(&mut self.marking);
                             self.capped = std::mem::take(&mut self.capping);
                             self.ticked = std::mem::take(&mut self.ticking);
-                            // Only the ones the page still holds, for the
+                            // Only the ones still on screen, for the
                             // light's reason: whether anything here turns
-                            // is what decides the frames, and a mark a list
-                            // was opened over is not turning on screen.
-                            self.spun = std::mem::take(&mut self.spinning);
-                            self.spun.retain(|mark| mark.round(&self.page).is_some());
+                            // is what decides the frames -- see `turning`.
+                            self.spun = turning(
+                                std::mem::take(&mut self.spinning),
+                                &self.page,
+                                &self.stacking,
+                            );
                             self.motion.spin_drawn(!self.spun.is_empty());
                             self.barred = std::mem::take(&mut self.barring_up);
                             // Said here and not at the drawing: what
@@ -1866,6 +1868,23 @@ fn on_a_link(linked: &[(Rect, usize)], page: &Page, x: u16, y: u16) -> bool {
         .contains(ratatui::style::Modifier::UNDERLINED)
 }
 
+/// The marks that turn which are still on screen: on the page, or in
+/// the picture of what a pane or a box was put over.
+///
+/// The second half because the glass shows that picture. A transcript an
+/// agent was writing in, with a file picker opened over it, is still seen
+/// through the picker -- and a mark dropped here for not being on the page
+/// was the braille the window draws instead of, turning behind the glass a
+/// frame a tick.
+fn turning(spinning: Vec<Spun>, page: &Page, stack: &[Behind]) -> Vec<Spun> {
+    spinning
+        .into_iter()
+        .filter(|mark| {
+            mark.round(page).is_some() || stack.iter().any(|over| mark.behind(over).is_some())
+        })
+        .collect()
+}
+
 /// What this window is called by the thing that manages windows.
 ///
 /// Not the title, which is what the reader sees: this is the name a
@@ -1974,11 +1993,54 @@ mod tests {
     use ratatui::layout::Rect;
     use winit::event_loop::ControlFlow;
 
-    use super::{MARK, Rolling, control_flow, on_a_link, wants_a_frame};
+    use super::{MARK, Rolling, control_flow, on_a_link, turning, wants_a_frame};
     use crate::{
-        grid::{Page, Update},
+        grid::{Behind, Page, Spun, Update},
         motion::{Motion, Wake},
     };
+
+    /// A mark that turns is kept while the page holds it or a pane's
+    /// picture does, and not otherwise.
+    ///
+    /// Deliberate break: keep only `mark.round(page)`, which is what this
+    /// was -- and the transcript's mark behind a file picker went back to
+    /// braille, though the picture under the glass knew how to draw it.
+    #[test]
+    fn a_mark_behind_the_glass_is_still_turning() {
+        let frame = |text: &str| {
+            let mut cell = ratatui::buffer::Cell::default();
+            cell.set_symbol(text);
+            cell
+        };
+        let mut page = Page::default();
+        page.resized(3, 1);
+        // The page has the mark in its first cell, and a list's letters
+        // where the second and third were.
+        for (x, text) in ["\u{2819}", "a", "b"].into_iter().enumerate() {
+            page.apply(Update::Cell {
+                x: u16::try_from(x).expect("three"),
+                y: 0,
+                cell: Box::new(frame(text)),
+            });
+        }
+        // And what the list was put over: the transcript's mark in the
+        // second, and a letter in the third.
+        let behind = Behind {
+            area: Rect::new(1, 0, 2, 1),
+            joined: obelus_ui::shapes::Joined::Below,
+            ground: ratatui::style::Color::Reset,
+            cells: vec![frame("\u{2819}"), frame("c")],
+            depth: 0,
+        };
+        let one = |x| Spun {
+            area: Rect::new(x, 0, 1, 1),
+        };
+        let kept: Vec<u16> = turning(vec![one(0), one(1), one(2)], &page, &[behind])
+            .iter()
+            .map(|mark| mark.area.x)
+            .collect();
+        assert_eq!(kept, vec![0, 1], "on the page, and behind the glass");
+    }
 
     /// The pointer is a hand over the cells of a link the frame said, while
     /// they are still underlined, and nowhere else -- not over a link a
