@@ -292,40 +292,15 @@ impl Painter {
         cell: CellSize,
     ) {
         let corner = (cell.height * HELD_CORNER).min(cell.width / 2.0);
-        let lit = paired.iter().map(|half| (half, along.unwrap_or(1.0)));
-        // Only while it is going: once it has gone there is nothing to
-        // draw, whatever the window still keeps.
-        let going = gone
-            .into_iter()
-            .flat_map(|gone| unpaired.iter().map(move |half| (half, gone)));
-        let halves: Vec<Lit> = lit
-            .chain(going)
-            .map(|(half, strength)| {
-                let (x, y) = (half.area.x, half.area.y);
-                let rect = [
-                    f32::from(x) * cell.width,
-                    f32::from(y) * cell.height,
-                    cell.width,
-                    cell.height,
-                ];
-                let ground = half
-                    .held
-                    .map_or_else(|| page.look(x, y).background, |(_, ground)| ground);
-                let ink = rgba(ground, Ink::Background);
-                // The pane or box the bracket is drawn in, nearest the
-                // reader first, the way a hold's is found.
-                let pane = panes.iter().rposition(|pane| {
-                    (pane.area.left()..pane.area.right()).contains(&x)
-                        && (pane.area.top()..pane.area.bottom()).contains(&y)
-                });
-                Lit {
-                    rect,
-                    colour: away(self.under(panes, framed, x, y), ink),
-                    pane,
-                    strength,
-                }
-            })
-            .collect();
+        let halves = lit_halves(
+            page,
+            paired,
+            unpaired,
+            panes,
+            (along, gone),
+            cell,
+            |x, y| self.under(panes, framed, x, y),
+        );
         // Every light under every plate, so the light round one half does
         // not lie over the other where the two are side by side: `()`.
         for &Lit {
@@ -887,6 +862,60 @@ fn lights(
         .collect()
 }
 
+/// Every half `pairs` draws: the cursor's pair at `along`, and the pair
+/// that was at `gone` while there is one going out -- each with what it
+/// is drawn in and how bright.
+///
+/// Apart from the painter so that what the reader sees can be checked
+/// without a device: a light going out in the page's own ground is a
+/// light nobody sees, and one going out from all of it is a flash.
+/// `under` is what the ground under a cell is -- `Painter::under`.
+fn lit_halves(
+    page: &Page,
+    paired: &[Paired],
+    unpaired: &[Paired],
+    panes: &[&Behind],
+    (along, gone): (Option<f32>, Option<f32>),
+    cell: CellSize,
+    under: impl Fn(u16, u16) -> [f32; 4],
+) -> Vec<Lit> {
+    let lit = paired.iter().map(|half| (half, along.unwrap_or(1.0)));
+    // Only while it is going: once it has gone there is nothing to draw,
+    // whatever the window still keeps.
+    let going = gone
+        .into_iter()
+        .flat_map(|gone| unpaired.iter().map(move |half| (half, gone)));
+    lit.chain(going)
+        .map(|(half, strength)| {
+            let (x, y) = (half.area.x, half.area.y);
+            let rect = [
+                f32::from(x) * cell.width,
+                f32::from(y) * cell.height,
+                cell.width,
+                cell.height,
+            ];
+            // What it wore when it was lit, which for the pair that was is
+            // not what the cell wears now: it has the page's ground back.
+            let ground = half
+                .held
+                .map_or_else(|| page.look(x, y).background, |(_, ground)| ground);
+            let ink = rgba(ground, Ink::Background);
+            // The pane or box the bracket is drawn in, nearest the reader
+            // first, the way a hold's is found.
+            let pane = panes.iter().rposition(|pane| {
+                (pane.area.left()..pane.area.right()).contains(&x)
+                    && (pane.area.top()..pane.area.bottom()).contains(&y)
+            });
+            Lit {
+                rect,
+                colour: away(under(x, y), ink),
+                pane,
+                strength,
+            }
+        })
+        .collect()
+}
+
 /// Half a pair of brackets, as `pairs` draws it.
 #[derive(Clone, Copy)]
 struct Lit {
@@ -1057,6 +1086,58 @@ mod tests {
                 .all(|light| light.to <= 20.0 || light.from >= 30.0),
             "{lit:?}"
         );
+    }
+
+    /// The pair that was is drawn in what it wore when it was lit, at the
+    /// brightness the clock says it has got down to, and not at all once
+    /// it has gone out.
+    ///
+    /// Deliberate breaks: read the cell's ground instead of `held`, and
+    /// the light goes out in the page's own colour, which is nothing; draw
+    /// it at `1.0 - gone`, and it goes out backwards.
+    #[test]
+    fn the_pair_that_was_goes_out_in_what_it_wore() {
+        let cell = CellSize {
+            width: 10.0,
+            height: 20.0,
+            baseline: 15.0,
+        };
+        let page = {
+            let mut page = Page::default();
+            page.resized(3, 1);
+            page
+        };
+        let wore = Color::Rgb(60, 60, 70);
+        let ghost = Paired {
+            area: ratatui::layout::Rect::new(0, 0, 1, 1),
+            pair: obelus_ui::shapes::Pair {
+                document: 1,
+                version: 1,
+                open: 0,
+            },
+            depth: 0,
+            held: Some(('(', wore)),
+        };
+        let under = [0.1, 0.1, 0.1, 1.0];
+        let lit = lit_halves(
+            &page,
+            &[],
+            &[ghost],
+            &[],
+            (None, Some(0.25)),
+            cell,
+            |_, _| under,
+        );
+        assert_eq!(lit.len(), 1);
+        assert!(
+            (lit[0].strength - 0.25).abs() < f32::EPSILON,
+            "{}",
+            lit[0].strength
+        );
+        assert_eq!(lit[0].colour, away(under, rgba(wore, Ink::Background)));
+        // Gone out: nothing.
+        let none = lit_halves(&page, &[], &[ghost], &[], (None, None), cell, |_, _| under);
+        assert!(none.is_empty());
     }
 
     /// The light round a bracket falls on its own layer and on nothing put

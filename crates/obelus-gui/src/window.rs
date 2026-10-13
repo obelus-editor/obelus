@@ -1301,35 +1301,14 @@ impl ApplicationHandler<Waking> for Showing {
                             self.motion
                                 .sheen_drawn(self.sheened.is_some(), Instant::now());
                             self.stroked = std::mem::take(&mut self.stroking);
-                            // Only where the page still holds it, and
-                            // said here for the light's reason: whether
-                            // the pair is another one than the last frame
-                            // drew is what starts it coming up, and only
-                            // the frame arriving knows that.
-                            let was = std::mem::replace(
-                                &mut self.paired,
+                            pairs_arrived(
                                 std::mem::take(&mut self.pairing),
-                            );
-                            self.paired.retain(|half| half.still_said(&self.page));
-                            for half in &mut self.paired {
-                                half.hold(&self.page);
-                            }
-                            // And the pair it was, where the caret left it
-                            // rather than the text moving it, kept for its
-                            // light to go out on -- and only while the cell
-                            // is still that bracket.
-                            if self.motion.pairs_drawn(
-                                self.paired.iter().map(|half| half.pair),
+                                &mut self.paired,
+                                &mut self.unpaired,
+                                &self.page,
+                                &mut self.motion,
                                 Instant::now(),
-                            ) {
-                                self.unpaired = was;
-                            }
-                            self.unpaired.retain(|half| half.still_there(&self.page));
-                            // And none once it has gone out, so what is kept
-                            // is what is going rather than what once went.
-                            if self.motion.moving(Instant::now()).unpair.is_none() {
-                                self.unpaired.clear();
-                            }
+                            );
                             self.stack = std::mem::take(&mut self.stacking);
                             self.panes = std::mem::take(&mut self.paning);
                             self.scrolled = std::mem::take(&mut self.scrolling);
@@ -1914,6 +1893,38 @@ impl Drop for Finished {
     }
 }
 
+/// What a frame said about the cursor's pair of brackets, taken as the
+/// frame arrives: the pair it said, where the page still holds it, and
+/// the pair that was, kept for its light to go out on.
+///
+/// Said here rather than at the drawing, for the light's reason: whether
+/// the pair is another one than the last frame drew is what starts it
+/// coming on or going out, and only the frame arriving knows that. And
+/// kept only where the caret left it rather than the text moving it, only
+/// while the cell is still that bracket, and not once it has gone out --
+/// so what is kept is what is going rather than what once went.
+fn pairs_arrived(
+    said: Vec<Paired>,
+    paired: &mut Vec<Paired>,
+    unpaired: &mut Vec<Paired>,
+    page: &Page,
+    motion: &mut Motion,
+    now: Instant,
+) {
+    let was = std::mem::replace(paired, said);
+    paired.retain(|half| half.still_said(page));
+    for half in paired.iter_mut() {
+        half.hold(page);
+    }
+    if motion.pairs_drawn(paired.iter().map(|half| half.pair), now) {
+        *unpaired = was;
+    }
+    unpaired.retain(|half| half.still_there(page));
+    if motion.moving(now).unpair.is_none() {
+        unpaired.clear();
+    }
+}
+
 /// Whether a cell is among the words of a link the frame said, and still
 /// is.
 ///
@@ -2039,11 +2050,101 @@ mod tests {
     use ratatui::layout::Rect;
     use winit::event_loop::ControlFlow;
 
-    use super::{MARK, Rolling, control_flow, on_a_link, wants_a_frame};
+    use super::{MARK, Rolling, control_flow, on_a_link, pairs_arrived, wants_a_frame};
     use crate::{
         grid::{Page, Update},
         motion::{Motion, Wake},
     };
+
+    /// The pair the caret left is kept for its light to go out on, while
+    /// its cell is still that bracket, and let go of once it has gone out.
+    ///
+    /// Deliberate breaks: drop the `*unpaired = was` and there is nothing
+    /// to go out; drop the `still_there` and the light goes out on the `x`
+    /// the file scrolled into the `(`'s cell; drop the clearing and what
+    /// went out is kept for good.
+    #[test]
+    fn the_pair_the_caret_left_is_kept_while_it_goes_out() {
+        let write = |page: &mut Page, x: u16, text: &str| {
+            let mut cell = ratatui::buffer::Cell::default();
+            cell.set_symbol(text);
+            page.apply(Update::Cell {
+                x,
+                y: 0,
+                cell: Box::new(cell),
+            });
+        };
+        let mut page = Page::default();
+        page.resized(3, 1);
+        for (x, text) in [(0, "("), (1, "a"), (2, ")")] {
+            write(&mut page, x, text);
+        }
+        let half = |x| crate::grid::Paired {
+            area: Rect::new(x, 0, 1, 1),
+            pair: obelus_ui::shapes::Pair {
+                document: 1,
+                version: 1,
+                open: 0,
+            },
+            depth: 0,
+            held: None,
+        };
+        let xs = |halves: &[crate::grid::Paired]| -> Vec<u16> {
+            halves.iter().map(|half| half.area.x).collect()
+        };
+        let mut motion = Motion::new(None);
+        let (mut paired, mut unpaired) = (Vec::new(), Vec::new());
+        let base = Instant::now();
+        pairs_arrived(
+            vec![half(0), half(2)],
+            &mut paired,
+            &mut unpaired,
+            &page,
+            &mut motion,
+            base,
+        );
+        assert_eq!(xs(&paired), vec![0, 2]);
+        assert!(unpaired.is_empty(), "nothing went");
+
+        // The caret leaves it.
+        let later = base + Duration::from_millis(500);
+        motion.advance(later, true);
+        pairs_arrived(
+            Vec::new(),
+            &mut paired,
+            &mut unpaired,
+            &page,
+            &mut motion,
+            later,
+        );
+        assert!(paired.is_empty());
+        assert_eq!(xs(&unpaired), vec![0, 2], "nothing kept to go out");
+
+        // The file scrolled under the `(`.
+        write(&mut page, 0, "x");
+        pairs_arrived(
+            Vec::new(),
+            &mut paired,
+            &mut unpaired,
+            &page,
+            &mut motion,
+            later,
+        );
+        assert_eq!(xs(&unpaired), vec![2], "a light on what scrolled in");
+
+        // And once it has gone out, nothing is kept.
+        let after = later + Duration::from_secs(1);
+        motion.advance(after, true);
+        pairs_arrived(
+            Vec::new(),
+            &mut paired,
+            &mut unpaired,
+            &page,
+            &mut motion,
+            after,
+        );
+        assert!(unpaired.is_empty(), "kept after it went out");
+    }
 
     /// The pointer is a hand over the cells of a link the frame said, while
     /// they are still underlined, and nowhere else -- not over a link a
