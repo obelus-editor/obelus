@@ -1,10 +1,8 @@
 //! The settings view: tabs, a filter, and a control per row.
 //!
-//! A binary of its own because applying a setting lays the glyph switch and
-//! the tab width for the whole process, and a test beside these drawing a
-//! screen would draw it with whatever the last one turned on.
-
-mod support;
+//! Not in the application's binary because applying a setting lays the glyph
+//! switch and the tab width for the whole process, and a test beside these
+//! drawing a screen would draw it with whatever the last one turned on.
 
 use crossterm::event::KeyCode;
 use obelus_app::{
@@ -14,11 +12,7 @@ use obelus_app::{
 use obelus_command::Command;
 use obelus_component::settings::Shown;
 
-/// Applying a setting touches process-wide state -- the glyph switch is one
-/// switch the drawing code can read without a flag threaded into every
-/// function -- so these tests take turns. Tests in one file share a process,
-/// and every test here applies a setting.
-static SETTINGS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+use crate::support;
 
 /// A settings file of its own for one test.
 ///
@@ -70,6 +64,7 @@ fn shown() -> usize {
 /// handing `ui::tabs` true.
 #[test]
 fn the_row_under_a_list_is_not_marked() {
+    let _turn = crate::turn();
     let scratch = temporary("under-a-list");
     let mut app = open(&settings_file(&scratch));
     let dump = support::render(&mut app, 66, 12);
@@ -124,7 +119,7 @@ fn the_row_under_a_list_is_not_marked() {
 /// `App::is_showing_dialog`: the box for a line opens over the page.
 #[test]
 fn nothing_of_obeluss_own_opens_over_the_settings() {
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("modal");
     let mut app = open(&settings_file(&scratch));
     let page = support::render(&mut app, 66, 12);
@@ -146,7 +141,7 @@ fn nothing_of_obeluss_own_opens_over_the_settings() {
 /// because Obelus is leaving.
 #[test]
 fn leaving_closes_the_settings_and_asks() {
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("modal-quit");
     let mut app = open(&settings_file(&scratch));
     support::render(&mut app, 66, 12);
@@ -161,9 +156,7 @@ fn leaving_closes_the_settings_and_asks() {
 /// be a setting nobody can tell they have changed.
 #[test]
 fn a_switch_takes_effect_and_is_written_down() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("switch");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -201,9 +194,7 @@ fn a_switch_takes_effect_and_is_written_down() {
 /// and marks its selection the way every other list does.
 #[test]
 fn a_choice_opens_the_list_every_other_choice_uses() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("droplist");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -278,9 +269,7 @@ fn a_choice_opens_the_list_every_other_choice_uses() {
 /// to pick between blind says nothing that the two words did not.
 #[test]
 fn walking_the_theme_list_wears_each_one() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("theme-droplist");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -348,9 +337,7 @@ fn walking_the_theme_list_wears_each_one() {
 /// walk the tabs, as they do in every other view with tabs on it.
 #[test]
 fn a_switch_is_a_box_that_enter_marks() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("switch-box");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -398,9 +385,7 @@ fn a_switch_is_a_box_that_enter_marks() {
 /// it.
 #[test]
 fn every_setting_is_on_one_page_under_a_heading() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("tabs");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -501,9 +486,7 @@ fn every_setting_is_on_one_page_under_a_heading() {
 /// `Nerd Font glyphs` is then drawn hard against `Theme`.
 #[test]
 fn a_setting_with_no_gloss_keeps_the_blank_under_it() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("no-gloss");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -541,9 +524,7 @@ fn a_setting_with_no_gloss_keeps_the_blank_under_it() {
 /// that (the page then has no room kept above the list).
 #[test]
 fn a_list_over_the_settings_leaves_the_file_where_it_is() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("room-behind");
     let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
     app.config_file_for_test(settings_file(&scratch));
@@ -581,9 +562,7 @@ fn a_list_over_the_settings_leaves_the_file_where_it_is() {
 /// word.
 #[test]
 fn typing_narrows_the_settings() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("filter");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -666,9 +645,7 @@ fn typing_narrows_the_settings() {
 /// time it opens: what is on the screen is what is in the file.
 #[test]
 fn the_view_closes_and_the_file_is_what_it_shows() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("closes");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -703,9 +680,7 @@ fn the_view_closes_and_the_file_is_what_it_shows() {
 #[cfg(unix)]
 #[test]
 fn a_change_to_the_file_a_link_points_at_is_a_change_to_the_settings() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
 
     let scratch = support::Scratch::new("linked");
     let directory = scratch.path().to_path_buf();
@@ -752,9 +727,7 @@ fn a_change_to_the_file_a_link_points_at_is_a_change_to_the_settings() {
 /// assertion failed.
 #[test]
 fn what_a_setting_does_goes_under_it_and_wraps() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("under");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -803,9 +776,7 @@ fn what_a_setting_does_goes_under_it_and_wraps() {
 /// fourth name was nowhere on the screen it is focused on.
 #[test]
 fn the_last_setting_can_be_walked_to_on_a_short_screen() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("short");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -840,9 +811,7 @@ fn the_last_setting_can_be_walked_to_on_a_short_screen() {
 /// as the default, and the last assertion failed.
 #[test]
 fn a_tree_lays_its_own_settings_over_the_readers() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = project("over", "wrap = true\n");
     let root = scratch.path().to_path_buf();
 
@@ -876,9 +845,7 @@ fn a_tree_lays_its_own_settings_over_the_readers() {
 /// arrived from the project and both assertions failed.
 #[test]
 fn a_tree_may_not_start_an_agent_or_move_a_key() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = project(
         "reach",
         "agent = \"claude-acp\"\n[keys]\nquit = \"ctrl+x\"\n",
@@ -905,9 +872,7 @@ fn a_tree_may_not_start_an_agent_or_move_a_key() {
 /// overrides, and the first assertion failed.
 #[test]
 fn a_setting_the_tree_has_cannot_be_changed_here() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = project("pinned", "wrap = true\n");
     let root = scratch.path().to_path_buf();
 
@@ -944,9 +909,7 @@ fn a_setting_the_tree_has_cannot_be_changed_here() {
 /// comments were gone on the first switch, and the last assertion failed.
 #[test]
 fn the_trees_page_edits_the_trees_file() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let root = project(
         "write",
         "# what this project needs\n\nwrap = true\n# the margin is noisy here\nblame_margin = false\n",
@@ -992,9 +955,7 @@ fn the_trees_page_edits_the_trees_file() {
 /// the heading went with the first key and the file lost it.
 #[test]
 fn delete_takes_a_setting_out_and_leaves_the_heading() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let root = project(
         "Unset",
         "# what this project needs\n\nwrap = true\nblame_margin = true\n",
@@ -1038,9 +999,7 @@ fn delete_takes_a_setting_out_and_leaves_the_heading() {
 /// taken off the foot's `Unset`, and it is offered over the filter.
 #[test]
 fn delete_takes_a_letter_out_of_the_filter_before_a_setting_out_of_the_file() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let root = project("delete-filter", "wrap = true\nblame_margin = true\n");
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
@@ -1084,9 +1043,7 @@ fn delete_takes_a_letter_out_of_the_filter_before_a_setting_out_of_the_file() {
 /// used until somebody makes a file by hand.
 #[test]
 fn a_tree_with_no_settings_gets_a_file_when_one_is_set() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let root = support::Scratch::new("project-new");
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
@@ -1110,9 +1067,7 @@ fn a_tree_with_no_settings_gets_a_file_when_one_is_set() {
 /// reader could not tell what this project had actually decided.
 #[test]
 fn the_trees_page_says_which_settings_are_not_its_own() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let root = project("whose", "wrap = true\n");
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
@@ -1194,9 +1149,7 @@ fn the_trees_page_says_which_settings_are_not_its_own() {
 /// setting never arrived, and this failed.
 #[test]
 fn a_tree_that_gains_settings_while_obelus_is_open_is_heard() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let root = support::Scratch::new("project-later");
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
@@ -1232,9 +1185,7 @@ fn a_tree_that_gains_settings_while_obelus_is_open_is_heard() {
 /// failed.
 #[test]
 fn the_trees_page_does_not_grey_out_what_can_be_set() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let root = project("grey", "wrap = true\n");
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
@@ -1293,9 +1244,7 @@ fn the_trees_page_does_not_grey_out_what_can_be_set() {
 /// reader got.
 #[test]
 fn the_file_on_the_tab_row_does_not_write_over_the_tabs() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let root = support::Scratch::new("corner");
     // The longer of the two forms, which is the one that will not fit.
     root.write(".obelus/config.toml", "wrap = true\n");
@@ -1347,9 +1296,7 @@ fn the_file_on_the_tab_row_does_not_write_over_the_tabs() {
 /// something a test may touch.
 #[test]
 fn nothing_is_written_without_being_told_where() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     support::lay_out(&mut app, 66, 12);
     dispatch::dispatch(&mut app, Command::ConfigOpen);
@@ -1366,9 +1313,7 @@ fn nothing_is_written_without_being_told_where() {
 /// a choice.
 #[test]
 fn the_theme_picker_writes_its_choice_down() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("theme-picker");
     let file = settings_file(&scratch);
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
@@ -1393,9 +1338,7 @@ fn the_theme_picker_writes_its_choice_down() {
 /// one thing in one view and nothing in the next.
 #[test]
 fn the_ends_and_the_pages_are_reachable() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("ends");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -1438,9 +1381,7 @@ fn the_ends_and_the_pages_are_reachable() {
 /// by rows (`window.scroll(rows)`), which goes three settings down.
 #[test]
 fn the_wheel_scrolls_the_settings_and_not_the_file_behind() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("wheel");
     // A file longer than the screen behind it, so a notch that reached it
     // would show: `open`'s is four lines, which no notch can scroll.
@@ -1485,9 +1426,7 @@ fn the_wheel_scrolls_the_settings_and_not_the_file_behind() {
 /// a page that showed no theme.
 #[test]
 fn enter_on_a_setting_scrolled_away_shows_it_first() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("enter-off-screen");
     let mut app = open(&settings_file(&scratch));
     support::render(&mut app, 66, 12);
@@ -1535,9 +1474,7 @@ fn enter_on_a_setting_scrolled_away_shows_it_first() {
 /// counting the layout's entry as one row, as tall as a command.
 #[test]
 fn the_row_the_focus_is_on_is_a_row_that_is_drawn() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("focus-drawn");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -1565,9 +1502,7 @@ fn the_row_the_focus_is_on_is_a_row_that_is_drawn() {
 /// rather than by a number of rows.
 #[test]
 fn the_agents_page_is_a_list_of_cards() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("cards");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -1670,9 +1605,7 @@ fn the_agents_page_is_a_list_of_cards() {
 /// is not this one.
 #[test]
 fn the_cards_have_a_bar_where_there_is_somewhere_to_scroll() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("card-bar");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -1737,9 +1670,7 @@ fn the_cards_have_a_bar_where_there_is_somewhere_to_scroll() {
 /// a session that started with no network may have one later.
 #[test]
 fn a_failed_fetch_says_so_and_is_tried_again() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("registry");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -1828,9 +1759,7 @@ fn a_failed_fetch_says_so_and_is_tried_again() {
 /// page slides under a reader who is nowhere near its edge.
 #[test]
 fn the_cards_scroll_only_at_an_edge() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("window");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -1923,9 +1852,7 @@ fn the_cards_scroll_only_at_an_edge() {
 /// the button, because pressing it runs `npm`.
 #[test]
 fn the_first_agent_installed_is_the_one_in_use() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("installed");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -2028,9 +1955,7 @@ fn installed(root: &std::path::Path, id: &str, version: &str) {
 /// could start, and the only button on it was the one that turned it off.
 #[test]
 fn an_agent_that_is_not_installed_is_not_in_use() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("stuck");
     let file = settings_file(&scratch);
     // The settings say an agent is in use, from some earlier session.
@@ -2101,7 +2026,7 @@ fn a_command_can_be_put_on_another_key() {
     use obelus_command::Command;
     use obelus_keymap::KeyChord;
 
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("bind");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -2163,7 +2088,7 @@ fn a_key_that_is_taken_says_so_on_the_row() {
     use crossterm::event::KeyModifiers;
     use obelus_command::Command;
 
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("taken");
     let mut app = open(&settings_file(&scratch));
     support::press(&mut app, KeyCode::Tab);
@@ -2219,7 +2144,7 @@ fn a_key_that_could_never_fire_is_refused() {
     use obelus_app::event::Event;
     use obelus_command::Command;
 
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("never");
     let mut app = open(&settings_file(&scratch));
     support::press(&mut app, KeyCode::Tab);
@@ -2272,7 +2197,7 @@ fn a_key_that_could_never_fire_is_refused() {
 fn alt_backspace_takes_a_key_away() {
     use obelus_command::Command;
 
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("unbind");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -2315,7 +2240,7 @@ fn alt_backspace_takes_a_key_away() {
 fn every_key_of_a_command_is_a_row_of_its_own() {
     use obelus_component::settings::KeyRow;
 
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("several-rows");
     let file = settings_file(&scratch);
     std::fs::write(&file, "keys_from = \"vscode\"\n").expect("the file");
@@ -2388,7 +2313,7 @@ fn enter_on_a_key_changes_it() {
     use obelus_command::Command;
     use obelus_keymap::KeyChord;
 
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("change-a-key");
     let file = settings_file(&scratch);
     std::fs::write(&file, "[keys]\nredo = [\"ctrl+y\", \"alt+y\"]\n").expect("the file");
@@ -2428,7 +2353,7 @@ fn control_and_enter_adds_a_key() {
     use obelus_app::event::Event;
     use obelus_keymap::KeyChord;
 
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("add-a-key");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -2483,7 +2408,7 @@ fn alt_backspace_takes_away_the_key_on_its_row() {
     use obelus_command::Command;
     use obelus_keymap::KeyChord;
 
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("remove-a-key");
     let file = settings_file(&scratch);
     std::fs::write(&file, "keys_from = \"vscode\"\n").expect("the file");
@@ -2545,7 +2470,7 @@ fn alt_backspace_takes_away_the_key_on_its_row() {
 /// the reader's file.
 #[test]
 fn a_key_bound_writes_the_readers_file_and_nothing_of_the_projects() {
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = project("keys-layers", "wrap = true\n");
     let mine = temporary("keys-layers-mine");
     let file = settings_file(&mine);
@@ -2576,7 +2501,7 @@ fn a_key_bound_writes_the_readers_file_and_nothing_of_the_projects() {
 fn a_key_bound_outlives_the_next_setting() {
     use obelus_keymap::KeyChord;
 
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("keys-outlive");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -2602,7 +2527,7 @@ fn a_key_bound_outlives_the_next_setting() {
 /// file became nothing but the new key.
 #[test]
 fn a_key_bound_does_not_write_over_a_file_that_will_not_read() {
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("keys-unreadable");
     let file = settings_file(&scratch);
     let before = "theme = \"light\"\nwrap = [\n";
@@ -2631,7 +2556,7 @@ fn a_key_given_back_is_in_every_context_the_command_was() {
     use crossterm::event::{KeyEvent, KeyModifiers};
     use obelus_keymap::Context;
 
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("given-back");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -2662,7 +2587,7 @@ fn a_key_given_back_is_in_every_context_the_command_was() {
 fn a_bad_key_on_a_line_is_said_of_the_key() {
     use obelus_keymap::KeyChord;
 
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("bad-key-of-several");
     let file = settings_file(&scratch);
     std::fs::write(&file, "[keys]\nredo = [\"nope\", \"alt+y\"]\n").expect("the file");
@@ -2691,7 +2616,7 @@ fn a_bad_key_on_a_line_is_said_of_the_key() {
 fn taking_a_key_away_leaves_the_focus_on_its_command() {
     use obelus_component::settings::KeyRow;
 
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("focus-stays");
     let file = settings_file(&scratch);
     std::fs::write(&file, "keys_from = \"vscode\"\n").expect("the file");
@@ -2739,7 +2664,7 @@ fn taking_a_key_away_leaves_the_focus_on_its_command() {
 fn a_press_on_a_tab_while_a_row_waits_does_nothing() {
     use obelus_app::event::{Event, Pointer};
 
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("press-tab-waits");
     let mut app = open(&settings_file(&scratch));
     support::press(&mut app, KeyCode::Tab);
@@ -2770,7 +2695,7 @@ fn a_press_on_a_tab_while_a_row_waits_does_nothing() {
 /// (run-command, whose line is VS Code's own keys, was marked).
 #[test]
 fn a_command_off_its_layout_is_marked_changed() {
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("marked-changed");
     let file = settings_file(&scratch);
     std::fs::write(
@@ -2813,7 +2738,7 @@ fn alt_backspace_takes_a_key_away_at_once() {
     use obelus_component::settings::KeyRow;
     use obelus_keymap::KeyChord;
 
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("delete-at-once");
     let file = settings_file(&scratch);
     std::fs::write(&file, "keys_from = \"vscode\"\n").expect("the file");
@@ -2854,7 +2779,7 @@ fn alt_backspace_takes_a_key_away_at_once() {
 fn alt_r_puts_a_command_back() {
     use obelus_keymap::{Keymap, Layout};
 
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("reset-one");
     let file = settings_file(&scratch);
     std::fs::write(&file, "[keys]\nredo = \"alt+z\"\n").expect("the file");
@@ -2895,7 +2820,7 @@ fn alt_backspace_on_a_row_scrolled_away_shows_it_first() {
     use obelus_component::settings::KeyRow;
     use obelus_keymap::KeyChord;
 
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("alt-off-screen");
     let file = settings_file(&scratch);
     std::fs::write(&file, "keys_from = \"vscode\"\n").expect("the file");
@@ -2948,7 +2873,7 @@ fn alt_backspace_on_a_row_scrolled_away_shows_it_first() {
 fn the_question_about_every_key_does_not_give_way() {
     use crossterm::event::{KeyEvent, KeyModifiers};
 
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("reset-all-stays");
     let file = settings_file(&scratch);
     std::fs::write(&file, "[keys]\nredo = \"alt+z\"\n").expect("the file");
@@ -2975,7 +2900,7 @@ fn the_question_about_every_key_does_not_give_way() {
 /// nothing.
 #[test]
 fn alt_r_is_offered_only_where_a_line_can_be_taken_out() {
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("reset-no-line");
     let file = settings_file(&scratch);
     let before = "keys_from = \"mnemonic\"\n\n[keys]\nchoose-theme = \"ctrl+o\"\n";
@@ -3005,7 +2930,7 @@ fn alt_shift_r_asks_and_puts_every_key_back() {
     use obelus_app::event::Event;
     use obelus_keymap::{KeyChord, Keymap, Layout};
 
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("reset-all");
     let file = settings_file(&scratch);
     std::fs::write(&file, "[keys]\nredo = \"alt+z\"\nundo = \"alt+u\"\n").expect("the file");
@@ -3060,7 +2985,7 @@ fn alt_shift_r_asks_and_puts_every_key_back() {
 /// is what they need in front of them to change one by hand.
 #[test]
 fn the_settings_file_itself_can_be_read() {
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("file");
     let file = settings_file(&scratch);
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
@@ -3093,9 +3018,7 @@ fn the_settings_file_itself_can_be_read() {
 /// it is what Obelus is set to -- whichever process wrote it.
 #[test]
 fn a_setting_changed_by_another_obelus_arrives_here() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("shared");
     let file = settings_file(&scratch);
     std::fs::write(&file, "theme = \"light\"\n").expect("a settings file");
@@ -3123,9 +3046,7 @@ fn a_setting_changed_by_another_obelus_arrives_here() {
 /// over everything that was in it.
 #[test]
 fn a_settings_file_that_will_not_read_is_not_written_over() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("broken");
     let file = settings_file(&scratch);
     let kept = "theme = \"light\"\nthis file is half written";
@@ -3168,9 +3089,7 @@ fn a_settings_file_that_will_not_read_is_not_written_over() {
 
 #[test]
 fn writing_the_settings_keeps_what_obelus_does_not_recognise() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = support::Scratch::new("settings-unknown");
     let file = scratch.path().join("config.toml");
     // A line from a newer Obelus, a setting that has been renamed since, and
@@ -3229,9 +3148,7 @@ fn writing_the_settings_keeps_what_obelus_does_not_recognise() {
 /// `Leave` on escape back at the end of the foot, and it is said here.
 #[test]
 fn the_settings_say_what_their_keys_do() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = project("foot", "wrap = true\n");
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     app.working_directory_for_test(scratch.path().to_path_buf());
@@ -3260,9 +3177,7 @@ fn the_settings_say_what_their_keys_do() {
 /// settings have no "Unset" -- one they have not changed is the default.
 #[test]
 fn the_foot_offers_unset_only_where_it_means_something() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     support::lay_out(&mut app, 76, 16);
     dispatch::dispatch(&mut app, Command::ConfigOpen);
@@ -3284,9 +3199,7 @@ fn word_on(text: &str, word: &str) -> bool {
 /// to say the slowest one.
 #[test]
 fn the_time_a_rest_takes_is_the_readers() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("dwell");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -3349,9 +3262,7 @@ fn the_time_a_rest_takes_is_the_readers() {
 /// which changes a setting the reader only meant to read.
 #[test]
 fn a_press_on_a_switch_flips_it() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("switch-press");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -3421,9 +3332,7 @@ fn a_press_on_a_switch_flips_it() {
 /// page on the tab it was on.
 #[test]
 fn a_press_on_a_tab_goes_to_it() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("tab-press");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -3532,9 +3441,7 @@ fn with_an_agent_set(
 /// nothing.
 #[test]
 fn the_active_agents_settings_are_a_group_on_the_page() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let (_scratch, mut app) = with_an_agent(
         "agent-group",
         &[offered(
@@ -3577,9 +3484,7 @@ fn the_active_agents_settings_are_a_group_on_the_page() {
 /// settings looked exactly like one without.
 #[test]
 fn an_agent_that_has_not_said_what_it_offers_says_so_rather_than_nothing() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let (_scratch, mut app) = with_an_agent("agent-silence", &[]);
 
     // The group is last but for what the agent is started with, whose
@@ -3606,9 +3511,7 @@ fn an_agent_that_has_not_said_what_it_offers_says_so_rather_than_nothing() {
 /// agent's settings, and the page said nothing about when they arrive.
 #[test]
 fn what_an_agent_is_started_with_is_a_group_of_its_own() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let (_scratch, mut app) = with_an_agent_set(
         "agent-environment",
         &[offered(
@@ -3661,9 +3564,7 @@ fn what_an_agent_is_started_with_is_a_group_of_its_own() {
 /// and the file had nothing in it.
 #[test]
 fn a_variable_is_added_by_its_name_and_then_what_it_holds() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let (scratch, mut app) = with_an_agent("agent-adding", &[]);
 
     support::press_control_key(&mut app, KeyCode::End);
@@ -3706,9 +3607,7 @@ fn a_variable_is_added_by_its_name_and_then_what_it_holds() {
 /// with nothing to say what was wrong).
 #[test]
 fn a_variable_is_named_the_way_a_shell_names_one() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let (_scratch, mut app) = with_an_agent("agent-naming", &[]);
 
     support::press_control_key(&mut app, KeyCode::End);
@@ -3735,9 +3634,7 @@ fn a_variable_is_named_the_way_a_shell_names_one() {
 /// agent chosen in the meantime.
 #[test]
 fn a_variable_goes_to_the_agent_it_was_asked_for() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let (scratch, mut app) = with_an_agent("agent-pinned", &[]);
 
     support::press_control_key(&mut app, KeyCode::End);
@@ -3775,9 +3672,7 @@ fn a_variable_goes_to_the_agent_it_was_asked_for() {
 /// the variable).
 #[test]
 fn a_variable_is_changed_with_enter_and_taken_away_with_delete() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let (scratch, mut app) = with_an_agent_set(
         "agent-removing",
         &[],
@@ -3814,9 +3709,7 @@ fn a_variable_is_changed_with_enter_and_taken_away_with_delete() {
 /// `Settings::setting_rows` instead is the next test's.
 #[test]
 fn a_choice_the_agent_no_longer_offers_says_so_on_its_row() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let (_scratch, mut app) = with_an_agent_set(
         "agent-gone",
         &[
@@ -3885,9 +3778,7 @@ fn a_choice_the_agent_no_longer_offers_says_so_on_its_row() {
 /// is not on screen.
 #[test]
 fn a_warning_is_counted_where_the_page_decides_what_is_on_it() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let ways = ["one", "two", "three", "four"];
     let offers: Vec<_> = ways
         .iter()
@@ -3923,9 +3814,7 @@ fn a_warning_is_counted_where_the_page_decides_what_is_on_it() {
 /// removing it: the row went on naming a value and the file kept it.
 #[test]
 fn choosing_what_a_conversation_starts_on_is_written_down_and_can_be_undone() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let (scratch, mut app) = with_an_agent(
         "agent-choose",
         &[offered(
@@ -3996,9 +3885,7 @@ fn choosing_what_a_conversation_starts_on_is_written_down_and_can_be_undone() {
 /// reader's.
 #[test]
 fn the_trees_page_has_no_group_for_the_agent() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let (_scratch, mut app) = with_an_agent(
         "agent-project",
         &[offered(
@@ -4049,9 +3936,7 @@ fn the_trees_page_has_no_group_for_the_agent() {
 /// activated whichever agent the invisible focus was on.
 #[test]
 fn the_projects_page_has_one_tab() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let (_scratch, mut app) = with_an_agent("project-tabs", &[]);
     // Something for an invisible focus to land on, if there were one.
     app.handle(Event::Agent(obelus_agent::Event::Registry {
@@ -4132,9 +4017,7 @@ fn the_projects_page_has_one_tab() {
 /// the reader can see.
 #[test]
 fn walking_the_cards_rewrites_marks_and_a_still_frame_does_not() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("marks-move");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -4217,9 +4100,7 @@ fn walking_the_cards_rewrites_marks_and_a_still_frame_does_not() {
 /// so none of those frames is written with the caret put out.
 #[test]
 fn install_progress_moves_no_mark() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("marks-installing");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -4275,9 +4156,7 @@ fn install_progress_moves_no_mark() {
 /// rather than the app's (the mark does not move with the clock).
 #[test]
 fn an_install_turns_its_mark() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("install-turns");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -4345,9 +4224,7 @@ fn an_install_turns_its_mark() {
 /// the arm that writes the two versions (they go).
 #[test]
 fn an_update_turns_its_mark() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("update-turns");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -4420,9 +4297,7 @@ fn one_agent() -> Event {
 /// would let that picture be written under a visible caret.
 #[test]
 fn a_mark_arriving_is_a_picture_to_write() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("marks-arriving");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -4483,9 +4358,7 @@ fn a_mark_arriving_is_a_picture_to_write() {
 /// back every time a scrolled row moves the marks.
 #[test]
 fn an_empty_filter_has_no_caret() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("empty-filter");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -4616,9 +4489,7 @@ impl Told {
 /// the first empty.
 #[test]
 fn the_size_of_the_text_reaches_whatever_is_drawing() {
-    let _taken = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _taken = crate::turn();
     let scratch = temporary("sizing");
     let file = settings_file(&scratch);
     std::fs::write(&file, "font_size = 20\n").expect("the settings");
@@ -4650,9 +4521,7 @@ fn the_size_of_the_text_reaches_whatever_is_drawing() {
 /// `drawn_by` and the first has nothing to compare.
 #[test]
 fn what_the_page_is_drawn_on_reaches_whatever_is_drawing() {
-    let _taken = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _taken = crate::turn();
     let scratch = temporary("grounding");
     let file = settings_file(&scratch);
     std::fs::write(&file, "theme = \"light\"\n").expect("the settings");
@@ -4685,9 +4554,7 @@ fn what_the_page_is_drawn_on_reaches_whatever_is_drawing() {
 /// `moved` in `set_theme`, and the count goes up by one a frame.
 #[test]
 fn a_theme_being_previewed_is_what_the_window_is_drawn_on() {
-    let _taken = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _taken = crate::turn();
     let scratch = temporary("previewing");
     let file = settings_file(&scratch);
     // Dark, because it is the first of the two: moving down from it walks
@@ -4750,9 +4617,7 @@ fn a_theme_being_previewed_is_what_the_window_is_drawn_on() {
 /// `drawn_by` and the first has nothing to compare.
 #[test]
 fn the_colours_a_hold_is_drawn_in_reach_whatever_is_drawing() {
-    let _taken = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _taken = crate::turn();
     let scratch = temporary("holding");
     let file = settings_file(&scratch);
     std::fs::write(&file, "theme = \"light\"\n").expect("the settings");
@@ -4788,7 +4653,7 @@ fn the_colours_a_hold_is_drawn_in_reach_whatever_is_drawing() {
 /// which is what it did before Obelus said anything about its own files.
 #[test]
 fn a_settings_file_that_will_not_read_is_marked_on_that_file() {
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("unreadable");
     let file = settings_file(&scratch);
     std::fs::write(&file, "theme = \"dark\"\nfont_size 15\n").expect("writing a settings file");
@@ -4830,7 +4695,7 @@ fn a_settings_file_that_will_not_read_is_marked_on_that_file() {
 /// reads, which leaves the old mark beside the new reading.
 #[test]
 fn fixing_the_settings_file_takes_the_mark_away() {
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("fixed");
     let file = settings_file(&scratch);
     std::fs::write(&file, "theme = \"dark\"\nfont_size 15\n").expect("writing a settings file");
@@ -4860,7 +4725,7 @@ fn fixing_the_settings_file_takes_the_mark_away() {
 /// leaves the count at zero.
 #[test]
 fn a_line_that_did_nothing_is_a_warning_on_that_line() {
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("ignored");
     let file = settings_file(&scratch);
     std::fs::write(
@@ -4913,7 +4778,7 @@ fn a_line_that_did_nothing_is_a_warning_on_that_line() {
 /// which is the reader's own file.
 #[test]
 fn what_a_project_may_not_set_is_marked_on_the_projects_file() {
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = project("not-allowed", "wrap = true\nagent = \"copilot\"\n");
     let theirs = scratch.path().join(".obelus").join("config.toml");
 
@@ -4947,9 +4812,7 @@ fn what_a_project_may_not_set_is_marked_on_the_projects_file() {
 /// and at twice that, which leaves `No workflow` off the top.
 #[test]
 fn each_workflow_says_what_it_does_where_it_is_chosen() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("workflows");
     let mut app = open(&settings_file(&scratch));
     support::type_text(&mut app, "workflow");
@@ -4991,9 +4854,7 @@ fn each_workflow_says_what_it_does_where_it_is_chosen() {
 /// drawing nothing for a `Text`, which leaves `Ada` off the page.
 #[test]
 fn what_an_agent_calls_itself_is_typed() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("speaks-as");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -5044,9 +4905,7 @@ fn what_an_agent_calls_itself_is_typed() {
 /// file given the title, which writes `No workflow`.
 #[test]
 fn a_workflow_is_called_by_its_title_and_written_by_its_name() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("workflow-titles");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -5105,9 +4964,7 @@ fn a_workflow_is_called_by_its_title_and_written_by_its_name() {
 /// number, which writes nothing a week long.
 #[test]
 fn how_long_a_conversation_is_kept_is_said_as_a_length_of_time() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("conversation-days");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -5152,9 +5009,7 @@ fn how_long_a_conversation_is_kept_is_said_as_a_length_of_time() {
 /// same.
 #[test]
 fn a_number_of_days_the_list_does_not_offer_is_said_as_days() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("conversation-days-by-hand");
     let file = settings_file(&scratch);
     std::fs::write(&file, "conversation_days = 14\n").expect("the settings");
@@ -5184,7 +5039,7 @@ fn a_number_of_days_the_list_does_not_offer_is_said_as_days() {
 /// problem at all.
 #[test]
 fn a_workflow_nothing_answers_to_is_marked() {
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = project("no-workflow", "workflow = \"feature_branch\"\n");
     let theirs = scratch.path().join(".obelus").join("config.toml");
 
@@ -5214,7 +5069,7 @@ fn a_workflow_nothing_answers_to_is_marked() {
 /// word leaves the start with nothing to say.
 #[test]
 fn a_workflow_nothing_answers_to_is_said_on_the_welcome_screen() {
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = project("no-workflow-welcome", "workflow = \"feature_branch\"\n");
     let mut app = App::new(Vec::new());
     app.working_directory_for_test(scratch.path().to_path_buf());
@@ -5250,7 +5105,7 @@ fn a_workflow_nothing_answers_to_is_said_on_the_welcome_screen() {
 /// in `why_not` again: `ctrl+shift+u` was a fourth.
 #[test]
 fn a_key_that_bound_nothing_is_a_warning_on_that_line() {
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("unbound");
     let file = settings_file(&scratch);
     std::fs::write(
@@ -5302,7 +5157,7 @@ fn a_key_that_bound_nothing_is_a_warning_on_that_line() {
 /// which leaves nothing written down.
 #[test]
 fn a_theme_nothing_answers_to_is_a_warning_on_its_line() {
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("no-theme");
     let file = settings_file(&scratch);
     std::fs::write(&file, "icons = true\ntheme = \"moonlight\"\n").expect("writing the settings");
@@ -5334,7 +5189,7 @@ fn a_theme_nothing_answers_to_is_a_warning_on_its_line() {
 /// mark with nowhere to be and the count at zero.
 #[test]
 fn a_theme_file_that_will_not_read_is_an_error_on_that_file() {
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = temporary("bad-theme");
     let themes = scratch.path().join("themes");
     std::fs::create_dir_all(&themes).expect("a themes directory");
@@ -5374,7 +5229,7 @@ fn a_theme_file_that_will_not_read_is_an_error_on_that_file() {
 /// is what it did.
 #[test]
 fn notes_that_will_not_read_are_an_error_on_the_notes_file() {
-    let _taken = SETTINGS.lock().expect("the lock");
+    let _taken = crate::turn();
     let scratch = support::Scratch::new("notes-unreadable");
     support::make_room_for_notes(scratch.path());
     let notes = obelus_todo::path(scratch.path()).expect("a tree that is there");
@@ -5415,9 +5270,7 @@ fn notes_that_will_not_read_are_an_error_on_the_notes_file() {
 /// is drawn, or `after + 1` in place of `arrow_at` beside a value.
 #[test]
 fn nothing_on_the_page_writes_in_the_column_the_bar_is_in() {
-    let _taken = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _taken = crate::turn();
     let scratch = temporary("bar-column");
     let file = settings_file(&scratch);
     // A theme whose name is wider than the column a value is given, so the
@@ -5474,6 +5327,7 @@ fn body_of(dump: &str) -> Vec<&str> {
 /// whose whole shape is names under names.
 #[test]
 fn a_groups_name_is_bold() {
+    let _turn = crate::turn();
     let scratch = temporary("heading-bold");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -5553,9 +5407,7 @@ fn drag_the_bar_down(app: &mut App, width: u16, height: u16) {
 /// was.
 #[test]
 fn the_settings_go_where_their_bar_is_dragged() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("dragged");
     let mut app = open(&settings_file(&scratch));
     let before = support::render(&mut app, 66, 12);
@@ -5582,9 +5434,7 @@ fn the_settings_go_where_their_bar_is_dragged() {
 /// again. The bar's mark goes down and the first card stays at the top.
 #[test]
 fn the_agents_go_where_their_bar_is_dragged() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("cards-dragged");
     let mut app = open(&settings_file(&scratch));
     support::press(&mut app, KeyCode::BackTab);
@@ -5640,9 +5490,7 @@ fn the_agents_go_where_their_bar_is_dragged() {
 fn the_keys_page_chooses_where_the_keys_start() {
     use crossterm::event::{KeyEvent, KeyModifiers};
     use obelus_keymap::Context;
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("keys-from");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -5727,6 +5575,7 @@ fn the_keys_page_chooses_where_the_keys_start() {
 /// Broken deliberately by adding a fifth word to `KEY_LAYOUTS`.
 #[test]
 fn every_layout_offered_is_a_table() {
+    let _turn = crate::turn();
     let named: Vec<_> = obelus_config::KEY_LAYOUTS
         .iter()
         .map(|word| obelus_keymap::Layout::named(word))
@@ -5748,9 +5597,7 @@ fn every_layout_offered_is_a_table() {
 fn a_layout_nothing_answers_to_stays_in_the_file() {
     use crossterm::event::{KeyEvent, KeyModifiers};
     use obelus_keymap::Context;
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("keys-from-misspelt");
     let file = settings_file(&scratch);
     std::fs::write(&file, "keys_from = \"mnemnic\"\n").expect("the file");
@@ -5786,9 +5633,7 @@ fn a_layout_nothing_answers_to_stays_in_the_file() {
 /// both `called` and the list read.
 #[test]
 fn every_layout_is_offered_with_a_name_and_what_it_is() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("layout-words");
     let file = settings_file(&scratch);
     let mut app = open(&file);
@@ -5816,9 +5661,7 @@ fn every_layout_is_offered_with_a_name_and_what_it_is() {
 /// the switch stays as it was.
 #[test]
 fn a_double_click_on_a_settings_name_is_enter() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = crate::turn();
     let scratch = temporary("switch-double-click");
     let file = settings_file(&scratch);
     let mut app = open(&file);

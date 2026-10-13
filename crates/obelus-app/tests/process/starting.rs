@@ -6,13 +6,13 @@
 //! whether Obelus opens on a file or on the list. Each of those was a line
 //! in `main` with a comment explaining itself and nothing checking it.
 //!
-//! A binary of its own because a start reads the settings and applies them
-//! to the whole process: the tree here that says `tab_width = 8` lays every
-//! tab in it at eight, under any test beside it that draws one.
-
-mod support;
+//! Not in the application's binary because a start reads the settings and
+//! applies them to the whole process: the tree here that says `tab_width = 8`
+//! lays every tab in it at eight, under any test beside it that draws one.
 
 use obelus_app::startup;
+
+use crate::support;
 
 /// What the binary would hand in, standing in for a commit nobody built.
 const BUILT: &str = "abc1234";
@@ -29,6 +29,7 @@ const BUILT: &str = "abc1234";
 /// `collect::<Result<_>>()?`: the start then succeeds with no documents.
 #[test]
 fn a_path_that_cannot_be_read_stops_the_start() {
+    let _turn = crate::turn();
     let scratch = support::Scratch::new("starting-missing");
     let missing = scratch.path().join("not-here.rs");
 
@@ -47,6 +48,7 @@ fn a_path_that_cannot_be_read_stops_the_start() {
 /// happen to run.
 #[test]
 fn a_file_is_opened_in_the_tree_it_is_in() {
+    let _turn = crate::turn();
     let scratch = support::Scratch::new("starting-file");
     let inner = scratch.path().join("src");
     std::fs::create_dir_all(&inner).expect("making it");
@@ -84,6 +86,7 @@ fn a_file_is_opened_in_the_tree_it_is_in() {
 /// `app.work_in(root)` call: `pinned` comes back empty.
 #[test]
 fn the_tree_is_settled_before_its_settings_are_read() {
+    let _turn = crate::turn();
     let scratch = support::Scratch::new("starting-tree-settings");
     std::fs::create_dir_all(scratch.path().join(".obelus")).expect("making it");
     std::fs::write(

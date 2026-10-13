@@ -1,11 +1,10 @@
 //! The remote page: which chat this machine can be reached from, and what is
 //! kept for it.
 //!
-//! A binary of its own because the secrets are kept in one directory for the
-//! whole process and the platform a test connects to is faked for all of it,
-//! and because its tests apply settings, which `settings` says the cost of.
-
-mod support;
+//! Not in the application's binary because the secrets are kept in one
+//! directory for the whole process and the platform a test connects to is faked
+//! for all of it, and because its tests apply settings, which `settings` says
+//! the cost of.
 
 use crossterm::event::KeyCode;
 use obelus_app::{
@@ -14,15 +13,13 @@ use obelus_app::{
 };
 use obelus_command::Command;
 
-/// The secrets are kept in one directory for the whole process, and the
-/// settings are applied to process-wide state, so these take turns.
-static TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+use crate::support;
 
-/// A test's turn, with the secrets emptied for it.
+/// A test's turn, with the secrets emptied for it: the binary's turn, because
+/// the secrets are kept in one directory for the whole process and the
+/// settings are applied to process-wide state.
 fn turn() -> std::sync::MutexGuard<'static, ()> {
-    let turn = TURN
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let turn = crate::turn();
     secrets_of_its_own();
     // Before the state directory is asked anything: a test comes to its
     // turn before it makes a scratch, and until something has said where

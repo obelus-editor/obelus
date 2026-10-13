@@ -5,14 +5,14 @@
 //! most of the time it took to build the suite. So everything that can share
 //! a process shares this one.
 //!
-//! What cannot is a file beside this directory rather than in it, and says
-//! why at its top -- a switch the whole process reads, set by its tests and
-//! never set back. The settings apply the glyph switch and the tab width,
-//! the remote page keeps its secrets in one directory for the process, and
-//! a start applies whatever settings it reads -- the machine's own among
-//! them; a test here drawing a screen while one of those ran would draw it
-//! wrong. And the page that asks which project keeps one list for the
-//! process, which every test that asks rewrites.
+//! What cannot is elsewhere and says why at its top. The settings apply the
+//! glyph switch and the tab width, the remote page keeps its secrets in one
+//! directory for the process, and a start applies whatever settings it
+//! reads -- the machine's own among them; a test here drawing a screen
+//! while one of those ran would draw it wrong. Those share `process/`,
+//! whose tests take turns. What sets something and never sets it back is a
+//! file beside both. And the page that asks which project keeps one list
+//! for the process, which every test that asks rewrites.
 //!
 //! What they do share has to be taken in turns across files now, not only
 //! within one: the clipboard and the link opener are one thing for this
