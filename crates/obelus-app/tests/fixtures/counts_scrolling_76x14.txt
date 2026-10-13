@@ -36,7 +36,7 @@ c fg=#e4e4e7 bg=#18181b
 d fg=#71717a bg=#18181b
 e fg=#a1a1aa bg=#18181b
 f fg=#52525b bg=#27272a
-g fg=#404047 bg=#18181b
+g fg=#18181b bg=#18181b
 h fg=#a1a1aa bg=#27272a
 -- cursor --
 none

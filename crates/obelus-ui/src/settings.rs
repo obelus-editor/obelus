@@ -419,6 +419,15 @@ fn rows_above(rows: &[Row], first: usize) -> usize {
         .sum()
 }
 
+/// Whether a page's rows are more than the screen has, which is whether it
+/// has a bar and gives that column up to it.
+///
+/// Asked in rows and not of the window, which counts entries: an entry here
+/// is as tall as what it says.
+fn scrolls(rows: &[Row], height: u16) -> bool {
+    rows_above(rows, rows.len()) > usize::from(height)
+}
+
 fn placed(region: Rect, rows: &[Row], window: &obelus_component::window::Window) -> Vec<Placed> {
     let mut placed = Vec::new();
     let mut y = region.y;
@@ -487,7 +496,7 @@ impl SettingsView<'_> {
         let found = placed(region, &rows, window)
             .into_iter()
             .find(|placed| y >= placed.area.y && y < placed.area.y + placed.area.height)?;
-        let room = match window.scrollable(region.height) {
+        let room = match scrolls(&rows, region.height) {
             true => region.width.saturating_sub(crate::editor::SCROLLBAR_WIDTH),
             false => region.width,
         };
@@ -981,19 +990,27 @@ impl SettingsView<'_> {
         }
 
         // The same bar every other list has when there is more of it than
-        // there is screen.
+        // there is screen -- measured in rows, as the page of cards is: an
+        // entry is as tall as what it says, so a page of a dozen of them can
+        // be twice the screen, and one measured in entries was a page that
+        // fitted, with no bar and nothing kept out of the bar's column.
         let window = self.settings.window();
-        let scrolling = window.scrollable(region.height);
+        let first = window.top().min(rows.len());
+        let above = rows_above(rows, first);
+        let scrolling = scrolls(rows, region.height);
         let bar = scrolling
-            .then(|| crate::scrollbar(cells, region, window.top(), rows.len(), self.theme))
+            .then(|| {
+                let total = rows_above(rows, rows.len());
+                let bar = crate::scrollbar(cells, region, above, total, self.theme);
+                // And what the window is moved by is the entry.
+                let heights: Vec<u16> = rows.iter().map(entry_rows).collect();
+                crate::bars::in_items(bar, &heights);
+                bar
+            })
             .flatten();
         // And where the list has got to, for a front end that can draw it
-        // arriving rather than simply being there -- in rows of the
-        // screen, which on this page is not the entry the window is on:
-        // see `entry_rows`. The bar above is the other question and takes
-        // the entry, because what it says is a proportion.
-        let first = window.top().min(rows.len());
-        if let Ok(top) = i64::try_from(rows_above(rows, first)) {
+        // arriving rather than simply being there, in the same rows.
+        if let Ok(top) = i64::try_from(above) {
             crate::shapes::scrolled(
                 Rect {
                     width: region.width.saturating_sub(crate::editor::SCROLLBAR_WIDTH),

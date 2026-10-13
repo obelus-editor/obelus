@@ -20,15 +20,15 @@ screen 60x16  editor 60x14  status 60x1
  0|abbbbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  2|cddddddddddcccccccccccccccccccccccccccccccccccccccccccccccce
- 3|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
- 4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbfbbbbbbbbbbbe
- 5|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
- 6|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
- 7|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccg
- 8|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccg
- 9|cccccaaaaaaaaaaacccccccccccccccccccccccccccccccccccccccccccg
-10|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccg
-11|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccg
+ 3|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccf
+ 4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbgbbbbbbbbbbbf
+ 5|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccf
+ 6|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccf
+ 7|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccf
+ 8|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccf
+ 9|cccccaaaaaaaaaaacccccccccccccccccccccccccccccccccccccccccccf
+10|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccf
+11|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccf
 12|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 13|cchhhhhhhcaaaaaacccccccccccccccccccccccccccccccccccccccccccc
 14|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -39,8 +39,8 @@ b fg=#e4e4e7 bg=#27272a
 c fg=#e4e4e7 bg=#18181b
 d fg=#d4d4d8 bg=#18181b
 e fg=#a1a1aa bg=#18181b
-f fg=#52525b bg=#27272a
-g fg=#404047 bg=#18181b
+f fg=#18181b bg=#18181b
+g fg=#52525b bg=#27272a
 h fg=#a1a1aa bg=#27272a
 -- cursor --
 none

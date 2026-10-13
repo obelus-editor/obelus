@@ -80,3 +80,38 @@ fn the_counts_page_ends_in_a_row_of_its_own() {
     );
     support::check("counts_60x16", &dump);
 }
+
+/// A page of settings longer than the screen has a bar, however few
+/// settings it is.
+///
+/// Forty rows hold every setting's name but not what each one says: there
+/// are fewer entries than rows, and more rows than the screen. Whether
+/// the page scrolled was asked of the window, which counts entries, so
+/// this page said it fitted -- no bar, the rows drawn into its column, and
+/// in a window nothing at all on the right to say there was more below.
+///
+/// Broken deliberately by asking `window.scrollable(region.height)` again
+/// in `SettingsView::column`: the last column is blank.
+#[test]
+fn a_page_of_settings_longer_than_the_screen_has_a_bar() {
+    let mut app = app();
+    page(&mut app, "open-settings");
+    let dump = support::render(&mut app, 60, 40);
+    let text = support::text_block(&dump);
+    // From the page's first row to its last, which is the one above the
+    // rule over the key at its foot.
+    let page = text.lines().filter_map(|line| {
+        let (number, row) = line.split_once('|')?;
+        let number: u16 = number.trim().parse().ok()?;
+        (2..36).contains(&number).then_some((number, row))
+    });
+    let mut seen = 0;
+    for (number, row) in page {
+        assert!(
+            row.ends_with('\u{2588}'),
+            "row {number} of the page has no bar at its end:\n{dump}"
+        );
+        seen += 1;
+    }
+    assert_eq!(seen, 34, "the page's rows were not found:\n{dump}");
+}
