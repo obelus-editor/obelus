@@ -5507,6 +5507,66 @@ fn a_question_that_arrives_while_an_input_method_writes_waits_behind_the_box() {
     }
 }
 
+/// A press where a held card is about to be does nothing: it is meant for
+/// the card -- the second of a double click on an answer, whose first let
+/// the next question through -- and what is under it until the card comes
+/// is the transcript, where a press takes the keys out of the box.
+///
+/// A card taller than the box is what makes the two places differ, so the
+/// question here is a form's, and the screen is short enough for the
+/// transcript to reach down behind it.
+///
+/// Broken deliberately by letting the press through (the `held` band in
+/// `pointer_in_chat` taken out): the keys leave the box.
+#[test]
+fn a_press_where_a_held_card_is_about_to_be_does_nothing() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    // Enough said already for the transcript to reach down behind the card.
+    for _ in 0..3 {
+        support::type_text(&mut app, "/echo ");
+        support::press(&mut app, KeyCode::Enter);
+        pump(&mut app, &events, "the echo", |app| {
+            app.talking() == obelus_agent::Talking::Ready
+        });
+    }
+    support::type_text(&mut app, "/ask ");
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "and");
+    let deadline = Instant::now() + patience();
+    while !app.is_asking() {
+        assert!(
+            Instant::now() < deadline,
+            "gave up waiting for the question"
+        );
+        match events.recv_timeout(Duration::from_millis(200)) {
+            Ok(event) => app.handle(event),
+            Err(_) => support::type_text(&mut app, "a"),
+        }
+    }
+    let short = 12;
+    let dump = support::render(&mut app, WIDTH, short);
+    assert!(app.card().is_none(), "the question is not held:\n{dump}");
+    // The row saying the question is held: the transcript's last, and one
+    // the card covers once it is in front.
+    let y = rows(&dump)
+        .iter()
+        .position(|row| row.contains("It has a question"))
+        .unwrap_or_else(|| panic!("nothing says a question is held:\n{dump}"));
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: 6,
+        y: u16::try_from(y).expect("a row on the screen"),
+    });
+    assert_eq!(
+        app.chat().map(obelus_component::chat::Chat::focus),
+        Some(obelus_component::chat::Focus::Writing),
+        "a press where the card is about to be took the keys out of the box"
+    );
+}
+
 /// A question that arrives while the reader is choosing one of the agent's
 /// commands leaves the list up, and the enter they press chooses from it.
 ///

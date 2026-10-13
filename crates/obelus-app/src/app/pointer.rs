@@ -167,6 +167,19 @@ impl App {
         if carded && self.press_in_card(kind, x, y) {
             return;
         }
+        // And where a question is held behind the box, the rows its card is
+        // about to cover take nothing: a press there is meant for the card
+        // -- the second of a double click whose first answered the one
+        // before -- and what is under it now would move the keys out of the
+        // box, or go somewhere the transcript names.
+        let held = self
+            .conversation()
+            .filter(|talk| talk.held)
+            .and_then(|talk| talk.card.as_ref())
+            .map(|card| obelus_ui::chat::bands_for(area, card).writing);
+        if held.is_some_and(|band| band.contains(ratatui::layout::Position { x, y })) {
+            return;
+        }
         let Some(at) = self
             .conversation()
             .and_then(|talk| obelus_ui::chat::ChatView::place_at(area, &talk.chat, carded, x, y))
