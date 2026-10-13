@@ -1238,8 +1238,13 @@ impl Motion {
             } else if self.animates && !edited {
                 self.pair.opened = Some(now);
             }
+            // Started, and never stopped here: a pair that came on from
+            // none is no reason for the last one to stop going out, which
+            // is the caret crossing the space between `(a) (b)`.
             let went = self.animates && !edited && !self.pairs.is_empty();
-            self.unpair.opened = went.then_some(now);
+            if went {
+                self.unpair.opened = Some(now);
+            }
             self.pairs = drawn;
             return went;
         }
@@ -2408,7 +2413,9 @@ mod tests {
     /// Break: start `unpair` whatever changed -- drop the `!edited` from
     /// `went` -- and a key typed in front of a bracket leaves a light
     /// going out a cell behind it; leave `unpair` out of `Motion::wake`
-    /// and the light goes out at whatever rate the blink wants.
+    /// and the light goes out at whatever rate the blink wants; set it to
+    /// `went` whatever it was, and crossing from one pair to the next
+    /// through the space between puts the first light out at once.
     #[test]
     fn a_pair_the_caret_left_goes_out() {
         let base = Instant::now();
@@ -2434,8 +2441,20 @@ mod tests {
         let later = base + LIGHT_DOWN * 2;
         motion.advance(later, true);
         assert!(motion.pairs_drawn(std::iter::empty(), later));
-        // And a pair the text moved does not go out.
+        // And going into the next pair from none does not stop it going
+        // out: the space between `(a) (b)`.
+        motion.pairs_drawn([pair(50, 1)].into_iter(), later);
+        assert!(
+            motion.moving(later + LIGHT_UP).unpair.is_some(),
+            "crossing the space put the last light out"
+        );
+        let later = later + LIGHT_DOWN * 2;
+        motion.advance(later, true);
+        // And a pair the text moved does not go out -- asked once the
+        // light the step into it put out has gone.
         motion.pairs_drawn([pair(10, 1)].into_iter(), later);
+        let later = later + LIGHT_DOWN * 2;
+        motion.advance(later, true);
         assert!(!motion.pairs_drawn([pair(11, 2)].into_iter(), later));
         assert_eq!(
             motion.moving(later).unpair,
