@@ -2676,7 +2676,8 @@ impl App {
             .is_some_and(|talk| talk.asking.is_some())
     }
 
-    /// Makes room for a question the agent is waiting on an answer to.
+    /// Readies the conversation for a question the agent is waiting on an
+    /// answer to, by closing the list of its commands.
     ///
     /// It does not bring the conversation to the front, and the name is
     /// what is left of one that did: a conversation is a document, so a
@@ -2685,21 +2686,16 @@ impl App {
     /// whatever they were reading. Every question names its conversation,
     /// so none is left to be asked wherever the reader happens to be.
     ///
-    /// What is still here is the clearing: a card is drawn inside the
-    /// conversation, so anything of Obelus's own over that region would be a
-    /// card the reader cannot see while the agent waits on it.
+    /// Nor does it close what the reader has open over the conversation it
+    /// is in: the card waits behind a list as it waits in a conversation
+    /// they are not in, and is there when the list goes. It used to clear
+    /// the region, and the enter a reader pressed on a row of the list it
+    /// closed under them answered the card with its first answer.
     fn show_the_question(&mut self, whose: Whose) {
-        // The clearing is for the screen, so it happens only where the
-        // question is going onto it. A question waiting in a conversation
-        // the reader is not in has nothing to clear and no business
-        // closing what is in front of them.
-        if self.is_here(whose) {
-            self.make_room(Room::Region);
-        }
-        // And nothing of the reader's own over it. The list of the agent's
-        // commands follows what is being typed in the box, and the box is
-        // what the card covers: left open it would be a list over a
-        // question, about words the keys are no longer going to.
+        // The list of the agent's commands belongs to the box: it follows
+        // what is being typed there, and the box is what the card covers.
+        // Left open it would be a list over a question, about words the
+        // keys are no longer going to.
         if let Some(talk) = self.talk_mut(whose) {
             talk.slash = None;
         }
@@ -3614,14 +3610,6 @@ impl App {
         self.documents
             .iter()
             .position(|document| document.as_ref().and_then(Document::chat).is_some_and(&is))
-    }
-
-    /// Whether what `whose` names is what the reader is looking at.
-    fn is_here(&self, whose: Whose) -> bool {
-        match whose {
-            Whose::Whoever => true,
-            Whose::One(id) => self.current == Some(id),
-        }
     }
 
     /// The conversation `whose` names, for the rest of the application.
