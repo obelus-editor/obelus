@@ -152,7 +152,8 @@ fn inside_a_pair_the_innermost_one_is_the_answer() {
 }
 
 /// Deliberate break: dropping the `literal` check from the backward walk
-/// pairs the `(` in the string with the `)` after it.
+/// stops it at the `(` in the string, which `pair_at` will not pair, so the
+/// cursor on `x` gets nothing at all where the call around it was.
 #[test]
 fn a_bracket_in_a_string_is_not_the_one_the_cursor_is_in() {
     let source = "f(\"(\", x);\n";

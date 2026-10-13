@@ -2225,6 +2225,35 @@ mod tests {
         );
     }
 
+    /// Half a pair of brackets is still the pair's only where the cell
+    /// holds a bracket and nothing has been put over it.
+    ///
+    /// A list opened over the file is drawn after it in the same frame,
+    /// and its rows can hold a bracket at the very cell the file's was in
+    /// -- so neither the glyph nor the layer alone says whose the cell is.
+    ///
+    /// Deliberate break: take `page.layer` out of `Paired::still_said`, and
+    /// the light shines on the pane's `(`; take the bracket out, and it
+    /// shines on a letter the frame wrote over the file's bracket.
+    #[test]
+    fn half_a_pair_under_a_pane_is_not_the_pairs() {
+        let mut page = written(&["(a)(b)"]);
+        page.put_over(&[pane(Rect::new(3, 0, 3, 1))]);
+        let half = |x, depth| Paired {
+            area: Rect::new(x, 0, 1, 1),
+            pair: Pair {
+                document: 0,
+                version: 0,
+                open: 0,
+            },
+            depth,
+        };
+        assert!(half(0, 0).still_said(&page), "the file's own bracket");
+        assert!(!half(1, 0).still_said(&page), "a letter is no bracket");
+        assert!(!half(3, 0).still_said(&page), "the pane's cell");
+        assert!(half(3, 1).still_said(&page), "said by the pane itself");
+    }
+
     /// A change mark under a pane keeps only the rows the pane is not on.
     ///
     /// Deliberate break: take `page.layer` out of `Stroked::holds`, and
