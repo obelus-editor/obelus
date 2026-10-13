@@ -887,6 +887,7 @@ fn wants_a_frame(stepped: bool, wake: Option<Wake>, covered: bool) -> bool {
 #[cfg(windows)]
 fn filled_with(window: &Window, ground: Color) {
     use windows_sys::Win32::{
+        Foundation::{GetLastError, SetLastError},
         Graphics::Gdi::{CreateSolidBrush, DeleteObject},
         UI::WindowsAndMessaging::{GCLP_HBRBACKGROUND, SetClassLongPtrW},
     };
@@ -908,15 +909,21 @@ fn filled_with(window: &Window, ground: Color) {
         if brush.is_null() {
             return;
         }
+        // Nothing before and a failure both answer zero, and only the
+        // error says which -- a failure leaves the new brush nobody's.
+        SetLastError(0);
         let was = SetClassLongPtrW(handle.hwnd.get() as _, GCLP_HBRBACKGROUND, brush as isize);
         if was != 0 {
             DeleteObject(was as _);
+        } else if GetLastError() != 0 {
+            DeleteObject(brush);
         }
     }
 }
 
-/// Nothing to fill: the strip was only ever seen on Windows, and on
-/// Wayland the compositor waits for the frame.
+/// Nothing to fill: the strip was only ever seen on Windows. On Wayland
+/// the compositor waits for the frame, and neither X11 nor macOS has been
+/// seen to show one before it.
 #[cfg(not(windows))]
 const fn filled_with(_window: &Window, _ground: Color) {}
 
@@ -1538,6 +1545,10 @@ impl ApplicationHandler<Waking> for Showing {
                     if !self.shown
                         && let Some(window) = self.window.as_ref()
                     {
+                        // Whatever the ground: one that is the reset colour
+                        // is the colour `ground` starts at, which a change
+                        // to it never reaches.
+                        filled_with(window, self.ground);
                         window.set_visible(true);
                         self.shown = true;
                     }
