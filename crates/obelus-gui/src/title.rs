@@ -17,15 +17,26 @@
 //! second one and the window neither zooms nor goes to the Dock. Obelus
 //! answers it instead, the way the reader has told the system to (`Presses`)
 //! -- and keeps the press off the page, or a double click on the bar would
-//! be one on whatever row is under it. Windows keeps its own bar and lets it be
-//! painted, from Windows 11 on. Drawing the bar would mean drawing the
-//! buttons and answering the hit test they need, and winit keeps that
-//! message to itself -- so it would cost the snap layouts Windows opens
-//! over the maximise button, for a strip with nothing in it.
+//! be one on whatever row is under it.
 //!
-//! The words on the bar are the system's either way, in the system's ink,
-//! so what Obelus tells it is whether the page is dark: that is what
-//! decides whether the title and the buttons are drawn light or dark.
+//! Windows has no transparent bar to run the page up under: what it lets an
+//! application do is paint its bar one colour, which is the picture under
+//! the page stopping short of the top of the window. So there the page is
+//! given the bar's room outright -- the frame is the system's still, and
+//! with it the resizing, the shadow and the way a window goes to the
+//! taskbar, but the strip along the top is taken into the page (`windows`)
+//! -- and Obelus draws the three buttons on it (`Bar`). What it does not
+//! do is answer them itself. winit keeps the window's messages to itself,
+//! so Obelus listens beside it and tells Windows which part of the window
+//! is which: the bar, so that dragging, a double click and the menu are the
+//! system's, and the buttons by name, so that the layouts Windows opens
+//! over the maximise button still open there.
+//!
+//! The words on the bar are the system's on the other two, in the system's
+//! ink, so what Obelus tells it is whether the page is dark: that is what
+//! decides whether the title and the buttons are drawn light or dark. On
+//! Windows there are no words, for the reason there are none of Obelus's
+//! own: the title is "Obelus" and the file is on the status row.
 //!
 //! There is no switch to take the bar away, and there was one briefly. It
 //! did something on macOS, Windows and GNOME and nothing at all where most
@@ -35,9 +46,14 @@
 //! looking for it -- and on macOS, where it worked, a window with no bar is a
 //! window nothing can move.
 
+#[cfg(windows)]
+mod windows;
+
 use std::time::{Duration, Instant};
 
 use ratatui::style::Color;
+#[cfg(windows)]
+pub(crate) use windows::{Bar, drawn};
 use winit::window::{Theme, Window, WindowAttributes};
 
 /// The window as it is asked for, with the page running up under the title
@@ -105,6 +121,170 @@ pub(crate) const fn height(_window: &Window) -> f32 {
 /// bar rather than the page.
 pub(crate) fn under(y: f64, titled: f32) -> bool {
     y < f64::from(titled)
+}
+
+/// One of the three buttons Obelus draws on a bar it has taken into the
+/// page, in the order they stand along it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Button {
+    Minimise,
+    /// Or restore, on a window that is maximised already.
+    Maximise,
+    Close,
+}
+
+impl Button {
+    /// The three, left to right.
+    pub(crate) const ALL: [Self; 3] = [Self::Minimise, Self::Maximise, Self::Close];
+
+    /// How many buttons in from the right-hand edge this one starts.
+    const fn places_in(self) -> f32 {
+        match self {
+            Self::Minimise => 3.0,
+            Self::Maximise => 2.0,
+            Self::Close => 1.0,
+        }
+    }
+}
+
+/// What a place on a window whose bar is in the page is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(
+    not(any(windows, test)),
+    expect(dead_code, reason = "only Windows asks")
+)]
+pub(crate) enum Part {
+    /// Below the bar: the page's own.
+    Page,
+    /// The edge along the top, which resizes the window: the bar has taken
+    /// the frame's place there, and the frame was what the edge was on.
+    Edge,
+    /// The bar, which drags the window.
+    Bar,
+    Button(Button),
+}
+
+/// What part of a window a place on it is, in pixels from its top left.
+///
+/// The edge first, over the buttons as well, the way it is on a window
+/// with the system's own bar -- and not at all on a maximised window, which
+/// has no edge to move and whose top row of pixels is the one the pointer
+/// stops on, so a button there is one thrown at rather than aimed at.
+#[cfg_attr(
+    not(any(windows, test)),
+    expect(dead_code, reason = "only Windows asks")
+)]
+pub(crate) fn part(
+    (x, y): (f32, f32),
+    width: f32,
+    titled: f32,
+    button: f32,
+    edge: f32,
+    maximised: bool,
+) -> Part {
+    if y >= titled {
+        return Part::Page;
+    }
+    if !maximised && y < edge {
+        return Part::Edge;
+    }
+    Button::ALL
+        .into_iter()
+        .find(|&each| {
+            let [left, _, wide, _] = button_at(each, width, titled, button);
+            (left..left + wide).contains(&x)
+        })
+        .map_or(Part::Bar, Part::Button)
+}
+
+/// Where a button is on a window this wide, as left, top, width and height
+/// in pixels: the whole height of the bar, against the right-hand edge.
+pub(crate) fn button_at(which: Button, width: f32, titled: f32, button: f32) -> [f32; 4] {
+    [width - which.places_in() * button, 0.0, button, titled]
+}
+
+/// How the bar is to be drawn on this frame: what of it is the system's to
+/// measure and what the pointer is doing to it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(
+    not(any(windows, test)),
+    expect(dead_code, reason = "only Windows draws it")
+)]
+pub(crate) struct Drawn {
+    /// How wide each button is, in pixels.
+    pub(crate) button: f32,
+    /// How wide and tall the mark on one is, in pixels.
+    pub(crate) mark: f32,
+    /// How wide the pen the marks are drawn with is, in pixels.
+    pub(crate) pen: f32,
+    /// The button the pointer is over.
+    pub(crate) hovered: Option<Button>,
+    /// The button the left button went down on and is still down.
+    pub(crate) pressed: Option<Button>,
+    /// Whether the window is maximised, which is when the middle button
+    /// restores it instead and says so.
+    pub(crate) maximised: bool,
+    /// Whether the window has the reader's keys. One that has not draws
+    /// its marks fainter, the way the system's own bar does.
+    pub(crate) active: bool,
+}
+
+/// The red a close button turns under the pointer, which is the system's
+/// on every theme: it is the one button whose press loses something.
+const CLOSING: [f32; 4] = [196.0 / 255.0, 43.0 / 255.0, 28.0 / 255.0, 1.0];
+
+/// What a button is drawn in on a page this dark: the colour laid over the
+/// page behind it, if any, and the colour of its mark.
+///
+/// The system's own, which are the page's ink at a fraction rather than
+/// colours of their own -- a button lit in a grey is a grey square on a
+/// picture -- and a mark fainter on a window without the reader's keys,
+/// which is how a reader tells which of two windows those are.
+pub(crate) fn inks(drawn: &Drawn, button: Button, dark: bool) -> (Option<[f32; 4]>, [f32; 4]) {
+    let ink = match dark {
+        true => [1.0, 1.0, 1.0],
+        false => [0.0, 0.0, 0.0],
+    };
+    let [r, g, b] = ink;
+    let [red, green, blue, _] = CLOSING;
+    // Pressed only while the pointer is still over the button it went down
+    // on, the way a button anywhere is: dragged off it, it stops looking
+    // pressed, because letting go there does nothing.
+    match (
+        drawn.hovered == Some(button),
+        drawn.pressed == Some(button),
+        button,
+    ) {
+        (true, false, Button::Close) => (Some(CLOSING), [1.0; 4]),
+        (true, true, Button::Close) => (Some([red, green, blue, 0.9]), [1.0; 4]),
+        (true, false, _) => (Some([r, g, b, 0.06]), [r, g, b, 0.9]),
+        (true, true, _) => (Some([r, g, b, 0.04]), [r, g, b, 0.62]),
+        (false, ..) => match drawn.active {
+            true => (None, [r, g, b, 0.9]),
+            false => (None, [r, g, b, 0.36]),
+        },
+    }
+}
+
+/// The bar Obelus draws, which only Windows has -- see `windows`.
+#[cfg(not(windows))]
+pub(crate) enum Bar {}
+
+#[cfg(not(windows))]
+impl Bar {
+    pub(crate) fn height(&self, _window: &Window) -> f32 {
+        match *self {}
+    }
+
+    pub(crate) fn drawn(&self, _window: &Window, _active: bool) -> Drawn {
+        match *self {}
+    }
+}
+
+/// Nothing: the bar is the system's, or the page already runs up under it.
+#[cfg(not(windows))]
+pub(crate) const fn drawn(_window: &Window) -> Option<Bar> {
+    None
 }
 
 /// The presses on the title bar, so that the second of two is a double
@@ -264,7 +444,7 @@ pub(crate) fn follow(window: &Window, ground: Color) {
 /// By how bright it looks rather than by how much of each channel there
 /// is: pure green and pure blue are the same amount of colour, and green is
 /// a light page while blue is a dark one.
-fn dark((r, g, b): (u8, u8, u8)) -> bool {
+pub(crate) fn dark((r, g, b): (u8, u8, u8)) -> bool {
     let bright = 0.0722f32.mul_add(
         f32::from(b),
         0.2126f32.mul_add(f32::from(r), 0.7152 * f32::from(g)),
@@ -383,5 +563,106 @@ mod tests {
         assert!(!dark((0xef, 0xf1, 0xf5)), "a light one");
         assert!(!dark((0, 0xff, 0)), "green is light");
         assert!(dark((0x64, 0x64, 0xff)), "a blue this pale is still dark");
+    }
+
+    /// A window 1000 pixels wide with a bar 31 tall, buttons 46 wide and
+    /// an edge of 8, which is the system's at its standard density.
+    fn on(x: f32, y: f32, maximised: bool) -> Part {
+        part((x, y), 1000.0, 31.0, 46.0, 8.0, maximised)
+    }
+
+    /// The bar is the bar, the buttons stand against the right-hand edge in
+    /// the system's order, and below the bar is the page.
+    ///
+    /// Deliberate break: count the buttons in from the left, or put close
+    /// first. A press meant to minimise closes the window.
+    #[test]
+    fn the_buttons_stand_against_the_right_in_the_systems_order() {
+        assert_eq!(on(500.0, 20.0, false), Part::Bar);
+        assert_eq!(on(999.0, 20.0, false), Part::Button(Button::Close));
+        assert_eq!(on(954.0, 20.0, false), Part::Button(Button::Close));
+        assert_eq!(on(953.0, 20.0, false), Part::Button(Button::Maximise));
+        assert_eq!(on(907.0, 20.0, false), Part::Button(Button::Minimise));
+        assert_eq!(on(862.0, 20.0, false), Part::Button(Button::Minimise));
+        assert_eq!(on(861.0, 20.0, false), Part::Bar, "left of the three");
+        assert_eq!(on(999.0, 31.0, false), Part::Page, "the first row below");
+        assert_eq!(on(500.0, 400.0, false), Part::Page);
+    }
+
+    /// The top edge resizes a window, over the buttons as well, and a
+    /// maximised window has no edge: there the top row is the bar's.
+    ///
+    /// Deliberate break: leave `maximised` out of `part`. A maximised
+    /// window's top row then resizes, which a maximised window cannot, and
+    /// a pointer thrown into the corner misses the close button.
+    #[test]
+    fn the_top_edge_resizes_a_window_that_is_not_maximised() {
+        assert_eq!(on(500.0, 0.0, false), Part::Edge);
+        assert_eq!(on(999.0, 7.0, false), Part::Edge, "over close too");
+        assert_eq!(on(999.0, 8.0, false), Part::Button(Button::Close));
+        assert_eq!(on(500.0, 0.0, true), Part::Bar);
+        assert_eq!(on(999.0, 0.0, true), Part::Button(Button::Close));
+    }
+
+    /// A bar on a page of this darkness, with the pointer as given.
+    fn drawn(hovered: Option<Button>, pressed: Option<Button>, active: bool) -> Drawn {
+        Drawn {
+            button: 46.0,
+            mark: 10.0,
+            pen: 1.0,
+            hovered,
+            pressed,
+            maximised: false,
+            active,
+        }
+    }
+
+    /// Under the pointer the close button turns red with a white mark, on
+    /// a light page as on a dark one, and the others take a shade of the
+    /// page's own ink.
+    ///
+    /// Deliberate break: draw close lit the way the others are. The one
+    /// button that loses something then looks like the two that do not.
+    #[test]
+    fn close_turns_red_under_the_pointer() {
+        let close = Some(Button::Close);
+        for dark in [true, false] {
+            let (behind, mark) = inks(&drawn(close, None, true), Button::Close, dark);
+            assert_eq!(behind, Some(CLOSING), "dark: {dark}");
+            assert_eq!(mark, [1.0; 4], "dark: {dark}");
+        }
+        let (behind, mark) = inks(
+            &drawn(Some(Button::Minimise), None, true),
+            Button::Minimise,
+            false,
+        );
+        assert_eq!(behind, Some([0.0, 0.0, 0.0, 0.06]));
+        assert_eq!(mark[..3], [0.0; 3]);
+        let (behind, _) = inks(&drawn(close, None, true), Button::Minimise, false);
+        assert_eq!(behind, None, "only the button under the pointer");
+    }
+
+    /// A button looks pressed only while the pointer is still over it, and
+    /// a window without the keys draws its marks fainter.
+    ///
+    /// Deliberate break: answer `pressed` without asking `hovered`. A press
+    /// dragged off the button still looks pressed, though letting go there
+    /// does nothing; and with `active` left out, the reader cannot tell
+    /// which of two windows has their keys.
+    #[test]
+    fn a_button_looks_pressed_only_under_the_pointer() {
+        let maximise = Some(Button::Maximise);
+        let (held, _) = inks(&drawn(maximise, maximise, true), Button::Maximise, true);
+        let (lit, _) = inks(&drawn(maximise, None, true), Button::Maximise, true);
+        assert_ne!(held, lit, "pressed is not hovered");
+        let (off, _) = inks(
+            &drawn(Some(Button::Close), maximise, true),
+            Button::Maximise,
+            true,
+        );
+        assert_eq!(off, None, "dragged off it");
+        let (_, awake) = inks(&drawn(None, None, true), Button::Maximise, true);
+        let (_, asleep) = inks(&drawn(None, None, false), Button::Maximise, true);
+        assert!(asleep[3] < awake[3], "fainter without the keys");
     }
 }

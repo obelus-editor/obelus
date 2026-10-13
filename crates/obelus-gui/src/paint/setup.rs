@@ -401,6 +401,7 @@ impl Painter {
             grid: [0.0, 0.0],
             margin: [0.0, 0.0],
             titled: 0.0,
+            bar: None,
             holding: (Color::Reset, Color::Reset),
             quads: Vec::new(),
             placed: Placed::default(),
@@ -980,6 +981,12 @@ impl Painter {
     /// changes size, and a second copy kept here would be one to forget.
     pub(crate) const fn titled(&mut self, titled: f32) {
         self.titled = titled;
+    }
+
+    /// The bar Obelus draws along the top, where it draws one. Handed over
+    /// every frame, for the same reason.
+    pub(crate) const fn bar(&mut self, bar: Option<crate::title::Drawn>) {
+        self.bar = bar;
     }
 
     /// What is behind a pane, blurred: across into the scratch picture,

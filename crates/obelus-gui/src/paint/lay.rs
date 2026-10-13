@@ -98,6 +98,10 @@ impl Painter {
             let veil = self.veil();
             self.block(left, top, wide, tall, veil);
         }
+        // The bar's buttons, on the picture where there is one. With it in
+        // the quads every whole screen starts from, because the bar stands
+        // still the way the picture does: what slides is the page under it.
+        self.title_bar(across, margin);
         // Where the picture's quads end, which every whole screen drawn
         // from this frame draws first -- and the one picture of the frame
         // that is cut into moving pieces leaves out (see `encode`).

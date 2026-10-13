@@ -312,6 +312,11 @@ struct Showing {
     /// The presses on the title bar, for the second of two to be a double
     /// click -- see `title::Presses`.
     title_presses: crate::title::Presses,
+    /// The bar along the top, where Obelus draws it -- see `title::Bar`.
+    bar: Option<crate::title::Bar>,
+    /// Whether the window has the reader's keys, which a bar Obelus draws
+    /// says the way the system's would.
+    active: bool,
     /// Wheels that report pixels rather than lines, added up until they
     /// amount to a row.
     rolled: f32,
@@ -514,6 +519,8 @@ impl Showing {
             over_the_title: false,
             pressed_on_the_title: false,
             title_presses: crate::title::Presses::default(),
+            bar: None,
+            active: true,
             rolled: 0.0,
             composing: false,
             spelling: None,
@@ -657,7 +664,10 @@ impl Showing {
         };
         let size = window.inner_size();
         let cell = fonts.cell();
-        self.titled = crate::title::height(window);
+        self.titled = match self.bar.as_ref() {
+            Some(bar) => bar.height(window),
+            None => crate::title::height(window),
+        };
         #[expect(
             clippy::cast_precision_loss,
             reason = "a window is thousands of pixels, not millions"
@@ -969,6 +979,9 @@ impl ApplicationHandler<Waking> for Showing {
             window.set_ime_allowed(true);
             self.allowed = true;
         }
+        // Before the first measuring, which leaves the bar's room above the
+        // grid once the bar is the page's.
+        self.bar = crate::title::drawn(&window);
         self.window = Some(Arc::clone(&window));
         self.fonts = Some(fonts);
         self.painter = Some(painter);
@@ -1637,6 +1650,12 @@ impl ApplicationHandler<Waking> for Showing {
                 };
                 painter.drawn_on(self.ground);
                 painter.titled(self.titled);
+                painter.bar(
+                    self.bar
+                        .as_ref()
+                        .zip(self.window.as_ref())
+                        .map(|(bar, window)| bar.drawn(window, self.active)),
+                );
                 painter.holding(self.holding);
                 if let Some(left) = self.left.take() {
                     painter.keep(&left.page, fonts, left.said(), &left.going);
@@ -1702,7 +1721,19 @@ impl ApplicationHandler<Waking> for Showing {
                     self.redraw();
                 }
             }
+            // Drawn again for a bar Obelus draws, whose marks are fainter
+            // on a window without the keys.
+            WindowEvent::Focused(true) => {
+                self.active = true;
+                if self.bar.is_some() {
+                    self.redraw();
+                }
+            }
             WindowEvent::Focused(false) => {
+                self.active = false;
+                if self.bar.is_some() {
+                    self.redraw();
+                }
                 if self.modifiers.shift_key() {
                     self.tell(Event::Shifted(false));
                 }

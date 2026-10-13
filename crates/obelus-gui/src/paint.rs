@@ -179,6 +179,9 @@ pub(crate) struct Painter {
     /// How many pixels at the top of the window belong to the title bar
     /// -- see `title::height`.
     titled: f32,
+    /// The bar along the top, where Obelus draws it rather than the system
+    /// -- see `title::Bar`.
+    bar: Option<crate::title::Drawn>,
     /// Which two colours mean the reader has hold of something: a run of
     /// characters, and the row their keys are on -- see
     /// `Drawing::holding`.
@@ -643,6 +646,13 @@ const BLUR: u32 = 1024;
 /// along: a plate says how each of its corners bends in two bits apiece
 /// from `HELD_TURNS`, and a flag inside that run would be read as a turn.
 const WEDGE: u32 = 2_097_152;
+
+/// The mark on one of the bar's buttons, drawn as the system draws its own:
+/// strokes of one pen across the quad -- see `paint.wgsl`. Which mark it is
+/// rides in the quad's `radius` and how wide the pen is in its `lower`, the
+/// two fields a mark has nothing else to say with. Past the turns, for the
+/// wedge's reason.
+const CAPTION: u32 = 4_194_304;
 
 /// A stretch of the light round a hold -- see `lights`, and the shader.
 /// Past the turns, which it carries for its own row's run, and past which

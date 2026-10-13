@@ -10,6 +10,50 @@ use super::*;
 use crate::grid::{Barred, Capped, Look, Page, Parted, Ruled, Spun, Stroked, Ticked};
 
 impl Painter {
+    /// The three buttons along the top of a window whose bar Obelus draws,
+    /// over the picture and the page's colour and under everything else --
+    /// see `title::Bar`.
+    ///
+    /// In the window's pixels less the grid's origin, which is where every
+    /// quad is placed: the bar is above the grid, so its rows come out
+    /// negative.
+    pub(super) fn title_bar(&mut self, across: f32, margin: [f32; 2]) {
+        let Some(bar) = self.bar else {
+            return;
+        };
+        let dark = crate::title::dark(ground_of(self.ground));
+        for button in crate::title::Button::ALL {
+            let [left, top, wide, tall] =
+                crate::title::button_at(button, across, self.titled, bar.button);
+            let (left, top) = (left - margin[0], top - margin[1]);
+            let (behind, ink) = crate::title::inks(&bar, button, dark);
+            if let Some(behind) = behind {
+                self.block(left, top, wide, tall, behind);
+            }
+            let mark = match button {
+                crate::title::Button::Minimise => 0.0,
+                crate::title::Button::Maximise if bar.maximised => 2.0,
+                crate::title::Button::Maximise => 1.0,
+                crate::title::Button::Close => 3.0,
+            };
+            // Whole pixels, or every stroke is drawn across two of them.
+            self.quads.push(Quad {
+                rect: [
+                    (left + (wide - bar.mark) / 2.0).round(),
+                    (top + (tall - bar.mark) / 2.0).round(),
+                    bar.mark,
+                    bar.mark,
+                ],
+                uv: self.atlas.white,
+                colour: ink,
+                flags: CAPTION,
+                radius: mark,
+                layer: 0,
+                lower: bar.pen,
+            });
+        }
+    }
+
     /// The line under every cell a view underlined.
     ///
     /// A pass of its own rather than something `letters` does, because an
