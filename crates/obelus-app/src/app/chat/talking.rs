@@ -2676,7 +2676,8 @@ impl App {
             .is_some_and(|talk| talk.asking.is_some())
     }
 
-    /// Makes room for a question the agent is waiting on an answer to.
+    /// Readies the conversation for a question the agent is waiting on an
+    /// answer to, by closing the list of its commands.
     ///
     /// It does not bring the conversation to the front, and the name is
     /// what is left of one that did: a conversation is a document, so a
@@ -2691,10 +2692,10 @@ impl App {
     /// the region, and the enter a reader pressed on a row of the list it
     /// closed under them answered the card with its first answer.
     fn show_the_question(&mut self, whose: Whose) {
-        // The list of the agent's commands is not the reader's: it follows
-        // what is being typed in the box, and the box is what the card
-        // covers. Left open it would be a list over a question, about words
-        // the keys are no longer going to.
+        // The list of the agent's commands belongs to the box: it follows
+        // what is being typed there, and the box is what the card covers.
+        // Left open it would be a list over a question, about words the
+        // keys are no longer going to.
         if let Some(talk) = self.talk_mut(whose) {
             talk.slash = None;
         }

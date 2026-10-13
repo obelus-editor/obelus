@@ -5211,7 +5211,9 @@ fn a_list_over_a_question_covers_it_until_it_goes() {
 /// whatever its first answer was, which is an answer nobody gave.
 ///
 /// Broken deliberately by putting `make_room(Room::Region)` back in
-/// `show_the_question`: the list is gone when the question arrives.
+/// `show_the_question`: the list is gone when the question arrives. And
+/// with that, and the assertion that the list is still up taken out, the
+/// enter answers the card's first question and the last assertion fails.
 #[test]
 fn a_question_that_arrives_under_a_list_waits_behind_it() {
     let (mut app, events) = talking();
@@ -5237,7 +5239,13 @@ fn a_question_that_arrives_under_a_list_waits_behind_it() {
     // The row the list opened on is this conversation, so enter stays here.
     support::press(&mut app, KeyCode::Enter);
     assert!(app.picker().is_none(), "enter did not go to the list");
-    assert!(app.is_asking(), "enter on the list answered the question");
+    // The first of its three questions, still asked: `is_asking` cannot say
+    // so, because answering one leaves the other two.
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Carefully"),
+        "enter on the list answered the question:\n{text}"
+    );
 }
 
 /// What a short list leaves showing of a conversation is drawn and not
