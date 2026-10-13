@@ -908,7 +908,7 @@ fn lit_halves(
             });
             Lit {
                 rect,
-                colour: away(under(x, y), ink),
+                colour: lifted(under(x, y), ink, PAIR_LIFT),
                 pane,
                 strength,
             }
@@ -987,6 +987,18 @@ fn lit_within(
         }
     }
     lit
+}
+
+/// `to` carried on away from `from`, to `by` times as far from it as it
+/// is -- `away` is twice.
+fn lifted(from: [f32; 4], to: [f32; 4], by: f32) -> [f32; 4] {
+    let mut out = to;
+    for channel in 0..3 {
+        out[channel] = (to[channel] - from[channel])
+            .mul_add(by, from[channel])
+            .clamp(0.0, 1.0);
+    }
+    out
 }
 
 fn away(from: [f32; 4], to: [f32; 4]) -> [f32; 4] {
@@ -1134,7 +1146,10 @@ mod tests {
             "{}",
             lit[0].strength
         );
-        assert_eq!(lit[0].colour, away(under, rgba(wore, Ink::Background)));
+        assert_eq!(
+            lit[0].colour,
+            lifted(under, rgba(wore, Ink::Background), PAIR_LIFT)
+        );
         // Gone out: nothing.
         let none = lit_halves(&page, &[], &[ghost], &[], (None, None), cell, |_, _| under);
         assert!(none.is_empty());
