@@ -256,6 +256,9 @@ pub(crate) struct Painter {
     wallpaper: Option<Hanging>,
     /// And where it lies on the frame being laid out, in the grid's pixels.
     laid: Option<crate::wallpaper::Laid>,
+    /// How much of that picture shows, from none to as much as the theme
+    /// lets through -- see `Motion::picture_shown`.
+    shown: f32,
 }
 
 /// The picture under the page, as the card holds it.

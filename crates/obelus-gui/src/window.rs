@@ -390,6 +390,9 @@ struct Showing {
     /// Which asking for a picture under the page was the last one drawn,
     /// so that an older one decoded later is not -- see `wallpaper`.
     hung: u64,
+    /// What takes the picture's place once it has gone down into the
+    /// page's colour: another picture, or none -- see `Motion::picture_going`.
+    after_the_veil: Option<Option<Arc<crate::wallpaper::Hung>>>,
     /// Which cells are switches on the frame being shown.
     ticked: Vec<Ticked>,
     /// Which cells are the mark that turns on the frame being shown.
@@ -537,6 +540,7 @@ impl Showing {
             titled: 0.0,
             holding: (Color::Reset, Color::Reset),
             hung: 0,
+            after_the_veil: None,
             ticked: Vec::new(),
             spun: Vec::new(),
             spinning: Vec::new(),
@@ -1136,7 +1140,34 @@ impl ApplicationHandler<Waking> for Showing {
                                 && let Some(painter) = self.painter.as_mut()
                             {
                                 self.hung = number;
-                                painter.hang(hung.as_deref());
+                                let now = Instant::now();
+                                match hung {
+                                    // Going, and down into the page's colour
+                                    // first: the window waits for it before
+                                    // hanging whatever comes next.
+                                    None if painter.hanging() && self.motion.picture_going(now) => {
+                                        self.after_the_veil = Some(None);
+                                    }
+                                    None => {
+                                        self.after_the_veil = None;
+                                        painter.hang(None);
+                                    }
+                                    // Decoded while the one before is still
+                                    // going: it waits.
+                                    Some(hung) if self.after_the_veil.is_some() => {
+                                        self.after_the_veil = Some(Some(hung));
+                                    }
+                                    // The same file again, fitted or covered
+                                    // differently: there is nothing to come
+                                    // up, only the same picture redrawn.
+                                    Some(hung) if painter.hanging() => {
+                                        painter.hang(Some(&hung));
+                                    }
+                                    Some(hung) => {
+                                        painter.hang(Some(&hung));
+                                        self.motion.picture_hung(now);
+                                    }
+                                }
                                 rehung = true;
                             }
                         }
@@ -1648,6 +1679,17 @@ impl ApplicationHandler<Waking> for Showing {
                 else {
                     return;
                 };
+                // The picture that went has gone down into the page's colour,
+                // so what takes its place is hung, and comes up.
+                let now = Instant::now();
+                if self.after_the_veil.is_some() && !self.motion.picture_still_going(now) {
+                    let next = self.after_the_veil.take().flatten();
+                    painter.hang(next.as_deref());
+                    if next.is_some() {
+                        self.motion.picture_hung(now);
+                    }
+                }
+                painter.unveiled(self.motion.picture_shown(now));
                 painter.drawn_on(self.ground);
                 painter.titled(self.titled);
                 painter.bar(

@@ -422,6 +422,7 @@ impl Painter {
             repeating,
             wallpaper: None,
             laid: None,
+            shown: 1.0,
         })
     }
 
@@ -432,6 +433,18 @@ impl Painter {
     pub(crate) fn hang(&mut self, hung: Option<&crate::wallpaper::Hung>) {
         self.wallpaper = hung.and_then(|hung| self.hung_on_the_card(hung));
         self.bound_again();
+    }
+
+    /// Whether there is a picture under the page, which is whether there
+    /// is one to see go.
+    pub(crate) const fn hanging(&self) -> bool {
+        self.wallpaper.is_some()
+    }
+
+    /// How much of the picture under the page shows on this frame. Handed
+    /// over every frame, like the ground.
+    pub(crate) const fn unveiled(&mut self, shown: f32) {
+        self.shown = shown;
     }
 
     /// A picture put on the card, or nothing where the card will not take
