@@ -245,8 +245,8 @@ pub fn cursor_position(area: Rect, app: &impl Screen) -> Option<Position> {
             // rather than on the status bar: a message is a paragraph, and
             // a paragraph does not fit on one row.
             match app.shown() {
-                Shown::Chat(chat) => {
-                    return chat::ChatView::caret(regions.editor, chat, app.card());
+                Shown::Chat(_) => {
+                    return chat::ChatView::new(app).and_then(|view| view.caret(regions.editor));
                 }
                 // And the notes, which are written into the same way.
                 Shown::Notes(notes) => return todo::caret(regions.editor, notes),
