@@ -5202,6 +5202,44 @@ fn a_list_over_a_question_covers_it_until_it_goes() {
     );
 }
 
+/// A question that arrives while a list is open over its conversation
+/// waits behind the list, and the key the reader meant for the list goes to
+/// the list.
+///
+/// The list used to be closed under the reader as the question came in, so
+/// the enter they pressed on a row of it answered the card instead -- with
+/// whatever its first answer was, which is an answer nobody gave.
+///
+/// Broken deliberately by putting `make_room(Room::Region)` back in
+/// `show_the_question`: the list is gone when the question arrives.
+#[test]
+fn a_question_that_arrives_under_a_list_waits_behind_it() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/ask ");
+    support::press(&mut app, KeyCode::Enter);
+    // Before the question is heard, which nothing does until the pump.
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentList);
+    assert!(
+        app.picker().is_some(),
+        "the list of what is open did not open"
+    );
+    pump(&mut app, &events, "the question", |app| {
+        app.card().is_some()
+    });
+
+    assert!(
+        app.picker().is_some(),
+        "the question closed the list the reader was in"
+    );
+    // The row the list opened on is this conversation, so enter stays here.
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.picker().is_none(), "enter did not go to the list");
+    assert!(app.is_asking(), "enter on the list answered the question");
+}
+
 /// What a short list leaves showing of a conversation is drawn and not
 /// marked: the card's row and the list of commands' row are where they were,
 /// and neither says the keys are on it while the list has them.
