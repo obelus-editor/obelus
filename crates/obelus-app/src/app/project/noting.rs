@@ -559,7 +559,7 @@ impl App {
                 .to_string();
         }
         let done = obelus_todo::change(&self.working_directory, |todo| match doing {
-            obelus_todo::Doing::Add { notes, under } => {
+            obelus_todo::Doing::Add { notes, place } => {
                 let written: Vec<(String, u16)> = notes
                     .into_iter()
                     .map(|(said, depth)| (obelus_todo::trimmed(&said), depth))
@@ -568,16 +568,23 @@ impl App {
                 if written.is_empty() {
                     return "there was nothing there to write down".to_string();
                 }
-                // Where they go, and how deep the first of them is. Under a
-                // note means after the whole of what already hangs under it
-                // -- between a note and its children is the one place that
-                // adopts what is put in it.
-                let (at, beneath) = match under {
-                    Some(name) => {
-                        let Some(at) = todo.notes.iter().position(|note| note.id == name) else {
+                // Where they go, and how deep the first of them is. Each
+                // of the three goes past the note's children or in front of
+                // the note itself, never between the two -- between a note
+                // and its children is the one place that adopts what is put
+                // in it.
+                let (at, beneath) = match &place {
+                    Some(place) => {
+                        let Some(at) = todo.notes.iter().position(|note| note.id == *place.note())
+                        else {
                             return "there is no note by that name any more".to_string();
                         };
-                        (at + 1 + todo.under(at), todo.notes[at].depth + 1)
+                        let depth = todo.notes[at].depth;
+                        match place {
+                            obelus_todo::Place::Under(_) => (at + 1 + todo.under(at), depth + 1),
+                            obelus_todo::Place::Before(_) => (at, depth),
+                            obelus_todo::Place::After(_) => (at + 1 + todo.under(at), depth),
+                        }
                     }
                     None => (todo.notes.len(), 0),
                 };

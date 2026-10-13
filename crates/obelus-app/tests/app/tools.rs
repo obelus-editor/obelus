@@ -252,6 +252,109 @@ fn what_an_agent_writes_down_is_in_the_file() {
     assert!(!todo.notes[1].done, "it ticked one nobody asked it to");
 }
 
+/// Notes go in front of a note or after it, beside it, and neither takes
+/// a child from it.
+///
+/// `under` alone could only add to the end of what hangs under a note, so a
+/// step that belonged between two others went at the bottom. In front of a
+/// child is in front of it and not inside it, and after a note is after
+/// what hangs under it too -- the one place in between would hand its
+/// children to the batch, or the batch to its children.
+///
+/// Broken deliberately by putting `after` straight after the note, without
+/// its children: the second batch lands between the first note and its
+/// own, and the order fails. And by taking `before` past the note's
+/// children, which puts it after the note it was meant to lead. And by
+/// letting `under` win over `after`, which writes a batch it should refuse.
+#[test]
+fn notes_go_before_or_after_a_note_beside_it() {
+    use obelus_app::app::App;
+
+    let scratch = support::Scratch::new("tools-beside");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
+        "[[todo]]\nid = \"AAAAAAAA\"\nsaid = \"first\"\ndone = false\n\n\
+         [[todo]]\nid = \"CCCCCCCC\"\nsaid = \"its child\"\ndone = false\ndepth = 1\n\n\
+         [[todo]]\nid = \"BBBBBBBB\"\nsaid = \"second\"\ndone = false\n",
+    )
+    .expect("the notes");
+
+    let (sender, events) = channel::<obelus_app::event::Event>();
+    let url = served(scratch.path(), sender);
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(scratch.path().to_path_buf());
+
+    let asking = std::thread::spawn({
+        let url = url.clone();
+        move || {
+            let (_, session) = ask(
+                &url,
+                None,
+                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"a test","version":"0"}}}"#,
+            );
+            let session = session.expect("a session of its own");
+            let (before, _) = ask(
+                &url,
+                Some(&session),
+                r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"todo_add","arguments":{"before":"CCCCCCCC","notes":[{"said":"ahead of the child"}]}}}"#,
+            );
+            let (after, _) = ask(
+                &url,
+                Some(&session),
+                r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"todo_add","arguments":{"after":"AAAAAAAA","notes":[{"said":"after the first"}]}}}"#,
+            );
+            // Asked of the server alone: it never reaches the loop, so
+            // there is nothing for this test to answer.
+            let (both, _) = ask(
+                &url,
+                Some(&session),
+                r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"todo_add","arguments":{"under":"AAAAAAAA","after":"BBBBBBBB","notes":[{"said":"nowhere"}]}}}"#,
+            );
+            (before, after, both)
+        }
+    });
+
+    for _ in 0..2 {
+        let event = events
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("the server asked the loop for something");
+        app.handle(event);
+    }
+    let (before, after, both) = asking.join().expect("the agent's side");
+    assert!(
+        before.contains("written down: 1"),
+        "it did not say so: {before}"
+    );
+    assert!(
+        after.contains("written down: 1"),
+        "it did not say so: {after}"
+    );
+    assert!(
+        both.contains("one of `under`, `before` and `after`"),
+        "two places at once were not refused: {both}"
+    );
+
+    let todo = obelus_todo::read(scratch.path())
+        .notes()
+        .expect("the notes");
+    let said: Vec<(&str, u16)> = todo
+        .notes
+        .iter()
+        .map(|note| (note.said.as_str(), note.depth))
+        .collect();
+    assert_eq!(
+        said,
+        vec![
+            ("first", 0),
+            ("ahead of the child", 1),
+            ("its child", 1),
+            ("after the first", 0),
+            ("second", 0),
+        ]
+    );
+}
+
 /// A note that is a paragraph is still one note in the listing.
 ///
 /// The list says a line beginning with a name is a note, and printing the
