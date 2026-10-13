@@ -5332,6 +5332,41 @@ fn a_question_that_arrives_while_the_reader_writes_waits_behind_the_box() {
     );
 }
 
+/// An enter to an empty box after one that answered a question does not
+/// say the reader has stopped: the question the answer let through, on the
+/// next turn, still waits behind the box.
+///
+/// The second enter used to arrive first -- the next question was a turn
+/// away -- and say "nothing written here", which wiped out the answer a
+/// moment before it; the question then came in front of a third.
+///
+/// Broken deliberately by letting a key to an empty box clear what was
+/// pressed (`else if !was_blank` in `writing_or_not` made `else`): the
+/// question comes in front.
+#[test]
+fn an_enter_to_an_empty_box_does_not_let_the_next_question_in() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "what is this file");
+    support::press(&mut app, KeyCode::Enter);
+    // Said while that turn goes, so it waits, and goes once the answer
+    // below has ended it -- a question a turn away from the answer.
+    support::type_text(&mut app, "/ask ");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the permission request", |app| {
+        app.card().is_some() && app.is_asking_permission()
+    });
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the next question", App::is_asking);
+    assert!(
+        app.card().is_none(),
+        "the question came in front of a reader still pressing enter"
+    );
+}
+
 /// The press that answered one question does not answer the next: a
 /// double click on an answer is one answer, the way two enters are.
 ///

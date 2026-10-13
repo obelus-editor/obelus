@@ -2529,9 +2529,10 @@ impl App {
         if carded && let Some(talk) = self.conversation_mut() {
             talk.typed = Some(std::time::Instant::now());
         }
+        let blank = self.chat().is_none_or(|chat| chat.writing().is_blank());
         let took = self.offer_to_the_conversation(key);
         if !carded {
-            self.writing_or_not();
+            self.writing_or_not(blank);
         }
         took
     }
@@ -2540,10 +2541,16 @@ impl App {
     /// that went to anything here but a card: whether there are words in
     /// the box.
     ///
+    /// Only the key that empties the box says they have stopped -- the one
+    /// that sends, or rubs out the last of it. A key to a box that was
+    /// empty already says nothing either way, or the second of two enters
+    /// that answered a card would wipe out the first, and the question the
+    /// answer let through would come in front of the third.
+    ///
     /// And while a question is held, puts back the clock that lets it in --
     /// whatever the key was, because a reader pressing keys is a reader who
     /// has not stopped.
-    fn writing_or_not(&mut self) {
+    fn writing_or_not(&mut self, was_blank: bool) {
         let id = self.current;
         let held = self.conversation().is_some_and(|talk| talk.held);
         let holding = match (held, id) {
@@ -2553,7 +2560,11 @@ impl App {
         let Some(talk) = self.conversation_mut() else {
             return;
         };
-        talk.typed = (!talk.chat.writing().is_blank()).then(std::time::Instant::now);
+        if !talk.chat.writing().is_blank() {
+            talk.typed = Some(std::time::Instant::now());
+        } else if !was_blank {
+            talk.typed = None;
+        }
         if held {
             talk.holding = holding;
         }
