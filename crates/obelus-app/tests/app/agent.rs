@@ -5323,6 +5323,49 @@ fn a_question_that_arrives_while_the_reader_writes_waits_behind_the_box() {
     );
 }
 
+/// A question that arrives while the reader is choosing one of the agent's
+/// commands leaves the list up, and the enter they press chooses from it.
+///
+/// Only where nothing is drawn between the question and the key: a frame
+/// works the list out again from what is in the box, so it is the question
+/// arriving and the enter in the same batch of events that the list has to
+/// survive -- which is what this does, drawing nothing until the enter.
+///
+/// Broken deliberately by closing the list whether or not the question is
+/// held (`talk.slash = None` in `show_the_question` with no condition): the
+/// enter sends `/com` as a message instead of choosing `compact`.
+#[test]
+fn a_question_that_arrives_while_the_reader_chooses_a_command_leaves_the_list() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session and its commands", |app| {
+        app.talking() == obelus_agent::Talking::Ready && !app.agent_orders().is_empty()
+    });
+    support::type_text(&mut app, "/ask ");
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "/com");
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    assert!(app.slash().is_some(), "the list of commands did not open");
+    // Still writing whenever nothing has arrived for a moment, by a letter
+    // and its rubbing out, so the box says the same and the list with it.
+    let deadline = Instant::now() + patience();
+    while !app.is_asking() {
+        assert!(Instant::now() < deadline, "gave up waiting for the question");
+        match events.recv_timeout(Duration::from_millis(200)) {
+            Ok(event) => app.handle(event),
+            Err(_) => {
+                support::type_text(&mut app, "x");
+                support::press(&mut app, KeyCode::Backspace);
+            }
+        }
+    }
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        app.chat().map(|chat| chat.writing().text()),
+        Some("/compact ".to_string()),
+        "the enter did not choose from the list"
+    );
+}
+
 /// The enter that answered one question does not answer the next: a reader
 /// pressing it twice meant the first, and the second card waits until they
 /// have stopped.
