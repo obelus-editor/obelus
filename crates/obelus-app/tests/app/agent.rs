@@ -5261,7 +5261,9 @@ fn a_question_that_arrives_under_a_list_waits_behind_it() {
 /// Broken deliberately by never holding the question (`talk.held = false`
 /// in `show_the_question`): the card is in front while the reader is
 /// writing. And with the two assertions that say so taken out, the enter
-/// answers its first question and the last but one fails.
+/// answers its first question and the last but one fails. And by not
+/// putting the wait back with every key (`holding` in `writing_or_not`):
+/// the card comes in front while the reader is still typing.
 #[test]
 fn a_question_that_arrives_while_the_reader_writes_waits_behind_the_box() {
     let (mut app, events) = talking();
@@ -5287,6 +5289,20 @@ fn a_question_that_arrives_while_the_reader_writes_waits_behind_the_box() {
         app.card().is_none(),
         "the question came in front of a reader who was writing"
     );
+    // And it stays there while they go on, well past the time it waits
+    // after their last key: every key puts the wait back.
+    let writing = Instant::now();
+    while writing.elapsed() < Duration::from_millis(2500) {
+        if let Ok(event) = events.recv_timeout(Duration::from_millis(400)) {
+            app.handle(event);
+        }
+        support::type_text(&mut app, "b");
+        support::lay_out(&mut app, WIDTH, HEIGHT);
+        assert!(
+            app.card().is_none(),
+            "the question came in front while the reader was still writing"
+        );
+    }
     support::type_text(&mut app, " next");
     support::press(&mut app, KeyCode::Enter);
     assert!(
