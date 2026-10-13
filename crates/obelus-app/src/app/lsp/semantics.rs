@@ -1150,12 +1150,14 @@ impl App {
     /// give four different accounts of one missing program.
     pub(in crate::app) fn why_not_asking(&self, language: LanguageId) -> Option<String> {
         let Some(client) = self.servers.get(&language) else {
+            // Not installed before switched off: the switch is no answer to
+            // a reader who would turn it on and find nothing to start.
             return Some(match obelus_lsp::command_for(language) {
-                Some(_) if !self.settled.config.language_servers => {
-                    "Language servers are off in the settings".to_string()
-                }
                 Some(command) if !obelus_lsp::on_path(command) => {
                     format!("{command} is not installed")
+                }
+                Some(_) if !self.settled.config.language_servers => {
+                    "Language servers are off in the settings".to_string()
                 }
                 Some(_) => format!("No server running for {}", language.name()),
                 None => format!("No language server for {}", language.name()),

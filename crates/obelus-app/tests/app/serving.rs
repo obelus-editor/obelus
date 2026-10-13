@@ -318,3 +318,55 @@ fn turning_the_servers_on_opens_nothing_twice() {
     let again = support::heard_requests(&heard, "textDocument/didOpen", 1);
     assert!(again.is_empty(), "the file was opened again: {again:?}");
 }
+
+/// What a key that asks a server says with the switch off, in a file of
+/// `name`.
+fn said_with_the_servers_off(name: &str) -> String {
+    let scratch = support::Scratch::new(&format!("serving-said-{name}"));
+    let path = scratch.path().join(name);
+    std::fs::write(&path, "key: value\n").expect("the file");
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&path).expect("opening it"),
+    ]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    support::lay_out(&mut app, 100, 12);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::SymbolHover);
+    support::text_block(&support::render(&mut app, 100, 12)).to_string()
+}
+
+/// A server that is not installed says so before the switch does: turning
+/// the switch on would start nothing, and the reader who did it would hear
+/// the real answer only then.
+///
+/// Against YAML's server, which is skipped where it is installed. Broken
+/// deliberately by asking the switch first again.
+#[test]
+fn a_server_that_is_not_installed_says_so_before_the_switch_does() {
+    if obelus_lsp::on_path("yaml-language-server") {
+        eprintln!("skipped: yaml-language-server is installed");
+        return;
+    }
+    let said = said_with_the_servers_off("settings.yaml");
+    assert!(
+        said.contains("yaml-language-server is not installed"),
+        "the row did not say the server is missing:\n{said}"
+    );
+}
+
+/// And one that is installed says the switch is off, which is the thing
+/// the reader can change.
+///
+/// Broken deliberately by taking the switch's line out: the row says no
+/// server is running, which does not say why.
+#[test]
+fn an_installed_server_with_the_switch_off_says_the_switch_is_off() {
+    if !obelus_lsp::on_path("rust-analyzer") {
+        eprintln!("skipped: rust-analyzer is not on PATH");
+        return;
+    }
+    let said = said_with_the_servers_off("main.rs");
+    assert!(
+        said.contains("Language servers are off in the settings"),
+        "the row did not say the switch is off:\n{said}"
+    );
+}
