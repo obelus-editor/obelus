@@ -24,6 +24,12 @@ tracing.workspace = true
 objc2.workspace = true
 objc2-app-kit.workspace = true
 objc2-foundation.workspace = true
+# A picture copied on macOS is as often a TIFF as a PNG, and an agent is
+# sent PNG: see `native.rs`.
+image = { workspace = true, features = ["tiff"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys.workspace = true
+# A picture copied on Windows is a DIB more often than a PNG, and an agent is
+# sent PNG: see `native.rs`.
+image = { workspace = true, features = ["bmp"] }
