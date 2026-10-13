@@ -5464,6 +5464,49 @@ fn the_press_that_answered_one_question_does_not_answer_the_next() {
     assert!(said_in_transcript(&app, "the first was [once]"));
 }
 
+/// What an input method spells is writing too: a window hands each word it
+/// was spelling over as a paste, so a reader writing in one is pressing no
+/// key Obelus hears -- and a question arriving while they do waits behind
+/// the box as it does for a reader typing.
+///
+/// Broken deliberately by taking `at_work` out of `paste_into_conversation`:
+/// the question comes in front of the reader still writing.
+#[test]
+fn a_question_that_arrives_while_an_input_method_writes_waits_behind_the_box() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/ask ");
+    support::press(&mut app, KeyCode::Enter);
+    app.handle(Event::Paste("\u{518d}".to_string()));
+    let deadline = Instant::now() + patience();
+    while !app.is_asking() {
+        assert!(
+            Instant::now() < deadline,
+            "gave up waiting for the question"
+        );
+        match events.recv_timeout(Duration::from_millis(200)) {
+            Ok(event) => app.handle(event),
+            Err(_) => app.handle(Event::Paste("\u{8bf4}".to_string())),
+        }
+        support::lay_out(&mut app, WIDTH, HEIGHT);
+    }
+    // And on, past the time it waits after the last word.
+    let writing = Instant::now();
+    while writing.elapsed() < Duration::from_millis(2500) {
+        if let Ok(event) = events.recv_timeout(Duration::from_millis(400)) {
+            app.handle(event);
+        }
+        app.handle(Event::Paste("\u{4e00}".to_string()));
+        support::lay_out(&mut app, WIDTH, HEIGHT);
+        assert!(
+            app.card().is_none(),
+            "the question came in front of a reader writing in an input method"
+        );
+    }
+}
+
 /// A question that arrives while the reader is choosing one of the agent's
 /// commands leaves the list up, and the enter they press chooses from it.
 ///

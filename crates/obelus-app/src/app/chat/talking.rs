@@ -1200,6 +1200,10 @@ impl App {
     /// box and takes the keys back with it, where a letter typed off the
     /// box goes nowhere.
     pub(in crate::app) fn paste_into_conversation(&mut self, what: &str) {
+        // The reader at work as much as a key is, before anything has it:
+        // a window's input method hands over what it spelled as a paste,
+        // so this is how every word written in one arrives.
+        self.at_work();
         let covered = self.card().is_some_and(|card| !card.takes_words());
         if covered {
             return;
