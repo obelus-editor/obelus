@@ -1549,4 +1549,23 @@ mod tests {
             assert_eq!(said.graphemes(true).count(), 4, "{character:?} joins");
         }
     }
+
+    /// A piece is as many cells as fit, so a wide character that would
+    /// straddle the edge starts the next piece.
+    ///
+    /// Deliberate break: asking `cells >= width` before a cluster is added
+    /// rather than whether the cluster fits, which put `意` on the first
+    /// piece and made it six cells in a room of five.
+    #[test]
+    fn a_line_is_broken_by_its_cells() {
+        fn pieces(line: &str, width: usize) -> Vec<&str> {
+            super::broken_at(line, width)
+                .into_iter()
+                .map(|piece| &line[piece])
+                .collect()
+        }
+        assert_eq!(pieces("abcd意思是", 5), vec!["abcd", "意思", "是"]);
+        assert_eq!(pieces("", 5), vec![""], "an empty line is still a row");
+        assert_eq!(pieces("意a", 1), vec!["意", "a"], "too wide for any row");
+    }
 }
