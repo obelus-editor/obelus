@@ -1172,9 +1172,16 @@ impl ApplicationHandler<Waking> for Showing {
                             });
                         }
                         Update::Ticked { area, on } => {
-                            self.ticking.push(Ticked { area, on });
+                            self.ticking.push(Ticked {
+                                area,
+                                on,
+                                depth: self.stacking.len(),
+                            });
                         }
-                        Update::Spun { area } => self.spinning.push(Spun { area }),
+                        Update::Spun { area } => self.spinning.push(Spun {
+                            area,
+                            depth: self.stacking.len(),
+                        }),
                         Update::Parted { area } => {
                             self.parting.push(Parted { area });
                         }

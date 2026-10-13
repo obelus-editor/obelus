@@ -493,6 +493,9 @@ pub(crate) struct Ticked {
     pub(crate) area: Rect,
     /// Whether it is set.
     pub(crate) on: bool,
+    /// How many panes and boxes had been put over the page when it was
+    /// said -- see `Page::layer`.
+    pub(crate) depth: usize,
 }
 
 impl Ticked {
@@ -504,11 +507,17 @@ impl Ticked {
     /// on the list, on a row with nothing to switch, and the letter it
     /// was over was missing as well, because `letters` leaves a switch's
     /// cell to `ticks`.
+    ///
+    /// And whose the cell is, because a list over the page can hold the
+    /// same glyph in the same cell -- the notes and the conversations put
+    /// a box in front of a row -- and then the glyph cannot say whose.
     pub(crate) fn still_said(&self, page: &Page) -> bool {
-        page.look(self.area.x, self.area.y)
-            .text
-            .chars()
-            .eq(std::iter::once(obelus_ui::tick(self.on)))
+        page.layer(self.area.x, self.area.y) <= self.depth
+            && page
+                .look(self.area.x, self.area.y)
+                .text
+                .chars()
+                .eq(std::iter::once(obelus_ui::tick(self.on)))
     }
 }
 
@@ -517,6 +526,9 @@ impl Ticked {
 pub(crate) struct Spun {
     /// Which cell it is.
     pub(crate) area: Rect,
+    /// How many panes and boxes had been put over the page when it was
+    /// said -- see `Page::layer`.
+    pub(crate) depth: usize,
 }
 
 impl Spun {
@@ -524,7 +536,14 @@ impl Spun {
     /// the cell holds something else by now -- the question
     /// `Ticked::still_said` asks, answered with the one thing a front end
     /// that has stopped its own clock still wants from the cell.
+    ///
+    /// Whose the cell is as well, for the reason a switch asks: a frame of
+    /// the turn is a braille letter, and a file previewed over the turning
+    /// mark may have that letter in that cell.
     pub(crate) fn round(&self, page: &Page) -> Option<f32> {
+        if page.layer(self.area.x, self.area.y) > self.depth {
+            return None;
+        }
         obelus_ui::how_far_round(page.look(self.area.x, self.area.y).text)
     }
 
@@ -1951,6 +1970,7 @@ mod tests {
                 height: 1,
             },
             on,
+            depth: 0,
         };
         assert!(switch(0, true).still_said(&page), "the settings' own");
         assert!(!switch(1, true).still_said(&page), "and one a list covered");
@@ -1958,6 +1978,44 @@ mod tests {
             !switch(0, false).still_said(&page),
             "nor one drawn unset where the page says it is set"
         );
+    }
+
+    /// And not under something put over the page that has the same glyph
+    /// in the same cell, which the cell alone cannot tell apart.
+    ///
+    /// Deliberate break: take `page.layer` out of `Ticked::still_said`, or
+    /// out of `Spun::round`. The switch under the list, or the turn under a
+    /// file previewed over it, is still drawn -- over the list's own box,
+    /// or turning over the file's letter.
+    #[test]
+    fn a_switch_or_a_turn_under_the_same_glyph_is_not_drawn() {
+        let set = obelus_ui::tick(true).to_string();
+        let mut page = written(&[&set, "\u{2819}"]);
+        let cell = |y: u16| Rect {
+            x: 0,
+            y,
+            width: 1,
+            height: 1,
+        };
+        let switch = |depth: usize| Ticked {
+            area: cell(0),
+            on: true,
+            depth,
+        };
+        let turn = |depth: usize| Spun {
+            area: cell(1),
+            depth,
+        };
+        assert!(switch(0).still_said(&page), "a switch with nothing over it");
+        assert!(
+            turn(0).round(&page).is_some(),
+            "a turn with nothing over it"
+        );
+        page.put_over(&[pane(Rect::new(0, 0, 1, 2))]);
+        assert!(!switch(0).still_said(&page), "a switch under the list");
+        assert!(turn(0).round(&page).is_none(), "a turn under the preview");
+        assert!(switch(1).still_said(&page), "a switch said on the list");
+        assert!(turn(1).round(&page).is_some(), "a turn said on the list");
     }
 
     /// And a mark is drawn only where the cells are still nobody's.

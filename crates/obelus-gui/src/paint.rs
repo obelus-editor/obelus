@@ -2148,6 +2148,7 @@ mod tests {
                 width: 1,
                 height: 1,
             },
+            depth: 0,
         };
         let spun = [one(2)];
         let said = Said {
