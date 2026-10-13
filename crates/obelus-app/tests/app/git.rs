@@ -1526,10 +1526,9 @@ fn the_map_beside_the_bar_shows_the_whole_file() {
     // The bar is the last column and the map the one before it.
     let cell = |row: &Vec<char>, back: usize| row.get(row.len() - back).copied().unwrap_or(' ');
 
+    // Asked of the bar rather than of its cells: the track is blank.
     assert!(
-        rows.iter()
-            .take(10)
-            .all(|row| matches!(cell(row, 1), '\u{2502}' | '\u{2588}')),
+        app.bars().iter().any(|drawn| drawn.bar.area.x == 29),
         "the bar is not the last column:\n{dump}"
     );
     assert!(

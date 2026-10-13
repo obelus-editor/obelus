@@ -4333,28 +4333,12 @@ fn the_row_that_says_it_is_working_turns_while_it_is_working() {
     );
 }
 
-/// The shade of every cell down the bar's column, top to bottom.
-///
-/// The track and the thumb are one block in two colours, so which is which
-/// is a question about the style grid rather than about the glyphs -- one
-/// letter per cell, and the same column in both blocks.
-fn shades_down_the_bar(dump: &str) -> Vec<char> {
-    let drawn = |block: &str| -> Vec<String> {
-        block
-            .lines()
-            .filter_map(|row| row.split_once('|'))
-            .map(|(_, drawn)| drawn.to_string())
-            .collect()
-    };
-    let text = drawn(support::text_block(dump));
-    let styles = drawn(support::style_block(dump));
-    text.iter()
-        .zip(styles)
-        .filter_map(|(row, style)| {
-            let column = row.chars().position(|glyph| glyph == '\u{2588}')?;
-            style.chars().nth(column)
-        })
-        .collect()
+/// The conversation's bar as the last frame left it, if it drew one.
+fn the_transcripts_bar(app: &App) -> Option<obelus_ui::shapes::Bar> {
+    app.bars()
+        .iter()
+        .find(|drawn| drawn.whose == obelus_ui::bars::Whose::Conversation)
+        .map(|drawn| drawn.bar)
 }
 
 /// A transcript long enough to scroll says so, like everything else.
@@ -4364,6 +4348,9 @@ fn shades_down_the_bar(dump: &str) -> Vec<char> {
 /// is there, and which part am I looking at". The column it takes is already
 /// spare -- the rows are wrapped to leave it -- so nothing moves to make
 /// room for it.
+///
+/// Deliberate break: hand back `None` for the bar in `ChatView`, where the
+/// transcript draws it. There is then no bar to find.
 #[test]
 fn a_transcript_with_more_than_fits_has_a_bar() {
     let (mut app, events) = talking();
@@ -4373,16 +4360,8 @@ fn a_transcript_with_more_than_fits_has_a_bar() {
 
     // Nothing said yet, so nothing to scroll and no bar to say so.
     let dump = support::render(&mut app, 60, 22);
-    let bar = |dump: &str| -> Vec<char> {
-        rows(dump)
-            .iter()
-            .filter_map(|row| row.split_once('|'))
-            .filter_map(|(_, drawn)| drawn.trim_end().chars().last())
-            .filter(|glyph| matches!(glyph, '\u{2502}' | '\u{2588}'))
-            .collect()
-    };
     assert!(
-        bar(&dump).is_empty(),
+        the_transcripts_bar(&app).is_none(),
         "a conversation that fits is drawing a bar:\n{dump}"
     );
 
@@ -4398,30 +4377,28 @@ fn a_transcript_with_more_than_fits_has_a_bar() {
     }
 
     let dump = support::render(&mut app, 60, 22);
-    let drawn = bar(&dump);
-    assert!(!drawn.is_empty(), "the transcript has no bar:\n{dump}");
-    // The track and the thumb are one block in two shades, so which is
-    // which is a question about the colours rather than the glyphs.
-    let shades = shades_down_the_bar(&dump);
+    let bar = the_transcripts_bar(&app).expect("the transcript has no bar");
     assert!(
-        shades.len() >= 3,
+        bar.area.height >= 3 && bar.thumb < bar.area.height,
         "the bar is too short to have a thumb on it:\n{dump}"
     );
-    // Following the end, so the thumb is at the bottom of the track.
-    assert_ne!(
-        shades.first(),
-        shades.last(),
-        "the whole bar is one shade:\n{dump}"
-    );
-    let thumb = shades.last().copied();
+    // Following the end, so the thumb is at the foot -- and drawn there,
+    // in the cells, for a terminal that hears nothing of the bar.
     assert_eq!(
-        shades.iter().rev().position(|shade| Some(*shade) != thumb),
-        shades
-            .iter()
-            .rev()
-            .position(|shade| Some(*shade) != thumb)
-            .filter(|run| *run > 0),
+        bar.mark + bar.thumb,
+        bar.area.height,
         "the thumb is not where the reader is:\n{dump}"
+    );
+    let foot = usize::from(bar.area.bottom() - 1);
+    let row = rows(&dump)
+        .into_iter()
+        .filter_map(|row| row.split_once('|').map(|(_, drawn)| drawn.to_string()))
+        .nth(foot)
+        .expect("the bar's last row");
+    assert_eq!(
+        row.chars().nth(usize::from(bar.area.x)),
+        Some('\u{2588}'),
+        "the thumb is not drawn at the foot:\n{dump}"
     );
 
     // Scrolled back, the thumb comes with it.
@@ -4432,9 +4409,9 @@ fn a_transcript_with_more_than_fits_has_a_bar() {
         )));
     }
     let scrolled = support::render(&mut app, 60, 22);
-    assert_ne!(
-        shades_down_the_bar(&scrolled).last().copied(),
-        thumb,
+    let back = the_transcripts_bar(&app).expect("the bar went");
+    assert!(
+        back.mark < bar.mark,
         "the thumb stayed at the end while the reader went back:\n{scrolled}"
     );
 }

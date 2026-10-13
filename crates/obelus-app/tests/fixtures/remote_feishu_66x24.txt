@@ -2,24 +2,24 @@ screen 66x24  editor 66x22  status 66x1
 -- text --
  0|  Settings  Keys  Remote  Themes  Agents                      ⇤ ⇥ 
  1|──────────────────────────────────────────────────────────────────
- 2| Feishu                                                           
- 3|                                                                  
- 4|   Platform                                      Feishu ▸         
- 5|     Which chat a note can be worked on from                      
- 6|                                                                  
- 7|   App ID                                        Not set ▸        
- 8|     From Credentials & Basic Info, on the app's page             
- 9|                                                                  
-10|   App Secret                                    Not set ▸        
-11|     From the same page, beside the App ID                        
-12|                                                                  
-13|   Domain                                        feishu ▸         
-14|     feishu for Feishu, lark for Lark outside China               
+ 2| Feishu                                                          █
+ 3|                                                                 █
+ 4|   Platform                                Feishu ▸              █
+ 5|     Which chat a note can be worked on from                     █
+ 6|                                                                 █
+ 7|   App ID                                  Not set ▸             █
+ 8|     From Credentials & Basic Info, on the app's page            █
+ 9|                                                                 █
+10|   App Secret                              Not set ▸             █
+11|     From the same page, beside the App ID                       █
+12|                                                                 █
+13|   Domain                                  feishu ▸              █
+14|     feishu for Feishu, lark for Lark outside China              █
 15|                                                                  
-16|   People                                        Nobody ▸         
+16|   People                                  Nobody ▸               
 17|     Who may talk to this machine through it                      
 18|                                                                  
-19|   Pair                                          Make a code ▸    
+19|   Pair                                    Make a code ▸          
 20|──────────────────────────────────────────────────────────────────
 21|   Enter  Change                                                  
 22|──────────────────────────────────────────────────────────────────
@@ -27,26 +27,26 @@ screen 66x24  editor 66x22  status 66x1
 -- style --
  0|aaaaaaaaaaaaaaaaabbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 2|cddddddccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
- 3|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
- 4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbebbbbbbbbb
- 5|bbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebbbbbbbbbbbbbbbbbbbbbb
- 6|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
- 7|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccacccccccc
- 8|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccc
- 9|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-10|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccacccccccc
-11|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccccccccccccccccccccc
-12|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-13|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccaccccccccc
-14|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccccc
+ 2|cddddddcccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
+ 3|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
+ 4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbfbbbbbbbbbbbbbbe
+ 5|bbbbbfffffffffffffffffffffffffffffffffffffffbbbbbbbbbbbbbbbbbbbbbe
+ 6|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
+ 7|cccccccccccccccccccccccccccccccccccccccccccccccccccaccccccccccccce
+ 8|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccccccccce
+ 9|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
+10|cccccccccccccccccccccccccccccccccccccccccccccccccccaccccccccccccce
+11|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccccccccccccce
+12|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
+13|ccccccccccccccccccccccccccccccccccccccccccccccccccacccccccccccccce
+14|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccccccccccce
 15|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-16|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccaccccccccc
+16|ccccccccccccccccccccccccccccccccccccccccccccccccccaccccccccccccccc
 17|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccccccccccccccccccc
 18|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-19|cccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaacacccc
+19|cccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaacacccccccccc
 20|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-21|ccfffffffcaaaaaacccccccccccccccccccccccccccccccccccccccccccccccccc
+21|ccgggggggcaaaaaacccccccccccccccccccccccccccccccccccccccccccccccccc
 22|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 23|dddaaaaaaaaaaaaaaaaaaaaaaddddddddddddddddddddddddddddddddddddddddd
 -- legend --
@@ -54,7 +54,8 @@ a fg=#52525b bg=#18181b
 b fg=#e4e4e7 bg=#27272a
 c fg=#e4e4e7 bg=#18181b
 d fg=#d4d4d8 bg=#18181b
-e fg=#52525b bg=#27272a
-f fg=#a1a1aa bg=#27272a
+e fg=#a1a1aa bg=#18181b
+f fg=#52525b bg=#27272a
+g fg=#a1a1aa bg=#27272a
 -- cursor --
 none

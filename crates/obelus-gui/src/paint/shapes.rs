@@ -268,7 +268,7 @@ impl Painter {
     /// shape either way, because a pair that changed shape would put a
     /// jog in a column read straight down -- which is what `tick` says
     /// about the two glyphs, for the same reason.
-    /// The bars, as capsules rather than as the blocks a terminal has.
+    /// The bars' marks, as capsules rather than as the blocks a terminal has.
     ///
     /// Nothing is covered over. `letters` is told to leave a bar's cells
     /// alone, the way it leaves a rule's and a cap's, so the blocks a
@@ -286,8 +286,8 @@ impl Painter {
     ///
     /// The colours are the cells' own, which is the rule a switch follows
     /// and for the same reason: what a terminal draws the blocks in is
-    /// what a window draws the capsules in, and asking the view for them
-    /// again would be the same two colours from two places.
+    /// what a window draws the capsule in, and asking the view for it
+    /// again would be the same colour from two places.
     pub(super) fn bars(&mut self, page: &Page, barred: &[Barred], cell: CellSize) {
         for showing in barred {
             let bar = showing.bar;
@@ -321,35 +321,6 @@ impl Painter {
                 continue;
             }
 
-            // A row the mark does not cover, which is where the track's
-            // colour is. There may be none -- a mark as long as its track
-            // -- and then there is no track to draw either: every pixel of
-            // it would be under the mark.
-            if let Some(row) = (0..bar.area.height)
-                .find(|row| *row < bar.mark || *row >= bar.mark.saturating_add(bar.thumb))
-            {
-                let look = page.look(column, bar.area.y + row);
-                // The track goes out altogether, which the mark may not:
-                // what it says is how far the mark can travel, and the
-                // column it is in says that much on its own.
-                let (left, width) = capsule(BAR_TRACK);
-                let ink = mixed(
-                    rgba(look.background, Ink::Background),
-                    rgba(look.foreground, Ink::Foreground),
-                    shown,
-                );
-                for (top, rows) in &runs {
-                    self.rounded(
-                        left,
-                        f32::from(*top) * cell.height,
-                        width,
-                        f32::from(*rows) * cell.height,
-                        width / 2.0,
-                        ink,
-                    );
-                }
-            }
-
             // Two widths in one: how far up the scrolling has brought it,
             // and then how far the pointer has taken it past that. The
             // second is laid over the first rather than chosen instead of
@@ -366,9 +337,9 @@ impl Painter {
                 rgba(look.foreground, Ink::Foreground),
                 BAR_RESTING + (1.0 - BAR_RESTING) * shown,
             );
-            // And the mark only where the column is still the bar's, the
-            // same as the track: half a mark is where the reader is, and a
-            // mark drawn across whatever covered it is not.
+            // The mark only where the column is still the bar's: half a mark is
+            // where the reader is, and a mark drawn across whatever
+            // covered it is not.
             let wanted = top..top.saturating_add(bar.thumb);
             for (run, rows) in &runs {
                 let from = (*run).max(wanted.start);

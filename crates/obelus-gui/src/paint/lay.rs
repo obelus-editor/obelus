@@ -168,9 +168,10 @@ impl Painter {
         //
         // A bar is not among them, and answers the same question finer:
         // where a switch and a mark are one cell and a run of them either
-        // is or is not still there, a bar is a column and the thing over
-        // it may take the middle of it -- so it is asked row by row, at
-        // the two places it matters, and `Barred::runs` is that answer.
+        // is or is not still there, a bar's mark is a run of rows and the
+        // thing over it may take the middle of it -- so it is asked row by
+        // row, at the two places it matters, and `Barred::runs` is that
+        // answer.
         let ticked: Vec<Ticked> = said
             .ticked
             .iter()
@@ -236,7 +237,7 @@ impl Painter {
         // tick, a window turns at whatever rate it draws.
         self.turns(page, said.spun, moving.turn, cell);
         // And so does a bar, for the same reason: what a terminal has for
-        // a track is a column of full blocks, and a window has a shape.
+        // a mark is a run of full blocks, and a window has a shape.
         self.bars(page, said.barred, cell);
         // And so does a change mark: half a block per row is what a cell
         // has, and a window has one shape however many rows the hunk

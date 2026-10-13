@@ -1122,9 +1122,13 @@ impl ApplicationHandler<Waking> for Showing {
                                 painter.carries(id, focused, svg, palette);
                             }
                         }
-                        Update::Marked { id, focused, x, y } => {
-                            self.marking.push(Marked { id, focused, x, y })
-                        }
+                        Update::Marked { id, focused, x, y } => self.marking.push(Marked {
+                            id,
+                            focused,
+                            x,
+                            y,
+                            depth: self.stacking.len(),
+                        }),
                         // Every one said is kept, in the order it was
                         // said, which is the order they are stacked in: a
                         // setting's choices open over the settings. Each is
@@ -1168,9 +1172,16 @@ impl ApplicationHandler<Waking> for Showing {
                             });
                         }
                         Update::Ticked { area, on } => {
-                            self.ticking.push(Ticked { area, on });
+                            self.ticking.push(Ticked {
+                                area,
+                                on,
+                                depth: self.stacking.len(),
+                            });
                         }
-                        Update::Spun { area } => self.spinning.push(Spun { area }),
+                        Update::Spun { area } => self.spinning.push(Spun {
+                            area,
+                            depth: self.stacking.len(),
+                        }),
                         Update::Parted { area } => {
                             self.parting.push(Parted { area });
                         }
@@ -2054,6 +2065,7 @@ mod tests {
         };
         let one = |x| Spun {
             area: Rect::new(x, 0, 1, 1),
+            depth: 0,
         };
         let kept: Vec<u16> = turning(
             vec![one(0), one(1), one(2)],

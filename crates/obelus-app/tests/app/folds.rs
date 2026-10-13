@@ -583,9 +583,9 @@ fn the_scrollbar_measures_what_is_shown() {
 
     let mut app = App::new(vec![Buffer::open(&path).expect("opening")]);
     support::lay_out(&mut app, 50, 10);
-    // The track and the thumb are the same block glyph in two colours, so
-    // the thumb is counted by style: the last cell of each row, and which
-    // of the two styles the topmost row uses.
+    // The thumb is a block and the track is blank, each in a style of its
+    // own, so the thumb is counted by style: the last cell of each row, and
+    // how many from the top wear the topmost row's.
     let thumb = |dump: &str| {
         let rows: Vec<char> = support::style_block(dump)
             .lines()

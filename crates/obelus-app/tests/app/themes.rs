@@ -550,7 +550,6 @@ fn the_template_for_omarchy_names_colours_obelus_has() {
         theme.foreground,
         theme.gutter,
         theme.gutter_current,
-        theme.scrollbar_track,
         theme.status_foreground,
         theme.status_stale,
         theme.selected_row_background,
