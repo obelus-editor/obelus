@@ -83,6 +83,8 @@ impl obelus_ui::shapes::Shapes for Heard {
 
     fn linked(&self, _area: Rect) {}
 
+    fn paired(&self, _area: Rect, _pair: usize) {}
+
     fn parted(&self, area: Rect) {
         if let Ok(mut partings) = self.partings.lock() {
             partings.push((std::thread::current().id(), area));

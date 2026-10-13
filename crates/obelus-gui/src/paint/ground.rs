@@ -1,8 +1,8 @@
-//! What is under the letters: each cell's own colour, and the reader's
-//! holds with the light round them.
+//! What is under the letters: each cell's own colour, the reader's holds
+//! with the light round them, and the cursor's pair of brackets lit.
 
 use super::*;
-use crate::grid::{Capped, Page};
+use crate::grid::{Capped, Page, Paired};
 
 impl Painter {
     /// The colour behind the text, as few rectangles as it takes.
@@ -17,6 +17,7 @@ impl Painter {
         panes: &[&Behind],
         framed: &[&Behind],
         capped: &[&Capped],
+        paired: &[Paired],
     ) {
         let (width, height) = (cell.width, cell.height);
         let spilt: Vec<(u16, u16)> = framed.iter().flat_map(|card| card.spilt(page)).collect();
@@ -71,6 +72,15 @@ impl Painter {
                     self.holds(page, row, capped)
                         .into_iter()
                         .map(|(from, to, _)| (from, to)),
+                );
+                // And the cursor's brackets, for the same reason: `pairs`
+                // draws each as a plate, and the square under it would
+                // stand outside its corners.
+                holes.extend(
+                    paired
+                        .iter()
+                        .filter(|half| half.area.y == row)
+                        .map(|half| (half.area.x, half.area.right())),
                 );
                 for (start, end) in without(start, end, &mut holes) {
                     self.block(
@@ -243,6 +253,81 @@ impl Painter {
             })
             .collect::<Vec<_>>();
         self.quads.splice(first..first, lights);
+    }
+
+    /// The cursor's pair of brackets, each a plate with light round it.
+    ///
+    /// Solid, and in the light's own colour: the plate is where the light
+    /// comes from, so it is the brightest thing there and the glow is the
+    /// same colour falling away from its edge. Not a hold's plate, whose
+    /// rim is brighter than its face -- on a bracket one cell wide that is
+    /// an outline round a hollow, which reads as a box drawn round the
+    /// character rather than as the character being lit.
+    ///
+    /// The colour is the cells' own carried further from the page, so it
+    /// is the theme's `bracket_background` and nothing the theme did not
+    /// choose -- only lifted, the way a lit thing is lighter than the same
+    /// thing in shade.
+    ///
+    /// `along` is how far it has come on, and the whole of it comes on
+    /// together: the plate from nothing, and the light from close in to
+    /// its full reach. A plate at full strength under a light still coming
+    /// on is a square that appears and then glows, which is two things
+    /// happening where the reader should see one.
+    pub(super) fn pairs(
+        &mut self,
+        page: &Page,
+        paired: &[Paired],
+        panes: &[&Behind],
+        framed: &[&Behind],
+        along: Option<f32>,
+        cell: CellSize,
+    ) {
+        let along = along.unwrap_or(1.0);
+        let corner = (cell.height * HELD_CORNER).min(cell.width / 2.0);
+        let reach = cell.height * PAIR_REACH * PAIR_REACH_FROM.mul_add(1.0 - along, along);
+        let halves: Vec<([f32; 4], [f32; 4])> = paired
+            .iter()
+            .map(|half| {
+                let (x, y) = (half.area.x, half.area.y);
+                let rect = [
+                    f32::from(x) * cell.width,
+                    f32::from(y) * cell.height,
+                    cell.width,
+                    cell.height,
+                ];
+                let ink = rgba(page.look(x, y).background, Ink::Background);
+                (rect, away(self.under(panes, framed, x, y), ink))
+            })
+            .collect();
+        // Every light under every plate, so the light round one half does
+        // not lie over the other where the two are side by side: `()`.
+        for &([left, top, width, height], lit) in &halves {
+            self.quads.push(Quad {
+                rect: [
+                    left - reach,
+                    top - reach,
+                    reach.mul_add(2.0, width),
+                    reach.mul_add(2.0, height),
+                ],
+                uv: [left, top, left + width, top + height],
+                colour: [lit[0], lit[1], lit[2], PAIR_LIGHT * along],
+                flags: SHADOW,
+                radius: corner,
+                layer: 0,
+                lower: 0.0,
+            });
+        }
+        for &([left, top, width, height], lit) in &halves {
+            self.rounded(
+                left,
+                top,
+                width,
+                height,
+                corner,
+                [lit[0], lit[1], lit[2], along],
+            );
+        }
     }
 
     /// The face a hold is drawn in at this cell, where the cell is part

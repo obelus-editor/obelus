@@ -35,6 +35,9 @@ obelus-program.workspace = true
 # Starting another Obelus on another tree, as a task on the one runtime that
 # reaps it when it ends -- see `elsewhere`.
 obelus-runtime.workspace = true
+# Which characters are brackets, which says whether a cell the light was
+# said about is still one.
+obelus-syntax.workspace = true
 # How many cells a cell's text takes, which is the application's own answer
 # and has to be: the window draws the character where the application put
 # the one after it.

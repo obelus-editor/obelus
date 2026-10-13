@@ -385,6 +385,26 @@ pub trait Shapes: Send + Sync {
     /// One row at a time: a link that wraps is said once for each row its
     /// words are on.
     fn linked(&self, area: Rect);
+
+    /// This cell is one half of the pair of brackets the cursor is on or
+    /// inside.
+    ///
+    /// A terminal says it in `bracket_background`, behind the bracket and
+    /// its partner. What a window has that a cell has not is light: a
+    /// plate under the bracket with a glow round it, which a pair is
+    /// easier to find by than a square a shade off the page.
+    ///
+    /// `pair` is which pair, as a number to be *compared*, the way
+    /// [`Shapes::scrolled`]'s `top` is: where the opening bracket is in
+    /// the file. What a front end does with it is notice that it changed
+    /// -- the caret went into another pair -- which nothing in the cells
+    /// says, because a pair the view scrolled and a pair the caret moved
+    /// to are the same two cells somewhere else.
+    ///
+    /// No colours, for the reason a switch has none: what the plate is
+    /// drawn in is the ground of that very cell, which the view has
+    /// already written.
+    fn paired(&self, area: Rect, pair: usize);
 }
 
 /// Who is drawing, where it is somebody who wants to be told.
@@ -475,6 +495,14 @@ pub(crate) fn sheened(area: Rect, from: Color, to: Color) {
 pub(crate) fn linked(area: Rect) {
     if let Some(shapes) = DRAWING.get() {
         shapes.linked(area);
+    }
+}
+
+/// Tells whoever is drawing that half of the cursor's pair of brackets is
+/// here.
+pub(crate) fn paired(area: Rect, pair: usize) {
+    if let Some(shapes) = DRAWING.get() {
+        shapes.paired(area, pair);
     }
 }
 

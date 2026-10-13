@@ -20,6 +20,7 @@ struct Heard {
     keys: Mutex<Vec<(String, Rect)>>,
     scrolls: Mutex<Vec<(Rect, i64)>>,
     links: Mutex<Vec<Rect>>,
+    pairs: Mutex<Vec<(Rect, usize)>>,
 }
 
 impl obelus_ui::shapes::Shapes for Heard {
@@ -51,6 +52,12 @@ impl obelus_ui::shapes::Shapes for Heard {
     fn linked(&self, area: Rect) {
         if let Ok(mut links) = self.links.lock() {
             links.push(area);
+        }
+    }
+
+    fn paired(&self, area: Rect, pair: usize) {
+        if let Ok(mut pairs) = self.pairs.lock() {
+            pairs.push((area, pair));
         }
     }
 
@@ -705,4 +712,67 @@ fn a_terminal_says_how_far_the_program_moved_it() {
     run(&mut app, "seq 1 3; echo moved-$((2 + 2))", "moved-4");
     let after = last().expect("the terminal never said where it was");
     assert_eq!(after - before, 5, "the view moved {before} to {after}");
+}
+
+/// The pair of brackets the cursor is inside is said to a window, both
+/// halves of it and as one pair, at the cells the cells themselves put the
+/// brackets in.
+///
+/// Said rather than found: the cells already carry `bracket_background`,
+/// but a window that went looking for that colour would be reading the
+/// grid back to find out what it means -- and could not tell a pair the
+/// caret moved into from the same pair scrolled, which is what decides
+/// whether the light comes on again.
+///
+/// Deliberate break: drop the `shapes::paired` beside the bracket's
+/// background in `ui::editor`. The window then has nothing to draw the
+/// light from, and this hears no pair at all.
+#[test]
+fn the_pair_the_cursor_is_inside_is_said_to_a_window() {
+    let _turn = turn();
+    obelus_config::drawn_in_a_window();
+    let path = std::path::Path::new("tests/fixtures/sample.rs");
+    let mut app = App::new(vec![obelus_buffer::Buffer::open(path).expect("opening it")]);
+    // Into the body of `main`, on neither brace.
+    support::press(&mut app, crossterm::event::KeyCode::Down);
+    support::press(&mut app, crossterm::event::KeyCode::Down);
+    if let Ok(mut pairs) = heard().pairs.lock() {
+        pairs.clear();
+    }
+    let dump = support::render(&mut app, 40, 8);
+
+    let grid: Vec<String> = support::text_block(&dump)
+        .lines()
+        .filter_map(|row| row.split_once('|'))
+        .map(|(_, cells)| cells.to_string())
+        .collect();
+    // Every cell holding one, in reading order: the first `{` and the last
+    // `}`, because the line between them has a pair of its own, in a
+    // string.
+    let cells = |wanted: char| -> Vec<Rect> {
+        grid.iter()
+            .enumerate()
+            .flat_map(|(y, row)| {
+                row.chars()
+                    .enumerate()
+                    .filter(move |&(_, c)| c == wanted)
+                    .map(move |(x, _)| {
+                        Rect::new(
+                            u16::try_from(x).expect("a column"),
+                            u16::try_from(y).expect("a row"),
+                            1,
+                            1,
+                        )
+                    })
+            })
+            .collect()
+    };
+    let open = *cells('{').first().expect("the opening brace on screen");
+    let close = *cells('}').last().expect("the closing brace on screen");
+    let source = std::fs::read_to_string(path).expect("reading it");
+    let pair = source.find('{').expect("a brace");
+
+    let mut pairs = heard().pairs.lock().expect("the pairs").clone();
+    pairs.sort_by_key(|(area, _)| (area.y, area.x));
+    assert_eq!(pairs, vec![(open, pair), (close, pair)], "{dump}");
 }

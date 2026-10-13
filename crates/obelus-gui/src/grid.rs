@@ -217,6 +217,14 @@ pub(crate) enum Update {
         /// The run the line covers.
         area: Rect,
     },
+    /// Half of the pair of brackets the cursor is on or inside.
+    Paired {
+        /// Which cell it is.
+        area: Rect,
+        /// Which pair, as a number to compare -- see
+        /// `obelus_ui::shapes::Shapes::paired`.
+        pair: usize,
+    },
     /// The words of a link, on one row.
     Linked {
         /// Which cells they are.
@@ -285,6 +293,8 @@ pub(crate) struct Said<'a> {
     pub(crate) parted: &'a [Parted],
     /// And which runs of a one-cell column are marked.
     pub(crate) stroked: &'a [Stroked],
+    /// And which cells are the cursor's pair of brackets.
+    pub(crate) paired: &'a [Paired],
     /// And what is under each pane and each box, furthest first: each is
     /// glass over everything before it.
     pub(crate) stack: &'a [Behind],
@@ -509,6 +519,36 @@ impl Ticked {
             .text
             .chars()
             .eq(std::iter::once(obelus_ui::tick(self.on)))
+    }
+}
+
+/// Where half of the cursor's pair of brackets is in the frame being drawn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Paired {
+    /// Which cell it is.
+    pub(crate) area: Rect,
+    /// Which pair it is half of.
+    pub(crate) pair: usize,
+    /// How many panes and boxes had been put over the page when it was
+    /// said -- see `Page::layer`.
+    pub(crate) depth: usize,
+}
+
+impl Paired {
+    /// Whether the page still says what this was said about.
+    ///
+    /// A bracket in the cell, and nothing put over it since. The same
+    /// question a cap asks: a list opened over the file is drawn after
+    /// the file in the same frame, and a light left where the file's
+    /// bracket was would be shining on a row of the list.
+    pub(crate) fn still_said(&self, page: &Page) -> bool {
+        let (x, y) = (self.area.x, self.area.y);
+        let mut text = page.look(x, y).text.chars();
+        page.layer(x, y) <= self.depth
+            && text.next().is_some_and(|c| {
+                obelus_syntax::brackets::opens(c) || obelus_syntax::brackets::closes(c)
+            })
+            && text.next().is_none()
     }
 }
 
@@ -997,6 +1037,10 @@ impl obelus_ui::shapes::Shapes for Marking {
 
     fn linked(&self, area: Rect) {
         let _ = self.updates.send(Update::Linked { area });
+    }
+
+    fn paired(&self, area: Rect, pair: usize) {
+        let _ = self.updates.send(Update::Paired { area, pair });
     }
 
     fn capped(&self, keys: &str, area: Rect, cap: Color, page: Color, edge: Color) {
@@ -1657,6 +1701,7 @@ impl Page {
             | Update::Spun { area }
             | Update::Ruled { area }
             | Update::Linked { area }
+            | Update::Paired { area, .. }
             | Update::Sheened { area, .. }
             | Update::Parted { area }
             | Update::Behind { area, .. }

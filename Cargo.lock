@@ -4616,6 +4616,7 @@ dependencies = [
  "obelus-logging",
  "obelus-program",
  "obelus-runtime",
+ "obelus-syntax",
  "obelus-text",
  "obelus-theme",
  "obelus-ui",

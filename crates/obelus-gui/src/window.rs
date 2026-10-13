@@ -70,8 +70,8 @@ use winit::{
 use crate::{
     blink::Blink,
     grid::{
-        Barred, Behind, Capped, Cells, Going, Marked, Marking, Measured, Page, Parted, Rolled,
-        Ruled, Said, Sheened, Spelling, Spun, Stroked, Ticked, Update,
+        Barred, Behind, Capped, Cells, Going, Marked, Marking, Measured, Page, Paired, Parted,
+        Rolled, Ruled, Said, Sheened, Spelling, Spun, Stroked, Ticked, Update,
     },
     keys,
     motion::{Lane, Motion, Wake},
@@ -151,6 +151,7 @@ struct Left {
     sheened: Option<Sheened>,
     parted: Vec<Parted>,
     stroked: Vec<Stroked>,
+    paired: Vec<Paired>,
     stack: Vec<Behind>,
     /// Which of its panes went.
     going: Vec<Going>,
@@ -169,6 +170,7 @@ impl Left {
             sheened: self.sheened.as_ref(),
             parted: &self.parted,
             stroked: &self.stroked,
+            paired: &self.paired,
             stack: &self.stack,
             bands: &[],
         }
@@ -419,6 +421,11 @@ struct Showing {
     stroked: Vec<Stroked>,
     /// And on the one being laid out.
     stroking: Vec<Stroked>,
+    /// Which cells are the cursor's pair of brackets on the frame being
+    /// shown.
+    paired: Vec<Paired>,
+    /// And on the one being laid out.
+    pairing: Vec<Paired>,
     /// Which bands of rows are lists, how far down each has got and what
     /// bar says so, on the frame being shown.
     ///
@@ -532,6 +539,8 @@ impl Showing {
             ruled: Vec::new(),
             stroked: Vec::new(),
             stroking: Vec::new(),
+            paired: Vec::new(),
+            pairing: Vec::new(),
             ruling: Vec::new(),
             linked: Vec::new(),
             linking: Vec::new(),
@@ -1195,6 +1204,11 @@ impl ApplicationHandler<Waking> for Showing {
                         Update::Linked { area } => {
                             self.linking.push((area, self.stacking.len()));
                         }
+                        Update::Paired { area, pair } => self.pairing.push(Paired {
+                            area,
+                            pair,
+                            depth: self.stacking.len(),
+                        }),
                         Update::Stroked { stroke } => {
                             self.stroking.push(Stroked {
                                 stroke,
@@ -1231,6 +1245,7 @@ impl ApplicationHandler<Waking> for Showing {
                                     sheened: self.sheened.take(),
                                     parted: std::mem::take(&mut self.parted),
                                     stroked: std::mem::take(&mut self.stroked),
+                                    paired: std::mem::take(&mut self.paired),
                                     stack: std::mem::take(&mut self.stack),
                                     going: Vec::new(),
                                 });
@@ -1281,6 +1296,17 @@ impl ApplicationHandler<Waking> for Showing {
                             self.motion
                                 .sheen_drawn(self.sheened.is_some(), Instant::now());
                             self.stroked = std::mem::take(&mut self.stroking);
+                            // Only where the page still holds it, and
+                            // said here for the light's reason: whether
+                            // the pair is another one than the last frame
+                            // drew is what starts it coming up, and only
+                            // the frame arriving knows that.
+                            self.paired = std::mem::take(&mut self.pairing);
+                            self.paired.retain(|half| half.still_said(&self.page));
+                            self.motion.pairs_drawn(
+                                self.paired.iter().map(|half| half.pair),
+                                Instant::now(),
+                            );
                             self.stack = std::mem::take(&mut self.stacking);
                             self.panes = std::mem::take(&mut self.paning);
                             self.scrolled = std::mem::take(&mut self.scrolling);
@@ -1613,6 +1639,7 @@ impl ApplicationHandler<Waking> for Showing {
                         sheened: self.sheened.as_ref(),
                         parted: &self.parted,
                         stroked: &self.stroked,
+                        paired: &self.paired,
                         stack: &self.stack,
                         bands: &rolled,
                     },

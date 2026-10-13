@@ -1662,11 +1662,12 @@ fn draw_row(
         // The pair the cursor is on or inside. After the mark, so
         // a symbol a preview is about keeps its own background where the two
         // land on the same cell.
-        if painting
+        if let Some((open, _)) = painting
             .brackets
-            .is_some_and(|(open, close)| glyph.first_byte == open || glyph.first_byte == close)
+            .filter(|(open, close)| glyph.first_byte == *open || glyph.first_byte == *close)
         {
             style = style.bg(painting.theme.bracket_background);
+            crate::shapes::paired(Rect::new(x + offset, y, 1, 1), open.get());
         }
 
         // A cell the file does not contain, drawn as whatever put it
