@@ -1122,9 +1122,13 @@ impl ApplicationHandler<Waking> for Showing {
                                 painter.carries(id, focused, svg, palette);
                             }
                         }
-                        Update::Marked { id, focused, x, y } => {
-                            self.marking.push(Marked { id, focused, x, y })
-                        }
+                        Update::Marked { id, focused, x, y } => self.marking.push(Marked {
+                            id,
+                            focused,
+                            x,
+                            y,
+                            depth: self.stacking.len(),
+                        }),
                         // Every one said is kept, in the order it was
                         // said, which is the order they are stacked in: a
                         // setting's choices open over the settings. Each is

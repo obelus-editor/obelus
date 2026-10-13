@@ -881,6 +881,9 @@ pub(crate) struct Marked {
     pub(crate) x: u16,
     /// And the row.
     pub(crate) y: u16,
+    /// How many panes and boxes had been put over the page when it was
+    /// said -- see `Page::layer`.
+    pub(crate) depth: usize,
 }
 
 impl Marked {
@@ -892,11 +895,16 @@ impl Marked {
     /// of its own to look for, and anything in them at all is somebody
     /// else's writing. A box opened over the agents page had two agents'
     /// marks sitting on its frame.
+    ///
+    /// And whose the cells are, which the cells cannot say: a page put
+    /// over the agents writes blanks where it has nothing to say, and a
+    /// blank over a blank is still blank. The page that says the project
+    /// has gone had the agents' marks floating on it.
     pub(crate) fn still_said(&self, page: &Page) -> bool {
         let slot = obelus_ui::image::SLOT;
         (self.y..self.y.saturating_add(slot.height)).all(|y| {
             (self.x..self.x.saturating_add(slot.width))
-                .all(|x| page.look(x, y).text.trim().is_empty())
+                .all(|x| page.layer(x, y) <= self.depth && page.look(x, y).text.trim().is_empty())
         })
     }
 }
@@ -1968,6 +1976,7 @@ mod tests {
             focused: false,
             x,
             y,
+            depth: 0,
         };
         assert!(mark(0, 1).still_said(&page), "two cells nobody wrote in");
         assert!(mark(0, 0).still_said(&page), "and the two before the line");
@@ -1975,6 +1984,27 @@ mod tests {
             !mark(1, 0).still_said(&page),
             "but not where the line is the second of them"
         );
+    }
+
+    /// And not under a page put over it that left its cells blank.
+    ///
+    /// Deliberate break: take `page.layer` out of `still_said`. The cells
+    /// are blank under the page as they were before it, so the mark is
+    /// drawn on the page that says the project has gone.
+    #[test]
+    fn a_mark_under_a_page_with_nothing_in_its_cells_is_not_drawn() {
+        let mut page = written(&["   ", "   "]);
+        let mark = |depth: usize| Marked {
+            id: "claude".to_string(),
+            focused: false,
+            x: 0,
+            y: 1,
+            depth,
+        };
+        assert!(mark(0).still_said(&page), "with nothing over it");
+        page.put_over(&[pane(Rect::new(0, 0, 3, 2))]);
+        assert!(!mark(0).still_said(&page), "under the page put over it");
+        assert!(mark(1).still_said(&page), "and one said on that page");
     }
 
     /// And a line between two things is drawn only where nothing has been
