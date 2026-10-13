@@ -688,6 +688,51 @@ mod keys {
         assert_eq!(text(&app), "函数 main() {}\n");
     }
 
+    /// And the word and what it replaced are one step back, as they were
+    /// when the word arrived alone and replaced the selection itself.
+    ///
+    /// Broken deliberately by recording the word as `Doing::Whole` in
+    /// `App::paste_text` whatever came before it: one undo left neither.
+    #[test]
+    fn a_word_spelled_over_a_selection_is_one_undo() {
+        let (_scratch, mut app) = reading("keys-spelling-undo", "fn main() {}\n");
+        for _ in 0..2 {
+            support::press_shift(&mut app, KeyCode::Right);
+        }
+        app.handle(obelus_app::event::Event::Spelling);
+        app.handle(obelus_app::event::Event::Paste("函数".to_string()));
+        dispatch::dispatch(&mut app, Command::Undo);
+        assert_eq!(
+            text(&app),
+            "fn main() {}\n",
+            "one undo did not put back what the word replaced"
+        );
+    }
+
+    /// But only the word that came straight after: anything the file went
+    /// through in between is a step of its own, and so is what follows it.
+    ///
+    /// Broken deliberately by joining whatever paste follows a word begun,
+    /// without asking the version: the undo took the letter typed between
+    /// them as well.
+    #[test]
+    fn a_paste_after_something_else_is_its_own_undo() {
+        let (_scratch, mut app) = reading("keys-spelling-between", "fn main() {}\n");
+        for _ in 0..2 {
+            support::press_shift(&mut app, KeyCode::Right);
+        }
+        app.handle(obelus_app::event::Event::Spelling);
+        support::type_text(&mut app, "x");
+        app.handle(obelus_app::event::Event::Paste("函数".to_string()));
+        assert_eq!(text(&app), "x函数 main() {}\n");
+        dispatch::dispatch(&mut app, Command::Undo);
+        assert_eq!(
+            text(&app),
+            "x main() {}\n",
+            "the paste was joined to what came before the letter"
+        );
+    }
+
     /// A pasted function is one change, however many lines it is.
     #[test]
     fn what_the_terminal_pastes_arrives_as_one_change() {

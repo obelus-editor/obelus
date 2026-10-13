@@ -611,6 +611,9 @@ impl App {
             self.wrong("Nothing to paste".to_string());
             return;
         };
+        // Not the word a selection was taken out for: that arrives as an
+        // input method's commit, and one given up with escape never does.
+        self.spelled_over = None;
         self.paste_text(&what);
     }
 
@@ -774,9 +777,16 @@ impl App {
     /// its top, a terminal's program is sent a paste. A word given up with
     /// escape never arrives, and those would have happened for nothing.
     pub(in crate::app) fn spelling_begins(&mut self) {
-        if self.holds_text() {
-            self.paste_text("");
+        if !self.holds_text() {
+            return;
         }
+        let version = |app: &Self| app.current.zip(app.current_buffer().map(Buffer::version));
+        let before = version(self);
+        self.paste_text("");
+        // A file it changed is one with an undo, and the word joins the step
+        // it took; a box has none.
+        let after = version(self);
+        self.spelled_over = after.filter(|_| after != before);
     }
 
     /// Whether whatever a paste would go into has something held in it.
@@ -914,13 +924,19 @@ impl App {
             return;
         };
         let cursor = buffer.cursor();
+        let here = self.current.zip(Some(buffer.version()));
         let span = buffer.selection().unwrap_or(Span {
             line: cursor.line,
             column: cursor.column,
             end_line: cursor.line,
             end_column: cursor.column,
         });
-        self.change(span, what, obelus_buffer::undo::Doing::Whole);
+        // The word a selection was taken out for, with nothing between.
+        let doing = match self.spelled_over.take() {
+            Some(over) if Some(over) == here => obelus_buffer::undo::Doing::Joined,
+            _ => obelus_buffer::undo::Doing::Whole,
+        };
+        self.change(span, what, doing);
     }
 
     /// Puts back what the last change took away.
