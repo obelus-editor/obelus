@@ -72,6 +72,17 @@ const FADE: Duration = Duration::from_millis(120);
 /// would otherwise keep it coming on for ever.
 const LIGHT_UP: Duration = Duration::from_millis(160);
 
+/// How long the picture under the page takes to come up out of the
+/// page's colour once it has been decoded: slower than anything the
+/// reader did, because nothing they did is arriving -- a photograph
+/// appearing all at once a moment after the theme was chosen is the one
+/// thing on the screen that looks like a mistake.
+const UNVEIL: Duration = Duration::from_millis(700);
+
+/// And how long the one it is taking the place of takes to go down into
+/// it: quicker, because what is wanted is the next one.
+const VEIL: Duration = Duration::from_millis(400);
+
 /// And how long it takes to go out.
 ///
 /// Slower than it came on, for the bar's reason: arriving is news and
@@ -864,6 +875,11 @@ pub(crate) struct Motion {
     /// list that went before the view came was a list that blinked out.
     leaving: Arriving,
     card: Arriving,
+    /// The picture under the page coming up out of the page's colour.
+    unveiling: Arriving,
+    /// And going back down into it, before another takes its place or
+    /// none does.
+    veiling: Arriving,
     /// The light round the cursor's pair of brackets, coming on.
     pair: Arriving,
     /// And how bright it was when it set out.
@@ -929,6 +945,14 @@ impl Motion {
                 opened: None,
                 takes: FADE,
             },
+            unveiling: Arriving {
+                opened: None,
+                takes: UNVEIL,
+            },
+            veiling: Arriving {
+                opened: None,
+                takes: VEIL,
+            },
             pair: Arriving {
                 opened: None,
                 takes: LIGHT_UP,
@@ -958,6 +982,8 @@ impl Motion {
             self.pane.opened = None;
             self.leaving.opened = None;
             self.card.opened = None;
+            self.unveiling.opened = None;
+            self.veiling.opened = None;
             self.pair.opened = None;
             self.fading.clear();
             self.bands.seen.clear();
@@ -1079,6 +1105,50 @@ impl Motion {
         Some(stayed)
     }
 
+    /// A picture is under the page now, where there was none: it comes
+    /// up out of the page's colour rather than being there at once.
+    pub(crate) fn picture_hung(&mut self, now: Instant) {
+        self.veiling.opened = None;
+        if self.animates {
+            self.unveiling.opened = Some(now);
+        }
+    }
+
+    /// The picture under the page is to go, and goes down into the
+    /// page's colour first. Says whether it does, which is whether the
+    /// window has to wait for it: with nothing moving it simply goes.
+    pub(crate) fn picture_going(&mut self, now: Instant) -> bool {
+        if !self.animates {
+            return false;
+        }
+        // From as far up as it had come, where it was still coming.
+        let shown = self.picture_shown(now);
+        let back = VEIL.mul_f32(1.0 - shown);
+        self.unveiling.opened = None;
+        self.veiling.opened = Some(now.checked_sub(back).unwrap_or(now));
+        true
+    }
+
+    /// Whether the picture under the page is still going down into the
+    /// page's colour, which is what what takes its place waits for.
+    pub(crate) fn picture_still_going(&self, now: Instant) -> bool {
+        self.veiling.moving(now)
+    }
+
+    /// How much of the picture under the page shows, from none -- the
+    /// page's colour over all of it -- to as much as the theme lets
+    /// through.
+    ///
+    /// Going down in a straight line rather than the way a thing
+    /// arriving settles: what goes is not arriving anywhere.
+    pub(crate) fn picture_shown(&self, now: Instant) -> f32 {
+        if let Some(opened) = self.veiling.opened {
+            let gone = now.duration_since(opened).as_secs_f32() / VEIL.as_secs_f32();
+            return (1.0 - gone).clamp(0.0, 1.0);
+        }
+        self.unveiling.along(now).unwrap_or(1.0)
+    }
+
     /// A box with a frame round it opened over the page.
     ///
     /// The opening only: a box that is closed leaves nothing to draw --
@@ -1108,6 +1178,8 @@ impl Motion {
         let left = self.leaving.settle(now);
         let faded = self.card.settle(now);
         let lit = self.pair.settle(now);
+        let unveiled = self.unveiling.settle(now);
+        let veiled = self.veiling.settle(now);
         // Drawn differently while any is going out, and once the last has
         // gone out -- which is the frame that takes it off the screen.
         let unlit = !self.fading.is_empty();
@@ -1120,7 +1192,16 @@ impl Motion {
         if turned {
             self.next_turn = now + TURN_STEP;
         }
-        flew || caught || slid || left || faded || lit || unlit || blinked || turned
+        flew || caught
+            || slid
+            || left
+            || faded
+            || lit
+            || unveiled
+            || veiled
+            || unlit
+            || blinked
+            || turned
     }
 
     /// When the window wants the loop back, or `None` for nothing moving.
@@ -1133,6 +1214,8 @@ impl Motion {
             || self.leaving.moving(now)
             || self.card.moving(now)
             || self.pair.moving(now)
+            || self.unveiling.moving(now)
+            || self.veiling.moving(now)
             || self.fading.iter().any(|fading| fading.lit(now).is_some())
             || self.bands.moving(now)
             || (self.animates && self.bars.moving(now))
@@ -2654,5 +2737,58 @@ mod tests {
         // Nor goes out: it is simply gone.
         assert!(!motion.pairs_drawn([pair(42, 1)].into_iter(), base));
         assert_eq!(motion.fading(pair(10, 1), base), None);
+    }
+
+    /// A picture comes up out of the page's colour, and the one going goes
+    /// down into it, and the window is told when that has finished.
+    ///
+    /// Deliberate break: leave the unveiling out of `wake`, or read
+    /// `veiling.along` (which eases) for the going instead of the
+    /// straight line. The first stops the window drawing while the picture
+    /// is still coming up; the second fails the half-way check below.
+    #[test]
+    fn a_picture_comes_up_and_goes_down_into_the_page() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        assert_eq!(motion.picture_shown(base), 1.0, "nothing moving");
+        motion.picture_hung(base);
+        assert_eq!(motion.picture_shown(base), 0.0, "hung under all of it");
+        assert_eq!(motion.wake(base, false), Some(Wake::EveryFrame));
+        let half = motion.picture_shown(base + UNVEIL / 2);
+        assert!(half > 0.0 && half < 1.0, "{half}");
+        assert_eq!(motion.picture_shown(base + UNVEIL), 1.0, "come up");
+
+        let later = base + UNVEIL * 2;
+        assert!(motion.advance(later, false), "the frame it arrives on");
+        assert!(motion.picture_going(later));
+        assert!(motion.picture_still_going(later));
+        let half = motion.picture_shown(later + VEIL / 2);
+        assert!((half - 0.5).abs() < 0.01, "a straight line: {half}");
+        assert!(!motion.picture_still_going(later + VEIL), "gone");
+        assert_eq!(motion.picture_shown(later + VEIL), 0.0);
+    }
+
+    /// One going while it is still coming up goes from as far as it had
+    /// come, and with nothing moving a picture is simply there or gone.
+    ///
+    /// Deliberate break: start the going at `now` whatever was showing. A
+    /// picture that had barely begun to come up jumps to all of itself
+    /// and then goes down again -- a flash -- which the first check sees.
+    #[test]
+    fn a_picture_going_part_way_up_goes_from_there() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        motion.picture_hung(base);
+        let quarter = base + UNVEIL / 8;
+        let shown = motion.picture_shown(quarter);
+        assert!(motion.picture_going(quarter));
+        let after = motion.picture_shown(quarter);
+        assert!((after - shown).abs() < 0.01, "from {shown}, not {after}");
+
+        let mut still = Motion::new(None);
+        still.animates(false);
+        still.picture_hung(base);
+        assert_eq!(still.picture_shown(base), 1.0, "simply there");
+        assert!(!still.picture_going(base), "simply gone");
     }
 }

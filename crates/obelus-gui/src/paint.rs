@@ -179,6 +179,13 @@ pub(crate) struct Painter {
     /// How many pixels at the top of the window belong to the title bar
     /// -- see `title::height`.
     titled: f32,
+    /// The bar along the top, where Obelus draws it rather than the system
+    /// -- see `title::Bar`.
+    bar: Option<crate::title::Drawn>,
+    /// Whether the bar is left out of the frame being laid, which is the
+    /// screen a pane went from being kept: the bar does not go with the
+    /// pane, and the frame it goes over draws its own -- see `keep`.
+    bar_left_out: bool,
     /// Which two colours mean the reader has hold of something: a run of
     /// characters, and the row their keys are on -- see
     /// `Drawing::holding`.
@@ -237,7 +244,10 @@ pub(crate) struct Painter {
     left_lifted: Option<Whole>,
     /// Where each pane that went stood in it -- its glass, which is where
     /// it was cut from the screen under it -- and the edge it goes along.
-    gone: Vec<([f32; 4], Joined)>,
+    /// And whether it hung from the top of the page, which under a bar
+    /// Obelus draws is a pane that goes up through the bar -- see
+    /// `Painter::going`.
+    gone: Vec<([f32; 4], Joined, bool)>,
     /// The same bindings with something else in the backdrop's place, for
     /// the pass that *draws* it: a texture cannot be read and written in
     /// one pass, and what goes in the slot is never sampled there.
@@ -253,6 +263,9 @@ pub(crate) struct Painter {
     wallpaper: Option<Hanging>,
     /// And where it lies on the frame being laid out, in the grid's pixels.
     laid: Option<crate::wallpaper::Laid>,
+    /// How much of that picture shows, from none to as much as the theme
+    /// lets through -- see `Motion::picture_shown`.
+    shown: f32,
 }
 
 /// The picture under the page, as the card holds it.
@@ -314,6 +327,11 @@ struct Placed {
     kept_from: Option<usize>,
     /// And the pieces that put what was written on them back.
     going_lifted: Option<Range<usize>>,
+    /// The bar Obelus draws, laid over a pane coming in or going out
+    /// through it rather than under it -- see `bar_on_top` in `lay`. Among
+    /// the pieces where the screen is composed; drawn on its own after
+    /// the panes that went where it is not.
+    bar_over: Option<Range<usize>>,
     /// And its glass where the pane has got to: a copy, drawn in the frame
     /// in the place of the glass every other picture reads -- see
     /// `in_place_of`.
@@ -643,6 +661,13 @@ const BLUR: u32 = 1024;
 /// along: a plate says how each of its corners bends in two bits apiece
 /// from `HELD_TURNS`, and a flag inside that run would be read as a turn.
 const WEDGE: u32 = 2_097_152;
+
+/// The mark on one of the bar's buttons, drawn as the system draws its own:
+/// strokes of one pen across the quad -- see `paint.wgsl`. Which mark it is
+/// rides in the quad's `radius` and how wide the pen is in its `lower`, the
+/// two fields a mark has nothing else to say with. Past the turns, for the
+/// wedge's reason.
+const CAPTION: u32 = 4_194_304;
 
 /// A stretch of the light round a hold -- see `lights`, and the shader.
 /// Past the turns, which it carries for its own row's run, and past which

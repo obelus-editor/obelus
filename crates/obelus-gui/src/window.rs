@@ -312,6 +312,14 @@ struct Showing {
     /// The presses on the title bar, for the second of two to be a double
     /// click -- see `title::Presses`.
     title_presses: crate::title::Presses,
+    /// The bar along the top, where Obelus draws it -- see `title::Bar`.
+    bar: Option<crate::title::Bar>,
+    /// How many pixels to a point the screen the window is on has, as it
+    /// was last said -- which a change of screen is measured from.
+    scale: f64,
+    /// Whether the window has the reader's keys, which a bar Obelus draws
+    /// says the way the system's would.
+    active: bool,
     /// Wheels that report pixels rather than lines, added up until they
     /// amount to a row.
     rolled: f32,
@@ -385,6 +393,9 @@ struct Showing {
     /// Which asking for a picture under the page was the last one drawn,
     /// so that an older one decoded later is not -- see `wallpaper`.
     hung: u64,
+    /// What takes the picture's place once it has gone down into the
+    /// page's colour: another picture, or none -- see `Motion::picture_going`.
+    after_the_veil: Option<Option<Arc<crate::wallpaper::Hung>>>,
     /// Which cells are switches on the frame being shown.
     ticked: Vec<Ticked>,
     /// Which cells are the mark that turns on the frame being shown.
@@ -514,6 +525,9 @@ impl Showing {
             over_the_title: false,
             pressed_on_the_title: false,
             title_presses: crate::title::Presses::default(),
+            bar: None,
+            scale: 1.0,
+            active: true,
             rolled: 0.0,
             composing: false,
             spelling: None,
@@ -530,6 +544,7 @@ impl Showing {
             titled: 0.0,
             holding: (Color::Reset, Color::Reset),
             hung: 0,
+            after_the_veil: None,
             ticked: Vec::new(),
             spun: Vec::new(),
             spinning: Vec::new(),
@@ -657,7 +672,10 @@ impl Showing {
         };
         let size = window.inner_size();
         let cell = fonts.cell();
-        self.titled = crate::title::height(window);
+        self.titled = match self.bar.as_ref() {
+            Some(bar) => bar.height(window),
+            None => crate::title::height(window),
+        };
         #[expect(
             clippy::cast_precision_loss,
             reason = "a window is thousands of pixels, not millions"
@@ -917,7 +935,7 @@ impl ApplicationHandler<Waking> for Showing {
             events,
             crate::title::asked_for(marked(named(hidden(
                 Window::default_attributes()
-                    .with_title("Obelus")
+                    .with_title(crate::title::TITLE)
                     .with_inner_size(LogicalSize::new(1100.0, 720.0)),
             )))),
         );
@@ -968,6 +986,10 @@ impl ApplicationHandler<Waking> for Showing {
             window.set_ime_allowed(true);
             self.allowed = true;
         }
+        // Before the first measuring, which leaves the bar's room above the
+        // grid once the bar is the page's.
+        self.bar = crate::title::drawn(&window);
+        self.scale = window.scale_factor();
         self.window = Some(Arc::clone(&window));
         self.fonts = Some(fonts);
         self.painter = Some(painter);
@@ -1122,7 +1144,42 @@ impl ApplicationHandler<Waking> for Showing {
                                 && let Some(painter) = self.painter.as_mut()
                             {
                                 self.hung = number;
-                                painter.hang(hung.as_deref());
+                                let now = Instant::now();
+                                match hung {
+                                    // Already going: what comes after it is
+                                    // none now, and it goes on going from where
+                                    // it is. Asked again, it was a picture
+                                    // already gone into the page come back at
+                                    // all of itself to go a second time.
+                                    None if self.after_the_veil.is_some() => {
+                                        self.after_the_veil = Some(None);
+                                    }
+                                    // Going, and down into the page's colour
+                                    // first: the window waits for it before
+                                    // hanging whatever comes next.
+                                    None if painter.hanging() && self.motion.picture_going(now) => {
+                                        self.after_the_veil = Some(None);
+                                    }
+                                    None => {
+                                        self.after_the_veil = None;
+                                        painter.hang(None);
+                                    }
+                                    // Decoded while the one before is still
+                                    // going: it waits.
+                                    Some(hung) if self.after_the_veil.is_some() => {
+                                        self.after_the_veil = Some(Some(hung));
+                                    }
+                                    // The same file again, fitted or covered
+                                    // differently: there is nothing to come
+                                    // up, only the same picture redrawn.
+                                    Some(hung) if painter.hanging() => {
+                                        painter.hang(Some(&hung));
+                                    }
+                                    Some(hung) => {
+                                        painter.hang(Some(&hung));
+                                        self.motion.picture_hung(now);
+                                    }
+                                }
                                 rehung = true;
                             }
                         }
@@ -1634,8 +1691,25 @@ impl ApplicationHandler<Waking> for Showing {
                 else {
                     return;
                 };
+                // The picture that went has gone down into the page's colour,
+                // so what takes its place is hung, and comes up.
+                let now = Instant::now();
+                if self.after_the_veil.is_some() && !self.motion.picture_still_going(now) {
+                    let next = self.after_the_veil.take().flatten();
+                    painter.hang(next.as_deref());
+                    if next.is_some() {
+                        self.motion.picture_hung(now);
+                    }
+                }
+                painter.unveiled(self.motion.picture_shown(now));
                 painter.drawn_on(self.ground);
                 painter.titled(self.titled);
+                painter.bar(
+                    self.bar
+                        .as_ref()
+                        .zip(self.window.as_ref())
+                        .map(|(bar, window)| bar.drawn(window, self.active)),
+                );
                 painter.holding(self.holding);
                 if let Some(left) = self.left.take() {
                     painter.keep(&left.page, fonts, left.said(), &left.going);
@@ -1686,12 +1760,29 @@ impl ApplicationHandler<Waking> for Showing {
             // a different number of pixels. Which is the same work as the
             // reader choosing another size, and the window asks its own
             // scale on the way through.
-            WindowEvent::ScaleFactorChanged { .. } => self.redraw_at(self.points),
-            // A window losing the reader takes what they were holding with
-            // it: the key comes up somewhere else, and nothing tells this
-            // window it did -- so shift held on the way out was held for
-            // good, and every press in a terminal after it took hold of
-            // words rather than reaching the program.
+            WindowEvent::ScaleFactorChanged {
+                scale_factor,
+                mut inner_size_writer,
+            } => {
+                // The page asked for less the bar, where the bar is the
+                // page's -- see `title::rescaled`. Not when maximised,
+                // which winit leaves the size of and the screen decides.
+                if let (Some(bar), Some(window)) = (self.bar.as_ref(), self.window.as_ref())
+                    && !window.is_maximized()
+                {
+                    let old = window.inner_size();
+                    let (width, height) = crate::title::rescaled(
+                        (old.width, old.height),
+                        self.scale,
+                        scale_factor,
+                        bar.height(window),
+                    );
+                    let _ = inner_size_writer
+                        .request_inner_size(winit::dpi::PhysicalSize::new(width, height));
+                }
+                self.scale = scale_factor;
+                self.redraw_at(self.points);
+            }
             // Uncovered, the window is drawn as things are now: what moved
             // while it was covered moved on its clock, and only the frames
             // were left out -- see `wants_a_frame`.
@@ -1701,7 +1792,24 @@ impl ApplicationHandler<Waking> for Showing {
                     self.redraw();
                 }
             }
+            // Drawn again for a bar Obelus draws, whose marks are fainter
+            // on a window without the keys.
+            WindowEvent::Focused(true) => {
+                self.active = true;
+                if self.bar.is_some() {
+                    self.redraw();
+                }
+            }
+            // A window losing the reader takes what they were holding with
+            // it: the key comes up somewhere else, and nothing tells this
+            // window it did -- so shift held on the way out was held for
+            // good, and every press in a terminal after it took hold of
+            // words rather than reaching the program.
             WindowEvent::Focused(false) => {
+                self.active = false;
+                if self.bar.is_some() {
+                    self.redraw();
+                }
                 if self.modifiers.shift_key() {
                     self.tell(Event::Shifted(false));
                 }
@@ -2092,6 +2200,19 @@ fn marked(attributes: winit::window::WindowAttributes) -> winit::window::WindowA
         attributes.with_taskbar_icon(icon.clone())
     };
     attributes.with_window_icon(icon)
+}
+
+/// The same icon at this many pixels to a side, for a bar Obelus draws to
+/// put at its left the way the system's bar does -- see `title::Bar`.
+/// From the largest of the file's sizes, which the decoder hands back.
+pub(crate) fn icon(side: u32) -> Option<image::RgbaImage> {
+    let mark = image::load_from_memory_with_format(MARK, image::ImageFormat::Ico).ok()?;
+    Some(image::imageops::resize(
+        &mark.to_rgba8(),
+        side,
+        side,
+        image::imageops::FilterType::Lanczos3,
+    ))
 }
 
 #[cfg(test)]

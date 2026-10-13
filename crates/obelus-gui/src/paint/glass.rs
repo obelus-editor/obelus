@@ -323,7 +323,7 @@ impl Painter {
         let shifts: Vec<([f32; 4], f32)> = self
             .gone
             .iter()
-            .map(|&(pane, joined)| {
+            .map(|&(pane, joined, _)| {
                 let toward = match joined {
                     Joined::Below => 1.0,
                     _ => -1.0,
@@ -540,6 +540,14 @@ impl Painter {
                 page.look(rule.area.x, rule.area.y).background,
             ));
             low = at;
+        }
+        // Up to the top of the window, where the pane hangs from the top of
+        // the page under a bar Obelus draws: the bar is the page's there,
+        // and a pane over the whole page with a strip of the page left
+        // bare above it is a pane that stopped short. The bar is drawn over
+        // it -- see `bar_on_top` in `lay`.
+        if from_the_top(self.bar.is_some(), behind.area.y, behind.joined) {
+            top = -self.margin[1];
         }
         let glass = self.quads.len();
         self.quads.push(Quad {
@@ -1022,6 +1030,13 @@ fn cut(piece: [f32; 4], room: [f32; 4], into: &mut Vec<[f32; 4]>) {
     if room[2] < far {
         into.push([room[2], over, far, under]);
     }
+}
+
+/// Whether a pane runs up under the bar, which is a bar Obelus draws and a
+/// pane hanging from the top of the page: its glass then goes on up to the
+/// top of the window, and the bar is drawn over it.
+pub(super) fn from_the_top(bar: bool, row: u16, joined: Joined) -> bool {
+    bar && row == 0 && matches!(joined, Joined::Above | Joined::Screen)
 }
 
 /// How much of a pane a slide has let through, which is the room its
