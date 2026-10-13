@@ -152,7 +152,13 @@ impl Bar {
             button: pixels(|measured| measured.button),
             mark,
             pen,
-            inset: pixels(|measured| measured.edge),
+            // As far in as the frame is wide, where the system puts its own --
+            // and maximised, with the frame off the screen, a pixel or two:
+            // measured off its bar at 250%, where it is two.
+            inset: match window.is_maximized() {
+                true => scale.floor(),
+                false => pixels(|measured| measured.edge),
+            },
             icon: pixels(|measured| measured.icon),
             words: (WORDS * scale).round(),
             hovered: held(self.shared.hovered.load(Ordering::Relaxed)),
@@ -191,7 +197,13 @@ fn measured(hwnd: HWND) -> Measured {
     )]
     let button = (BUTTON * dpi as i32 + 48) / 96;
     Measured {
-        titled: metric(SM_CYCAPTION) + edge,
+        // Maximised, the frame hangs off the screen and only the caption
+        // is left on it: the system's own bar there is that tall.
+        titled: metric(SM_CYCAPTION)
+            + match unsafe { IsZoomed(hwnd) } != 0 {
+                true => 0,
+                false => edge,
+            },
         edge,
         button,
         icon: metric(SM_CXSMICON),
