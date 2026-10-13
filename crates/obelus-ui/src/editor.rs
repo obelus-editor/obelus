@@ -770,7 +770,8 @@ impl Widget for EditorView<'_> {
         let brackets = self
             .brackets
             .then(|| brackets::nearest(text, self.highlights, at, visible))
-            .flatten();
+            .flatten()
+            .map(|pair| (pair, which_pair(buffer, pair.0)));
 
         // The hunks the reader has opened, worked out once: every row asks
         // whether it is one of their lines.
@@ -1563,8 +1564,22 @@ struct Painting<'a> {
     /// What the language server says is wrong with the file.
     troubles: &'a [obelus_lsp::trouble::Trouble],
     /// The bracket under the cursor and its partner, or the pair the
-    /// cursor is inside.
-    brackets: Option<(ByteOffset, ByteOffset)>,
+    /// cursor is inside -- and which pair that is, for a window.
+    brackets: Option<((ByteOffset, ByteOffset), crate::shapes::Pair)>,
+}
+
+/// Which pair of brackets this is, as a window compares them -- see
+/// [`crate::shapes::Pair`].
+fn which_pair(buffer: &Buffer, open: ByteOffset) -> crate::shapes::Pair {
+    use std::hash::{Hash, Hasher};
+    let mut document = std::hash::DefaultHasher::new();
+    buffer.path().hash(&mut document);
+    buffer.content().at().hash(&mut document);
+    crate::shapes::Pair {
+        document: document.finish(),
+        version: buffer.version(),
+        open: open.get(),
+    }
 }
 
 /// Draws one visual row of a line, and says which column it ended at.
@@ -1678,12 +1693,12 @@ fn draw_row(
         // The pair the cursor is on or inside. After the mark, so
         // a symbol a preview is about keeps its own background where the two
         // land on the same cell.
-        if let Some((open, _)) = painting
+        if let Some((_, pair)) = painting
             .brackets
-            .filter(|(open, close)| glyph.first_byte == *open || glyph.first_byte == *close)
+            .filter(|((open, close), _)| glyph.first_byte == *open || glyph.first_byte == *close)
         {
             style = style.bg(painting.theme.bracket_background);
-            crate::shapes::paired(Rect::new(x + offset, y, 1, 1), open.get());
+            crate::shapes::paired(Rect::new(x + offset, y, 1, 1), pair);
         }
 
         // A cell the file does not contain, drawn as whatever put it

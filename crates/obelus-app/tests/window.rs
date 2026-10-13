@@ -20,7 +20,7 @@ struct Heard {
     keys: Mutex<Vec<(String, Rect)>>,
     scrolls: Mutex<Vec<(Rect, i64)>>,
     links: Mutex<Vec<Rect>>,
-    pairs: Mutex<Vec<(Rect, usize)>>,
+    pairs: Mutex<Vec<(Rect, obelus_ui::shapes::Pair)>>,
 }
 
 impl obelus_ui::shapes::Shapes for Heard {
@@ -55,7 +55,7 @@ impl obelus_ui::shapes::Shapes for Heard {
         }
     }
 
-    fn paired(&self, area: Rect, pair: usize) {
+    fn paired(&self, area: Rect, pair: obelus_ui::shapes::Pair) {
         if let Ok(mut pairs) = self.pairs.lock() {
             pairs.push((area, pair));
         }
@@ -772,7 +772,13 @@ fn the_pair_the_cursor_is_inside_is_said_to_a_window() {
     let source = std::fs::read_to_string(path).expect("reading it");
     let pair = source.find('{').expect("a brace");
 
-    let mut pairs = heard().pairs.lock().expect("the pairs").clone();
+    let mut pairs: Vec<(Rect, usize)> = heard()
+        .pairs
+        .lock()
+        .expect("the pairs")
+        .iter()
+        .map(|(area, said)| (*area, said.open))
+        .collect();
     pairs.sort_by_key(|(area, _)| (area.y, area.x));
     assert_eq!(pairs, vec![(open, pair), (close, pair)], "{dump}");
 }

@@ -39,7 +39,7 @@ use obelus_app::app::Caret;
 use obelus_component::layers::Layer;
 use obelus_ui::{
     image::Palette,
-    shapes::{About, Bar, Joined, Side, Stroke},
+    shapes::{About, Bar, Joined, Pair, Side, Stroke},
 };
 use ratatui::{
     backend::{Backend, ClearType, WindowSize},
@@ -221,9 +221,9 @@ pub(crate) enum Update {
     Paired {
         /// Which cell it is.
         area: Rect,
-        /// Which pair, as a number to compare -- see
-        /// `obelus_ui::shapes::Shapes::paired`.
-        pair: usize,
+        /// Which pair, as numbers to compare -- see
+        /// `obelus_ui::shapes::Pair`.
+        pair: Pair,
     },
     /// The words of a link, on one row.
     Linked {
@@ -528,7 +528,7 @@ pub(crate) struct Paired {
     /// Which cell it is.
     pub(crate) area: Rect,
     /// Which pair it is half of.
-    pub(crate) pair: usize,
+    pub(crate) pair: Pair,
     /// How many panes and boxes had been put over the page when it was
     /// said -- see `Page::layer`.
     pub(crate) depth: usize,
@@ -1039,7 +1039,7 @@ impl obelus_ui::shapes::Shapes for Marking {
         let _ = self.updates.send(Update::Linked { area });
     }
 
-    fn paired(&self, area: Rect, pair: usize) {
+    fn paired(&self, area: Rect, pair: Pair) {
         let _ = self.updates.send(Update::Paired { area, pair });
     }
 

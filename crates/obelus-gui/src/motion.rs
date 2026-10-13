@@ -29,7 +29,7 @@
 
 use std::time::{Duration, Instant};
 
-use obelus_ui::shapes::{Bar, Joined};
+use obelus_ui::shapes::{Bar, Joined, Pair};
 use ratatui::layout::{Position, Rect};
 
 use crate::blink::Blink;
@@ -826,7 +826,7 @@ pub(crate) struct Motion {
     pair: Arriving,
     /// Which pairs the last frame drew, which is what says the next one's
     /// are other ones -- see `pairs_drawn`.
-    pairs: Vec<usize>,
+    pairs: Vec<Pair>,
     bands: Bands,
     bars: Bars,
     /// When the mark the light runs across last arrived, which is what
@@ -1177,23 +1177,44 @@ impl Motion {
     /// inside a call and the same pair is two cells further up, and a
     /// light coming on again at every notch of the wheel is a pair that
     /// flickers while the reader is only looking around. What starts it is
-    /// the pair being another one -- the caret went into it, or a pair
-    /// came on where there was none.
+    /// the pair being another one -- the caret went into it, another file
+    /// came up, or a pair came on where there was none.
     ///
-    /// Gone is not one of those: a light going off is not news, and the
-    /// light simply is not drawn.
-    pub(crate) fn pairs_drawn(&mut self, pairs: impl Iterator<Item = usize>, now: Instant) {
-        let mut drawn: Vec<usize> = pairs.collect();
+    /// Not a pair the text moved. Type in front of an opening bracket with
+    /// the caret on it, or let an agent write above it, and it is a byte
+    /// further on: compared by place alone it is another pair at every
+    /// key, which is a light that pulses while the reader types. So a pair
+    /// somewhere else in a document the last frame drew at an older
+    /// version is the change having moved it, and is taken as it is. The
+    /// one this lets go of is a pair the reader's own typing made, which
+    /// is there without coming on -- and their hands made it, so nothing
+    /// arrived.
+    ///
+    /// Gone is not news either: the light simply is not drawn.
+    pub(crate) fn pairs_drawn(&mut self, pairs: impl Iterator<Item = Pair>, now: Instant) {
+        let mut drawn: Vec<Pair> = pairs.collect();
         drawn.sort_unstable();
         drawn.dedup();
-        if drawn != self.pairs {
+        let place = |pairs: &[Pair]| -> Vec<(u64, usize)> {
+            pairs
+                .iter()
+                .map(|pair| (pair.document, pair.open))
+                .collect()
+        };
+        if place(&drawn) != place(&self.pairs) {
+            let edited = !drawn.is_empty()
+                && drawn.iter().all(|now| {
+                    self.pairs
+                        .iter()
+                        .any(|was| was.document == now.document && was.version != now.version)
+                });
             if drawn.is_empty() {
                 self.pair.opened = None;
-            } else if self.animates {
+            } else if self.animates && !edited {
                 self.pair.opened = Some(now);
             }
-            self.pairs = drawn;
         }
+        self.pairs = drawn;
     }
 
     /// The frame drew a mark that turns, or it did not.
@@ -2271,6 +2292,15 @@ mod tests {
         assert!(motion.moving(base).caret);
     }
 
+    /// A pair in the first document, at a version of it.
+    fn pair(open: usize, version: i32) -> Pair {
+        Pair {
+            document: 1,
+            version,
+            open,
+        }
+    }
+
     /// The light round a pair comes on when the pair is another one, and
     /// not when the same pair is drawn again somewhere else.
     ///
@@ -2283,7 +2313,7 @@ mod tests {
     fn a_pair_lights_up_when_the_caret_goes_into_it() {
         let base = Instant::now();
         let mut motion = Motion::new(None);
-        motion.pairs_drawn([10, 10].into_iter(), base);
+        motion.pairs_drawn([pair(10, 1), pair(10, 1)].into_iter(), base);
         assert_eq!(motion.moving(base).pair, Some(0.0), "coming on");
         let half = motion
             .moving(base + LIGHT_UP / 2)
@@ -2295,7 +2325,7 @@ mod tests {
         // The same pair again, as a scroll draws it: nothing starts.
         let later = base + LIGHT_UP * 2;
         motion.advance(later, true);
-        motion.pairs_drawn([10, 10].into_iter(), later);
+        motion.pairs_drawn([pair(10, 1)].into_iter(), later);
         assert_eq!(
             motion.moving(later).pair,
             None,
@@ -2303,15 +2333,44 @@ mod tests {
         );
 
         // Another pair does.
-        motion.pairs_drawn([42, 42].into_iter(), later);
+        motion.pairs_drawn([pair(42, 1)].into_iter(), later);
         assert_eq!(motion.moving(later).pair, Some(0.0));
         assert_eq!(motion.wake(later, true), Some(Wake::EveryFrame));
 
         // And after none at all, the same pair is news again.
         motion.pairs_drawn(std::iter::empty(), later);
         assert_eq!(motion.moving(later).pair, None);
-        motion.pairs_drawn([42].into_iter(), later);
+        motion.pairs_drawn([pair(42, 1)].into_iter(), later);
         assert_eq!(motion.moving(later).pair, Some(0.0));
+    }
+
+    /// A pair the text moved is the pair it was, and a pair at the same
+    /// place in another file is not.
+    ///
+    /// Break: drop the `!edited`, and typing in front of a bracket brings
+    /// the light on at every key; compare places without the document,
+    /// and a pair at the same byte of another file comes up unlit.
+    #[test]
+    fn a_pair_the_text_moved_does_not_light_up_again() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        motion.pairs_drawn([pair(10, 1)].into_iter(), base);
+        let later = base + LIGHT_UP * 2;
+        motion.advance(later, true);
+        // A key typed in front of it: a byte on, and a version on.
+        motion.pairs_drawn([pair(11, 2)].into_iter(), later);
+        assert_eq!(motion.moving(later).pair, None, "a keystroke lit it again");
+        // The same place in another file.
+        motion.pairs_drawn(
+            [Pair {
+                document: 2,
+                version: 2,
+                open: 11,
+            }]
+            .into_iter(),
+            later,
+        );
+        assert_eq!(motion.moving(later).pair, Some(0.0), "another file's pair");
     }
 
     /// Break: drop the `self.animates` from `pairs_drawn`, and a reader who
@@ -2321,7 +2380,7 @@ mod tests {
         let base = Instant::now();
         let mut motion = Motion::new(None);
         motion.animates(false);
-        motion.pairs_drawn([10].into_iter(), base);
+        motion.pairs_drawn([pair(10, 1)].into_iter(), base);
         assert_eq!(motion.moving(base).pair, None);
     }
 }
