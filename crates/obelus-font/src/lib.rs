@@ -177,7 +177,15 @@ pub struct Fonts {
     /// Every face by the families it goes by, in lower case: what `tried`
     /// asks of every name in a list, for every character none of them had.
     named: Named,
+    /// Lines in the face the system writes its own words in, by the text
+    /// and the size in pixels -- see [`Fonts::caption`].
+    captions: HashMap<(String, u32), Vec<Placed>>,
 }
+
+/// The faces a window's own words are written in, the first this machine
+/// has: what Windows draws a title bar's title in. Everywhere else the
+/// system's sans serif, which is the nearest thing to the question.
+const CAPTION_FACES: &[&str] = &["Segoe UI"];
 
 /// Every face by the families it goes by, in lower case.
 type Named = HashMap<String, Vec<fontdb::ID>>;
@@ -241,6 +249,7 @@ impl Fonts {
             by_coretext,
             drawn_by_coretext: HashMap::new(),
             named: HashMap::new(),
+            captions: HashMap::new(),
         };
         for face in fonts.system.db().faces() {
             for (family, _) in &face.families {
@@ -462,6 +471,35 @@ impl Fonts {
             shaped.insert(text.to_string(), placed);
         }
         &shaped[text]
+    }
+
+    /// A line in the face the system writes a window's title in, at a size
+    /// in pixels: nothing on the grid, so neither the reader's faces nor a
+    /// cell's width have anything to say about it.
+    ///
+    /// Each glyph is placed from the start of the line and from its
+    /// baseline; where that baseline goes is the caller's.
+    pub fn caption(&mut self, text: &str, size: f32) -> &[Placed] {
+        let key = (text.to_string(), size.to_bits());
+        if !self.captions.contains_key(&key) {
+            let family = CAPTION_FACES
+                .iter()
+                .copied()
+                .find(|name| self.named.contains_key(&name.to_lowercase()))
+                .map_or(Family::SansSerif, Family::Name);
+            let metrics = Metrics::new(size, (size * LINE_HEIGHT).round());
+            let (mut placed, _) = lay(
+                &mut self.system,
+                metrics,
+                text,
+                &Attrs::new().family(family),
+            );
+            for glyph in &mut placed {
+                glyph.baseline = None;
+            }
+            self.captions.insert(key.clone(), placed);
+        }
+        &self.captions[&key]
     }
 
     /// The pixels of one glyph, or nothing where the face has none.

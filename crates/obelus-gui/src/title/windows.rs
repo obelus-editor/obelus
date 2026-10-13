@@ -31,7 +31,7 @@ use windows_sys::Win32::{
         WindowsAndMessaging::{
             GWL_STYLE, GetClientRect, GetWindowLongW, HTCAPTION, HTCLIENT, HTCLOSE, HTMAXBUTTON,
             HTMINBUTTON, HTTOP, IsZoomed, NCCALCSIZE_PARAMS, PostMessageW, SC_CLOSE, SC_MAXIMIZE,
-            SC_MINIMIZE, SC_RESTORE, SM_CXPADDEDBORDER, SM_CYCAPTION, SM_CYSIZEFRAME,
+            SC_MINIMIZE, SC_RESTORE, SM_CXPADDEDBORDER, SM_CXSMICON, SM_CYCAPTION, SM_CYSIZEFRAME,
             SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos,
             WM_MOUSEMOVE, WM_NCCALCSIZE, WM_NCDESTROY, WM_NCHITTEST, WM_NCLBUTTONDBLCLK,
             WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_SYSCOMMAND,
@@ -58,6 +58,11 @@ const BUTTON: i32 = 46;
 /// own bar at 250%, where it is twenty pixels and ten would have been
 /// twenty-five.
 const MARK: f32 = 8.0;
+
+/// How big the title is written at that density: Segoe UI at nine points,
+/// which is what the system writes its own in -- measured off its bar at
+/// 250%, where a capital is twenty-one pixels tall.
+const WORDS: f32 = 12.0;
 
 /// The bar Obelus draws on Windows: what the pointer is doing to its
 /// buttons, which the window's messages say and the frame reads.
@@ -140,12 +145,16 @@ impl Bar {
         if (mark - pen).rem_euclid(2.0) != 0.0 {
             mark += 1.0;
         }
+        let measured = hwnd.map(measured);
         #[expect(clippy::cast_precision_loss, reason = "tens of pixels")]
-        let button = hwnd.map_or(0, |hwnd| measured(hwnd).button) as f32;
+        let pixels = |of: fn(&Measured) -> i32| measured.as_ref().map_or(0, of) as f32;
         Drawn {
-            button,
+            button: pixels(|measured| measured.button),
             mark,
             pen,
+            inset: pixels(|measured| measured.edge),
+            icon: pixels(|measured| measured.icon),
+            words: (WORDS * scale).round(),
             hovered: held(self.shared.hovered.load(Ordering::Relaxed)),
             pressed: held(self.shared.pressed.load(Ordering::Relaxed)),
             maximised: window.is_maximized(),
@@ -162,6 +171,8 @@ struct Measured {
     edge: i32,
     /// How wide each button is.
     button: i32,
+    /// How big the window's icon is drawn on it.
+    icon: i32,
 }
 
 /// The window's own measures, asked at its density rather than the
@@ -183,6 +194,7 @@ fn measured(hwnd: HWND) -> Measured {
         titled: metric(SM_CYCAPTION) + edge,
         edge,
         button,
+        icon: metric(SM_CXSMICON),
     }
 }
 

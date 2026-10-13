@@ -2126,6 +2126,19 @@ fn marked(attributes: winit::window::WindowAttributes) -> winit::window::WindowA
     attributes.with_window_icon(icon)
 }
 
+/// The same icon at this many pixels to a side, for a bar Obelus draws to
+/// put at its left the way the system's bar does -- see `title::Bar`.
+/// From the largest of the file's sizes, which the decoder hands back.
+pub(crate) fn icon(side: u32) -> Option<image::RgbaImage> {
+    let mark = image::load_from_memory_with_format(MARK, image::ImageFormat::Ico).ok()?;
+    Some(image::imageops::resize(
+        &mark.to_rgba8(),
+        side,
+        side,
+        image::imageops::FilterType::Lanczos3,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::{Duration, Instant};

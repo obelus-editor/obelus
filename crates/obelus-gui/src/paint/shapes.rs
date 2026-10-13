@@ -17,11 +17,48 @@ impl Painter {
     /// In the window's pixels less the grid's origin, which is where every
     /// quad is placed: the bar is above the grid, so its rows come out
     /// negative.
-    pub(super) fn title_bar(&mut self, across: f32, margin: [f32; 2]) {
+    pub(super) fn title_bar(&mut self, across: f32, margin: [f32; 2], fonts: &mut Fonts) {
         let Some(bar) = self.bar else {
             return;
         };
         let dark = crate::title::dark(ground_of(self.ground));
+        // The icon and the title at the left, where the system's bar has
+        // them: the icon a frame's width in and middled in the bar's
+        // height, and the title after it.
+        let middle = self.titled / 2.0 - margin[1];
+        let icon_top = (middle - bar.icon / 2.0).round();
+        self.window_icon([bar.inset - margin[0], icon_top, bar.icon]);
+        // Where the system's own sits, measured off its bar at 250%: a
+        // little below the line its capitals would be middled on, and a
+        // little under half the size after the icon.
+        let baseline = (middle + bar.words * 0.39).round();
+        let start = bar.inset + bar.icon + (bar.words * 0.44).round() - margin[0];
+        let ink = crate::title::title_ink(&bar, dark);
+        let placed = fonts.caption("Obelus", bar.words).to_vec();
+        for glyph in placed {
+            let Some(spot) = self.atlas.spot(fonts, glyph.key) else {
+                continue;
+            };
+            #[expect(clippy::cast_precision_loss, reason = "a glyph is a few pixels along")]
+            let (x, y) = (glyph.x as f32, glyph.y as f32);
+            self.quads.push(Quad {
+                rect: [
+                    start + x + spot.left,
+                    baseline + y - spot.top,
+                    spot.width,
+                    spot.height,
+                ],
+                uv: spot.uv,
+                colour: ink,
+                flags: match spot.colourful {
+                    true => COLOURFUL,
+                    false => 0,
+                },
+                radius: 0.0,
+                layer: spot.layer,
+                lower: 0.0,
+            });
+        }
         for button in crate::title::Button::ALL {
             let [left, top, wide, tall] =
                 crate::title::button_at(button, across, self.titled, bar.button);
@@ -52,6 +89,43 @@ impl Painter {
                 lower: bar.pen,
             });
         }
+    }
+
+    /// The window's icon, at a place and a size in pixels -- made the first
+    /// time it is asked for at that size and kept where the marks are,
+    /// which is what it is: a picture with colours of its own.
+    fn window_icon(&mut self, [left, top, side]: [f32; 3]) {
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "an icon is a few dozen pixels to a side"
+        )]
+        let pixels = side as u32;
+        let key = (format!("the window's icon at {pixels}"), false);
+        let spot = match self.atlas.mark(&key) {
+            Some(spot) => spot,
+            None => {
+                let Some(icon) = crate::window::icon(pixels) else {
+                    self.atlas.no_mark(key);
+                    return;
+                };
+                let spot = self.atlas.place(pixels, pixels, &icon, true);
+                self.atlas.marked(key, spot);
+                let Some(spot) = spot else {
+                    return;
+                };
+                spot
+            }
+        };
+        self.quads.push(Quad {
+            rect: [left, top, side, side],
+            uv: spot.uv,
+            colour: [1.0; 4],
+            flags: COLOURFUL,
+            radius: 0.0,
+            layer: spot.layer,
+            lower: 0.0,
+        });
     }
 
     /// The line under every cell a view underlined.

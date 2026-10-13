@@ -35,8 +35,9 @@
 //! The words on the bar are the system's on the other two, in the system's
 //! ink, so what Obelus tells it is whether the page is dark: that is what
 //! decides whether the title and the buttons are drawn light or dark. On
-//! Windows there are no words, for the reason there are none of Obelus's
-//! own: the title is "Obelus" and the file is on the status row.
+//! Windows Obelus writes them itself, where the system would: the icon and
+//! "Obelus" at the left, in the system's face and at its size, in the
+//! page's ink.
 //!
 //! There is no switch to take the bar away, and there was one briefly. It
 //! did something on macOS, Windows and GNOME and nothing at all where most
@@ -217,6 +218,13 @@ pub(crate) struct Drawn {
     pub(crate) mark: f32,
     /// How wide the pen the marks are drawn with is, in pixels.
     pub(crate) pen: f32,
+    /// How far in from the left the window's icon stands, in pixels: as
+    /// far as the frame is wide, which is where the system puts its own.
+    pub(crate) inset: f32,
+    /// How wide and tall the icon is, in pixels.
+    pub(crate) icon: f32,
+    /// How big the title is written, in pixels.
+    pub(crate) words: f32,
     /// The button the pointer is over.
     pub(crate) hovered: Option<Button>,
     /// The button the left button went down on and is still down.
@@ -263,6 +271,20 @@ pub(crate) fn inks(drawn: &Drawn, button: Button, dark: bool) -> (Option<[f32; 4
             true => (None, [r, g, b, 0.9]),
             false => (None, [r, g, b, 0.36]),
         },
+    }
+}
+
+/// What the title is written in on a page this dark: the page's ink, at
+/// full strength on a window with the reader's keys and faint on one
+/// without, as the marks on the buttons are.
+pub(crate) fn title_ink(drawn: &Drawn, dark: bool) -> [f32; 4] {
+    let strength = match drawn.active {
+        true => 1.0,
+        false => 0.36,
+    };
+    match dark {
+        true => [1.0, 1.0, 1.0, strength],
+        false => [0.0, 0.0, 0.0, strength],
     }
 }
 
@@ -610,6 +632,9 @@ mod tests {
             button: 46.0,
             mark: 10.0,
             pen: 1.0,
+            inset: 8.0,
+            icon: 16.0,
+            words: 12.0,
             hovered,
             pressed,
             maximised: false,
