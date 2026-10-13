@@ -302,14 +302,14 @@ pub trait Shapes: Send + Sync {
     /// beside a band something else was already saying had moved.
     ///
     /// No colours, for the reason a switch has none: a bar is a column of
-    /// cells the view has already written, and what the track and the mark
-    /// are drawn in is the foreground of those very cells, with the page
-    /// behind them their background. Said again here they would be the
-    /// same colours from two places, and two places is somewhere for them
-    /// to differ.
+    /// cells the view has already written, and what the mark is drawn in
+    /// is the foreground of those very cells, with the page behind them
+    /// their background. Said again here they would be the same colours
+    /// from two places, and two places is somewhere for them to differ.
     ///
-    /// A terminal has an answer to all of this already -- a full block a
-    /// shade off the page with a brighter run in it -- which is the whole
+    /// A terminal has an answer to all of this already -- a column of full
+    /// blocks, the mark's in its own colour and the rest in the ground's --
+    /// which is the whole
     /// test for whether a thing may be said here.
     fn barred(&self, bar: Bar);
 

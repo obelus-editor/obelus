@@ -792,21 +792,16 @@ const ABOVE: f32 = 0.05;
 /// button rather than as a mark beside a word.
 const RING: f32 = 0.9;
 
-/// How wide a bar's track is drawn, as a part of the cell it sits in.
+/// How wide a bar's mark is drawn, as a part of the cell it sits in.
 ///
-/// A third, which is what leaves the column reading as a margin with
-/// something in it rather than as a wall. The cell stays the cell: what
-/// the view reserved is a column, and narrowing the ink inside it is the
-/// front end saying what that column looks like, not the application
-/// giving back a column it told the text it had taken.
-const BAR_TRACK: f32 = 0.32;
-
-/// And how wide its mark is.
+/// Half, which leaves the column reading as a margin with something in it
+/// rather than as a wall. The cell stays the cell: what the view reserved
+/// is a column, and narrowing the ink inside it is the front end saying
+/// what that column looks like, not the application giving back a column
+/// it told the text it had taken.
 ///
-/// Wider than the track, because the mark is the part that is doing the
-/// telling and the track is only there to say how far it can go. Two
-/// capsules about one centre line, which is the same figure a terminal
-/// draws in one column of blocks and two colours.
+/// The mark alone, with no track under it: how far it can go is said by
+/// the region it runs beside, the same as in a terminal.
 const BAR_MARK: f32 = 0.5;
 
 /// How wide the mark is once it has settled.
@@ -860,11 +855,11 @@ fn on_wayland(window: &Window) -> bool {
 
 /// How wide a stroke is drawn, as a part of the cell it sits in.
 ///
-/// The same as a bar's track, because the map and the bar are next to each
-/// other and what they say is one picture: a stroke a different weight
-/// from the bar beside it would read as two columns that happened to line
-/// up. A terminal has half a cell for both, which is the only stroke a
-/// cell can draw.
+/// The same as a settled bar's mark, near enough, because the map and the
+/// bar are next to each other and what they say is one picture: a stroke a
+/// different weight from the bar beside it would read as two columns that
+/// happened to line up. A terminal has half a cell for both, which is the
+/// only stroke a cell can draw.
 const STROKE: f32 = 0.32;
 
 /// How far the arrow on a seam reaches across its cell.
@@ -2269,7 +2264,7 @@ mod tests {
     /// And the picture of what a pane was opened over leaves it alone too.
     ///
     /// Deliberate break: drop the `barred` clause from `lettered_behind`.
-    /// The block a terminal draws a track with is then written into the
+    /// The block a terminal draws a bar with is then written into the
     /// picture behind the list as well -- where `letters` never put it --
     /// and a full block's raster is taller than its cell, so the first
     /// row's reached above the grid and came out in the margin round it: a

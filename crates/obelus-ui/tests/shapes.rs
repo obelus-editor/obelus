@@ -419,7 +419,8 @@ fn a_bar_says_where_it_is_and_how_much_of_it_is_the_mark() {
 /// as, and `ob` is back to a column every rule that crosses it has to
 /// decide about. Or drop the `put` and keep the `barred`, and the terminal
 /// has nothing at all -- which is the invariant everything said on this
-/// channel rests on.
+/// channel rests on. Or draw the track again, the column's other rows in
+/// a colour a shade off the page rather than the ground's.
 ///
 /// The other half of the test above, and each passes with the other
 /// broken: that one holds what was *said* about the mark, this one holds
@@ -440,18 +441,17 @@ fn the_cells_are_the_bar_a_terminal_draws() {
         assert_eq!(cell.symbol(), "\u{2588}", "row {row}: {cell:?}");
     }
 
-    // And the rows the mark covers are the brighter of the two colours,
-    // which is what a front end that hears nothing has to go on.
+    // And the rows the mark covers are the mark's colour, which is what a
+    // front end that hears nothing has to go on.
     let marked: Vec<u16> = (0..height)
         .filter(|row| cells[(x, y + row)].fg == DARK.gutter_current)
         .collect();
     assert_eq!(marked, vec![0, 1], "the mark's rows");
+    // And the rest are the ground's, so nothing is seen there: there is
+    // no track.
     for row in 2..height {
-        assert_eq!(
-            cells[(x, y + row)].fg,
-            DARK.scrollbar_track,
-            "the track at {row}"
-        );
+        let cell = &cells[(x, y + row)];
+        assert_eq!(cell.fg, cell.bg, "the column at {row}: {cell:?}");
     }
 }
 

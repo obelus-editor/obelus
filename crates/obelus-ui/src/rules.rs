@@ -3,11 +3,10 @@
 
 use super::*;
 
-/// The block a bar is drawn with, track and thumb alike.
+/// The block a bar is drawn with, down the whole of its column.
 ///
-/// One glyph in two colours rather than a line and a block: a bar is a
-/// surface with something sliding on it, and it is the *shade* that says
-/// which part of it the reader is looking at.
+/// A block rather than a line: a line would be a line, and every rule that
+/// crossed it would have to work out whether to join.
 pub(crate) const BAR: char = '\u{2588}';
 
 /// One row of rule, saying that what is above it and what is below it are
@@ -60,9 +59,16 @@ pub(crate) fn divider(cells: &mut CellBuffer, area: Rect, y: u16, theme: &Theme)
 /// both -- how much of this is on screen, and which part -- and two
 /// implementations would answer it in two shapes.
 ///
-/// Drawn as a block in two shades: the track a shade off the page and the
-/// thumb the brighter one. A line would be a line, and every rule that
-/// crossed it would have to work out whether to join.
+/// Only the thumb is seen. The track was a column of blocks a shade off the
+/// page, the length of the region -- the heaviest thing on the screen for
+/// the least it said: how far the thumb can go is already said by the
+/// region it runs beside.
+///
+/// It is still written, as blocks in the colour of the ground they are on,
+/// because a column of blocks is how a bar is known for one: the pointer
+/// asks it of these cells (`bars::collect`), and a window of the grid it is
+/// handed (`Barred::holds`), to tell a bar from one something has since
+/// been drawn over. A track of spaces would answer that every bar had been.
 ///
 /// `total` is how many rows the whole thing has and `top` which of them is
 /// on the first row.
@@ -100,13 +106,21 @@ pub(crate) fn scrollbar(
     let start = bar_mark(area.height, top, total);
 
     for row in 0..area.height {
+        let y = area.y + row;
         let inside = row >= start && usize::from(row) < usize::from(start) + thumb;
-        let colour = if inside {
-            theme.gutter_current
-        } else {
-            theme.scrollbar_track
+        let colour = match inside {
+            true => theme.gutter_current,
+            // The ground's own colour, whatever it is here -- a selected
+            // row, a pane -- so the block is not seen. A cell with no colour
+            // of its own is on the page, and a block in no colour is drawn
+            // in the terminal's foreground, which is the one that would be.
+            false => cells
+                .cell((x, y))
+                .map(|cell| cell.bg)
+                .filter(|ground| *ground != ratatui::style::Color::Reset)
+                .unwrap_or(theme.background),
         };
-        put(cells, x, area.y + row, BAR, Style::new().fg(colour));
+        put(cells, x, y, BAR, Style::new().fg(colour));
     }
 
     let bar = shapes::Bar {

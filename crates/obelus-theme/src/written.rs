@@ -419,7 +419,6 @@ fn over_noting(table: &toml::Table) -> (Theme, Noted) {
         foreground: of("foreground", base.foreground),
         gutter: of("gutter", base.gutter),
         gutter_current: of("gutter_current", base.gutter_current),
-        scrollbar_track: of("scrollbar_track", base.scrollbar_track),
         status_foreground: of("status_foreground", base.status_foreground),
         status_stale: of("status_stale", base.status_stale),
         selected_row_background: of("selected_row_background", base.selected_row_background),
@@ -485,6 +484,11 @@ fn over_noting(table: &toml::Table) -> (Theme, Noted) {
             // Read elsewhere: the base above, the picture by `hung`, and
             // what a theme says about itself by whatever lists it.
             "base" | "wallpaper" | "about" => {}
+            // A colour there used to be: the scrollbar's track, which is
+            // no longer drawn. Every theme written before then sets it, and
+            // a mark on each of them for a line the reader did nothing
+            // wrong in would be noise about a decision that was Obelus's.
+            "scrollbar_track" => {}
             section @ ("syntax" | "terminal") => match said.as_table() {
                 Some(within) => noted.extend(
                     within
@@ -664,17 +668,19 @@ mod tests {
     /// Every line that does nothing is noted where it is -- a value that is
     /// not a colour, a name no colour has at the top and in each table, a
     /// base that is no built-in theme -- and nothing else is: the colours
-    /// that are colours, and the tables something else reads.
+    /// that are colours, the tables something else reads, and a colour
+    /// there used to be.
     ///
     /// Deliberate breaks: no walk for what nobody asked for (only the bad
-    /// value and the base are noted), and the names asked for not written
+    /// value and the base are noted), the names asked for not written
     /// down as they are asked (every colour in the file is then a
-    /// misspelling).
+    /// misspelling), and the arm for `scrollbar_track` taken out (it is
+    /// noted as a name no colour has).
     #[test]
     fn a_line_that_does_nothing_is_noted_where_it_is() {
         let table: toml::Table =
             "base = \"dusk\"\nbackground = \"blue\"\nbackgound = \"#111111\"\n\
-             foreground = \"#abcdef\"\n\
+             foreground = \"#abcdef\"\nscrollbar_track = \"#222222\"\n\
              [syntax]\nkeywrd = \"#123456\"\ncomment = \"#654321\"\n\
              [terminal]\nred = \"#123456\"\npurple = \"#123456\"\n\
              [wallpaper]\nfile = \"rain.jpg\"\n[about]\nauthor = \"someone\"\n"

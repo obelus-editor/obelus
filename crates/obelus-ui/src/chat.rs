@@ -2871,7 +2871,7 @@ mod caret {
                     let bar = area.right() - 1;
                     for y in band.y..band.bottom() {
                         // Every row of a band that scrolls carries the bar, in
-                        // the thumb's colour or the track's. Anything else in
+                        // the thumb's colour or the ground's. Anything else in
                         // that column is a row written over it -- a blank
                         // included, which is what the space in front of a
                         // fold's mark leaves, and what a tint leaves behind it.

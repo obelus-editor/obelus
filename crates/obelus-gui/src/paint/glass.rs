@@ -827,7 +827,7 @@ pub(super) fn behind_row(
 /// The same question `letters` asks of the page, asked of the picture: a
 /// bar is drawn as a shape, and drawn over the pane as well -- `bars` is
 /// asked from where the bar was said and not from what the page holds
-/// there -- so the block a terminal has for a track is a glyph nobody
+/// there -- so the block a terminal has for a bar is a glyph nobody
 /// wanted here, under a capsule and under the tint.
 ///
 /// It was not merely redundant. A full block's raster is taller than its
