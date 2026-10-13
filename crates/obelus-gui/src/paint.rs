@@ -328,7 +328,7 @@ struct Placed {
     /// And the pieces that put what was written on them back.
     going_lifted: Option<Range<usize>>,
     /// The bar Obelus draws, laid over a pane coming in or going out
-    /// through it rather than under it -- see `through` in `lay`. Among
+    /// through it rather than under it -- see `bar_on_top` in `lay`. Among
     /// the pieces where the screen is composed; drawn on its own after
     /// the panes that went where it is not.
     bar_over: Option<Range<usize>>,

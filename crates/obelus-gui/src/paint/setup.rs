@@ -9,7 +9,10 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 use obelus_font::Fonts;
 
-use super::{glass::tiles, *};
+use super::{
+    glass::{from_the_top, tiles},
+    *,
+};
 use crate::{
     grid::{Going, Page, Said, Spelling},
     motion::Moving,
@@ -765,7 +768,7 @@ impl Painter {
                 (
                     level.map_or_else(|| box_of(gone.area, cell), |level| level.rect),
                     gone.joined,
-                    self.bar.is_some() && gone.area.y == 0 && gone.joined != Joined::Below,
+                    from_the_top(self.bar.is_some(), gone.area.y, gone.joined),
                 )
             })
             .collect();

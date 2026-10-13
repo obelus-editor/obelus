@@ -546,7 +546,7 @@ impl Painter {
         // and a pane over the whole page with a strip of the page left
         // bare above it is a pane that stopped short. The bar is drawn over
         // it -- see `bar_on_top` in `lay`.
-        if from_the_top(self.bar.is_some(), behind) {
+        if from_the_top(self.bar.is_some(), behind.area.y, behind.joined) {
             top = -self.margin[1];
         }
         let glass = self.quads.len();
@@ -1035,8 +1035,8 @@ fn cut(piece: [f32; 4], room: [f32; 4], into: &mut Vec<[f32; 4]>) {
 /// Whether a pane runs up under the bar, which is a bar Obelus draws and a
 /// pane hanging from the top of the page: its glass then goes on up to the
 /// top of the window, and the bar is drawn over it.
-pub(super) fn from_the_top(bar: bool, behind: &Behind) -> bool {
-    bar && behind.area.y == 0 && behind.joined != Joined::Below
+pub(super) fn from_the_top(bar: bool, row: u16, joined: Joined) -> bool {
+    bar && row == 0 && matches!(joined, Joined::Above | Joined::Screen)
 }
 
 /// How much of a pane a slide has let through, which is the room its

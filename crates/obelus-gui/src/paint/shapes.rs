@@ -10,9 +10,10 @@ use super::*;
 use crate::grid::{Barred, Capped, Look, Page, Parted, Ruled, Spun, Stroked, Ticked};
 
 impl Painter {
-    /// The three buttons along the top of a window whose bar Obelus draws,
-    /// over the picture and the page's colour and under everything else --
-    /// see `title::Bar`.
+    /// The bar along the top of a window whose bar Obelus draws -- see
+    /// `title::Bar`: its icon, its title and its three buttons, over the
+    /// picture and the page's colour, and over any pane whose glass runs
+    /// up under it -- see `bar_on_top` in `lay`.
     ///
     /// In the window's pixels less the grid's origin, which is where every
     /// quad is placed: the bar is above the grid, so its rows come out
