@@ -5617,9 +5617,10 @@ fn a_question_that_arrives_while_the_reader_chooses_a_command_leaves_the_list() 
 /// pressing it twice meant the first, and the second card waits until they
 /// have stopped.
 ///
-/// Broken deliberately by leaving a key to a card out of what counts as
-/// writing (the `carded` arm in `chat_key`): the second enter answers the
-/// second question too.
+/// Broken deliberately by counting the key once it has been handled rather
+/// than before (`at_work` after `offer_to_the_conversation` in `chat_key`):
+/// answering the first question puts up the second before the key that
+/// answered is counted, and the second enter answers it too.
 #[test]
 fn the_enter_that_answered_one_question_does_not_answer_the_next() {
     let (mut app, events) = talking();
