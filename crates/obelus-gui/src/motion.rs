@@ -77,11 +77,11 @@ const LIGHT_UP: Duration = Duration::from_millis(160);
 /// reader did, because nothing they did is arriving -- a photograph
 /// appearing all at once a moment after the theme was chosen is the one
 /// thing on the screen that looks like a mistake.
-const UNVEIL: Duration = Duration::from_millis(450);
+const UNVEIL: Duration = Duration::from_millis(700);
 
 /// And how long the one it is taking the place of takes to go down into
 /// it: quicker, because what is wanted is the next one.
-const VEIL: Duration = Duration::from_millis(250);
+const VEIL: Duration = Duration::from_millis(400);
 
 /// And how long it takes to go out.
 ///
