@@ -547,7 +547,13 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
         if (distance <= 0.0) {
             discard;
         }
-        let spread = max(in.half_size.x - half.x, 1.0);
+        // How far it reaches is what the quad reaches past the box --
+        // unless it says otherwise, which a light cut into pieces has to:
+        // a piece's own size is not the whole light's (`lit_within`).
+        var spread = max(in.half_size.x - half.x, 1.0);
+        if (in.lower > 0.0) {
+            spread = in.lower;
+        }
         let fall = 1.0 - clamp(distance / spread, 0.0, 1.0);
         // Squared, so it leaves the edge dark and is gone before it
         // reaches the end: a shadow that fades in a straight line reads

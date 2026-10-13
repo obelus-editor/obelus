@@ -72,8 +72,8 @@ use winit::{
 use crate::{
     blink::Blink,
     grid::{
-        Barred, Behind, Capped, Cells, Going, Marked, Marking, Measured, Page, Parted, Rolled,
-        Ruled, Said, Sheened, Spelling, Spun, Stroked, Ticked, Update,
+        Barred, Behind, Capped, Cells, Going, Marked, Marking, Measured, Page, Paired, Parted,
+        Rolled, Ruled, Said, Sheened, Spelling, Spun, Stroked, Ticked, Update,
     },
     keys,
     motion::{Lane, Motion, Wake},
@@ -153,6 +153,7 @@ struct Left {
     sheened: Option<Sheened>,
     parted: Vec<Parted>,
     stroked: Vec<Stroked>,
+    paired: Vec<Paired>,
     stack: Vec<Behind>,
     /// Which of its panes went.
     going: Vec<Going>,
@@ -171,6 +172,8 @@ impl Left {
             sheened: self.sheened.as_ref(),
             parted: &self.parted,
             stroked: &self.stroked,
+            paired: &self.paired,
+            fading: &[],
             stack: &self.stack,
             bands: &[],
         }
@@ -421,6 +424,13 @@ struct Showing {
     stroked: Vec<Stroked>,
     /// And on the one being laid out.
     stroking: Vec<Stroked>,
+    /// Which cells are the cursor's pair of brackets on the frame being
+    /// shown.
+    paired: Vec<Paired>,
+    /// And on the one being laid out.
+    pairing: Vec<Paired>,
+    /// And the pairs the caret was in before, while their light goes out.
+    unpaired: Vec<Paired>,
     /// Which bands of rows are lists, how far down each has got and what
     /// bar says so, on the frame being shown.
     ///
@@ -534,6 +544,9 @@ impl Showing {
             ruled: Vec::new(),
             stroked: Vec::new(),
             stroking: Vec::new(),
+            paired: Vec::new(),
+            pairing: Vec::new(),
+            unpaired: Vec::new(),
             ruling: Vec::new(),
             linked: Vec::new(),
             linking: Vec::new(),
@@ -1208,6 +1221,12 @@ impl ApplicationHandler<Waking> for Showing {
                         Update::Linked { area } => {
                             self.linking.push((area, self.stacking.len()));
                         }
+                        Update::Paired { area, pair } => self.pairing.push(Paired {
+                            area,
+                            pair,
+                            depth: self.stacking.len(),
+                            held: None,
+                        }),
                         Update::Stroked { stroke } => {
                             self.stroking.push(Stroked {
                                 stroke,
@@ -1244,6 +1263,7 @@ impl ApplicationHandler<Waking> for Showing {
                                     sheened: self.sheened.take(),
                                     parted: std::mem::take(&mut self.parted),
                                     stroked: std::mem::take(&mut self.stroked),
+                                    paired: std::mem::take(&mut self.paired),
                                     stack: std::mem::take(&mut self.stack),
                                     going: Vec::new(),
                                 });
@@ -1296,6 +1316,14 @@ impl ApplicationHandler<Waking> for Showing {
                             self.motion
                                 .sheen_drawn(self.sheened.is_some(), Instant::now());
                             self.stroked = std::mem::take(&mut self.stroking);
+                            pairs_arrived(
+                                std::mem::take(&mut self.pairing),
+                                &mut self.paired,
+                                &mut self.unpaired,
+                                &self.page,
+                                &mut self.motion,
+                                Instant::now(),
+                            );
                             self.stack = std::mem::take(&mut self.stacking);
                             self.panes = std::mem::take(&mut self.paning);
                             self.scrolled = std::mem::take(&mut self.scrolling);
@@ -1613,11 +1641,19 @@ impl ApplicationHandler<Waking> for Showing {
                 if let Some(left) = self.left.take() {
                     painter.keep(&left.page, fonts, left.said(), &left.going);
                 }
+                // One moment for the whole frame, so each pair going out
+                // is as far out as the clock that says how far the rest is.
+                let now = Instant::now();
+                let fading: Vec<(Paired, f32)> = self
+                    .unpaired
+                    .iter()
+                    .filter_map(|half| self.motion.fading(half.pair, now).map(|lit| (*half, lit)))
+                    .collect();
                 if let Err(error) = painter.paint(
                     &self.page,
                     fonts,
                     self.spelling.as_ref(),
-                    self.motion.moving(Instant::now()),
+                    self.motion.moving(now),
                     Said {
                         marked: &self.marked,
                         capped: &self.capped,
@@ -1628,6 +1664,8 @@ impl ApplicationHandler<Waking> for Showing {
                         sheened: self.sheened.as_ref(),
                         parted: &self.parted,
                         stroked: &self.stroked,
+                        paired: &self.paired,
+                        fading: &fading,
                         stack: &self.stack,
                         bands: &rolled,
                     },
@@ -1885,6 +1923,37 @@ impl Drop for Finished {
     }
 }
 
+/// What a frame said about the cursor's pair of brackets, taken as the
+/// frame arrives: the pair it said, where the page still holds it, and
+/// the pairs that were, kept for their light to go out on.
+///
+/// Said here rather than at the drawing, for the light's reason: whether
+/// the pair is another one than the last frame drew is what starts it
+/// coming on or going out, and only the frame arriving knows that. And
+/// kept only where the caret left it rather than the text moving it, only
+/// while the cell is still that bracket, and not once it has gone out --
+/// so what is kept is what is going rather than what once went. Added to
+/// rather than replaced, because each goes out on its own clock: the
+/// pair left two presses ago is still going out when the next one goes.
+fn pairs_arrived(
+    said: Vec<Paired>,
+    paired: &mut Vec<Paired>,
+    unpaired: &mut Vec<Paired>,
+    page: &Page,
+    motion: &mut Motion,
+    now: Instant,
+) {
+    let was = std::mem::replace(paired, said);
+    paired.retain(|half| half.still_said(page));
+    for half in paired.iter_mut() {
+        half.hold(page);
+    }
+    if motion.pairs_drawn(paired.iter().map(|half| half.pair), now) {
+        unpaired.extend(was);
+    }
+    unpaired.retain(|half| half.still_there(page) && motion.fading(half.pair, now).is_some());
+}
+
 /// Whether a cell is among the words of a link the frame said, and still
 /// is.
 ///
@@ -2033,11 +2102,92 @@ mod tests {
     use ratatui::layout::Rect;
     use winit::event_loop::ControlFlow;
 
-    use super::{MARK, Rolling, control_flow, on_a_link, turning, wants_a_frame};
+    use super::{MARK, Rolling, control_flow, on_a_link, pairs_arrived, turning, wants_a_frame};
     use crate::{
         grid::{Behind, Page, Spun, Update},
         motion::{Motion, Wake},
     };
+
+    /// The pair the caret left is kept for its light to go out on, while
+    /// its cell is still that bracket, and let go of once it has gone out.
+    ///
+    /// Deliberate breaks: drop the `unpaired.extend(was)` and there is
+    /// nothing to go out, or replace with it and the pair left first is
+    /// put out by the next; drop the `still_there` and the light goes out
+    /// on the `x` the file scrolled into the `(`'s cell; drop the `fading`
+    /// and what went out is kept for good.
+    #[test]
+    fn the_pair_the_caret_left_is_kept_while_it_goes_out() {
+        let write = |page: &mut Page, x: u16, text: &str| {
+            let mut cell = ratatui::buffer::Cell::default();
+            cell.set_symbol(text);
+            page.apply(Update::Cell {
+                x,
+                y: 0,
+                cell: Box::new(cell),
+            });
+        };
+        let mut page = Page::default();
+        page.resized(6, 1);
+        for (x, text) in [(0, "("), (1, "a"), (2, ")"), (3, "("), (4, "b"), (5, ")")] {
+            write(&mut page, x, text);
+        }
+        let half = |x, open| crate::grid::Paired {
+            area: Rect::new(x, 0, 1, 1),
+            pair: obelus_ui::shapes::Pair {
+                document: 1,
+                version: 1,
+                open,
+            },
+            depth: 0,
+            held: None,
+        };
+        let xs = |halves: &[crate::grid::Paired]| -> Vec<u16> {
+            halves.iter().map(|half| half.area.x).collect()
+        };
+        let mut motion = Motion::new(None);
+        let (mut paired, mut unpaired) = (Vec::new(), Vec::new());
+        let mut arrive = |said, page: &Page, at| {
+            pairs_arrived(said, &mut paired, &mut unpaired, page, &mut motion, at);
+            (xs(&paired), xs(&unpaired))
+        };
+        let base = Instant::now();
+        assert_eq!(
+            arrive(vec![half(0, 0), half(2, 0)], &page, base),
+            (vec![0, 2], vec![])
+        );
+
+        // Into the second pair: the first is kept to go out.
+        let later = base + Duration::from_millis(500);
+        assert_eq!(
+            arrive(vec![half(3, 3), half(5, 3)], &page, later),
+            (vec![3, 5], vec![0, 2]),
+            "nothing kept to go out"
+        );
+        // And out of it while the first is still going: both are kept.
+        let on = later + Duration::from_millis(30);
+        assert_eq!(
+            arrive(Vec::new(), &page, on),
+            (vec![], vec![0, 2, 3, 5]),
+            "the first was put out by the second"
+        );
+
+        // The file scrolled under the first `(`.
+        write(&mut page, 0, "x");
+        assert_eq!(
+            arrive(Vec::new(), &page, on).1,
+            vec![2, 3, 5],
+            "a light on what scrolled in"
+        );
+
+        // And once they have gone out, nothing is kept.
+        assert!(
+            arrive(Vec::new(), &page, on + Duration::from_secs(1))
+                .1
+                .is_empty(),
+            "kept after it went out"
+        );
+    }
 
     /// A mark that turns is kept while the page holds it or a pane's
     /// picture does, and not otherwise.

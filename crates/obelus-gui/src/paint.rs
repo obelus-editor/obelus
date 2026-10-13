@@ -753,6 +753,41 @@ const HELD_EDGE: f32 = 0.03;
 /// the ground under what the reader is holding.
 const HELD_CORNER: f32 = 0.18;
 
+/// How far the light round the cursor's brackets reaches, as a share of a
+/// row's height.
+///
+/// Further than a hold's, and that is the point of it: a bracket is one
+/// narrow cell, and what makes it findable from across the screen is the
+/// light being bigger than the thing it is round. Not so far that the two
+/// halves of `()` read as one blob, which is a little over half a row.
+const PAIR_REACH: f32 = 0.55;
+
+/// How much of that reach the light starts from while it comes on.
+///
+/// Some, rather than none: a light that grows from the bracket's own edge
+/// is a ring spreading, which draws the eye to the motion rather than to
+/// the bracket. What is wanted is a light brightening that also opens a
+/// little.
+const PAIR_REACH_FROM: f32 = 0.4;
+
+/// How far the plate and its light are from the page, as a share of how
+/// far the cells' own `bracket_background` is.
+///
+/// Further than the cells, because a lit thing is lighter than the same
+/// thing in shade -- but only half as far again. Twice as far was tried
+/// first, and the plate was the strongest thing on the line: what the
+/// reader is meant to see is the bracket, and a plate that outshone it
+/// was a mark laid over it. Away from the page whichever way the page
+/// is, so on a light theme this is a plate a little darker than the
+/// cells.
+const PAIR_LIFT: f32 = 1.5;
+
+/// And how much of the plate's colour it carries where it leaves the plate.
+///
+/// More than a hold's, which only has to soften an edge: this one has to
+/// be seen.
+const PAIR_LIGHT: f32 = 0.7;
+
 /// How far a shadow reaches past the thing casting it, as a share of a
 /// row's height.
 ///
@@ -2161,6 +2196,8 @@ mod tests {
             sheened: None,
             parted: &[],
             stroked: &[],
+            paired: &[],
+            fading: &[],
             stack: &[],
             bands: &[],
         };
@@ -2218,6 +2255,8 @@ mod tests {
             sheened: None,
             parted: &[],
             stroked: &[],
+            paired: &[],
+            fading: &[],
             stack: &[],
             bands: &[],
         };
@@ -2594,6 +2633,8 @@ mod tests {
             barred: &[],
             ruled: &[],
             stroked: &stroked,
+            paired: &[],
+            fading: &[],
             sheened: None,
             parted: &[],
             stack: &[],

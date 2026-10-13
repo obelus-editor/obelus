@@ -9,21 +9,22 @@ screen 40x8  editor 40x6  status 40x1
  6|────────────────────────────────────────
  7| tests/fixtures/sample.rs           3:1 
 -- style --
- 0|aaababccaddddeeaeaaaaaaaaaaaaaaaaaaaaaaa
- 1|aaabaaaaaacccaaaaaaaaaaaaffffffeaaaaaaaa
- 2|aaaeaaaaaaddddddddeffffffffffffffffffeea
- 3|aaabaaeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 0|aaababccaddddeeafaaaaaaaaaaaaaaaaaaaaaaa
+ 1|aaabaaaaaacccaaaaaaaaaaaaggggggeaaaaaaaa
+ 2|aaaeaaaaaaddddddddeggggggggggggggggggeea
+ 3|aaabaafaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  4|aaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  5|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  6|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 7|gggggggggggggggggggggggggggggggggggggggg
+ 7|hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh
 -- legend --
 a fg=#e4e4e7 bg=#18181b
 b fg=#52525b bg=#18181b
 c fg=#c084fc bg=#18181b
 d fg=#60a5fa bg=#18181b
 e fg=#a1a1aa bg=#18181b
-f fg=#a3e635 bg=#18181b
-g fg=#d4d4d8 bg=#18181b
+f fg=#a1a1aa bg=#3f3f46
+g fg=#a3e635 bg=#18181b
+h fg=#d4d4d8 bg=#18181b
 -- cursor --
 6,2

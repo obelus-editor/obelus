@@ -402,6 +402,17 @@ pub struct EditorView<'a> {
     drawn: &'a [crate::Drawn],
     /// The characters selected in the file being read.
     selection: Option<Span>,
+    /// Whether the pair of brackets the cursor is on or inside is marked.
+    ///
+    /// Not for a preview, for the selection's reason: which pair the
+    /// cursor is in is an answer to "where am I", and a preview is a look
+    /// at somewhere else. It was harmless while a pair was marked only
+    /// with the cursor on a bracket, which a preview's target rarely is;
+    /// marked from inside one, nearly every preview of a call lit the
+    /// braces of the function round it, and in a window every step down
+    /// the list brought a light on. `calls_80x24` is the grid that says
+    /// so: set this for a preview and its `fn main() { ... }` is lit.
+    brackets: bool,
     /// What the language server says is wrong with the file being read.
     ///
     /// Empty for a preview: a preview is somewhere else, and what is wrong
@@ -565,6 +576,7 @@ impl<'a> EditorView<'a> {
             marked: app.marked_runs(),
             drawn: app.drawn(),
             selection: app.current_buffer().and_then(Buffer::selection),
+            brackets: true,
             troubles: app.troubles(),
             changes: app.changes(),
             opened: app.opened_hunks(),
@@ -633,6 +645,7 @@ impl<'a> EditorView<'a> {
             // Everything that answers "where am I and what am I doing" is
             // the document's rather than a look at another one's.
             selection: None,
+            brackets: false,
             opened: Vec::new(),
             blame: None,
             blamed_here: false,
@@ -754,7 +767,11 @@ impl Widget for EditorView<'_> {
         // same question.
         let visible = buffer.visible_bytes(area.height);
         let at = text.byte_of_char(text.char_offset(cursor.line, cursor.column));
-        let brackets = brackets::pair_at(text, self.highlights, at, visible);
+        let brackets = self
+            .brackets
+            .then(|| brackets::nearest(text, self.highlights, at, visible))
+            .flatten()
+            .map(|pair| (pair, which_pair(buffer, pair.0)));
 
         // The hunks the reader has opened, worked out once: every row asks
         // whether it is one of their lines.
@@ -1546,8 +1563,23 @@ struct Painting<'a> {
     selection: Option<Span>,
     /// What the language server says is wrong with the file.
     troubles: &'a [obelus_lsp::trouble::Trouble],
-    /// The bracket under the cursor and its partner.
-    brackets: Option<(ByteOffset, ByteOffset)>,
+    /// The bracket under the cursor and its partner, or the pair the
+    /// cursor is inside -- and which pair that is, for a window.
+    brackets: Option<((ByteOffset, ByteOffset), crate::shapes::Pair)>,
+}
+
+/// Which pair of brackets this is, as a window compares them -- see
+/// [`crate::shapes::Pair`].
+fn which_pair(buffer: &Buffer, open: ByteOffset) -> crate::shapes::Pair {
+    use std::hash::{Hash, Hasher};
+    let mut document = std::hash::DefaultHasher::new();
+    buffer.path().hash(&mut document);
+    buffer.content().at().hash(&mut document);
+    crate::shapes::Pair {
+        document: document.finish(),
+        version: buffer.version(),
+        open: open.get(),
+    }
 }
 
 /// Draws one visual row of a line, and says which column it ended at.
@@ -1658,14 +1690,15 @@ fn draw_row(
                 .add_modifier(Modifier::UNDERLINED)
                 .underline_color(painting.theme.colour_for(Some(severity.kind())));
         }
-        // The bracket the cursor is on, and its partner. After the mark, so
+        // The pair the cursor is on or inside. After the mark, so
         // a symbol a preview is about keeps its own background where the two
         // land on the same cell.
-        if painting
+        if let Some((_, pair)) = painting
             .brackets
-            .is_some_and(|(open, close)| glyph.first_byte == open || glyph.first_byte == close)
+            .filter(|((open, close), _)| glyph.first_byte == *open || glyph.first_byte == *close)
         {
             style = style.bg(painting.theme.bracket_background);
+            crate::shapes::paired(Rect::new(x + offset, y, 1, 1), pair);
         }
 
         // A cell the file does not contain, drawn as whatever put it

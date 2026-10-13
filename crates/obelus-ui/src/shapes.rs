@@ -384,6 +384,45 @@ pub trait Shapes: Send + Sync {
     /// One row at a time: a link that wraps is said once for each row its
     /// words are on.
     fn linked(&self, area: Rect);
+
+    /// This cell is one half of the pair of brackets the cursor is on or
+    /// inside.
+    ///
+    /// A terminal says it in `bracket_background`, behind the bracket and
+    /// its partner. What a window has that a cell has not is light: a
+    /// plate under the bracket with a glow round it, which a pair is
+    /// easier to find by than a square a shade off the page.
+    ///
+    /// `pair` is which pair -- see [`Pair`], which says why it is three
+    /// numbers to compare rather than a place on the screen.
+    ///
+    /// No colours, for the reason a switch has none: what the plate is
+    /// drawn in is the ground of that very cell, which the view has
+    /// already written.
+    fn paired(&self, area: Rect, pair: Pair);
+}
+
+/// Which pair of brackets a cell is half of, as numbers to be *compared*,
+/// the way [`Shapes::scrolled`]'s `top` is.
+///
+/// What a front end does with it is notice that the pair is another one --
+/// the caret went into it -- which nothing in the cells says: a pair the
+/// view scrolled and a pair the caret moved to are the same two cells
+/// somewhere else. And notice when it is the same one moved, which the
+/// place alone cannot say either: type in front of an opening bracket, or
+/// let an agent write above it, and it is a byte further on while being
+/// the pair it was. The version is what tells the two apart -- a pair
+/// that moved while the text changed was moved by the change.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Pair {
+    /// Which document: its path and which commit it is, because two
+    /// buffers can wear one path. Hashed, because all it is for is
+    /// comparing.
+    pub document: u64,
+    /// Which version of the document's text.
+    pub version: i32,
+    /// Where the opening bracket is in it, in bytes.
+    pub open: usize,
 }
 
 /// Who is drawing, where it is somebody who wants to be told.
@@ -477,6 +516,14 @@ pub(crate) fn sheened(area: Rect, from: Color, to: Color) {
 pub(crate) fn linked(area: Rect) {
     if let Some(shapes) = DRAWING.get() {
         shapes.linked(area);
+    }
+}
+
+/// Tells whoever is drawing that half of the cursor's pair of brackets is
+/// here.
+pub(crate) fn paired(area: Rect, pair: Pair) {
+    if let Some(shapes) = DRAWING.get() {
+        shapes.paired(area, pair);
     }
 }
 

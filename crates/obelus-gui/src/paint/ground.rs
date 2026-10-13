@@ -1,8 +1,8 @@
-//! What is under the letters: each cell's own colour, and the reader's
-//! holds with the light round them.
+//! What is under the letters: each cell's own colour, the reader's holds
+//! with the light round them, and the cursor's pair of brackets lit.
 
 use super::*;
-use crate::grid::{Capped, Page};
+use crate::grid::{Capped, Page, Paired};
 
 impl Painter {
     /// The colour behind the text, as few rectangles as it takes.
@@ -17,6 +17,7 @@ impl Painter {
         panes: &[&Behind],
         framed: &[&Behind],
         capped: &[&Capped],
+        paired: &[Paired],
     ) {
         let (width, height) = (cell.width, cell.height);
         let spilt: Vec<(u16, u16)> = framed.iter().flat_map(|card| card.spilt(page)).collect();
@@ -71,6 +72,15 @@ impl Painter {
                     self.holds(page, row, capped)
                         .into_iter()
                         .map(|(from, to, _)| (from, to)),
+                );
+                // And the cursor's brackets, for the same reason: `pairs`
+                // draws each as a plate, and the square under it would
+                // stand outside its corners.
+                holes.extend(
+                    paired
+                        .iter()
+                        .filter(|half| half.area.y == row)
+                        .map(|half| (half.area.x, half.area.right())),
                 );
                 for (start, end) in without(start, end, &mut holes) {
                     self.block(
@@ -243,6 +253,103 @@ impl Painter {
             })
             .collect::<Vec<_>>();
         self.quads.splice(first..first, lights);
+    }
+
+    /// The cursor's pair of brackets, each a plate with light round it.
+    ///
+    /// Solid, and in the light's own colour: the plate is where the light
+    /// comes from, so it is the brightest thing there and the glow is the
+    /// same colour falling away from its edge. Not a hold's plate, whose
+    /// rim is brighter than its face -- on a bracket one cell wide that is
+    /// an outline round a hollow, which reads as a box drawn round the
+    /// character rather than as the character being lit.
+    ///
+    /// The colour is the cells' own carried further from the page, so it
+    /// is the theme's `bracket_background` and nothing the theme did not
+    /// choose -- only lifted, the way a lit thing is lighter than the same
+    /// thing in shade.
+    ///
+    /// `coming_on` is how bright it is while it comes on, and the whole of
+    /// it comes on together: the plate from nothing, and the light from
+    /// close in to its full reach. A plate at full strength under a light still
+    /// coming on is a square that appears and then glows, which is two
+    /// things happening where the reader should see one. `fading` is the
+    /// pairs the caret was in before, going out the same way backwards,
+    /// each at the brightness beside it -- in the ground it wore when it
+    /// was lit, because its cells have the page's back.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the pair coming on and the pairs going out are one picture"
+    )]
+    pub(super) fn pairs(
+        &mut self,
+        page: &Page,
+        paired: &[Paired],
+        fading: &[(Paired, f32)],
+        panes: &[&Behind],
+        framed: &[&Behind],
+        coming_on: Option<f32>,
+        cell: CellSize,
+    ) {
+        let corner = (cell.height * HELD_CORNER).min(cell.width / 2.0);
+        let halves = lit_halves(page, paired, fading, panes, coming_on, cell, |x, y| {
+            self.under(panes, framed, x, y)
+        });
+        // Every light under every plate, so the light round one half does
+        // not lie over the other where the two are side by side: `()`.
+        for &Lit {
+            rect: [left, top, width, height],
+            colour: lit,
+            pane,
+            strength,
+        } in &halves
+        {
+            let reach =
+                cell.height * PAIR_REACH * PAIR_REACH_FROM.mul_add(1.0 - strength, strength);
+            let glow = [
+                left - reach,
+                top - reach,
+                left + width + reach,
+                top + height + reach,
+            ];
+            let room = pane.map_or_else(
+                || ratatui::layout::Rect::new(0, 0, page.columns(), page.rows()),
+                |pane| panes[pane].area,
+            );
+            let over: Vec<ratatui::layout::Rect> = panes[pane.map_or(0, |pane| pane + 1)..]
+                .iter()
+                .map(|over| over.area)
+                .collect();
+            for rect in lit_within(glow, room, &over, cell) {
+                self.quads.push(Quad {
+                    rect,
+                    uv: [left, top, left + width, top + height],
+                    colour: [lit[0], lit[1], lit[2], PAIR_LIGHT * strength],
+                    flags: SHADOW,
+                    radius: corner,
+                    layer: 0,
+                    // How far the whole light reaches, which a piece of it
+                    // cannot say with its own size -- see `paint.wgsl`.
+                    lower: reach.max(1.0),
+                });
+            }
+        }
+        for &Lit {
+            rect: [left, top, width, height],
+            colour: lit,
+            strength,
+            ..
+        } in &halves
+        {
+            self.rounded(
+                left,
+                top,
+                width,
+                height,
+                corner,
+                [lit[0], lit[1], lit[2], strength],
+            );
+        }
     }
 
     /// The face a hold is drawn in at this cell, where the cell is part
@@ -749,6 +856,141 @@ fn lights(
         .collect()
 }
 
+/// Every half `pairs` draws: the cursor's pair at `coming_on`, and each pair
+/// that was at the brightness beside it -- each with what it is drawn in
+/// and how bright.
+///
+/// Apart from the painter so that what the reader sees can be checked
+/// without a device: a light going out in the page's own ground is a
+/// light nobody sees, and one going out from all of it is a flash.
+/// `under` is what the ground under a cell is -- `Painter::under`.
+fn lit_halves(
+    page: &Page,
+    paired: &[Paired],
+    fading: &[(Paired, f32)],
+    panes: &[&Behind],
+    coming_on: Option<f32>,
+    cell: CellSize,
+    under: impl Fn(u16, u16) -> [f32; 4],
+) -> Vec<Lit> {
+    let lit = paired.iter().map(|half| (half, coming_on.unwrap_or(1.0)));
+    let going = fading.iter().map(|(half, lit)| (half, *lit));
+    lit.chain(going)
+        .map(|(half, strength)| {
+            let (x, y) = (half.area.x, half.area.y);
+            let rect = [
+                f32::from(x) * cell.width,
+                f32::from(y) * cell.height,
+                cell.width,
+                cell.height,
+            ];
+            // What it wore when it was lit, which for the pair that was is
+            // not what the cell wears now: it has the page's ground back.
+            let ground = half
+                .held
+                .map_or_else(|| page.look(x, y).background, |(_, ground)| ground);
+            let ink = rgba(ground, Ink::Background);
+            // The pane or box the bracket is drawn in, nearest the reader
+            // first, the way a hold's is found.
+            let pane = panes.iter().rposition(|pane| {
+                (pane.area.left()..pane.area.right()).contains(&x)
+                    && (pane.area.top()..pane.area.bottom()).contains(&y)
+            });
+            Lit {
+                rect,
+                colour: lifted(under(x, y), ink, PAIR_LIFT),
+                pane,
+                strength,
+            }
+        })
+        .collect()
+}
+
+/// Half a pair of brackets, as `pairs` draws it.
+#[derive(Clone, Copy)]
+struct Lit {
+    /// Its cell, in pixels: left, top, width, height.
+    rect: [f32; 4],
+    /// What its plate and its light are drawn in.
+    colour: [f32; 4],
+    /// The pane or box it is drawn in, or `None` for the page.
+    pane: Option<usize>,
+    /// How much of it there is: coming on, going out, or all of it.
+    strength: f32,
+}
+
+/// Where the light round a bracket may fall: `glow` -- left, top, right,
+/// bottom, in pixels -- cut to the cells of `room` and out of every one
+/// of `over`, as a rectangle per stretch of a row.
+///
+/// What the layers are for. The bracket is drawn in a pane, a box or the
+/// page, and its light belongs to that and to nothing put over it: a
+/// bracket on the row above a list joined below would otherwise light the
+/// list's first row, and one beside a hover would shine on its frame.
+/// Cells, because that is what a pane or a box covers -- the same answer
+/// `lights_round` gives the light round a hold.
+fn lit_within(
+    glow: [f32; 4],
+    room: ratatui::layout::Rect,
+    over: &[ratatui::layout::Rect],
+    cell: CellSize,
+) -> Vec<[f32; 4]> {
+    let [left, top, right, bottom] = [
+        glow[0].max(f32::from(room.left()) * cell.width),
+        glow[1].max(f32::from(room.top()) * cell.height),
+        glow[2].min(f32::from(room.right()) * cell.width),
+        glow[3].min(f32::from(room.bottom()) * cell.height),
+    ];
+    let mut lit = Vec::new();
+    if left >= right || top >= bottom {
+        return lit;
+    }
+    for row in room.top()..room.bottom() {
+        let from = top.max(f32::from(row) * cell.height);
+        let to = bottom.min(f32::from(row + 1) * cell.height);
+        if from >= to {
+            continue;
+        }
+        let mut holes: Vec<(f32, f32)> = over
+            .iter()
+            .filter(|over| (over.top()..over.bottom()).contains(&row))
+            .map(|over| {
+                (
+                    f32::from(over.left()) * cell.width,
+                    f32::from(over.right()) * cell.width,
+                )
+            })
+            .collect();
+        holes.sort_by(|one, other| one.0.total_cmp(&other.0));
+        let mut start = left;
+        for (hole_from, hole_to) in holes {
+            if hole_from > start {
+                let end = hole_from.min(right);
+                if end > start {
+                    lit.push([start, from, end - start, to - from]);
+                }
+            }
+            start = start.max(hole_to);
+        }
+        if right > start {
+            lit.push([start, from, right - start, to - from]);
+        }
+    }
+    lit
+}
+
+/// `to` carried on away from `from`, to `by` times as far from it as it
+/// is -- `away` is twice.
+fn lifted(from: [f32; 4], to: [f32; 4], by: f32) -> [f32; 4] {
+    let mut out = to;
+    for channel in 0..3 {
+        out[channel] = (to[channel] - from[channel])
+            .mul_add(by, from[channel])
+            .clamp(0.0, 1.0);
+    }
+    out
+}
+
 fn away(from: [f32; 4], to: [f32; 4]) -> [f32; 4] {
     let mut out = to;
     for channel in 0..3 {
@@ -846,6 +1088,82 @@ mod tests {
                 .all(|light| light.to <= 20.0 || light.from >= 30.0),
             "{lit:?}"
         );
+    }
+
+    /// The pair that was is drawn in what it wore when it was lit, at the
+    /// brightness its own clock says it has got down to.
+    ///
+    /// Deliberate breaks: read the cell's ground instead of `held`, and
+    /// the light goes out in the page's own colour, which is nothing; draw
+    /// it at all of it, and it does not go out at all.
+    #[test]
+    fn the_pair_that_was_goes_out_in_what_it_wore() {
+        let cell = CellSize {
+            width: 10.0,
+            height: 20.0,
+            baseline: 15.0,
+        };
+        let page = {
+            let mut page = Page::default();
+            page.resized(3, 1);
+            page
+        };
+        let wore = Color::Rgb(60, 60, 70);
+        let ghost = Paired {
+            area: ratatui::layout::Rect::new(0, 0, 1, 1),
+            pair: obelus_ui::shapes::Pair {
+                document: 1,
+                version: 1,
+                open: 0,
+            },
+            depth: 0,
+            held: Some(('(', wore)),
+        };
+        let under = [0.1, 0.1, 0.1, 1.0];
+        let lit = lit_halves(&page, &[], &[(ghost, 0.25)], &[], None, cell, |_, _| under);
+        assert_eq!(lit.len(), 1);
+        assert!(
+            (lit[0].strength - 0.25).abs() < f32::EPSILON,
+            "{}",
+            lit[0].strength
+        );
+        assert_eq!(
+            lit[0].colour,
+            lifted(under, rgba(wore, Ink::Background), PAIR_LIFT)
+        );
+    }
+
+    /// The light round a bracket falls on its own layer and on nothing put
+    /// over it, and all of what is left of it is drawn.
+    ///
+    /// A bracket at column 2 of row 2, its light reaching one cell every
+    /// way, with a list joined below over rows 3 and down, inside a room
+    /// that stops at column 2's right edge.
+    ///
+    /// Deliberate break: drop the holes, and row 3 is lit across the list;
+    /// drop the clamp to the room, and the light reaches past column 2.
+    #[test]
+    fn a_brackets_light_stays_on_its_own_layer() {
+        let cell = CellSize {
+            width: 10.0,
+            height: 20.0,
+            baseline: 15.0,
+        };
+        let glow = [10.0, 20.0, 40.0, 80.0];
+        let room = ratatui::layout::Rect::new(0, 0, 3, 10);
+        let list = ratatui::layout::Rect::new(0, 3, 3, 7);
+        let lit = lit_within(glow, room, &[list], cell);
+        // Rows 1 and 2, from column 1 to the room's edge, and nothing on
+        // row 3.
+        assert_eq!(
+            lit,
+            vec![[10.0, 20.0, 20.0, 20.0], [10.0, 40.0, 20.0, 20.0]],
+            "{lit:?}"
+        );
+        // And with nothing over it, every row the light reaches.
+        let open = lit_within(glow, room, &[], cell);
+        assert_eq!(open.len(), 3, "{open:?}");
+        assert!(open.iter().all(|piece| piece[0] + piece[2] <= 30.0));
     }
 
     /// No turn a plate can carry is read as a shadow.

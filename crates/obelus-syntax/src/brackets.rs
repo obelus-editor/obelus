@@ -1,4 +1,5 @@
-//! The bracket under the cursor, and the one that closes it.
+//! The bracket under the cursor, and the one that closes it -- or the pair
+//! the cursor is inside, when it is on neither half.
 //!
 //! A scan rather than a tree walk. The tree knows the answer, but reaching
 //! it means knowing which node kind each grammar uses for a delimited group,
@@ -86,6 +87,65 @@ pub fn pair_at(
         }
         cursor = step(text, cursor, forward, &within)?;
     }
+}
+
+/// The pair nearest the cursor: the bracket it is on and its partner, or
+/// else the innermost pair it is inside.
+///
+/// The second is what the screen wants and the key does not. A reader
+/// standing in the middle of an argument list is asking where it starts and
+/// ends, and lighting a pair only when the caret happens to land on one half
+/// of it answers that for one column in forty. Going to a bracket from
+/// inside one would be a jump nobody could predict, so `go-to-bracket`
+/// keeps [`pair_at`].
+///
+/// Both halves have to be within `within`, for the same reason as there: a
+/// function taller than the screen gets no mark from inside it, and the call
+/// on the line the caret is on still does.
+#[must_use]
+pub fn nearest(
+    text: &Text,
+    highlights: &Highlights,
+    at: ByteOffset,
+    within: Range<ByteOffset>,
+) -> Option<(ByteOffset, ByteOffset)> {
+    pair_at(text, highlights, at, within.clone()).or_else(|| around(text, highlights, at, within))
+}
+
+/// The innermost pair with the cursor between its halves.
+///
+/// Backwards to the first opening bracket nothing between closes -- counting
+/// all three kinds as one depth, since `f(a[0])` is balanced whichever kind
+/// is asked about -- and then that bracket's partner, which has to be ahead
+/// of the cursor: in broken code it can be behind it, as in `( [ )`, and a
+/// pair that ends before the caret is not one the caret is in.
+fn around(
+    text: &Text,
+    highlights: &Highlights,
+    at: ByteOffset,
+    within: Range<ByteOffset>,
+) -> Option<(ByteOffset, ByteOffset)> {
+    if at < within.start || at > within.end {
+        return None;
+    }
+    let mut depth = 0usize;
+    let mut cursor = at;
+    let open = loop {
+        cursor = step(text, cursor, false, &within)?;
+        if literal(highlights, cursor) {
+            continue;
+        }
+        let character = char_at(text, cursor)?;
+        if closes(character) {
+            depth += 1;
+        } else if opens(character) {
+            if depth == 0 {
+                break cursor;
+            }
+            depth -= 1;
+        }
+    };
+    pair_at(text, highlights, open, within).filter(|(_, close)| *close > at)
 }
 
 /// Whether a byte is inside a string or a comment.

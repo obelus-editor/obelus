@@ -209,11 +209,21 @@ impl Painter {
             .iter()
             .filter(|cap| cap.still_said(page))
             .collect();
-        self.backgrounds(page, cell, panes, &framed, &capped);
+        self.backgrounds(page, cell, panes, &framed, &capped, said.paired);
         // Over the page and under everything written on it: a hold is a
         // ground, and the letters it is behind are the ones the reader is
         // holding.
         self.holdings(page, panes, &framed, &capped, cell);
+        // And the cursor's brackets, which are a ground of the same kind.
+        self.pairs(
+            page,
+            said.paired,
+            said.fading,
+            panes,
+            &framed,
+            moving.pair,
+            cell,
+        );
         self.rules(page, said.ruled, cell);
         // The boundaries with no row to be on, which go where there is no
         // cell: the pixel between one row and the one above it. Under the
