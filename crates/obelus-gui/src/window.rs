@@ -1325,6 +1325,11 @@ impl ApplicationHandler<Waking> for Showing {
                                 self.unpaired = was;
                             }
                             self.unpaired.retain(|half| half.still_there(&self.page));
+                            // And none once it has gone out, so what is kept
+                            // is what is going rather than what once went.
+                            if self.motion.moving(Instant::now()).unpair.is_none() {
+                                self.unpaired.clear();
+                            }
                             self.stack = std::mem::take(&mut self.stacking);
                             self.panes = std::mem::take(&mut self.paning);
                             self.scrolled = std::mem::take(&mut self.scrolling);

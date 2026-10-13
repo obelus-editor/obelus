@@ -720,14 +720,18 @@ impl Arriving {
 
     /// How far along it is, or `None` for one that is simply there.
     fn along(&self, now: Instant) -> Option<f32> {
-        let opened = self.opened?;
-        let gone = now.duration_since(opened).as_secs_f32() / self.takes.as_secs_f32();
-        if gone >= 1.0 {
-            return None;
-        }
+        let gone = self.gone(now)?;
         // Slowest into its place, fastest leaving the top: a thing that
         // arrives somewhere settles into it.
         Some(1.0 - (1.0 - gone).powi(3))
+    }
+
+    /// The share of its time that has gone, evenly, or `None` for one
+    /// that is simply there.
+    fn gone(&self, now: Instant) -> Option<f32> {
+        let opened = self.opened?;
+        let gone = now.duration_since(opened).as_secs_f32() / self.takes.as_secs_f32();
+        (gone < 1.0).then_some(gone)
     }
 
     /// Moves it on, and says whether what is drawn changed.
@@ -1292,9 +1296,14 @@ impl Motion {
     }
 
     /// And the pair that was, while it goes out.
+    ///
+    /// Slowest at first, the other way round from coming on: a light that
+    /// went out the way a thing arrives would be half gone a fifth of the
+    /// way through, and `LIGHT_DOWN` being the longer of the two would be
+    /// a number and not something anybody saw.
     fn unpair_lit(&self, now: Instant) -> Option<f32> {
-        let along = self.unpair.along(now)?;
-        Some(self.unpair_from * (1.0 - along))
+        let gone = self.unpair.gone(now)?;
+        Some(self.unpair_from * gone.mul_add(-gone, 1.0))
     }
 
     /// The frame drew a mark that turns, or it did not.
@@ -2460,7 +2469,9 @@ mod tests {
     /// going out a cell behind it; leave `unpair` out of `Motion::wake`
     /// and the light goes out at whatever rate the blink wants; set it to
     /// `went` whatever it was, and crossing from one pair to the next
-    /// through the space between puts the first light out at once.
+    /// through the space between puts the first light out at once; go out
+    /// on `along`'s curve, and most of the light is gone a quarter of the
+    /// way through.
     #[test]
     fn a_pair_the_caret_left_goes_out() {
         let base = Instant::now();
@@ -2480,6 +2491,13 @@ mod tests {
             .unpair
             .expect("still going out");
         assert!(half > 0.0 && half < 1.0, "{half}");
+        // Most of it still there a quarter of the way through: it goes
+        // slowly first.
+        let quarter = motion
+            .moving(base + LIGHT_DOWN / 4)
+            .unpair
+            .expect("going out");
+        assert!(quarter > 0.9, "gone too fast: {quarter}");
         // Slower than it came on, and still asking for frames once the
         // new pair is lit -- which is the moment only it is moving.
         assert!(motion.moving(base + LIGHT_UP).unpair.is_some());
