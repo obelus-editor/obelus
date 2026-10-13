@@ -455,6 +455,9 @@ windows-sys = { version = "0.61.2", features = [
     # And the window's title bar, drawn in the page's colour: see
     # `obelus-gui`'s `title.rs`.
     "Win32_Graphics_Dwm",
+    # And what the system fills the window with before Obelus has drawn
+    # it: see `obelus-gui`'s `window.rs`.
+    "Win32_Graphics_Gdi",
     # And which faces Windows links to the one code is drawn in, for the
     # characters it has not got: see `obelus-gui`'s `cascade.rs`.
     "Win32_System_Registry",

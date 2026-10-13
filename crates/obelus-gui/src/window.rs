@@ -869,6 +869,57 @@ fn wants_a_frame(stepped: bool, wake: Option<Wake>, covered: bool) -> bool {
     !covered && (stepped || wake == Some(Wake::EveryFrame))
 }
 
+/// Has the system fill the window with the page's ground where it shows
+/// the window before Obelus has drawn it.
+///
+/// Windows does not wait for a frame before it shows a window at the size
+/// it was dragged to, and what is in the part the frame has not reached is
+/// the window class's brush -- which winit leaves empty, so it was black: a
+/// strip down the edge being dragged, as wide as the drag had got ahead of
+/// the frame, and nothing a frame could reach, because it was never in one.
+/// Found by painting the brush magenta, after a frame cleared to magenta
+/// and a frame that could not be narrower than the window both left it
+/// black. The page's ground rather than the picture under it, because a
+/// brush is one colour, and the strip is there for the moment the frame
+/// takes to arrive.
+///
+/// The class is one window's here: `obg` opens one.
+#[cfg(windows)]
+fn filled_with(window: &Window, ground: Color) {
+    use windows_sys::Win32::{
+        Graphics::Gdi::{CreateSolidBrush, DeleteObject},
+        UI::WindowsAndMessaging::{GCLP_HBRBACKGROUND, SetClassLongPtrW},
+    };
+    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    let Ok(handle) = window.window_handle() else {
+        return;
+    };
+    let RawWindowHandle::Win32(handle) = handle.as_raw() else {
+        return;
+    };
+    let (r, g, b) = crate::paint::ground_of(ground);
+    // A `COLORREF`, which is the three bytes the other way round.
+    let colour: u32 = u32::from(r) | (u32::from(g) << 8) | (u32::from(b) << 16);
+    // Safe: the handle is winit's live window. The brush the class had is
+    // let go of once it has been replaced, and only if it was one of ours:
+    // winit registers the class with none.
+    unsafe {
+        let brush = CreateSolidBrush(colour);
+        if brush.is_null() {
+            return;
+        }
+        let was = SetClassLongPtrW(handle.hwnd.get() as _, GCLP_HBRBACKGROUND, brush as isize);
+        if was != 0 {
+            DeleteObject(was as _);
+        }
+    }
+}
+
+/// Nothing to fill: the strip was only ever seen on Windows, and on
+/// Wayland the compositor waits for the frame.
+#[cfg(not(windows))]
+const fn filled_with(_window: &Window, _ground: Color) {}
+
 /// How the loop waits after a pass that worked out `wake`.
 ///
 /// Something in flight waits for the frame `wants_a_frame` has just
@@ -1112,6 +1163,7 @@ impl ApplicationHandler<Waking> for Showing {
                                 && let Some(window) = self.window.as_ref()
                             {
                                 crate::title::follow(window, ground);
+                                filled_with(window, ground);
                             }
                             self.ground = ground;
                             self.page.drawn_on(ground);
