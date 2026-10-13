@@ -525,8 +525,19 @@ impl App {
         }
         self.servers_on = on;
         if on {
+            // Not a file whose server is already running -- one the reader
+            // started by hand with the switch off. It has been told about
+            // that file, and the protocol does not let a file be opened twice.
+            let running: std::collections::HashSet<LanguageId> =
+                self.servers.keys().copied().collect();
             for index in 0..self.documents.len() {
-                self.serve(index);
+                let told = self
+                    .file(DocumentId::new(index))
+                    .and_then(Buffer::language)
+                    .is_some_and(|language| running.contains(&language));
+                if !told {
+                    self.serve(index);
+                }
             }
             return;
         }

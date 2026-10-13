@@ -282,3 +282,39 @@ fn the_switch_says_whether_opening_a_file_starts_a_server() {
     app.configure(servers(true), Vec::new());
     app.configure(servers(false), Vec::new());
 }
+
+/// Turning the switch on does not open a file a second time with a server
+/// that already has it -- one the reader started by hand while the switch
+/// was off. The protocol does not let a file be opened twice without being
+/// closed between, and a server may take it for an error.
+///
+/// Broken deliberately by serving every open file when the switch goes on,
+/// whatever is running: the stand-in hears a second `didOpen`.
+#[test]
+fn turning_the_servers_on_opens_nothing_twice() {
+    let scratch = support::Scratch::new("serving-opened-once");
+    let path = scratch.path().join("main.rs");
+    std::fs::write(&path, "fn main() {}\n").expect("the file");
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&path).expect("opening it"),
+    ]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    let (sender, heard) = obelus_app::event::channel();
+    app.events_for_test(sender);
+    support::lay_out(&mut app, 100, 12);
+    assert!(
+        app.stand_in_server_for_test(LanguageId::Rust, support::cat()),
+        "the stand-in server would not start"
+    );
+    app.serve_current_for_test();
+    app.declared_for_test(LanguageId::Rust, json!({}));
+    assert_eq!(
+        support::heard_requests(&heard, "textDocument/didOpen", 1).len(),
+        1,
+        "the file was never opened with the server"
+    );
+
+    app.configure(servers(true), Vec::new());
+    let again = support::heard_requests(&heard, "textDocument/didOpen", 1);
+    assert!(again.is_empty(), "the file was opened again: {again:?}");
+}
