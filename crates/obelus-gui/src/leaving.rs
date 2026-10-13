@@ -24,16 +24,17 @@
 //! in the log.
 //!
 //! While it waits, `ctrl+c` is the window's too: the reader pressed it to
-//! stop a start, and the first `obg` is only the half that heard it. On
-//! Windows that is nothing to do, because both are on the one console and
-//! it tells both.
+//! stop a start, and the first `obg` is only the half that heard it. On a
+//! Windows console there is nothing to pass on, because both are on it and
+//! it tells both -- which is not said here for mintty, Git Bash's own
+//! window, where it is not a console that hears the key.
 //!
 //! The test is a terminal on standard input, and that is all it can be: a
 //! script started from a terminal has one there as well, and so does `git
 //! commit` running `GIT_EDITOR=obg`, and both stop waiting for the window.
 //! Neither is what `obg` is for -- the editor in a terminal is `ob` -- and
 //! one that has to wait gives `obg` an input that is not a terminal,
-//! `obg </dev/null`.
+//! `obg </dev/null` -- `<NUL` in `cmd`.
 
 use std::{
     io::{IsTerminal as _, Read as _, Write as _},
@@ -94,6 +95,8 @@ pub(crate) fn leave_the_terminal() {
             _ => Ok(()),
         });
     }
+    #[cfg(windows)]
+    hand_on_none_of_the_shells_handles();
     let Ok(mut started) = command.spawn() else {
         return;
     };
@@ -127,6 +130,31 @@ pub(crate) fn leave_the_terminal() {
         status
     });
     std::process::exit(status.unwrap_or(1));
+}
+
+/// Keeps the window from the handles the shell gave this `obg`.
+///
+/// Windows gives a child every handle its parent may hand on, and the three
+/// standard ones a shell gives are among them: kept by the window, the far
+/// end of `obg | ...` holds the shell until the window closes, which is the
+/// wait this is all here to be rid of. What the window is meant to have it
+/// is given as copies of its own, which this does not touch (`Stdio`).
+#[cfg(windows)]
+fn hand_on_none_of_the_shells_handles() {
+    use windows_sys::Win32::{
+        Foundation::{HANDLE_FLAG_INHERIT, SetHandleInformation},
+        System::Console::{GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE},
+    };
+    for which in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+        // Safety: handles this process owns, and only whether they are
+        // handed on changes.
+        unsafe {
+            let handle = GetStdHandle(which);
+            if !handle.is_null() {
+                SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0);
+            }
+        }
+    }
 }
 
 /// The `obg` started again, for [`pass_on`].
@@ -195,6 +223,13 @@ fn let_go_of_the_terminal() {
 
 /// And of the console, which on Windows ends every program still attached
 /// to it when its window closes -- this one included.
+///
+/// Standard output is the pipe to the `obg` that has gone, and is put
+/// aside rather than closed. Standard error is closed, because it may be
+/// the far end of `obg 2>&1 | ...` and the shell waits until it is. Not an
+/// exchange the way `dup2` is: what Obelus writes asks for the handle on
+/// every write, and is held off while it changes; C's own streams kept the
+/// number at the start, and nothing Obelus links writes through them.
 #[cfg(windows)]
 fn let_go_of_the_terminal() {
     use std::os::windows::io::IntoRawHandle as _;
@@ -205,20 +240,24 @@ fn let_go_of_the_terminal() {
             FreeConsole, GetStdHandle, STD_ERROR_HANDLE, STD_OUTPUT_HANDLE, SetStdHandle,
         },
     };
-    for which in [STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+    let held = (std::io::stdout().lock(), std::io::stderr().lock());
+    for (which, close) in [(STD_OUTPUT_HANDLE, false), (STD_ERROR_HANDLE, true)] {
         let Ok(nowhere) = std::fs::OpenOptions::new().write(true).open("NUL") else {
-            return;
+            continue;
         };
-        // Safety: handles this process owns. The standard one is closed
-        // only once it has been replaced, and the standard streams ask for
-        // their handle on every write rather than keeping one.
+        // Safety: handles this process owns, and the old one is closed only
+        // once nothing can ask for it.
         unsafe {
             let was = GetStdHandle(which);
-            if SetStdHandle(which, nowhere.into_raw_handle()) != 0 && !was.is_null() {
+            if SetStdHandle(which, nowhere.into_raw_handle()) != 0 && close && !was.is_null() {
                 CloseHandle(was);
             }
         }
     }
+    drop(held);
+    // Whatever became of the two above, because a window still on the
+    // console goes when the terminal does.
+    //
     // Safety: it takes nothing, and a failure is only an answer.
     unsafe {
         FreeConsole();
