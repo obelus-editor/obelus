@@ -210,17 +210,19 @@ pub struct Proposed {
     pub notes: Vec<Offered>,
     /// The note they all go under, by the name `todo_list` gives it.
     ///
-    /// Left out, with `before` and `after`, they go at the end of the list
-    /// at the top level. A conversation opened on a note is told that note's
-    /// name in its first message, and that is usually the one they belong
-    /// under.
+    /// Left out, and `before` and `after` with it, they go at the end of the
+    /// list at the top level. A conversation opened on a note is told that
+    /// note's name in its first message, and that is usually the one they
+    /// belong under.
     pub under: Option<String>,
-    /// The note they go in front of, beside it at its depth.
+    /// The note they go in front of, beside it at its depth -- the first
+    /// of them whatever depth it is given, and the rest counted from it.
     ///
     /// Not with `under` or `after`: one place, by one note.
     pub before: Option<String>,
     /// The note they go after, beside it at its depth and after what hangs
-    /// under it.
+    /// under it -- the first of them whatever depth it is given, and the
+    /// rest counted from it.
     ///
     /// Not with `under` or `before`: one place, by one note.
     pub after: Option<String>,
@@ -480,8 +482,11 @@ impl Obelus {
             )]));
         }
         // Two places is no place: a batch both under one note and before
-        // another could only land by Obelus choosing which was meant.
-        let place = match (under, before, after) {
+        // another could only land by Obelus choosing which was meant. An
+        // empty name is none at all, because an agent that fills in every
+        // field it is offered has said nothing with the two it left blank.
+        let given = |name: Option<String>| name.filter(|name| !name.trim().is_empty());
+        let place = match (given(under), given(before), given(after)) {
             (None, None, None) => None,
             (Some(name), None, None) => Some(todo::NoteId::read(&name).map(todo::Place::Under)),
             (None, Some(name), None) => Some(todo::NoteId::read(&name).map(todo::Place::Before)),

@@ -545,9 +545,10 @@ impl App {
         // agent cannot do what the reader standing in front of it cannot.
         //
         // Nothing for `Doing::Add`, which hangs a new note under a locked
-        // one and changes that one's words, its box and its depth not at
-        // all -- the same reason `alt+up` is allowed to carry a locked
-        // child past a neighbour.
+        // one or puts it beside one, and changes that one's words, its box
+        // and its depth not at all -- the same reason `alt+up` is allowed to
+        // carry a locked child past a neighbour, and enter on a locked note
+        // starts one after it.
         let about = match &doing {
             obelus_todo::Doing::Finish(id) => Some(id),
             obelus_todo::Doing::Reword { note, .. } => Some(note),
@@ -588,8 +589,17 @@ impl App {
                     }
                     None => (todo.notes.len(), 0),
                 };
+                // Beside a note means beside it: a first note given a depth
+                // of its own would hang under whatever is above the place,
+                // which is a note the agent did not name. The rest count
+                // from the first, as they do anywhere.
+                let beside = matches!(
+                    place,
+                    Some(obelus_todo::Place::Before(_) | obelus_todo::Place::After(_))
+                );
                 let how_many = written.len();
                 for (offset, (said, depth)) in written.into_iter().enumerate() {
+                    let depth = if beside && offset == 0 { 0 } else { depth };
                     // Clamped twice, because what is written has to be what
                     // reading it gives back: one deeper than the note above
                     // at the most, and never past the deepest a note may be.
