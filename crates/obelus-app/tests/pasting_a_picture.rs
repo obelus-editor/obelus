@@ -142,7 +142,10 @@ fn a_picture_pasted_on_a_card_does_not_go_behind_it() {
     // under the box offers, the second sends it.
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "the question", App::is_asking);
+    // In front, which is once the keys that sent it have stopped.
+    pump(&mut app, &events, "the question", |app| {
+        app.is_asking() && app.card().is_some()
+    });
     // A card with nowhere to write kept the picture out before the fix as
     // well, so a test on one would pass whatever `paste` asked.
     assert!(

@@ -292,6 +292,55 @@ fn pump(app: &mut App, events: &Receiver<Event>, what: &str, until: impl Fn(&App
     }
 }
 
+/// Whether the agent is asking for permission, with its card in front --
+/// which is once the keys that led to it have stopped, so a test that
+/// answers a question with a key waits for this rather than the asking.
+fn permission_in_front(app: &App) -> bool {
+    app.is_asking_permission() && app.card().is_some()
+}
+
+/// The same, for a form.
+fn question_in_front(app: &App) -> bool {
+    app.is_asking() && app.card().is_some()
+}
+
+/// Waits as [`pump`] does, with the reader at the keys: `press` every so
+/// often whether or not anything has arrived -- an agent at work sends the
+/// ticks of its turning mark, so "whenever nothing has arrived" may be
+/// never -- so what is waited for comes while they are still at it, however
+/// slowly the agent gets there. `drawn` says whether a frame is laid out
+/// after each event, which a test about what happens between two frames
+/// must not have.
+fn pump_at_the_keys(
+    app: &mut App,
+    events: &Receiver<Event>,
+    what: &str,
+    until: impl Fn(&App) -> bool,
+    drawn: bool,
+    mut press: impl FnMut(&mut App),
+) {
+    let deadline = Instant::now() + patience();
+    let mut pressed = Instant::now();
+    while !until(app) {
+        assert!(Instant::now() < deadline, "gave up waiting for {what}");
+        if let Ok(event) = events.recv_timeout(Duration::from_millis(100)) {
+            app.handle(event);
+        }
+        if pressed.elapsed() >= Duration::from_millis(200) {
+            press(app);
+            pressed = Instant::now();
+        }
+        if drawn {
+            support::lay_out(app, WIDTH, HEIGHT);
+        }
+    }
+}
+
+/// A key that changes nothing: right, in an empty box.
+fn nothing(app: &mut App) {
+    support::press(app, KeyCode::Right);
+}
+
 /// Waits for the fake agent to have been sent a request, handling whatever
 /// arrives meanwhile.
 ///
@@ -587,7 +636,7 @@ fn a_whole_turn_of_conversation() {
         &mut app,
         &events,
         "the permission request",
-        App::is_asking_permission,
+        permission_in_front,
     );
     let text = screen(&mut app);
     // Everything the agent said while it worked, in the order it said it:
@@ -674,7 +723,7 @@ fn escape_on_the_question_tells_the_agent_it_was_not_answered() {
         &mut app,
         &events,
         "the permission request",
-        App::is_asking_permission,
+        permission_in_front,
     );
 
     support::press(&mut app, KeyCode::Esc);
@@ -2500,7 +2549,7 @@ fn down_scrolls_the_transcript_before_it_leaves_the_box() {
         &mut app,
         &events,
         "the permission request",
-        App::is_asking_permission,
+        permission_in_front,
     );
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the turn to end", |app| {
@@ -2559,7 +2608,7 @@ fn the_wheel_scrolls_the_transcript_and_leaves_the_cursor() {
         &mut app,
         &events,
         "the permission request",
-        App::is_asking_permission,
+        permission_in_front,
     );
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the turn to end", |app| {
@@ -2622,7 +2671,7 @@ fn a_drag_held_above_the_transcript_carries_on_scrolling() {
         &mut app,
         &events,
         "the permission request",
-        App::is_asking_permission,
+        permission_in_front,
     );
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the turn to end", |app| {
@@ -3020,7 +3069,7 @@ fn a_permission_question_says_what_it_will_do() {
         &mut app,
         &events,
         "the permission request",
-        App::is_asking_permission,
+        permission_in_front,
     );
 
     let dump = support::render(&mut app, WIDTH, HEIGHT);
@@ -3141,7 +3190,7 @@ fn a_form_puts_its_answers_and_room_for_your_own_on_one_card() {
     support::lay_out(&mut app, WIDTH, HEIGHT);
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "the question", App::is_asking);
+    pump(&mut app, &events, "the question", question_in_front);
 
     // What the form is about, above the answers rather than in a line of
     // its own in the transcript: a list of answers with nothing saying
@@ -3242,7 +3291,7 @@ fn a_form_of_several_questions_says_the_first_on_its_card() {
     });
     support::type_text(&mut app, "/questions");
     support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "the question", App::is_asking);
+    pump(&mut app, &events, "the question", question_in_front);
 
     // The agent's words, then the question, then the rule over its answers.
     let dump = support::render(&mut app, WIDTH, HEIGHT);
@@ -3308,7 +3357,7 @@ fn a_number_asked_on_its_own_says_what_it_takes_on_its_first_card() {
     });
     support::type_text(&mut app, "/count");
     support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "the question", App::is_asking);
+    pump(&mut app, &events, "the question", question_in_front);
 
     let text = screen(&mut app);
     assert!(
@@ -3336,7 +3385,7 @@ fn writing_your_own_answer_goes_with_the_one_you_choose() {
     support::lay_out(&mut app, WIDTH, HEIGHT);
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "the question", App::is_asking);
+    pump(&mut app, &events, "the question", question_in_front);
 
     // Typed while the reader is on the first answer: it goes in the box
     // under them rather than nowhere.
@@ -3495,7 +3544,7 @@ fn several_answers_are_ticked_and_sent_from_a_row_of_their_own() {
     support::lay_out(&mut app, WIDTH, HEIGHT);
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "the question", App::is_asking);
+    pump(&mut app, &events, "the question", question_in_front);
 
     // Every answer with a box in front of it, none of them ticked: a card
     // that ticked something for the reader would be answering for them.
@@ -3585,7 +3634,7 @@ fn the_box_on_a_ticked_card_is_ticked_open() {
     support::lay_out(&mut app, WIDTH, HEIGHT);
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "the question", App::is_asking);
+    pump(&mut app, &events, "the question", question_in_front);
 
     // Two of them ticked.
     support::press(&mut app, KeyCode::Down);
@@ -3950,7 +3999,7 @@ fn a_tool_call_in_the_transcript_opens_the_file_it_was_in() {
         &mut app,
         &events,
         "the permission request",
-        App::is_asking_permission,
+        permission_in_front,
     );
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the end of the turn", |app| {
@@ -4109,7 +4158,7 @@ fn what_is_happening_is_in_the_transcript_and_not_in_the_header() {
         &mut app,
         &events,
         "the permission request",
-        App::is_asking_permission,
+        permission_in_front,
     );
 
     let dump = support::render(&mut app, WIDTH, HEIGHT);
@@ -4217,7 +4266,7 @@ fn a_change_it_is_asking_to_make_is_read_in_the_transcript() {
     support::type_text(&mut app, "/edit");
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "the question", App::is_asking_permission);
+    pump(&mut app, &events, "the question", permission_in_front);
 
     // The file, how much it changes, and the lines themselves -- worked out
     // by Obelus from the two texts the agent sent, with the engine it works
@@ -4279,7 +4328,7 @@ fn the_row_that_says_it_is_working_turns_while_it_is_working() {
         &mut app,
         &events,
         "the permission request",
-        App::is_asking_permission,
+        permission_in_front,
     );
     // The first thing drawn on the row, past the row number the dump puts
     // in front of it.
@@ -4369,7 +4418,7 @@ fn a_transcript_with_more_than_fits_has_a_bar() {
     for turn in 0..8 {
         support::type_text(&mut app, &format!("tell me about number {turn}"));
         support::press(&mut app, KeyCode::Enter);
-        pump(&mut app, &events, "the question", App::is_asking_permission);
+        pump(&mut app, &events, "the question", permission_in_front);
         support::press(&mut app, KeyCode::Enter);
         pump(&mut app, &events, "the turn", |app| {
             app.talking() == obelus_agent::Talking::Ready
@@ -4484,7 +4533,7 @@ fn a_word_begun_on_a_card_takes_what_is_held_there() {
     support::lay_out(&mut app, WIDTH, HEIGHT);
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "the question", App::is_asking);
+    pump(&mut app, &events, "the question", question_in_front);
     app.handle(Event::Paste("held words".to_string()));
     support::press_shift(&mut app, KeyCode::Home);
     assert_eq!(
@@ -4519,7 +4568,7 @@ fn a_paste_goes_into_the_card_and_not_behind_it() {
     support::lay_out(&mut app, WIDTH, HEIGHT);
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "the question", App::is_asking);
+    pump(&mut app, &events, "the question", question_in_front);
 
     // Pasted while the reader is on the first of the named answers, which
     // is where the card opens: it goes in the box the same way typing does.
@@ -4571,7 +4620,7 @@ fn what_is_written_on_a_card_is_held_like_any_box() {
     support::lay_out(&mut app, WIDTH, HEIGHT);
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "the question", App::is_asking);
+    pump(&mut app, &events, "the question", question_in_front);
     support::type_text(&mut app, "one two three");
     let held = |app: &App| app.card().and_then(Card::selected);
     let chord = |app: &mut App, code: KeyCode, modifiers: KeyModifiers| {
@@ -4725,7 +4774,7 @@ fn a_conversation_takes_typing_only_in_its_box() {
         &mut app,
         &events,
         "the permission request",
-        App::is_asking_permission,
+        permission_in_front,
     );
     assert!(!app.takes_text(), "a permission card takes text");
     support::type_text(&mut app, "x");
@@ -4898,7 +4947,10 @@ fn a_conversation_about_a_note_offers_something_to_say() {
 ///
 /// Broken deliberately by routing on the screen again -- keeping only the
 /// conversation being read -- after which nothing arrives at all and the
-/// wait for the question times out.
+/// wait for the question times out. And by holding a question behind the
+/// box whichever conversation it arrives in (the `self.current` filter in
+/// `show_the_question` taken out): the keys that sent the message were a
+/// moment ago, so the reader comes back to a box with no card in front.
 #[test]
 fn a_question_that_arrives_while_the_reader_is_away_waits_in_its_own_conversation() {
     let scratch = support::Scratch::new("agent-question-away");
@@ -5288,6 +5340,394 @@ fn a_question_that_arrives_under_a_list_waits_behind_it() {
     );
 }
 
+/// A question that arrives while the reader is writing waits behind the
+/// box, and the enter they were already pressing sends what they wrote.
+///
+/// The card used to come in front at once, and that enter answered its
+/// first question with the first answer -- which nobody gave.
+///
+/// The reader starts writing before the question is heard, and keeps on
+/// -- a letter every so often -- so it comes while they are writing
+/// however slowly the agent asks.
+///
+/// Broken deliberately by never holding the question (`talk.held = false`
+/// in `show_the_question`): the card is in front while the reader is
+/// writing. And with the two assertions that say so taken out, the enter
+/// answers its first question and the last but one fails. And by not
+/// putting the wait back with every key (`holding` in `at_work`):
+/// the card comes in front while the reader is still typing. And by taking
+/// the `held` arm out of what `frame` says is happening: nothing on the
+/// screen says the agent is waiting on the reader.
+#[test]
+fn a_question_that_arrives_while_the_reader_writes_waits_behind_the_box() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/ask ");
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "and");
+    pump_at_the_keys(
+        &mut app,
+        &events,
+        "the question",
+        App::is_asking,
+        true,
+        |app| {
+            support::type_text(app, "a");
+        },
+    );
+    assert!(
+        app.card().is_none(),
+        "the question came in front of a reader who was writing"
+    );
+    // Said where what is happening is said, because the card that would
+    // say the agent is waiting on them is not on the screen.
+    let text = screen(&mut app);
+    assert!(
+        text.contains("It has a question for when you stop typing"),
+        "nothing said a question was waiting:\n{text}"
+    );
+    // And it stays there while they go on, well past the time it waits
+    // after their last key: every key puts the wait back.
+    let writing = Instant::now();
+    while writing.elapsed() < Duration::from_millis(2500) {
+        if let Ok(event) = events.recv_timeout(Duration::from_millis(400)) {
+            app.handle(event);
+        }
+        support::type_text(&mut app, "b");
+        support::lay_out(&mut app, WIDTH, HEIGHT);
+        assert!(
+            app.card().is_none(),
+            "the question came in front while the reader was still writing"
+        );
+    }
+    support::type_text(&mut app, " next");
+    support::press(&mut app, KeyCode::Enter);
+    assert!(
+        app.card().is_none(),
+        "the question came in front while the reader was still pressing keys"
+    );
+    pump(&mut app, &events, "the question in front", |app| {
+        app.card().is_some()
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Carefully"),
+        "the enter meant for the box answered the question:\n{text}"
+    );
+    assert!(
+        said_in_transcript(&app, "next"),
+        "what the reader was writing was not sent:\n{text}"
+    );
+}
+
+/// An enter to an empty box after one that answered a question does not
+/// say the reader has stopped: the question the answer let through, on the
+/// next turn, still waits behind the box.
+///
+/// The second enter used to arrive first -- the next question was a turn
+/// away -- and say "nothing written here", which wiped out the answer a
+/// moment before it; the question then came in front of a third.
+///
+/// Broken deliberately by counting a key only where it leaves words in the
+/// box (`at_work` after the key in `chat_key`, and only then): the
+/// question comes in front.
+#[test]
+fn an_enter_to_an_empty_box_does_not_let_the_next_question_in() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "what is this file");
+    support::press(&mut app, KeyCode::Enter);
+    // Said while that turn goes, so it waits, and goes once the answer
+    // below has ended it -- a question a turn away from the answer.
+    support::type_text(&mut app, "/ask ");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the permission request", |app| {
+        app.card().is_some() && app.is_asking_permission()
+    });
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump_at_the_keys(
+        &mut app,
+        &events,
+        "the next question",
+        App::is_asking,
+        true,
+        nothing,
+    );
+    assert!(
+        app.card().is_none(),
+        "the question came in front of a reader still pressing enter"
+    );
+}
+
+/// A question that arrives the moment after the reader sent something
+/// waits behind the box: the keys that follow the enter that sent are the
+/// next message, already on their way.
+///
+/// It used to come in front, the next letters went to the card, and the
+/// enter after them answered it -- allowing a command nobody had read.
+///
+/// Broken deliberately by counting a key only where it leaves words in the
+/// box, and letting the one that empties it say the reader has stopped
+/// (`at_work` after the key in `chat_key`, as it was before this): the
+/// question comes in front.
+#[test]
+fn a_question_right_after_a_message_is_sent_waits_behind_the_box() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "what is this file");
+    support::press(&mut app, KeyCode::Enter);
+    pump_at_the_keys(
+        &mut app,
+        &events,
+        "the permission request",
+        App::is_asking_permission,
+        true,
+        nothing,
+    );
+    assert!(
+        app.card().is_none(),
+        "the question came in front of a reader who had just sent"
+    );
+    support::type_text(&mut app, "and also");
+    support::press(&mut app, KeyCode::Enter);
+    assert!(
+        app.is_asking_permission(),
+        "the enter meant for the next message answered the question"
+    );
+    assert!(
+        said_in_transcript(&app, "and also"),
+        "the next message did not go where it was written"
+    );
+}
+
+/// The press that answered one question does not answer the next: a
+/// double click on an answer is one answer, the way two enters are.
+///
+/// Broken deliberately by giving the press to the card alone
+/// (`self.card_key(&enter())` in `press_in_card`, as it was): the second
+/// press answers the second question too.
+#[test]
+fn the_press_that_answered_one_question_does_not_answer_the_next() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/pair");
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "both questions", |app| {
+        app.card().is_some() && said_in_transcript(app, "Read the second file")
+    });
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let y = rows(&dump)
+        .iter()
+        .position(|row| row.contains("Allow once"))
+        .unwrap_or_else(|| panic!("no answer on the card:\n{dump}"));
+    let y = u16::try_from(y).expect("a row on the screen");
+    for _ in 0..2 {
+        app.handle(Event::Pointer {
+            kind: obelus_app::event::Pointer::Pressed,
+            x: 6,
+            y,
+        });
+    }
+    assert!(
+        app.is_asking_permission(),
+        "the second press answered the second question"
+    );
+    pump(&mut app, &events, "the first answer", |app| {
+        said_in_transcript(app, "the first was")
+    });
+    assert!(said_in_transcript(&app, "the first was [once]"));
+}
+
+/// What an input method spells is writing too: a window hands each word it
+/// was spelling over as a paste, so a reader writing in one is pressing no
+/// key Obelus hears -- and a question arriving while they do waits behind
+/// the box as it does for a reader typing.
+///
+/// Broken deliberately by taking `at_work` out of `paste_into_conversation`:
+/// the question comes in front of the reader still writing.
+#[test]
+fn a_question_that_arrives_while_an_input_method_writes_waits_behind_the_box() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/ask ");
+    support::press(&mut app, KeyCode::Enter);
+    app.handle(Event::Paste("\u{518d}".to_string()));
+    pump_at_the_keys(
+        &mut app,
+        &events,
+        "the question",
+        App::is_asking,
+        true,
+        |app| {
+            app.handle(Event::Paste("\u{8bf4}".to_string()));
+        },
+    );
+    // And on, past the time it waits after the last word.
+    let writing = Instant::now();
+    while writing.elapsed() < Duration::from_millis(2500) {
+        if let Ok(event) = events.recv_timeout(Duration::from_millis(400)) {
+            app.handle(event);
+        }
+        app.handle(Event::Paste("\u{4e00}".to_string()));
+        support::lay_out(&mut app, WIDTH, HEIGHT);
+        assert!(
+            app.card().is_none(),
+            "the question came in front of a reader writing in an input method"
+        );
+    }
+}
+
+/// A press where a held card is about to be does nothing: it is meant for
+/// the card -- the second of a double click on an answer, whose first let
+/// the next question through -- and what is under it until the card comes
+/// is the transcript, where a press takes the keys out of the box.
+///
+/// A card taller than the box is what makes the two places differ, so the
+/// question here is a form's, and the screen is short enough for the
+/// transcript to reach down behind it.
+///
+/// Broken deliberately by letting the press through (the `held` band in
+/// `pointer_in_chat` taken out): the keys leave the box.
+#[test]
+fn a_press_where_a_held_card_is_about_to_be_does_nothing() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    // Enough said already for the transcript to reach down behind the card.
+    for _ in 0..3 {
+        support::type_text(&mut app, "/echo ");
+        support::press(&mut app, KeyCode::Enter);
+        pump(&mut app, &events, "the echo", |app| {
+            app.talking() == obelus_agent::Talking::Ready
+        });
+    }
+    support::type_text(&mut app, "/ask ");
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "and");
+    pump_at_the_keys(
+        &mut app,
+        &events,
+        "the question",
+        App::is_asking,
+        false,
+        |app| {
+            support::type_text(app, "a");
+        },
+    );
+    let short = 12;
+    let dump = support::render(&mut app, WIDTH, short);
+    assert!(app.card().is_none(), "the question is not held:\n{dump}");
+    // The row saying the question is held: the transcript's last, and one
+    // the card covers once it is in front.
+    let y = rows(&dump)
+        .iter()
+        .position(|row| row.contains("It has a question"))
+        .unwrap_or_else(|| panic!("nothing says a question is held:\n{dump}"));
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: 6,
+        y: u16::try_from(y).expect("a row on the screen"),
+    });
+    assert_eq!(
+        app.chat().map(obelus_component::chat::Chat::focus),
+        Some(obelus_component::chat::Focus::Writing),
+        "a press where the card is about to be took the keys out of the box"
+    );
+}
+
+/// A question that arrives while the reader is choosing one of the agent's
+/// commands leaves the list up, and the enter they press chooses from it.
+///
+/// Only where nothing is drawn between the question and the key: a frame
+/// works the list out again from what is in the box, so it is the question
+/// arriving and the enter in the same batch of events that the list has to
+/// survive -- which is what this does, drawing nothing until the enter.
+///
+/// Broken deliberately by closing the list whether or not the question is
+/// held (`talk.slash = None` in `show_the_question` with no condition): the
+/// enter sends `/com` as a message instead of choosing `compact`.
+#[test]
+fn a_question_that_arrives_while_the_reader_chooses_a_command_leaves_the_list() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session and its commands", |app| {
+        app.talking() == obelus_agent::Talking::Ready && !app.agent_orders().is_empty()
+    });
+    support::type_text(&mut app, "/ask ");
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "/com");
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    assert!(app.slash().is_some(), "the list of commands did not open");
+    // Still writing, by a letter and its rubbing out, so the box says the
+    // same and the list with it -- and nothing drawn until the enter.
+    pump_at_the_keys(
+        &mut app,
+        &events,
+        "the question",
+        App::is_asking,
+        false,
+        |app| {
+            support::type_text(app, "x");
+            support::press(app, KeyCode::Backspace);
+        },
+    );
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        app.chat().map(|chat| chat.writing().text()),
+        Some("/compact ".to_string()),
+        "the enter did not choose from the list"
+    );
+}
+
+/// The enter that answered one question does not answer the next: a reader
+/// pressing it twice meant the first, and the second card waits until they
+/// have stopped.
+///
+/// Broken deliberately by counting the key once it has been handled rather
+/// than before (`at_work` after `offer_to_the_conversation` in `chat_key`):
+/// answering the first question puts up the second before the key that
+/// answered is counted, and the second enter answers it too.
+#[test]
+fn the_enter_that_answered_one_question_does_not_answer_the_next() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/pair");
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "both questions", |app| {
+        app.card().is_some() && said_in_transcript(app, "Read the second file")
+    });
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    assert!(
+        app.is_asking_permission(),
+        "the second enter answered the second question"
+    );
+    pump(&mut app, &events, "the second question in front", |app| {
+        app.card().is_some()
+    });
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the second answer", |app| {
+        said_in_transcript(app, "the second was")
+    });
+    assert!(said_in_transcript(&app, "the first was [once]"));
+    assert!(said_in_transcript(&app, "the second was [once]"));
+}
+
 /// What a short list leaves showing of a conversation is drawn and not
 /// marked: the card's row and the list of commands' row are where they were,
 /// and neither says the keys are on it while the list has them.
@@ -5340,7 +5780,7 @@ fn what_a_list_leaves_showing_of_a_conversation_is_not_marked() {
     support::lay_out(&mut app, WIDTH, HEIGHT);
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "the question", App::is_asking);
+    pump(&mut app, &events, "the question", question_in_front);
     let answer = "Write the weekly report";
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     let lit = support::drawn_in(&dump, answer);
@@ -8085,7 +8525,7 @@ fn a_tool_call_that_is_still_running_turns_at_the_front_of_its_row() {
         &mut app,
         &events,
         "the permission request",
-        App::is_asking_permission,
+        permission_in_front,
     );
 
     let call = |app: &mut App, phase: u32| {
@@ -9615,7 +10055,7 @@ fn a_press_on_a_cards_answer_answers_it() {
     });
     support::type_text(&mut app, "/twice");
     support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "the question", App::is_asking_permission);
+    pump(&mut app, &events, "the question", permission_in_front);
 
     // The row `Yes` is drawn on, and a press on it.
     let dump = support::render(&mut app, WIDTH, HEIGHT);
@@ -9626,7 +10066,7 @@ fn a_press_on_a_cards_answer_answers_it() {
         y,
     });
     assert!(
-        !App::is_asking_permission(&app),
+        !permission_in_front(&app),
         "the press did not answer the question:\n{}",
         support::render(&mut app, WIDTH, HEIGHT)
     );
@@ -9718,7 +10158,7 @@ fn shift_and_home_hold_the_line_in_the_box() {
         &mut app,
         &events,
         "the permission request",
-        App::is_asking_permission,
+        permission_in_front,
     );
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the turn to end", |app| {
@@ -13569,7 +14009,7 @@ fn two_questions_at_once_are_put_one_after_the_other() {
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "both questions", |app| {
-        app.is_asking_permission() && said_in_transcript(app, "Read the second file")
+        permission_in_front(app) && said_in_transcript(app, "Read the second file")
     });
     assert!(
         said_in_transcript(&app, "Read the first file"),
@@ -13591,6 +14031,11 @@ fn two_questions_at_once_are_put_one_after_the_other() {
         app.is_asking_permission(),
         "the second question never went up"
     );
+    // In front once the reader has stopped, which the enter that answered
+    // the first says they had not.
+    pump(&mut app, &events, "the second question in front", |app| {
+        app.card().is_some()
+    });
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the second answer", |app| {
         said_in_transcript(app, "the second was")
@@ -13730,7 +14175,7 @@ fn refusing_a_question_puts_up_the_next() {
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "both questions", |app| {
-        app.is_asking_permission() && said_in_transcript(app, "Read the second file")
+        permission_in_front(app) && said_in_transcript(app, "Read the second file")
     });
 
     support::press(&mut app, KeyCode::Esc);
@@ -13789,6 +14234,12 @@ fn a_question_taken_back_while_it_waits_is_never_put() {
         "the call taken back still says it is waiting:\n{dump}"
     );
 
+    pump(
+        &mut app,
+        &events,
+        "the question in front",
+        permission_in_front,
+    );
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the end of the turn", |app| {
         app.talking() == obelus_agent::Talking::Ready
@@ -14387,7 +14838,7 @@ fn a_press_in_the_transcript_under_a_card_leaves_the_keys_alone() {
     let (mut app, events) = answered();
     support::type_text(&mut app, "/twice");
     support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "the question", App::is_asking_permission);
+    pump(&mut app, &events, "the question", permission_in_front);
 
     press_on(&mut app, "heard you", 6);
     assert_eq!(
@@ -16638,7 +17089,7 @@ fn a_double_click_on_a_tool_call_goes_to_the_file_it_names() {
         &mut app,
         &events,
         "the permission request",
-        App::is_asking_permission,
+        permission_in_front,
     );
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the end of the turn", |app| {
@@ -16682,7 +17133,7 @@ fn a_double_click_on_a_call_that_folds_goes_and_leaves_the_fold() {
         &mut app,
         &events,
         "the permission request",
-        App::is_asking_permission,
+        permission_in_front,
     );
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the end of the turn", |app| {
@@ -16761,7 +17212,7 @@ fn a_double_click_on_a_call_that_opens_goes_where_the_first_press_was() {
         &mut app,
         &events,
         "the permission request",
-        App::is_asking_permission,
+        permission_in_front,
     );
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the end of the turn", |app| {

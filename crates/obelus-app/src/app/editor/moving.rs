@@ -273,7 +273,10 @@ impl App {
             if let Some(card) = self.card() {
                 let width =
                     obelus_ui::card::width_of(obelus_ui::chat::bands_for(area, card).writing);
-                if let Some(card) = self.conversation_mut().and_then(|talk| talk.card.as_mut()) {
+                if let Some(card) = self
+                    .conversation_mut()
+                    .and_then(|talk| talk.card_in_front_mut())
+                {
                     card.select_all(width);
                 }
                 return;
@@ -512,7 +515,7 @@ impl App {
             );
             if let Some((text, what)) = self
                 .conversation_mut()
-                .and_then(|talk| talk.card.as_mut())
+                .and_then(|talk| talk.card_in_front_mut())
                 .and_then(|card| card.cut(width))
             {
                 self.cut_away(&text, what);
@@ -642,7 +645,9 @@ impl App {
     fn box_takes_a_picture(&self) -> bool {
         self.layers().nearest().is_none()
             && self.which_project.chooser.is_none()
-            && self.conversation().is_some_and(|talk| talk.card.is_none())
+            && self
+                .conversation()
+                .is_some_and(|talk| talk.card_in_front().is_none())
             && self.conversation_takes_text()
     }
 
@@ -703,7 +708,7 @@ impl App {
         let Some(talk) = self.conversation() else {
             return false;
         };
-        match talk.card.as_ref() {
+        match talk.card_in_front() {
             Some(card) => card.takes_words(),
             None => talk.chat.focus() == obelus_component::chat::Focus::Writing,
         }

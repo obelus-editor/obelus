@@ -144,7 +144,9 @@ impl App {
         if kind == Pointer::Pressed
             && self
                 .conversation()
-                .and_then(|talk| obelus_ui::chat::way_back_at(area, &talk.chat, talk.card.as_ref()))
+                .and_then(|talk| {
+                    obelus_ui::chat::way_back_at(area, &talk.chat, talk.card_in_front())
+                })
                 .is_some_and(|at| at.contains(ratatui::layout::Position { x, y }))
         {
             self.chat_key(&crossterm::event::KeyEvent::new(
@@ -163,6 +165,19 @@ impl App {
         // above it is still the transcript, so a question on screen does
         // not stop the reader taking a copy of what led to it.
         if carded && self.press_in_card(kind, x, y) {
+            return;
+        }
+        // And where a question is held behind the box, the rows its card is
+        // about to cover take nothing: a press there is meant for the card
+        // -- the second of a double click whose first answered the one
+        // before -- and what is under it now would move the keys out of the
+        // box, or go somewhere the transcript names.
+        let held = self
+            .conversation()
+            .filter(|talk| talk.held)
+            .and_then(|talk| talk.card.as_ref())
+            .map(|card| obelus_ui::chat::bands_for(area, card).writing);
+        if held.is_some_and(|band| band.contains(ratatui::layout::Position { x, y })) {
             return;
         }
         let Some(at) = self
@@ -593,7 +608,9 @@ impl App {
         // the card would take hold of the transcript behind it.
         if kind == crate::event::Pointer::Dragged && on == On::Words {
             let place = obelus_ui::card::place_at(card, band, x, y);
-            if let Some(card) = self.conversation_mut().and_then(|talk| talk.card.as_mut())
+            if let Some(card) = self
+                .conversation_mut()
+                .and_then(|talk| talk.card_in_front_mut())
                 && let Some((row, cell)) = place
             {
                 card.place_in_words(row, cell, width, true);
@@ -606,7 +623,10 @@ impl App {
         let clicks = self.clicks_at(x, y);
         let area = self.editor_area;
 
-        let Some(card) = self.conversation_mut().and_then(|talk| talk.card.as_mut()) else {
+        let Some(card) = self
+            .conversation_mut()
+            .and_then(|talk| talk.card_in_front_mut())
+        else {
             return true;
         };
         card.stand_on(on);
@@ -628,8 +648,11 @@ impl App {
         }
         // Down the key's own path: what enter does to the row under the
         // pointer is what that row is for, and a second answer about it
-        // would be a second answer to keep alike.
-        self.card_key(&enter());
+        // would be a second answer to keep alike. The whole of that path,
+        // so a press that answers is the reader at work the way the key
+        // is, and the second press of a double click does not answer the
+        // question the first one put up.
+        self.chat_key(&enter());
         true
     }
 
@@ -669,7 +692,7 @@ impl App {
             let place = obelus_ui::chat::ChatView::place_in_transcript(
                 area,
                 &talk.chat,
-                talk.card.as_ref(),
+                talk.card_in_front(),
                 &rows,
                 x,
                 y,
@@ -692,7 +715,7 @@ impl App {
             // A cursor stands on a row, and the band under the last of them
             // is not one; nor while a card is up, which has the keys -- a
             // cursor moved under it would be found there afterwards.
-            let cursor = (row.is_some() && talk.card.is_none()).then_some(place);
+            let cursor = (row.is_some() && talk.card_in_front().is_none()).then_some(place);
             // The file the call this row is part of names, which is on the
             // call's first row whichever row of its title was pressed.
             let goes = obelus_component::chat::Row::acting(&rows, place.row)

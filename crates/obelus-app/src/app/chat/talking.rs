@@ -20,8 +20,16 @@ use obelus_component::{
 
 use crate::{
     app::*,
-    conversation::{Asking, Permission, Topic},
+    conversation::{Asking, Conversation, Permission, Topic},
 };
+
+/// How long after the reader's last key a question waits behind the box.
+///
+/// Long enough for a reader who has stopped to have stopped -- the gap
+/// between words in a sentence is well under it -- and short enough that a
+/// reader who has finished does not see the agent wait on nothing. Claude
+/// Code holds its own questions back for about as long, for the same reason.
+const STILL_WRITING: std::time::Duration = std::time::Duration::from_millis(1500);
 
 /// The answer on a sign-in's card that is not a way in.
 ///
@@ -1192,10 +1200,11 @@ impl App {
     /// box and takes the keys back with it, where a letter typed off the
     /// box goes nowhere.
     pub(in crate::app) fn paste_into_conversation(&mut self, what: &str) {
-        let covered = self
-            .conversation()
-            .and_then(|talk| talk.card.as_ref())
-            .is_some_and(|card| !card.takes_words());
+        // The reader at work as much as a key is, before anything has it:
+        // a window's input method hands over what it spelled as a paste,
+        // so this is how every word written in one arrives.
+        self.at_work();
+        let covered = self.card().is_some_and(|card| !card.takes_words());
         if covered {
             return;
         }
@@ -1205,7 +1214,7 @@ impl App {
         // which takes words, and not to an agent that said it takes none --
         // but wherever the keys are in the conversation, because a paste
         // takes them back to the box.
-        let carded = self.conversation().is_some_and(|talk| talk.card.is_some());
+        let carded = self.card().is_some();
         if !carded && self.agent_takes_pictures() && self.attach_what_is_named(what) {
             return;
         }
@@ -1214,8 +1223,7 @@ impl App {
         // the band the box would have had.
         let area = self.editor_area;
         let card_width = self
-            .conversation()
-            .and_then(|talk| talk.card.as_ref())
+            .card()
             .map(|card| obelus_ui::card::width_of(obelus_ui::chat::bands_for(area, card).writing));
         let width = obelus_ui::chat::writing_width(area);
         let Some(talk) = self.conversation_mut() else {
@@ -1224,7 +1232,7 @@ impl App {
         // Into the card while one is up: it is what covers the box, so the
         // half of it that takes words is the only place on screen the reader
         // could be writing.
-        match (talk.card.as_mut(), card_width) {
+        match (talk.card_in_front_mut(), card_width) {
             (Some(card), Some(room)) => {
                 card.paste(what, room);
             }
@@ -1282,7 +1290,7 @@ impl App {
             && self.which_project.chooser.is_none()
             && self
                 .conversation()
-                .is_some_and(|talk| talk.card.as_ref().is_none_or(Card::takes_words));
+                .is_some_and(|talk| talk.card_in_front().is_none_or(Card::takes_words));
         if !into_a_conversation {
             self.wrong("A file goes in a message to an agent".to_string());
             return;
@@ -2479,7 +2487,7 @@ impl App {
     /// The card an agent's question is on, while one is up.
     #[must_use]
     pub fn card(&self) -> Option<&Card> {
-        self.conversation().and_then(|talk| talk.card.as_ref())
+        self.conversation().and_then(Conversation::card_in_front)
     }
 
     /// Whether any conversation is waiting on an answer from the reader.
@@ -2518,6 +2526,37 @@ impl App {
     /// then the conversation itself -- the transcript, the box, and the row
     /// of settings under it.
     pub(in crate::app) fn chat_key(&mut self, key: &crossterm::event::KeyEvent) -> bool {
+        // Every key here is the reader at work, and is counted before
+        // anything has it: answering a card is what puts up the question
+        // behind it, and the enter that sends a message is often followed
+        // by the first letter of the next -- either may already be on its
+        // way down when a question comes.
+        self.at_work();
+        self.offer_to_the_conversation(key)
+    }
+
+    /// Says the reader pressed a key here just now.
+    ///
+    /// And while a question is held, puts back the clock that lets it in,
+    /// because a reader pressing keys is a reader who has not stopped.
+    fn at_work(&mut self) {
+        let id = self.current;
+        let held = self.conversation().is_some_and(|talk| talk.held);
+        let holding = match (held, id) {
+            (true, Some(id)) => self.come_back_in(STILL_WRITING, Event::StoppedWriting(id)),
+            _ => None,
+        };
+        let Some(talk) = self.conversation_mut() else {
+            return;
+        };
+        talk.typed = Some(std::time::Instant::now());
+        if held {
+            talk.holding = holding;
+        }
+    }
+
+    /// The key itself, which [`App::chat_key`] watches go by.
+    fn offer_to_the_conversation(&mut self, key: &crossterm::event::KeyEvent) -> bool {
         if self.conversation().is_none() {
             return false;
         }
@@ -2535,7 +2574,7 @@ impl App {
         // and the caret moves by the rows the box really has.
         let room = ChatRoom {
             transcript: self.conversation().map_or(0, |talk| {
-                obelus_ui::chat::bands(self.editor_area, &talk.chat, talk.card.as_ref())
+                obelus_ui::chat::bands(self.editor_area, &talk.chat, talk.card_in_front())
                     .transcript
                     .height
             }),
@@ -2627,14 +2666,17 @@ impl App {
     /// What it does not take falls through to the table, so `ctrl+q` quits
     /// from a card the way it quits from a list.
     pub(in crate::app) fn card_key(&mut self, key: &crossterm::event::KeyEvent) -> bool {
-        let Some(card) = self.conversation().and_then(|talk| talk.card.as_ref()) else {
+        let Some(card) = self.card() else {
             return false;
         };
         // The width a card's own rows have, which is what its caret is
         // worked out against.
         let width =
             obelus_ui::card::width_of(obelus_ui::chat::bands_for(self.editor_area, card).writing);
-        let Some(card) = self.conversation_mut().and_then(|talk| talk.card.as_mut()) else {
+        let Some(card) = self
+            .conversation_mut()
+            .and_then(Conversation::card_in_front_mut)
+        else {
             return false;
         };
         match card.handle_key(key, width) {
@@ -2691,12 +2733,57 @@ impl App {
     /// they are not in, and is there when the list goes. It used to clear
     /// the region, and the enter a reader pressed on a row of the list it
     /// closed under them answered the card with its first answer.
+    ///
+    /// Nor does it come in front of a reader who is pressing keys here. It
+    /// waits behind the box until they stop, because the key already on its
+    /// way down was meant for something else: an enter that was to send a
+    /// message, or to pick from the list of the agent's commands, answered
+    /// the card with its first answer instead -- and so did the one after
+    /// the first letters of the next message, typed the moment the last
+    /// was sent.
     fn show_the_question(&mut self, whose: Whose) {
+        let id = match whose {
+            Whose::One(id) => Some(id),
+            Whose::Whoever => self.current,
+        };
+        // Only in the conversation on the screen, which is the one the keys
+        // go to: a reader who has walked away from this one is pressing
+        // keys somewhere else, and comes back to the card.
+        let writing = self
+            .talk_of(whose)
+            .and_then(|talk| talk.typed)
+            .filter(|_| id.is_some() && id == self.current)
+            .map(|at| STILL_WRITING.saturating_sub(at.elapsed()))
+            .filter(|left| !left.is_zero());
+        let holding = writing
+            .zip(id)
+            .and_then(|(left, id)| self.come_back_in(left, Event::StoppedWriting(id)));
+        let Some(talk) = self.talk_mut(whose) else {
+            return;
+        };
+        talk.held = writing.is_some();
+        talk.holding = holding;
         // The list of the agent's commands belongs to the box: it follows
         // what is being typed there, and the box is what the card covers.
         // Left open it would be a list over a question, about words the
-        // keys are no longer going to.
-        if let Some(talk) = self.talk_mut(whose) {
+        // keys are no longer going to. Not while the box is in front.
+        if !talk.held {
+            talk.slash = None;
+        }
+    }
+
+    /// Puts a question held behind the box in front of it, now the reader
+    /// has stopped writing.
+    pub(in crate::app) fn let_the_question_in(&mut self, id: DocumentId) {
+        let Some(talk) = self.talk_mut(Whose::One(id)) else {
+            return;
+        };
+        if !talk.held {
+            return;
+        }
+        talk.held = false;
+        talk.holding = None;
+        if talk.card.is_some() {
             talk.slash = None;
         }
     }
@@ -3479,7 +3566,8 @@ impl App {
         // And the band was worked out as though the foot of the region
         // were the box a message is written in. While a question is up it
         // is the card, which is taller.
-        let region = obelus_ui::chat::bands(editor_area, &talk.chat, talk.card.as_ref()).transcript;
+        let region =
+            obelus_ui::chat::bands(editor_area, &talk.chat, talk.card_in_front()).transcript;
         let rows = talk
             .chat
             .rows(obelus_ui::chat::reading_width(editor_area))

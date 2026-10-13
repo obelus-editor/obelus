@@ -168,7 +168,14 @@ impl App {
         // What the conversation says is happening, read off the state
         // rather than remembered: a row that is worked out every frame
         // cannot be left saying something that stopped being true.
+        //
+        // A question held behind the box first: the agent is waiting on the
+        // reader, and the card that would say so is not in front yet.
+        let held = self
+            .conversation()
+            .is_some_and(|talk| talk.held && talk.card.is_some());
         let doing = match self.talking() {
+            _ if held => Some("It has a question for when you stop typing"),
             Talking::Starting => Some("Starting\u{2026}"),
             Talking::Thinking => Some("Thinking\u{2026}"),
             Talking::Nobody | Talking::Idle | Talking::Ready | Talking::Gone => None,
@@ -182,7 +189,9 @@ impl App {
         // Only the animation, which is what the ticker is for. Everything
         // else that once rode this question waits on a clock of its own:
         // work that is owed is owed on a machine with nothing moving on it.
-        self.animate(self.wants_animating(doing.is_some()));
+        // Not while a question is held: what that row says is that the
+        // reader is being waited on, and its mark stands still.
+        self.animate(self.wants_animating(doing.is_some() && !held));
         // Which for a tree behind its text is asked from what is true
         // rather than started where a document changes -- the same way the
         // ticker was asked, and what stops a clock outliving its reason.
