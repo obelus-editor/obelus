@@ -553,7 +553,12 @@ impl Spun {
     /// The other half, as `Capped::still_behind` is: a transcript a list
     /// was opened over is seen through the glass, and asked only of the
     /// page its mark was the braille the window draws instead of.
+    ///
+    /// Only a mark said before the pane, as everything in the picture was.
     pub(crate) fn behind<'a>(&self, behind: &'a Behind) -> Option<Look<'a>> {
+        if self.depth > behind.depth {
+            return None;
+        }
         behind
             .look(self.area.x, self.area.y)
             .filter(|look| obelus_ui::how_far_round(look.text).is_some())
@@ -981,8 +986,13 @@ impl Capped {
     /// picture's to draw. Asked only of [`Self::still_said`]'s caps, the
     /// welcome screen under a list was its keys in plain ink: the cells
     /// were seen through the glass and the shape round them was not.
+    ///
+    /// Only a cap said before the pane, as everything in the picture was: a
+    /// cap said on the pane with the same key in the same place is the
+    /// pane's, and drawn there already.
     pub(crate) fn still_behind(&self, behind: &Behind) -> bool {
-        behind.area.intersection(self.area) == self.area
+        self.depth <= behind.depth
+            && behind.area.intersection(self.area) == self.area
             && self.said_by(|x, y| behind.look(x, y).map_or("", |look| look.text))
     }
 
@@ -2624,6 +2634,15 @@ mod tests {
         assert!(
             !cap.still_behind(&picture("   f1", short)),
             "its blank outside"
+        );
+        // And a cap said on the pane, over the same key in the picture.
+        //
+        // Deliberate break: drop `self.depth <= behind.depth`, and this one
+        // is drawn twice: on the pane, and under it in the picture.
+        let on_the_pane = Capped { depth: 1, ..cap };
+        assert!(
+            !on_the_pane.still_behind(&picture("   f1   ", row)),
+            "a cap said after the pane"
         );
     }
 

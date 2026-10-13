@@ -2065,6 +2065,7 @@ mod tests {
         };
         let one = |x| Spun {
             area: Rect::new(x, 0, 1, 1),
+            depth: 0,
         };
         let kept: Vec<u16> = turning(
             vec![one(0), one(1), one(2)],

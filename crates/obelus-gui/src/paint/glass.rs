@@ -686,7 +686,7 @@ impl Painter {
                 }
                 // No bars: a picture this far up draws a bar's block as a
                 // letter, the way the page it was taken from did.
-                if lettered_behind(under, &[], spun, x, y) {
+                if lettered_behind(under, &[], spun, over.depth, x, y) {
                     let ink = rgba(under.foreground, Ink::Foreground);
                     self.glyphs_at((left, top), under, ink, 0, fonts, Size::Cell);
                 }
@@ -816,7 +816,7 @@ pub(super) fn behind_row(
         .filter(|&x| {
             behind
                 .look(x, y)
-                .is_some_and(|under| lettered_behind(under, barred, spun, x, y))
+                .is_some_and(|under| lettered_behind(under, barred, spun, behind.depth, x, y))
         })
         .collect();
     (grounds, lettered)
@@ -825,10 +825,13 @@ pub(super) fn behind_row(
 /// Whether the picture of what a pane was opened over writes this cell.
 ///
 /// The same question `letters` asks of the page, asked of the picture: a
-/// bar is drawn as a shape, and drawn over the pane as well -- `bars` is
-/// asked from where the bar was said and not from what the page holds
-/// there -- so the block a terminal has for a mark is a glyph nobody
-/// wanted here, under a capsule and under the tint.
+/// bar said before the pane is a shape, and the block a terminal has for
+/// its mark is a glyph nobody wanted here, under the tint.
+///
+/// Only a bar said before the pane, which is `depth` -- how many panes and
+/// boxes had been put over the page when this one was. A bar said on the
+/// pane or over it is not in this picture at all, and the letters under
+/// its column are the picture's to draw.
 ///
 /// It was not merely redundant. A full block's raster is taller than its
 /// cell, and the glass covers the pane's own rectangle exactly, so the
@@ -843,22 +846,27 @@ pub(super) fn lettered_behind(
     under: Look<'_>,
     barred: &[Barred],
     spun: &[Spun],
+    depth: usize,
     x: u16,
     y: u16,
 ) -> bool {
     !under.text.trim().is_empty()
         && !barred.iter().any(|showing| {
             let area = showing.bar.area;
-            (area.left()..area.right()).contains(&x) && (area.top()..area.bottom()).contains(&y)
+            showing.depth <= depth
+                && (area.left()..area.right()).contains(&x)
+                && (area.top()..area.bottom()).contains(&y)
         })
-        && !turns_at(under, spun, x, y)
+        && !turns_at(under, spun, depth, x, y)
 }
 
-/// Whether this cell of a picture is a mark that turns: said to be one,
-/// and still holding a frame of it -- see `Spun::behind`.
-fn turns_at(under: Look<'_>, spun: &[Spun], x: u16, y: u16) -> bool {
+/// Whether this cell of a picture is a mark that turns: said to be one
+/// before the pane, and still holding a frame of it -- see `Spun::behind`.
+fn turns_at(under: Look<'_>, spun: &[Spun], depth: usize, x: u16, y: u16) -> bool {
     obelus_ui::how_far_round(under.text).is_some()
-        && spun.iter().any(|mark| mark.area.x == x && mark.area.y == y)
+        && spun
+            .iter()
+            .any(|mark| mark.depth <= depth && mark.area.x == x && mark.area.y == y)
 }
 
 /// How far a bar's mark is drawn from where the frame put it, while the
