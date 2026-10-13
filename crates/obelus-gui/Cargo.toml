@@ -63,6 +63,15 @@ tracing.workspace = true
 wgpu.workspace = true
 winit.workspace = true
 
+# Starting `obg` again in a session of its own, so that the terminal it was
+# typed into is the reader's again -- see `leaving`.
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+# A terminal for `obg` to be typed into, in its tests.
+[target.'cfg(unix)'.dev-dependencies]
+libc.workspace = true
+
 # Taking the selection rather than handing it to `wl-copy`. The same crate
 # winit already has, on purpose: a serial belongs to a connection, so the
 # clipboard has to be on the window's own.

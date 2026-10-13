@@ -41,6 +41,8 @@ mod clipboard;
 mod elsewhere;
 mod grid;
 mod keys;
+#[cfg(unix)]
+mod leaving;
 mod motion;
 mod paint;
 mod title;
@@ -76,6 +78,13 @@ fn main() -> Result<()> {
     #[cfg(windows)]
     take_the_console_it_was_started_from();
     let arguments = Arguments::parse();
+    // After the arguments, so that `--help` is said where it was asked for
+    // and the shell waits for it. Before anything else, because what it
+    // starts is this whole program again.
+    #[cfg(unix)]
+    leaving::leave_the_terminal();
+    #[cfg(unix)]
+    leaving::hear_who_waits();
     // Before anything else starts a thread, because changing the
     // environment while another thread reads it is undefined. And before
     // the log, which starts one -- so what happened is said after it.
@@ -91,7 +100,9 @@ fn main() -> Result<()> {
     #[cfg(unix)]
     match environment {
         Ok(Environment::Terminals) => {}
-        Ok(Environment::PassedOn) => tracing::info!("kept the environment the window before had"),
+        Ok(Environment::PassedOn) => {
+            tracing::info!("kept the environment of the obg that started this one")
+        }
         Ok(Environment::Taken(taken)) => {
             tracing::info!(taken, "took the login shell's environment")
         }
@@ -131,7 +142,8 @@ fn main() -> Result<()> {
 enum Environment {
     /// The terminal it was started from, which read the reader's files.
     Terminals,
-    /// The window that started this one, which had one of the others.
+    /// The `obg` that started this one -- another window, or the one typed
+    /// into a terminal -- which had one of the others.
     PassedOn,
     /// The reader's login shell, this many variables of it.
     Taken(usize),
@@ -152,7 +164,8 @@ enum Environment {
 /// put the files' answer over the terminal's -- a virtualenv's path, a
 /// variable exported a moment ago -- even where its input was sent
 /// somewhere else. And a window started by another window has whichever
-/// of the two that one had, and is told so (`elsewhere`).
+/// of the two that one had, and is told so (`elsewhere`) -- as is one
+/// started by the `obg` typed into a terminal (`leaving`).
 #[cfg(unix)]
 fn take_the_shells_environment() -> Result<Environment, String> {
     use std::io::IsTerminal as _;

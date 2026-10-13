@@ -4605,6 +4605,7 @@ dependencies = [
  "crossterm",
  "etagere",
  "image",
+ "libc",
  "obelus-app",
  "obelus-clipboard",
  "obelus-component",

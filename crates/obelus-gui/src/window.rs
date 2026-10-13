@@ -581,6 +581,14 @@ impl Showing {
     }
 
     /// What Obelus's loop returned, or that it never got to run.
+    /// Why the window did not open, said where `obg` was started rather
+    /// than only in the log -- see `leaving`.
+    fn failed(&self, why: Result<()>) {
+        if let Ok(mut outcome) = self.outcome.lock() {
+            *outcome = Some(why);
+        }
+    }
+
     fn outcome(&mut self) -> Result<()> {
         self.outcome
             .lock()
@@ -902,6 +910,7 @@ impl ApplicationHandler<Waking> for Showing {
             Ok(window) => Arc::new(window),
             Err(error) => {
                 tracing::error!(%error, "no window");
+                self.failed(Err(error).context("no window"));
                 events.exit();
                 return;
             }
@@ -915,10 +924,15 @@ impl ApplicationHandler<Waking> for Showing {
             Ok(painter) => painter,
             Err(error) => {
                 tracing::error!(?error, "nothing to draw with");
+                self.failed(Err(error).context("nothing to draw with"));
                 events.exit();
                 return;
             }
         };
+        // The last thing that can stop a start, so the terminal `obg` was
+        // typed into is the reader's again -- see `leaving`.
+        #[cfg(unix)]
+        crate::leaving::up();
         // Once there is a window, which is the first moment there is a
         // display connection to adopt.
         crate::clipboard::take(events, self.proxy.clone());
