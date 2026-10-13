@@ -40,15 +40,15 @@ screen 80x24  editor 80x22  status 80x1
 12|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 13|cccaccddceeeiiciiccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 14|cccacccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-15|cccacaddceeeeiicjccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-16|cccicccccckkkiiicccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-17|cccaccjccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+15|cccacaddceeeeiiciccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+16|ccciccccccjjjiiicccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+17|cccacciccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 18|cccacccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 19|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 20|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 21|cchhhhhhhcaaaaccchhhhhhhhhhhcaaaaaaaaccccccccccccccccccccccccccccccccccccccccccc
 22|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-23|lllaaaaaaaaaaaalllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllll
+23|kkkaaaaaaaaaaaakkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk
 -- legend --
 a fg=#52525b bg=#18181b
 b fg=#e4e4e7 bg=#27272a
@@ -59,8 +59,7 @@ f fg=#52525b bg=#27272a
 g fg=#60a5fa bg=#27272a
 h fg=#a1a1aa bg=#27272a
 i fg=#a1a1aa bg=#18181b
-j fg=#a1a1aa bg=#3f3f46
-k fg=#60a5fa bg=#1e3a5f
-l fg=#d4d4d8 bg=#18181b
+j fg=#60a5fa bg=#1e3a5f
+k fg=#d4d4d8 bg=#18181b
 -- cursor --
 3,23
