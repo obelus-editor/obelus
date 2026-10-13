@@ -269,14 +269,14 @@ impl Painter {
     /// choose -- only lifted, the way a lit thing is lighter than the same
     /// thing in shade.
     ///
-    /// `along` is how bright it is while it comes on, and the whole of it comes
-    /// on together: the plate from nothing, and the light from close in to
-    /// its full reach. A plate at full strength under a light still coming
-    /// on is a square that appears and then glows, which is two things
-    /// happening where the reader should see one. `fading` is the pairs
-    /// the caret was in before, going out the same way backwards, each at
-    /// the brightness beside it -- in the ground it wore when it was lit,
-    /// because its cells have the page's back.
+    /// `coming_on` is how bright it is while it comes on, and the whole of
+    /// it comes on together: the plate from nothing, and the light from
+    /// close in to its full reach. A plate at full strength under a light still
+    /// coming on is a square that appears and then glows, which is two
+    /// things happening where the reader should see one. `fading` is the
+    /// pairs the caret was in before, going out the same way backwards,
+    /// each at the brightness beside it -- in the ground it wore when it
+    /// was lit, because its cells have the page's back.
     #[expect(
         clippy::too_many_arguments,
         reason = "the pair coming on and the pairs going out are one picture"
@@ -288,11 +288,11 @@ impl Painter {
         fading: &[(Paired, f32)],
         panes: &[&Behind],
         framed: &[&Behind],
-        along: Option<f32>,
+        coming_on: Option<f32>,
         cell: CellSize,
     ) {
         let corner = (cell.height * HELD_CORNER).min(cell.width / 2.0);
-        let halves = lit_halves(page, paired, fading, panes, along, cell, |x, y| {
+        let halves = lit_halves(page, paired, fading, panes, coming_on, cell, |x, y| {
             self.under(panes, framed, x, y)
         });
         // Every light under every plate, so the light round one half does
@@ -856,7 +856,7 @@ fn lights(
         .collect()
 }
 
-/// Every half `pairs` draws: the cursor's pair at `along`, and each pair
+/// Every half `pairs` draws: the cursor's pair at `coming_on`, and each pair
 /// that was at the brightness beside it -- each with what it is drawn in
 /// and how bright.
 ///
@@ -869,11 +869,11 @@ fn lit_halves(
     paired: &[Paired],
     fading: &[(Paired, f32)],
     panes: &[&Behind],
-    along: Option<f32>,
+    coming_on: Option<f32>,
     cell: CellSize,
     under: impl Fn(u16, u16) -> [f32; 4],
 ) -> Vec<Lit> {
-    let lit = paired.iter().map(|half| (half, along.unwrap_or(1.0)));
+    let lit = paired.iter().map(|half| (half, coming_on.unwrap_or(1.0)));
     let going = fading.iter().map(|(half, lit)| (half, *lit));
     lit.chain(going)
         .map(|(half, strength)| {
