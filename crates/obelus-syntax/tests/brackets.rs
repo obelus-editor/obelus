@@ -107,3 +107,70 @@ fn a_partner_off_screen_is_no_answer() {
         None
     );
 }
+
+/// What the screen asks: the pair the cursor is on, or else the innermost
+/// one it is inside.
+fn nearest(source: &str, at: usize) -> Option<(usize, usize)> {
+    let text = Text::from_string(source);
+    let state = SyntaxState::new(LanguageId::Rust, &text).expect("parsing");
+    let mut highlights = Highlights::default();
+    let all = ByteOffset::new(0)..text.byte_length();
+    highlights.refresh(&state, &text, all.clone());
+    brackets::nearest(&text, &highlights, ByteOffset::new(at), all)
+        .map(|(open, close)| (open.get(), close.get()))
+}
+
+/// Deliberate break: `nearest` returning `pair_at` alone fails the first
+/// assertion; the backward walk not counting a closing bracket, so that
+/// the `]` of `a[0]` did not hide its `[`, fails the second.
+#[test]
+fn inside_a_pair_the_innermost_one_is_the_answer() {
+    let source = "let x = f(a[0], g(1));\n";
+    let outer = source.find('(').expect("a bracket");
+    let last = source.rfind(')').expect("a bracket");
+
+    // On `a`: inside the call and nothing nearer.
+    let a = source.find("a[").expect("a");
+    assert_eq!(nearest(source, a), Some((outer, last)));
+
+    // On the comma, past a pair that has already closed: still the call.
+    let comma = source.find(',').expect("a comma");
+    assert_eq!(nearest(source, comma), Some((outer, last)));
+
+    // On the `1`: the inner call, not the outer one.
+    let inner = source.find("g(").expect("g") + 1;
+    let one = source.find('1').expect("a one");
+    assert_eq!(nearest(source, one), Some((inner, inner + 2)));
+
+    // On a bracket, that bracket's pair rather than the one around it.
+    let index = source.find('[').expect("a bracket");
+    assert_eq!(nearest(source, index), Some((index, index + 2)));
+
+    // And outside every pair, nothing.
+    assert_eq!(nearest(source, 0), None);
+    assert_eq!(nearest(source, source.len() - 1), None, "after the `;`");
+}
+
+/// Deliberate break: dropping the `literal` check from the backward walk
+/// pairs the `(` in the string with the `)` after it.
+#[test]
+fn a_bracket_in_a_string_is_not_the_one_the_cursor_is_in() {
+    let source = "f(\"(\", x);\n";
+    let open = source.find('(').expect("a bracket");
+    let close = source.rfind(')').expect("a bracket");
+    let x = source.find('x').expect("x");
+    assert_eq!(nearest(source, x), Some((open, close)));
+
+    // And inside the string itself, the call around it.
+    let quoted = source.find("\"(").expect("the string") + 1;
+    assert_eq!(nearest(source, quoted), Some((open, close)));
+}
+
+/// Deliberate break: dropping the `close > at` filter answers `(0, 4)`,
+/// a pair that ends before the cursor.
+#[test]
+fn a_pair_that_closed_behind_the_cursor_is_not_around_it() {
+    let source = "( [ ) x\n";
+    let x = source.find('x').expect("x");
+    assert_eq!(nearest(source, x), None);
+}

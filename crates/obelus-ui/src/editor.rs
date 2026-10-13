@@ -754,7 +754,7 @@ impl Widget for EditorView<'_> {
         // same question.
         let visible = buffer.visible_bytes(area.height);
         let at = text.byte_of_char(text.char_offset(cursor.line, cursor.column));
-        let brackets = brackets::pair_at(text, self.highlights, at, visible);
+        let brackets = brackets::nearest(text, self.highlights, at, visible);
 
         // The hunks the reader has opened, worked out once: every row asks
         // whether it is one of their lines.
@@ -1546,7 +1546,8 @@ struct Painting<'a> {
     selection: Option<Span>,
     /// What the language server says is wrong with the file.
     troubles: &'a [obelus_lsp::trouble::Trouble],
-    /// The bracket under the cursor and its partner.
+    /// The bracket under the cursor and its partner, or the pair the
+    /// cursor is inside.
     brackets: Option<(ByteOffset, ByteOffset)>,
 }
 
@@ -1658,7 +1659,7 @@ fn draw_row(
                 .add_modifier(Modifier::UNDERLINED)
                 .underline_color(painting.theme.colour_for(Some(severity.kind())));
         }
-        // The bracket the cursor is on, and its partner. After the mark, so
+        // The pair the cursor is on or inside. After the mark, so
         // a symbol a preview is about keeps its own background where the two
         // land on the same cell.
         if painting
