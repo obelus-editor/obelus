@@ -5443,6 +5443,45 @@ fn the_settings_go_where_their_bar_is_dragged() {
     assert_eq!(app.settings().expect("the settings").focus(), 0);
 }
 
+/// A press half way down the page's bar goes half way down the page, in
+/// entries -- not to the end.
+///
+/// The bar is measured in rows and the window moves by the entry, and an
+/// entry is several rows: a row half way down the bar, taken for an entry,
+/// is an entry past the last, and the page went to its end wherever the
+/// bar was pressed. The drag to the foot, which is the other test here,
+/// cannot tell: the foot is the end either way.
+///
+/// Deliberate break: take `bars::in_items` out of `SettingsView::column`.
+/// The press half way down shows the last screenful.
+#[test]
+fn a_press_half_way_down_the_settings_bar_goes_half_way() {
+    let _turn = crate::turn();
+    let scratch = temporary("pressed-half-way");
+    let mut app = open(&settings_file(&scratch));
+    let rows = bar_rows(&mut app, 66, 12);
+    let middle = rows[rows.len() / 2];
+    for kind in [
+        obelus_app::event::Pointer::Pressed,
+        obelus_app::event::Pointer::Released,
+    ] {
+        app.handle(Event::Pointer {
+            kind,
+            x: 65,
+            y: middle,
+        });
+        support::lay_out(&mut app, 66, 12);
+    }
+    let half_way = app.settings().expect("the settings").top();
+
+    drag_the_bar_down(&mut app, 66, 12);
+    let end = app.settings().expect("the settings").top();
+    assert!(
+        half_way > 0 && half_way < end,
+        "half way down the bar is entry {half_way}, and the end is {end}"
+    );
+}
+
 /// And the agents page, whose cards are as tall as they need: dragged to
 /// the foot it shows the last of them, and the focus stays on the first.
 ///
