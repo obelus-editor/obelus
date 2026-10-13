@@ -65,7 +65,8 @@ struct Quad {
     // what is behind a pane, blurred one way. 2048: a letter of the
     // welcome screen's mark, which the light runs across. 2097152: a
     // triangle filling the quad, which is the arrow on the seam a
-    // deletion left. 16777216: the mark that turns while something is
+    // deletion left. 4194304: the mark on one of the bar's buttons.
+    // 16777216: the mark that turns while something is
     // happening. 536870912: the light round a run the reader has hold of.
     // 1073741824: the picture under the page. 2147483648, beside any of
     // the others: drawn only in the rows from `radius` to `lower`.
@@ -278,6 +279,13 @@ fn to_line(point: vec2<f32>, one_end: vec2<f32>, other: vec2<f32>) -> f32 {
     return length(along - line * how_far);
 }
 
+// How far outside a square box a point is, in pixels: negative inside it,
+// with its corners rounded by `round`. `outside` without the seams.
+fn square(point: vec2<f32>, half_size: vec2<f32>, round: f32) -> f32 {
+    let over = abs(point) - half_size + vec2<f32>(round);
+    return length(max(over, vec2<f32>(0.0))) + min(max(over.x, over.y), 0.0) - round;
+}
+
 // The mark in a switch, as two strokes of a pen: down to the turn, and up
 // again further. In the quad's own units from nought to one, so a reader
 // who makes the text bigger gets a bigger one drawn the same.
@@ -371,6 +379,40 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
         // Back into pixels, so the edge is a pixel wide whatever size the
         // text is -- the same as the switch's mark below.
         let covered = clamp(0.5 - over * in.half_size.y * 2.0, 0.0, 1.0);
+        return vec4<f32>(in.colour.rgb, in.colour.a * covered);
+    }
+    // The mark on one of the buttons along the top of a window whose bar
+    // Obelus draws: `radius` says which -- a line, a square, two squares
+    // and a cross -- and `lower` how wide the pen is, in pixels. In pixels
+    // throughout rather than in the quad's units, because the pen is a
+    // whole number of them at every size the mark is.
+    if ((in.flags & 4194304u) != 0u) {
+        let pen = in.lower * 0.5;
+        let half = in.half_size.x;
+        // The system's squares have their corners rounded, a pixel and a
+        // half outside at 250%, and its cross stands a pen inside them.
+        let round = pen;
+        var far: f32;
+        if (in.radius < 0.5) {
+            far = max(abs(in.middle.x) - half, abs(in.middle.y) - pen);
+        } else if (in.radius < 1.5) {
+            far = abs(square(in.middle, vec2<f32>(half - pen), round)) - pen;
+        } else if (in.radius < 2.5) {
+            // Restore: a square in front, down and to the left, and the
+            // corner of another behind it showing above and to the right.
+            let shift = in.lower * 2.0;
+            let side = vec2<f32>(half - shift * 0.5 - pen);
+            let front = square(in.middle - vec2<f32>(-shift, shift) * 0.5, side, round);
+            let back = square(in.middle - vec2<f32>(shift, -shift) * 0.5, side, round);
+            far = min(abs(front) - pen, max(abs(back) - pen, -(front + pen)));
+        } else {
+            let reach = half - in.lower;
+            far = min(
+                to_line(in.middle, vec2<f32>(-reach), vec2<f32>(reach)),
+                to_line(in.middle, vec2<f32>(-reach, reach), vec2<f32>(reach, -reach)),
+            ) - pen;
+        }
+        let covered = clamp(0.5 - far, 0.0, 1.0);
         return vec4<f32>(in.colour.rgb, in.colour.a * covered);
     }
     // The mark in a switch that is set.

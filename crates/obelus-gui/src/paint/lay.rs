@@ -4,7 +4,7 @@
 use obelus_font::Fonts;
 
 use super::{
-    glass::{casting, reached},
+    glass::{casting, from_the_top, reached},
     *,
 };
 use crate::{
@@ -98,6 +98,35 @@ impl Painter {
             let veil = self.veil();
             self.block(left, top, wide, tall, veil);
         }
+        // Every pane and box, furthest first, each over the glass of those
+        // before it -- see `drawn`, which four passes ask about.
+        let stack = drawn(said.stack, page);
+        // Where the bar Obelus draws goes, which is over a pane whose glass
+        // runs up under it -- see `from_the_top` -- and never under one as
+        // well, which would be every letter of the title twice, once seen
+        // through the glass.
+        //
+        // At the end of everything while one is on its way in or out, so
+        // that it is not in what moves; after the panes and before the
+        // pieces where one is simply there; and first, under everything,
+        // where none is.
+        let panes: Vec<(u16, Joined)> = stack
+            .iter()
+            .filter(|over| !over.is_a_box())
+            .map(|over| (over.area.y, over.joined))
+            .collect();
+        let bar_on_top = bar_on_top(
+            self.bar.is_some() && !self.bar_left_out,
+            &panes,
+            moving.pane.is_some(),
+            moving.leaving.is_some() && self.gone.iter().any(|&(.., top)| top),
+        );
+        // The bar's buttons, on the picture where there is one. With it in
+        // the quads every whole screen starts from, because the bar stands
+        // still the way the picture does: what slides is the page under it.
+        if bar_on_top.is_none() {
+            self.title_bar(across, margin, fonts);
+        }
         // Where the picture's quads end, which every whole screen drawn
         // from this frame draws first -- and the one picture of the frame
         // that is cut into moving pieces leaves out (see `encode`).
@@ -106,9 +135,6 @@ impl Painter {
         } else {
             0
         };
-        // Every pane and box, furthest first, each over the glass of those
-        // before it -- see `drawn`, which four passes ask about.
-        let stack = drawn(said.stack, page);
         // The pane on top, which is the one that arrives: a list opened
         // over the settings comes up over a page that was already there.
         let top = stack.iter().rposition(|over| !over.is_a_box());
@@ -289,6 +315,10 @@ impl Painter {
             self.slid(box_of(stack[nearest].area, cell), 0.0, 1.0 - along);
         }
 
+        // The bar over a pane that is simply there -- see `bar_on_top`.
+        if bar_on_top == Some(BarOnTop::Resting) {
+            self.title_bar(across, margin, fonts);
+        }
         // Everything the frame says has been said. What is left is
         // putting it back on the screen in pieces, where a pane is on its
         // way in -- see `paint.wgsl` and `Painter::lifted`.
@@ -361,6 +391,12 @@ impl Painter {
             self.going(moving.leaving);
         } else {
             self.going(moving.leaving);
+        }
+        // The bar over a pane on its way in or out -- see `bar_on_top`.
+        if matches!(bar_on_top, Some(BarOnTop::Arriving | BarOnTop::Leaving)) {
+            let start = self.quads.len();
+            self.title_bar(across, margin, fonts);
+            self.placed.bar_over = Some(start..self.quads.len());
         }
         // Last, because none of it is drawn on the screen: the blurs are
         // passes of their own, before any of the above.
@@ -446,5 +482,113 @@ impl Painter {
             .write_buffer(&self.instances, 0, bytemuck::cast_slice(&self.quads));
 
         self.levels_for(self.placed.levels.len());
+    }
+}
+
+/// Where the bar Obelus draws goes over a pane whose glass runs up under it
+/// -- see `bar_on_top`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BarOnTop {
+    /// Over a pane on its way in, after everything that moves.
+    Arriving,
+    /// Over one on its way out, the same.
+    Leaving,
+    /// Over every pane, with the rest of the frame.
+    Resting,
+}
+
+/// Where the bar goes on this frame, or `None` for first, under
+/// everything, where nothing runs up under it.
+///
+/// `panes` are the frame's, furthest first, by the row each starts on and
+/// what it hangs from; `arriving` is the one on top on its way in, and
+/// `leaving` is one going that ran up under the bar. Over *every* pane
+/// that runs up under it and not only the one on top: a list standing on
+/// the status row over the settings leaves the settings' glass over the
+/// bar, and a bar drawn first was a smear under it.
+fn bar_on_top(
+    bar: bool,
+    panes: &[(u16, Joined)],
+    arriving: bool,
+    leaving: bool,
+) -> Option<BarOnTop> {
+    if !bar {
+        return None;
+    }
+    let under = |&(y, joined): &(u16, Joined)| from_the_top(true, y, joined);
+    match () {
+        () if arriving && panes.last().is_some_and(under) => Some(BarOnTop::Arriving),
+        () if leaving => Some(BarOnTop::Leaving),
+        () if panes.iter().any(under) => Some(BarOnTop::Resting),
+        () => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const FILES: (u16, Joined) = (0, Joined::Screen);
+    const SETTINGS: (u16, Joined) = (0, Joined::Screen);
+    const PALETTE: (u16, Joined) = (0, Joined::Above);
+    const CHOICES: (u16, Joined) = (20, Joined::Below);
+
+    /// The bar goes over a pane that runs up under it -- resting, coming
+    /// in or going out -- and first, under everything, where none does.
+    ///
+    /// Deliberate breaks, each failing one line here: ask only the pane on
+    /// top for `Resting` (the settings with a list on them, the smear the
+    /// review found); drop `arriving` from the first arm (a list standing
+    /// on the status row coming in over the settings takes the bar with
+    /// it); put `Resting` before `Leaving` (the files going over the
+    /// settings draw the bar under their going pieces); and leave out
+    /// `bar` (a window with the system's bar draws a second one).
+    #[test]
+    fn the_bar_goes_over_every_pane_that_runs_up_under_it() {
+        let at =
+            |panes: &[(u16, Joined)], arriving, leaving| bar_on_top(true, panes, arriving, leaving);
+        assert_eq!(at(&[], false, false), None, "the page");
+        assert_eq!(
+            at(&[CHOICES], false, false),
+            None,
+            "a list on the status row"
+        );
+        assert_eq!(at(&[FILES], false, false), Some(BarOnTop::Resting));
+        assert_eq!(at(&[FILES], true, false), Some(BarOnTop::Arriving));
+        assert_eq!(
+            at(&[FILES], true, true),
+            Some(BarOnTop::Arriving),
+            "the palette going"
+        );
+        assert_eq!(
+            at(&[], false, true),
+            Some(BarOnTop::Leaving),
+            "the files going"
+        );
+        assert_eq!(
+            at(&[SETTINGS], false, true),
+            Some(BarOnTop::Leaving),
+            "back to the settings"
+        );
+        assert_eq!(
+            at(&[SETTINGS, CHOICES], false, false),
+            Some(BarOnTop::Resting)
+        );
+        assert_eq!(
+            at(&[SETTINGS, CHOICES], true, false),
+            Some(BarOnTop::Resting),
+            "a list coming in"
+        );
+        assert_eq!(
+            at(&[CHOICES], true, true),
+            Some(BarOnTop::Leaving),
+            "a list in for the files"
+        );
+        assert_eq!(at(&[PALETTE], false, false), Some(BarOnTop::Resting));
+        assert_eq!(
+            bar_on_top(false, &[FILES], true, true),
+            None,
+            "the system's bar"
+        );
     }
 }

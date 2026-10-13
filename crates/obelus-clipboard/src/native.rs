@@ -64,30 +64,112 @@ fn is_words(mime: &str) -> bool {
     mime.starts_with("text/") || mime == "UTF8_STRING"
 }
 
+/// What a picture on either service is called here, whatever shape it was
+/// put there in.
+///
+/// One name, because each of them holds a picture in a shape no agent is
+/// sent -- a DIB on Windows, a TIFF on macOS -- as often as in a PNG, and
+/// makes it a PNG on the way out.
+#[cfg(any(target_os = "macos", windows))]
+const PICTURE: &str = "image/png";
+
+/// Which of the shapes Obelus asks about are on the clipboard.
+#[cfg(any(target_os = "macos", windows))]
+struct Holding {
+    /// A list of files.
+    files: bool,
+    /// Words.
+    words: bool,
+    /// A picture, in any shape.
+    picture: bool,
+}
+
+#[cfg(any(target_os = "macos", windows))]
+impl Holding {
+    /// Said in mime types.
+    ///
+    /// A picture only where there are no words beside it. On both services
+    /// a program copying words puts a picture of them down too -- a
+    /// spreadsheet's cells, a paragraph out of a word processor -- so a
+    /// copy that has words was a copy of words, and pasting it as a picture
+    /// would send an agent a screenshot of the text the reader meant to
+    /// type. A screenshot, or a picture copied out of a browser, has none.
+    fn names(&self) -> Vec<String> {
+        let mut names = Vec::new();
+        if self.files {
+            names.push(super::FILES.to_string());
+        }
+        if self.words {
+            names.push("text/plain".to_string());
+        } else if self.picture {
+            names.push(PICTURE.to_string());
+        }
+        names
+    }
+}
+
+/// A picture the service held in another shape, as the PNG it is sent in.
+#[cfg(any(target_os = "macos", windows))]
+fn as_png(picture: &image::DynamicImage) -> Option<Vec<u8>> {
+    let mut png = std::io::Cursor::new(Vec::new());
+    match picture.write_to(&mut png, image::ImageFormat::Png) {
+        Ok(()) => Some(png.into_inner()),
+        Err(error) => {
+            tracing::warn!(%error, "making a pasted picture a PNG");
+            None
+        }
+    }
+}
+
+#[cfg(all(test, any(target_os = "macos", windows)))]
+mod tests {
+    use super::Holding;
+
+    /// A picture with words beside it is the words, and one on its own is
+    /// a picture.
+    ///
+    /// Deliberate break: `names` pushing the picture whenever there is one,
+    /// which makes a spreadsheet's cells a screenshot of them.
+    #[test]
+    fn a_picture_beside_words_is_the_words() {
+        let held = |words, picture| {
+            Holding {
+                files: false,
+                words,
+                picture,
+            }
+            .names()
+        };
+        assert_eq!(held(true, true), ["text/plain"]);
+        assert_eq!(held(false, true), [super::PICTURE]);
+        assert!(held(false, false).is_empty());
+    }
+}
+
 /// macOS: the general pasteboard.
 #[cfg(target_os = "macos")]
 mod cocoa {
     // `class()` is the trait's, not the type's: a class object is what
     // `readObjectsForClasses` is asking for.
     use objc2::ClassType;
-    use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
+    use objc2_app_kit::{
+        NSPasteboard, NSPasteboardTypePNG, NSPasteboardTypeString, NSPasteboardTypeTIFF,
+    };
     use objc2_foundation::{NSArray, NSData, NSString, NSURL};
 
     /// What is on it, said in mime types.
     ///
-    /// Only the two Obelus asks about. The pasteboard names dozens of
+    /// Only the three Obelus asks about. The pasteboard names dozens of
     /// shapes -- a copied file carries its name, its icon and its
     /// promises -- and reporting all of them would be reporting a
     /// vocabulary nothing here speaks.
     pub(crate) fn types() -> Option<Vec<String>> {
-        let mut names = Vec::new();
-        if !urls().is_empty() {
-            names.push(super::super::FILES.to_string());
-        }
-        if string().is_some() {
-            names.push("text/plain".to_string());
-        }
-        Some(names)
+        let held = super::Holding {
+            files: !urls().is_empty(),
+            words: string().is_some(),
+            picture: picture_type().is_some(),
+        };
+        Some(held.names())
     }
 
     /// One shape, as bytes.
@@ -96,10 +178,53 @@ mod cocoa {
             let list: Vec<String> = urls().into_iter().map(|url| url.to_string()).collect();
             return (!list.is_empty()).then(|| list.join("\r\n").into_bytes());
         }
+        if mime == super::PICTURE {
+            return picture();
+        }
         if mime.starts_with("text/") {
             return string().map(String::into_bytes);
         }
         None
+    }
+
+    /// Which of the two shapes a picture goes by is there, without reading
+    /// it: a screenshot is a megabyte, and this is asked on every paste.
+    fn picture_type() -> Option<objc2::rc::Retained<NSString>> {
+        // Safety: as below; the two names are statics AppKit defines.
+        unsafe {
+            let pasteboard = NSPasteboard::generalPasteboard();
+            let wanted = NSArray::from_slice(&[NSPasteboardTypePNG, NSPasteboardTypeTIFF]);
+            pasteboard.availableTypeFromArray(&wanted)
+        }
+    }
+
+    /// The picture on it, as a PNG.
+    ///
+    /// A TIFF is what a copy out of most of macOS's own programs is, and
+    /// it is made a PNG here rather than sent on: an agent is not obliged
+    /// to read one.
+    fn picture() -> Option<Vec<u8>> {
+        // The TIFF is asked for only where there is no PNG, because a
+        // program may make a shape only when it is asked for, and one
+        // asked for and thrown away is a picture encoded for nobody.
+        //
+        // Safety, in each block: the names are statics AppKit defines,
+        // and the data is copied out before it is dropped.
+        let pasteboard = NSPasteboard::generalPasteboard();
+        if let Some(png) =
+            unsafe { pasteboard.dataForType(NSPasteboardTypePNG) }.map(|png| png.to_vec())
+            && !png.is_empty()
+        {
+            return Some(png);
+        }
+        let tiff = unsafe { pasteboard.dataForType(NSPasteboardTypeTIFF) }?.to_vec();
+        match image::load_from_memory_with_format(&tiff, image::ImageFormat::Tiff) {
+            Ok(picture) => super::as_png(&picture),
+            Err(error) => {
+                tracing::warn!(%error, "reading a TIFF off the pasteboard");
+                None
+            }
+        }
     }
 
     /// The files on the pasteboard, as `file://` URIs.
@@ -190,8 +315,8 @@ mod win32 {
                 CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable,
                 OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
             },
-            Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock},
-            Ole::CF_UNICODETEXT,
+            Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock},
+            Ole::{CF_DIB, CF_UNICODETEXT},
         },
         UI::Shell::{DragQueryFileW, HDROP},
     };
@@ -227,20 +352,24 @@ mod win32 {
     /// What is on it, said in mime types.
     pub(crate) fn types() -> Option<Vec<String>> {
         let _open = Open::taken()?;
-        let mut names = Vec::new();
         // Safety: asking whether a format is there reads nothing and
         // cannot fail in a way that matters.
-        if unsafe { IsClipboardFormatAvailable(CF_HDROP) } != 0 {
-            names.push(super::super::FILES.to_string());
-        }
-        if unsafe { IsClipboardFormatAvailable(CF_UNICODETEXT as u32) } != 0 {
-            names.push("text/plain".to_string());
-        }
-        Some(names)
+        let there = |format: u32| unsafe { IsClipboardFormatAvailable(format) } != 0;
+        let held = super::Holding {
+            files: there(CF_HDROP),
+            words: there(CF_UNICODETEXT as u32),
+            picture: there(png()) || there(CF_DIB as u32),
+        };
+        Some(held.names())
     }
 
     /// One shape, as bytes.
     pub(crate) fn paste_as(mime: &str) -> Option<Vec<u8>> {
+        // Before the clipboard is opened, because a picture opens it
+        // itself, and lets it go before it is made a PNG.
+        if mime == super::PICTURE {
+            return picture();
+        }
         let _open = Open::taken()?;
         if mime == super::super::FILES {
             let list: Vec<String> = dropped()
@@ -253,6 +382,79 @@ mod win32 {
             return text().map(String::into_bytes);
         }
         None
+    }
+
+    /// The number the clipboard gives the format a PNG goes by.
+    ///
+    /// Registered by name rather than standard, because Windows has no PNG
+    /// of its own: a browser and Office put one down under this name beside
+    /// the DIB, and a zero -- the name could not be registered -- is a
+    /// format nothing is ever available in.
+    fn png() -> u32 {
+        let name: Vec<u16> = "PNG".encode_utf16().chain(std::iter::once(0)).collect();
+        // Safety: a terminated string, and registering one twice returns
+        // the number the first call got.
+        unsafe { RegisterClipboardFormatW(name.as_ptr()) }
+    }
+
+    /// The picture on it, as a PNG.
+    ///
+    /// The PNG where one was put down, and otherwise the DIB made one --
+    /// which is the only shape a screenshot taken with the system's own
+    /// tool is in, and the one Windows makes out of any other bitmap that
+    /// is copied. Not out of a PNG: a program that put down only that has
+    /// no DIB, which is why it is asked for first.
+    ///
+    /// The DIB is copied out and the clipboard let go before it is made
+    /// one: nothing else on the machine can copy or paste while it is
+    /// open, and a screenshot's DIB is tens of megabytes to encode.
+    fn picture() -> Option<Vec<u8>> {
+        let dib = {
+            let _open = Open::taken()?;
+            if let Some(png) = held(png())
+                && !png.is_empty()
+            {
+                return Some(png);
+            }
+            held(CF_DIB as u32)?
+        };
+        png_of_dib(&dib)
+    }
+
+    /// A DIB -- a bitmap file without the file's own header, which is how
+    /// the clipboard keeps one -- as a PNG.
+    fn png_of_dib(dib: &[u8]) -> Option<Vec<u8>> {
+        let decoder =
+            image::codecs::bmp::BmpDecoder::new_without_file_header(std::io::Cursor::new(dib));
+        match decoder.and_then(image::DynamicImage::from_decoder) {
+            Ok(picture) => super::as_png(&picture),
+            Err(error) => {
+                tracing::warn!(%error, "reading a DIB off the clipboard");
+                None
+            }
+        }
+    }
+
+    /// One format's bytes, as they are on the clipboard.
+    ///
+    /// Only reached with the clipboard open.
+    fn held(format: u32) -> Option<Vec<u8>> {
+        // Safety: the handle belongs to the clipboard and is only read
+        // while it is open and locked, for as many bytes as the block says
+        // it holds.
+        unsafe {
+            let handle: HANDLE = GetClipboardData(format);
+            if handle.is_null() {
+                return None;
+            }
+            let locked = GlobalLock(handle.cast()).cast::<u8>();
+            if locked.is_null() {
+                return None;
+            }
+            let bytes = std::slice::from_raw_parts(locked, GlobalSize(handle.cast())).to_vec();
+            GlobalUnlock(handle.cast());
+            Some(bytes)
+        }
     }
 
     /// Puts a copy on the clipboard, in every shape it was made in.
@@ -418,6 +620,70 @@ mod win32 {
 
     #[cfg(test)]
     mod tests {
+        use image::GenericImageView;
+
+        /// The header a DIB starts with: `BITMAPINFOHEADER`, two pixels
+        /// wide and one high, in `bits` to a pixel.
+        fn header(bits: u16, compression: u32) -> Vec<u8> {
+            let mut header = Vec::new();
+            header.extend(40u32.to_le_bytes());
+            header.extend(2i32.to_le_bytes());
+            header.extend(1i32.to_le_bytes());
+            header.extend(1u16.to_le_bytes());
+            header.extend(bits.to_le_bytes());
+            header.extend(compression.to_le_bytes());
+            // The image's size, the two resolutions, and the two counts of
+            // a palette nothing here has.
+            header.extend([0; 20]);
+            header
+        }
+
+        /// The colours of a PNG's two pixels.
+        fn pixels(png: &[u8]) -> [[u8; 3]; 2] {
+            let picture = image::load_from_memory(png).expect("a PNG Obelus can read");
+            let rgb = |x| {
+                let [r, g, b, _] = picture.get_pixel(x, 0).0;
+                [r, g, b]
+            };
+            [rgb(0), rgb(1)]
+        }
+
+        /// A DIB is made a PNG of the same picture.
+        ///
+        /// Deliberate break: `BmpDecoder::new` in `png_of_dib`, which looks
+        /// for the file header a DIB on the clipboard has not got, and
+        /// makes nothing of it.
+        #[test]
+        fn a_dib_is_made_a_png() {
+            let mut dib = header(24, 0);
+            // Blue, green, red: a red pixel and a blue one, and the row
+            // made up to four bytes.
+            dib.extend([0, 0, 255, 255, 0, 0, 0, 0]);
+            let png = super::png_of_dib(&dib).expect("a PNG");
+            assert_eq!(pixels(&png), [[255, 0, 0], [0, 0, 255]]);
+        }
+
+        /// And so is the shape Windows itself makes one in, out of a
+        /// screenshot: thirty-two bits with the three masks after the
+        /// header, which say where each colour is in a pixel.
+        ///
+        /// Obelus's own path through this is the one the test above
+        /// covers; what this one holds is the decoder's reading of the
+        /// masks, which is `image`'s and could change under an upgrade.
+        /// So its deliberate break is in the input rather than in Obelus:
+        /// the masks left out of the DIB, which reads the pixels as masks
+        /// and the picture as nothing.
+        #[test]
+        fn a_dib_with_masks_is_made_a_png() {
+            let mut dib = header(32, 3);
+            for mask in [0x00ff_0000u32, 0x0000_ff00, 0x0000_00ff] {
+                dib.extend(mask.to_le_bytes());
+            }
+            dib.extend([0, 0, 255, 0, 255, 0, 0, 0]);
+            let png = super::png_of_dib(&dib).expect("a PNG");
+            assert_eq!(pixels(&png), [[255, 0, 0], [0, 0, 255]]);
+        }
+
         /// A copy's line breaks are made Windows', and one already made so
         /// is not made so twice.
         ///

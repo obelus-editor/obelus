@@ -451,10 +451,7 @@ const PICTURES: &[&str] = &["image/png", "image/jpeg", "image/webp", "image/gif"
 /// megabyte of nothing on every paste of ordinary text.
 #[must_use]
 pub fn picture() -> Option<(String, Vec<u8>)> {
-    let offered = types();
-    let wanted = PICTURES
-        .iter()
-        .find(|mime| offered.iter().any(|held| held == *mime))?;
+    let wanted = offered_picture()?;
     let bytes = paste_as(wanted)?;
     // A shape that is offered and comes back empty is not a picture. The
     // clipboard can say it holds something it can no longer produce -- the
@@ -467,7 +464,25 @@ pub fn picture() -> Option<(String, Vec<u8>)> {
         );
         return None;
     }
-    Some(((*wanted).to_string(), bytes))
+    Some((wanted.to_string(), bytes))
+}
+
+/// Whether the clipboard offers a picture, without taking it.
+///
+/// For saying a picture has nowhere to go: on Windows and macOS taking one
+/// is making it a PNG, which is a screenshot encoded to say a sentence.
+#[must_use]
+pub fn holds_a_picture() -> bool {
+    offered_picture().is_some()
+}
+
+/// The best shape a picture is offered in, by the listing alone.
+fn offered_picture() -> Option<&'static str> {
+    let offered = types();
+    PICTURES
+        .iter()
+        .copied()
+        .find(|mime| offered.iter().any(|held| held == mime))
 }
 
 /// What a `text/uri-list` names, as paths on this machine.
@@ -706,10 +721,19 @@ mod tests {
     /// that starts with `image/` takes the JPEG, because that is the order
     /// this hand lists them in. And dropping the empty check hands back a
     /// picture of no bytes, which an agent is then asked to look at.
+    ///
+    /// And whether there is one is asked of the listing alone. Broken by
+    /// `holds_a_picture` as `picture().is_some()`, which takes the bytes --
+    /// on Windows and macOS, a screenshot encoded as a PNG to say a
+    /// sentence.
     #[test]
     fn a_picture_is_taken_in_the_best_shape_that_has_bytes() {
         #[derive(Default)]
-        struct Hand(std::sync::Mutex<Vec<(String, Vec<u8>)>>);
+        struct Hand(
+            std::sync::Mutex<Vec<(String, Vec<u8>)>>,
+            // How many times a shape has been taken.
+            std::sync::atomic::AtomicUsize,
+        );
         impl Hand {
             fn holding(&self, shapes: &[(&str, &[u8])]) {
                 *self.0.lock().expect("the hand") = shapes
@@ -723,6 +747,7 @@ mod tests {
                 true
             }
             fn holding(&self, mime: &str) -> Option<Vec<u8>> {
+                self.1.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 let held = self.0.lock().expect("the hand");
                 held.iter()
                     .find(|(name, _)| name == mime)
@@ -740,6 +765,7 @@ mod tests {
 
         // Words alone are not a picture.
         assert!(picture().is_none(), "text was taken for a picture");
+        assert!(!holds_a_picture(), "text was said to be a picture");
 
         // Listed worst first, which is what makes the order a claim.
         hand.holding(&[
@@ -749,6 +775,11 @@ mod tests {
         let (mime, bytes) = picture().expect("a picture");
         assert_eq!(mime, "image/png", "the lossless shape was not preferred");
         assert_eq!(bytes, vec![0x89, b'P', b'N', b'G']);
+
+        let taken = || hand.1.load(std::sync::atomic::Ordering::SeqCst);
+        let before = taken();
+        assert!(holds_a_picture(), "a picture on offer was not said to be");
+        assert_eq!(taken(), before, "asking whether there is a picture took it");
 
         // Offered and empty, which a clipboard whose owner has gone does.
         hand.holding(&[("image/png", &[])]);

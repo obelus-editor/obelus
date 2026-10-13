@@ -9,7 +9,10 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 use obelus_font::Fonts;
 
-use super::{glass::tiles, *};
+use super::{
+    glass::{from_the_top, tiles},
+    *,
+};
 use crate::{
     grid::{Going, Page, Said, Spelling},
     motion::Moving,
@@ -401,6 +404,8 @@ impl Painter {
             grid: [0.0, 0.0],
             margin: [0.0, 0.0],
             titled: 0.0,
+            bar: None,
+            bar_left_out: false,
             holding: (Color::Reset, Color::Reset),
             quads: Vec::new(),
             placed: Placed::default(),
@@ -421,6 +426,7 @@ impl Painter {
             repeating,
             wallpaper: None,
             laid: None,
+            shown: 1.0,
         })
     }
 
@@ -431,6 +437,18 @@ impl Painter {
     pub(crate) fn hang(&mut self, hung: Option<&crate::wallpaper::Hung>) {
         self.wallpaper = hung.and_then(|hung| self.hung_on_the_card(hung));
         self.bound_again();
+    }
+
+    /// Whether there is a picture under the page, which is whether there
+    /// is one to see go.
+    pub(crate) const fn hanging(&self) -> bool {
+        self.wallpaper.is_some()
+    }
+
+    /// How much of the picture under the page shows on this frame. Handed
+    /// over every frame, like the ground.
+    pub(crate) const fn unveiled(&mut self, shown: f32) {
+        self.shown = shown;
     }
 
     /// A picture put on the card, or nothing where the card will not take
@@ -728,7 +746,9 @@ impl Painter {
     /// frame of the leaving reads the same one.
     pub(crate) fn keep(&mut self, page: &Page, fonts: &mut Fonts, said: Said<'_>, going: &[Going]) {
         let cell = fonts.cell();
+        self.bar_left_out = true;
         self.lay(page, fonts, None, Moving::still(), said);
+        self.bar_left_out = false;
         // Cut where its glass is, which is where it was cut from what was
         // under it: the half row above a list's rule is the file, and taken
         // along it would be a strip of the file going down with the list.
@@ -748,6 +768,7 @@ impl Painter {
                 (
                     level.map_or_else(|| box_of(gone.area, cell), |level| level.rect),
                     gone.joined,
+                    from_the_top(self.bar.is_some(), gone.area.y, gone.joined),
                 )
             })
             .collect();
@@ -920,7 +941,7 @@ impl Painter {
                 None if let Some(from) = placed.kept_from => {
                     let (glass, written) = parted_at(on_the_screen(&placed), from);
                     self.follow(&mut pass, &glass, &self.levels[0].bindings);
-                    let gone: Vec<[f32; 4]> = self.gone.iter().map(|&(pane, _)| pane).collect();
+                    let gone: Vec<[f32; 4]> = self.gone.iter().map(|&(pane, ..)| pane).collect();
                     for tile in tiles([f32::MIN, f32::MIN, f32::MAX, f32::MAX], &gone) {
                         self.within(&mut pass, tile);
                         self.follow(&mut pass, &written, &self.levels[0].bindings);
@@ -954,6 +975,11 @@ impl Painter {
                         pass.set_bind_group(0, &lifted.bindings, &[]);
                         drawing(&mut pass, going);
                     }
+                    // And the bar, over the panes going up through it.
+                    if let Some(bar) = placed.bar_over {
+                        pass.set_bind_group(0, &self.plain_bindings, &[]);
+                        drawing(&mut pass, bar);
+                    }
                 }
             }
         }
@@ -980,6 +1006,12 @@ impl Painter {
     /// changes size, and a second copy kept here would be one to forget.
     pub(crate) const fn titled(&mut self, titled: f32) {
         self.titled = titled;
+    }
+
+    /// The bar Obelus draws along the top, where it draws one. Handed over
+    /// every frame, for the same reason.
+    pub(crate) const fn bar(&mut self, bar: Option<crate::title::Drawn>) {
+        self.bar = bar;
     }
 
     /// What is behind a pane, blurred: across into the scratch picture,
