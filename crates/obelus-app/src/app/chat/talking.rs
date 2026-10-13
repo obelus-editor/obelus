@@ -2536,8 +2536,9 @@ impl App {
         took
     }
 
-    /// Says whether the reader is in the middle of writing, after a key to
-    /// the box: whether there are words in it.
+    /// Says whether the reader is in the middle of writing, after a key
+    /// that went to anything here but a card: whether there are words in
+    /// the box.
     ///
     /// And while a question is held, puts back the clock that lets it in --
     /// whatever the key was, because a reader pressing keys is a reader who

@@ -635,8 +635,11 @@ impl App {
         }
         // Down the key's own path: what enter does to the row under the
         // pointer is what that row is for, and a second answer about it
-        // would be a second answer to keep alike.
-        self.card_key(&enter());
+        // would be a second answer to keep alike. The whole of that path,
+        // so a press that answers is the reader at work the way the key
+        // is, and the second press of a double click does not answer the
+        // question the first one put up.
+        self.chat_key(&enter());
         true
     }
 

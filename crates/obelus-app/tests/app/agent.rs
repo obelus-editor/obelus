@@ -5332,6 +5332,47 @@ fn a_question_that_arrives_while_the_reader_writes_waits_behind_the_box() {
     );
 }
 
+/// The press that answered one question does not answer the next: a
+/// double click on an answer is one answer, the way two enters are.
+///
+/// Broken deliberately by giving the press to the card alone
+/// (`self.card_key(&enter())` in `press_in_card`, as it was): the second
+/// press answers the second question too.
+#[test]
+fn the_press_that_answered_one_question_does_not_answer_the_next() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/pair");
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "both questions", |app| {
+        app.card().is_some() && said_in_transcript(app, "Read the second file")
+    });
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let y = rows(&dump)
+        .iter()
+        .position(|row| row.contains("Allow once"))
+        .unwrap_or_else(|| panic!("no answer on the card:\n{dump}"));
+    let y = u16::try_from(y).expect("a row on the screen");
+    for _ in 0..2 {
+        app.handle(Event::Pointer {
+            kind: obelus_app::event::Pointer::Pressed,
+            x: 6,
+            y,
+        });
+    }
+    assert!(
+        app.is_asking_permission(),
+        "the second press answered the second question"
+    );
+    pump(&mut app, &events, "the first answer", |app| {
+        said_in_transcript(app, "the first was")
+    });
+    assert!(said_in_transcript(&app, "the first was [once]"));
+}
+
 /// A question that arrives while the reader is choosing one of the agent's
 /// commands leaves the list up, and the enter they press chooses from it.
 ///
