@@ -359,12 +359,14 @@ impl Spells for TodoView {
             .is_some_and(|writing| writing.hold_written(from, said))
     }
 
-    fn spelling(&mut self, from: obelus_editing::Cursor, said: &str, before: &str) {
-        if let Some(writing) = self.writing_mut() {
-            writing.spelling(from, said, before);
-        }
+    fn spelling(&mut self, from: obelus_editing::Cursor, said: &str, before: &str) -> String {
+        let landed = self
+            .writing_mut()
+            .map(|writing| writing.spelling(from, said, before))
+            .unwrap_or_default();
         self.rebuild();
         self.follow_caret();
+        landed
     }
 
     fn take_back(&mut self, from: obelus_editing::Cursor, said: &str) -> bool {

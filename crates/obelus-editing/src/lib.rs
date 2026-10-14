@@ -901,6 +901,13 @@ impl Editing {
         self.place(at.line, at.column, width);
     }
 
+    /// What has been written from `from` to the caret: what a box that
+    /// refuses some characters actually took of what it was given.
+    #[must_use]
+    pub fn written_since(&self, from: Cursor) -> String {
+        span_between(from, self.cursor).map_or_else(String::new, |span| self.text.text_in(span))
+    }
+
     /// Says that `said`, written in from `from`, is what an input method
     /// is spelling -- or, with nothing said, that it is spelling nothing.
     pub fn spelling(&mut self, from: Cursor, said: &str) {

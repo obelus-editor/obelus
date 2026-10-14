@@ -1949,6 +1949,10 @@ impl ApplicationHandler<Waking> for Showing {
                     self.tell(Event::Shifted(false));
                 }
                 self.modifiers = ModifiersState::empty();
+                // And a word half spelled: some input methods drop it
+                // without a word when the window goes, and its letters are
+                // written in the reader's text, so they would stay there.
+                self.give_up_spelling();
             }
             WindowEvent::ModifiersChanged(modifiers) => {
                 let shifted = modifiers.state().shift_key();

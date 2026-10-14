@@ -919,3 +919,27 @@ fn every_box_on_the_status_row_spells() {
         );
     }
 }
+
+/// A box that takes only some characters takes only those of a spelling,
+/// and the next spelling goes over what it took rather than over what it
+/// was offered -- so nothing of the last one is left behind.
+///
+/// Broken deliberately by keeping what was offered rather than what landed
+/// in `App::spell`: the next spelling is not found, and the line number
+/// reads `112`.
+#[test]
+fn a_box_that_takes_some_characters_spells_with_those() {
+    let mut app = reading();
+    open(&mut app, Layer::Prompt);
+    let said = |app: &App| app.prompt().map(|prompt| prompt.text());
+    app.handle(obelus_app::event::Event::Spelling("1a".to_string(), None));
+    assert_eq!(said(&app).as_deref(), Some("1"));
+    app.handle(obelus_app::event::Event::Spelling("1a2".to_string(), None));
+    assert_eq!(
+        said(&app).as_deref(),
+        Some("12"),
+        "the last spelling was left"
+    );
+    app.handle(obelus_app::event::Event::Spelling(String::new(), None));
+    assert_eq!(said(&app).as_deref(), Some(""));
+}

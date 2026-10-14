@@ -875,11 +875,12 @@ impl App {
                     return;
                 }
                 self.paste_text(said);
-                if let (Some(spelling), Some(from)) = (self.spelled_into(), from) {
-                    spelling.spelling(from, said, &caret_after);
-                }
-                self.spelt = from.filter(|_| !said.is_empty()).map(|from| Spelt {
-                    said: said.to_string(),
+                let landed = match (self.spelled_into(), from) {
+                    (Some(spelling), Some(from)) => spelling.spelling(from, said, &caret_after),
+                    _ => String::new(),
+                };
+                self.spelt = from.filter(|_| !landed.is_empty()).map(|from| Spelt {
+                    said: landed,
                     from,
                     at: here,
                     took: false,

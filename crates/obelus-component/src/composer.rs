@@ -103,13 +103,13 @@ impl crate::spelling::Spells for Composer {
         self.writing.hold_written(from, said)
     }
 
-    fn spelling(&mut self, from: obelus_editing::Cursor, said: &str, before: &str) {
-        self.writing.spelling(from, said);
-        // Only into letters that landed: a box that refuses them -- a line
-        // number takes digits -- has nothing of the spelling to be in.
-        if self.writing.spelled().is_some() {
+    fn spelling(&mut self, from: obelus_editing::Cursor, said: &str, before: &str) -> String {
+        let landed = self.writing.written_since(from);
+        self.writing.spelling(from, &landed);
+        if landed == said && self.writing.spelled().is_some() {
             self.writing.place_after(from, before, u16::MAX);
         }
+        landed
     }
 
     fn take_back(&mut self, from: obelus_editing::Cursor, said: &str) -> bool {

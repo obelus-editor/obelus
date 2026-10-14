@@ -178,10 +178,11 @@ impl Painter {
 
     /// One line under one run of cells.
     ///
-    /// One line for every underlined cell: what a server says is wrong
-    /// with a word and what an input method is in the middle of spelling
-    /// over a program are the same mark, and a window that drew them two
-    /// thicknesses would be saying they were two different things.
+    /// One line, one thickness, for every underline a view wrote: what a
+    /// server says is wrong with a word, a link, a heading. What an input
+    /// method is still spelling is the one drawn otherwise, dotted -- see
+    /// `dotted` -- and in this same thickness, so the two differ in the one
+    /// way that says what each is.
     pub(super) fn underline(
         &mut self,
         left: f32,

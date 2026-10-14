@@ -23,10 +23,15 @@ pub trait Spells {
     /// there, and says whether it was.
     fn hold_written(&mut self, from: Cursor, said: &str) -> bool;
 
-    /// Says `said`, just written in from `from`, is what an input method is
-    /// spelling -- which is what draws the line under it -- and puts the
-    /// caret `before` into it, where the input method has its own.
-    fn spelling(&mut self, from: Cursor, said: &str, before: &str);
+    /// Says what was just written in from `from` is what an input method
+    /// is spelling -- which is what draws the line under it -- and hands
+    /// back what that is.
+    ///
+    /// Which is not always `said`: a box that takes only some characters
+    /// took only those, and the next spelling is written over what is
+    /// there, not over what was offered. Where all of `said` went in, the
+    /// caret goes `before` into it, where the input method has its own.
+    fn spelling(&mut self, from: Cursor, said: &str, before: &str) -> String;
 
     /// Takes `said`, written in from `from`, back out, where it is still
     /// there -- and says whether it was.
