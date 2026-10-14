@@ -1609,22 +1609,37 @@ impl ApplicationHandler<Waking> for Showing {
                 // And what is no longer on the screen is no longer kept.
                 let lanes: Vec<Lane> = self.scrolled.iter().map(Rolling::lane).collect();
                 self.motion.bands_drawn(&lanes);
+                // Both are said again after every change to the settings,
+                // and are nearly always what they already are -- so only a
+                // real change counts as one. Counting the saying was a
+                // change of theme from the settings page with no
+                // recolouring: the theme is a setting too, and the same
+                // change of settings said the faces and the size.
+                let refaced = faces.is_some_and(|names| {
+                    self.fonts
+                        .as_mut()
+                        .is_some_and(|fonts| fonts.use_families(&names))
+                });
+                #[expect(
+                    clippy::cast_precision_loss,
+                    reason = "a size in points, which is two digits"
+                )]
+                let resized = sized
+                    .map(|points| points as f32)
+                    .filter(|points| (points - self.points).abs() > f32::EPSILON);
                 // A cell of another size is a screen the kept one was not
                 // laid out for, and a pane cut from it would be cut from the
                 // wrong place: what was leaving is simply gone, as it is
                 // when the window is resized.
-                if faces.is_some() || sized.is_some() {
+                if refaced || resized.is_some() {
                     self.left = None;
                     self.recolouring = None;
                 }
-                if let Some(names) = faces {
+                if refaced {
                     // Which faces text is drawn in decides how wide a cell
                     // is, so this is the same work a new size is: measure
                     // again, throw away the glyphs, and tell the
                     // application what the grid has become.
-                    if let Some(fonts) = self.fonts.as_mut() {
-                        fonts.use_families(&names);
-                    }
                     if let Some(painter) = self.painter.as_mut() {
                         painter.forget_the_glyphs();
                     }
@@ -1632,17 +1647,8 @@ impl ApplicationHandler<Waking> for Showing {
                     self.tell(Event::Resize);
                     self.redraw();
                 }
-                if let Some(points) = sized {
-                    #[expect(
-                        clippy::cast_precision_loss,
-                        reason = "a size in points, which is two digits"
-                    )]
-                    let points = points as f32;
-                    // Said on the way up as well as on a change, so this is
-                    // usually the size it already is.
-                    if (points - self.points).abs() > f32::EPSILON {
-                        self.redraw_at(points);
-                    }
+                if let Some(points) = resized {
+                    self.redraw_at(points);
                 }
                 if drew {
                     self.allow_the_input_method();
