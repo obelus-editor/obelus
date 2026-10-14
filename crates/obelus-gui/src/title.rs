@@ -708,6 +708,9 @@ pub(crate) fn follow(window: &Window, ground: Color) {
         false => Theme::Light,
     }));
     painted(window, rgb);
+    // A new appearance is a new layout of the bar, and the buttons go back
+    // to the top of it.
+    centre_the_buttons(window);
 }
 
 /// Whether a colour is one the system should write light ink on.

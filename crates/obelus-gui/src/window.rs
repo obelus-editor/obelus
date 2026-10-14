@@ -708,6 +708,15 @@ impl Showing {
         }
     }
 
+    /// Puts the system's buttons back in the middle of the bar, at the
+    /// moments AppKit lays it out again without the window being measured --
+    /// see `title::centre_the_buttons`.
+    fn centre_the_buttons(&self) {
+        if let Some(window) = self.window.as_ref() {
+            crate::title::centre_the_buttons(window);
+        }
+    }
+
     /// Works out how many columns and rows the window now holds, and tells
     /// both sides.
     fn remeasure(&mut self) {
@@ -1983,6 +1992,7 @@ impl ApplicationHandler<Waking> for Showing {
             WindowEvent::Occluded(covered) => {
                 self.covered = covered;
                 if !covered {
+                    self.centre_the_buttons();
                     self.redraw();
                 }
             }
@@ -1991,6 +2001,7 @@ impl ApplicationHandler<Waking> for Showing {
             // fainter there.
             WindowEvent::Focused(true) => {
                 self.active = true;
+                self.centre_the_buttons();
                 if self.motion.focused(true, Instant::now()) || self.bar.is_some() {
                     self.redraw();
                 }
