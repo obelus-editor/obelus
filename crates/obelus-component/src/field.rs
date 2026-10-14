@@ -113,6 +113,13 @@ impl Field {
         self.writing.cursor().column
     }
 
+    /// Which characters an input method is still spelling, if it is.
+    #[must_use]
+    pub fn spelled(&self) -> Option<std::ops::Range<usize>> {
+        let span = self.writing.spelled()?;
+        Some(span.column.get()..span.end_column.get())
+    }
+
     /// Which characters are held, if any are.
     #[must_use]
     pub fn held(&self) -> Option<std::ops::Range<usize>> {
@@ -353,6 +360,34 @@ impl Field {
         let said = self.said();
         self.replace("");
         said
+    }
+}
+
+impl crate::spelling::Spells for Field {
+    fn writes_from(&self) -> obelus_editing::Cursor {
+        self.writing.writes_from()
+    }
+
+    fn hold_written(&mut self, from: obelus_editing::Cursor, said: &str) -> bool {
+        self.writing.hold_written(from, said)
+    }
+
+    fn spelling(&mut self, from: obelus_editing::Cursor, said: &str, before: &str) -> String {
+        let landed = self.writing.written_since(from);
+        self.writing.spelling(from, &landed);
+        if landed == said && self.writing.spelled().is_some() {
+            self.writing.place_after(from, before, ROOM);
+        }
+        landed
+    }
+
+    fn take_back(&mut self, from: obelus_editing::Cursor, said: &str) -> bool {
+        if !self.writing.hold_written(from, said) {
+            return false;
+        }
+        let _ = self.writing.cut(ROOM);
+        self.writing.spelling(from, "");
+        true
     }
 }
 

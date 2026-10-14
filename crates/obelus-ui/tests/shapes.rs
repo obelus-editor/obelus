@@ -88,6 +88,8 @@ impl obelus_ui::shapes::Shapes for Heard {
 
     fn linked(&self, _area: Rect) {}
 
+    fn spelled(&self, _area: Rect) {}
+
     fn paired(&self, _area: Rect, _pair: obelus_ui::shapes::Pair) {}
 
     fn parted(&self, _area: Rect) {}

@@ -14,7 +14,7 @@ use super::{
     *,
 };
 use crate::{
-    grid::{Going, Page, Said, Spelling},
+    grid::{Going, Page, Said},
     motion::Moving,
 };
 
@@ -682,17 +682,15 @@ impl Painter {
         self.drawings.insert((id, focused), svg);
     }
 
-    /// Draws a page, the marks on it, and whatever is being spelled over
-    /// it.
+    /// Draws a page and the marks on it.
     pub(crate) fn paint(
         &mut self,
         page: &Page,
         fonts: &mut Fonts,
-        spelling: Option<&Spelling>,
         moving: Moving,
         said: Said<'_>,
     ) -> Result<()> {
-        self.lay(page, fonts, spelling, moving, said);
+        self.lay(page, fonts, moving, said);
         self.picture_while_wanted();
         if self.placed.going.is_none() {
             self.left = None;
@@ -765,7 +763,7 @@ impl Painter {
     pub(crate) fn keep(&mut self, page: &Page, fonts: &mut Fonts, said: Said<'_>, going: &[Going]) {
         let cell = fonts.cell();
         self.bar_left_out = true;
-        self.lay(page, fonts, None, Moving::still(), said);
+        self.lay(page, fonts, Moving::still(), said);
         self.bar_left_out = false;
         // Cut where its glass is, which is where it was cut from what was
         // under it: the half row above a list's rule is the file, and taken
@@ -838,7 +836,6 @@ impl Painter {
         self.lay(
             page,
             fonts,
-            None,
             Moving {
                 recoloured,
                 ..Moving::still()

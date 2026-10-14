@@ -251,7 +251,13 @@ pub fn cursor_position(area: Rect, app: &impl Screen) -> Option<Position> {
                 // And the notes, which are written into the same way.
                 Shown::Notes(notes) => return todo::caret(regions.editor, notes),
                 // And a terminal, whose caret is its program's cursor.
-                Shown::Terminal(terminal) => return terminal::caret(regions.editor, terminal),
+                Shown::Terminal(terminal) => {
+                    return terminal::caret(
+                        regions.editor,
+                        terminal,
+                        app.spelling_over_a_program(),
+                    );
+                }
                 Shown::File(_) | Shown::Reading(_) | Shown::Nothing => {}
             }
         }

@@ -227,6 +227,12 @@ pub struct App {
     /// replaced the selection itself. The version is what says nothing came
     /// between them.
     spelled_over: Option<(DocumentId, i32)>,
+    /// What an input method last wrote in, so that what it spells next can
+    /// be written over it -- see [`App::spell`].
+    spelt: Option<editor::moving::Spelt>,
+    /// What an input method is spelling at a terminal's program, which is
+    /// drawn over its screen and sent nothing until it is a word.
+    spelling_over_a_program: Option<String>,
     /// The colours in force, and the name they answer to.
     ///
     /// Owned rather than borrowed from the built-in ones, because a theme
@@ -590,6 +596,8 @@ impl App {
             travelled: 0,
             looked_from: None,
             spelled_over: None,
+            spelt: None,
+            spelling_over_a_program: None,
             keymap: Keymap::new(),
             documents,
             current,

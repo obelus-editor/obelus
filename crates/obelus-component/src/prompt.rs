@@ -260,6 +260,18 @@ impl Prompt {
         self.text.held()
     }
 
+    /// What an input method's spelling is written into -- see
+    /// [`crate::spelling`].
+    pub fn spells(&mut self) -> &mut dyn crate::spelling::Spells {
+        &mut self.text
+    }
+
+    /// Which characters of the answer an input method is still spelling.
+    #[must_use]
+    pub fn spelled(&self) -> Option<std::ops::Range<usize>> {
+        self.text.spelled()
+    }
+
     /// Puts a run of text into the answer, which is what a paste is.
     pub fn put(&mut self, said: &str) {
         self.text.put(said);

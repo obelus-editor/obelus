@@ -385,6 +385,16 @@ pub trait Shapes: Send + Sync {
     /// words are on.
     fn linked(&self, area: Rect);
 
+    /// These cells are what an input method is still spelling.
+    ///
+    /// A terminal says it in the underline the view wrote. A window draws
+    /// that line dotted, which is how an input method's own spelling is
+    /// drawn and what tells it apart from a line a server put under a word
+    /// it complained about.
+    ///
+    /// One cell or one character at a time, as each is drawn.
+    fn spelled(&self, area: Rect);
+
     /// This cell is one half of the pair of brackets the cursor is on or
     /// inside.
     ///
@@ -516,6 +526,13 @@ pub(crate) fn sheened(area: Rect, from: Color, to: Color) {
 pub(crate) fn linked(area: Rect) {
     if let Some(shapes) = DRAWING.get() {
         shapes.linked(area);
+    }
+}
+
+/// Tells whoever is drawing that what an input method is spelling is here.
+pub(crate) fn spelled(area: Rect) {
+    if let Some(shapes) = DRAWING.get() {
+        shapes.spelled(area);
     }
 }
 

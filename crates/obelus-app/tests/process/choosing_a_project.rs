@@ -261,27 +261,26 @@ fn typing_moves_the_reader_off_a_row_that_has_changed() {
     );
 }
 
-/// An input method beginning a word with nothing held is nothing at all,
-/// rather than a paste of nothing -- which is a paste for all that, and
-/// moves the reader to the top as the word would. A word given up with
-/// escape never arrives, and the reader was moved for nothing.
+/// An input method saying it is spelling nothing, where it had spelled
+/// nothing, is nothing at all -- rather than a paste of nothing, which is
+/// a paste for all that, and moves the reader to the top as a word would.
 ///
-/// Broken deliberately by pasting nothing whether or not anything is held,
-/// in `App::spelling_begins`: the reader is back on the first row.
+/// Broken deliberately by pasting nothing whether or not a spelling is
+/// being taken back, in `App::spell`: the reader is back on the first row.
 #[test]
-fn a_word_begun_over_nothing_held_moves_nothing() {
+fn a_spelling_of_nothing_moves_nothing() {
     let _turn = crate::turn();
     let mut app = asking();
     press(&mut app, KeyCode::Down);
     press(&mut app, KeyCode::Down);
     assert_eq!(app.choosing().expect("asking").at, 2, "it did not move");
 
-    app.handle(obelus_app::event::Event::Spelling);
+    app.handle(obelus_app::event::Event::Spelling(String::new(), None));
 
     assert_eq!(
         app.choosing().expect("asking").at,
         2,
-        "beginning a word over nothing held moved the reader"
+        "a spelling of nothing moved the reader"
     );
 }
 

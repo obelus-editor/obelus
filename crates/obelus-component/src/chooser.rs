@@ -185,6 +185,12 @@ impl Chooser {
         }
     }
 
+    /// What an input method's spelling is written into -- see
+    /// [`crate::spelling`].
+    pub fn spells(&mut self) -> &mut dyn crate::spelling::Spells {
+        self.typing_mut()
+    }
+
     /// The same, to change.
     fn typing_mut(&mut self) -> &mut Field {
         match &mut self.doing {

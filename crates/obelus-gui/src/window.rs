@@ -24,19 +24,18 @@
 //! event to the loop it is parked in. That is what the proxy is for, and it
 //! is why the backend holds one.
 //!
-//! **What an input method is spelling is on the page, and is not in the
-//! file.** Typing Chinese is spelling a word before it exists: several
-//! keypresses that are not characters, and then one character that is. The
-//! window draws that spelling itself, over the cells to the right of the
-//! caret, underlined, in the colours of the place it is going into -- and
-//! the application is never told what it says. Not because it could not
-//! be: because what would arrive is half-typed pinyin in a buffer with an
-//! undo history and a file that has changed. What arrives instead, when the
-//! input method commits, is a paste -- which is the same question Obelus
-//! already answered about where typed text goes when several things are on
-//! screen. The application is told only that a word has *begun*, because
-//! what the reader has hold of goes then, as it does in every other
-//! editor, and is not brought back by giving the word up.
+//! **What an input method is spelling is written in, the way Zed does it.**
+//! Typing Chinese is spelling a word before it exists: several keypresses
+//! that are not characters, and then one character that is. Every change to
+//! the spelling goes to the application, which writes it where the reader
+//! is writing, over the spelling before it -- so it wraps where the box
+//! wraps and pushes along what comes after it, as the word will. The window
+//! once drew it over the cells after the caret instead, and a word spelled
+//! at the end of a row ran on off the side of the box and of the screen.
+//! When the input method commits, the word arrives as a paste, which is the
+//! same question Obelus already answered about where typed text goes when
+//! several things are on screen; the application has already been told the
+//! spelling is over by then, and the word goes where it was.
 //!
 //! The keys during that spelling belong to the input method, so a plain
 //! character is swallowed while one is being composed: it is arriving
@@ -73,7 +72,7 @@ use crate::{
     blink::Blink,
     grid::{
         Barred, Behind, Capped, Cells, Going, Marked, Marking, Measured, Page, Paired, Parted,
-        Rolled, Ruled, Said, Sheened, Spelling, Spun, Stroked, Ticked, Update,
+        Rolled, Ruled, Said, Sheened, Spun, Stroked, Ticked, Update,
     },
     keys,
     motion::{Lane, Motion, Wake},
@@ -150,6 +149,7 @@ struct Left {
     spun: Vec<Spun>,
     showing: Vec<Barred>,
     ruled: Vec<Ruled>,
+    spelled: Vec<(Rect, usize)>,
     sheened: Option<Sheened>,
     parted: Vec<Parted>,
     stroked: Vec<Stroked>,
@@ -182,6 +182,7 @@ impl Left {
             spun: &self.spun,
             barred: &self.showing,
             ruled: &self.ruled,
+            spelled: &self.spelled,
             sheened: self.sheened.as_ref(),
             parted: &self.parted,
             stroked: &self.stroked,
@@ -344,13 +345,6 @@ struct Showing {
     /// `o` is spelling one character, and passing those presses on as well
     /// would put the spelling in the file and the word after it.
     composing: bool,
-    /// What an input method is spelling, and where its own caret is in it.
-    ///
-    /// The window's, not the application's: the word is not in the file
-    /// yet, and telling the application about a word that may never be
-    /// committed would be putting somebody's half-typed pinyin into a
-    /// buffer with an undo history.
-    spelling: Option<Spelling>,
     /// Where the input method was last told the caret is, in pixels:
     /// left, top, width, height.
     ///
@@ -442,6 +436,11 @@ struct Showing {
     linked: Vec<(Rect, usize)>,
     /// And on the one being laid out.
     linking: Vec<(Rect, usize)>,
+    /// Which cells are what an input method is still spelling on the frame
+    /// being shown.
+    spelled: Vec<(Rect, usize)>,
+    /// And on the one being laid out.
+    spelling_out: Vec<(Rect, usize)>,
     /// Whether the pointer is a hand, so that it is changed only when
     /// what is under it does.
     pointing: bool,
@@ -555,7 +554,6 @@ impl Showing {
             active: true,
             rolled: 0.0,
             composing: false,
-            spelling: None,
             pointed: None,
             allowed: false,
             on_x11: false,
@@ -590,6 +588,8 @@ impl Showing {
             ruling: Vec::new(),
             linked: Vec::new(),
             linking: Vec::new(),
+            spelled: Vec::new(),
+            spelling_out: Vec::new(),
             pointing: false,
             scrolled: Vec::new(),
             scrolling: Vec::new(),
@@ -781,10 +781,16 @@ impl Showing {
             // than waited for, because Windows takes the context away
             // without a word, and `composing` left standing swallows every
             // plain key after it.
-            false => {
-                self.composing = false;
-                self.spelling = None;
-            }
+            false => self.give_up_spelling(),
+        }
+    }
+
+    /// Says a word half spelled is over, where one was: its letters are
+    /// written in, and an input method that goes away without a word would
+    /// leave them there.
+    fn give_up_spelling(&mut self) {
+        if std::mem::take(&mut self.composing) {
+            self.tell(Event::Spelling(String::new(), None));
         }
     }
 
@@ -792,12 +798,9 @@ impl Showing {
     /// are drawn beside the word being typed rather than in the corner of
     /// the screen.
     ///
-    /// Asked on every frame and on every change to what is being spelled,
-    /// and said only when the answer moved -- see `pointed`. The spelling
-    /// is the one that matters: the window draws it without Obelus hearing
-    /// of it, so no frame comes while a word grows, and on macOS and
-    /// Windows the candidates go wherever this last said. Asked on frames
-    /// alone, they stayed at the first letter of the pinyin.
+    /// Asked on every frame, and said only when the answer moved -- see
+    /// `pointed`. The caret is the application's, after the spelling it has
+    /// written in, so the candidates follow the word as it grows and wraps.
     fn point_the_input_method(&mut self) {
         let (Some(window), Some(fonts), Some(caret)) =
             (self.window.as_ref(), self.fonts.as_ref(), self.page.caret())
@@ -805,18 +808,11 @@ impl Showing {
             return;
         };
         let cell = fonts.cell();
-        // Past what is being spelled, so the candidates sit under the end
-        // of the word rather than under the character it started at.
-        let along = self.spelling.as_ref().map_or(0, Spelling::columns);
-        // And put back on here, for the same reason: what an input method
-        // is told is a place in the window, not a place in the grid.
+        // The margin put back on: what an input method is told is a place
+        // in the window, not a place in the grid.
         let margin = self.margin();
-        #[expect(
-            clippy::cast_precision_loss,
-            reason = "a caret is a few columns into what is being spelled"
-        )]
         let area = [
-            (f32::from(caret.x) + along as f32) * cell.width + margin[0],
+            f32::from(caret.x) * cell.width + margin[0],
             f32::from(caret.y) * cell.height + margin[1],
             cell.width,
             cell.height,
@@ -1256,6 +1252,7 @@ impl ApplicationHandler<Waking> for Showing {
                                 spun: self.spun.clone(),
                                 showing: self.showing.clone(),
                                 ruled: self.ruled.clone(),
+                                spelled: self.spelled.clone(),
                                 sheened: self.sheened,
                                 parted: self.parted.clone(),
                                 stroked: self.stroked.clone(),
@@ -1410,6 +1407,9 @@ impl ApplicationHandler<Waking> for Showing {
                         Update::Linked { area } => {
                             self.linking.push((area, self.stacking.len()));
                         }
+                        Update::Spelled { area } => {
+                            self.spelling_out.push((area, self.stacking.len()));
+                        }
                         Update::Paired { area, pair } => self.pairing.push(Paired {
                             area,
                             pair,
@@ -1449,6 +1449,7 @@ impl ApplicationHandler<Waking> for Showing {
                                     spun: std::mem::take(&mut self.spun),
                                     showing: self.showing.clone(),
                                     ruled: std::mem::take(&mut self.ruled),
+                                    spelled: std::mem::take(&mut self.spelled),
                                     sheened: self.sheened.take(),
                                     parted: std::mem::take(&mut self.parted),
                                     stroked: std::mem::take(&mut self.stroked),
@@ -1489,6 +1490,7 @@ impl ApplicationHandler<Waking> for Showing {
                             );
                             self.ruled = std::mem::take(&mut self.ruling);
                             self.linked = std::mem::take(&mut self.linking);
+                            self.spelled = std::mem::take(&mut self.spelling_out);
                             // Only where the page still holds it: the
                             // welcome screen is what every list is opened
                             // over, and a light run across a list lights
@@ -1915,7 +1917,6 @@ impl ApplicationHandler<Waking> for Showing {
                 if let Err(error) = painter.paint(
                     &self.page,
                     fonts,
-                    self.spelling.as_ref(),
                     self.motion.moving(now),
                     Said {
                         marked: &self.marked,
@@ -1924,6 +1925,7 @@ impl ApplicationHandler<Waking> for Showing {
                         spun: &self.spun,
                         barred: &self.showing,
                         ruled: &self.ruled,
+                        spelled: &self.spelled,
                         sheened: self.sheened.as_ref(),
                         parted: &self.parted,
                         stroked: &self.stroked,
@@ -2006,6 +2008,10 @@ impl ApplicationHandler<Waking> for Showing {
                     self.tell(Event::Shifted(false));
                 }
                 self.modifiers = ModifiersState::empty();
+                // And a word half spelled: some input methods drop it
+                // without a word when the window goes, and its letters are
+                // written in the reader's text, so they would stay there.
+                self.give_up_spelling();
             }
             WindowEvent::ModifiersChanged(modifiers) => {
                 let shifted = modifiers.state().shift_key();
@@ -2017,42 +2023,34 @@ impl ApplicationHandler<Waking> for Showing {
             WindowEvent::Ime(ime) => {
                 self.stir();
                 match ime {
-                    // The spelling so far, drawn in the file at the place the
-                    // word will go. An input method draws a window of its own
-                    // for the candidates and Obelus leaves that alone; what it
-                    // will not leave alone is *where the word is being typed*,
-                    // which belongs on the page with the code it is going into.
+                    // The spelling so far, written in where the word will go.
+                    // An input method draws a window of its own for the
+                    // candidates and Obelus leaves that alone; what it will
+                    // not leave alone is *where the word is being typed*,
+                    // which is in the box with the words it is going among.
                     Ime::Preedit(spelling, caret) => {
-                        // As it arrived: where an input method says its own
-                        // caret is differs by input method and by
-                        // compositor, and a caret drawn in the wrong place
-                        // is otherwise a question with no answer to look at.
+                        // As it arrived: what an input method sends differs
+                        // by input method and by compositor, and is otherwise
+                        // a question with no answer to look at.
                         tracing::debug!(?spelling, ?caret, "the input method is spelling");
-                        // A word begun takes what the reader has hold of,
-                        // the way the first letter typed over it would --
-                        // said before the spelling is drawn, so that it is
-                        // drawn where the held text was.
-                        if !self.composing && !spelling.is_empty() {
-                            self.tell(Event::Spelling);
+                        // Where nothing was being spelled and nothing is, an
+                        // input method saying so is news to nobody.
+                        if self.composing || !spelling.is_empty() {
+                            self.composing = !spelling.is_empty();
+                            let caret = caret_in(&spelling, caret);
+                            self.tell(Event::Spelling(spelling, caret));
                         }
-                        self.composing = !spelling.is_empty();
-                        self.spelling = Spelling::new(spelling, caret);
-                        self.point_the_input_method();
-                        self.redraw();
                     }
                     // The word. It goes in the way pasted text goes in --
                     // wherever the reader is writing, as one change -- because
                     // that is the same question and it is already answered.
+                    // An empty spelling has come first and taken the letters
+                    // back out.
                     Ime::Commit(word) => {
                         self.composing = false;
-                        self.spelling = None;
                         self.tell(Event::Paste(word));
                     }
-                    Ime::Enabled | Ime::Disabled => {
-                        self.composing = false;
-                        self.spelling = None;
-                        self.redraw();
-                    }
+                    Ime::Enabled | Ime::Disabled => self.give_up_spelling(),
                 }
             }
             WindowEvent::KeyboardInput {
@@ -2485,8 +2483,55 @@ impl Regrid {
     }
 }
 
+/// How many characters of a spelling come before the input method's own
+/// caret, or `None` for after all of them.
+///
+/// `caret` is as winit hands it on: a run of bytes, or nothing for a caret
+/// the input method would rather not show. A run whose two ends meet is a
+/// caret; one whose ends differ is text the input method is highlighting,
+/// and the caret is its *far* end, which is where typing carries on from.
+/// fcitx5 says `(0, 6)` for `ni hao` -- the whole of it, ending where the
+/// next letter goes -- and a caret taken from the near end sat at the front
+/// of the pinyin however much was typed.
+///
+/// In characters rather than bytes: the application counts where it goes
+/// in a text, and a byte offset into what is being spelled is not one.
+fn caret_in(spelling: &str, caret: Option<(usize, usize)>) -> Option<usize> {
+    let (_, end) = caret?;
+    Some(
+        spelling
+            .get(..end)
+            .map_or(0, |before| before.chars().count()),
+    )
+}
+
 #[cfg(test)]
 mod tests {
+    /// The caret in a spelling is at the far end of what the input method
+    /// named, which is where the next letter goes.
+    ///
+    /// Deliberate break: take the near end, `Some((start, _))`, as this
+    /// once did. The first case below is what fcitx5 actually sent, read
+    /// off the log, and with the near end the caret sat at the front of
+    /// the pinyin however much of it had been typed.
+    #[test]
+    fn a_spelling_carries_on_from_the_far_end_of_what_is_named() {
+        use super::caret_in;
+        assert_eq!(
+            caret_in("ni hao", Some((0, 6))),
+            Some(6),
+            "fcitx5's whole run"
+        );
+        assert_eq!(
+            caret_in("ni hao", Some((2, 2))),
+            Some(2),
+            "a caret of its own"
+        );
+        assert_eq!(caret_in("ni hao", None), None, "a caret not shown");
+        // Bytes in, characters out: two characters of Chinese are six bytes.
+        assert_eq!(caret_in("\u{4f60}\u{597d}hao", Some((0, 6))), Some(2));
+    }
+
     use std::time::{Duration, Instant};
 
     use ratatui::layout::Rect;

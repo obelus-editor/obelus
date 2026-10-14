@@ -1104,12 +1104,24 @@ impl Settings {
         self.query.held()
     }
 
+    /// Which characters of it an input method is still spelling.
+    #[must_use]
+    pub fn query_spelled(&self) -> Option<std::ops::Range<usize>> {
+        self.query.spelled()
+    }
+
     /// Whether the key the foot calls delete is the filter's just now
     /// rather than the row's (`Field::delete_is_the_rows`): on a Mac that
     /// is backspace, which the filter keeps while anything is in it.
     #[must_use]
     pub fn delete_is_the_filters(&self) -> bool {
         !self.query.delete_is_the_rows()
+    }
+
+    /// What an input method's spelling is written into -- see
+    /// [`crate::spelling`].
+    pub fn spells(&mut self) -> &mut dyn crate::spelling::Spells {
+        &mut self.query
     }
 
     /// Puts a run of text into it, which is what a paste is.

@@ -1006,6 +1006,7 @@ impl crate::app::App {
             typed: chooser.typing().said(),
             caret: chooser.typing().caret().get(),
             held: chooser.typing().held(),
+            spelled: chooser.typing().spelled(),
             naming: chooser.is_naming(),
             forgets: chooser.forgets(),
             there: self.which_project.named_is_there,

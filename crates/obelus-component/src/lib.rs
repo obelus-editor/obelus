@@ -19,5 +19,6 @@ pub mod prompt;
 pub mod question;
 pub mod settings;
 pub mod signature;
+pub mod spelling;
 pub mod todo;
 pub mod window;

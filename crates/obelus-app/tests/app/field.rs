@@ -580,11 +580,59 @@ mod in_place {
         );
     }
 
+    /// What an input method spells is written into a query, each spelling
+    /// over the one before it -- so the list narrows as the letters do --
+    /// and the word over the last.
+    ///
+    /// Broken deliberately by answering `false` from
+    /// `Editing::hold_written` whatever is there: the query reads `nni`,
+    /// and giving the word up leaves it.
+    #[test]
+    fn each_spelling_is_written_over_the_last_in_a_box() {
+        let (_scratch, mut app) = open("field-spelling-over");
+        dispatch::dispatch(&mut app, Command::SearchFile);
+        support::type_text(&mut app, "a ");
+        for spelling in ["n", "ni"] {
+            app.handle(Event::Spelling(spelling.to_string(), None));
+        }
+        assert_eq!(app.picker().expect("the list").query(), "a ni");
+        app.handle(Event::Spelling(String::new(), None));
+        assert_eq!(app.picker().expect("the list").query(), "a ");
+        app.handle(Event::Paste("你".to_string()));
+        assert_eq!(app.picker().expect("the list").query(), "a 你");
+    }
+
+    /// What is being spelled in a query is underlined on the status row,
+    /// past whatever stands in front of the box.
+    ///
+    /// Broken deliberately by not shifting the spelling past what is in
+    /// front of the box in `status::held_after`: the line is under the
+    /// prompt's own characters instead.
+    #[test]
+    fn what_is_being_spelled_in_a_box_is_underlined() {
+        let (_scratch, mut app) = open("field-spelling-line");
+        dispatch::dispatch(&mut app, Command::SearchFile);
+        support::type_text(&mut app, "qq");
+        app.handle(Event::Spelling("xyz".to_string(), None));
+        let cells = support::cells_of(&mut app, 60, 12);
+        let (x, y) = support::find(&cells, "qqxyz");
+        let underlined: Vec<bool> = (0..5)
+            .map(|at| {
+                cells
+                    .cell((x + at, y))
+                    .expect("a cell")
+                    .modifier
+                    .contains(ratatui::style::Modifier::UNDERLINED)
+            })
+            .collect();
+        assert_eq!(underlined, [false, false, true, true, true]);
+    }
+
     /// A word an input method has begun takes what is held in a query, the
     /// way the first letter typed over it would.
     ///
-    /// Broken deliberately by taking the cut out of `Field::put`: a paste
-    /// of nothing puts no character, and the held word stayed.
+    /// Broken deliberately by letting go of what is held in `Field::put`
+    /// rather than cutting it: the query reads `hello nworld`.
     #[test]
     fn a_word_begun_in_a_box_takes_what_is_held() {
         let (_scratch, mut app) = open("field-spelling");
@@ -598,10 +646,10 @@ mod in_place {
         }
         assert_eq!(app.picker().expect("the list").query_held(), Some(6..11));
 
-        app.handle(Event::Spelling);
+        app.handle(Event::Spelling("n".to_string(), None));
         assert_eq!(
             app.picker().expect("the list").query(),
-            "hello ",
+            "hello n",
             "beginning a word left what was held in the query"
         );
         assert_eq!(

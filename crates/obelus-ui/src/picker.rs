@@ -772,6 +772,7 @@ impl PickerView<'_> {
                     mark: self.theme.picker_match_background,
                     syntax: None,
                     skip: item.label[..range.start].chars().count(),
+                    spelled: None,
                 },
             );
             if row == last && body.label_cut {
@@ -1087,6 +1088,7 @@ impl PickerView<'_> {
                     .filter(|runs| !runs.is_empty())
                     .map(|runs| (runs, self.theme)),
                 skip: dropped,
+                spelled: None,
             },
         );
         // In the row's own style and not the label's: the mark says the row

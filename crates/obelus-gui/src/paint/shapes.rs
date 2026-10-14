@@ -313,30 +313,50 @@ impl Painter {
     /// `letters` skips a cell with nothing in it. A terminal draws these
     /// itself, off the modifier; a window has to be told, which is the
     /// same seam a full-width character crosses.
-    pub(super) fn underlines(&mut self, page: &Page, cell: CellSize) {
+    ///
+    /// Dotted under what an input method is still spelling, where a view
+    /// said so and the cell is still that view's: the line a word nobody
+    /// has written yet wears, apart from the solid one under a word a
+    /// server complained about.
+    pub(super) fn underlines(&mut self, page: &Page, cell: CellSize, spelled: &[(Rect, usize)]) {
         for row in 0..page.rows() {
             for column in 0..page.columns() {
                 let look = page.look(column, row);
                 let Some(ink) = underline_ink(&look) else {
                     continue;
                 };
-                self.underline(
+                let (left, top, width) = (
                     f32::from(column) * cell.width,
                     f32::from(row) * cell.height,
                     f32::from(look.columns()) * cell.width,
-                    cell.height,
-                    ink,
                 );
+                match is_spelled(page, spelled, column, row) {
+                    true => self.dotted(left, top, width, cell.height, ink),
+                    false => self.underline(left, top, width, cell.height, ink),
+                }
             }
+        }
+    }
+
+    /// The same line, as a run of short dashes.
+    ///
+    /// Counted from the window's left edge rather than from the cell, so
+    /// that the dashes under a word are one run across it, and not one
+    /// that starts again at every character.
+    pub(super) fn dotted(&mut self, left: f32, top: f32, width: f32, height: f32, ink: [f32; 4]) {
+        let thick = (height * UNDERLINE).round().max(1.0);
+        for (start, end) in dashes(left, width, thick) {
+            self.block(start, top + height - thick, end - start, thick, ink);
         }
     }
 
     /// One line under one run of cells.
     ///
-    /// Two callers and one line: what a server says is wrong with a word,
-    /// and what an input method is in the middle of spelling. They are the
-    /// same mark, and a window that drew them two thicknesses would be
-    /// saying they were two different things.
+    /// One line, one thickness, for every underline a view wrote: what a
+    /// server says is wrong with a word, a link, a heading. What an input
+    /// method is still spelling is the one drawn otherwise, dotted -- see
+    /// `dotted` -- and in this same thickness, so the two differ in the one
+    /// way that says what each is.
     pub(super) fn underline(
         &mut self,
         left: f32,
@@ -1001,6 +1021,35 @@ impl Painter {
             column += obelus_text::text_width(look.text).max(1);
         }
     }
+}
+
+/// Where the dashes of a dotted line `thick` pixels thick fall between
+/// `left` and `left + width`, each from where to where.
+///
+/// A dash twice as long as the line is thick, and a gap as long, counted
+/// from the window's left edge -- see `Painter::dotted`.
+pub(super) fn dashes(left: f32, width: f32, thick: f32) -> Vec<(f32, f32)> {
+    let dash = thick * 2.0;
+    let period = dash * 2.0;
+    let mut from = (left / period).floor() * period;
+    let mut dashes = Vec::new();
+    while from < left + width {
+        let (start, end) = (from.max(left), (from + dash).min(left + width));
+        if end > start {
+            dashes.push((start, end));
+        }
+        from += period;
+    }
+    dashes
+}
+
+/// Whether this cell is what an input method is still spelling: a view
+/// said so, and nothing has been put over the cell since -- see
+/// `Page::layer`.
+pub(super) fn is_spelled(page: &Page, spelled: &[(Rect, usize)], x: u16, y: u16) -> bool {
+    spelled.iter().any(|&(area, depth)| {
+        area.contains(ratatui::layout::Position { x, y }) && page.layer(x, y) <= depth
+    })
 }
 
 /// What colour to draw the line under a cell in, where there is one.

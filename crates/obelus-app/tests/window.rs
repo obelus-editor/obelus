@@ -20,6 +20,7 @@ struct Heard {
     keys: Mutex<Vec<(String, Rect)>>,
     scrolls: Mutex<Vec<(Rect, i64)>>,
     links: Mutex<Vec<Rect>>,
+    spellings: Mutex<Vec<Rect>>,
     pairs: Mutex<Vec<(Rect, obelus_ui::shapes::Pair)>>,
 }
 
@@ -52,6 +53,12 @@ impl obelus_ui::shapes::Shapes for Heard {
     fn linked(&self, area: Rect) {
         if let Ok(mut links) = self.links.lock() {
             links.push(area);
+        }
+    }
+
+    fn spelled(&self, area: Rect) {
+        if let Ok(mut spellings) = self.spellings.lock() {
+            spellings.push(area);
         }
     }
 
@@ -781,4 +788,47 @@ fn the_pair_the_cursor_is_inside_is_said_to_a_window() {
         .collect();
     pairs.sort_by_key(|(area, _)| (area.y, area.x));
     assert_eq!(pairs, vec![(open, pair), (close, pair)], "{dump}");
+}
+
+/// What an input method is spelling is said to the window, a cell at a
+/// time, so the window can draw the line under it dotted -- and nothing
+/// round it is.
+///
+/// Deliberate break: take `shapes::spelled` out of `obelus_ui::spelling`.
+/// Nothing is said, and the window draws the line solid.
+#[test]
+fn a_spelling_says_where_it_is() {
+    use crossterm::event::KeyCode;
+
+    let _turn = turn();
+    obelus_config::drawn_in_a_window();
+    let heard = heard();
+    let scratch = support::Scratch::new("window-spelling");
+    let path = scratch.write("sample.rs", "abc\n");
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&path).expect("opening it"),
+    ]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    support::lay_out(&mut app, 40, 8);
+    support::press(&mut app, KeyCode::Right);
+    app.handle(obelus_app::event::Event::Spelling("xyz".to_string(), None));
+    if let Ok(mut spellings) = heard.spellings.lock() {
+        spellings.clear();
+    }
+    let cells = support::cells_of(&mut app, 40, 8);
+    let (x, y) = support::find(&cells, "axyzbc");
+    let mut said: Vec<Rect> = heard
+        .spellings
+        .lock()
+        .map(|spellings| spellings.clone())
+        .unwrap_or_default();
+    said.sort_by_key(|area| (area.y, area.x));
+    said.dedup();
+    assert_eq!(
+        said,
+        (1..4)
+            .map(|at| Rect::new(x + at, y, 1, 1))
+            .collect::<Vec<_>>(),
+        "not the spelling's cells and only those"
+    );
 }

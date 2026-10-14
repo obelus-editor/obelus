@@ -347,6 +347,12 @@ impl Names {
         self.window.scroll(rows);
     }
 
+    /// What an input method's spelling is written into -- see
+    /// [`crate::spelling`].
+    pub fn spells(&mut self) -> &mut dyn crate::spelling::Spells {
+        &mut self.query
+    }
+
     /// Puts pasted text in the query.
     ///
     /// The same door a key goes through, so that what was pasted narrows

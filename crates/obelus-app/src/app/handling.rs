@@ -10,6 +10,16 @@ impl App {
     /// moves, not about which key it is. Navigation belongs to whatever holds
     /// the position it moves; commands are the named actions left over.
     pub fn handle(&mut self, event: Event) {
+        // A key, a command or a press between a word given up and a word
+        // arriving: whatever arrives next is not the word the spelling was
+        // for, and joining its step would take back what the reader held
+        // before they began -- see `App::spell`.
+        if matches!(
+            event,
+            Event::Key(_) | Event::Command(_) | Event::Pointer { .. }
+        ) {
+            self.spelled_over = None;
+        }
         match event {
             Event::Key(key) => self.handle_key(key),
             // The same key, said once more for the one hearer that tells
@@ -235,7 +245,7 @@ impl App {
             // One change for the whole of it, so undoing a paste is one
             // step rather than however many lines it happened to be.
             Event::Paste(text) => self.paste_text(&text),
-            Event::Spelling => self.spelling_begins(),
+            Event::Spelling(said, caret) => self.spell(&said, caret),
             Event::Dropped(path) => self.dropped(&path),
             // A frame of the one thing moving, and nothing else: what is
             // owed at a moment is owed on a machine with nothing animated

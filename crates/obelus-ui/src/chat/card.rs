@@ -346,7 +346,8 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, card: &Card, on: Option<On>, the
                 let held = match words.held.clone() {
                     Some(held) => Marked::run(held, theme.selection_background),
                     None => Marked::plain(),
-                };
+                }
+                .spelling(words.spelled.clone());
                 write_marked(
                     cells,
                     row,

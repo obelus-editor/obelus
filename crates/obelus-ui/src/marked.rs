@@ -57,6 +57,10 @@ pub struct Marked<'a> {
     /// the start of the whole text, so a match that fell in the dropped
     /// part simply has no character left to colour.
     pub skip: usize,
+    /// Which characters an input method is still spelling, counted the way
+    /// a run is: underlined, as every input method's spelling is, to say
+    /// they are not a word yet.
+    pub spelled: Option<(usize, usize)>,
 }
 
 impl Marked<'_> {
@@ -68,6 +72,7 @@ impl Marked<'_> {
             mark: Color::Reset,
             syntax: None,
             skip: 0,
+            spelled: None,
         }
     }
 
@@ -79,6 +84,7 @@ impl Marked<'_> {
             mark,
             syntax: None,
             skip: 0,
+            spelled: None,
         }
     }
 
@@ -93,6 +99,17 @@ impl Marked<'_> {
             mark,
             syntax: None,
             skip: 0,
+            spelled: None,
+        }
+    }
+
+    /// The same text, with what an input method is spelling in it
+    /// underlined.
+    #[must_use]
+    pub fn spelling(self, spelled: Option<Range<usize>>) -> Self {
+        Self {
+            spelled: spelled.map(|spelled| (spelled.start, spelled.end)),
+            ..self
         }
     }
 }
@@ -146,9 +163,35 @@ pub fn write_marked(
             true => style.bg(marked.mark),
             false => style,
         };
+        let style = match marked.spelled {
+            Some((first, end)) if (first..end).contains(&cluster.first) => spelling(
+                style,
+                Rect::new(
+                    column,
+                    y,
+                    u16::try_from(cluster.cells.max(1)).unwrap_or(1),
+                    1,
+                ),
+            ),
+            _ => style,
+        };
         column = column.saturating_add(put_cluster(cells, column, y, cluster.text, style));
     }
     column
+}
+
+/// What a character an input method is still spelling looks like, in the
+/// cells `area` is: the line every input method draws under its spelling,
+/// in the ink -- and said to whoever is drawing, which draws it dotted.
+///
+/// One answer for every view that draws a box or a file, so the spelling
+/// looks the same wherever it is being typed.
+#[must_use]
+pub fn spelling(style: Style, area: Rect) -> Style {
+    crate::shapes::spelled(area);
+    style
+        .add_modifier(ratatui::style::Modifier::UNDERLINED)
+        .underline_color(Color::Reset)
 }
 
 #[cfg(test)]

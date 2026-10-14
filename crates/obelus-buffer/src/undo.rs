@@ -159,6 +159,16 @@ impl Undo {
         !self.undone.is_empty()
     }
 
+    /// Forgets the most recent group, which turned out to change nothing.
+    ///
+    /// A word an input method began and the reader gave up: its letters
+    /// went in and came out again, and a step that puts back nothing is a
+    /// press of undo that does nothing the reader can see.
+    pub fn forget_the_last(&mut self) {
+        self.done.pop();
+        self.open = false;
+    }
+
     /// Forgets everything, for a document that has been replaced wholesale.
     ///
     /// A re-read is not an edit anybody made, and the steps before it are

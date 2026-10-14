@@ -1848,6 +1848,61 @@ mod tests {
     };
     use crate::grid::{Barred, Capped, Page, Said, Spun, Stroked, Update};
 
+    /// The dashes under a word are one run across it: two cells drawn one
+    /// after the other put their dashes where one run as wide as both
+    /// would, and none of them is longer than a dash.
+    ///
+    /// Deliberate break: count the dashes from the cell's own left in
+    /// `shapes::dashes` (`let mut from = left;`). Every character then
+    /// starts a dash of its own, and the second cell's first dash runs on
+    /// from the first cell's last.
+    #[test]
+    fn a_dotted_line_is_one_run_across_its_cells() {
+        let (cell, thick) = (9.0, 1.0);
+        let whole = shapes::dashes(0.0, cell * 2.0, thick);
+        let mut apart = shapes::dashes(0.0, cell, thick);
+        apart.extend(shapes::dashes(cell, cell, thick));
+        // Where a dash crosses from one cell to the next, it is two pieces
+        // that meet; joined up, they are the whole run's.
+        let mut joined: Vec<(f32, f32)> = Vec::new();
+        for (start, end) in apart {
+            match joined.last_mut() {
+                Some(last) if (last.1 - start).abs() < f32::EPSILON => last.1 = end,
+                _ => joined.push((start, end)),
+            }
+        }
+        assert_eq!(joined, whole);
+        assert!(
+            whole.iter().all(|(start, end)| end - start <= thick * 2.0),
+            "a dash longer than a dash: {whole:?}"
+        );
+        assert!(whole.len() > 1, "not a dotted line: {whole:?}");
+    }
+
+    /// A cell a view said is being spelled is dotted only while nothing has
+    /// been put over it: a list opened over the box writes its own cells
+    /// there, and their underlines are the list's.
+    ///
+    /// Deliberate break: leave the `page.layer` out of `shapes::is_spelled`.
+    /// The cell under the pane still reads as spelled.
+    #[test]
+    fn a_spelling_under_a_pane_is_not_dotted() {
+        let mut page = Page::default();
+        page.resized(4, 1);
+        let spelled = [(Rect::new(0, 0, 4, 1), 0)];
+        assert!(shapes::is_spelled(&page, &spelled, 2, 0), "the spelling");
+        assert!(!shapes::is_spelled(&page, &[], 2, 0), "nothing said");
+        page.put_over(&[crate::grid::Behind {
+            area: Rect::new(2, 0, 2, 1),
+            joined: obelus_ui::shapes::Joined::Above,
+            ground: ratatui::style::Color::Reset,
+            cells: Vec::new(),
+            depth: 0,
+        }]);
+        assert!(shapes::is_spelled(&page, &spelled, 1, 0), "beside the pane");
+        assert!(!shapes::is_spelled(&page, &spelled, 2, 0), "under the pane");
+    }
+
     /// A block covers the share of its cell its name says, and only the
     /// blocks are drawn this way.
     ///
@@ -2237,6 +2292,7 @@ mod tests {
             spun: &spun,
             barred: &[],
             ruled: &[],
+            spelled: &[],
             sheened: None,
             parted: &[],
             stroked: &[],
@@ -2296,6 +2352,7 @@ mod tests {
             spun: &[],
             barred: &barred,
             ruled: &[],
+            spelled: &[],
             sheened: None,
             parted: &[],
             stroked: &[],
@@ -2676,6 +2733,7 @@ mod tests {
             spun: &[],
             barred: &[],
             ruled: &[],
+            spelled: &[],
             stroked: &stroked,
             paired: &[],
             fading: &[],

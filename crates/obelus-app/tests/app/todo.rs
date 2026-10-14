@@ -2414,8 +2414,8 @@ fn the_notes_are_wrapped_to_the_width_of_the_frame_being_drawn() {
 /// A word an input method has begun takes what is held in a note's box,
 /// which is a composer like the message box and goes the same way.
 ///
-/// Broken deliberately by taking the notes' arm out of `App::holds_text`:
-/// nothing is asked to go, and the note keeps its words.
+/// Broken deliberately by taking the notes' arm out of `App::writing_into`:
+/// the spelling goes elsewhere, and the note keeps its words.
 #[test]
 fn a_word_begun_in_a_note_takes_what_is_held() {
     let scratch = tree(
@@ -2437,11 +2437,34 @@ fn a_word_begun_in_a_note_takes_what_is_held() {
         Some("held words")
     );
 
-    app.handle(Event::Spelling);
+    app.handle(Event::Spelling("n".to_string(), None));
     assert_eq!(
         writing(&app).map(|written| written.text()).as_deref(),
-        Some(""),
+        Some("n"),
         "beginning a word left what was held in the note"
+    );
+}
+
+/// What is being spelled in a note's box is underlined there.
+///
+/// Broken deliberately by taking `.spelling(row.spelled.clone())` off the
+/// note's rows in `ui::todo`: nothing is underlined.
+#[test]
+fn what_is_being_spelled_in_a_note_is_underlined() {
+    let scratch = tree(
+        "spelling-line",
+        "[[todo]]\nsaid = \"first note\"\ndone = false\n",
+    );
+    let mut app = open(&scratch, 76, 18);
+    press(&mut app, KeyCode::Enter);
+    app.handle(Event::Key(KeyEvent::new(KeyCode::End, KeyModifiers::NONE)));
+    support::type_text(&mut app, " qq");
+    app.handle(Event::Spelling("xyz".to_string(), None));
+    let cells = support::cells_of(&mut app, 76, 18);
+    let at = support::find(&cells, "qqxyz");
+    assert_eq!(
+        support::underlined(&cells, at, 5),
+        [false, false, true, true, true]
     );
 }
 

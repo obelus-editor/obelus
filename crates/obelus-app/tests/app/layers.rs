@@ -71,8 +71,8 @@ fn open(app: &mut App, layer: Layer) {
 /// letter, and an X11 window leaves its input method on anyway -- so a
 /// word begun and given up took the filter's held words for nothing.
 ///
-/// Broken deliberately by not asking `App::takes_text` in
-/// `App::spelling_begins`: the filter lost what it held.
+/// Broken deliberately by not asking `App::takes_text` in `App::spell`:
+/// the filter lost what it held.
 #[test]
 fn a_word_begun_where_nothing_is_typed_takes_nothing() {
     let mut app = reading();
@@ -88,7 +88,7 @@ fn a_word_begun_where_nothing_is_typed_takes_nothing() {
         "nothing is held in the filter"
     );
 
-    app.handle(obelus_app::event::Event::Spelling);
+    app.handle(obelus_app::event::Event::Spelling("n".to_string(), None));
     assert_eq!(
         app.settings().expect("the settings").query(),
         "choose-theme",
@@ -880,4 +880,66 @@ fn a_cut_over_a_list_over_the_settings_comes_out_of_the_list() {
         "wrap",
         "the cut came out of the settings behind the list"
     );
+}
+
+/// Every box on the status row takes a spelling in, says which of it is
+/// being spelled, and takes it back out -- the same as the list's query,
+/// because they are the same box.
+///
+/// Broken deliberately by not marking the spelling in `Field`'s
+/// `Spells::spelling`: none of them says any of it is being spelled.
+#[test]
+fn every_box_on_the_status_row_spells() {
+    for layer in [Layer::Prompt, Layer::Settings, Layer::Picker, Layer::Names] {
+        let mut app = reading();
+        open(&mut app, layer);
+        let said = |app: &App| match layer {
+            Layer::Prompt => app.prompt().map(|prompt| (prompt.text(), prompt.spelled())),
+            Layer::Settings => app
+                .settings()
+                .map(|settings| (settings.query(), settings.query_spelled())),
+            Layer::Picker => app
+                .picker()
+                .map(|picker| (picker.query(), picker.query_spelled())),
+            _ => app
+                .names()
+                .map(|names| (names.query().said(), names.query().spelled())),
+        };
+        app.handle(obelus_app::event::Event::Spelling("12".to_string(), None));
+        assert_eq!(
+            said(&app),
+            Some(("12".to_string(), Some(0..2))),
+            "{layer:?} did not take the spelling in"
+        );
+        app.handle(obelus_app::event::Event::Spelling(String::new(), None));
+        assert_eq!(
+            said(&app),
+            Some((String::new(), None)),
+            "{layer:?} did not take the spelling back out"
+        );
+    }
+}
+
+/// A box that takes only some characters takes only those of a spelling,
+/// and the next spelling goes over what it took rather than over what it
+/// was offered -- so nothing of the last one is left behind.
+///
+/// Broken deliberately by keeping what was offered rather than what landed
+/// in `App::spell`: the next spelling is not found, and the line number
+/// reads `112`.
+#[test]
+fn a_box_that_takes_some_characters_spells_with_those() {
+    let mut app = reading();
+    open(&mut app, Layer::Prompt);
+    let said = |app: &App| app.prompt().map(|prompt| prompt.text());
+    app.handle(obelus_app::event::Event::Spelling("1a".to_string(), None));
+    assert_eq!(said(&app).as_deref(), Some("1"));
+    app.handle(obelus_app::event::Event::Spelling("1a2".to_string(), None));
+    assert_eq!(
+        said(&app).as_deref(),
+        Some("12"),
+        "the last spelling was left"
+    );
+    app.handle(obelus_app::event::Event::Spelling(String::new(), None));
+    assert_eq!(said(&app).as_deref(), Some(""));
 }

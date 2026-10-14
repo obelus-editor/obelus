@@ -402,6 +402,8 @@ pub struct EditorView<'a> {
     drawn: &'a [crate::Drawn],
     /// The characters selected in the file being read.
     selection: Option<Span>,
+    /// What an input method is still spelling in the file being read.
+    spelled: Option<Span>,
     /// Whether the pair of brackets the cursor is on or inside is marked.
     ///
     /// Not for a preview, for the selection's reason: which pair the
@@ -576,6 +578,7 @@ impl<'a> EditorView<'a> {
             marked: app.marked_runs(),
             drawn: app.drawn(),
             selection: app.current_buffer().and_then(Buffer::selection),
+            spelled: app.current_buffer().and_then(Buffer::spelled),
             brackets: true,
             troubles: app.troubles(),
             changes: app.changes(),
@@ -645,6 +648,7 @@ impl<'a> EditorView<'a> {
             // Everything that answers "where am I and what am I doing" is
             // the document's rather than a look at another one's.
             selection: None,
+            spelled: None,
             brackets: false,
             opened: Vec::new(),
             blame: None,
@@ -1000,6 +1004,8 @@ impl Widget for EditorView<'_> {
                                 // nothing here.
                                 drawn: &[],
                                 selection: selected_in(block.above),
+                                // Nothing is typed into a commit's version.
+                                spelled: None,
                                 // A block is a commit's version of these
                                 // lines. What is wrong with the file is
                                 // wrong with the file, not with that.
@@ -1183,6 +1189,7 @@ impl Widget for EditorView<'_> {
                         marked: self.marked,
                         drawn: self.drawn,
                         selection: self.selection,
+                        spelled: self.spelled,
                         troubles: self.troubles,
                         brackets,
                     },
@@ -1561,6 +1568,8 @@ struct Painting<'a> {
     drawn: &'a [crate::Drawn],
     /// The characters the reader selected in the file being read.
     selection: Option<Span>,
+    /// What an input method is still spelling in it.
+    spelled: Option<Span>,
     /// What the language server says is wrong with the file.
     troubles: &'a [obelus_lsp::trouble::Trouble],
     /// The bracket under the cursor and its partner, or the pair the
@@ -1689,6 +1698,23 @@ fn draw_row(
             style = style
                 .add_modifier(Modifier::UNDERLINED)
                 .underline_color(painting.theme.colour_for(Some(severity.kind())));
+        }
+        // What an input method is spelling, after the troubles: a word not
+        // written yet is not the word a server complained about, and the
+        // line under it is the input method's.
+        if painting
+            .spelled
+            .is_some_and(|spelled| spelled.contains(line, CharColumn::new(column)))
+        {
+            style = crate::spelling(
+                style,
+                Rect::new(
+                    x + offset,
+                    y,
+                    u16::try_from(glyph.cells.max(1)).unwrap_or(1),
+                    1,
+                ),
+            );
         }
         // The pair the cursor is on or inside. After the mark, so
         // a symbol a preview is about keeps its own background where the two

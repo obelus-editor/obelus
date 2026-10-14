@@ -263,6 +263,7 @@ impl NamesView<'_> {
                         mark: self.theme.picker_match_background,
                         syntax: None,
                         skip: 0,
+                        spelled: None,
                     },
                 );
                 self.say_elsewhere(cells, room, y, *has, style);

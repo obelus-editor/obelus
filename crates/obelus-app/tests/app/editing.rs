@@ -666,9 +666,9 @@ mod keys {
         assert_eq!(text(&app), "abcfn main() {}\n");
     }
 
-    /// A word an input method has begun takes what is held, before the
-    /// word arrives: escape gives the word up and does not bring it back,
-    /// which is what every other editor's input method does.
+    /// A word an input method has begun is written over what is held,
+    /// before the word arrives: escape gives the word up and does not bring
+    /// it back, which is what every other editor's input method does.
     ///
     /// Broken deliberately by taking `Event::Spelling`'s arm out of
     /// `App::handle`: the selection is still there when the word begins.
@@ -678,12 +678,13 @@ mod keys {
         for _ in 0..2 {
             support::press_shift(&mut app, KeyCode::Right);
         }
-        app.handle(obelus_app::event::Event::Spelling);
+        app.handle(obelus_app::event::Event::Spelling("h".to_string(), None));
         assert_eq!(
             text(&app),
-            " main() {}\n",
+            "h main() {}\n",
             "beginning a word left what was held in the file"
         );
+        app.handle(obelus_app::event::Event::Spelling(String::new(), None));
         app.handle(obelus_app::event::Event::Paste("函数".to_string()));
         assert_eq!(text(&app), "函数 main() {}\n");
     }
@@ -699,7 +700,12 @@ mod keys {
         for _ in 0..2 {
             support::press_shift(&mut app, KeyCode::Right);
         }
-        app.handle(obelus_app::event::Event::Spelling);
+        for spelling in ["h", "han", "hans", ""] {
+            app.handle(obelus_app::event::Event::Spelling(
+                spelling.to_string(),
+                None,
+            ));
+        }
         app.handle(obelus_app::event::Event::Paste("函数".to_string()));
         dispatch::dispatch(&mut app, Command::Undo);
         assert_eq!(
@@ -721,7 +727,8 @@ mod keys {
         for _ in 0..2 {
             support::press_shift(&mut app, KeyCode::Right);
         }
-        app.handle(obelus_app::event::Event::Spelling);
+        app.handle(obelus_app::event::Event::Spelling("h".to_string(), None));
+        app.handle(obelus_app::event::Event::Spelling(String::new(), None));
         support::type_text(&mut app, "x");
         app.handle(obelus_app::event::Event::Paste("函数".to_string()));
         assert_eq!(text(&app), "x函数 main() {}\n");
@@ -731,6 +738,240 @@ mod keys {
             "x main() {}\n",
             "the paste was joined to what came before the letter"
         );
+    }
+
+    /// What an input method spells is written into the file, each spelling
+    /// over the one before it, and taken back out when the spelling is
+    /// over -- so the word lands between what was there, and one undo
+    /// takes the whole of it.
+    ///
+    /// Broken deliberately by never writing over the last spelling in
+    /// `App::spell_into_the_file` (`over` always `None`): the file says
+    /// `anninihb`, and giving the word up leaves the letters.
+    #[test]
+    fn each_spelling_is_written_over_the_last() {
+        let (_scratch, mut app) = reading("keys-spelling-over", "ab\n");
+        support::press(&mut app, KeyCode::Right);
+        for spelling in ["n", "ni", "nih"] {
+            app.handle(obelus_app::event::Event::Spelling(
+                spelling.to_string(),
+                None,
+            ));
+        }
+        assert_eq!(text(&app), "anihb\n", "the spelling is not in the file");
+        app.handle(obelus_app::event::Event::Spelling(String::new(), None));
+        assert_eq!(text(&app), "ab\n", "the spelling over left its letters");
+        app.handle(obelus_app::event::Event::Paste("你".to_string()));
+        assert_eq!(text(&app), "a你b\n");
+        dispatch::dispatch(&mut app, Command::Undo);
+        assert_eq!(text(&app), "ab\n", "one undo did not take the word");
+    }
+
+    /// The next spelling goes over the last and nothing else: what was
+    /// written after it since is not the spelling's, and is left alone.
+    ///
+    /// Broken deliberately by writing the next spelling from where the
+    /// last began to the caret in `App::spell_into_the_file`: the `x` goes
+    /// with it, and the file says `anib`.
+    #[test]
+    fn a_spelling_is_not_written_over_what_came_after_it() {
+        let (_scratch, mut app) = reading("keys-spelling-moved", "ab\n");
+        support::press(&mut app, KeyCode::Right);
+        app.handle(obelus_app::event::Event::Spelling("n".to_string(), None));
+        support::type_text(&mut app, "x");
+        app.handle(obelus_app::event::Event::Spelling("ni".to_string(), None));
+        assert_eq!(text(&app), "anixb\n");
+    }
+
+    /// A spelling is followed across an edit made before it -- an agent
+    /// writing earlier in the same line, say -- and the next spelling still
+    /// goes over it, rather than leaving its letters behind in the file.
+    ///
+    /// Broken deliberately by not carrying the spelling across the edit in
+    /// `Buffer::apply`: it is looked for where it was, is not found, and
+    /// the file says `zznihanib`.
+    #[test]
+    fn a_spelling_is_followed_across_an_edit_before_it() {
+        let (_scratch, mut app) = reading("keys-spelling-followed", "ab\n");
+        support::press(&mut app, KeyCode::Right);
+        app.handle(obelus_app::event::Event::Spelling("ni".to_string(), None));
+        let start = obelus_text::coordinates::Span {
+            line: obelus_text::coordinates::LineNumber::new(0),
+            column: obelus_text::coordinates::CharColumn::new(0),
+            end_line: obelus_text::coordinates::LineNumber::new(0),
+            end_column: obelus_text::coordinates::CharColumn::new(0),
+        };
+        app.current_buffer_mut().expect("a file").edit(
+            start,
+            "zz",
+            obelus_buffer::undo::Doing::Whole,
+        );
+        assert_eq!(text(&app), "zzanib\n");
+        app.handle(obelus_app::event::Event::Spelling("nih".to_string(), None));
+        assert_eq!(text(&app), "zzanihb\n", "the last spelling was left behind");
+    }
+
+    /// The caret goes where the input method has its own inside what it is
+    /// spelling, and the next spelling still goes over the whole of the
+    /// last -- which runs from where it began to where it ends, wherever
+    /// the caret is.
+    ///
+    /// Broken deliberately by taking the last spelling's end from the
+    /// caret in `App::spell_into_the_file`, as it was while the caret was
+    /// always at the end: `nih` goes over the `n` alone, and the file reads
+    /// `anihib`.
+    #[test]
+    fn the_caret_is_where_the_input_method_has_it() {
+        let (_scratch, mut app) = reading("keys-spelling-caret", "ab\n");
+        support::press(&mut app, KeyCode::Right);
+        app.handle(obelus_app::event::Event::Spelling(
+            "ni".to_string(),
+            Some(1),
+        ));
+        assert_eq!(text(&app), "anib\n");
+        assert_eq!(
+            app.current_buffer().expect("a file").cursor().column.get(),
+            2,
+            "the caret is not after the n"
+        );
+        app.handle(obelus_app::event::Event::Spelling(
+            "nih".to_string(),
+            Some(3),
+        ));
+        assert_eq!(text(&app), "anihb\n");
+    }
+
+    /// What is being spelled in the file is underlined, and what is round
+    /// it is not -- and the line goes when the spelling does.
+    ///
+    /// Broken deliberately by leaving the check for `painting.spelled` out
+    /// of the editor's `draw_row`: nothing is underlined.
+    #[test]
+    fn what_is_being_spelled_in_a_file_is_underlined() {
+        let (_scratch, mut app) = reading("keys-spelling-line", "abc\n");
+        support::press(&mut app, KeyCode::Right);
+        app.handle(obelus_app::event::Event::Spelling("xyz".to_string(), None));
+        let cells = support::cells_of(&mut app, 40, 8);
+        let (x, y) = support::find(&cells, "axyzbc");
+        let underlined = |at: u16| {
+            cells
+                .cell((x + at, y))
+                .expect("a cell")
+                .modifier
+                .contains(ratatui::style::Modifier::UNDERLINED)
+        };
+        assert_eq!(
+            (0..6).map(underlined).collect::<Vec<_>>(),
+            [false, true, true, true, false, false],
+            "the line is not under the spelling alone"
+        );
+        app.handle(obelus_app::event::Event::Spelling(String::new(), None));
+        support::type_text(&mut app, "xyz");
+        let cells = support::cells_of(&mut app, 40, 8);
+        let (x, y) = support::find(&cells, "axyzbc");
+        assert!(
+            !cells
+                .cell((x + 1, y))
+                .expect("a cell")
+                .modifier
+                .contains(ratatui::style::Modifier::UNDERLINED),
+            "typed letters are underlined like a spelling"
+        );
+    }
+
+    /// A spelling left where nothing is typed any more is taken back out:
+    /// a list nobody types into came up over the file, the window turned
+    /// its input method off and said the spelling was over, and the
+    /// letters were still in the file, for good.
+    ///
+    /// Broken deliberately by taking `take_the_spelling_back` out of
+    /// `App::spell`: the file keeps `ni`.
+    #[test]
+    fn a_spelling_where_nothing_is_typed_any_more_is_taken_back() {
+        let (_scratch, mut app) = reading("keys-spelling-left", "ab\n");
+        support::press(&mut app, KeyCode::Right);
+        app.handle(obelus_app::event::Event::Spelling("ni".to_string(), None));
+        assert_eq!(text(&app), "anib\n");
+        dispatch::dispatch(&mut app, Command::CountLines);
+        app.handle(obelus_app::event::Event::Spelling(String::new(), None));
+        assert_eq!(text(&app), "ab\n", "the spelling was left in the file");
+    }
+
+    /// A word given up leaves nothing to undo: its letters went in and came
+    /// out again, and the next press of undo is the reader's last change.
+    ///
+    /// Broken deliberately by not forgetting the step in
+    /// `App::spell_into_the_file`: undo spends itself on the word that was
+    /// never written, and the `x` stays.
+    #[test]
+    fn a_word_given_up_leaves_nothing_to_undo() {
+        let (_scratch, mut app) = reading("keys-spelling-given-up", "ab\n");
+        support::type_text(&mut app, "x");
+        app.handle(obelus_app::event::Event::Spelling("ni".to_string(), None));
+        app.handle(obelus_app::event::Event::Spelling(String::new(), None));
+        assert_eq!(text(&app), "xab\n");
+        dispatch::dispatch(&mut app, Command::Undo);
+        assert_eq!(text(&app), "ab\n", "undo did not reach the x");
+    }
+
+    /// A word spelled while something else changed the file is not part of
+    /// that change: the first undo takes the word and nothing else, and the
+    /// agent's edit is a step of its own after it.
+    ///
+    /// The second undo puts back the letters the word had when the agent
+    /// wrote: they went out with the agent's edit, which is what that step
+    /// was made against. The third takes them.
+    ///
+    /// Broken deliberately by joining every spelling after the first to the
+    /// step before it in `App::spell_into_the_file`, whatever came between:
+    /// giving the word up then forgets the agent's step along with it, and
+    /// the second undo takes the wrong two letters out.
+    #[test]
+    fn a_word_does_not_join_an_edit_made_under_it() {
+        let (_scratch, mut app) = reading("keys-spelling-under", "ab\n");
+        support::press(&mut app, KeyCode::Right);
+        app.handle(obelus_app::event::Event::Spelling("ni".to_string(), None));
+        let start = obelus_text::coordinates::Span {
+            line: obelus_text::coordinates::LineNumber::new(0),
+            column: obelus_text::coordinates::CharColumn::new(0),
+            end_line: obelus_text::coordinates::LineNumber::new(0),
+            end_column: obelus_text::coordinates::CharColumn::new(0),
+        };
+        app.current_buffer_mut().expect("a file").edit(
+            start,
+            "zz",
+            obelus_buffer::undo::Doing::Whole,
+        );
+        app.handle(obelus_app::event::Event::Spelling("nih".to_string(), None));
+        app.handle(obelus_app::event::Event::Spelling(String::new(), None));
+        app.handle(obelus_app::event::Event::Paste("你".to_string()));
+        assert_eq!(text(&app), "zza你b\n");
+        let mut undone = Vec::new();
+        for _ in 0..3 {
+            dispatch::dispatch(&mut app, Command::Undo);
+            undone.push(text(&app));
+        }
+        assert_eq!(undone, ["zzab\n", "anib\n", "ab\n"]);
+    }
+
+    /// A word given up, a move, and then something pasted: the paste is a
+    /// step of its own, and undoing it does not put back what the given-up
+    /// word was spelled over.
+    ///
+    /// Broken deliberately by not letting go of `spelled_over` on a key in
+    /// `App::handle`: undoing the comma puts the `a` back as well.
+    #[test]
+    fn what_comes_after_a_word_given_up_and_a_move_is_its_own_step() {
+        let (_scratch, mut app) = reading("keys-spelling-moved-on", "ab\n");
+        support::press_shift(&mut app, KeyCode::Right);
+        app.handle(obelus_app::event::Event::Spelling("n".to_string(), None));
+        app.handle(obelus_app::event::Event::Spelling(String::new(), None));
+        assert_eq!(text(&app), "b\n");
+        support::press(&mut app, KeyCode::Right);
+        app.handle(obelus_app::event::Event::Paste(",".to_string()));
+        assert_eq!(text(&app), "b,\n");
+        dispatch::dispatch(&mut app, Command::Undo);
+        assert_eq!(text(&app), "b\n", "the undo took more than the comma");
     }
 
     /// A pasted function is one change, however many lines it is.

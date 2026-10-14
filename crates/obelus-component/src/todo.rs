@@ -121,6 +121,9 @@ pub struct Row {
     /// what gets drawn, and a selection given in the note's own lines would
     /// have to be taken apart again by whoever draws it.
     pub held: Option<Range<usize>>,
+    /// Which of them an input method is still spelling, counted the same
+    /// way.
+    pub spelled: Option<Range<usize>>,
     /// Whether this row heads notes hanging under it, and whether they are
     /// showing.
     ///
@@ -389,6 +392,48 @@ fn places_by_name(todo: &Todo, known: &[(NoteId, Option<LineNumber>)]) -> Vec<Op
                 .and_then(|(_, line)| *line)
         })
         .collect()
+}
+
+/// The note being written, as what a spelling is written into -- see
+/// [`crate::spelling`].
+///
+/// The page's own rather than its box's, because the page lays its rows
+/// out from the box and keeps them: a box changed behind its back is drawn
+/// as it was until something else makes the page lay itself out again, and
+/// the line under a spelling was the first thing that went missing.
+use crate::spelling::Spells;
+
+impl Spells for TodoView {
+    fn writes_from(&self) -> obelus_editing::Cursor {
+        self.writing()
+            .map_or_else(obelus_editing::Cursor::start, Spells::writes_from)
+    }
+
+    fn hold_written(&mut self, from: obelus_editing::Cursor, said: &str) -> bool {
+        self.writing_mut()
+            .is_some_and(|writing| writing.hold_written(from, said))
+    }
+
+    fn spelling(&mut self, from: obelus_editing::Cursor, said: &str, before: &str) -> String {
+        let landed = self
+            .writing_mut()
+            .map(|writing| writing.spelling(from, said, before))
+            .unwrap_or_default();
+        self.rebuild();
+        self.follow_caret();
+        landed
+    }
+
+    fn take_back(&mut self, from: obelus_editing::Cursor, said: &str) -> bool {
+        let taken = self
+            .writing_mut()
+            .is_some_and(|writing| writing.take_back(from, said));
+        if taken {
+            self.rebuild();
+            self.follow_caret();
+        }
+        taken
+    }
 }
 
 impl TodoView {
@@ -993,6 +1038,7 @@ impl TodoView {
                     done: note.done,
                     depth: note.depth,
                     held: None,
+                    spelled: None,
                     under: None,
                 });
             }
@@ -1005,6 +1051,7 @@ impl TodoView {
                 done: note.done,
                 depth: note.depth,
                 held: first.held,
+                spelled: first.spelled,
                 under,
             });
             for line in lines {
@@ -1017,6 +1064,7 @@ impl TodoView {
                     done: note.done,
                     depth: note.depth,
                     held: line.held,
+                    spelled: line.spelled,
                     // Only the note's own row carries it: the mark is
                     // about the note, and one on every line of it would
                     // be a column of arrows saying the same thing.
@@ -1043,6 +1091,7 @@ impl TodoView {
                     // of it, and it is not the reader's to take a copy of
                     // by selecting it.
                     held: None,
+                    spelled: None,
                     under: None,
                 });
             }

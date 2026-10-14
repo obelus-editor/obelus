@@ -374,6 +374,29 @@ fn ctrl_v_pastes_into_the_program() {
     });
 }
 
+/// What an input method spells at a program is drawn over its screen and
+/// not sent: what is sent to a program cannot be taken back. The word is.
+///
+/// Broken deliberately by writing a terminal's spelling in like a box's in
+/// `App::spell`: the shell is sent `zz`, runs `zzecho`, and the line never
+/// says `word-42`.
+#[test]
+fn a_spelling_is_drawn_over_a_program_and_not_sent() {
+    let (mut app, events) = a_shell();
+    app.handle(Event::Spelling("zz".to_string(), None));
+    assert!(screen(&mut app).contains("zz"), "the spelling is not drawn");
+    app.handle(Event::Spelling(String::new(), None));
+    assert!(
+        !screen(&mut app).contains("zz"),
+        "the spelling stayed drawn"
+    );
+    app.handle(Event::Paste("echo word-$((6 * 7))".to_string()));
+    press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    pump(&mut app, &events, "the word's line to run", |app| {
+        on_the_terminal(app).contains("word-42")
+    });
+}
+
 /// A program that asked for the pointer is told what it did, in the
 /// encoding it asked for; shift held is a selection all the same.
 ///
