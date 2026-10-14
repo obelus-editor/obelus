@@ -159,6 +159,19 @@ struct Left {
     going: Vec<Going>,
 }
 
+/// The screen in the theme that has just gone, and the two colours of that
+/// theme the window paints for itself -- see `Showing::recolouring`.
+///
+/// The colours with it rather than read off the painter when it is kept,
+/// because the painter is handed them at a redraw and the theme can change
+/// before the first: then what it had was the colour it starts at, and the
+/// screen going had a black margin round it.
+struct Recolouring {
+    was: Left,
+    ground: Color,
+    holding: (Color, Color),
+}
+
 impl Left {
     /// What it said, the way a frame being drawn says it.
     fn said(&self) -> Said<'_> {
@@ -465,7 +478,7 @@ struct Showing {
     /// The screen in the theme that has just gone, until the painter has
     /// kept it -- see `Painter::recolour`. Kept the way a pane's leaving
     /// is, and with nothing going: what goes is all of it.
-    recolouring: Option<Left>,
+    recolouring: Option<Recolouring>,
     /// And on the frame being laid out.
     paning: Vec<Joined>,
     /// And the ones the frame being laid out has asked for so far.
@@ -1208,7 +1221,7 @@ impl ApplicationHandler<Waking> for Showing {
                         // in the queue. The first of several, which is the
                         // one on the screen.
                         Update::Recoloured if self.shown && self.recolouring.is_none() => {
-                            self.recolouring = Some(Left {
+                            let was = Left {
                                 page: Arc::new(self.page.clone()),
                                 marked: self.marked.clone(),
                                 capped: self.capped.clone(),
@@ -1222,6 +1235,11 @@ impl ApplicationHandler<Waking> for Showing {
                                 paired: self.paired.clone(),
                                 stack: self.stack.clone(),
                                 going: Vec::new(),
+                            };
+                            self.recolouring = Some(Recolouring {
+                                was,
+                                ground: self.ground,
+                                holding: self.holding,
                             });
                         }
                         Update::Recoloured => {}
@@ -1785,9 +1803,17 @@ impl ApplicationHandler<Waking> for Showing {
                 // The screen in the theme that went, before the painter is
                 // handed anything of the new one -- see `Painter::recolour`.
                 let now = Instant::now();
-                if let Some(was) = self.recolouring.take() {
+                if let Some(Recolouring {
+                    was,
+                    ground,
+                    holding,
+                }) = self.recolouring.take()
+                {
                     let going = self.motion.moving(now).recoloured;
                     if self.motion.recolouring(now) {
+                        painter.drawn_on(ground);
+                        painter.holding(holding);
+                        painter.titled(self.titled);
                         painter.recolour(&was.page, fonts, was.said(), going);
                     }
                 }
