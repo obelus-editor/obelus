@@ -370,8 +370,13 @@ impl Strip {
     /// and the wheel go to the bar, as they do where there are no tabs --
     /// a press on a tab nobody can see was the file it named taking the
     /// place of the settings.
-    pub(crate) const fn cover(&mut self, covered: bool) {
+    ///
+    /// What the pointer is over is asked again here and not left to the
+    /// next laying out: a press that arrives between the pane and the
+    /// frame that draws it reads `hovered`, and would choose the tab.
+    pub(crate) fn cover(&mut self, covered: bool) {
         self.covered = covered;
+        self.hovered = self.pointer.and_then(|x| self.at(x));
     }
 
     /// What is at a place on the bar, in pixels from the window's left.
@@ -708,15 +713,18 @@ mod tests {
     /// glass, and theirs again when it goes.
     ///
     /// Deliberate breaks: leave `covered` out of `at`, and a press over a
-    /// tab under the settings opens its file in their place; out of
-    /// `covers`, and on Windows the bar over a covered tab will not drag
-    /// the window; out of `scroll`, and the wheel moves a row nobody sees.
+    /// tab under the settings opens its file in their place; leave the
+    /// pointer out of `cover`, and so does one that arrives before the
+    /// frame that draws them; out of `covers`, and on Windows the bar over
+    /// a covered tab will not drag the window; out of `scroll` or `step`,
+    /// and the wheel or an arrow moves a row nobody sees.
     #[test]
     fn a_pane_over_the_bar_takes_it_from_the_tabs() {
         let mut strip = strip(0);
         strip.point(Some(30.0));
         assert_eq!(strip.hovered(), Some(Spot::Tab(0)));
         strip.cover(true);
+        assert_eq!(strip.hovered(), None, "nothing lit, before any frame");
         settle(&mut strip);
         assert_eq!(strip.hovered(), None, "nothing lit under the pane");
         assert_eq!(strip.at(30.0), None);
