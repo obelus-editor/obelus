@@ -86,11 +86,12 @@ const VEIL: Duration = Duration::from_millis(400);
 /// How long the screen in the theme it was in takes to go, over the same
 /// screen in the one chosen.
 ///
-/// The picture's going, so that a theme carrying one changes as one
-/// thing: its colours and its picture go down together, and the new
-/// picture comes up after them. On a clock of its own all the same, because
-/// most themes carry no picture and the colours change anyway.
-const RECOLOUR: Duration = VEIL;
+/// Quicker than a picture goes, because the reader asked for this one with
+/// a key and the colours are the answer: at the picture's 400ms a theme
+/// walked to in the list felt a beat behind the key. A picture takes its
+/// own time after the colours have changed, which is what a photograph
+/// coming up is for anyway.
+const RECOLOUR: Duration = Duration::from_millis(250);
 
 /// And how long it takes to go out.
 ///
