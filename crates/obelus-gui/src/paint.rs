@@ -241,6 +241,14 @@ pub(crate) struct Painter {
     /// theme changed and let go by the first frame it has gone from -- see
     /// `recolour`. A window's worth of memory for the 200ms it is drawn.
     before: Option<Whole>,
+    /// And the one it was drawn out of, kept to draw the next into while
+    /// a theme is still going -- see `recolour`.
+    ///
+    /// Two that take turns, because a picture cannot be drawn into while it
+    /// is read and the next theme's is drawn out of this one. A new one at
+    /// each change was a window's worth of memory made and let go at every
+    /// press of an arrow key walking the list of themes.
+    spare: Option<Whole>,
     /// And what was written on the panes that went, on nothing: `left`
     /// holds their glass and not what was on it, so the glass can stay
     /// over what it showed while what was on it goes -- the way a pane

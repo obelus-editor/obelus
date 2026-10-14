@@ -421,6 +421,7 @@ impl Painter {
             left: None,
             left_lifted: None,
             before: None,
+            spare: None,
             gone: Vec::new(),
             plain_bindings,
             nothing,
@@ -557,6 +558,7 @@ impl Painter {
         self.gone.clear();
         // And so is a theme that was going: the new one is simply there.
         self.before = None;
+        self.spare = None;
     }
 
     /// A picture of the whole window, at the size it is now.
@@ -609,6 +611,7 @@ impl Painter {
         let left_lifted =
             (self.left_lifted.as_ref()).map(|whole| binder.bound(&whole.view, &self.nothing));
         let before = (self.before.as_ref()).map(|whole| binder.bound(&whole.view, &self.nothing));
+        let spare = (self.spare.as_ref()).map(|whole| binder.bound(&whole.view, &self.nothing));
         let plain = binder.bound(&self.nothing, &self.nothing);
         for (seen, bindings) in self.levels.iter_mut().zip(levels) {
             seen.bindings = bindings;
@@ -627,6 +630,9 @@ impl Painter {
             whole.bindings = bindings;
         }
         if let (Some(whole), Some(bindings)) = (self.before.as_mut(), before) {
+            whole.bindings = bindings;
+        }
+        if let (Some(whole), Some(bindings)) = (self.spare.as_mut(), spare) {
             whole.bindings = bindings;
         }
         self.plain_bindings = plain;
@@ -693,6 +699,7 @@ impl Painter {
         }
         if self.placed.recoloured.is_none() {
             self.before = None;
+            self.spare = None;
         }
         let acquiring = Instant::now();
         let acquired = self.surface.get_current_texture();
@@ -838,9 +845,8 @@ impl Painter {
             said,
         );
         self.picture_while_wanted();
-        // A new picture rather than the one being read: a pass cannot draw
-        // into what it samples.
-        let before = self.whole();
+        // Not the one being read: a pass cannot draw into what it samples.
+        let before = self.spare.take().unwrap_or_else(|| self.whole());
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -848,7 +854,7 @@ impl Painter {
             });
         self.encode(&mut encoder, &before.view);
         self.queue.submit([encoder.finish()]);
-        self.before = Some(before);
+        self.spare = self.before.replace(before);
     }
 
     /// What the passes that draw the laid-out frame are, into `target`.
