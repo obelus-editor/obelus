@@ -92,7 +92,7 @@ list of arms rather than a table.
 
 Reuse stops where the *subject* differs, and forcing those together is the
 mistake in the other direction: the editor is not a list, a message being
-written is not a buffer (no undo, no syntax, no file), and an agent's card is
+written is not a buffer (no journal, no syntax, no file), and an agent's card is
 not a picker row (it is as tall as its description needs and carries a
 button). Share the mechanism, not the meaning.
 
@@ -704,12 +704,14 @@ crates/
                       and so is the record of it (chat/kept); folding is one
                       act and the notes are the fourth place it happens, a note
                       somebody else is talking about is read here and not
-                      changed, and a box is the reader's once they have put
-                      something in it (todo); a setting is two rows, and a name
+                      changed, a box is the reader's once they have put
+                      something in it, and undo is the box's first and the
+                      page's after (todo); a setting is two rows, and a name
                       and a gloss (settings); what a call takes is about a
                       place, and somebody else's text is capped (signature);
                       wherever enter means something else a line is
-                      `shift+enter` and `alt+enter` (composer); a list the
+                      `shift+enter` and `alt+enter`, and a box keeps what it
+                      said a step at a time (composer); a list the
                       reader builds is not a picker (names); a screen that
                       cannot be left, two boxes that never share their
                       text, why no numbers, a walk down the tree stops at

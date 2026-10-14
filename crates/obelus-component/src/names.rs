@@ -30,7 +30,7 @@
 //! Cells only, like everything else in this crate. A window draws it the
 //! same way a terminal does.
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use nucleo_matcher::{
     Matcher, Utf32Str,
     pattern::{CaseMatching, Normalization, Pattern},
@@ -455,8 +455,18 @@ impl Names {
             // the same way, once there is something in front of its caret
             // or held in it -- which there never was while the caret could
             // only sit at the end.
-            KeyCode::Delete if !self.query.takes_a_delete() => self.take_out(),
-            KeyCode::Backspace if self.query.said().is_empty() => self.take_out(),
+            //
+            // And neither while it is held down: a reader holding backspace
+            // to empty the query is still typing in it, and the list is the
+            // next thing the held key reaches -- a face gone per repeat.
+            // A terminal does not say which presses are repeats, so there
+            // it cannot be told.
+            KeyCode::Delete if self.query.leaves_to_the_row(key) => self.take_out(),
+            KeyCode::Backspace
+                if key.kind != KeyEventKind::Repeat && self.query.said().is_empty() =>
+            {
+                self.take_out()
+            }
             // What the query refuses goes on to the table, which is how
             // copying, cutting and taking all of it reach the box: a box a
             // reader can select in but not copy out of has half a
@@ -752,6 +762,30 @@ mod tests {
         names.window.set_focus(focus);
         assert_eq!(press(&mut names, KeyCode::Backspace), Outcome::Changed);
         assert!(names.chosen().is_empty());
+    }
+
+    /// A key held down takes no name out, though the same key pressed once
+    /// would.
+    ///
+    /// Deliberate break: take the `Repeat` guard off backspace, and holding
+    /// it over an empty query takes a face out per repeat; ask
+    /// `takes_a_delete` again for delete instead of `leaves_to_the_row`,
+    /// and holding delete does.
+    #[test]
+    fn a_held_key_takes_no_name_out() {
+        for code in [KeyCode::Backspace, KeyCode::Delete] {
+            let mut names = names();
+            let focus = names
+                .rows()
+                .iter()
+                .position(Row::chosen)
+                .expect("one of the reader's");
+            names.window.set_focus(focus);
+            let mut held = KeyEvent::new(code, KeyModifiers::NONE);
+            held.kind = crossterm::event::KeyEventKind::Repeat;
+            names.handle_key(&held, 10);
+            assert_eq!(names.chosen(), ["Iosevka"], "a held {code:?} cost a face");
+        }
     }
 
     /// The list opens on the first thing there is to add, not on the first

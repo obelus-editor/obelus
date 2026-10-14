@@ -6,7 +6,7 @@
 //! listens beside it -- a subclass, which is Windows' own way for a second
 //! party to hear a window's messages first -- and answers those two
 //! differently: the frame without the strip along the top, and the strip as
-//! the bar and its three buttons.
+//! the bar, its three buttons and the tabs.
 //!
 //! Everything else stays the system's because the window keeps the style of
 //! a window with a bar: the resizing on three sides, the shadow and the
@@ -18,7 +18,7 @@
 
 use std::sync::{
     Arc,
-    atomic::{AtomicU8, Ordering},
+    atomic::{AtomicU8, AtomicU64, Ordering},
 };
 
 use windows_sys::Win32::{
@@ -31,7 +31,7 @@ use windows_sys::Win32::{
         WindowsAndMessaging::{
             GWL_STYLE, GetClientRect, GetWindowLongW, HTCAPTION, HTCLIENT, HTCLOSE, HTMAXBUTTON,
             HTMINBUTTON, HTTOP, IsZoomed, NCCALCSIZE_PARAMS, PostMessageW, SC_CLOSE, SC_MAXIMIZE,
-            SC_MINIMIZE, SC_RESTORE, SM_CXPADDEDBORDER, SM_CXSMICON, SM_CYCAPTION, SM_CYSIZEFRAME,
+            SC_MINIMIZE, SC_RESTORE, SM_CXPADDEDBORDER, SM_CYCAPTION, SM_CYSIZEFRAME,
             SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos,
             WM_MOUSEMOVE, WM_NCCALCSIZE, WM_NCDESTROY, WM_NCHITTEST, WM_NCLBUTTONDBLCLK,
             WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_SYSCOMMAND,
@@ -52,6 +52,11 @@ const LISTENING: usize = 0x0b31;
 /// the size of the bitmaps the buttons had before DWM drew them.
 const BUTTON: i32 = 46;
 
+/// How tall the bar is at that density, less the edge above it: what the
+/// system's own tabbed windows -- Explorer, Terminal -- give a row of tabs,
+/// where its caption alone is twenty-two and a tab in it is a sliver.
+const TABBED: i32 = 34;
+
 /// How wide and tall the mark on a button is at that density. Not the size
 /// of the glyphs the system draws its own in, which is ten: that is the
 /// face's em, and the ink inside it is eight -- measured off the system's
@@ -59,9 +64,9 @@ const BUTTON: i32 = 46;
 /// twenty-five.
 const MARK: f32 = 8.0;
 
-/// How big the title is written at that density: Segoe UI at nine points,
-/// which is what the system writes its own in -- measured off its bar at
-/// 250%, where a capital is twenty-one pixels tall.
+/// How big a tab's name is written at that density: Segoe UI at nine
+/// points, which is what the system writes its own title in -- measured off
+/// its bar at 250%, where a capital is twenty-one pixels tall.
 const WORDS: f32 = 12.0;
 
 /// The bar Obelus draws on Windows: what the pointer is doing to its
@@ -79,6 +84,10 @@ struct Shared {
     hovered: AtomicU8,
     /// The button the left button went down on.
     pressed: AtomicU8,
+    /// Where the tabs are along the bar, from and to in pixels, as two
+    /// `f32`s in one word: what the hit test answers as the page's. Both
+    /// nothing, which is no tabs, until the window has laid them out.
+    tabs: AtomicU64,
 }
 
 /// Takes the bar into the page, or says why it could not and leaves it the
@@ -128,6 +137,14 @@ impl Bar {
             })
     }
 
+    /// Says where the tabs are, for the hit test: a press there is the
+    /// page's, where anywhere else on the bar it is the system's to drag.
+    pub(crate) fn tabs_are(&self, tabs: Option<(f32, f32)>) {
+        self.shared
+            .tabs
+            .store(tabs_holding(tabs), Ordering::Relaxed);
+    }
+
     /// The bar as this frame draws it.
     pub(crate) fn drawn(&self, window: &Window, active: bool) -> Drawn {
         let hwnd = handle(window);
@@ -150,6 +167,7 @@ impl Bar {
         let pixels = |of: fn(&Measured) -> i32| measured.as_ref().map_or(0, of) as f32;
         Drawn {
             button: pixels(|measured| measured.button),
+            captioned: pixels(|measured| measured.captioned),
             mark,
             pen,
             // As far in as the frame is wide, where the system puts its own --
@@ -159,7 +177,6 @@ impl Bar {
                 true => scale.floor(),
                 false => pixels(|measured| measured.edge),
             },
-            icon: pixels(|measured| measured.icon),
             words: (WORDS * scale).round(),
             hovered: held(self.shared.hovered.load(Ordering::Relaxed)),
             pressed: held(self.shared.pressed.load(Ordering::Relaxed)),
@@ -177,8 +194,9 @@ struct Measured {
     edge: i32,
     /// How wide each button is.
     button: i32,
-    /// How big the window's icon is drawn on it.
-    icon: i32,
+    /// How tall the bar the system would have drawn is, which is how tall
+    /// the buttons are.
+    captioned: i32,
 }
 
 /// The window's own measures, asked at its density rather than the
@@ -195,18 +213,22 @@ fn measured(hwnd: HWND) -> Measured {
         clippy::cast_possible_wrap,
         reason = "a density is a few hundred dots to the inch"
     )]
-    let button = (BUTTON * dpi as i32 + 48) / 96;
+    let (button, tabbed) = (
+        (BUTTON * dpi as i32 + 48) / 96,
+        (TABBED * dpi as i32 + 48) / 96,
+    );
+    // Maximised, the frame hangs off the screen and only the caption is
+    // left on it: the system's own bar there is that tall.
+    let above = match unsafe { IsZoomed(hwnd) } != 0 {
+        true => 0,
+        false => edge,
+    };
     Measured {
-        // Maximised, the frame hangs off the screen and only the caption
-        // is left on it: the system's own bar there is that tall.
-        titled: metric(SM_CYCAPTION)
-            + match unsafe { IsZoomed(hwnd) } != 0 {
-                true => 0,
-                false => edge,
-            },
+        // Or the height a row of tabs wants, where that is more.
+        titled: metric(SM_CYCAPTION).max(tabbed) + above,
         edge,
         button,
-        icon: metric(SM_CXSMICON),
+        captioned: metric(SM_CYCAPTION) + above,
     }
 }
 
@@ -226,6 +248,26 @@ fn captioned(hwnd: HWND) -> bool {
     // Safe: the window is alive.
     let style = unsafe { GetWindowLongW(hwnd, GWL_STYLE) }.cast_unsigned();
     style & WS_CAPTION == WS_CAPTION
+}
+
+/// The tabs as `Shared` holds them: from and to in one word, and both
+/// nothing for none.
+fn tabs_holding(tabs: Option<(f32, f32)>) -> u64 {
+    let (from, to) = tabs.unwrap_or((0.0, 0.0));
+    (u64::from(from.to_bits()) << 32) | u64::from(to.to_bits())
+}
+
+/// The other way.
+fn tabs_held(word: u64) -> Option<(f32, f32)> {
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "two words packed into one, taken apart again"
+    )]
+    let (from, to) = (
+        f32::from_bits((word >> 32) as u32),
+        f32::from_bits(word as u32),
+    );
+    (to > from).then_some((from, to))
 }
 
 /// A button as `Shared` holds it, nought for none.
@@ -362,9 +404,10 @@ unsafe extern "system" fn listen(
                 (at.x as f32, at.y as f32),
                 page.right as f32,
                 measured.titled as f32,
-                measured.button as f32,
+                [measured.button as f32, measured.captioned as f32],
                 measured.edge as f32,
                 unsafe { IsZoomed(hwnd) } != 0,
+                tabs_held(shared.tabs.load(Ordering::Relaxed)),
             );
             let answer = match part {
                 Part::Page => HTCLIENT,
@@ -375,6 +418,10 @@ unsafe extern "system" fn listen(
                 Part::Button(Button::Minimise) => HTMINBUTTON,
                 Part::Button(Button::Maximise) => HTMAXBUTTON,
                 Part::Button(Button::Close) => HTCLOSE,
+                // The page's, so that winit hears the pointer there and a
+                // press on a tab goes to Obelus rather than moving the
+                // window.
+                Part::Tabs => HTCLIENT,
             };
             answer as LRESULT
         }
@@ -424,5 +471,23 @@ unsafe extern "system" fn listen(
             passed()
         }
         _ => passed(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Where the tabs are comes back out of the one word the hit test
+    /// reads it from as it went in, and none as none.
+    ///
+    /// Deliberate break: swap the halves in `tabs_held`. Every tab is then
+    /// from where it ends to where it starts, which is nowhere, and a
+    /// press on any of them drags the window.
+    #[test]
+    fn where_the_tabs_are_comes_back_as_it_went() {
+        let tabs = Some((8.0, 412.5));
+        assert_eq!(tabs_held(tabs_holding(tabs)), tabs);
+        assert_eq!(tabs_held(tabs_holding(None)), None);
     }
 }

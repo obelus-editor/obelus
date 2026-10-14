@@ -405,6 +405,7 @@ impl Painter {
             margin: [0.0, 0.0],
             titled: 0.0,
             bar: None,
+            strip: None,
             bar_left_out: false,
             holding: (Color::Reset, Color::Reset),
             quads: Vec::new(),
@@ -1077,6 +1078,12 @@ impl Painter {
     /// every frame, for the same reason.
     pub(crate) const fn bar(&mut self, bar: Option<crate::title::Drawn>) {
         self.bar = bar;
+    }
+
+    /// The tabs along the bar, where there is room for any. Handed over
+    /// every frame, for the same reason.
+    pub(crate) fn tabs(&mut self, strip: Option<crate::title::Painted>) {
+        self.strip = strip;
     }
 
     /// What is behind a pane, blurred: across into the scratch picture,

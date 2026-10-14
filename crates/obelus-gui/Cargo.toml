@@ -17,6 +17,9 @@ workspace = true
 
 [dependencies]
 obelus-app.workspace = true
+# For `DocumentId` alone: which document a tab on the title bar is, said
+# back to the application when it is pressed -- see `title::tabs`.
+obelus-buffer.workspace = true
 # For `Layer` alone: the window is told which of them owns the caret, so
 # that a caret changing hands is not taken for one that moved.
 obelus-component.workspace = true

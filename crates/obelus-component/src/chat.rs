@@ -1066,8 +1066,17 @@ impl Chat {
             .said
             .iter()
             .find(|said| said.speaker == Speaker::Reader)?;
-        let words = match said.parts.is_empty() {
-            true => said.text.clone(),
+        // Read where they lie rather than copied out first: this names a
+        // tab on every frame, and a first message is as often a pasted log
+        // as a sentence.
+        let first = |words: &str| {
+            words
+                .lines()
+                .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
+                .find(|line| !line.is_empty())
+        };
+        match said.parts.is_empty() {
+            true => first(&said.text),
             false => said
                 .parts
                 .iter()
@@ -1075,12 +1084,8 @@ impl Chat {
                     crate::composer::Part::Words(words) => Some(words.as_str()),
                     crate::composer::Part::Picture(_) => None,
                 })
-                .collect(),
-        };
-        words
-            .lines()
-            .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
-            .find(|line| !line.is_empty())
+                .find_map(first),
+        }
     }
 
     /// Puts pasted text in the box, wherever the caret is.

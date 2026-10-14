@@ -182,6 +182,9 @@ pub(crate) struct Painter {
     /// The bar along the top, where Obelus draws it rather than the system
     /// -- see `title::Bar`.
     bar: Option<crate::title::Drawn>,
+    /// The tabs along the bar, on any bar the page runs up under -- see
+    /// `title::tabs`.
+    strip: Option<crate::title::Painted>,
     /// Whether the bar is left out of the frame being laid, which is the
     /// screen a pane went from being kept: the bar does not go with the
     /// pane, and the frame it goes over draws its own -- see `keep`.

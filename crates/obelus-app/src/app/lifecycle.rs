@@ -117,6 +117,10 @@ impl App {
         let was = std::mem::replace(self, Self::new(Vec::new()));
         self.events = was.events;
         self.drawing = was.drawing;
+        // With what it was last told, which is what it is still showing:
+        // started from nothing, a project with nothing open would agree
+        // with nothing and leave the old project's tabs up.
+        self.told_tabs = was.told_tabs;
         self.fonts_here = was.fonts_here;
         self.monospace_here = was.monospace_here;
         self.screen_area = was.screen_area;

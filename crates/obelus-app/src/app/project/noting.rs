@@ -525,6 +525,38 @@ impl App {
         notes.paste(what);
     }
 
+    /// Takes back the last thing done to the notes, or does it again, if
+    /// they are what is being read. Says whether they were.
+    ///
+    /// Through the key table and not a key of the page's own, as `ctrl+a`
+    /// once was: undo is a command, and a reader who rebinds it has rebound
+    /// it here too.
+    pub(in crate::app) fn notes_undo(&mut self, back: bool) -> bool {
+        let laid = self.notes_laid_out();
+        // What may be changed, asked here as it is before a key: an undo
+        // changes a note as surely as typing in it does.
+        let elsewhere = self.which_notes_are_elsewhere();
+        let Some(notes) = self.notes_mut() else {
+            return false;
+        };
+        notes.lay_out(laid);
+        notes.these_are_elsewhere(elsewhere);
+        let outcome = match back {
+            true => notes.undo(),
+            false => notes.redo(),
+        };
+        match outcome {
+            // Inside the box, which is typing: written when the reader
+            // stops, the way the letters it took back were.
+            TodoOutcome::Consumed => self.the_notes_will_settle(),
+            _ => {
+                let changes = notes.take_changes();
+                self.do_to_the_notes(changes);
+            }
+        }
+        true
+    }
+
     /// Writes the notes down, and says so if it cannot.
     /// Does what an agent asked to the notes, and says what came of it.
     ///

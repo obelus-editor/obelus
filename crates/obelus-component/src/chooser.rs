@@ -30,6 +30,12 @@
 //! places is not the beginning of a path, and carrying it over would be
 //! the one mistake that makes the two read as one thing.
 //!
+//! **Delete forgets the row the reader is on**, and on a Mac backspace
+//! does too, once the filter has nothing for either, which the box is
+//! asked in one place (`Field::leaves_to_the_row`). Without a
+//! question first: what is forgotten is a line on a list, not the project,
+//! and choosing it again by its path puts it back.
+//!
 //! **No numbers.** A short list elsewhere in Obelus is chosen from with
 //! `1`-`9`, and that cannot happen here: both states of the foot are typed
 //! into, so a digit is a character. `~/Work/project2` is the example that
@@ -94,6 +100,9 @@ pub enum Outcome {
     Ignored,
     /// The reader has settled on this project.
     Chose(PathBuf),
+    /// The reader took this project off the list, and it is gone from the
+    /// rows already. The file it was written in is the application's.
+    Forgot(PathBuf),
     /// What is being typed now names this directory, and its entries are
     /// wanted.
     ///
@@ -209,7 +218,7 @@ impl Chooser {
     /// The projects the filter leaves, newest first.
     ///
     /// Worked out rather than kept, because what it is worked out from is
-    /// one short string and a list of twenty: a cache here would be a
+    /// one short string and a list of a few dozen: a cache here would be a
     /// second answer to a question that costs nothing to ask.
     #[must_use]
     pub fn rows(&self) -> Vec<(&Known, Option<(usize, usize)>)> {
@@ -295,6 +304,26 @@ impl Chooser {
         self.at >= self.rows().len()
     }
 
+    /// Whether the key the foot calls delete, pressed now, would forget
+    /// the project the reader is on -- which is what the foot asks before
+    /// it offers the key (`Field::delete_is_the_rows`).
+    #[must_use]
+    pub fn forgets(&self) -> bool {
+        self.on_a_project() && self.filter.delete_is_the_rows()
+    }
+
+    /// Whether this key would: the filter has nothing for it, and the
+    /// reader is on a project.
+    fn forgets_with(&self, key: &KeyEvent) -> bool {
+        self.on_a_project() && self.filter.leaves_to_the_row(key)
+    }
+
+    /// Whether the reader is looking at the rows, and on a project rather
+    /// than on the row that opens one.
+    fn on_a_project(&self) -> bool {
+        matches!(self.doing, Doing::Choosing) && !self.on_the_opening_row()
+    }
+
     /// Takes a key, and says what the application has to do about it.
     ///
     /// `height` is how many rows the list on screen has, which the paging
@@ -335,6 +364,29 @@ impl Chooser {
                 // rather than a guess at which row was meant.
                 None => Outcome::Ignored,
             },
+            // The row the reader is on, taken off the list -- once the
+            // filter has nothing for the key (`Field::leaves_to_the_row`).
+            // Not the opening row, which is not a project and is always
+            // there; the key goes on to the filter, which does nothing
+            // with it.
+            KeyCode::Delete | KeyCode::Backspace if self.forgets_with(&key) => {
+                let Some(path) = self
+                    .rows()
+                    .get(self.at)
+                    .map(|(known, _)| known.path.clone())
+                else {
+                    return Outcome::Ignored;
+                };
+                self.known.retain(|known| known.path != path);
+                // The row that was under it moves up into its place, and
+                // the reader is on that one; or on the one above, where it
+                // was the last -- the opening row only once no project is
+                // left to stand on, because a key that put the reader on it
+                // would be a key that changed what enter does. Which with a
+                // filter is once none matches, though the list holds more.
+                self.at = self.at.min(self.rows().len().saturating_sub(1));
+                Outcome::Forgot(path)
+            }
             // Nothing is nearer than this screen, so there is nothing to
             // give up on. Clearing the filter is what escape means where
             // there is one, and a reader who has narrowed to nothing has

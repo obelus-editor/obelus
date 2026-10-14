@@ -23,7 +23,7 @@
 //! here. A box with a rule of its own adds an arm, not a copy of the key
 //! table.
 
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use obelus_editing::{Editing, Typing};
 use obelus_text::coordinates::{CharColumn, DisplayColumn, LineNumber};
 
@@ -264,6 +264,65 @@ impl Field {
         self.writing.has_selection() || self.caret().get() < self.said().chars().count()
     }
 
+    /// Whether this key is the reader taking away the row the line is over,
+    /// rather than a character of the line.
+    ///
+    /// Delete, once the line has nothing for it ([`Field::takes_a_delete`]).
+    /// And on macOS backspace as well, once the line has nothing in it at
+    /// all: the key a Mac's keyboard has `delete` written on sends
+    /// backspace, and its forward delete is that key with `fn`. Nothing at
+    /// all, and not merely the caret at the start, because what is behind
+    /// it is what backspace rubs out -- a space included, which narrows the
+    /// list like any other character.
+    ///
+    /// Never a key held down. A reader holding backspace to empty the line,
+    /// or delete to empty it from the front, is still typing in it, and the
+    /// rows are the next thing the held key would reach -- one project
+    /// forgotten each time it repeats. A window says which presses are
+    /// repeats; a terminal does not, so there a held key is still the
+    /// row's once the line is empty, and nothing here can tell.
+    ///
+    /// Bare, both: with a modifier they rub out a word, which is the
+    /// line's.
+    #[must_use]
+    pub fn leaves_to_the_row(&self, key: &KeyEvent) -> bool {
+        self.leaves_to_the_row_on(key, cfg!(target_os = "macos"))
+    }
+
+    /// Whether the key the foot calls delete would take the row away now.
+    ///
+    /// On a Mac that is the key with `delete` written on it, which is
+    /// backspace, and goes to the row on fewer occasions than a forward
+    /// delete does: a foot that offered the key whenever forward delete
+    /// would act said "delete" over a line that backspace was still
+    /// rubbing out.
+    #[must_use]
+    pub fn delete_is_the_rows(&self) -> bool {
+        self.delete_is_the_rows_on(cfg!(target_os = "macos"))
+    }
+
+    /// The same, saying which machine it is asked on.
+    fn delete_is_the_rows_on(&self, mac: bool) -> bool {
+        let code = match mac {
+            true => KeyCode::Backspace,
+            false => KeyCode::Delete,
+        };
+        self.leaves_to_the_row_on(&KeyEvent::new(code, KeyModifiers::NONE), mac)
+    }
+
+    /// The same as [`Field::leaves_to_the_row`], saying which machine it is
+    /// asked on, so that a test on one can ask about the other.
+    fn leaves_to_the_row_on(&self, key: &KeyEvent, mac: bool) -> bool {
+        if !key.modifiers.is_empty() || key.kind == KeyEventKind::Repeat {
+            return false;
+        }
+        match key.code {
+            KeyCode::Delete => !self.takes_a_delete(),
+            KeyCode::Backspace => mac && self.said().is_empty(),
+            _ => false,
+        }
+    }
+
     /// Lets go of what is held, and says whether anything was.
     ///
     /// What escape does first in every box: a selection is nearer than
@@ -345,3 +404,120 @@ impl Default for Field {
 /// text's. The width only reaches [`Editing`] so that a motion measured in
 /// rows has something to measure against, and there are no rows here.
 const ROOM: u16 = u16::MAX;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    /// Delete is the row's only where the line has nothing in front of its
+    /// caret, on any machine.
+    ///
+    /// Broken deliberately by asking `is_empty` instead of
+    /// `takes_a_delete`: a filter with a word typed in it then keeps
+    /// delete, and the row the reader is on cannot be taken away until the
+    /// word is rubbed out.
+    #[test]
+    fn delete_is_the_rows_once_the_line_has_nothing_for_it() {
+        let mut line = Field::new();
+        assert!(line.leaves_to_the_row_on(&key(KeyCode::Delete), false));
+        line.put("ob");
+        assert!(
+            line.leaves_to_the_row_on(&key(KeyCode::Delete), false),
+            "delete at the end of a word, with nothing for it, stayed in the line"
+        );
+        line.handle_key(&key(KeyCode::Left));
+        assert!(
+            !line.leaves_to_the_row_on(&key(KeyCode::Delete), false),
+            "delete in front of a character went to the row"
+        );
+    }
+
+    /// Backspace is the row's on a Mac and only with an empty line; never
+    /// elsewhere.
+    ///
+    /// Broken deliberately by taking `mac &&` away, which gives a held
+    /// backspace on Linux the rows once the filter is empty; by asking
+    /// whether the caret is at the start rather than whether the line is
+    /// empty, which gives the row a backspace with a word still in front;
+    /// and by asking `is_empty`, which is blank and takes a line holding a
+    /// space -- one the list is narrowed by -- for an empty one.
+    #[test]
+    fn backspace_is_the_rows_only_on_a_mac_and_only_when_empty() {
+        let mut line = Field::new();
+        assert!(line.leaves_to_the_row_on(&key(KeyCode::Backspace), true));
+        assert!(!line.leaves_to_the_row_on(&key(KeyCode::Backspace), false));
+        line.put("ob");
+        line.handle_key(&key(KeyCode::Home));
+        assert!(
+            !line.leaves_to_the_row_on(&key(KeyCode::Backspace), true),
+            "backspace with a word in the line went to the row"
+        );
+        let mut line = Field::new();
+        line.put(" ");
+        assert!(
+            !line.leaves_to_the_row_on(&key(KeyCode::Backspace), true),
+            "backspace with a space in the line went to the row"
+        );
+    }
+
+    /// A key held down is never the row's, whichever key and whatever is in
+    /// the line.
+    ///
+    /// Broken deliberately by taking the `Repeat` out of the guard: holding
+    /// delete over an empty filter forgets a project each time it repeats.
+    #[test]
+    fn a_held_key_is_never_the_rows() {
+        let line = Field::new();
+        for code in [KeyCode::Delete, KeyCode::Backspace] {
+            let mut held = key(code);
+            held.kind = KeyEventKind::Repeat;
+            assert!(
+                !line.leaves_to_the_row_on(&held, true),
+                "a held {code:?} went to the row"
+            );
+        }
+    }
+
+    /// What the foot calls delete is backspace on a Mac, so it is offered
+    /// only where backspace would act -- and forward delete everywhere else.
+    ///
+    /// Broken deliberately by asking about forward delete on a Mac too: the
+    /// foot then offers the key over a word that the key with `delete` on
+    /// it would rub out a letter of.
+    #[test]
+    fn the_foots_delete_is_the_key_a_mac_has_delete_written_on() {
+        let mut line = Field::new();
+        assert!(line.delete_is_the_rows_on(true));
+        assert!(line.delete_is_the_rows_on(false));
+        line.put("ob");
+        assert!(
+            !line.delete_is_the_rows_on(true),
+            "a Mac's foot offered delete over a word backspace would rub out"
+        );
+        assert!(
+            line.delete_is_the_rows_on(false),
+            "forward delete at the end of a word was not offered"
+        );
+    }
+
+    /// With a modifier both keys rub out a word, and that is the line's.
+    ///
+    /// Broken deliberately by taking the modifier check out of the guard:
+    /// `alt+backspace` on an empty line forgets the row on a Mac.
+    #[test]
+    fn a_modifier_keeps_the_key_in_the_line() {
+        let line = Field::new();
+        for code in [KeyCode::Delete, KeyCode::Backspace] {
+            for modifiers in [KeyModifiers::ALT, KeyModifiers::CONTROL] {
+                assert!(
+                    !line.leaves_to_the_row_on(&KeyEvent::new(code, modifiers), true),
+                    "{modifiers:?} and {code:?} went to the row"
+                );
+            }
+        }
+    }
+}

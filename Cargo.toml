@@ -484,6 +484,8 @@ sys-locale = "0.3.2"
 # click on it does -- see `obelus-gui`'s `title.rs`. Only on that platform.
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", features = [
+    "NSButton",
+    "NSControl",
     "NSEvent",
     "NSPasteboard",
     "NSResponder",

@@ -117,9 +117,10 @@ fn build(paths: &[PathBuf], built: &'static str, headless: bool) -> Result<App> 
     let root = opening
         .root
         .or_else(|| obelus_git::worktree(&here).map(|_| here.clone()));
-    match root {
+    let asking = match root {
         Some(root) => {
             app.work_in(root);
+            false
         }
         // Nothing to go on, so Obelus asks, and the asking is the whole
         // of the screen until it is answered. `work_in` is deliberately
@@ -130,11 +131,16 @@ fn build(paths: &[PathBuf], built: &'static str, headless: bool) -> Result<App> 
                 "Headless, Obelus needs a project: name its directory, or start it in one"
             )
         }
-        None => app.ask_which_project(),
-    }
+        None => true,
+    };
     // Read here rather than in `App::new`, so that a test gets the defaults
     // rather than whatever the machine it runs on has in `~/.config`.
     app.load_config();
+    // After the settings, because how many projects the page offers is one
+    // of them.
+    if asking {
+        app.ask_which_project();
+    }
     // After the settings, because whether to is one of them -- and a
     // project's own file may say. Beside whatever the paths named.
     app.reopen_what_was_open();

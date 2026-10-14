@@ -288,6 +288,14 @@ impl Terminal {
         self.parser.callbacks().title.as_deref()
     }
 
+    /// What to call it: what the program calls itself, or the words it was
+    /// started with until it has said. The one answer the list of what is
+    /// open, a tab and the window's own name all read.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        self.title().unwrap_or(self.said())
+    }
+
     /// How it ended, once it has.
     #[must_use]
     pub const fn ended(&self) -> Option<&Ended> {

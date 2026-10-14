@@ -1,9 +1,18 @@
 //! The box a message or a note is written in.
 //!
 //! A few lines of text with a caret in them, which is a smaller thing than a
-//! buffer -- no file, no syntax, no history -- and a larger thing than a
+//! buffer -- no file, no syntax, no journal -- and a larger thing than a
 //! prompt, because a message to an agent is a paragraph and sometimes a
 //! pasted stack trace.
+//!
+//! **A box keeps what it said, a step at a time.** Not the file's journal,
+//! which keeps what each edit changed because a copy of a file per
+//! keystroke is unaffordable -- a box is a paragraph, and a copy of it per
+//! step is what is simplest to be right about, pictures and all. The steps
+//! are the file's all the same (`obelus_buffer::undo`): a run of typing is
+//! one, a run of deleting is another, and anything else is one of its own.
+//! What the box is *given* -- a note opened, a message sent and the box
+//! emptied -- is not a step: it is where the reader starts from.
 //!
 //! What is *in* the box is [`obelus_editing::Editing`], which is what the
 //! file being read is too. That is the whole of the point: a reader who has
@@ -28,7 +37,7 @@
 //! reader has nowhere to type at all, the pair is swallowed rather than
 //! passed on, for the same reason a plain character is.
 
-use std::ops::Range;
+use std::{ops::Range, sync::Arc};
 
 use crossterm::event::KeyEvent;
 use obelus_editing::Editing;
@@ -91,7 +100,41 @@ pub struct Composer {
     /// length and the same order -- and what makes the caret step over a
     /// picture in one press and the backspace take the whole of it, both of
     /// them without knowing pictures exist.
-    attached: Vec<Attached>,
+    ///
+    /// Shared, because every step keeps what the box held: a picture is
+    /// megabytes, and copying them into a step on every key -- and comparing
+    /// them byte for byte afterwards -- was the price of a letter typed
+    /// beside a screenshot. A step holds the same list until an edit changes
+    /// it, and an edit that does changes a copy, so whether the pictures
+    /// moved is whether the list is still the one the step holds.
+    attached: Arc<Vec<Attached>>,
+    /// What it said before each step, nearest last.
+    behind: Vec<Was>,
+    /// What it said before each step taken back, nearest last.
+    ahead: Vec<Was>,
+    /// What the last step was doing and where it left the caret: the next
+    /// edit joins it if it is the same kind of thing carried straight on.
+    running: Option<(Doing, LineNumber, CharColumn)>,
+}
+
+/// What a reader was doing, for where one step back ends.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Doing {
+    /// Putting characters in one at a time.
+    Typing,
+    /// Taking them out one at a time, from either side of the caret.
+    Deleting,
+    /// Anything else: a line, a paste, a cut, a selection typed over.
+    Whole,
+}
+
+/// What the box said, to go back to.
+#[derive(Clone, Debug)]
+struct Was {
+    said: String,
+    attached: Arc<Vec<Attached>>,
+    line: LineNumber,
+    column: CharColumn,
 }
 
 impl crate::spelling::Spells for Composer {
@@ -134,8 +177,96 @@ impl Composer {
     pub fn new() -> Self {
         Self {
             writing: Editing::new(""),
-            attached: Vec::new(),
+            attached: Arc::default(),
+            behind: Vec::new(),
+            ahead: Vec::new(),
+            running: None,
         }
+    }
+
+    /// Whether there is a step to take back.
+    #[must_use]
+    pub fn can_undo(&self) -> bool {
+        !self.behind.is_empty()
+    }
+
+    /// Whether there is a step taken back to take again.
+    #[must_use]
+    pub fn can_redo(&self) -> bool {
+        !self.ahead.is_empty()
+    }
+
+    /// Takes back the last step. Says whether there was one.
+    pub fn undo(&mut self) -> bool {
+        let Some(was) = self.behind.pop() else {
+            return false;
+        };
+        self.ahead.push(self.was());
+        self.go_back_to(was);
+        true
+    }
+
+    /// Takes again the last step [`Self::undo`] took back.
+    pub fn redo(&mut self) -> bool {
+        let Some(was) = self.ahead.pop() else {
+            return false;
+        };
+        self.behind.push(self.was());
+        self.go_back_to(was);
+        true
+    }
+
+    fn was(&self) -> Was {
+        let cursor = self.writing.cursor();
+        Was {
+            said: self.writing.said(),
+            attached: self.attached.clone(),
+            line: cursor.line,
+            column: cursor.column,
+        }
+    }
+
+    fn go_back_to(&mut self, was: Was) {
+        self.writing.replace(&was.said, u16::MAX);
+        self.writing.arrive(was.line, was.column);
+        self.attached = was.attached;
+        // A step taken back is not one a letter typed next carries on.
+        self.running = None;
+    }
+
+    /// Does an edit, and keeps what the box said before it as a step --
+    /// or as part of the last one, where this carries straight on from it.
+    fn edit<T>(&mut self, doing: Doing, act: impl FnOnce(&mut Self) -> T) -> T {
+        let was = self.was();
+        // Over a selection, whatever the key, the selection went: that is
+        // a step of its own, as it is in the file.
+        let doing = match self.writing.has_selection() {
+            true => Doing::Whole,
+            false => doing,
+        };
+        let out = act(self);
+        if self.writing.said() == was.said && Arc::ptr_eq(&self.attached, &was.attached) {
+            return out;
+        }
+        let joins = doing != Doing::Whole && self.running == Some((doing, was.line, was.column));
+        if !joins {
+            self.behind.push(was);
+        }
+        self.ahead.clear();
+        let cursor = self.writing.cursor();
+        self.running = (doing != Doing::Whole).then_some((doing, cursor.line, cursor.column));
+        out
+    }
+
+    /// Lets go of every step: what the box holds now is where the reader
+    /// starts from.
+    ///
+    /// For whoever holds the box and has just kept its steps some other
+    /// way -- the notes, which make what was typed a step of the page's.
+    pub fn start_from_here(&mut self) {
+        self.behind.clear();
+        self.ahead.clear();
+        self.running = None;
     }
 
     /// What has been written, newlines and all.
@@ -154,12 +285,17 @@ impl Composer {
     pub fn take(&mut self) -> String {
         let said = self.text();
         self.writing = Editing::new("");
+        self.start_from_here();
         said
     }
 
     /// Puts text in, with the caret at the end of it.
+    ///
+    /// Given rather than typed, so it is where the reader starts from and
+    /// not a step they can take back.
     pub fn replace(&mut self, text: &str) {
         self.writing.replace(text, u16::MAX);
+        self.start_from_here();
     }
 
     /// Whatever a key means to what is being written.
@@ -181,19 +317,35 @@ impl Composer {
             self.newline();
             return true;
         }
-        self.writing.handle_key(key, &(), room.max(1))
+        let doing = match obelus_editing::typing_for(key) {
+            Some(obelus_editing::Typing::Character(_)) => Doing::Typing,
+            Some(obelus_editing::Typing::Backward | obelus_editing::Typing::Forward) => {
+                Doing::Deleting
+            }
+            Some(_) => Doing::Whole,
+            // A motion, which changes nothing there is to take back.
+            None => return self.writing.handle_key(key, &(), room.max(1)),
+        };
+        self.edit(doing, |me| me.writing.handle_key(key, &(), room.max(1)))
     }
 
     /// Types one character.
     pub fn insert(&mut self, character: char) {
-        self.writing
-            .apply(obelus_editing::Typing::Character(character), &(), u16::MAX);
+        self.edit(Doing::Typing, |me| {
+            me.writing
+                .apply(obelus_editing::Typing::Character(character), &(), u16::MAX);
+        });
     }
 
     /// Breaks the line at the caret.
+    ///
+    /// A step of its own, as it is in the file: the end of a line is where
+    /// a reader expects taking back what they typed to stop.
     pub fn newline(&mut self) {
-        self.writing
-            .apply(obelus_editing::Typing::Newline, &(), u16::MAX);
+        self.edit(Doing::Whole, |me| {
+            me.writing
+                .apply(obelus_editing::Typing::Newline, &(), u16::MAX);
+        });
     }
 
     /// Up or down one row, answering `false` at the ends -- which is what
@@ -230,9 +382,11 @@ impl Composer {
     /// who goes back and pastes one between two others has put it between
     /// them, and the order is what the agent will be told.
     pub fn attach(&mut self, picture: Attached, width: u16) {
-        let at = self.marks_before(self.caret_offset());
-        self.attached.insert(at, picture);
-        self.writing.write_in(&ATTACHED.to_string(), width.max(1));
+        self.edit(Doing::Whole, |me| {
+            let at = me.marks_before(me.caret_offset());
+            Arc::make_mut(&mut me.attached).insert(at, picture);
+            me.writing.write_in(&ATTACHED.to_string(), width.max(1));
+        });
     }
 
     /// What is in the box, in order, with the runs between the pictures.
@@ -276,13 +430,13 @@ impl Composer {
     /// again they would tell the agent about a picture it was not given.
     pub fn put_parts(&mut self, parts: Vec<Part>) {
         let mut text = String::new();
-        self.attached.clear();
+        self.attached = Arc::default();
         for part in parts {
             match part {
                 Part::Words(words) => text.push_str(&words),
                 Part::Picture(picture) => {
                     text.push(ATTACHED);
-                    self.attached.push(picture);
+                    Arc::make_mut(&mut self.attached).push(picture);
                 }
             }
         }
@@ -296,7 +450,7 @@ impl Composer {
     /// them with the next thing typed.
     pub fn take_parts(&mut self) -> Vec<Part> {
         let parts = self.parts();
-        self.attached.clear();
+        self.attached = Arc::default();
         self.replace("");
         parts
     }
@@ -350,24 +504,28 @@ impl Composer {
 
     /// Takes out what is behind the caret.
     pub fn backspace(&mut self) {
-        let was = self.marks_before(usize::MAX);
-        // Which picture the mark behind the caret is, before it is gone.
-        let doomed = (self.caret_offset() > 0
-            && self.writing.said().chars().nth(self.caret_offset() - 1) == Some(ATTACHED))
-        .then(|| self.marks_before(self.caret_offset() - 1));
-        self.writing
-            .apply(obelus_editing::Typing::Backward, &(), u16::MAX);
-        self.forget(was, doomed);
+        self.edit(Doing::Deleting, |me| {
+            let was = me.marks_before(usize::MAX);
+            // Which picture the mark behind the caret is, before it is gone.
+            let doomed = (me.caret_offset() > 0
+                && me.writing.said().chars().nth(me.caret_offset() - 1) == Some(ATTACHED))
+            .then(|| me.marks_before(me.caret_offset() - 1));
+            me.writing
+                .apply(obelus_editing::Typing::Backward, &(), u16::MAX);
+            me.forget(was, doomed);
+        });
     }
 
     /// And what is in front of it.
     pub fn delete(&mut self) {
-        let was = self.marks_before(usize::MAX);
-        let doomed = (self.writing.said().chars().nth(self.caret_offset()) == Some(ATTACHED))
-            .then(|| self.marks_before(self.caret_offset()));
-        self.writing
-            .apply(obelus_editing::Typing::Forward, &(), u16::MAX);
-        self.forget(was, doomed);
+        self.edit(Doing::Deleting, |me| {
+            let was = me.marks_before(usize::MAX);
+            let doomed = (me.writing.said().chars().nth(me.caret_offset()) == Some(ATTACHED))
+                .then(|| me.marks_before(me.caret_offset()));
+            me.writing
+                .apply(obelus_editing::Typing::Forward, &(), u16::MAX);
+            me.forget(was, doomed);
+        });
     }
 
     /// Drops the picture an edit just took the mark of.
@@ -391,7 +549,7 @@ impl Composer {
             && was - now == 1
             && which < self.attached.len()
         {
-            self.attached.remove(which);
+            Arc::make_mut(&mut self.attached).remove(which);
             return;
         }
         // More than one went, which a selection typed over does. Which of
@@ -402,7 +560,7 @@ impl Composer {
         // selected across the middle and kept typing; the alternative is
         // carrying an identity for each mark through a box that is
         // deliberately not a buffer.
-        self.attached.truncate(now);
+        Arc::make_mut(&mut self.attached).truncate(now);
     }
 
     /// One character left, or right.
@@ -524,7 +682,7 @@ impl Composer {
         } else {
             what.to_string()
         };
-        self.writing.write_in(what, width.max(1));
+        self.edit(Doing::Whole, |me| me.writing.write_in(what, width.max(1)));
     }
 
     /// Puts the caret where a cell of a row is, and holds from where it
@@ -585,7 +743,7 @@ impl Composer {
 
     /// Takes out what is held, and says what it was.
     pub fn cut(&mut self, width: u16) -> Option<String> {
-        self.writing.cut(width.max(1))
+        self.edit(Doing::Whole, |me| me.writing.cut(width.max(1)))
     }
 
     /// Which row of the box the caret is on, and how many cells into it.
@@ -941,6 +1099,51 @@ mod tests {
                 Part::Picture(picture("two")),
             ],
             "the mark that is left was paired with the picture that went"
+        );
+    }
+
+    /// Taking back a step puts back the pictures it took, in their places,
+    /// and what the box was given is not a step at all.
+    ///
+    /// Broken deliberately by keeping only the text of a step: the mark
+    /// came back with no picture behind it, and the parts lost one.
+    #[test]
+    fn a_step_taken_back_brings_its_picture_with_it() {
+        let mut box_ = Composer::new();
+        box_.replace("given");
+        assert!(!box_.can_undo(), "what the box was given is a step");
+        box_.attach(picture("one"), 80);
+        let whole = box_.parts();
+        box_.backspace();
+        assert!(!box_.has_pictures());
+
+        assert!(box_.undo());
+        assert_eq!(box_.parts(), whole, "the picture did not come back");
+        assert!(box_.undo());
+        assert_eq!(box_.text(), "given");
+        assert!(!box_.undo());
+        assert!(box_.redo());
+        assert_eq!(box_.parts(), whole);
+    }
+
+    /// A letter typed beside a picture keeps the picture once, however many
+    /// steps there are.
+    ///
+    /// Broken deliberately by having a step copy the list rather than share
+    /// it: the step held a second copy of the bytes.
+    #[test]
+    fn a_step_shares_the_pictures_it_did_not_change() {
+        let mut box_ = Composer::new();
+        box_.attach(picture("big"), 80);
+        box_.newline();
+        box_.insert('a');
+        let steps = &box_.behind;
+        assert_eq!(steps.len(), 3);
+        assert!(
+            steps[1..]
+                .iter()
+                .all(|step| Arc::ptr_eq(&step.attached, &box_.attached)),
+            "a step copied the pictures"
         );
     }
 
