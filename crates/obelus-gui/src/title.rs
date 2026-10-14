@@ -1,12 +1,14 @@
-//! The strip along the top of the window, where the title goes.
+//! The strip along the top of the window, and what is open along it.
 //!
-//! The title says nothing of Obelus's own: a terminal has no title bar, so
-//! anything written in one would be something `ob` does not say, and the
-//! file being read is on the status row already. It is "Obelus", which is
-//! what every platform would write there anyway. What is Obelus's is what
-//! is *under* it -- a grey bar across the top of a page drawn in a theme is
-//! a frame round the theme in somebody else's colours, and a picture under
-//! the page stopping short of the top of the window is the same frame.
+//! No title: a window's title is the program's name, which the reader
+//! knows, and the system's icon beside it says the same thing again. What
+//! the bar has room for instead is a tab for each open document, and a
+//! press on one goes to it (`tabs`). A terminal has no title bar and so no
+//! tabs, and reaches the same documents through the list of what is open.
+//! What is Obelus's too is what is *under* the bar -- a grey bar across
+//! the top of a page drawn in a theme is a frame round the theme in
+//! somebody else's colours, and a picture under the page stopping short of
+//! the top of the window is the same frame.
 //!
 //! Which each platform answers differently. macOS lets the page run up
 //! under a transparent title bar, so the ground the painter lays under
@@ -27,16 +29,18 @@
 //! -- and Obelus draws the three buttons on it (`Bar`). What it does not
 //! do is answer them itself. winit keeps the window's messages to itself,
 //! so Obelus listens beside it and tells Windows which part of the window
-//! is which: the bar, so that dragging, a double click and the menu are the
-//! system's, and the buttons by name, so that the layouts Windows opens
-//! over the maximise button still open there.
+//! is which: the bar, so that dragging, a double click and the menu are
+//! the system's, the buttons by name, so that the layouts Windows opens over
+//! the maximise button still open there -- and the tabs as the page's, so
+//! that a press on one reaches Obelus rather than dragging the window.
 //!
-//! The words on the bar are the system's on the other two, in the system's
-//! ink, so what Obelus tells it is whether the page is dark: that is what
-//! decides whether the title and the buttons are drawn light or dark. On
-//! Windows Obelus writes them itself, where the system would: the icon and
-//! "Obelus" at the left, in the system's face and at its size, in the
-//! page's ink.
+//! So the buttons stand where each system puts them: on the right on
+//! Windows, which Obelus draws, and on the left on macOS, which AppKit
+//! draws and the tabs start after. The title is hidden on macOS, and on
+//! Windows nothing writes one. The buttons' ink is the system's on macOS,
+//! so what Obelus tells it is whether the page is dark; the tabs are
+//! written in the page's ink on both, in the face the system writes its
+//! own words in.
 //!
 //! There is no switch to take the bar away, and there was one briefly. It
 //! did something on macOS, Windows and GNOME and nothing at all where most
@@ -46,18 +50,20 @@
 //! looking for it -- and on macOS, where it worked, a window with no bar is a
 //! window nothing can move.
 
+mod tabs;
 #[cfg(windows)]
 mod windows;
 
 use std::time::{Duration, Instant};
 
 use ratatui::style::Color;
+pub(crate) use tabs::{Painted, Room, Spot, Strip};
 #[cfg(windows)]
 pub(crate) use windows::{Bar, drawn};
 use winit::window::{Theme, Window, WindowAttributes};
 
-/// What the window is called, which is what the bar says: the system's bar
-/// on the other two, and the one Obelus draws on Windows.
+/// What the window is called: what a taskbar, a switcher and a list of
+/// windows say about it. Not on its bar, which has the tabs instead.
 pub(crate) const TITLE: &str = "Obelus";
 
 /// The window as it is asked for, with the page running up under the title
@@ -69,6 +75,7 @@ pub(crate) fn asked_for(attributes: WindowAttributes) -> WindowAttributes {
         attributes
             .with_titlebar_transparent(true)
             .with_fullsize_content_view(true)
+            .with_title_hidden(true)
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -121,6 +128,67 @@ pub(crate) const fn height(_window: &Window) -> f32 {
     0.0
 }
 
+/// Where on a bar this tall the tabs may go, on a window this wide.
+///
+/// Nowhere, where there is no bar in the page: a window in full screen,
+/// and on Linux, where the bar is the compositor's.
+pub(crate) fn room(window: &Window, titled: f32, width: f32, bar: Option<&Drawn>) -> Option<Room> {
+    if titled <= 0.0 {
+        return None;
+    }
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "a screen is a few pixels to a point"
+    )]
+    let scale = window.scale_factor() as f32;
+    match bar {
+        // Between the frame's edge and the three buttons on the right.
+        Some(bar) => Some(Room {
+            from: bar.inset,
+            to: width - 3.0 * bar.button,
+            titled,
+            words: bar.words,
+        }),
+        None => beside_the_buttons(window, scale).map(|from| Room {
+            from,
+            to: width - (8.0 * scale).round(),
+            titled,
+            words: (WORDS * scale).round(),
+        }),
+    }
+}
+
+/// How big a tab's name is written on macOS: the size AppKit writes a
+/// window's title in.
+#[cfg(target_os = "macos")]
+const WORDS: f32 = 13.0;
+
+/// Not asked anywhere else: the bar there is Obelus's, and says its own.
+#[cfg(not(target_os = "macos"))]
+const WORDS: f32 = 12.0;
+
+/// Where the tabs start on macOS: a little after the three buttons AppKit
+/// stands at the left of the bar, wherever it has put them.
+#[cfg(target_os = "macos")]
+fn beside_the_buttons(window: &Window, scale: f32) -> Option<f32> {
+    use objc2_app_kit::NSWindowButton;
+    let zoom = appkit(window)?.standardWindowButton(NSWindowButton::ZoomButton)?;
+    // In the bar's own points, which start at the window's left edge.
+    let frame = zoom.frame();
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "a title bar is hundreds of points across"
+    )]
+    let end = (frame.origin.x + frame.size.width) as f32;
+    Some(((end + 12.0) * scale).round())
+}
+
+/// Nowhere: the bar is the compositor's.
+#[cfg(not(target_os = "macos"))]
+const fn beside_the_buttons(_window: &Window, _scale: f32) -> Option<f32> {
+    None
+}
+
 /// Whether a place in the window, in pixels from the top, is on the title
 /// bar rather than the page.
 pub(crate) fn under(y: f64, titled: f32) -> bool {
@@ -166,14 +234,19 @@ pub(crate) enum Part {
     /// The bar, which drags the window.
     Bar,
     Button(Button),
+    /// The tabs, which are the page's: a press on one is Obelus's.
+    Tabs,
 }
 
-/// What part of a window a place on it is, in pixels from its top left.
+/// What part of a window a place on it is, in pixels from its top left,
+/// with the tabs from and to where they are.
 ///
-/// The edge first, over the buttons as well, the way it is on a window
-/// with the system's own bar -- and not at all on a maximised window, which
-/// has no edge to move and whose top row of pixels is the one the pointer
-/// stops on, so a button there is one thrown at rather than aimed at.
+/// The edge first, over the buttons and the tabs as well, the way it is on
+/// a window with the system's own bar -- and not at all on a maximised
+/// window, which has no edge to move and whose top row of pixels is the one
+/// the pointer stops on, so a button there is one thrown at rather than
+/// aimed at. The bar is only what is left: where there are no tabs, which
+/// is where a window is taken hold of to move it.
 #[cfg_attr(
     not(any(windows, test)),
     expect(dead_code, reason = "only Windows asks")
@@ -185,6 +258,7 @@ pub(crate) fn part(
     button: f32,
     edge: f32,
     maximised: bool,
+    tabs: Option<(f32, f32)>,
 ) -> Part {
     if y >= titled {
         return Part::Page;
@@ -192,13 +266,16 @@ pub(crate) fn part(
     if !maximised && y < edge {
         return Part::Edge;
     }
-    Button::ALL
-        .into_iter()
-        .find(|&each| {
-            let [left, _, wide, _] = button_at(each, width, titled, button);
-            (left..left + wide).contains(&x)
-        })
-        .map_or(Part::Bar, Part::Button)
+    if let Some(button) = Button::ALL.into_iter().find(|&each| {
+        let [left, _, wide, _] = button_at(each, width, titled, button);
+        (left..left + wide).contains(&x)
+    }) {
+        return Part::Button(button);
+    }
+    match tabs.is_some_and(|(from, to)| (from..to).contains(&x)) {
+        true => Part::Tabs,
+        false => Part::Bar,
+    }
 }
 
 /// Where a button is on a window this wide, as left, top, width and height
@@ -239,12 +316,10 @@ pub(crate) struct Drawn {
     pub(crate) mark: f32,
     /// How wide the pen the marks are drawn with is, in pixels.
     pub(crate) pen: f32,
-    /// How far in from the left the window's icon stands, in pixels: as
-    /// far as the frame is wide, which is where the system puts its own.
+    /// How far in from the left the tabs start, in pixels: as far as the
+    /// frame is wide, which is where the system puts its own icon.
     pub(crate) inset: f32,
-    /// How wide and tall the icon is, in pixels.
-    pub(crate) icon: f32,
-    /// How big the title is written, in pixels.
+    /// How big a tab's name is written, in pixels.
     pub(crate) words: f32,
     /// The button the pointer is over.
     pub(crate) hovered: Option<Button>,
@@ -295,17 +370,48 @@ pub(crate) fn inks(drawn: &Drawn, button: Button, dark: bool) -> (Option<[f32; 4
     }
 }
 
-/// What the title is written in on a page this dark: the page's ink, at
-/// full strength on a window with the reader's keys and faint on one
-/// without, as the marks on the buttons are.
-pub(crate) fn title_ink(drawn: &Drawn, dark: bool) -> [f32; 4] {
-    let strength = match drawn.active {
-        true => 1.0,
-        false => 0.36,
+/// What a tab is drawn in on a page this dark: the colour laid behind it,
+/// if any, and its name's.
+///
+/// The page's ink at a fraction, as the buttons are. The tab being read is
+/// the one in full ink on a shade of its own -- it is the bar saying what
+/// is on the page under it -- and the rest are fainter, lit only under the
+/// pointer. Fainter again on a window without the reader's keys.
+pub(crate) fn tab_inks(
+    reading: bool,
+    hovered: bool,
+    active: bool,
+    dark: bool,
+) -> (Option<[f32; 4]>, [f32; 4]) {
+    let [r, g, b] = match dark {
+        true => [1.0, 1.0, 1.0],
+        false => [0.0, 0.0, 0.0],
     };
-    match dark {
-        true => [1.0, 1.0, 1.0, strength],
-        false => [0.0, 0.0, 0.0, strength],
+    let strength = match (reading, active) {
+        (true, true) => 1.0,
+        (false, true) => 0.6,
+        (true, false) => 0.5,
+        (false, false) => 0.36,
+    };
+    let behind = match (reading, hovered) {
+        (true, _) => Some([r, g, b, 0.1]),
+        (false, true) => Some([r, g, b, 0.05]),
+        (false, false) => None,
+    };
+    (behind, [r, g, b, strength])
+}
+
+/// What an arrow at the end of the tabs is drawn in: the page's ink, faint
+/// where there is nothing further that way.
+pub(crate) fn arrow_inks(more: bool, hovered: bool, dark: bool) -> (Option<[f32; 4]>, [f32; 4]) {
+    let [r, g, b] = match dark {
+        true => [1.0, 1.0, 1.0],
+        false => [0.0, 0.0, 0.0],
+    };
+    match (more, hovered) {
+        (true, true) => (Some([r, g, b, 0.06]), [r, g, b, 0.9]),
+        (true, false) => (None, [r, g, b, 0.7]),
+        (false, _) => (None, [r, g, b, 0.2]),
     }
 }
 
@@ -320,6 +426,10 @@ impl Bar {
     }
 
     pub(crate) fn drawn(&self, _window: &Window, _active: bool) -> Drawn {
+        match *self {}
+    }
+
+    pub(crate) fn tabs_are(&self, _tabs: Option<(f32, f32)>) {
         match *self {}
     }
 }
@@ -611,18 +721,30 @@ mod tests {
     /// A window 1000 pixels wide with a bar 31 tall, buttons 46 wide and
     /// an edge of 8, which is the system's at its standard density.
     fn on(x: f32, y: f32, maximised: bool) -> Part {
-        part((x, y), 1000.0, 31.0, 46.0, 8.0, maximised)
+        part(
+            (x, y),
+            1000.0,
+            31.0,
+            46.0,
+            8.0,
+            maximised,
+            Some((8.0, 400.0)),
+        )
     }
 
     /// The bar is the bar, the buttons stand against the right-hand edge in
     /// the system's order, and below the bar is the page.
     ///
     /// Deliberate break: count the buttons in from the left, or put close
-    /// first. A press meant to minimise closes the window.
+    /// first. A press meant to minimise closes the window. And answer the
+    /// tabs as the bar: a press on one drags the window instead of going
+    /// to the document.
     #[test]
     fn the_buttons_stand_against_the_right_in_the_systems_order() {
         assert_eq!(on(500.0, 20.0, false), Part::Bar);
         assert_eq!(on(999.0, 20.0, false), Part::Button(Button::Close));
+        assert_eq!(on(200.0, 20.0, false), Part::Tabs);
+        assert_eq!(on(400.0, 20.0, false), Part::Bar, "past the last tab");
         assert_eq!(on(954.0, 20.0, false), Part::Button(Button::Close));
         assert_eq!(on(953.0, 20.0, false), Part::Button(Button::Maximise));
         assert_eq!(on(907.0, 20.0, false), Part::Button(Button::Minimise));
@@ -641,6 +763,7 @@ mod tests {
     #[test]
     fn the_top_edge_resizes_a_window_that_is_not_maximised() {
         assert_eq!(on(500.0, 0.0, false), Part::Edge);
+        assert_eq!(on(200.0, 3.0, false), Part::Edge, "over the tabs too");
         assert_eq!(on(999.0, 7.0, false), Part::Edge, "over close too");
         assert_eq!(on(999.0, 8.0, false), Part::Button(Button::Close));
         assert_eq!(on(500.0, 0.0, true), Part::Bar);
@@ -654,7 +777,6 @@ mod tests {
             mark: 10.0,
             pen: 1.0,
             inset: 8.0,
-            icon: 16.0,
             words: 12.0,
             hovered,
             pressed,

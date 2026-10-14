@@ -178,8 +178,9 @@ pub struct Fonts {
     /// asks of every name in a list, for every character none of them had.
     named: Named,
     /// Lines in the face the system writes its own words in, by the text
-    /// and the size in pixels -- see [`Fonts::caption`].
-    captions: HashMap<(String, u32), Vec<Placed>>,
+    /// and the size in pixels, and how wide each is -- see
+    /// [`Fonts::caption`].
+    captions: HashMap<(String, u32), (Vec<Placed>, f32)>,
 }
 
 /// The faces a window's own words are written in, the first this machine
@@ -485,6 +486,15 @@ impl Fonts {
     /// Each glyph is placed from the start of the line and from its
     /// baseline; where that baseline goes is the caller's.
     pub fn caption(&mut self, text: &str, size: f32) -> &[Placed] {
+        &self.captioned(text, size).0
+    }
+
+    /// How wide that line is, in pixels.
+    pub fn caption_width(&mut self, text: &str, size: f32) -> f32 {
+        self.captioned(text, size).1
+    }
+
+    fn captioned(&mut self, text: &str, size: f32) -> &(Vec<Placed>, f32) {
         let key = (text.to_string(), size.to_bits());
         if !self.captions.contains_key(&key) {
             let family = CAPTION_FACES
@@ -493,7 +503,7 @@ impl Fonts {
                 .find(|name| self.named.contains_key(&name.to_lowercase()))
                 .map_or(Family::SansSerif, Family::Name);
             let metrics = Metrics::new(size, (size * LINE_HEIGHT).round());
-            let (mut placed, _) = lay(
+            let (mut placed, wide) = lay(
                 &mut self.system,
                 metrics,
                 text,
@@ -502,7 +512,7 @@ impl Fonts {
             for glyph in &mut placed {
                 glyph.baseline = None;
             }
-            self.captions.insert(key.clone(), placed);
+            self.captions.insert(key.clone(), (placed, wide));
         }
         &self.captions[&key]
     }

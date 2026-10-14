@@ -362,6 +362,12 @@ pub struct App {
     ///
     /// `None` in a terminal, which is told nothing: see [`App::drawn_by`].
     drawing: Option<std::sync::Arc<dyn Drawing>>,
+    /// The tabs the drawing was last told about -- see [`Drawing::tabs`].
+    ///
+    /// Kept so that it is told again only when they change: worked out on
+    /// every frame, because a name changes with nothing else saying so --
+    /// an agent naming its conversation, a file being written.
+    told_tabs: Vec<Tab>,
     /// Whether `ctrl+enter` arrives as itself rather than as enter.
     ///
     /// A window's keys always do; a terminal's only where it speaks the
@@ -604,6 +610,7 @@ impl App {
             names: None,
             replacing: false,
             drawing: None,
+            told_tabs: Vec::new(),
             prompt: None,
 
             ctrl_enter_arrives: true,
@@ -1642,6 +1649,27 @@ pub trait Drawing: std::fmt::Debug + Send + Sync {
     /// as every cell on the screen at once -- the cells cannot say this,
     /// because scrolling a file changes as many of them.
     fn recoloured(&self) {}
+
+    /// What is open, in the order the list of open documents has it, and
+    /// which of it is being read.
+    ///
+    /// Said when it changes, with the frame that changed it. Only a window
+    /// has anywhere to put it: its title bar, where a terminal has none --
+    /// and a terminal reaches the same documents through the list.
+    fn tabs(&self, _tabs: &[Tab]) {}
+}
+
+/// One open document, as a row of tabs says it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Tab {
+    /// Which document, for choosing it again -- see `Event::Chose`.
+    pub document: DocumentId,
+    /// What it is called: the file's name, or a conversation's.
+    pub name: String,
+    /// Whether it is the one being read.
+    pub reading: bool,
+    /// Whether it has changes that are not on disk.
+    pub unwritten: bool,
 }
 
 /// Lays out, scrolls and draws one frame.

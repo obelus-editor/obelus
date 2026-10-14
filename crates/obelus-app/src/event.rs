@@ -105,6 +105,11 @@ pub enum Event {
         /// And the row, from the top.
         y: u16,
     },
+    /// The reader chose an open document by its tab -- see `Drawing::tabs`.
+    ///
+    /// Only a window says this: the tabs are on its title bar, outside the
+    /// cells, so the press is the window's to place and not a `Pointer`.
+    Chose(obelus_buffer::DocumentId),
     /// Text the terminal pasted, all at once.
     ///
     /// Because Obelus asks for bracketed paste, which wraps what the
@@ -276,6 +281,7 @@ impl Event {
             Self::Shifted(_) => "Shifted",
             Self::Scroll(_) => "Scroll",
             Self::Pointer { .. } => "Pointer",
+            Self::Chose(_) => "Chose",
             Self::Paste(_) => "Paste",
             Self::Spelling => "Spelling",
             Self::Dropped(_) => "Dropped",

@@ -4615,6 +4615,7 @@ dependencies = [
  "image",
  "libc",
  "obelus-app",
+ "obelus-buffer",
  "obelus-clipboard",
  "obelus-component",
  "obelus-config",
