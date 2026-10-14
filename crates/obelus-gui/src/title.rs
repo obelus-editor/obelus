@@ -87,23 +87,31 @@ pub(crate) fn asked_for(attributes: WindowAttributes) -> WindowAttributes {
 /// title bar.
 ///
 /// Nothing, except where the page runs up under it. Asked of AppKit rather
-/// than written down, because the height is the system's -- and because in
-/// full screen the bar is gone until the pointer asks for it, which the
-/// same question answers with nothing.
+/// than written down, because in full screen the bar is gone until the
+/// pointer asks for it, which the same question answers with nothing --
+/// and where there is a bar, it is made `TALL`.
 #[cfg(target_os = "macos")]
 pub(crate) fn height(window: &Window) -> f32 {
     let Some(shown) = appkit(window) else {
         return 0.0;
     };
-    // The frame is the whole window and the layout rectangle is the part
-    // the title bar does not cover, both in points.
-    let points = (shown.frame().size.height - shown.contentLayoutRect().size.height).max(0.0);
+    let points = bar_points(&shown);
     #[expect(
         clippy::cast_possible_truncation,
         reason = "a title bar is tens of pixels"
     )]
     let pixels = (points * window.scale_factor()).round() as f32;
     pixels
+}
+
+/// How tall the bar is, in points -- the one answer the grid and the
+/// buttons both go by, or a bar AppKit made taller still would leave the
+/// buttons in the middle of less than the grid leaves.
+#[cfg(target_os = "macos")]
+fn bar_points(shown: &objc2_app_kit::NSWindow) -> f64 {
+    // The frame is the whole window and the layout rectangle is the part
+    // the title bar does not cover, both in points.
+    tall(shown.frame().size.height - shown.contentLayoutRect().size.height)
 }
 
 /// The window AppKit has behind winit's.
@@ -127,6 +135,93 @@ fn appkit(window: &Window) -> Option<objc2::rc::Retained<objc2_app_kit::NSWindow
 pub(crate) const fn height(_window: &Window) -> f32 {
     0.0
 }
+
+/// How tall the bar is on macOS, in points: what Safari gives its row of
+/// tabs. The system's own is twenty-eight, and a tab in it was a sliver.
+#[cfg_attr(
+    not(any(target_os = "macos", test)),
+    expect(dead_code, reason = "only macOS asks")
+)]
+const TALL: f64 = 38.0;
+
+/// How tall a bar AppKit says is this tall is drawn: at least `TALL`, and
+/// none at all where there is none, which is full screen.
+///
+/// Asked whether there is a point of it rather than whether it is nothing:
+/// it is a subtraction of two of AppKit's doubles, and a hair over nothing
+/// on the way into full screen would otherwise be a whole bar.
+#[cfg_attr(
+    not(any(target_os = "macos", test)),
+    expect(dead_code, reason = "only macOS asks")
+)]
+fn tall(system: f64) -> f64 {
+    match system >= 1.0 {
+        true => system.max(TALL),
+        false => 0.0,
+    }
+}
+
+/// Stands the system's three buttons in the middle of the bar, the
+/// way Zed does it, rather than at the top of the one AppKit lays them out
+/// on.
+///
+/// Not an empty toolbar, which is how AppKit makes a bar taller of its own
+/// accord: the toolbar takes every press on the bar, so a tab could not be
+/// pressed and a press on one dragged the window.
+///
+/// AppKit lays the bar out again whenever it likes and puts the buttons
+/// back at the top of it, so this is asked at every moment Zed found it
+/// does: whenever the window is measured, which is every resize and every
+/// way into and out of full screen; a new appearance (`follow`); and the
+/// window getting the keys or coming back into sight. Not in full screen
+/// itself, where the bar is a window of its own that comes down when the
+/// pointer asks for it, and has no room in the page to be the middle of.
+#[cfg(target_os = "macos")]
+pub(crate) fn centre_the_buttons(window: &Window) {
+    use objc2_app_kit::{NSWindowButton, NSWindowStyleMask};
+    let Some(shown) = appkit(window) else {
+        return;
+    };
+    let tall = bar_points(&shown);
+    if tall <= 0.0 || shown.styleMask().contains(NSWindowStyleMask::FullScreen) {
+        return;
+    }
+    let [Some(close), Some(minimise), Some(zoom)] = [
+        NSWindowButton::CloseButton,
+        NSWindowButton::MiniaturizeButton,
+        NSWindowButton::ZoomButton,
+    ]
+    .map(|which| shown.standardWindowButton(which)) else {
+        return;
+    };
+    // The view the whole bar is in, which is AppKit's height for it: made
+    // taller from the top of the window down, or a button moved below its
+    // foot would be one no press could reach.
+    //
+    // Safe: `superview` is unsafe because AppKit does not keep the view it
+    // hands back alive for the caller, and objc2 retains it on the way out.
+    let Some(bar) = (unsafe { close.superview().and_then(|buttons| buttons.superview()) }) else {
+        return;
+    };
+    let mut frame = bar.frame();
+    frame.size.height = tall;
+    frame.origin.y = shown.frame().size.height - tall;
+    bar.setFrame(frame);
+    for button in [&close, &minimise, &zoom] {
+        let mut frame = button.frame();
+        frame.origin.y = (tall - frame.size.height) / 2.0;
+        button.setFrame(frame);
+    }
+    // Or a button goes on lighting up where it used to be.
+    bar.updateTrackingAreas();
+    for button in [&close, &minimise, &zoom] {
+        button.updateTrackingAreas();
+    }
+}
+
+/// Nothing: the buttons are where the system put them.
+#[cfg(not(target_os = "macos"))]
+pub(crate) const fn centre_the_buttons(_window: &Window) {}
 
 /// Where on a bar this tall the tabs may go, on a window this wide.
 ///
@@ -618,6 +713,9 @@ pub(crate) fn follow(window: &Window, ground: Color) {
         false => Theme::Light,
     }));
     painted(window, rgb);
+    // A new appearance is a new layout of the bar, and the buttons go back
+    // to the top of it.
+    centre_the_buttons(window);
 }
 
 /// Whether a colour is one the system should write light ink on.
@@ -744,6 +842,20 @@ mod tests {
         assert!(!dark((0xef, 0xf1, 0xf5)), "a light one");
         assert!(!dark((0, 0xff, 0)), "green is light");
         assert!(dark((0x64, 0x64, 0xff)), "a blue this pale is still dark");
+    }
+
+    /// The system's bar is made taller, a taller one is left alone, and
+    /// full screen -- no bar, or a hair of one -- is still no bar.
+    ///
+    /// Deliberate breaks: `system > 0.0` for the first arm, and the hair
+    /// is a whole bar; `system` alone for its answer, and the system's bar
+    /// stays a sliver; `TALL` alone, and a taller one is cut down.
+    #[test]
+    fn the_bar_is_tall_enough_for_tabs_wherever_there_is_one() {
+        assert!((tall(28.0) - TALL).abs() < f64::EPSILON, "the system's bar");
+        assert!((tall(52.0) - 52.0).abs() < f64::EPSILON, "a taller one");
+        assert!(tall(0.0).abs() < f64::EPSILON, "full screen");
+        assert!(tall(1e-9).abs() < f64::EPSILON, "a hair of a bar");
     }
 
     /// A window 1000 pixels wide with a bar 31 tall, buttons 46 wide and
