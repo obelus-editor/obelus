@@ -367,11 +367,13 @@ fn theme_hints(settings: &Settings, card: Option<&ThemeCard>) -> Vec<Hint> {
     use crossterm::event::{KeyCode, KeyModifiers};
     let bare = |code| obelus_keymap::KeyChord::new(code, KeyModifiers::NONE);
     let enter = match card {
+        Some(card) if card.may_be_worn() => "Use",
         Some(card) if card.installed => "Update",
         _ => "Install",
     };
     vec![
-        Hint::new(bare(KeyCode::Enter), enter).when(card.is_some_and(ThemeCard::may_be_installed)),
+        Hint::new(bare(KeyCode::Enter), enter)
+            .when(card.is_some_and(|card| card.may_be_installed() || card.may_be_worn())),
         Hint::new(bare(KeyCode::Delete), "Remove").when(
             card.is_some_and(ThemeCard::may_be_taken_away) && !settings.delete_is_the_filters(),
         ),

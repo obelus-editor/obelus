@@ -1256,6 +1256,47 @@ fn delete_takes_a_theme_away_but_not_the_one_worn() {
     assert!(!root.join("gone").exists(), "two presses did not take it");
 }
 
+/// Enter on a theme installed and current wears it, and keeps it -- the
+/// same as choosing it from the list of themes -- and the foot offers the
+/// key for it.
+///
+/// Deliberate breaks: the page's `WearTheme` handed to nothing (the theme
+/// is then still the one before), `may_be_worn` false for every card (enter
+/// then does nothing and the foot offers no `Use`), and `choose_theme`
+/// swapped for `set_theme` alone (nothing is written).
+#[test]
+fn enter_wears_a_theme_already_installed() {
+    let scratch = reader("themes-wear");
+    let root = support::Scratch::new("themes-wear-installed");
+    installed_as(root.path(), "spare", "bbb", "obelus");
+
+    let mut app = open(&scratch);
+    app.installed_themes_for_test(root.path().to_path_buf());
+    app.themes_index_for_test(vec![listed("spare", obelus_themes::Group::Obelus, "bbb")]);
+    assert_ne!(app.theme_name(), "spare");
+    on_the_themes_page(&mut app);
+    support::type_text(&mut app, "spare");
+
+    let dump = support::render(&mut app, 90, 30);
+    assert!(
+        support::text_block(&dump).contains("Use"),
+        "the foot does not offer enter:\n{dump}"
+    );
+
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(app.theme_name(), "spare", "enter did not wear it");
+    let written = std::fs::read_to_string(scratch.join("config.toml")).expect("the settings");
+    assert!(
+        written.contains("theme = \"spare\""),
+        "the theme was worn and not kept:\n{written}"
+    );
+    let dump = support::render(&mut app, 90, 30);
+    assert!(
+        card_row(support::text_block(&dump), "spare").contains("In use"),
+        "{dump}"
+    );
+}
+
 /// Whether the row the list is on is the one that goes for more themes.
 fn on_more_themes(app: &App) -> bool {
     matches!(

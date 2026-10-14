@@ -79,6 +79,8 @@ pub enum SettingsOutcome {
     InstallTheme(String),
     /// A theme taken from the registry should be taken away.
     RemoveTheme(String),
+    /// A theme taken from the registry should be worn, and kept.
+    WearTheme(String),
     /// An agent should be the one Obelus talks to.
     Activate(String),
     /// Whichever agent was active should stop being.
@@ -1746,11 +1748,15 @@ impl Settings {
                 }
             }
             // On the themes page, enter is the card's button: install it,
-            // or update it -- and nothing on one installed and current, or
-            // on its way, or one the registry no longer has to give.
+            // or update it, or wear it once it is installed and current --
+            // and nothing on one on its way, or one the registry no longer
+            // has to give.
             KeyCode::Enter if bare && self.on_themes() => match themes.get(self.window.focus()) {
                 Some(card) if card.may_be_installed() => {
                     SettingsOutcome::InstallTheme(card.theme.name.clone())
+                }
+                Some(card) if card.may_be_worn() => {
+                    SettingsOutcome::WearTheme(card.theme.name.clone())
                 }
                 _ => SettingsOutcome::Consumed,
             },
