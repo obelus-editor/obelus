@@ -680,13 +680,8 @@ impl Showing {
         }
     }
 
-    /// Tells Obelus what the reader did.
-    ///
-    /// A send that fails is Obelus's loop having ended, which the window
-    /// hears about by its own route: nothing to do here but let the press
-    /// go.
     /// A press on a tab, which goes to its document, or on an arrow, which
-    /// walks the tabs a tab that way.
+    /// slides the tabs on to the next one that end is cutting.
     fn press_on_the_tabs(&mut self, spot: crate::title::Spot) {
         match spot {
             crate::title::Spot::Tab(index) => {
@@ -694,19 +689,19 @@ impl Showing {
                     self.tell(Event::Chose(document));
                 }
             }
-            crate::title::Spot::Earlier => {
-                if self.strip.scroll(-1) {
-                    self.redraw();
-                }
-            }
-            crate::title::Spot::Later => {
-                if self.strip.scroll(1) {
+            towards => {
+                if self.strip.step(towards) {
                     self.redraw();
                 }
             }
         }
     }
 
+    /// Tells Obelus what the reader did.
+    ///
+    /// A send that fails is Obelus's loop having ended, which the window
+    /// hears about by its own route: nothing to do here but let the press
+    /// go.
     fn tell(&self, event: Event) {
         if let Some(doing) = &self.doing {
             let _ = doing.send(event);
@@ -1750,8 +1745,19 @@ impl ApplicationHandler<Waking> for Showing {
     fn about_to_wait(&mut self, events: &ActiveEventLoop) {
         let now = Instant::now();
         let caret = self.page.caret().is_some();
-        let wake = self.motion.wake(now, caret);
-        if wants_a_frame(self.motion.advance(now, caret), wake, self.covered) {
+        // The tabs sliding to where an arrow sent them, which is a clock of
+        // their own and asked here the same way: from whether they are
+        // still on their way.
+        let sliding = self.strip.sliding();
+        let wake = match sliding {
+            true => Some(Wake::EveryFrame),
+            false => self.motion.wake(now, caret),
+        };
+        if wants_a_frame(
+            self.motion.advance(now, caret) || sliding,
+            wake,
+            self.covered,
+        ) {
             self.redraw();
         }
         events.set_control_flow(control_flow(wake));
@@ -1875,8 +1881,12 @@ impl ApplicationHandler<Waking> for Showing {
                     let width = window.inner_size().width as f32;
                     crate::title::room(window, self.titled, width, drawn.as_ref())
                 });
-                self.strip
-                    .lay(room, |said, size| fonts.caption_width(said, size));
+                self.strip.lay(
+                    room,
+                    |said, size| fonts.caption_width(said, size),
+                    Instant::now(),
+                    self.motion.animated(),
+                );
                 if let Some(bar) = self.bar.as_ref() {
                     bar.tabs_are(self.strip.covers());
                 }
@@ -2169,30 +2179,33 @@ impl ApplicationHandler<Waking> for Showing {
                     y,
                 });
             }
-            // The wheel over the tabs walks them, a tab a notch: the page
-            // under the bar is not what the reader is pointing at.
+            // The wheel over the tabs scrolls them: the page under the bar
+            // is not what the reader is pointing at. Whichever way the
+            // wheel turns further, so a wheel that only turns down still
+            // walks a row that runs across.
             WindowEvent::MouseWheel { delta, .. } if self.over_the_title => {
                 let notches = match delta {
                     MouseScrollDelta::LineDelta(across, down) => match across.abs() > down.abs() {
                         true => across,
                         false => -down,
                     },
-                    #[expect(clippy::cast_possible_truncation, reason = "pixels under a finger")]
+                    // Pixels, from a touchpad, as the part of a notch they
+                    // are: the row is scrolled by the pixel either way.
+                    #[expect(
+                        clippy::cast_possible_truncation,
+                        clippy::cast_precision_loss,
+                        reason = "pixels under a finger, and a notch of three rows"
+                    )]
                     MouseScrollDelta::PixelDelta(moved) => {
                         let height = self.fonts.as_ref().map_or(1.0, |fonts| fonts.cell().height);
                         let moved = match moved.x.abs() > moved.y.abs() {
                             true => moved.x as f32,
                             false => -moved.y as f32,
                         };
-                        self.rolled += moved;
-                        let whole = (self.rolled / height).trunc();
-                        self.rolled -= whole * height;
-                        whole
+                        moved / (height * NOTCH as f32)
                     }
                 };
-                #[expect(clippy::cast_possible_truncation, reason = "a handful of notches")]
-                let by = notches.signum() as isize * (notches.abs().ceil() as isize);
-                if by != 0 && self.strip.scroll(by) {
+                if notches != 0.0 && self.strip.scroll(notches) {
                     self.redraw();
                 }
             }

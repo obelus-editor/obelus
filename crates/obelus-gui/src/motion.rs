@@ -996,6 +996,12 @@ impl Motion {
     /// What is under way when they turn it off is dropped: a slide that
     /// finished itself after the switch would be the setting taking a
     /// moment to mean anything.
+    /// Whether things move at all, for what moves on a clock of its own --
+    /// the tabs along the bar (`title::tabs`).
+    pub(crate) const fn animated(&self) -> bool {
+        self.animates
+    }
+
     pub(crate) fn animates(&mut self, on: bool) {
         self.animates = on;
         if !on {

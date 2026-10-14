@@ -1666,6 +1666,9 @@ pub struct Tab {
     pub document: DocumentId,
     /// What it is called: the file's name, or a conversation's.
     pub name: String,
+    /// The mark before the name: the one its row in the list of what is
+    /// open wears. None where marks are not drawn.
+    pub icon: Option<char>,
     /// Whether it is the one being read.
     pub reading: bool,
     /// Whether it has changes that are not on disk.

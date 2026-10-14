@@ -62,9 +62,20 @@ impl App {
                 // or a program's for its terminal: one line, and capped, so
                 // that one tab cannot push every other off the bar.
                 let name = name.replace(['\n', '\r'], " ");
+                // The row's mark in the list of what is open, so the tab and
+                // the row are visibly one document.
+                let icon = obelus_icons::enabled().then(|| match document {
+                    Document::File(buffer) => obelus_icons::for_path(buffer.path()),
+                    Document::Chat(_) => obelus_icons::ui::AGENT,
+                    Document::Notes(_) => {
+                        obelus_icons::for_command(obelus_command::Command::TodoOpen)
+                    }
+                    Document::Terminal(_) => obelus_icons::ui::TERMINAL,
+                });
                 Tab {
                     document: id,
                     name: obelus_ui::truncate_from_right(&name, TAB_NAME),
+                    icon,
                     reading: self.current == Some(id),
                     unwritten: document.file().is_some_and(Buffer::is_dirty),
                 }

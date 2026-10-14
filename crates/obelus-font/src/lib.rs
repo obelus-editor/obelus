@@ -494,14 +494,36 @@ impl Fonts {
         self.captioned(text, size).1
     }
 
+    /// A mark beside a window's own words -- a tab's, at the size the words
+    /// are -- in the face the marks are carried in, whatever the system
+    /// writes its words in: no system face has them.
+    pub fn caption_mark(&mut self, mark: char, size: f32) -> &[Placed] {
+        &self.laid_in(&mark.to_string(), size, true).0
+    }
+
     fn captioned(&mut self, text: &str, size: f32) -> &(Vec<Placed>, f32) {
-        let key = (text.to_string(), size.to_bits());
+        self.laid_in(text, size, false)
+    }
+
+    /// A line in the system's face, or in the marks' -- kept apart in the
+    /// one map by the sign of the size, which is never negative otherwise.
+    fn laid_in(&mut self, text: &str, size: f32, marks: bool) -> &(Vec<Placed>, f32) {
+        let key = (
+            text.to_string(),
+            match marks {
+                true => (-size).to_bits(),
+                false => size.to_bits(),
+            },
+        );
         if !self.captions.contains_key(&key) {
-            let family = CAPTION_FACES
-                .iter()
-                .copied()
-                .find(|name| self.named.contains_key(&name.to_lowercase()))
-                .map_or(Family::SansSerif, Family::Name);
+            let family = match marks {
+                true => Family::Name(SYMBOLS_FAMILY),
+                false => CAPTION_FACES
+                    .iter()
+                    .copied()
+                    .find(|name| self.named.contains_key(&name.to_lowercase()))
+                    .map_or(Family::SansSerif, Family::Name),
+            };
             let metrics = Metrics::new(size, (size * LINE_HEIGHT).round());
             let (mut placed, wide) = lay(
                 &mut self.system,

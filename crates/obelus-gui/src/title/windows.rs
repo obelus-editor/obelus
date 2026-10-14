@@ -52,6 +52,11 @@ const LISTENING: usize = 0x0b31;
 /// the size of the bitmaps the buttons had before DWM drew them.
 const BUTTON: i32 = 46;
 
+/// How tall the bar is at that density, less the edge above it: what the
+/// system's own tabbed windows -- Explorer, Terminal -- give a row of tabs,
+/// where its caption alone is twenty-two and a tab in it is a sliver.
+const TABBED: i32 = 34;
+
 /// How wide and tall the mark on a button is at that density. Not the size
 /// of the glyphs the system draws its own in, which is ten: that is the
 /// face's em, and the ink inside it is eight -- measured off the system's
@@ -162,6 +167,7 @@ impl Bar {
         let pixels = |of: fn(&Measured) -> i32| measured.as_ref().map_or(0, of) as f32;
         Drawn {
             button: pixels(|measured| measured.button),
+            captioned: pixels(|measured| measured.captioned),
             mark,
             pen,
             // As far in as the frame is wide, where the system puts its own --
@@ -188,6 +194,9 @@ struct Measured {
     edge: i32,
     /// How wide each button is.
     button: i32,
+    /// How tall the bar the system would have drawn is, which is how tall
+    /// the buttons are.
+    captioned: i32,
 }
 
 /// The window's own measures, asked at its density rather than the
@@ -204,17 +213,22 @@ fn measured(hwnd: HWND) -> Measured {
         clippy::cast_possible_wrap,
         reason = "a density is a few hundred dots to the inch"
     )]
-    let button = (BUTTON * dpi as i32 + 48) / 96;
+    let (button, tabbed) = (
+        (BUTTON * dpi as i32 + 48) / 96,
+        (TABBED * dpi as i32 + 48) / 96,
+    );
+    // Maximised, the frame hangs off the screen and only the caption is
+    // left on it: the system's own bar there is that tall.
+    let above = match unsafe { IsZoomed(hwnd) } != 0 {
+        true => 0,
+        false => edge,
+    };
     Measured {
-        // Maximised, the frame hangs off the screen and only the caption
-        // is left on it: the system's own bar there is that tall.
-        titled: metric(SM_CYCAPTION)
-            + match unsafe { IsZoomed(hwnd) } != 0 {
-                true => 0,
-                false => edge,
-            },
+        // Or the height a row of tabs wants, where that is more.
+        titled: metric(SM_CYCAPTION).max(tabbed) + above,
         edge,
         button,
+        captioned: metric(SM_CYCAPTION) + above,
     }
 }
 
@@ -383,7 +397,7 @@ unsafe extern "system" fn listen(
                 (at.x as f32, at.y as f32),
                 page.right as f32,
                 measured.titled as f32,
-                measured.button as f32,
+                [measured.button as f32, measured.captioned as f32],
                 measured.edge as f32,
                 unsafe { IsZoomed(hwnd) } != 0,
                 tabs_held(shared.tabs.load(Ordering::Relaxed)),

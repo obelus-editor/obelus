@@ -143,15 +143,17 @@ pub(crate) fn room(window: &Window, titled: f32, width: f32, bar: Option<&Drawn>
     let scale = window.scale_factor() as f32;
     match bar {
         // Between the frame's edge and the three buttons on the right.
+        // Short of the buttons by a stretch that is always the bar's, so
+        // that a window with many tabs still has somewhere to take hold of.
         Some(bar) => Some(Room {
             from: bar.inset,
-            to: width - 3.0 * bar.button,
+            to: width - 3.0 * bar.button - (bar.words * 4.0).round(),
             titled,
             words: bar.words,
         }),
         None => beside_the_buttons(window, scale).map(|from| Room {
             from,
-            to: width - (8.0 * scale).round(),
+            to: width - (WORDS * 4.0 * scale).round(),
             titled,
             words: (WORDS * scale).round(),
         }),
@@ -255,7 +257,7 @@ pub(crate) fn part(
     (x, y): (f32, f32),
     width: f32,
     titled: f32,
-    button: f32,
+    [button, captioned]: [f32; 2],
     edge: f32,
     maximised: bool,
     tabs: Option<(f32, f32)>,
@@ -267,8 +269,8 @@ pub(crate) fn part(
         return Part::Edge;
     }
     if let Some(button) = Button::ALL.into_iter().find(|&each| {
-        let [left, _, wide, _] = button_at(each, width, titled, button);
-        (left..left + wide).contains(&x)
+        let [left, _, wide, tall] = button_at(each, width, captioned, button);
+        (left..left + wide).contains(&x) && y < tall
     }) {
         return Part::Button(button);
     }
@@ -279,9 +281,15 @@ pub(crate) fn part(
 }
 
 /// Where a button is on a window this wide, as left, top, width and height
-/// in pixels: the whole height of the bar, against the right-hand edge.
-pub(crate) fn button_at(which: Button, width: f32, titled: f32, button: f32) -> [f32; 4] {
-    [width - which.places_in() * button, 0.0, button, titled]
+/// in pixels: against the right-hand edge, from the top, as tall as the
+/// system's own bar would be.
+///
+/// Not the whole height of a bar the tabs have made taller, which is what
+/// the system's own tabbed windows do too: a button stretched down beside
+/// the tabs is a button that has moved, and the room under it is the bar's
+/// to drag.
+pub(crate) fn button_at(which: Button, width: f32, captioned: f32, button: f32) -> [f32; 4] {
+    [width - which.places_in() * button, 0.0, button, captioned]
 }
 
 /// How tall to ask for the page to be on a screen of another density, where
@@ -312,6 +320,8 @@ pub(crate) fn rescaled(old: (u32, u32), from: f64, to: f64, titled: f32) -> (u32
 pub(crate) struct Drawn {
     /// How wide each button is, in pixels.
     pub(crate) button: f32,
+    /// How tall, which is as tall as the system's own bar would be.
+    pub(crate) captioned: f32,
     /// How wide and tall the mark on one is, in pixels.
     pub(crate) mark: f32,
     /// How wide the pen the marks are drawn with is, in pixels.
@@ -370,35 +380,53 @@ pub(crate) fn inks(drawn: &Drawn, button: Button, dark: bool) -> (Option<[f32; 4
     }
 }
 
-/// What a tab is drawn in on a page this dark: the colour laid behind it,
-/// if any, and its name's.
+/// What the bar behind the tabs is laid over with on a page this dark: a
+/// shade darker than the page, so that the tab being read -- which is the
+/// page's own colour -- stands out of it as part of the page under it.
 ///
-/// The page's ink at a fraction, as the buttons are. The tab being read is
-/// the one in full ink on a shade of its own -- it is the bar saying what
-/// is on the page under it -- and the rest are fainter, lit only under the
-/// pointer. Fainter again on a window without the reader's keys.
-pub(crate) fn tab_inks(
-    reading: bool,
-    hovered: bool,
-    active: bool,
-    dark: bool,
-) -> (Option<[f32; 4]>, [f32; 4]) {
-    let [r, g, b] = match dark {
-        true => [1.0, 1.0, 1.0],
-        false => [0.0, 0.0, 0.0],
-    };
+/// Darker on a light page as on a dark one, which is what the system's
+/// own tabbed windows do: the page is the lit thing, and the bar the frame
+/// round it.
+pub(crate) const fn bar_shade(dark: bool) -> [f32; 4] {
+    match dark {
+        true => [0.0, 0.0, 0.0, 0.28],
+        false => [0.0, 0.0, 0.0, 0.07],
+    }
+}
+
+/// What a tab's name is written in on a page this dark: the page's ink,
+/// full on the tab being read and fainter on the rest, and fainter again
+/// on a window without the reader's keys.
+pub(crate) const fn tab_ink(reading: bool, active: bool, dark: bool) -> [f32; 4] {
     let strength = match (reading, active) {
         (true, true) => 1.0,
-        (false, true) => 0.6,
-        (true, false) => 0.5,
-        (false, false) => 0.36,
+        (false, true) => 0.62,
+        (true, false) => 0.55,
+        (false, false) => 0.4,
     };
-    let behind = match (reading, hovered) {
-        (true, _) => Some([r, g, b, 0.1]),
-        (false, true) => Some([r, g, b, 0.05]),
-        (false, false) => None,
-    };
-    (behind, [r, g, b, strength])
+    match dark {
+        true => [1.0, 1.0, 1.0, strength],
+        false => [0.0, 0.0, 0.0, strength],
+    }
+}
+
+/// What a tab under the pointer is laid over with: the bar's own shade
+/// again, a little more of it -- a tab that could be chosen, and not one
+/// that has been.
+pub(crate) const fn under_the_pointer(dark: bool) -> [f32; 4] {
+    match dark {
+        true => [1.0, 1.0, 1.0, 0.07],
+        false => [0.0, 0.0, 0.0, 0.05],
+    }
+}
+
+/// The line between two tabs neither of which is lit: the page's ink, a
+/// little of it.
+pub(crate) const fn seam(dark: bool) -> [f32; 4] {
+    match dark {
+        true => [1.0, 1.0, 1.0, 0.16],
+        false => [0.0, 0.0, 0.0, 0.16],
+    }
 }
 
 /// What an arrow at the end of the tabs is drawn in: the page's ink, faint
@@ -724,8 +752,8 @@ mod tests {
         part(
             (x, y),
             1000.0,
-            31.0,
-            46.0,
+            41.0,
+            [46.0, 31.0],
             8.0,
             maximised,
             Some((8.0, 400.0)),
@@ -738,11 +766,14 @@ mod tests {
     /// Deliberate break: count the buttons in from the left, or put close
     /// first. A press meant to minimise closes the window. And answer the
     /// tabs as the bar: a press on one drags the window instead of going
-    /// to the document.
+    /// to the document. And leave `y < tall` out of `part`: the buttons
+    /// reach down the whole of a bar the tabs made taller, where the
+    /// system's own stop at the height of its own bar.
     #[test]
     fn the_buttons_stand_against_the_right_in_the_systems_order() {
         assert_eq!(on(500.0, 20.0, false), Part::Bar);
         assert_eq!(on(999.0, 20.0, false), Part::Button(Button::Close));
+        assert_eq!(on(999.0, 35.0, false), Part::Bar, "under the buttons");
         assert_eq!(on(200.0, 20.0, false), Part::Tabs);
         assert_eq!(on(400.0, 20.0, false), Part::Bar, "past the last tab");
         assert_eq!(on(954.0, 20.0, false), Part::Button(Button::Close));
@@ -750,7 +781,7 @@ mod tests {
         assert_eq!(on(907.0, 20.0, false), Part::Button(Button::Minimise));
         assert_eq!(on(862.0, 20.0, false), Part::Button(Button::Minimise));
         assert_eq!(on(861.0, 20.0, false), Part::Bar, "left of the three");
-        assert_eq!(on(999.0, 31.0, false), Part::Page, "the first row below");
+        assert_eq!(on(999.0, 41.0, false), Part::Page, "the first row below");
         assert_eq!(on(500.0, 400.0, false), Part::Page);
     }
 
@@ -774,6 +805,7 @@ mod tests {
     fn drawn(hovered: Option<Button>, pressed: Option<Button>, active: bool) -> Drawn {
         Drawn {
             button: 46.0,
+            captioned: 31.0,
             mark: 10.0,
             pen: 1.0,
             inset: 8.0,
