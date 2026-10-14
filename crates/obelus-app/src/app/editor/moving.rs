@@ -831,14 +831,29 @@ impl App {
     /// is, to say it is not a word yet.
     pub(in crate::app) fn spell(&mut self, said: &str, caret: Option<usize>) {
         let caret_after: String = said.chars().take(caret.unwrap_or(usize::MAX)).collect();
-        let into = self.writing_into();
-        let before = self.spelt.take().filter(|spelt| spelt.into == into);
+        let here = self.written_here();
+        let takes = self.takes_text();
+        // The last spelling is written over only where this one goes too.
+        // Anywhere else it is taken back out of where it was first: a card
+        // with no box came up over the message it was in, the reader was
+        // taken to another file, the input method was turned off -- and a
+        // spelling left there is letters nobody typed, in the reader's
+        // words, for good.
+        let before = match self.spelt.take() {
+            Some(before) if before.at == here && takes => Some(before),
+            Some(before) => {
+                self.take_the_spelling_back(&before);
+                None
+            }
+            None => None,
+        };
+        let into = here.into;
         // A program is sent nothing until the word arrives, because what is
         // sent to a program cannot be taken back: the letters are drawn
         // over its screen instead, and the word goes down the pty.
         self.spelling_over_a_program =
-            (into == WritingInto::Terminal && !said.is_empty()).then(|| said.to_string());
-        if !self.takes_text() {
+            (takes && into == WritingInto::Terminal && !said.is_empty()).then(|| said.to_string());
+        if !takes {
             return;
         }
         match into {
@@ -866,7 +881,7 @@ impl App {
                 self.spelt = from.filter(|_| !said.is_empty()).map(|from| Spelt {
                     said: said.to_string(),
                     from,
-                    into,
+                    at: here,
                     file: None,
                 });
             }
@@ -889,6 +904,7 @@ impl App {
         // Over the last spelling only where nothing has changed the file
         // since: the version is what says the letters there are still it.
         let over = before.filter(|before| here.is_some() && before.file == here);
+        let at = self.written_here();
         let (span, doing) = match &over {
             Some(before) => {
                 let end = buffer.end_of_written(before.from, &before.said);
@@ -933,17 +949,85 @@ impl App {
                 self.spelt = Some(Spelt {
                     said: said.to_string(),
                     from,
-                    into: WritingInto::File,
+                    at,
                     file: after,
                 });
             }
         }
     }
 
+    /// Where what is typed now is written: what it goes into, and which
+    /// one of those it is.
+    ///
+    /// More than [`App::writing_into`], because a spelling has to be found
+    /// again where it was: two conversations are both a conversation, and a
+    /// card over a message is not the message.
+    fn written_here(&self) -> Written {
+        let into = self.writing_into();
+        let document = match into {
+            WritingInto::Conversation | WritingInto::Notes | WritingInto::File => self.current,
+            _ => None,
+        };
+        Written {
+            into,
+            document,
+            card: into == WritingInto::Conversation && self.card().is_some(),
+        }
+    }
+
+    /// Takes a spelling back out of where it was written, wherever the
+    /// reader is now -- where its letters are still there.
+    fn take_the_spelling_back(&mut self, spelt: &Spelt) {
+        let (from, said) = (spelt.from, spelt.said.as_str());
+        let spelling: Option<&mut dyn Spells> = match (spelt.at.into, spelt.at.document) {
+            (WritingInto::File, Some(document)) => {
+                let Some(buffer) = self.file(document) else {
+                    return;
+                };
+                let end = buffer.end_of_written(from, said);
+                let span = Span {
+                    line: from.line,
+                    column: from.column,
+                    end_line: end.line,
+                    end_column: end.column,
+                };
+                if buffer.text().text_in(span) == said {
+                    // Part of the step the spelling took, which then puts
+                    // back nothing at all.
+                    self.change_in(document.get(), span, "", obelus_buffer::undo::Doing::Joined);
+                }
+                return;
+            }
+            (WritingInto::Conversation, Some(document)) => {
+                let Some(talk) = self.document_mut(document).and_then(Document::chat_mut) else {
+                    return;
+                };
+                match spelt.at.card {
+                    true => talk.card_in_front_mut().and_then(|card| card.spells()),
+                    false => Some(talk.chat.writing_mut() as &mut dyn Spells),
+                }
+            }
+            (WritingInto::Notes, Some(document)) => self
+                .document_mut(document)
+                .and_then(Document::notes_mut)
+                .map(|notes| notes as &mut dyn Spells),
+            (into, _) => self.spelled_in(into),
+        };
+        if let Some(spelling) = spelling {
+            spelling.take_back(from, said);
+        }
+    }
+
     /// The box a spelling is written into, where what is typed goes into a
     /// box -- see [`App::writing_into`].
     fn spelled_into(&mut self) -> Option<&mut dyn Spells> {
-        match self.writing_into() {
+        let into = self.writing_into();
+        self.spelled_in(into)
+    }
+
+    /// The same, for what is typed into `into`.
+    fn spelled_in(&mut self, into: WritingInto) -> Option<&mut dyn Spells> {
+        match into {
             WritingInto::Prompt => self.prompt.as_mut().map(|prompt| prompt.spells()),
             WritingInto::Settings => self.settings.as_mut().map(|settings| settings.spells()),
             WritingInto::Names => self.names.as_mut().map(|(_, names)| names.spells()),
@@ -960,10 +1044,7 @@ impl App {
                 }
                 Some(talk.chat.writing_mut() as &mut dyn Spells)
             }
-            WritingInto::Notes => self
-                .notes_mut()?
-                .writing_mut()
-                .map(|writing| writing as &mut dyn Spells),
+            WritingInto::Notes => self.notes_mut().map(|notes| notes as &mut dyn Spells),
             WritingInto::Nowhere | WritingInto::Terminal | WritingInto::File => None,
         }
     }
@@ -1215,15 +1296,27 @@ pub(in crate::app) enum WritingInto {
     File,
 }
 
+/// Where a spelling was written -- see [`App::written_here`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::app) struct Written {
+    /// What it went into.
+    into: WritingInto,
+    /// Which conversation, note page or file, where it went into one.
+    document: Option<DocumentId>,
+    /// Whether it went into a card's box rather than the message under it.
+    card: bool,
+}
+
 /// A word an input method is spelling, as it was last written in.
 #[derive(Clone, Debug)]
 pub(in crate::app) struct Spelt {
     /// What was written.
     said: String,
-    /// Where it begins. It ends at the caret.
+    /// Where it begins. Where it ends is worked out from what it says,
+    /// because the caret may be anywhere in it.
     from: obelus_buffer::Cursor,
-    /// What it was written into.
-    into: WritingInto,
+    /// Where it was written.
+    at: Written,
     /// The file and the version the writing left it at, where it was a
     /// file -- which is what says nothing has changed it since.
     file: Option<(DocumentId, i32)>,

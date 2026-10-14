@@ -881,3 +881,41 @@ fn a_cut_over_a_list_over_the_settings_comes_out_of_the_list() {
         "the cut came out of the settings behind the list"
     );
 }
+
+/// Every box on the status row takes a spelling in, says which of it is
+/// being spelled, and takes it back out -- the same as the list's query,
+/// because they are the same box.
+///
+/// Broken deliberately by not marking the spelling in `Field`'s
+/// `Spells::spelling`: none of them says any of it is being spelled.
+#[test]
+fn every_box_on_the_status_row_spells() {
+    for layer in [Layer::Prompt, Layer::Settings, Layer::Picker, Layer::Names] {
+        let mut app = reading();
+        open(&mut app, layer);
+        let said = |app: &App| match layer {
+            Layer::Prompt => app.prompt().map(|prompt| (prompt.text(), prompt.spelled())),
+            Layer::Settings => app
+                .settings()
+                .map(|settings| (settings.query(), settings.query_spelled())),
+            Layer::Picker => app
+                .picker()
+                .map(|picker| (picker.query(), picker.query_spelled())),
+            _ => app
+                .names()
+                .map(|names| (names.query().said(), names.query().spelled())),
+        };
+        app.handle(obelus_app::event::Event::Spelling("12".to_string(), None));
+        assert_eq!(
+            said(&app),
+            Some(("12".to_string(), Some(0..2))),
+            "{layer:?} did not take the spelling in"
+        );
+        app.handle(obelus_app::event::Event::Spelling(String::new(), None));
+        assert_eq!(
+            said(&app),
+            Some((String::new(), None)),
+            "{layer:?} did not take the spelling back out"
+        );
+    }
+}

@@ -339,6 +339,46 @@ fn places_by_name(todo: &Todo, known: &[(NoteId, Option<LineNumber>)]) -> Vec<Op
         .collect()
 }
 
+/// The note being written, as what a spelling is written into -- see
+/// [`crate::spelling`].
+///
+/// The page's own rather than its box's, because the page lays its rows
+/// out from the box and keeps them: a box changed behind its back is drawn
+/// as it was until something else makes the page lay itself out again, and
+/// the line under a spelling was the first thing that went missing.
+use crate::spelling::Spells;
+
+impl Spells for TodoView {
+    fn writes_from(&self) -> obelus_editing::Cursor {
+        self.writing()
+            .map_or_else(obelus_editing::Cursor::start, Spells::writes_from)
+    }
+
+    fn hold_written(&mut self, from: obelus_editing::Cursor, said: &str) -> bool {
+        self.writing_mut()
+            .is_some_and(|writing| writing.hold_written(from, said))
+    }
+
+    fn spelling(&mut self, from: obelus_editing::Cursor, said: &str, before: &str) {
+        if let Some(writing) = self.writing_mut() {
+            writing.spelling(from, said, before);
+        }
+        self.rebuild();
+        self.follow_caret();
+    }
+
+    fn take_back(&mut self, from: obelus_editing::Cursor, said: &str) -> bool {
+        let taken = self
+            .writing_mut()
+            .is_some_and(|writing| writing.take_back(from, said));
+        if taken {
+            self.rebuild();
+            self.follow_caret();
+        }
+        taken
+    }
+}
+
 impl TodoView {
     /// Takes the file again, keeping what the reader was doing.
     ///

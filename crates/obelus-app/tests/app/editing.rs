@@ -851,6 +851,24 @@ mod keys {
         );
     }
 
+    /// A spelling left where nothing is typed any more is taken back out:
+    /// a list nobody types into came up over the file, the window turned
+    /// its input method off and said the spelling was over, and the
+    /// letters were still in the file, for good.
+    ///
+    /// Broken deliberately by taking `take_the_spelling_back` out of
+    /// `App::spell`: the file keeps `ni`.
+    #[test]
+    fn a_spelling_where_nothing_is_typed_any_more_is_taken_back() {
+        let (_scratch, mut app) = reading("keys-spelling-left", "ab\n");
+        support::press(&mut app, KeyCode::Right);
+        app.handle(obelus_app::event::Event::Spelling("ni".to_string(), None));
+        assert_eq!(text(&app), "anib\n");
+        dispatch::dispatch(&mut app, Command::CountLines);
+        app.handle(obelus_app::event::Event::Spelling(String::new(), None));
+        assert_eq!(text(&app), "ab\n", "the spelling was left in the file");
+    }
+
     /// A pasted function is one change, however many lines it is.
     #[test]
     fn what_the_terminal_pastes_arrives_as_one_change() {

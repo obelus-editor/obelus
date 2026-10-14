@@ -27,4 +27,8 @@ pub trait Spells {
     /// spelling -- which is what draws the line under it -- and puts the
     /// caret `before` into it, where the input method has its own.
     fn spelling(&mut self, from: Cursor, said: &str, before: &str);
+
+    /// Takes `said`, written in from `from`, back out, where it is still
+    /// there -- and says whether it was.
+    fn take_back(&mut self, from: Cursor, said: &str) -> bool;
 }

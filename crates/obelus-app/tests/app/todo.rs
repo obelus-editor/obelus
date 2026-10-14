@@ -2445,6 +2445,29 @@ fn a_word_begun_in_a_note_takes_what_is_held() {
     );
 }
 
+/// What is being spelled in a note's box is underlined there.
+///
+/// Broken deliberately by taking `.spelling(row.spelled.clone())` off the
+/// note's rows in `ui::todo`: nothing is underlined.
+#[test]
+fn what_is_being_spelled_in_a_note_is_underlined() {
+    let scratch = tree(
+        "spelling-line",
+        "[[todo]]\nsaid = \"first note\"\ndone = false\n",
+    );
+    let mut app = open(&scratch, 76, 18);
+    press(&mut app, KeyCode::Enter);
+    app.handle(Event::Key(KeyEvent::new(KeyCode::End, KeyModifiers::NONE)));
+    support::type_text(&mut app, " qq");
+    app.handle(Event::Spelling("xyz".to_string(), None));
+    let cells = support::cells_of(&mut app, 76, 18);
+    let at = support::find(&cells, "qqxyz");
+    assert_eq!(
+        support::underlined(&cells, at, 5),
+        [false, false, true, true, true]
+    );
+}
+
 /// What was pasted stays on the page when the file is read again.
 ///
 /// The notes file is watched while the page is open, so anything that

@@ -321,6 +321,15 @@ impl crate::spelling::Spells for Field {
             self.writing.place_after(from, before, ROOM);
         }
     }
+
+    fn take_back(&mut self, from: obelus_editing::Cursor, said: &str) -> bool {
+        if !self.writing.hold_written(from, said) {
+            return false;
+        }
+        let _ = self.writing.cut(ROOM);
+        self.writing.spelling(from, "");
+        true
+    }
 }
 
 impl Default for Field {

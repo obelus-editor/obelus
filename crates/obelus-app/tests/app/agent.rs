@@ -4626,6 +4626,61 @@ fn what_is_being_spelled_in_the_message_box_is_underlined() {
     );
 }
 
+/// A spelling in the message box is taken back out when a card with no box
+/// comes up over it: the window turns its input method off there, and the
+/// letters were left in the message, underlined, for good.
+///
+/// Broken deliberately by taking `take_the_spelling_back` out of
+/// `App::spell`: the message keeps `ni`.
+#[test]
+fn a_spelling_under_a_card_with_no_box_is_taken_back() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/edit");
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    app.handle(Event::Spelling("ni".to_string(), None));
+    assert_eq!(
+        app.chat().map(|chat| chat.writing().text()).as_deref(),
+        Some("ni"),
+        "the spelling is not in the message box"
+    );
+    pump(&mut app, &events, "the question", permission_in_front);
+    app.handle(Event::Spelling(String::new(), None));
+    assert_eq!(
+        app.chat().map(|chat| chat.writing().text()).as_deref(),
+        Some(""),
+        "the spelling was left in the message"
+    );
+}
+
+/// What is being spelled on a card's box is underlined there.
+///
+/// Broken deliberately by taking `.spelling(words.spelled.clone())` off the
+/// card's rows in `ui::card::draw`: nothing is underlined.
+#[test]
+fn what_is_being_spelled_on_a_card_is_underlined() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/pick");
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", question_in_front);
+    app.handle(Event::Paste("qq".to_string()));
+    app.handle(Event::Spelling("xyz".to_string(), None));
+    let cells = support::cells_of(&mut app, WIDTH, HEIGHT);
+    let at = support::find(&cells, "qqxyz");
+    assert_eq!(
+        support::underlined(&cells, at, 5),
+        [false, false, true, true, true]
+    );
+}
+
 /// And on a card, whose words cover the box: what is held there goes, and
 /// the message behind it is not touched.
 ///

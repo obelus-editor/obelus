@@ -190,6 +190,17 @@ pub(crate) fn cells_of(app: &mut App, width: u16, height: u16) -> CellBuffer {
     cells
 }
 
+/// Which of the `count` cells from `(x, y)` on are underlined.
+pub(crate) fn underlined(cells: &CellBuffer, (x, y): (u16, u16), count: u16) -> Vec<bool> {
+    (0..count)
+        .map(|at| {
+            cells
+                .cell((x + at, y))
+                .is_some_and(|cell| cell.modifier.contains(ratatui::style::Modifier::UNDERLINED))
+        })
+        .collect()
+}
+
 /// Where in a drawn screen `word` starts, by its cells.
 pub(crate) fn find(cells: &ratatui::buffer::Buffer, word: &str) -> (u16, u16) {
     let area = cells.area;
