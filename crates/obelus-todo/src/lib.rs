@@ -399,6 +399,33 @@ pub enum Change {
         /// Out towards the margin, rather than in under the note above.
         out: bool,
     },
+    /// Takes back what one act did to a run of notes, and only that.
+    ///
+    /// What undo and redo are. A page cannot put its own copy of a note
+    /// back over the file any more than it can write the file from one: the
+    /// other window may have ticked it since, or reworded it, or taken it
+    /// away. So this carries the run as the act left it and as it is to be,
+    /// and what is done to the file is the difference between the two -- a
+    /// field the act did not touch is left as the file has it, and a note
+    /// the act did not take away and the file no longer has stays gone,
+    /// which is the rule every other change here keeps.
+    ///
+    /// A note in `to` and not in `from` is one the act took away, and goes
+    /// back in; one in `from` and not in `to` is one it put in, and comes
+    /// out. Where the act moved anything, or took anything away or put it
+    /// in, the run is laid down again in `to`'s order between the notes that
+    /// were either side of it -- which are outside the run, and so are the
+    /// same two notes before the act and after it.
+    Restore {
+        /// The run as the act left it.
+        from: Vec<Note>,
+        /// The run as it is to be.
+        to: Vec<Note>,
+        /// The note just above the run, if there is one.
+        after: Option<NoteId>,
+        /// The note just below it.
+        before: Option<NoteId>,
+    },
 }
 
 impl Change {
@@ -414,9 +441,14 @@ impl Change {
         match self {
             Self::Put { note, .. } => Some(&note.id),
             Self::Said { id, .. } => Some(id),
-            Self::Done { .. } | Self::Remove { .. } | Self::Move { .. } | Self::Shift { .. } => {
-                None
-            }
+            // Words the reader is owed back are words they once wrote, and
+            // the file has had them: an undo that found nothing left to
+            // undo is not somebody's typing with nowhere to go.
+            Self::Done { .. }
+            | Self::Remove { .. }
+            | Self::Move { .. }
+            | Self::Shift { .. }
+            | Self::Restore { .. } => None,
         }
     }
 }
@@ -830,6 +862,12 @@ impl Todo {
                 self.notes.splice(to..to, moved);
                 true
             }
+            Change::Restore {
+                from,
+                to,
+                after,
+                before,
+            } => self.restore(from, to, after.as_ref(), before.as_ref()),
             Change::Shift { id, out } => {
                 let Some(at) = self.find(id) else {
                     return false;
@@ -850,6 +888,94 @@ impl Todo {
                 true
             }
         }
+    }
+
+    /// Does a [`Change::Restore`], which says what it means.
+    ///
+    /// Idempotent, like [`Change::Put`]: the same one queued before a write
+    /// and drained after it finds the run already the way it is to be, and
+    /// leaves it so.
+    fn restore(
+        &mut self,
+        from: &[Note],
+        to: &[Note],
+        after: Option<&NoteId>,
+        before: Option<&NoteId>,
+    ) -> bool {
+        let left = |id: &NoteId| from.iter().find(|note| note.id == *id);
+        // Each note as it is to be: the file's own, with what the act
+        // changed put back -- and only that, so a tick another window gave
+        // a note since is still a tick after this one's words are undone.
+        let mut run: Vec<Note> = Vec::new();
+        for note in to {
+            match (left(&note.id), self.find(&note.id)) {
+                (Some(was), Some(at)) => {
+                    let mut now = self.notes[at].clone();
+                    if was.said != note.said {
+                        now.said.clone_from(&note.said);
+                    }
+                    if was.done != note.done {
+                        now.done = note.done;
+                    }
+                    if was.at != note.at {
+                        now.at.clone_from(&note.at);
+                    }
+                    if was.depth != note.depth {
+                        now.depth = note.depth;
+                    }
+                    run.push(now);
+                }
+                // The act left it here and somebody else has taken it away
+                // since: putting it back would be undoing their act, not
+                // this reader's.
+                (Some(_), None) => {}
+                // The act took it away, so it goes back as it was.
+                (None, _) => run.push(note.clone()),
+            }
+        }
+        let order = |notes: &[Note]| notes.iter().map(|note| note.id.clone()).collect::<Vec<_>>();
+        if order(from) == order(to) {
+            // Nothing moved, went or came: each is changed where it is.
+            let mut any = false;
+            for note in run {
+                let Some(at) = self.find(&note.id) else {
+                    continue;
+                };
+                let depth = note.depth.min(self.room_at(at)).min(DEEPEST);
+                self.notes[at] = Note { depth, ..note };
+                any = true;
+            }
+            return any;
+        }
+        // Taken up, all of it that is here, and laid down again in order.
+        let named = |id: &NoteId| from.iter().chain(to).any(|note| note.id == *id);
+        let first = self.notes.iter().position(|note| named(&note.id));
+        let before_taking = self.notes.len();
+        self.notes.retain(|note| !named(&note.id));
+        let took = before_taking - self.notes.len();
+        let start = before
+            .and_then(|before| self.find(before))
+            .or_else(|| after.and_then(|after| self.find(after)).map(|at| at + 1))
+            .or(first)
+            // Neither neighbour is left and nothing of the run was here:
+            // the top if nothing was above it, and the end otherwise.
+            .unwrap_or(match after {
+                None => 0,
+                Some(_) => self.notes.len(),
+            });
+        let laid = run.len();
+        for (offset, note) in run.into_iter().enumerate() {
+            let at = start + offset;
+            let at_most = self.room_at(at).min(DEEPEST);
+            self.notes.insert(
+                at,
+                Note {
+                    depth: note.depth.min(at_most),
+                    ..note
+                },
+            );
+        }
+        took + laid > 0
     }
 
     /// Writes them back, making the directory if it is not there.
@@ -1329,6 +1455,141 @@ mod tests {
         }));
         let said: Vec<&str> = todo.notes.iter().map(|note| note.said.as_str()).collect();
         assert_eq!(said, ["the one being moved", "a parent", "a child"]);
+    }
+
+    fn said(todo: &Todo) -> Vec<&str> {
+        todo.notes.iter().map(|note| note.said.as_str()).collect()
+    }
+
+    /// Taking back a tick takes back the tick, and leaves what somebody
+    /// else did to the note since.
+    ///
+    /// Broken deliberately by laying `to` down whole in place of merging the
+    /// fields the act changed: the note came back with the words it had
+    /// before the other window reworded it.
+    #[test]
+    fn taking_an_act_back_leaves_what_somebody_else_did_since() {
+        let ticked = Note {
+            done: true,
+            ..note("as this window had it")
+        };
+        let mut file = named(vec![Note {
+            said: "as the other window put it".to_string(),
+            ..ticked.clone()
+        }]);
+        let unticked = Note {
+            done: false,
+            ..ticked.clone()
+        };
+        assert!(file.apply(&Change::Restore {
+            from: vec![ticked],
+            to: vec![unticked],
+            after: None,
+            before: None,
+        }));
+        assert!(!file.notes[0].done);
+        assert_eq!(file.notes[0].said, "as the other window put it");
+    }
+
+    /// A note the act did not take away, and somebody else has since, stays
+    /// gone: undoing a move is not bringing a note back from the dead, and
+    /// neither is undoing a tick.
+    ///
+    /// Broken deliberately by putting back every note of `to` the file does
+    /// not have, whether or not the act was what took it: the note moved
+    /// past came back.
+    #[test]
+    fn taking_an_act_back_does_not_bring_back_what_somebody_else_took_away() {
+        let moved = note("moved here");
+        let gone = note("moved past here, taken away there");
+        let mut file = named(vec![moved.clone()]);
+        assert!(file.apply(&Change::Restore {
+            from: vec![moved.clone(), gone.clone()],
+            to: vec![gone, moved],
+            after: None,
+            before: None,
+        }));
+        assert_eq!(said(&file), ["moved here"]);
+
+        let ticked = Note {
+            done: true,
+            ..note("ticked here, taken away there")
+        };
+        assert!(!file.apply(&Change::Restore {
+            from: vec![ticked.clone()],
+            to: vec![Note {
+                done: false,
+                ..ticked
+            }],
+            after: None,
+            before: None,
+        }));
+        assert_eq!(said(&file), ["moved here"]);
+    }
+
+    /// A run taken away goes back between the notes it was between, with
+    /// its children under it -- and between them even where the file has
+    /// gained a note above it since.
+    ///
+    /// Broken deliberately by finding the place from `after` before
+    /// `before`: the run went in above the note the other window added.
+    #[test]
+    fn a_run_taken_away_goes_back_where_it_was() {
+        let above = note("above");
+        let below = note("below");
+        let parent = note("parent");
+        let child = Note {
+            depth: 1,
+            ..note("child")
+        };
+        let mut file = named(vec![above.clone(), note("added elsewhere"), below.clone()]);
+        assert!(file.apply(&Change::Restore {
+            from: Vec::new(),
+            to: vec![parent, child],
+            after: Some(above.id),
+            before: Some(below.id),
+        }));
+        assert_eq!(
+            said(&file),
+            ["above", "added elsewhere", "parent", "child", "below"]
+        );
+        assert_eq!(file.notes[3].depth, 1);
+    }
+
+    /// A move is taken back by the two runs in their old order, and a note
+    /// put in by being taken out.
+    ///
+    /// Broken deliberately by changing each note where it stands whenever
+    /// the run's notes are the same set: the move was not taken back.
+    #[test]
+    fn a_move_and_a_new_note_are_taken_back() {
+        let one = note("one");
+        let two = note("two");
+        let mut file = named(vec![two.clone(), one.clone()]);
+        assert!(file.apply(&Change::Restore {
+            from: vec![two.clone(), one.clone()],
+            to: vec![one.clone(), two.clone()],
+            after: None,
+            before: None,
+        }));
+        assert_eq!(said(&file), ["one", "two"]);
+
+        assert!(file.apply(&Change::Restore {
+            from: vec![two.clone()],
+            to: Vec::new(),
+            after: Some(one.id.clone()),
+            before: None,
+        }));
+        assert_eq!(said(&file), ["one"]);
+        // And again, which is what a change queued before a write and
+        // drained after it is: the run is already as it is to be.
+        file.apply(&Change::Restore {
+            from: vec![two],
+            to: Vec::new(),
+            after: Some(one.id),
+            before: None,
+        });
+        assert_eq!(said(&file), ["one"]);
     }
 
     /// "There is no file" and "there is a file that will not read" are

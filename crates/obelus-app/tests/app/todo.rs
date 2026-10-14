@@ -3572,3 +3572,157 @@ fn the_wheel_scrolls_the_notes_and_a_key_comes_back() {
         "a letter went into a note that stayed off the screen"
     );
 }
+
+fn control(code: KeyCode) -> Event {
+    Event::Key(KeyEvent::new(code, KeyModifiers::CONTROL))
+}
+
+/// The first line of each note in the file, and whether it is done.
+fn in_the_file(scratch: &support::Scratch) -> Vec<(String, bool)> {
+    let written =
+        std::fs::read_to_string(obelus_todo::path(scratch.path()).expect("a tree that is there"))
+            .expect("the notes");
+    let table = written.parse::<toml::Table>().expect("it parses");
+    table["todo"]
+        .as_array()
+        .expect("the notes")
+        .iter()
+        .map(|note| {
+            (
+                note["said"]
+                    .as_str()
+                    .and_then(|said| said.lines().next())
+                    .unwrap_or_default()
+                    .to_string(),
+                note["done"].as_bool().unwrap_or_default(),
+            )
+        })
+        .collect()
+}
+
+fn heads(app: &App) -> Vec<String> {
+    app.notes()
+        .expect("the view")
+        .rows()
+        .iter()
+        .filter(|row| row.head)
+        .map(|row| row.said.clone())
+        .collect()
+}
+
+/// Inside a note, undo takes back what was typed a run at a time, and redo
+/// puts it back.
+///
+/// Broken deliberately by having the application's undo not ask the notes,
+/// which is what it was: the page took `ctrl+z` as nothing, the key table's
+/// undo was about a file that was not open, and the letters stayed.
+#[test]
+fn undo_in_a_note_takes_back_what_was_typed() {
+    let scratch = tree("undo-typing", THREE);
+    let mut app = open(&scratch, 76, 18);
+    let first = heads(&app)[0].clone();
+
+    support::type_text(&mut app, "ab");
+    press(&mut app, KeyCode::Backspace);
+    press(&mut app, KeyCode::Backspace);
+    assert_eq!(heads(&app)[0], first);
+
+    app.handle(control(KeyCode::Char('z')));
+    assert_eq!(
+        heads(&app)[0],
+        format!("ab{first}"),
+        "the deleting was not one step"
+    );
+    app.handle(control(KeyCode::Char('z')));
+    assert_eq!(heads(&app)[0], first, "the typing was not one step");
+    app.handle(control(KeyCode::Char('y')));
+    assert_eq!(
+        heads(&app)[0],
+        format!("ab{first}"),
+        "redo did not put it back"
+    );
+}
+
+/// A tick is taken back, in the file as well as on the page, and done again.
+///
+/// Broken deliberately by keeping no step for `alt+space`: the tick stayed.
+#[test]
+fn undo_takes_back_a_tick() {
+    let scratch = tree("undo-tick", THREE);
+    let mut app = open(&scratch, 76, 18);
+    app.handle(alt(KeyCode::Char(' ')));
+    assert!(in_the_file(&scratch)[0].1);
+
+    app.handle(control(KeyCode::Char('z')));
+    assert!(!in_the_file(&scratch)[0].1, "the tick was not taken back");
+    app.handle(control(KeyCode::Char('y')));
+    assert!(in_the_file(&scratch)[0].1, "the tick was not done again");
+}
+
+/// A note taken away comes back where it was, with the caret in it.
+///
+/// Broken deliberately by keeping no step for taking a note away: it
+/// stayed gone.
+#[test]
+fn undo_brings_back_a_note_taken_away() {
+    let scratch = tree("undo-drop", THREE);
+    let mut app = open(&scratch, 76, 18);
+    let first = heads(&app)[0].clone();
+    app.handle(alt(KeyCode::Backspace));
+    assert_eq!(in_the_file(&scratch).len(), 2);
+
+    app.handle(control(KeyCode::Char('z')));
+    let file = in_the_file(&scratch);
+    assert_eq!(file.len(), 3, "it did not come back: {file:?}");
+    assert_eq!(file[0].0, first, "it came back somewhere else: {file:?}");
+    assert_eq!(
+        app.notes()
+            .and_then(obelus_component::todo::TodoView::selected_note)
+            .map(|note| note.said.clone()),
+        Some(first),
+        "the caret is not in it"
+    );
+}
+
+/// A move is taken back.
+///
+/// Broken deliberately by keeping only the moved note's own run as the
+/// step, not its neighbour's: undo had nothing to say about the order.
+#[test]
+fn undo_takes_back_a_move() {
+    let scratch = tree("undo-move", THREE);
+    let mut app = open(&scratch, 76, 18);
+    let before = heads(&app);
+    app.handle(alt(KeyCode::Down));
+    assert_ne!(heads(&app), before);
+
+    app.handle(control(KeyCode::Char('z')));
+    assert_eq!(heads(&app), before, "the page was not put back");
+    let file: Vec<String> = in_the_file(&scratch)
+        .into_iter()
+        .map(|(said, _)| said)
+        .collect();
+    assert_eq!(file, before, "the file was not put back");
+}
+
+/// Once the caret has left a note, what was written in it is one step:
+/// undo from the next note puts the words back as they were.
+///
+/// Broken deliberately by measuring the step from the page's copy of the
+/// note rather than from the words it had when the caret went in: after a
+/// pause had written the box down, undo had nothing to take back.
+#[test]
+fn undo_after_leaving_a_note_takes_back_its_words() {
+    let scratch = tree("undo-words", THREE);
+    let mut app = open(&scratch, 76, 18);
+    let first = heads(&app)[0].clone();
+    support::type_text(&mut app, "now ");
+    // The pause, which writes what is in the box into the note.
+    app.handle(Event::NotesSettled);
+    assert_eq!(in_the_file(&scratch)[0].0, format!("now {first}"));
+    press(&mut app, KeyCode::Down);
+
+    app.handle(control(KeyCode::Char('z')));
+    assert_eq!(in_the_file(&scratch)[0].0, first, "the words stayed");
+    assert_eq!(heads(&app)[0], first);
+}

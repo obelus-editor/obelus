@@ -305,6 +305,15 @@ impl App {
             // A walk of one commit, which is what "is there a history
             // here" costs: the same trade `AChangedFile` makes.
             Requires::AHistory => self.has_a_project() && self.has_history(),
+            // The notes answer for themselves, the way they do for folding:
+            // the page and the box a note is written in are what undo is
+            // about while they are what is being read.
+            Requires::SomethingToUndo if self.notes().is_some() => self
+                .notes()
+                .is_some_and(obelus_component::todo::TodoView::can_undo),
+            Requires::SomethingToRedo if self.notes().is_some() => self
+                .notes()
+                .is_some_and(obelus_component::todo::TodoView::can_redo),
             Requires::SomethingToUndo => self.current_buffer().is_some_and(Buffer::can_undo),
             Requires::SomethingToRedo => self.current_buffer().is_some_and(Buffer::can_redo),
             // The file's own runs, and nothing a block holds. A block used
