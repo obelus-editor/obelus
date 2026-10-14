@@ -87,9 +87,9 @@ pub(crate) fn asked_for(attributes: WindowAttributes) -> WindowAttributes {
 /// title bar.
 ///
 /// Nothing, except where the page runs up under it. Asked of AppKit rather
-/// than written down, because the height is the system's -- and because in
-/// full screen the bar is gone until the pointer asks for it, which the
-/// same question answers with nothing.
+/// than written down, because in full screen the bar is gone until the
+/// pointer asks for it, which the same question answers with nothing --
+/// and where there is a bar, it is made `TALL`.
 #[cfg(target_os = "macos")]
 pub(crate) fn height(window: &Window) -> f32 {
     let Some(shown) = appkit(window) else {
@@ -97,7 +97,11 @@ pub(crate) fn height(window: &Window) -> f32 {
     };
     // The frame is the whole window and the layout rectangle is the part
     // the title bar does not cover, both in points.
-    let points = (shown.frame().size.height - shown.contentLayoutRect().size.height).max(0.0);
+    let points = match (shown.frame().size.height - shown.contentLayoutRect().size.height).max(0.0)
+    {
+        0.0 => 0.0,
+        points => points.max(TALL),
+    };
     #[expect(
         clippy::cast_possible_truncation,
         reason = "a title bar is tens of pixels"
@@ -127,6 +131,67 @@ fn appkit(window: &Window) -> Option<objc2::rc::Retained<objc2_app_kit::NSWindow
 pub(crate) const fn height(_window: &Window) -> f32 {
     0.0
 }
+
+/// How tall the bar is on macOS, in points: what Safari gives its row of
+/// tabs. The system's own is twenty-eight, and a tab in it was a sliver.
+#[cfg(target_os = "macos")]
+const TALL: f64 = 38.0;
+
+/// Stands the system's three buttons in the middle of a bar `TALL`, the
+/// way Zed does it, rather than at the top of the one AppKit lays them out
+/// on.
+///
+/// Not an empty toolbar, which is how AppKit makes a bar taller of its own
+/// accord: the toolbar takes every press on the bar, so a tab could not be
+/// pressed and a press on one dragged the window. Asked again whenever the
+/// window is measured, because AppKit lays the bar out again at a resize
+/// and puts the buttons back where it keeps them. Left alone in full
+/// screen, where the bar is a window of its own that comes down when the
+/// pointer asks for it, and AppKit's layout there is the right one.
+#[cfg(target_os = "macos")]
+pub(crate) fn centre_the_buttons(window: &Window) {
+    use objc2_app_kit::{NSWindowButton, NSWindowStyleMask};
+    let Some(shown) = appkit(window) else {
+        return;
+    };
+    if shown.styleMask().contains(NSWindowStyleMask::FullScreen) {
+        return;
+    }
+    let [Some(close), Some(minimise), Some(zoom)] = [
+        NSWindowButton::CloseButton,
+        NSWindowButton::MiniaturizeButton,
+        NSWindowButton::ZoomButton,
+    ]
+    .map(|which| shown.standardWindowButton(which)) else {
+        return;
+    };
+    // The view the whole bar is in, which is AppKit's height for it: made
+    // taller from the top of the window down, or a button moved below its
+    // foot would be one no press could reach.
+    //
+    // Safe: AppKit's own views, asked on the thread it wants.
+    let Some(bar) = (unsafe { close.superview().and_then(|buttons| buttons.superview()) }) else {
+        return;
+    };
+    let mut frame = bar.frame();
+    frame.size.height = TALL;
+    frame.origin.y = shown.frame().size.height - TALL;
+    bar.setFrame(frame);
+    for button in [&close, &minimise, &zoom] {
+        let mut frame = button.frame();
+        frame.origin.y = (TALL - frame.size.height) / 2.0;
+        button.setFrame(frame);
+    }
+    // Or a button goes on lighting up where it used to be.
+    bar.updateTrackingAreas();
+    for button in [&close, &minimise, &zoom] {
+        button.updateTrackingAreas();
+    }
+}
+
+/// Nothing: the buttons are where the system put them.
+#[cfg(not(target_os = "macos"))]
+pub(crate) const fn centre_the_buttons(_window: &Window) {}
 
 /// Where on a bar this tall the tabs may go, on a window this wide.
 ///
