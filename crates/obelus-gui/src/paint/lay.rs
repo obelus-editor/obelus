@@ -568,9 +568,12 @@ mod tests {
     /// review found); drop `arriving` from the first arm (a list standing
     /// on the status row coming in over the settings takes the bar with
     /// it); put `Resting` before `Leaving` (the files going over the
-    /// settings draw the bar under their going pieces); and leave out
-    /// `titled` (a window whose bar is the compositor's, or one in full
-    /// screen, draws one of its own).
+    /// settings draw the bar under their going pieces). And leave out the
+    /// return where `titled` is nothing, which fails the last line and on
+    /// its own changes nothing on the screen: with no bar in the page no
+    /// pane runs up under one, the caller works `leaving` out by the same
+    /// `from_the_top`, and there is nothing there to draw. It is there so
+    /// that the answer does not hang on that.
     #[test]
     fn the_bar_goes_over_every_pane_that_runs_up_under_it() {
         let at = |panes: &[(u16, Joined)], arriving, leaving| {
