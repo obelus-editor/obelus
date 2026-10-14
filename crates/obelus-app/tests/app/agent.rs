@@ -4596,8 +4596,8 @@ fn a_word_begun_in_the_message_box_takes_what_is_held() {
 /// And on a card, whose words cover the box: what is held there goes, and
 /// the message behind it is not touched.
 ///
-/// Broken deliberately by answering `None` for a card in
-/// `App::spelled_into`: the card keeps its words.
+/// Broken deliberately by putting nothing on the card in
+/// `App::paste_into_conversation`: the card keeps its words.
 #[test]
 fn a_word_begun_on_a_card_takes_what_is_held_there() {
     let (mut app, events) = talking();

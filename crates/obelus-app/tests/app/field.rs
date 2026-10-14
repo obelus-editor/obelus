@@ -605,8 +605,8 @@ mod in_place {
     /// A word an input method has begun takes what is held in a query, the
     /// way the first letter typed over it would.
     ///
-    /// Broken deliberately by taking the cut out of `Field::put`: a paste
-    /// of nothing puts no character, and the held word stayed.
+    /// Broken deliberately by letting go of what is held in `Field::put`
+    /// rather than cutting it: the query reads `hello nworld`.
     #[test]
     fn a_word_begun_in_a_box_takes_what_is_held() {
         let (_scratch, mut app) = open("field-spelling");
