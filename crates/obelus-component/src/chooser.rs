@@ -59,7 +59,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::{
     field::Field,
@@ -298,19 +298,24 @@ impl Chooser {
         self.at >= self.rows().len()
     }
 
-    /// Whether delete, pressed now, would forget the project the reader is
-    /// on -- which is what the foot asks before it offers the key.
+    /// Whether the key the foot calls delete, pressed now, would forget
+    /// the project the reader is on -- which is what the foot asks before
+    /// it offers the key (`Field::delete_is_the_rows`).
     #[must_use]
     pub fn forgets(&self) -> bool {
-        self.forgets_with(&KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE))
+        self.on_a_project() && self.filter.delete_is_the_rows()
     }
 
     /// Whether this key would: the filter has nothing for it, and the
-    /// reader is on a project rather than on the row that opens one.
+    /// reader is on a project.
     fn forgets_with(&self, key: &KeyEvent) -> bool {
-        matches!(self.doing, Doing::Choosing)
-            && self.filter.leaves_to_the_row(key)
-            && !self.on_the_opening_row()
+        self.on_a_project() && self.filter.leaves_to_the_row(key)
+    }
+
+    /// Whether the reader is looking at the rows, and on a project rather
+    /// than on the row that opens one.
+    fn on_a_project(&self) -> bool {
+        matches!(self.doing, Doing::Choosing) && !self.on_the_opening_row()
     }
 
     /// Takes a key, and says what the application has to do about it.

@@ -97,7 +97,8 @@ pub fn hints(choosing: &crate::Choosing, keymap: &Keymap) -> Vec<Hint> {
         ],
     };
     // Only delete is said, though a Mac takes backspace as well: the key a
-    // Mac has `delete` written on is that one.
+    // Mac has `delete` written on is that one, and `forgets` is asked about
+    // it there.
     if choosing.forgets {
         hints.push(Hint::new(bare(KeyCode::Delete), "Forget"));
     }
