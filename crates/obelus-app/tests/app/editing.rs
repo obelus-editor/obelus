@@ -767,12 +767,12 @@ mod keys {
         assert_eq!(text(&app), "ab\n", "one undo did not take the word");
     }
 
-    /// A spelling is not written over what something else put there since:
-    /// the file changed under it, and the letters at the caret are not the
-    /// spelling's any more.
+    /// The next spelling goes over the last and nothing else: what was
+    /// written after it since is not the spelling's, and is left alone.
     ///
-    /// Broken deliberately by not asking the version in
-    /// `App::spell_into_the_file`: the next spelling takes the `x` with it.
+    /// Broken deliberately by writing the next spelling from where the
+    /// last began to the caret in `App::spell_into_the_file`: the `x` goes
+    /// with it, and the file says `anib`.
     #[test]
     fn a_spelling_is_not_written_over_what_came_after_it() {
         let (_scratch, mut app) = reading("keys-spelling-moved", "ab\n");
@@ -780,7 +780,35 @@ mod keys {
         app.handle(obelus_app::event::Event::Spelling("n".to_string(), None));
         support::type_text(&mut app, "x");
         app.handle(obelus_app::event::Event::Spelling("ni".to_string(), None));
-        assert_eq!(text(&app), "anxnib\n");
+        assert_eq!(text(&app), "anixb\n");
+    }
+
+    /// A spelling is followed across an edit made before it -- an agent
+    /// writing earlier in the same line, say -- and the next spelling still
+    /// goes over it, rather than leaving its letters behind in the file.
+    ///
+    /// Broken deliberately by not carrying the spelling across the edit in
+    /// `Buffer::apply`: it is looked for where it was, is not found, and
+    /// the file says `zzanihnib`.
+    #[test]
+    fn a_spelling_is_followed_across_an_edit_before_it() {
+        let (_scratch, mut app) = reading("keys-spelling-followed", "ab\n");
+        support::press(&mut app, KeyCode::Right);
+        app.handle(obelus_app::event::Event::Spelling("ni".to_string(), None));
+        let start = obelus_text::coordinates::Span {
+            line: obelus_text::coordinates::LineNumber::new(0),
+            column: obelus_text::coordinates::CharColumn::new(0),
+            end_line: obelus_text::coordinates::LineNumber::new(0),
+            end_column: obelus_text::coordinates::CharColumn::new(0),
+        };
+        app.current_buffer_mut().expect("a file").edit(
+            start,
+            "zz",
+            obelus_buffer::undo::Doing::Whole,
+        );
+        assert_eq!(text(&app), "zzanib\n");
+        app.handle(obelus_app::event::Event::Spelling("nih".to_string(), None));
+        assert_eq!(text(&app), "zzanihb\n", "the last spelling was left behind");
     }
 
     /// The caret goes where the input method has its own inside what it is

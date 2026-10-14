@@ -1435,6 +1435,9 @@ impl Buffer {
         let one_line = span.line == span.end_line && !with.contains('\n');
         let shape = one_line.then(|| folds::shape_of(self.editing.text(), span.line));
         let at = self.editing.text().char_offset(span.line, span.column);
+        // Where what an input method is spelling began, before the edit
+        // moves it: carried across below, the way the folds are.
+        let spelled = self.editing.spelled_from();
         let removed = match empty {
             true => String::new(),
             false => {
@@ -1446,6 +1449,15 @@ impl Buffer {
         if !with.is_empty() {
             let edit = self.editing.text_mut().insert(at, with);
             self.reparse(&edit);
+        }
+        if let Some(spelled) = spelled {
+            let edit = obelus_text::coordinates::Replacement {
+                at,
+                removed: removed.chars().count(),
+                inserted: with.chars().count(),
+            };
+            self.editing
+                .spelled_at(edit.carry(spelled, obelus_text::coordinates::End::Start));
         }
 
         // Five caches key on this -- the language server's idea of the

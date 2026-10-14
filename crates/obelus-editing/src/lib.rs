@@ -20,7 +20,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use obelus_text::{
     Text,
-    coordinates::{CharColumn, DisplayColumn, LineNumber, Span},
+    coordinates::{CharColumn, CharOffset, DisplayColumn, LineNumber, Span},
 };
 
 /// The modifiers a binding can name.
@@ -905,6 +905,31 @@ impl Editing {
     /// is spelling -- or, with nothing said, that it is spelling nothing.
     pub fn spelling(&mut self, from: Cursor, said: &str) {
         self.spelled = (!said.is_empty()).then(|| (from, said.to_string()));
+    }
+
+    /// Where what an input method is spelling begins, as an offset into
+    /// the text -- for carrying it across an edit, which is measured
+    /// before the edit is made.
+    #[must_use]
+    pub fn spelled_from(&self) -> Option<CharOffset> {
+        let (from, _) = self.spelled.as_ref()?;
+        Some(self.text.char_offset(from.line, from.column))
+    }
+
+    /// Says what an input method is spelling begins at `offset` now.
+    ///
+    /// What carries it across an edit somewhere else in the text: two
+    /// lines put in above it, and a spelling asked for where it was is two
+    /// lines up from where it is, and is not found.
+    pub fn spelled_at(&mut self, offset: CharOffset) {
+        let (line, column) = self.text.position(offset);
+        if let Some((from, _)) = self.spelled.as_mut() {
+            *from = Cursor {
+                line,
+                column,
+                ..*from
+            };
+        }
     }
 
     /// Where what an input method is spelling is, while it is still there.

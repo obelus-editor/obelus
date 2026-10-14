@@ -882,7 +882,6 @@ impl App {
                     said: said.to_string(),
                     from,
                     at: here,
-                    file: None,
                 });
             }
         }
@@ -899,25 +898,15 @@ impl App {
         let Some(buffer) = self.current_buffer() else {
             return;
         };
-        let here = self.current.zip(Some(buffer.version()));
         let cursor = buffer.cursor();
-        // Over the last spelling only where nothing has changed the file
-        // since: the version is what says the letters there are still it.
-        let over = before.filter(|before| here.is_some() && before.file == here);
+        // Over the last spelling where its letters are still in the file:
+        // the buffer carries where it begins across whatever else changed
+        // the file since, and says nothing where something changed the
+        // letters themselves.
+        let over = before.and_then(|_| buffer.spelled());
         let at = self.written_here();
-        let (span, doing) = match &over {
-            Some(before) => {
-                let end = buffer.end_of_written(before.from, &before.said);
-                (
-                    Span {
-                        line: before.from.line,
-                        column: before.from.column,
-                        end_line: end.line,
-                        end_column: end.column,
-                    },
-                    obelus_buffer::undo::Doing::Joined,
-                )
-            }
+        let (span, doing) = match over {
+            Some(span) => (span, obelus_buffer::undo::Doing::Joined),
             None => (
                 buffer.selection().unwrap_or(Span {
                     line: cursor.line,
@@ -950,7 +939,6 @@ impl App {
                     said: said.to_string(),
                     from,
                     at,
-                    file: after,
                 });
             }
         }
@@ -981,19 +969,9 @@ impl App {
         let (from, said) = (spelt.from, spelt.said.as_str());
         let spelling: Option<&mut dyn Spells> = match (spelt.at.into, spelt.at.document) {
             (WritingInto::File, Some(document)) => {
-                let Some(buffer) = self.file(document) else {
-                    return;
-                };
-                let end = buffer.end_of_written(from, said);
-                let span = Span {
-                    line: from.line,
-                    column: from.column,
-                    end_line: end.line,
-                    end_column: end.column,
-                };
-                if buffer.text().text_in(span) == said {
-                    // Part of the step the spelling took, which then puts
-                    // back nothing at all.
+                // Part of the step the spelling took, which then puts back
+                // nothing at all.
+                if let Some(span) = self.file(document).and_then(Buffer::spelled) {
                     self.change_in(document.get(), span, "", obelus_buffer::undo::Doing::Joined);
                 }
                 return;
@@ -1317,7 +1295,4 @@ pub(in crate::app) struct Spelt {
     from: obelus_buffer::Cursor,
     /// Where it was written.
     at: Written,
-    /// The file and the version the writing left it at, where it was a
-    /// file -- which is what says nothing has changed it since.
-    file: Option<(DocumentId, i32)>,
 }

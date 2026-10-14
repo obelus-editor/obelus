@@ -73,12 +73,6 @@ impl Buffer {
         self.editing.spelled()
     }
 
-    /// Where `said`, written in from `from`, ends.
-    #[must_use]
-    pub fn end_of_written(&self, from: Cursor, said: &str) -> Cursor {
-        self.editing.end_of(from, said)
-    }
-
     /// Puts the caret where a pointer landed, or drags the selection out
     /// to it.
     ///
