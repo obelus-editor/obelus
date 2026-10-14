@@ -212,7 +212,7 @@ impl Chooser {
     /// The projects the filter leaves, newest first.
     ///
     /// Worked out rather than kept, because what it is worked out from is
-    /// one short string and a list of twenty: a cache here would be a
+    /// one short string and a list of a few dozen: a cache here would be a
     /// second answer to a question that costs nothing to ask.
     #[must_use]
     pub fn rows(&self) -> Vec<(&Known, Option<(usize, usize)>)> {
@@ -374,9 +374,10 @@ impl Chooser {
                 self.known.retain(|known| known.path != path);
                 // The row that was under it moves up into its place, and
                 // the reader is on that one; or on the one above, where it
-                // was the last -- the opening row only once there are no
-                // projects left, because a key that put the reader on it
-                // would be a key that changed what enter does.
+                // was the last -- the opening row only once no project is
+                // left to stand on, because a key that put the reader on it
+                // would be a key that changed what enter does. Which with a
+                // filter is once none matches, though the list holds more.
                 self.at = self.at.min(self.rows().len().saturating_sub(1));
                 Outcome::Forgot(path)
             }

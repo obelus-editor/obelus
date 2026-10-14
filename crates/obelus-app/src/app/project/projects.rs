@@ -39,8 +39,8 @@
 //! so it holds both.
 //!
 //! **A project whose directory has gone is forgotten.** Asked when the
-//! screen opens, which is the moment a view reads what it shows: twenty
-//! `stat`s, not twenty reads, and a row offering a place that is not
+//! screen opens, which is the moment a view reads what it shows: a `stat`
+//! a row, not a read, and a row offering a place that is not
 //! there is a row whose one answer is a refusal. And taken out of the file
 //! as well as off the screen, which is a choice with a cost said out loud
 //! -- a disk that is not plugged in, or a share not mounted yet at the
@@ -403,15 +403,16 @@ impl crate::app::App {
             // reader never opens it.
             self.amiss(&format!("The list of projects would not read: {why}"));
         }
+        let (mut here, went): (Vec<_>, Vec<_>) = reading
+            .rows()
+            .into_iter()
+            .partition(|project| !gone(&project.path));
         // As many as the setting says, which the file holds more of where
         // the reader has just made it fewer: the rest go the next time a
         // project is written down, and come back meanwhile if it is made
-        // more again.
-        let (here, went): (Vec<_>, Vec<_>) = reading
-            .rows()
-            .into_iter()
-            .take(self.config().recent_projects)
-            .partition(|project| !gone(&project.path));
+        // more again. Of those that are there, so that one which has gone
+        // leaves room for the next rather than a page one row short.
+        here.truncate(self.config().recent_projects);
         if !went.is_empty() {
             let went: Vec<PathBuf> = went.into_iter().map(|project| project.path).collect();
             forget(&went);
@@ -1331,6 +1332,47 @@ mod tests {
             .collect();
         assert_eq!(offered, vec![root], "the page offers more than it keeps");
         assert_eq!(read().rows().len(), 2, "making it fewer wrote the file");
+    }
+
+    /// A project that has gone leaves room for the next: the page offers as
+    /// many as the setting says of those that are there.
+    ///
+    /// Broken deliberately by taking as many as the setting says before
+    /// asking which have gone, as it first did: the page offers none.
+    #[test]
+    fn a_gone_project_leaves_room_for_the_next() {
+        let (root, _turn) = scratch("room");
+        // The gone one newest, so that it is the one taken.
+        let path = path().expect("somewhere");
+        std::fs::create_dir_all(path.parent().expect("a directory")).expect("the directory");
+        std::fs::write(
+            &path,
+            to_toml(&[
+                Project {
+                    path: root.join("gone"),
+                    last: Some(30),
+                },
+                Project {
+                    path: root.clone(),
+                    last: Some(20),
+                },
+            ]),
+        )
+        .expect("a list");
+
+        let mut app = crate::app::App::new(Vec::new());
+        app.settled.config.recent_projects = 1;
+        app.ask_which_project();
+        let offered: Vec<PathBuf> = app
+            .which_project
+            .chooser
+            .as_ref()
+            .expect("asking")
+            .rows()
+            .into_iter()
+            .map(|(known, _)| known.path.clone())
+            .collect();
+        assert_eq!(offered, vec![root], "a gone project took the only room");
     }
 
     /// Delete on a project takes it off the page and out of the file, and

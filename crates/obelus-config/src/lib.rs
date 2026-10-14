@@ -1641,7 +1641,12 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
         .and_then(toml::Value::as_integer)
         && allowed("recent_projects")
     {
-        config.recent_projects = usize::try_from(many).unwrap_or(DEFAULT_RECENT_PROJECTS);
+        // At least one, clamped where it is read: `0` is what a reader
+        // writes by hand after `conversation_days`, where it means never
+        // forgetting, and here it would empty the list the next time a
+        // project was chosen.
+        config.recent_projects =
+            usize::try_from(many).map_or(DEFAULT_RECENT_PROJECTS, |many| many.max(1));
     }
     if let Some(points) = table.get("font_size").and_then(toml::Value::as_integer)
         && allowed("font_size")
@@ -2750,6 +2755,29 @@ mod tests {
     /// the keys start from the default when the table is built, and a word
     /// dropped here would be taken out of the file by the next save.
     ///
+    /// Remembering no projects is not something a hand-written `0` can ask
+    /// for, and a project's file cannot ask for any number at all.
+    ///
+    /// Broken deliberately by taking the `max(1)` out of `apply`: the `0`
+    /// is kept, and the next project chosen empties the list. And by
+    /// making it `Reach::Anywhere`: the project's `5` is taken.
+    #[test]
+    fn recent_projects_are_at_least_one_and_the_readers_alone() {
+        let mut config = Config::default();
+        let table: toml::Table = "recent_projects = 0".parse().expect("toml");
+        apply(&mut config, &table, Whose::Reader);
+        assert_eq!(config.recent_projects, 1, "a 0 was kept");
+
+        let mut config = Config::default();
+        let table: toml::Table = "recent_projects = 5".parse().expect("toml");
+        apply(&mut config, &table, Whose::Project);
+        assert_eq!(
+            config.recent_projects,
+            super::DEFAULT_RECENT_PROJECTS,
+            "a project set how many the reader remembers"
+        );
+    }
+
     /// Broken deliberately by not checking the word against `KEY_LAYOUTS`,
     /// which says nothing about it, and by leaving it out of the config,
     /// which writes the file without it.
