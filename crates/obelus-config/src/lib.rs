@@ -220,6 +220,15 @@ pub struct Config {
     /// page it kept: the agent keeps its own account, and nothing is asked
     /// of it.
     pub conversation_days: usize,
+    /// How many projects the page that asks which one remembers.
+    ///
+    /// A limit on the list is a limit on what can be found in it, so this
+    /// is as many as a reader could plausibly recognise rather than as many
+    /// as fit on the screen -- the filter is what reaches the ones below the
+    /// fold. A reader who moves between a great many checkouts recognises
+    /// more of them than one who lives in two, which is why it is theirs to
+    /// say.
+    pub recent_projects: usize,
     /// Whether Obelus asks, once a day, whether a newer version is out.
     ///
     /// The one thing Obelus asks the network for that the reader did not
@@ -393,6 +402,7 @@ impl Default for Config {
             // is still there, short enough that the list is of what the
             // reader is doing rather than of everything they ever asked.
             conversation_days: 30,
+            recent_projects: DEFAULT_RECENT_PROJECTS,
             // On, because a reader who installed Obelus from a release has
             // no other way to hear of the next one.
             new_versions: true,
@@ -695,6 +705,16 @@ const DELAYS: &[&str] = &["0", "200", "400", "800"];
 /// Zero is never forgetting, the way it is off for a rest.
 const DAYS: &[&str] = &["0", "7", "30", "90", "365"];
 
+/// How many projects are remembered, as the few anybody picks.
+///
+/// No zero: a page that asks which project with nothing to offer but a box
+/// to type a path in is what a first start already is, and a reader who
+/// wants that has nothing to keep it for.
+const RECENT_PROJECTS: &[&str] = &["10", "20", "40", "80"];
+
+/// How many projects are remembered when the reader has not said.
+pub const DEFAULT_RECENT_PROJECTS: usize = 40;
+
 /// The workflows an agent can be asked to follow.
 ///
 /// `none` is the agent's own way. What each one says -- to the reader in
@@ -950,6 +970,18 @@ pub const ALL: &[Setting] = &[
         drawn: Drawn::Anywhere,
     },
     Setting {
+        key: "recent_projects",
+        name: "Recent projects",
+        about: "How many projects the page that asks which one remembers, newest first. Fewer takes the oldest off the list",
+        group: Group::Files,
+        // The reader's alone: the list is one for the whole machine, and a
+        // project that could shorten it would be a downloaded file emptying
+        // it.
+        reach: Reach::ReaderOnly,
+        kind: Kind::Count(RECENT_PROJECTS),
+        drawn: Drawn::Anywhere,
+    },
+    Setting {
         key: "workflow",
         name: "Workflow",
         about: "How an agent goes about changing this project",
@@ -1028,6 +1060,7 @@ impl Config {
             "fonts" => Some(Value::Names(self.fonts.clone())),
             "hover_delay" => Some(Value::Count(self.hover_delay)),
             "conversation_days" => Some(Value::Count(self.conversation_days)),
+            "recent_projects" => Some(Value::Count(self.recent_projects)),
             "animation" => Some(Value::Switch(self.animation)),
             "read_only" => Some(Value::Switch(self.read_only)),
             "language_servers" => Some(Value::Switch(self.language_servers)),
@@ -1061,6 +1094,7 @@ impl Config {
             ("tab_width", Value::Count(width)) => self.tab_width = *width,
             ("hover_delay", Value::Count(delay)) => self.hover_delay = *delay,
             ("conversation_days", Value::Count(days)) => self.conversation_days = *days,
+            ("recent_projects", Value::Count(many)) => self.recent_projects = *many,
             ("font_size", Value::Count(points)) => self.font_size = *points,
             ("fonts", Value::Names(names)) => self.fonts = names.clone(),
             ("animation", Value::Switch(on)) => self.animation = *on,
@@ -1602,6 +1636,13 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
     {
         config.conversation_days = usize::try_from(days).unwrap_or(0);
     }
+    if let Some(many) = table
+        .get("recent_projects")
+        .and_then(toml::Value::as_integer)
+        && allowed("recent_projects")
+    {
+        config.recent_projects = usize::try_from(many).unwrap_or(DEFAULT_RECENT_PROJECTS);
+    }
     if let Some(points) = table.get("font_size").and_then(toml::Value::as_integer)
         && allowed("font_size")
     {
@@ -2026,6 +2067,11 @@ fn lay(existing: &str, config: &Config, every: bool) -> String {
         "conversation_days",
         config.conversation_days != default.conversation_days,
         toml_edit::value(i64::try_from(config.conversation_days).unwrap_or(30)),
+    );
+    put(
+        "recent_projects",
+        config.recent_projects != default.recent_projects,
+        toml_edit::value(i64::try_from(config.recent_projects).unwrap_or(40)),
     );
     put(
         "animation",
@@ -2969,6 +3015,7 @@ mod tests {
             font_size: 18,
             hover_delay: 800,
             conversation_days: 90,
+            recent_projects: 80,
             read_only: true,
             language_servers: true,
             format_on_save: true,

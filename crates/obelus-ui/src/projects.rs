@@ -96,6 +96,11 @@ pub fn hints(choosing: &crate::Choosing, keymap: &Keymap) -> Vec<Hint> {
             .when(choosing.offering || choosing.there),
         ],
     };
+    // Only delete is said, though a Mac takes backspace as well: the key a
+    // Mac has `delete` written on is that one.
+    if choosing.forgets {
+        hints.push(Hint::new(bare(KeyCode::Delete), "Forget"));
+    }
     if let Some(chord) = keymap.chord_for(Command::Quit) {
         hints.push(Hint::new(chord, "Leave"));
     }

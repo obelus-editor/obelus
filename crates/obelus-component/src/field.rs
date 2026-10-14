@@ -23,7 +23,7 @@
 //! here. A box with a rule of its own adds an arm, not a copy of the key
 //! table.
 
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyCode, KeyEvent};
 use obelus_editing::{Editing, Typing};
 use obelus_text::coordinates::{CharColumn, DisplayColumn, LineNumber};
 
@@ -257,6 +257,35 @@ impl Field {
         self.writing.has_selection() || self.caret().get() < self.said().chars().count()
     }
 
+    /// Whether this key is the reader taking away the row the line is over,
+    /// rather than a character of the line.
+    ///
+    /// Delete, once the line has nothing for it ([`Field::takes_a_delete`]).
+    /// And on macOS backspace as well, once the line is empty: the key a
+    /// Mac's keyboard has `delete` written on sends backspace, and its
+    /// forward delete is that key with `fn`. Empty and not merely with the
+    /// caret at the start, because a reader holding backspace down to empty
+    /// the line is still typing in it, and the row is the next thing the
+    /// held key would reach. Bare, both: with a modifier they rub out a
+    /// word, which is the line's.
+    #[must_use]
+    pub fn leaves_to_the_row(&self, key: &KeyEvent) -> bool {
+        self.leaves_to_the_row_on(key, cfg!(target_os = "macos"))
+    }
+
+    /// The same, saying which machine it is asked on, so that a test on
+    /// one can ask about the other.
+    fn leaves_to_the_row_on(&self, key: &KeyEvent, mac: bool) -> bool {
+        if !key.modifiers.is_empty() {
+            return false;
+        }
+        match key.code {
+            KeyCode::Delete => !self.takes_a_delete(),
+            KeyCode::Backspace => mac && self.is_empty(),
+            _ => false,
+        }
+    }
+
     /// Lets go of what is held, and says whether anything was.
     ///
     /// What escape does first in every box: a selection is nearer than
@@ -310,3 +339,71 @@ impl Default for Field {
 /// text's. The width only reaches [`Editing`] so that a motion measured in
 /// rows has something to measure against, and there are no rows here.
 const ROOM: u16 = u16::MAX;
+
+#[cfg(test)]
+mod tests {
+    use crossterm::event::KeyModifiers;
+
+    use super::*;
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    /// Delete is the row's only where the line has nothing in front of its
+    /// caret, on any machine.
+    ///
+    /// Broken deliberately by asking `is_empty` instead of
+    /// `takes_a_delete`: a filter with a word typed in it then keeps
+    /// delete, and the row the reader is on cannot be taken away until the
+    /// word is rubbed out.
+    #[test]
+    fn delete_is_the_rows_once_the_line_has_nothing_for_it() {
+        let mut line = Field::new();
+        assert!(line.leaves_to_the_row_on(&key(KeyCode::Delete), false));
+        line.put("ob");
+        assert!(
+            line.leaves_to_the_row_on(&key(KeyCode::Delete), false),
+            "delete at the end of a word is still the line's"
+        );
+        line.handle_key(&key(KeyCode::Left));
+        assert!(
+            !line.leaves_to_the_row_on(&key(KeyCode::Delete), false),
+            "delete in front of a character went to the row"
+        );
+    }
+
+    /// Backspace is the row's on a Mac and only with an empty line; never
+    /// elsewhere.
+    ///
+    /// Broken deliberately by taking `mac &&` away, which gives a held
+    /// backspace on Linux the rows once the filter is empty; and by asking
+    /// whether the caret is at the start rather than whether the line is
+    /// empty, which gives the row a backspace with a word still in front.
+    #[test]
+    fn backspace_is_the_rows_only_on_a_mac_and_only_when_empty() {
+        let mut line = Field::new();
+        assert!(line.leaves_to_the_row_on(&key(KeyCode::Backspace), true));
+        assert!(!line.leaves_to_the_row_on(&key(KeyCode::Backspace), false));
+        line.put("ob");
+        line.handle_key(&key(KeyCode::Home));
+        assert!(
+            !line.leaves_to_the_row_on(&key(KeyCode::Backspace), true),
+            "backspace with a word in the line went to the row"
+        );
+    }
+
+    /// With a modifier both keys rub out a word, and that is the line's.
+    #[test]
+    fn a_modifier_keeps_the_key_in_the_line() {
+        let line = Field::new();
+        for code in [KeyCode::Delete, KeyCode::Backspace] {
+            for modifiers in [KeyModifiers::ALT, KeyModifiers::CONTROL] {
+                assert!(
+                    !line.leaves_to_the_row_on(&KeyEvent::new(code, modifiers), true),
+                    "{modifiers:?} and {code:?} went to the row"
+                );
+            }
+        }
+    }
+}
