@@ -21,42 +21,41 @@ const JOINS_THE_PAGE: u32 = 0b0101_0000;
 const STANDS_ON_THE_BAR: u32 = 0b1010_0000;
 
 impl Painter {
-    /// The bar along the top: the tabs on any bar the page runs up under,
-    /// and the three buttons on one Obelus draws -- see `title::Bar` --
-    /// over the picture and the page's colour, and over any pane whose
-    /// glass runs up under it -- see `bar_on_top` in `lay`.
+    /// The tabs along the top, on any bar the page runs up under -- see
+    /// `title::tabs` -- as part of the page: first, under everything, so
+    /// that a pane whose glass runs up under the bar is over them the way
+    /// it is over the rest of the page, and slides down over them coming
+    /// in. Seen through its glass they are blurred with everything else,
+    /// and nothing on the bar is theirs to press while it is there
+    /// (`Strip::cover`).
+    ///
+    /// In the screen a pane went from as well, where the buttons are left
+    /// out: what the pane's glass over the bar read there is what it read
+    /// while it rested, and with the tabs left out of it too, the glass
+    /// going was the bar's shade and the tabs blinking off under it.
     ///
     /// In the window's pixels less the grid's origin, which is where every
     /// quad is placed: the bar is above the grid, so its rows come out
     /// negative.
+    pub(super) fn tabs_on_the_bar(&mut self, across: f32, margin: [f32; 2], fonts: &mut Fonts) {
+        let dark = crate::title::dark(ground_of(self.ground));
+        if let Some(strip) = self.strip.take() {
+            self.tab_strip(&strip, across, margin, fonts, dark);
+            self.strip = Some(strip);
+        }
+    }
+
+    /// The three buttons on a bar Obelus draws -- see `title::Bar` -- over
+    /// the picture and the page's colour, and over any pane whose glass runs
+    /// up under the bar -- see `bar_on_top` in `lay`. A pane covers the
+    /// tabs and not these: the window has to be closable whatever is open.
     ///
-    /// `over_panes` where it is drawn over a pane whose glass runs up under
-    /// it. A tab cut by an end of the row is cut by painting the bar back
-    /// over what is past the end, which is the page there -- but over a
-    /// pane it is the pane's glass, which cannot be painted back. So there
-    /// only the tabs that are whole between the ends are drawn, which is
-    /// what a row looked like before it could cut one.
-    pub(super) fn title_bar(
-        &mut self,
-        across: f32,
-        margin: [f32; 2],
-        fonts: &mut Fonts,
-        over_panes: bool,
-    ) {
-        if self.bar_left_out {
+    /// In the same pixels as the tabs.
+    pub(super) fn buttons_on_the_bar(&mut self, across: f32, margin: [f32; 2]) {
+        if self.buttons_left_out {
             return;
         }
         let dark = crate::title::dark(ground_of(self.ground));
-        if let Some(strip) = self.strip.take() {
-            match strip.cut.filter(|_| over_panes) {
-                Some(cut) => {
-                    let whole = crate::title::whole_between(&strip, cut);
-                    self.tab_strip(&whole, across, margin, fonts, dark);
-                }
-                None => self.tab_strip(&strip, across, margin, fonts, dark),
-            }
-            self.strip = Some(strip);
-        }
         let Some(bar) = self.bar else {
             return;
         };

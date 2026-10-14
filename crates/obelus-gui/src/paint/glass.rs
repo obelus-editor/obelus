@@ -542,11 +542,12 @@ impl Painter {
             low = at;
         }
         // Up to the top of the window, where the pane hangs from the top of
-        // the page under a bar Obelus draws: the bar is the page's there,
+        // the page under a bar in it: the bar is the page's there,
         // and a pane over the whole page with a strip of the page left
-        // bare above it is a pane that stopped short. The bar is drawn over
-        // it -- see `bar_on_top` in `lay`.
-        if from_the_top(self.bar.is_some(), behind.area.y, behind.joined) {
+        // bare above it is a pane that stopped short. The tabs are under it,
+        // with the page, and the buttons Obelus draws are drawn over it --
+        // see `bar_on_top` in `lay`.
+        if from_the_top(self.titled, behind.area.y, behind.joined) {
             top = -self.margin[1];
         }
         let glass = self.quads.len();
@@ -1032,12 +1033,8 @@ fn cut(piece: [f32; 4], room: [f32; 4], into: &mut Vec<[f32; 4]>) {
     }
 }
 
-/// Whether a pane runs up under the bar, which is a bar Obelus draws and a
-/// pane hanging from the top of the page: its glass then goes on up to the
-/// top of the window, and the bar is drawn over it.
-pub(super) fn from_the_top(bar: bool, row: u16, joined: Joined) -> bool {
-    bar && row == 0 && matches!(joined, Joined::Above | Joined::Screen)
-}
+/// Asked here, and by the window of the tabs -- see `title::from_the_top`.
+pub(super) use crate::title::from_the_top;
 
 /// How much of a pane a slide has let through, which is the room its
 /// shadow falls from.

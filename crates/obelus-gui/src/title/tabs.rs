@@ -152,6 +152,8 @@ pub(crate) struct Strip {
     room: Option<Room>,
     /// Where the pointer is along the bar, while it is over it.
     pointer: Option<f32>,
+    /// Whether a pane is over the bar -- see `cover`.
+    covered: bool,
     /// What it is over, asked again of every laying out: the row moves
     /// under a pointer that does not -- the wheel, an arrow's slide, a tab
     /// opened from the keys -- and what a press there is on is what is
@@ -362,8 +364,26 @@ impl Strip {
         true
     }
 
+    /// Says whether a pane runs up under the bar, which puts the tabs
+    /// under its glass with the rest of the page (`Painter::tabs_on_the_bar`).
+    /// Nothing on the bar is theirs while it is there: a press, the pointer
+    /// and the wheel go to the bar, as they do where there are no tabs --
+    /// a press on a tab nobody can see was the file it named taking the
+    /// place of the settings.
+    ///
+    /// What the pointer is over is asked again here and not left to the
+    /// next laying out: a press that arrives between the pane and the
+    /// frame that draws it reads `hovered`, and would choose the tab.
+    pub(crate) fn cover(&mut self, covered: bool) {
+        self.covered = covered;
+        self.hovered = self.pointer.and_then(|x| self.at(x));
+    }
+
     /// What is at a place on the bar, in pixels from the window's left.
     pub(crate) fn at(&self, x: f32) -> Option<Spot> {
+        if self.covered {
+            return None;
+        }
         let inside = |[left, width]: [f32; 2]| (left..left + width).contains(&x);
         if let Some((earlier, later)) = self.arrows {
             if inside(earlier) {
@@ -393,7 +413,7 @@ impl Strip {
     /// of whatever is last on it -- which is where a press is the strip's
     /// and not the bar's to drag.
     pub(crate) fn covers(&self) -> Option<(f32, f32)> {
-        let room = self.room?;
+        let room = self.room.filter(|_| !self.covered)?;
         let end = match self.arrows {
             Some((_, [left, width])) => left + width,
             None => self.laid.last().map(|laid| laid.left + laid.width)?,
@@ -404,7 +424,7 @@ impl Strip {
     /// Scrolls the row by some notches of the wheel, on towards the last
     /// tab where it is more than none. Whether that moved it.
     pub(crate) fn scroll(&mut self, notches: f32) -> bool {
-        let Some(room) = self.room.filter(|_| self.arrows.is_some()) else {
+        let Some(room) = self.room.filter(|_| self.arrows.is_some() && !self.covered) else {
             return false;
         };
         self.go_to(self.target + notches * room.notch())
@@ -413,7 +433,7 @@ impl Strip {
     /// Walks the row to the next tab one of its ends is cutting, or hiding,
     /// in the way an arrow points: that tab then whole at that end.
     pub(crate) fn step(&mut self, towards: Spot) -> bool {
-        if self.arrows.is_none() {
+        if self.arrows.is_none() || self.covered {
             return false;
         }
         let span = self.span();
@@ -449,8 +469,13 @@ impl Strip {
     }
 
     /// The strip as this frame paints it.
+    ///
+    /// Nothing while nothing is open -- the welcome screen, a start that
+    /// asks which project: the bar's shade is the ground the tabs stand on,
+    /// and drawn under none it is an empty row of tabs across the top of a
+    /// page that has nothing to put in it.
     pub(crate) fn painted(&self, active: bool) -> Option<Painted> {
-        let room = self.room?;
+        let room = self.room.filter(|_| !self.tabs.is_empty())?;
         let tabs = self
             .laid
             .iter()
@@ -494,24 +519,6 @@ impl Strip {
             arrows,
             active,
         })
-    }
-}
-
-/// The strip with only the tabs that are whole between `cut`'s ends, and
-/// nothing to paint back past them: for a bar drawn over a pane's glass,
-/// which cannot be painted back -- see `Painter::title_bar`.
-pub(crate) fn whole_between(strip: &Painted, (start, end): (f32, f32)) -> Painted {
-    Painted {
-        tabs: strip
-            .tabs
-            .iter()
-            .filter(|tab| {
-                tab.laid.left >= start - 0.5 && tab.laid.left + tab.laid.width <= end + 0.5
-            })
-            .cloned()
-            .collect(),
-        cut: None,
-        ..strip.clone()
     }
 }
 
@@ -685,6 +692,53 @@ mod tests {
         assert_eq!(few.covers(), None, "no room for a tab");
     }
 
+    /// With nothing open there is nothing to paint, not an empty bar.
+    ///
+    /// Deliberate break: leave the filter out of `painted`. The strip is
+    /// painted with no tabs in it, which is the bar's shade drawn across
+    /// the top of the welcome screen.
+    #[test]
+    fn nothing_open_paints_no_strip() {
+        let mut strip = Strip::default();
+        strip.told(Vec::new());
+        strip.lay(Some(room()), |_, _| 4.0, Instant::now(), false);
+        assert_eq!(strip.painted(true), None);
+        strip.told(vec![tab(0, true)]);
+        strip.lay(Some(room()), |_, _| 4.0, Instant::now(), false);
+        assert!(strip.painted(true).is_some(), "a tab, and the bar under it");
+    }
+
+    /// Under a pane nothing on the bar is the tabs': not a press, not the
+    /// pointer, not the wheel -- and they are still painted, under its
+    /// glass, and theirs again when it goes.
+    ///
+    /// Deliberate breaks: leave `covered` out of `at`, and a press over a
+    /// tab under the settings opens its file in their place; leave the
+    /// pointer out of `cover`, and so does one that arrives before the
+    /// frame that draws them; out of `covers`, and on Windows the bar over
+    /// a covered tab will not drag the window; out of `scroll` or `step`,
+    /// and the wheel or an arrow moves a row nobody sees.
+    #[test]
+    fn a_pane_over_the_bar_takes_it_from_the_tabs() {
+        let mut strip = strip(0);
+        strip.point(Some(30.0));
+        assert_eq!(strip.hovered(), Some(Spot::Tab(0)));
+        strip.cover(true);
+        assert_eq!(strip.hovered(), None, "nothing lit, before any frame");
+        settle(&mut strip);
+        assert_eq!(strip.hovered(), None, "nothing lit under the pane");
+        assert_eq!(strip.at(30.0), None);
+        assert_eq!(strip.at(5.0), None, "nor the arrows");
+        assert_eq!(strip.covers(), None);
+        assert!(!strip.scroll(1.0));
+        assert!(!strip.step(Spot::Later));
+        assert!(strip.painted(true).is_some(), "still painted, under it");
+        strip.cover(false);
+        settle(&mut strip);
+        assert_eq!(strip.hovered(), Some(Spot::Tab(0)), "theirs again");
+        assert!(strip.scroll(1.0));
+    }
+
     /// Over a different density the row is as far along itself as it was.
     ///
     /// Deliberate break: leave the scaling out of `lay`. Twice the density
@@ -701,29 +755,6 @@ mod tests {
         };
         strip.lay(Some(doubled), |_, _| 8.0, Instant::now(), false);
         assert_eq!(strip.target, was * 2.0);
-    }
-
-    /// Over a pane's glass only the whole tabs are drawn, and nothing is
-    /// painted back past the ends.
-    ///
-    /// Deliberate break: keep `cut` in `whole_between`. The bar over a list
-    /// that runs up under it then paints two squares of the page over the
-    /// list's glass, at either end of the row.
-    #[test]
-    fn over_a_pane_only_whole_tabs_are_drawn() {
-        let painted = strip(0).painted(true).expect("a strip");
-        let cut = painted.cut.expect("tabs past the end");
-        let whole = whole_between(&painted, cut);
-        assert_eq!(whole.cut, None);
-        assert_eq!(
-            whole
-                .tabs
-                .iter()
-                .map(|tab| tab.laid.index)
-                .collect::<Vec<_>>(),
-            [0, 1, 2, 3, 4, 5],
-            "the seventh is cut by the end"
-        );
     }
 
     /// The row slides to where it is going, a frame at a time, and stops

@@ -937,6 +937,30 @@ fn wants_a_frame(stepped: bool, wake: Option<Wake>, covered: bool) -> bool {
     !covered && (stepped || wake == Some(Wake::EveryFrame))
 }
 
+/// Tells the tabs whether a pane runs up under the bar: they are the
+/// page's, and it is over them -- see `Strip::cover`.
+///
+/// The moment the window hears which panes there are, not at the frame
+/// that draws them: a press in between is a press on what the reader can
+/// already see is going to be there. And the system told at once on
+/// Windows, where it is the system that says what a press on the bar is.
+///
+/// Of the window's pieces and not of the window, because both places that
+/// ask hold some other part of it.
+fn cover_the_tabs(
+    strip: &mut crate::title::Strip,
+    stack: &[Behind],
+    titled: f32,
+    bar: Option<&crate::title::Bar>,
+) {
+    strip.cover(stack.iter().any(|over| {
+        !over.is_a_box() && crate::title::from_the_top(titled, over.area.y, over.joined)
+    }));
+    if let Some(bar) = bar {
+        bar.tabs_are(strip.covers());
+    }
+}
+
 /// Has the system fill the window with the page's ground where it shows
 /// the window before Obelus has drawn it.
 ///
@@ -1526,6 +1550,12 @@ impl ApplicationHandler<Waking> for Showing {
                                 Instant::now(),
                             );
                             self.stack = std::mem::take(&mut self.stacking);
+                            cover_the_tabs(
+                                &mut self.strip,
+                                &self.stack,
+                                self.titled,
+                                self.bar.as_ref(),
+                            );
                             self.panes = std::mem::take(&mut self.paning);
                             self.scrolled = std::mem::take(&mut self.scrolling);
                             drew = true;
@@ -1901,6 +1931,9 @@ impl ApplicationHandler<Waking> for Showing {
                     let width = window.inner_size().width as f32;
                     crate::title::room(window, self.titled, width, drawn.as_ref())
                 });
+                // Again here, for a bar whose height changed with nothing
+                // said -- full screen, a new density.
+                cover_the_tabs(&mut self.strip, &self.stack, self.titled, self.bar.as_ref());
                 self.strip.lay(
                     room,
                     |said, size| fonts.caption_width(said, size),

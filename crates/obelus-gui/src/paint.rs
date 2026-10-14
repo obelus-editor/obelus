@@ -185,10 +185,12 @@ pub(crate) struct Painter {
     /// The tabs along the bar, on any bar the page runs up under -- see
     /// `title::tabs`.
     strip: Option<crate::title::Painted>,
-    /// Whether the bar is left out of the frame being laid, which is the
-    /// screen a pane went from being kept: the bar does not go with the
-    /// pane, and the frame it goes over draws its own -- see `keep`.
-    bar_left_out: bool,
+    /// Whether the bar's buttons are left out of the frame being laid,
+    /// which is the screen a pane went from being kept: they do not go with
+    /// the pane, and the frame it goes over draws its own -- see `keep`.
+    /// Not the tabs, which are the page's and under the pane's glass there
+    /// as they were while it rested (`tabs_on_the_bar`).
+    buttons_left_out: bool,
     /// Which two colours mean the reader has hold of something: a run of
     /// characters, and the row their keys are on -- see
     /// `Drawing::holding`.
@@ -259,8 +261,8 @@ pub(crate) struct Painter {
     left_lifted: Option<Whole>,
     /// Where each pane that went stood in it -- its glass, which is where
     /// it was cut from the screen under it -- and the edge it goes along.
-    /// And whether it hung from the top of the page, which under a bar
-    /// Obelus draws is a pane that goes up through the bar -- see
+    /// And whether it hung from the top of the page, which under a bar in
+    /// the page is a pane that goes up through the bar -- see
     /// `Painter::going`.
     gone: Vec<([f32; 4], Joined, bool)>,
     /// The same bindings with something else in the backdrop's place, for
@@ -346,8 +348,9 @@ struct Placed {
     /// going -- see `Painter::recolour`. Drawn last, over everything,
     /// because everything changed colour.
     recoloured: Option<Range<usize>>,
-    /// The bar Obelus draws, laid over a pane coming in or going out
-    /// through it rather than under it -- see `bar_on_top` in `lay`. Among
+    /// The buttons of the bar Obelus draws, laid over a pane coming in or
+    /// going out through it rather than under it -- see `bar_on_top` in
+    /// `lay`. Among
     /// the pieces where the screen is composed; drawn on its own after
     /// the panes that went where it is not.
     bar_over: Option<Range<usize>>,

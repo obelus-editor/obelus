@@ -94,10 +94,10 @@ impl Painter {
         // Every pane and box, furthest first, each over the glass of those
         // before it -- see `drawn`, which four passes ask about.
         let stack = drawn(said.stack, page);
-        // Where the bar Obelus draws goes, which is over a pane whose glass
-        // runs up under it -- see `from_the_top` -- and never under one as
-        // well, which would be every letter of the title twice, once seen
-        // through the glass.
+        // Where the buttons of the bar Obelus draws go, which is over a pane
+        // whose glass runs up under it -- see `from_the_top` -- and never
+        // under one as well, which would be every stroke of them twice, once
+        // seen through the glass. The tabs are always under, with the page.
         //
         // At the end of everything while one is on its way in or out, so
         // that it is not in what moves; after the panes and before the
@@ -109,16 +109,22 @@ impl Painter {
             .map(|over| (over.area.y, over.joined))
             .collect();
         let bar_on_top = bar_on_top(
-            self.bar.is_some() && !self.bar_left_out,
+            match self.buttons_left_out {
+                true => 0.0,
+                false => self.titled,
+            },
             &panes,
             moving.pane.is_some(),
             moving.leaving.is_some() && self.gone.iter().any(|&(.., top)| top),
         );
-        // The bar's buttons, on the picture where there is one. With it in
-        // the quads every whole screen starts from, because the bar stands
-        // still the way the picture does: what slides is the page under it.
+        // The tabs, and the bar's buttons where nothing runs up under them,
+        // on the picture where there is one. With them in the quads every
+        // whole screen starts from, because the bar stands still the way
+        // the picture does: what slides is the page under it, or a pane
+        // over it.
+        self.tabs_on_the_bar(across, margin, fonts);
         if bar_on_top.is_none() {
-            self.title_bar(across, margin, fonts, false);
+            self.buttons_on_the_bar(across, margin);
         }
         // Where the picture's quads end, which every whole screen drawn
         // from this frame draws first -- and the one picture of the frame
@@ -304,9 +310,9 @@ impl Painter {
             self.slid(box_of(stack[nearest].area, cell), 0.0, 1.0 - along);
         }
 
-        // The bar over a pane that is simply there -- see `bar_on_top`.
+        // The buttons over a pane that is simply there -- see `bar_on_top`.
         if bar_on_top == Some(BarOnTop::Resting) {
-            self.title_bar(across, margin, fonts, true);
+            self.buttons_on_the_bar(across, margin);
         }
         // Everything the frame says has been said. What is left is
         // putting it back on the screen in pieces, where a pane is on its
@@ -381,10 +387,10 @@ impl Painter {
         } else {
             self.going(moving.leaving);
         }
-        // The bar over a pane on its way in or out -- see `bar_on_top`.
+        // The buttons over a pane on its way in or out -- see `bar_on_top`.
         if matches!(bar_on_top, Some(BarOnTop::Arriving | BarOnTop::Leaving)) {
             let start = self.quads.len();
-            self.title_bar(across, margin, fonts, true);
+            self.buttons_on_the_bar(across, margin);
             self.placed.bar_over = Some(start..self.quads.len());
         }
         // Last, because none of it is drawn on the screen: the blurs are
@@ -483,8 +489,10 @@ impl Painter {
     }
 }
 
-/// Where the bar Obelus draws goes over a pane whose glass runs up under it
-/// -- see `bar_on_top`.
+/// Where the buttons of the bar Obelus draws go over a pane whose glass
+/// runs up under it -- see `bar_on_top`. Not the tabs, which are always
+/// under, with the page; and nothing at all on macOS, which draws its own
+/// buttons over everything, though the answer is the same there.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BarOnTop {
     /// Over a pane on its way in, after everything that moves.
@@ -495,25 +503,26 @@ enum BarOnTop {
     Resting,
 }
 
-/// Where the bar goes on this frame, or `None` for first, under
-/// everything, where nothing runs up under it.
+/// Where the bar's buttons go on this frame, or `None` for first, under
+/// everything, where nothing runs up under the bar.
 ///
-/// `panes` are the frame's, furthest first, by the row each starts on and
-/// what it hangs from; `arriving` is the one on top on its way in, and
+/// `titled` is how tall the bar in the page is, and nothing where it is
+/// left out. `panes` are the frame's, furthest first, by the row each starts on
+/// and what it hangs from; `arriving` is the one on top on its way in, and
 /// `leaving` is one going that ran up under the bar. Over *every* pane
 /// that runs up under it and not only the one on top: a list standing on
 /// the status row over the settings leaves the settings' glass over the
-/// bar, and a bar drawn first was a smear under it.
+/// bar, and buttons drawn first were a smear under it.
 fn bar_on_top(
-    bar: bool,
+    titled: f32,
     panes: &[(u16, Joined)],
     arriving: bool,
     leaving: bool,
 ) -> Option<BarOnTop> {
-    if !bar {
+    if titled <= 0.0 {
         return None;
     }
-    let under = |&(y, joined): &(u16, Joined)| from_the_top(true, y, joined);
+    let under = |&(y, joined): &(u16, Joined)| from_the_top(titled, y, joined);
     match () {
         () if arriving && panes.last().is_some_and(under) => Some(BarOnTop::Arriving),
         () if leaving => Some(BarOnTop::Leaving),
@@ -528,23 +537,58 @@ mod tests {
 
     const FILES: (u16, Joined) = (0, Joined::Screen);
     const SETTINGS: (u16, Joined) = (0, Joined::Screen);
-    const PALETTE: (u16, Joined) = (0, Joined::Above);
+    /// A list over the whole page that ends above a row it does not own.
+    /// Not the palette, which is compact and stands on the status row --
+    /// `Below`, like `CHOICES`, however tall it is -- and so never runs up
+    /// under the bar.
+    const ABOVE_A_ROW: (u16, Joined) = (0, Joined::Above);
     const CHOICES: (u16, Joined) = (20, Joined::Below);
+    /// A bar 38 points tall at twice the density: macOS's.
+    const TITLED: f32 = 76.0;
 
-    /// The bar goes over a pane that runs up under it -- resting, coming
-    /// in or going out -- and first, under everything, where none does.
+    /// A pane hanging from the top of the page runs up under a bar in the
+    /// page, whoever draws its buttons, and under none where there is no
+    /// bar in the page -- a window in full screen, or one whose bar is the
+    /// compositor's.
+    ///
+    /// Deliberate break: leave `titled` out of `from_the_top`. The last
+    /// line then fails: a window in full screen runs its settings up under
+    /// a bar that is not there. What this cannot see is the callers, which
+    /// handed it whether Obelus draws the bar -- `None` on macOS, so the
+    /// settings came down from under the bar rather than from the top of
+    /// the window -- and the glass reaching the top as the pane comes
+    /// down, which wants a device.
+    #[test]
+    fn a_pane_runs_up_under_any_bar_in_the_page() {
+        assert!(from_the_top(TITLED, 0, Joined::Screen), "the settings");
+        assert!(from_the_top(TITLED, 0, Joined::Above), "a list above a row");
+        assert!(
+            !from_the_top(TITLED, 20, Joined::Below),
+            "a list on the status row"
+        );
+        assert!(!from_the_top(0.0, 0, Joined::Screen), "no bar in the page");
+    }
+
+    /// The bar's buttons go over a pane that runs up under it -- resting,
+    /// coming in or going out -- and first, under everything, where none
+    /// does.
     ///
     /// Deliberate breaks, each failing one line here: ask only the pane on
     /// top for `Resting` (the settings with a list on them, the smear the
     /// review found); drop `arriving` from the first arm (a list standing
-    /// on the status row coming in over the settings takes the bar with
-    /// it); put `Resting` before `Leaving` (the files going over the
-    /// settings draw the bar under their going pieces); and leave out
-    /// `bar` (a window with the system's bar draws a second one).
+    /// on the status row coming in over the settings takes the buttons
+    /// with it); put `Resting` before `Leaving` (the files going over the
+    /// settings draw the buttons under their going pieces). And leave out the
+    /// return where `titled` is nothing, which fails the last line and on
+    /// its own changes nothing on the screen: with no bar in the page no
+    /// pane runs up under one, the caller works `leaving` out by the same
+    /// `from_the_top`, and there is nothing there to draw. It is there so
+    /// that the answer does not hang on that.
     #[test]
-    fn the_bar_goes_over_every_pane_that_runs_up_under_it() {
-        let at =
-            |panes: &[(u16, Joined)], arriving, leaving| bar_on_top(true, panes, arriving, leaving);
+    fn the_buttons_go_over_every_pane_that_runs_up_under_the_bar() {
+        let at = |panes: &[(u16, Joined)], arriving, leaving| {
+            bar_on_top(TITLED, panes, arriving, leaving)
+        };
         assert_eq!(at(&[], false, false), None, "the page");
         assert_eq!(
             at(&[CHOICES], false, false),
@@ -556,7 +600,7 @@ mod tests {
         assert_eq!(
             at(&[FILES], true, true),
             Some(BarOnTop::Arriving),
-            "the palette going"
+            "the history going"
         );
         assert_eq!(
             at(&[], false, true),
@@ -582,11 +626,11 @@ mod tests {
             Some(BarOnTop::Leaving),
             "a list in for the files"
         );
-        assert_eq!(at(&[PALETTE], false, false), Some(BarOnTop::Resting));
+        assert_eq!(at(&[ABOVE_A_ROW], false, false), Some(BarOnTop::Resting));
         assert_eq!(
-            bar_on_top(false, &[FILES], true, true),
+            bar_on_top(0.0, &[FILES], true, true),
             None,
-            "the system's bar"
+            "no bar in the page"
         );
     }
 }
