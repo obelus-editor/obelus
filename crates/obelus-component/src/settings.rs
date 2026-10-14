@@ -1748,9 +1748,8 @@ impl Settings {
                 }
             }
             // On the themes page, enter is the card's button: install it,
-            // or update it, or wear it once it is installed and current --
-            // and nothing on one on its way, or one the registry no longer
-            // has to give.
+            // or update it, or wear it once it is installed and current or
+            // no longer listed -- and nothing on one on its way.
             KeyCode::Enter if bare && self.on_themes() => match themes.get(self.window.focus()) {
                 Some(card) if card.may_be_installed() => {
                     SettingsOutcome::InstallTheme(card.theme.name.clone())

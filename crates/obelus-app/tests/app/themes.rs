@@ -1305,6 +1305,32 @@ fn enter_wears_a_theme_already_installed() {
     );
 }
 
+/// Enter on a theme the registry no longer lists wears it too: it is still
+/// installed, still works, and is the reader's to keep.
+///
+/// Deliberate break: `may_be_worn` asking for `Installed` alone (enter then
+/// does nothing on it, and the theme is still the one before).
+#[test]
+fn enter_wears_a_theme_no_longer_listed() {
+    let scratch = reader("themes-wear-delisted");
+    let root = support::Scratch::new("themes-wear-delisted-installed");
+    installed_as(root.path(), "gone", "zzz", "obelus");
+
+    let mut app = open(&scratch);
+    app.installed_themes_for_test(root.path().to_path_buf());
+    app.themes_index_for_test(vec![listed("spare", obelus_themes::Group::Obelus, "bbb")]);
+    on_the_themes_page(&mut app);
+    support::type_text(&mut app, "gone");
+    let dump = support::render(&mut app, 90, 30);
+    assert!(
+        card_row(support::text_block(&dump), "gone").contains("No longer listed"),
+        "{dump}"
+    );
+
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(app.theme_name(), "gone", "enter did not wear it");
+}
+
 /// Whether the row the list is on is the one that goes for more themes.
 fn on_more_themes(app: &App) -> bool {
     matches!(

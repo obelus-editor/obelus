@@ -8,9 +8,9 @@
 //!
 //! **A theme the registry no longer lists is still shown, if it is
 //! installed** -- under the group it came from, saying so, with nothing on
-//! it but the key that takes it away. It still works and is the reader's to
-//! keep; and taking it away is the one thing that cannot be undone from the
-//! page, so it takes the same key twice.
+//! it but the key that wears it and the key that takes it away. It still
+//! works and is the reader's to keep; and taking it away is the one thing
+//! that cannot be undone from the page, so it takes the same key twice.
 
 use obelus_component::settings::Page;
 use obelus_themes::{Card, Group, Listed, Status, install::Progress};
