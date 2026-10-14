@@ -1262,7 +1262,8 @@ fn delete_takes_a_theme_away_but_not_the_one_worn() {
 ///
 /// Deliberate breaks: the page's `WearTheme` handed to nothing (the theme
 /// is then still the one before), `may_be_worn` false for every card (enter
-/// then does nothing and the foot offers no `Use`), and `choose_theme`
+/// then does nothing and the foot offers no `Use`), the foot saying
+/// another word beside the key (`Wear`), and `choose_theme`
 /// swapped for `set_theme` alone (nothing is written).
 #[test]
 fn enter_wears_a_theme_already_installed() {
@@ -1278,8 +1279,15 @@ fn enter_wears_a_theme_already_installed() {
     support::type_text(&mut app, "spare");
 
     let dump = support::render(&mut app, 90, 30);
-    assert!(
-        support::text_block(&dump).contains("Use"),
+    // The word beside the key on the foot, and not anywhere on the screen:
+    // a theme's description could say "Use" as well.
+    let beside_enter = support::text_block(&dump)
+        .lines()
+        .find_map(|row| row.split_once("Enter"))
+        .and_then(|(_, after)| after.split_whitespace().next());
+    assert_eq!(
+        beside_enter,
+        Some("Use"),
         "the foot does not offer enter:\n{dump}"
     );
 
