@@ -3726,3 +3726,195 @@ fn undo_after_leaving_a_note_takes_back_its_words() {
     assert_eq!(in_the_file(&scratch)[0].0, first, "the words stayed");
     assert_eq!(heads(&app)[0], first);
 }
+
+/// A note somebody else is talking about is not this window's to undo,
+/// any more than to type in: not what was done to it on the page, and not
+/// the letters in its box.
+///
+/// Deliberate breaks: `TodoView::is_ours` answering `true` (the tick was
+/// taken back from under the other window); and the box's answer in
+/// `TodoView::can_undo` and `walk` not asking whether the note is
+/// somebody else's (the letters went).
+#[test]
+fn a_note_somebody_else_has_is_not_undone() {
+    let scratch = tree(
+        "undo-locked",
+        "[[todo]]\nid = \"0123456W\"\nsaid = \"mine\"\ndone = false\ndepth = 0\n\
+         \n[[todo]]\nid = \"0123456X\"\nsaid = \"theirs\"\ndone = false\ndepth = 0\n",
+    );
+    let theirs = obelus_todo::NoteId::read("0123456X").expect("a name");
+    let which = obelus_agent::chats::ChatId::Note(theirs);
+    let mut app = open(&scratch, 76, 18);
+
+    // Done to it before anybody had it: ticked, and typed in.
+    press(&mut app, KeyCode::Down);
+    app.handle(alt(KeyCode::Char(' ')));
+    support::type_text(&mut app, "x");
+    assert!(in_the_file(&scratch)[1].1);
+
+    // And now somebody has it.
+    let _held = obelus_agent::chats::claim(scratch.path(), &which).expect("their claim");
+    let claim = obelus_agent::chats::directory(scratch.path())
+        .expect("a project")
+        .join(which.file_name());
+    app.handle(Event::Watched(obelus_watch::Changed { path: claim }));
+    // The page hears which notes are somebody else's from the frame.
+    support::render(&mut app, 76, 18);
+    assert!(
+        app.notes()
+            .is_some_and(obelus_component::todo::TodoView::selected_is_elsewhere),
+        "the note is not somebody else's, so this proves nothing"
+    );
+
+    // The letters in its box.
+    assert!(!app.offers(Command::Undo), "undo is offered on their note");
+    app.handle(control(KeyCode::Char('z')));
+    assert_eq!(heads(&app)[1], "xtheirs", "the letters were taken back");
+
+    // And the tick, from the note beside it.
+    press(&mut app, KeyCode::Up);
+    assert!(!app.offers(Command::Undo), "undo is offered on their note");
+    app.handle(control(KeyCode::Char('z')));
+    assert!(in_the_file(&scratch)[1].1, "the tick was taken back");
+}
+
+/// A note started here comes out of the file on undo and goes back where it
+/// was on redo -- the one path where a note only this page has, its words
+/// on their way to the file, and taking it back all meet.
+///
+/// Deliberate break: `TodoView::remember` taking the neighbours from the
+/// run as it was before the act even where that was nothing (redo put the
+/// note back at the top).
+#[test]
+fn a_new_note_is_taken_back_and_put_back() {
+    let scratch = tree("undo-new", THREE);
+    let mut app = open(&scratch, 76, 18);
+    press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "fresh");
+    press(&mut app, KeyCode::Down);
+    // Leaving the note is written down at the pause.
+    app.handle(Event::NotesSettled);
+    let file = in_the_file(&scratch);
+    assert_eq!(file.len(), 4, "{file:?}");
+    assert_eq!(file[1].0, "fresh");
+
+    app.handle(control(KeyCode::Char('z')));
+    let file = in_the_file(&scratch);
+    assert_eq!(file.len(), 3, "it was not taken out: {file:?}");
+    assert!(!heads(&app).contains(&"fresh".to_string()));
+
+    app.handle(control(KeyCode::Char('y')));
+    let file = in_the_file(&scratch);
+    assert_eq!(file.len(), 4, "it was not put back: {file:?}");
+    assert_eq!(file[1].0, "fresh", "it came back somewhere else: {file:?}");
+}
+
+/// Undo takes things back in the order they were done: what was typed in a
+/// note before it was ticked comes back after the tick does.
+///
+/// Deliberate break: `recorded` not making the box a step before the act
+/// (the first undo took the letters, and the tick stayed).
+#[test]
+fn undo_takes_back_the_latest_thing_first() {
+    let scratch = tree("undo-order", THREE);
+    let mut app = open(&scratch, 76, 18);
+    let first = heads(&app)[0].clone();
+    support::type_text(&mut app, "now ");
+    app.handle(alt(KeyCode::Char(' ')));
+
+    app.handle(control(KeyCode::Char('z')));
+    assert_eq!(
+        in_the_file(&scratch)[0],
+        (format!("now {first}"), false),
+        "the tick was not what came back first"
+    );
+    app.handle(control(KeyCode::Char('z')));
+    assert_eq!(in_the_file(&scratch)[0], (first, false));
+}
+
+/// A move past a note somebody else is talking about is taken back like
+/// any other: the move was allowed, because it changed nothing of theirs,
+/// and so is taking it back.
+///
+/// Deliberate break: the move's step locked on both runs rather than the
+/// note that moved (undo was dim, and the order stayed).
+#[test]
+fn a_move_past_a_note_somebody_else_has_is_undone() {
+    let scratch = tree(
+        "undo-move-past",
+        "[[todo]]\nid = \"0123456W\"\nsaid = \"mine\"\ndone = false\ndepth = 0\n\
+         \n[[todo]]\nid = \"0123456X\"\nsaid = \"theirs\"\ndone = false\ndepth = 0\n",
+    );
+    let theirs = obelus_todo::NoteId::read("0123456X").expect("a name");
+    let _held =
+        obelus_agent::chats::claim(scratch.path(), &obelus_agent::chats::ChatId::Note(theirs))
+            .expect("their claim");
+    let mut app = open(&scratch, 76, 18);
+    support::render(&mut app, 76, 18);
+
+    app.handle(alt(KeyCode::Down));
+    assert_eq!(heads(&app), ["theirs", "mine"], "it did not move");
+    assert!(
+        app.offers(Command::Undo),
+        "taking the move back is not offered"
+    );
+    app.handle(control(KeyCode::Char('z')));
+    assert_eq!(heads(&app), ["mine", "theirs"]);
+}
+
+/// Letters the box took back are not lost by undo going on past them to
+/// the page: redo does the page's step again, and then the letters.
+///
+/// Deliberate break: `walk` not putting what the box could do again onto
+/// redo's side (the last redo did nothing, and the letters were gone).
+#[test]
+fn letters_taken_back_come_back_after_the_page_does() {
+    let scratch = tree("redo-box-past", THREE);
+    let mut app = open(&scratch, 76, 18);
+    let first = heads(&app)[0].clone();
+    support::type_text(&mut app, "ab");
+    app.handle(alt(KeyCode::Char(' ')));
+    support::type_text(&mut app, "cd");
+
+    app.handle(control(KeyCode::Char('z')));
+    assert_eq!(heads(&app)[0], format!("ab{first}"));
+    app.handle(control(KeyCode::Char('z')));
+    assert!(!in_the_file(&scratch)[0].1, "the tick was not taken back");
+
+    app.handle(control(KeyCode::Char('y')));
+    assert!(in_the_file(&scratch)[0].1, "the tick was not done again");
+    app.handle(control(KeyCode::Char('y')));
+    assert_eq!(
+        heads(&app)[0],
+        format!("abcd{first}"),
+        "the letters are gone"
+    );
+    assert_eq!(in_the_file(&scratch)[0].0, format!("abcd{first}"));
+}
+
+/// Undo in a note just started takes that note away and stops: what was
+/// written in the note before it is not taken back with it, the way undo
+/// after a line break takes back the line break.
+///
+/// Deliberate break: `walk` with no answer of its own for a note just
+/// started (the empty note went, and the words before it with it).
+#[test]
+fn undo_in_a_note_just_started_takes_only_it() {
+    let scratch = tree("undo-just-started", THREE);
+    let mut app = open(&scratch, 76, 18);
+    let first = heads(&app)[0].clone();
+    support::type_text(&mut app, "now ");
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(heads(&app).len(), 4);
+
+    app.handle(control(KeyCode::Char('z')));
+    assert_eq!(heads(&app).len(), 3, "the note just started stayed");
+    assert_eq!(heads(&app)[0], format!("now {first}"), "the words went too");
+    assert_eq!(
+        app.notes()
+            .and_then(obelus_component::todo::TodoView::selected_note)
+            .map(|note| note.id.clone()),
+        app.notes().map(|notes| notes.todo().notes[0].id.clone()),
+        "the caret is not back in the note it was started from"
+    );
+}

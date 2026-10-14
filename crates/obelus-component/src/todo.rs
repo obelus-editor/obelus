@@ -365,6 +365,8 @@ struct Step {
     now: Vec<Note>,
     after: Option<NoteId>,
     before: Option<NoteId>,
+    /// The notes whose being somebody else's stops undo taking this back.
+    lock: Vec<NoteId>,
 }
 
 /// A run of notes as it stands, and the notes either side of it.
@@ -1198,15 +1200,8 @@ impl TodoView {
                 .map(|note| vec![note.id.clone()])
                 .unwrap_or_default(),
         };
-        let mut was = self.run(&ids);
-        if let Some(entered) = self.undoing.entered.take()
-            && let Some(note) = was.0.iter_mut().find(|note| note.id == entered.id)
-        {
-            note.said = entered.said;
-        }
-        // A note that said nothing when the caret went in was in nobody's
-        // file: it was started here, and taking this back takes it away.
-        was.0.retain(|note| !note.said.trim().is_empty());
+        let was = self.as_entered(&ids);
+        self.undoing.entered = None;
         let did = match blank {
             true => self.let_the_note_go(at),
             false => match self.written_down(at, &said) {
@@ -1214,8 +1209,59 @@ impl TodoView {
                 None => false,
             },
         };
-        self.remember(&ids, was);
+        self.remember(&ids, was, &ids);
         did
+    }
+
+    /// These notes as the page has them, with the one the caret is in
+    /// saying what it said when the caret went in.
+    fn as_entered(&self, ids: &[NoteId]) -> Run {
+        let mut was = self.run(ids);
+        if let Some(entered) = self.undoing.entered.as_ref()
+            && let Some(note) = was.0.iter_mut().find(|note| note.id == entered.id)
+        {
+            note.said.clone_from(&entered.said);
+        }
+        // A note that said nothing when the caret went in was in nobody's
+        // file: it was started here, and taking this back takes it away.
+        was.0.retain(|note| !note.said.trim().is_empty());
+        was
+    }
+
+    /// Makes what has been typed in the box since the caret went in a step
+    /// of its own, and leaves the caret where it is.
+    ///
+    /// Before an act on the note, so that undo takes back the act and then
+    /// the words, which is the order they were done in. Left in the box,
+    /// the words were taken back first and the act second.
+    fn fold_the_box(&mut self) {
+        let Some((at, said)) = self
+            .writing
+            .as_ref()
+            .map(|(at, composer)| (*at, obelus_todo::trimmed(&composer.text())))
+        else {
+            return;
+        };
+        // An empty box goes when the caret leaves it, and an act on a note
+        // that says nothing has nothing of it for undo to keep.
+        if said.trim().is_empty() {
+            return;
+        }
+        let Some(id) = self.todo.notes.get(at).map(|note| note.id.clone()) else {
+            return;
+        };
+        let ids = vec![id];
+        let was = self.as_entered(&ids);
+        if let Some(change) = self.written_down(at, &said) {
+            self.change(change);
+        }
+        self.remember(&ids, was, &ids);
+        // From here, the box starts again: its letters are the step just
+        // kept.
+        self.undoing.entered = self.todo.notes.get(at).cloned();
+        if let Some((_, composer)) = self.writing.as_mut() {
+            composer.start_from_here();
+        }
     }
 
     /// The note at `at` and every note that hangs under it, by name.
@@ -1258,7 +1304,7 @@ impl TodoView {
     /// Keeps what an act did to these notes, if it did anything, as a step
     /// for undo -- and lets go of everything redo had, because the reader
     /// has gone somewhere else from here.
-    fn remember(&mut self, ids: &[NoteId], was: Run) {
+    fn remember(&mut self, ids: &[NoteId], was: Run, lock: &[NoteId]) {
         let now = self.run(ids);
         if was.0 == now.0 {
             return;
@@ -1275,29 +1321,31 @@ impl TodoView {
             now: now.0,
             after,
             before,
+            lock: lock.to_vec(),
         });
         self.undoing.ahead.clear();
     }
 
     /// Does an act to a run of notes and keeps it as a step.
     ///
-    /// What is in the box is written into the page first, so what the step
+    /// What is in the box is a step of its own first, so what this one
     /// keeps of the note is what the reader can see -- and so that taking
     /// the act back cannot hand them words from before their last pause.
-    fn recorded(&mut self, ids: &[NoteId], act: impl FnOnce(&mut Self) -> bool) -> bool {
-        if let Some((at, said)) = self
-            .writing
-            .as_ref()
-            .map(|(at, composer)| (*at, obelus_todo::trimmed(&composer.text())))
-            && !said.trim().is_empty()
-            && let Some(change) = self.written_down(at, &said)
-        {
-            self.change(change);
-        }
+    ///
+    /// `lock` is the notes whose being somebody else's stops undo taking
+    /// this back: the ones the act changed, which for a move is the note
+    /// that moved and not what it was carried past.
+    fn recorded(
+        &mut self,
+        ids: &[NoteId],
+        lock: &[NoteId],
+        act: impl FnOnce(&mut Self) -> bool,
+    ) -> bool {
+        self.fold_the_box();
         let was = self.run(ids);
         let did = act(self);
         if did {
-            self.remember(ids, was);
+            self.remember(ids, was, lock);
         }
         did
     }
@@ -1307,6 +1355,9 @@ impl TodoView {
     /// The box first, which is nearer: inside a note, undo is the letters.
     #[must_use]
     pub fn can_undo(&self) -> bool {
+        if self.in_a_note_just_started().is_some() {
+            return true;
+        }
         if let Some((_, composer)) = self.writing.as_ref()
             && composer.can_undo()
         {
@@ -1351,16 +1402,63 @@ impl TodoView {
             .is_none_or(|entered| entered.said.trim_end() != said.trim_end())
     }
 
-    /// Whether a step touches nothing somebody else is talking about.
+    /// Where the caret is, if it is in a note this page started and nothing
+    /// is written in yet.
+    fn in_a_note_just_started(&self) -> Option<usize> {
+        let (at, composer) = self.writing.as_ref()?;
+        let note = self.todo.notes.get(*at)?;
+        (self.unwritten.contains(&note.id)
+            && composer.text().trim().is_empty()
+            && !composer.can_undo())
+        .then_some(*at)
+    }
+
+    /// What the box has taken back and could do again, as a step of the
+    /// page's: the note as the box has it now, and as it would be with
+    /// every step done again.
+    fn what_the_box_could_do_again(&self) -> Option<Step> {
+        let (at, composer) = self.writing.as_ref()?;
+        if !composer.can_redo() {
+            return None;
+        }
+        let mut again = composer.clone();
+        while again.redo() {}
+        let (now, then) = (
+            obelus_todo::trimmed(&composer.text()),
+            obelus_todo::trimmed(&again.text()),
+        );
+        // Leaving a box with nothing in it lets the note go, and there is no
+        // note left for the words to be done again to.
+        if now.trim().is_empty() || then.trim().is_empty() {
+            return None;
+        }
+        let note = self.todo.notes.get(*at)?;
+        let neighbour = |at: Option<usize>| {
+            at.and_then(|at| self.todo.notes.get(at))
+                .map(|note| note.id.clone())
+        };
+        Some(Step {
+            was: vec![Note {
+                said: now,
+                ..note.clone()
+            }],
+            now: vec![Note {
+                said: then,
+                ..note.clone()
+            }],
+            after: neighbour(at.checked_sub(1)),
+            before: neighbour(Some(at + 1)),
+            lock: vec![note.id.clone()],
+        })
+    }
+
+    /// Whether a step changed nothing somebody else is talking about.
     ///
     /// The lock is about what may be changed, and an undo is a change like
     /// any other: taking back a tick on a note another window is standing
     /// in is changing that note under them.
     fn is_ours(&self, step: &Step) -> bool {
-        step.was
-            .iter()
-            .chain(&step.now)
-            .all(|note| !self.elsewhere.contains_key(&note.id))
+        step.lock.iter().all(|id| !self.elsewhere.contains_key(id))
     }
 
     /// Takes back the last thing done here: in the box, while there is
@@ -1394,11 +1492,33 @@ impl TodoView {
                 return TodoOutcome::Consumed;
             }
         }
+        // A note just started and still empty is the last thing done, the
+        // way a line break is in a file: undo takes it away and goes back
+        // to the end of the note it was started from, and stops there.
+        if back && let Some(at) = self.in_a_note_just_started() {
+            self.keep();
+            if !self.todo.notes.is_empty() {
+                self.enter_note(at.saturating_sub(1).min(self.todo.notes.len() - 1), true);
+            }
+            self.follow_caret();
+            return TodoOutcome::Consumed;
+        }
+        // What the box took back and could still do again goes onto redo's
+        // side as a step of the page's, underneath the one about to be taken
+        // back: it was done after that one, so it is done again after it.
+        // Left in the box, it went with the box.
+        let undone_in_the_box = match back {
+            true => self.what_the_box_could_do_again(),
+            false => None,
+        };
         // Out of the box first: what was written in it is a step of its
         // own, and it has to be one before there is a step to take back --
         // for redo, it is the step that ends what redo had.
         let here = self.selected_note().map(|note| note.id.clone());
         self.keep();
+        if let Some(step) = undone_in_the_box {
+            self.undoing.ahead.push(step);
+        }
         let next = match back {
             true => self.undoing.behind.last(),
             false => self.undoing.ahead.last(),
@@ -1512,7 +1632,7 @@ impl TodoView {
             return false;
         }
         let run = self.run_of(at);
-        self.recorded(&run, |me| me.take_run_away(at));
+        self.recorded(&run, &run, |me| me.take_run_away(at));
         self.rebuild();
         if !self.todo.notes.is_empty() {
             self.enter_note(at.min(self.todo.notes.len() - 1), false);
@@ -1599,7 +1719,7 @@ impl TodoView {
             return false;
         };
         let run = self.run_of(at);
-        self.recorded(&run, |me| me.change(Change::Shift { id, out }));
+        self.recorded(&run, &run, |me| me.change(Change::Shift { id, out }));
         // Rebuilt and followed rather than entered again: the reader is
         // still in the note they were in, and what [`Self::enter_note`] does
         // on the way into another is put away the one being left -- which
@@ -1648,7 +1768,10 @@ impl TodoView {
         // takes the move back is the two in their old order.
         let mut runs = self.run_of(at);
         runs.extend(neighbour.map(|it| self.run_of(it)).unwrap_or_default());
-        let moved = self.recorded(&runs, |me| {
+        // The lock is asked about this note alone, as the move itself is:
+        // what rides along, or is stepped over, keeps its words, its depth
+        // and its name either way round.
+        let moved = self.recorded(&runs, std::slice::from_ref(&id), |me| {
             me.change(Change::Move {
                 id: id.clone(),
                 over,
@@ -1921,7 +2044,7 @@ impl TodoView {
             {
                 Some((id, done)) => {
                     let ids = vec![id.clone()];
-                    self.recorded(&ids, |me| me.change(Change::Done { id, done }));
+                    self.recorded(&ids, &ids, |me| me.change(Change::Done { id, done }));
                     self.rebuild();
                     TodoOutcome::Changed
                 }

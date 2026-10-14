@@ -308,14 +308,14 @@ impl App {
             // The notes answer for themselves, the way they do for folding:
             // the page and the box a note is written in are what undo is
             // about while they are what is being read.
-            Requires::SomethingToUndo if self.notes().is_some() => self
-                .notes()
-                .is_some_and(obelus_component::todo::TodoView::can_undo),
-            Requires::SomethingToRedo if self.notes().is_some() => self
-                .notes()
-                .is_some_and(obelus_component::todo::TodoView::can_redo),
-            Requires::SomethingToUndo => self.current_buffer().is_some_and(Buffer::can_undo),
-            Requires::SomethingToRedo => self.current_buffer().is_some_and(Buffer::can_redo),
+            Requires::SomethingToUndo => match self.notes() {
+                Some(notes) => notes.can_undo(),
+                None => self.current_buffer().is_some_and(Buffer::can_undo),
+            },
+            Requires::SomethingToRedo => match self.notes() {
+                Some(notes) => notes.can_redo(),
+                None => self.current_buffer().is_some_and(Buffer::can_redo),
+            },
             // The file's own runs, and nothing a block holds. A block used
             // to be asked as well, because a commit's message was a thing
             // the reader was put inside and the cursor cannot say so -- it

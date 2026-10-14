@@ -37,7 +37,7 @@
 //! reader has nowhere to type at all, the pair is swallowed rather than
 //! passed on, for the same reason a plain character is.
 
-use std::ops::Range;
+use std::{ops::Range, sync::Arc};
 
 use crossterm::event::KeyEvent;
 use obelus_editing::Editing;
@@ -97,7 +97,14 @@ pub struct Composer {
     /// length and the same order -- and what makes the caret step over a
     /// picture in one press and the backspace take the whole of it, both of
     /// them without knowing pictures exist.
-    attached: Vec<Attached>,
+    ///
+    /// Shared, because every step keeps what the box held: a picture is
+    /// megabytes, and copying them into a step on every key -- and comparing
+    /// them byte for byte afterwards -- was the price of a letter typed
+    /// beside a screenshot. A step holds the same list until an edit changes
+    /// it, and an edit that does changes a copy, so whether the pictures
+    /// moved is whether the list is still the one the step holds.
+    attached: Arc<Vec<Attached>>,
     /// What it said before each step, nearest last.
     behind: Vec<Was>,
     /// What it said before each step taken back, nearest last.
@@ -122,7 +129,7 @@ enum Doing {
 #[derive(Clone, Debug)]
 struct Was {
     said: String,
-    attached: Vec<Attached>,
+    attached: Arc<Vec<Attached>>,
     line: LineNumber,
     column: CharColumn,
 }
@@ -139,7 +146,7 @@ impl Composer {
     pub fn new() -> Self {
         Self {
             writing: Editing::new(""),
-            attached: Vec::new(),
+            attached: Arc::default(),
             behind: Vec::new(),
             ahead: Vec::new(),
             running: None,
@@ -207,7 +214,7 @@ impl Composer {
             false => doing,
         };
         let out = act(self);
-        if self.writing.said() == was.said && self.attached == was.attached {
+        if self.writing.said() == was.said && Arc::ptr_eq(&self.attached, &was.attached) {
             return out;
         }
         let joins = doing != Doing::Whole && self.running == Some((doing, was.line, was.column));
@@ -222,7 +229,10 @@ impl Composer {
 
     /// Lets go of every step: what the box holds now is where the reader
     /// starts from.
-    fn start_from_here(&mut self) {
+    ///
+    /// For whoever holds the box and has just kept its steps some other
+    /// way -- the notes, which make what was typed a step of the page's.
+    pub fn start_from_here(&mut self) {
         self.behind.clear();
         self.ahead.clear();
         self.running = None;
@@ -343,7 +353,7 @@ impl Composer {
     pub fn attach(&mut self, picture: Attached, width: u16) {
         self.edit(Doing::Whole, |me| {
             let at = me.marks_before(me.caret_offset());
-            me.attached.insert(at, picture);
+            Arc::make_mut(&mut me.attached).insert(at, picture);
             me.writing.write_in(&ATTACHED.to_string(), width.max(1));
         });
     }
@@ -389,13 +399,13 @@ impl Composer {
     /// again they would tell the agent about a picture it was not given.
     pub fn put_parts(&mut self, parts: Vec<Part>) {
         let mut text = String::new();
-        self.attached.clear();
+        self.attached = Arc::default();
         for part in parts {
             match part {
                 Part::Words(words) => text.push_str(&words),
                 Part::Picture(picture) => {
                     text.push(ATTACHED);
-                    self.attached.push(picture);
+                    Arc::make_mut(&mut self.attached).push(picture);
                 }
             }
         }
@@ -409,7 +419,7 @@ impl Composer {
     /// them with the next thing typed.
     pub fn take_parts(&mut self) -> Vec<Part> {
         let parts = self.parts();
-        self.attached.clear();
+        self.attached = Arc::default();
         self.replace("");
         parts
     }
@@ -508,7 +518,7 @@ impl Composer {
             && was - now == 1
             && which < self.attached.len()
         {
-            self.attached.remove(which);
+            Arc::make_mut(&mut self.attached).remove(which);
             return;
         }
         // More than one went, which a selection typed over does. Which of
@@ -519,7 +529,7 @@ impl Composer {
         // selected across the middle and kept typing; the alternative is
         // carrying an identity for each mark through a box that is
         // deliberately not a buffer.
-        self.attached.truncate(now);
+        Arc::make_mut(&mut self.attached).truncate(now);
     }
 
     /// One character left, or right.
@@ -1072,6 +1082,27 @@ mod tests {
         assert!(!box_.undo());
         assert!(box_.redo());
         assert_eq!(box_.parts(), whole);
+    }
+
+    /// A letter typed beside a picture keeps the picture once, however many
+    /// steps there are.
+    ///
+    /// Broken deliberately by having a step copy the list rather than share
+    /// it: the step held a second copy of the bytes.
+    #[test]
+    fn a_step_shares_the_pictures_it_did_not_change() {
+        let mut box_ = Composer::new();
+        box_.attach(picture("big"), 80);
+        box_.newline();
+        box_.insert('a');
+        let steps = &box_.behind;
+        assert_eq!(steps.len(), 3);
+        assert!(
+            steps[1..]
+                .iter()
+                .all(|step| Arc::ptr_eq(&step.attached, &box_.attached)),
+            "a step copied the pictures"
+        );
     }
 
     /// A mark is written out where it is drawn, and it takes the room the

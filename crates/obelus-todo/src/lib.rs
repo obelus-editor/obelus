@@ -406,7 +406,8 @@ pub enum Change {
     /// other window may have ticked it since, or reworded it, or taken it
     /// away. So this carries the run as the act left it and as it is to be,
     /// and what is done to the file is the difference between the two -- a
-    /// field the act did not touch is left as the file has it, and a note
+    /// field the act did not touch is left as the file has it, so is one
+    /// somebody else has changed since the act, and a note
     /// the act did not take away and the file no longer has stays gone,
     /// which is the rule every other change here keeps.
     ///
@@ -906,21 +907,26 @@ impl Todo {
         // Each note as it is to be: the file's own, with what the act
         // changed put back -- and only that, so a tick another window gave
         // a note since is still a tick after this one's words are undone.
+        //
+        // And only where the file still says what the act left. A field
+        // somebody else has changed since is theirs now: words an agent
+        // reworded after the reader did are not the reader's to take back
+        // to what they were before either of them.
         let mut run: Vec<Note> = Vec::new();
         for note in to {
             match (left(&note.id), self.find(&note.id)) {
                 (Some(was), Some(at)) => {
                     let mut now = self.notes[at].clone();
-                    if was.said != note.said {
+                    if now.said == was.said {
                         now.said.clone_from(&note.said);
                     }
-                    if was.done != note.done {
+                    if now.done == was.done {
                         now.done = note.done;
                     }
-                    if was.at != note.at {
+                    if now.at == was.at {
                         now.at.clone_from(&note.at);
                     }
-                    if was.depth != note.depth {
+                    if now.depth == was.depth {
                         now.depth = note.depth;
                     }
                     run.push(now);
@@ -941,10 +947,10 @@ impl Todo {
                 let Some(at) = self.find(&note.id) else {
                     continue;
                 };
-                let depth = note.depth.min(self.room_at(at)).min(DEEPEST);
-                self.notes[at] = Note { depth, ..note };
+                self.notes[at] = note;
                 any = true;
             }
+            self.hang_under_something();
             return any;
         }
         // Taken up, all of it that is here, and laid down again in order.
@@ -964,18 +970,24 @@ impl Todo {
                 Some(_) => self.notes.len(),
             });
         let laid = run.len();
-        for (offset, note) in run.into_iter().enumerate() {
-            let at = start + offset;
-            let at_most = self.room_at(at).min(DEEPEST);
-            self.notes.insert(
-                at,
-                Note {
-                    depth: note.depth.min(at_most),
-                    ..note
-                },
-            );
-        }
+        self.notes.splice(start..start, run);
+        self.hang_under_something();
         took + laid > 0
+    }
+
+    /// Every note no deeper than what is above it allows.
+    ///
+    /// After a run is laid down again, and not only within it: a note
+    /// somebody else hung under the run since, or the run taken out from
+    /// over, is left after something it is too deep to hang under -- which
+    /// written down reads back a level shallower, the note moving on its
+    /// own between one open and the next.
+    fn hang_under_something(&mut self) {
+        for at in 0..self.notes.len() {
+            let room = self.room_at(at).min(DEEPEST);
+            let note = &mut self.notes[at];
+            note.depth = note.depth.min(room);
+        }
     }
 
     /// Writes them back, making the directory if it is not there.
@@ -1491,6 +1503,32 @@ mod tests {
         assert_eq!(file.notes[0].said, "as the other window put it");
     }
 
+    /// Taking back new words leaves words somebody else wrote over them
+    /// since: the field is theirs now.
+    ///
+    /// Broken deliberately by putting back every field the act changed,
+    /// whatever the file says now: the agent's rewording went, and the note
+    /// said what it said before either of them.
+    #[test]
+    fn taking_an_act_back_leaves_a_field_somebody_else_changed_since() {
+        let before = note("as the reader found it");
+        let after = Note {
+            said: "as the reader left it".to_string(),
+            ..before.clone()
+        };
+        let mut file = named(vec![Note {
+            said: "as an agent reworded it".to_string(),
+            ..before.clone()
+        }]);
+        file.apply(&Change::Restore {
+            from: vec![after],
+            to: vec![before],
+            after: None,
+            before: None,
+        });
+        assert_eq!(file.notes[0].said, "as an agent reworded it");
+    }
+
     /// A note the act did not take away, and somebody else has since, stays
     /// gone: undoing a move is not bringing a note back from the dead, and
     /// neither is undoing a tick.
@@ -1554,6 +1592,32 @@ mod tests {
             ["above", "added elsewhere", "parent", "child", "below"]
         );
         assert_eq!(file.notes[3].depth, 1);
+    }
+
+    /// A note somebody else hung under one this window then takes back out
+    /// comes up a level, rather than being left hanging under nothing.
+    ///
+    /// Broken deliberately by not looking at the depths after the run is
+    /// laid down: the note was written at a depth the file reads back
+    /// shallower.
+    #[test]
+    fn what_hung_under_a_note_taken_back_comes_up_a_level() {
+        let started = note("started here");
+        let mut file = named(vec![
+            started.clone(),
+            Note {
+                depth: 1,
+                ..note("hung under it elsewhere")
+            },
+        ]);
+        file.apply(&Change::Restore {
+            from: vec![started],
+            to: Vec::new(),
+            after: None,
+            before: None,
+        });
+        assert_eq!(said(&file), ["hung under it elsewhere"]);
+        assert_eq!(file.notes[0].depth, 0);
     }
 
     /// A move is taken back by the two runs in their old order, and a note
