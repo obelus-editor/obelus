@@ -239,7 +239,7 @@ pub(crate) struct Painter {
     left: Option<Whole>,
     /// The screen in the theme it was in, drawn once at the moment the
     /// theme changed and let go by the first frame it has gone from -- see
-    /// `recolour`. A window's worth of memory for the 400ms it is drawn.
+    /// `recolour`. A window's worth of memory for the 200ms it is drawn.
     before: Option<Whole>,
     /// And what was written on the panes that went, on nothing: `left`
     /// holds their glass and not what was on it, so the glass can stay
