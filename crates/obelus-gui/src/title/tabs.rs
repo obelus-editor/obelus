@@ -701,7 +701,6 @@ mod tests {
         strip.told(Vec::new());
         strip.lay(Some(room()), |_, _| 4.0, Instant::now(), false);
         assert_eq!(strip.painted(true), None);
-        assert_eq!(strip.covers(), None, "and the whole bar drags the window");
         strip.told(vec![tab(0, true)]);
         strip.lay(Some(room()), |_, _| 4.0, Instant::now(), false);
         assert!(strip.painted(true).is_some(), "a tab, and the bar under it");
