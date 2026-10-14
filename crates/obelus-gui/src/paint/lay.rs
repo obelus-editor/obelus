@@ -535,7 +535,11 @@ mod tests {
 
     const FILES: (u16, Joined) = (0, Joined::Screen);
     const SETTINGS: (u16, Joined) = (0, Joined::Screen);
-    const PALETTE: (u16, Joined) = (0, Joined::Above);
+    /// A list over the whole page that ends above a row it does not own.
+    /// Not the palette, which is compact and stands on the status row --
+    /// `Below`, like `CHOICES`, however tall it is -- and so never runs up
+    /// under the bar.
+    const ABOVE_A_ROW: (u16, Joined) = (0, Joined::Above);
     const CHOICES: (u16, Joined) = (20, Joined::Below);
     /// A bar 38 points tall at twice the density: macOS's.
     const TITLED: f32 = 76.0;
@@ -555,7 +559,7 @@ mod tests {
     #[test]
     fn a_pane_runs_up_under_any_bar_in_the_page() {
         assert!(from_the_top(TITLED, 0, Joined::Screen), "the settings");
-        assert!(from_the_top(TITLED, 0, Joined::Above), "the palette");
+        assert!(from_the_top(TITLED, 0, Joined::Above), "a list above a row");
         assert!(
             !from_the_top(TITLED, 20, Joined::Below),
             "a list on the status row"
@@ -593,7 +597,7 @@ mod tests {
         assert_eq!(
             at(&[FILES], true, true),
             Some(BarOnTop::Arriving),
-            "the palette going"
+            "the history going"
         );
         assert_eq!(
             at(&[], false, true),
@@ -619,7 +623,7 @@ mod tests {
             Some(BarOnTop::Leaving),
             "a list in for the files"
         );
-        assert_eq!(at(&[PALETTE], false, false), Some(BarOnTop::Resting));
+        assert_eq!(at(&[ABOVE_A_ROW], false, false), Some(BarOnTop::Resting));
         assert_eq!(
             bar_on_top(0.0, &[FILES], true, true),
             None,
