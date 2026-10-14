@@ -277,7 +277,7 @@ pub(crate) fn fields_of(schema: &ElicitationSchema) -> Result<Vec<Field>, String
                     whole: false,
                     least: number.minimum,
                     most: number.maximum,
-                    suggested: number.default.map(|default| default.to_string()),
+                    suggested: within(number.default, number.minimum, number.maximum),
                 },
             ),
             ElicitationPropertySchema::Integer(number) => (
@@ -295,7 +295,7 @@ pub(crate) fn fields_of(schema: &ElicitationSchema) -> Result<Vec<Field>, String
                         reason = "a bound a reader is expected to type by hand"
                     )]
                     most: number.maximum.map(|most| most as f64),
-                    suggested: number.default.map(|default| default.to_string()),
+                    suggested: within(number.default, number.minimum, number.maximum),
                 },
             ),
             // Several of a list. The items come either as bare strings or
@@ -356,6 +356,22 @@ pub(crate) fn fields_of(schema: &ElicitationSchema) -> Result<Vec<Field>, String
         },
     );
     Ok(fields)
+}
+
+/// A number the agent suggested, as the box starts with it.
+///
+/// Only within its own bounds, for the reason [`one_of`] drops a value the
+/// list does not have: a box that starts with a number Obelus will refuse
+/// is a box the reader is led to send and then told off for.
+fn within<N: PartialOrd + ToString>(
+    suggested: Option<N>,
+    least: Option<N>,
+    most: Option<N>,
+) -> Option<String> {
+    suggested
+        .filter(|number| least.as_ref().is_none_or(|least| number >= least))
+        .filter(|number| most.as_ref().is_none_or(|most| number <= most))
+        .map(|number| number.to_string())
 }
 
 /// One of a field's values, starting on the one the agent suggested.
@@ -671,7 +687,10 @@ mod tests {
     ///
     /// Broken deliberately by reading a single choice's default as `None`,
     /// and a number's the same: the card started on its first answer and
-    /// the box empty.
+    /// the box empty. By taking the filter out of `one_of`, and `unknown`
+    /// suggested `development`; and out of `within`, and `beyond` and
+    /// `below` suggested numbers Obelus would then refuse. And by writing
+    /// a number with `{:?}`, and `round` suggested `2.0`.
     #[test]
     fn a_field_starts_with_what_the_agent_suggested() {
         let schema = serde_json::from_value(serde_json::json!({
@@ -698,7 +717,10 @@ mod tests {
                 "whole": { "type": "integer", "default": 3 },
                 "half": { "type": "number", "default": 0.5 },
                 "round": { "type": "number", "default": 2.0 },
-                "none": { "type": "integer" }
+                "none": { "type": "integer" },
+                "beyond": { "type": "integer", "minimum": 1, "maximum": 5, "default": 10 },
+                "below": { "type": "number", "minimum": 1.5, "default": 1.0 },
+                "edge": { "type": "integer", "minimum": 1, "maximum": 5, "default": 5 }
             }
         }))
         .expect("a schema");
@@ -720,6 +742,9 @@ mod tests {
         // As a reader would type it, not `2.0`.
         assert_eq!(suggested("round").as_deref(), Some("2"));
         assert_eq!(suggested("none"), None);
+        assert_eq!(suggested("beyond"), None);
+        assert_eq!(suggested("below"), None);
+        assert_eq!(suggested("edge").as_deref(), Some("5"));
     }
 
     /// Every shape Obelus refuses to hand to the machine's own launcher.
