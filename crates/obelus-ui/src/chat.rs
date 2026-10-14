@@ -1577,14 +1577,15 @@ impl ChatView<'_> {
                     let spelled = row
                         .spelled
                         .as_ref()
-                        .is_some_and(|spelled| spelled.contains(&at));
+                        .is_some_and(|spelled| spelled.contains(&at))
+                        .then(|| Rect::new(column, y, wide, 1));
                     for cell in column..column.saturating_add(wide) {
                         if let Some(cell) = cells.cell_mut((cell, y)) {
                             if held {
                                 cell.set_bg(self.theme.selection_background);
                             }
-                            if spelled {
-                                cell.set_style(crate::spelling(cell.style()));
+                            if let Some(area) = spelled {
+                                cell.set_style(crate::spelling(cell.style(), area));
                             }
                         }
                     }

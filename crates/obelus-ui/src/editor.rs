@@ -1706,7 +1706,15 @@ fn draw_row(
             .spelled
             .is_some_and(|spelled| spelled.contains(line, CharColumn::new(column)))
         {
-            style = crate::spelling(style);
+            style = crate::spelling(
+                style,
+                Rect::new(
+                    x + offset,
+                    y,
+                    u16::try_from(glyph.cells.max(1)).unwrap_or(1),
+                    1,
+                ),
+            );
         }
         // The pair the cursor is on or inside. After the mark, so
         // a symbol a preview is about keeps its own background where the two

@@ -85,10 +85,16 @@ impl Widget for TerminalView<'_> {
         // sent cannot be taken back. Underlined, in the page's colours,
         // which is what says it is not the program's.
         if let (Some(spelling), Some(cursor)) = (self.spelling, cursor_of(area, self.terminal)) {
-            let style = page.add_modifier(Modifier::UNDERLINED);
             for (at, character) in spelled(area, cursor, spelling).0 {
                 let mut buffer = [0; 4];
-                cells.set_stringn(at.x, at.y, character.encode_utf8(&mut buffer), 2, style);
+                let written = character.encode_utf8(&mut buffer);
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    reason = "the width of one character, which is one or two"
+                )]
+                let wide = text_width(written).max(1) as u16;
+                let style = crate::spelling(page, Rect::new(at.x, at.y, wide, 1));
+                cells.set_stringn(at.x, at.y, written, 2, style);
             }
         }
     }

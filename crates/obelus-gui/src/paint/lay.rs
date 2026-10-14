@@ -254,7 +254,7 @@ impl Painter {
         // Over the glyph, the way a terminal draws one: a descender
         // crossing the line is what an underline looks like everywhere
         // else.
-        self.underlines(page, cell);
+        self.underlines(page, cell, said.spelled);
         // Over the text, which it covers: a cap is the shape the cells
         // behind a key are, and it writes the key on itself, smaller than
         // the words beside it.

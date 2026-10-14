@@ -236,6 +236,12 @@ pub(crate) enum Update {
         /// Which cells they are.
         area: Rect,
     },
+    /// What an input method is still spelling, a cell or a character at a
+    /// time.
+    Spelled {
+        /// Which cells they are.
+        area: Rect,
+    },
     /// The mark with the light on it, and the two colours it runs between.
     Sheened {
         /// Which cells it is.
@@ -292,6 +298,10 @@ pub(crate) struct Said<'a> {
     pub(crate) barred: &'a [Barred],
     /// And which rows are lines between two things.
     pub(crate) ruled: &'a [Ruled],
+    /// And which cells are what an input method is still spelling, with
+    /// how many panes and boxes had been put over the page when each was
+    /// said -- see `Page::layer`.
+    pub(crate) spelled: &'a [(Rect, usize)],
     /// And the mark the light runs across, where one is showing.
     pub(crate) sheened: Option<&'a Sheened>,
     /// And which rows begin something new, with nowhere to say so but the
@@ -1132,6 +1142,10 @@ impl obelus_ui::shapes::Shapes for Marking {
         let _ = self.updates.send(Update::Linked { area });
     }
 
+    fn spelled(&self, area: Rect) {
+        let _ = self.updates.send(Update::Spelled { area });
+    }
+
     fn paired(&self, area: Rect, pair: Pair) {
         let _ = self.updates.send(Update::Paired { area, pair });
     }
@@ -1754,6 +1768,7 @@ impl Page {
             | Update::Spun { area }
             | Update::Ruled { area }
             | Update::Linked { area }
+            | Update::Spelled { area }
             | Update::Paired { area, .. }
             | Update::Sheened { area, .. }
             | Update::Parted { area }

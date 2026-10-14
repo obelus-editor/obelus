@@ -164,7 +164,15 @@ pub fn write_marked(
             false => style,
         };
         let style = match marked.spelled {
-            Some((first, end)) if (first..end).contains(&cluster.first) => spelling(style),
+            Some((first, end)) if (first..end).contains(&cluster.first) => spelling(
+                style,
+                Rect::new(
+                    column,
+                    y,
+                    u16::try_from(cluster.cells.max(1)).unwrap_or(1),
+                    1,
+                ),
+            ),
             _ => style,
         };
         column = column.saturating_add(put_cluster(cells, column, y, cluster.text, style));
@@ -172,13 +180,15 @@ pub fn write_marked(
     column
 }
 
-/// What a character an input method is still spelling looks like: the
-/// line every input method draws under its spelling, in the ink.
+/// What a character an input method is still spelling looks like, in the
+/// cells `area` is: the line every input method draws under its spelling,
+/// in the ink -- and said to whoever is drawing, which draws it dotted.
 ///
 /// One answer for every view that draws a box or a file, so the spelling
 /// looks the same wherever it is being typed.
 #[must_use]
-pub fn spelling(style: Style) -> Style {
+pub fn spelling(style: Style, area: Rect) -> Style {
+    crate::shapes::spelled(area);
     style
         .add_modifier(ratatui::style::Modifier::UNDERLINED)
         .underline_color(Color::Reset)

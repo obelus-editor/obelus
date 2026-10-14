@@ -149,6 +149,7 @@ struct Left {
     spun: Vec<Spun>,
     showing: Vec<Barred>,
     ruled: Vec<Ruled>,
+    spelled: Vec<(Rect, usize)>,
     sheened: Option<Sheened>,
     parted: Vec<Parted>,
     stroked: Vec<Stroked>,
@@ -181,6 +182,7 @@ impl Left {
             spun: &self.spun,
             barred: &self.showing,
             ruled: &self.ruled,
+            spelled: &self.spelled,
             sheened: self.sheened.as_ref(),
             parted: &self.parted,
             stroked: &self.stroked,
@@ -432,6 +434,11 @@ struct Showing {
     linked: Vec<(Rect, usize)>,
     /// And on the one being laid out.
     linking: Vec<(Rect, usize)>,
+    /// Which cells are what an input method is still spelling on the frame
+    /// being shown.
+    spelled: Vec<(Rect, usize)>,
+    /// And on the one being laid out.
+    spelling_out: Vec<(Rect, usize)>,
     /// Whether the pointer is a hand, so that it is changed only when
     /// what is under it does.
     pointing: bool,
@@ -578,6 +585,8 @@ impl Showing {
             ruling: Vec::new(),
             linked: Vec::new(),
             linking: Vec::new(),
+            spelled: Vec::new(),
+            spelling_out: Vec::new(),
             pointing: false,
             scrolled: Vec::new(),
             scrolling: Vec::new(),
@@ -1222,6 +1231,7 @@ impl ApplicationHandler<Waking> for Showing {
                                 spun: self.spun.clone(),
                                 showing: self.showing.clone(),
                                 ruled: self.ruled.clone(),
+                                spelled: self.spelled.clone(),
                                 sheened: self.sheened,
                                 parted: self.parted.clone(),
                                 stroked: self.stroked.clone(),
@@ -1376,6 +1386,9 @@ impl ApplicationHandler<Waking> for Showing {
                         Update::Linked { area } => {
                             self.linking.push((area, self.stacking.len()));
                         }
+                        Update::Spelled { area } => {
+                            self.spelling_out.push((area, self.stacking.len()));
+                        }
                         Update::Paired { area, pair } => self.pairing.push(Paired {
                             area,
                             pair,
@@ -1415,6 +1428,7 @@ impl ApplicationHandler<Waking> for Showing {
                                     spun: std::mem::take(&mut self.spun),
                                     showing: self.showing.clone(),
                                     ruled: std::mem::take(&mut self.ruled),
+                                    spelled: std::mem::take(&mut self.spelled),
                                     sheened: self.sheened.take(),
                                     parted: std::mem::take(&mut self.parted),
                                     stroked: std::mem::take(&mut self.stroked),
@@ -1455,6 +1469,7 @@ impl ApplicationHandler<Waking> for Showing {
                             );
                             self.ruled = std::mem::take(&mut self.ruling);
                             self.linked = std::mem::take(&mut self.linking);
+                            self.spelled = std::mem::take(&mut self.spelling_out);
                             // Only where the page still holds it: the
                             // welcome screen is what every list is opened
                             // over, and a light run across a list lights
@@ -1852,6 +1867,7 @@ impl ApplicationHandler<Waking> for Showing {
                         spun: &self.spun,
                         barred: &self.showing,
                         ruled: &self.ruled,
+                        spelled: &self.spelled,
                         sheened: self.sheened.as_ref(),
                         parted: &self.parted,
                         stroked: &self.stroked,
