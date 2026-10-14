@@ -33,6 +33,8 @@ pub struct Choosing {
     pub caret: usize,
     /// Which of its characters the reader has hold of.
     pub held: Option<std::ops::Range<usize>>,
+    /// Which of them an input method is still spelling.
+    pub spelled: Option<std::ops::Range<usize>>,
     /// Whether that box is a path being named rather than a filter over
     /// the rows.
     ///

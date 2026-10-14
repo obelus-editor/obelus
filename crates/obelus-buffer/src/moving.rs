@@ -56,6 +56,29 @@ impl Buffer {
         self.editing.selection()
     }
 
+    /// Says `said`, just written in from `from`, is what an input method is
+    /// spelling, and puts the cursor `before` into it -- where the input
+    /// method has its own. See [`Editing::spelled`].
+    pub fn spelling(&mut self, from: Cursor, said: &str, before: &str) {
+        self.editing.spelling(from, said);
+        if self.editing.spelled().is_some() {
+            let at = self.editing.end_of(from, before);
+            self.place_cursor(at.line, at.column);
+        }
+    }
+
+    /// Where what an input method is spelling is, while it is still there.
+    #[must_use]
+    pub fn spelled(&self) -> Option<Span> {
+        self.editing.spelled()
+    }
+
+    /// Where `said`, written in from `from`, ends.
+    #[must_use]
+    pub fn end_of_written(&self, from: Cursor, said: &str) -> Cursor {
+        self.editing.end_of(from, said)
+    }
+
     /// Puts the caret where a pointer landed, or drags the selection out
     /// to it.
     ///

@@ -761,7 +761,7 @@ impl Showing {
     /// leave them there.
     fn give_up_spelling(&mut self) {
         if std::mem::take(&mut self.composing) {
-            self.tell(Event::Spelling(String::new()));
+            self.tell(Event::Spelling(String::new(), None));
         }
     }
 
@@ -1958,7 +1958,8 @@ impl ApplicationHandler<Waking> for Showing {
                         // input method saying so is news to nobody.
                         if self.composing || !spelling.is_empty() {
                             self.composing = !spelling.is_empty();
-                            self.tell(Event::Spelling(spelling));
+                            let caret = caret_in(&spelling, caret);
+                            self.tell(Event::Spelling(spelling, caret));
                         }
                     }
                     // The word. It goes in the way pasted text goes in --
@@ -2361,8 +2362,55 @@ pub(crate) fn icon(side: u32) -> Option<image::RgbaImage> {
     ))
 }
 
+/// How many characters of a spelling come before the input method's own
+/// caret, or `None` for after all of them.
+///
+/// `caret` is as winit hands it on: a run of bytes, or nothing for a caret
+/// the input method would rather not show. A run whose two ends meet is a
+/// caret; one whose ends differ is text the input method is highlighting,
+/// and the caret is its *far* end, which is where typing carries on from.
+/// fcitx5 says `(0, 6)` for `ni hao` -- the whole of it, ending where the
+/// next letter goes -- and a caret taken from the near end sat at the front
+/// of the pinyin however much was typed.
+///
+/// In characters rather than bytes: the application counts where it goes
+/// in a text, and a byte offset into what is being spelled is not one.
+fn caret_in(spelling: &str, caret: Option<(usize, usize)>) -> Option<usize> {
+    let (_, end) = caret?;
+    Some(
+        spelling
+            .get(..end)
+            .map_or(0, |before| before.chars().count()),
+    )
+}
+
 #[cfg(test)]
 mod tests {
+    /// The caret in a spelling is at the far end of what the input method
+    /// named, which is where the next letter goes.
+    ///
+    /// Deliberate break: take the near end, `Some((start, _))`, as this
+    /// once did. The first case below is what fcitx5 actually sent, read
+    /// off the log, and with the near end the caret sat at the front of
+    /// the pinyin however much of it had been typed.
+    #[test]
+    fn a_spelling_carries_on_from_the_far_end_of_what_is_named() {
+        use super::caret_in;
+        assert_eq!(
+            caret_in("ni hao", Some((0, 6))),
+            Some(6),
+            "fcitx5's whole run"
+        );
+        assert_eq!(
+            caret_in("ni hao", Some((2, 2))),
+            Some(2),
+            "a caret of its own"
+        );
+        assert_eq!(caret_in("ni hao", None), None, "a caret not shown");
+        // Bytes in, characters out: two characters of Chinese are six bytes.
+        assert_eq!(caret_in("\u{4f60}\u{597d}hao", Some((0, 6))), Some(2));
+    }
+
     use std::time::{Duration, Instant};
 
     use ratatui::layout::Rect;

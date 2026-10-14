@@ -2117,6 +2117,12 @@ impl Picker {
         self.query.held()
     }
 
+    /// Which characters of it an input method is still spelling.
+    #[must_use]
+    pub fn query_spelled(&self) -> Option<std::ops::Range<usize>> {
+        self.query.spelled()
+    }
+
     /// What an input method's spelling is written into -- see
     /// [`crate::spelling`].
     pub fn spells(&mut self) -> &mut dyn crate::spelling::Spells {

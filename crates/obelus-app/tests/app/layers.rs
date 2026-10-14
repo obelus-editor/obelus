@@ -88,7 +88,7 @@ fn a_word_begun_where_nothing_is_typed_takes_nothing() {
         "nothing is held in the filter"
     );
 
-    app.handle(obelus_app::event::Event::Spelling("n".to_string()));
+    app.handle(obelus_app::event::Event::Spelling("n".to_string(), None));
     assert_eq!(
         app.settings().expect("the settings").query(),
         "choose-theme",

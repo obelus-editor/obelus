@@ -108,6 +108,9 @@ pub struct Row {
     /// what gets drawn, and a selection given in the note's own lines would
     /// have to be taken apart again by whoever draws it.
     pub held: Option<Range<usize>>,
+    /// Which of them an input method is still spelling, counted the same
+    /// way.
+    pub spelled: Option<Range<usize>>,
     /// Whether this row heads notes hanging under it, and whether they are
     /// showing.
     ///
@@ -935,6 +938,7 @@ impl TodoView {
                     done: note.done,
                     depth: note.depth,
                     held: None,
+                    spelled: None,
                     under: None,
                 });
             }
@@ -947,6 +951,7 @@ impl TodoView {
                 done: note.done,
                 depth: note.depth,
                 held: first.held,
+                spelled: first.spelled,
                 under,
             });
             for line in lines {
@@ -959,6 +964,7 @@ impl TodoView {
                     done: note.done,
                     depth: note.depth,
                     held: line.held,
+                    spelled: line.spelled,
                     // Only the note's own row carries it: the mark is
                     // about the note, and one on every line of it would
                     // be a column of arrows saying the same thing.
@@ -985,6 +991,7 @@ impl TodoView {
                     // of it, and it is not the reader's to take a copy of
                     // by selecting it.
                     held: None,
+                    spelled: None,
                     under: None,
                 });
             }

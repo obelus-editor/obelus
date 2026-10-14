@@ -975,6 +975,7 @@ impl crate::app::App {
             typed: chooser.typing().said(),
             caret: chooser.typing().caret().get(),
             held: chooser.typing().held(),
+            spelled: chooser.typing().spelled(),
             naming: chooser.is_naming(),
             there: self.which_project.named_is_there,
             project: self.which_project.named_is_a_project,

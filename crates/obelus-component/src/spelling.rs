@@ -19,7 +19,12 @@ pub trait Spells {
     /// the caret.
     fn writes_from(&self) -> Cursor;
 
-    /// Takes hold of what runs from `from` to the caret, where that is
-    /// `said`, and says whether it was.
-    fn hold_back_to(&mut self, from: Cursor, said: &str) -> bool;
+    /// Takes hold of `said`, written in from `from`, where it is still
+    /// there, and says whether it was.
+    fn hold_written(&mut self, from: Cursor, said: &str) -> bool;
+
+    /// Says `said`, just written in from `from`, is what an input method is
+    /// spelling -- which is what draws the line under it -- and puts the
+    /// caret `before` into it, where the input method has its own.
+    fn spelling(&mut self, from: Cursor, said: &str, before: &str);
 }

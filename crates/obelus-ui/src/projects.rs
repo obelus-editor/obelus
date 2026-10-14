@@ -366,6 +366,7 @@ impl ProjectsView<'_> {
             mark: self.theme.picker_match_background,
             syntax: None,
             skip,
+            spelled: None,
         };
         let (start, name) = name_of(&opened.path);
 

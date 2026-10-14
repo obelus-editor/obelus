@@ -4585,11 +4585,44 @@ fn a_word_begun_in_the_message_box_takes_what_is_held() {
         Some("a message I typed")
     );
 
-    app.handle(Event::Spelling("n".to_string()));
+    app.handle(Event::Spelling("n".to_string(), None));
     assert_eq!(
         app.chat().map(|chat| chat.writing().text()).as_deref(),
         Some("n"),
         "beginning a word left what was held in the message"
+    );
+}
+
+/// What is being spelled in the message box is underlined, and the caret
+/// is where the input method has its own.
+///
+/// Broken deliberately by leaving the spelling out of the loop that lays a
+/// ground under the box's rows in `ChatView::writing`: nothing is
+/// underlined.
+#[test]
+fn what_is_being_spelled_in_the_message_box_is_underlined() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "qq");
+    app.handle(Event::Spelling("xyz".to_string(), Some(1)));
+    let cells = support::cells_of(&mut app, WIDTH, HEIGHT);
+    let (x, y) = support::find(&cells, "qqxyz");
+    let underlined: Vec<bool> = (0..5)
+        .map(|at| {
+            cells
+                .cell((x + at, y))
+                .expect("a cell")
+                .modifier
+                .contains(ratatui::style::Modifier::UNDERLINED)
+        })
+        .collect();
+    assert_eq!(underlined, [false, false, true, true, true]);
+    assert_eq!(
+        obelus_ui::cursor_position(ratatui::layout::Rect::new(0, 0, WIDTH, HEIGHT), &app),
+        Some(ratatui::layout::Position::new(x + 3, y)),
+        "the caret is not after the x"
     );
 }
 
@@ -4616,7 +4649,7 @@ fn a_word_begun_on_a_card_takes_what_is_held_there() {
         Some("held words")
     );
 
-    app.handle(Event::Spelling("n".to_string()));
+    app.handle(Event::Spelling("n".to_string(), None));
     assert_eq!(
         app.card()
             .and_then(Card::copied)

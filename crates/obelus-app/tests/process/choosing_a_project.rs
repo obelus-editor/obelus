@@ -275,7 +275,7 @@ fn a_spelling_of_nothing_moves_nothing() {
     press(&mut app, KeyCode::Down);
     assert_eq!(app.choosing().expect("asking").at, 2, "it did not move");
 
-    app.handle(obelus_app::event::Event::Spelling(String::new()));
+    app.handle(obelus_app::event::Event::Spelling(String::new(), None));
 
     assert_eq!(
         app.choosing().expect("asking").at,

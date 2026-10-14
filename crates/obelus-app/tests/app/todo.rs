@@ -2437,7 +2437,7 @@ fn a_word_begun_in_a_note_takes_what_is_held() {
         Some("held words")
     );
 
-    app.handle(Event::Spelling("n".to_string()));
+    app.handle(Event::Spelling("n".to_string(), None));
     assert_eq!(
         writing(&app).map(|written| written.text()).as_deref(),
         Some("n"),

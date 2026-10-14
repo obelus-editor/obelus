@@ -119,11 +119,13 @@ pub enum Event {
     Paste(String),
     /// What an input method is spelling now, and nothing where it has
     /// stopped -- which it always says before the word arrives as a paste.
+    /// And how many of its characters come before the input method's own
+    /// caret, or `None` for after all of them.
     ///
     /// Only a window hears one: a terminal's input method is the
     /// terminal's, and what reaches Obelus is the word. Written in where
     /// the reader is writing, over what it spelled before (`App::spell`).
-    Spelling(String),
+    Spelling(String, Option<usize>),
     /// A file was dropped on the window.
     ///
     /// Only a window hears one: a terminal types the file's path instead,
@@ -276,7 +278,7 @@ impl Event {
             Self::Scroll(_) => "Scroll",
             Self::Pointer { .. } => "Pointer",
             Self::Paste(_) => "Paste",
-            Self::Spelling(_) => "Spelling",
+            Self::Spelling(..) => "Spelling",
             Self::Dropped(_) => "Dropped",
             Self::Tick => "Tick",
             Self::NotesSettled => "NotesSettled",

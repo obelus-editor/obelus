@@ -678,13 +678,13 @@ mod keys {
         for _ in 0..2 {
             support::press_shift(&mut app, KeyCode::Right);
         }
-        app.handle(obelus_app::event::Event::Spelling("h".to_string()));
+        app.handle(obelus_app::event::Event::Spelling("h".to_string(), None));
         assert_eq!(
             text(&app),
             "h main() {}\n",
             "beginning a word left what was held in the file"
         );
-        app.handle(obelus_app::event::Event::Spelling(String::new()));
+        app.handle(obelus_app::event::Event::Spelling(String::new(), None));
         app.handle(obelus_app::event::Event::Paste("函数".to_string()));
         assert_eq!(text(&app), "函数 main() {}\n");
     }
@@ -701,7 +701,10 @@ mod keys {
             support::press_shift(&mut app, KeyCode::Right);
         }
         for spelling in ["h", "han", "hans", ""] {
-            app.handle(obelus_app::event::Event::Spelling(spelling.to_string()));
+            app.handle(obelus_app::event::Event::Spelling(
+                spelling.to_string(),
+                None,
+            ));
         }
         app.handle(obelus_app::event::Event::Paste("函数".to_string()));
         dispatch::dispatch(&mut app, Command::Undo);
@@ -724,8 +727,8 @@ mod keys {
         for _ in 0..2 {
             support::press_shift(&mut app, KeyCode::Right);
         }
-        app.handle(obelus_app::event::Event::Spelling("h".to_string()));
-        app.handle(obelus_app::event::Event::Spelling(String::new()));
+        app.handle(obelus_app::event::Event::Spelling("h".to_string(), None));
+        app.handle(obelus_app::event::Event::Spelling(String::new(), None));
         support::type_text(&mut app, "x");
         app.handle(obelus_app::event::Event::Paste("函数".to_string()));
         assert_eq!(text(&app), "x函数 main() {}\n");
@@ -750,10 +753,13 @@ mod keys {
         let (_scratch, mut app) = reading("keys-spelling-over", "ab\n");
         support::press(&mut app, KeyCode::Right);
         for spelling in ["n", "ni", "nih"] {
-            app.handle(obelus_app::event::Event::Spelling(spelling.to_string()));
+            app.handle(obelus_app::event::Event::Spelling(
+                spelling.to_string(),
+                None,
+            ));
         }
         assert_eq!(text(&app), "anihb\n", "the spelling is not in the file");
-        app.handle(obelus_app::event::Event::Spelling(String::new()));
+        app.handle(obelus_app::event::Event::Spelling(String::new(), None));
         assert_eq!(text(&app), "ab\n", "the spelling over left its letters");
         app.handle(obelus_app::event::Event::Paste("你".to_string()));
         assert_eq!(text(&app), "a你b\n");
@@ -771,10 +777,78 @@ mod keys {
     fn a_spelling_is_not_written_over_what_came_after_it() {
         let (_scratch, mut app) = reading("keys-spelling-moved", "ab\n");
         support::press(&mut app, KeyCode::Right);
-        app.handle(obelus_app::event::Event::Spelling("n".to_string()));
+        app.handle(obelus_app::event::Event::Spelling("n".to_string(), None));
         support::type_text(&mut app, "x");
-        app.handle(obelus_app::event::Event::Spelling("ni".to_string()));
+        app.handle(obelus_app::event::Event::Spelling("ni".to_string(), None));
         assert_eq!(text(&app), "anxnib\n");
+    }
+
+    /// The caret goes where the input method has its own inside what it is
+    /// spelling, and the next spelling still goes over the whole of the
+    /// last -- which runs from where it began to where it ends, wherever
+    /// the caret is.
+    ///
+    /// Broken deliberately by taking the last spelling's end from the
+    /// caret in `App::spell_into_the_file`, as it was while the caret was
+    /// always at the end: `nih` goes over the `n` alone, and the file reads
+    /// `anihib`.
+    #[test]
+    fn the_caret_is_where_the_input_method_has_it() {
+        let (_scratch, mut app) = reading("keys-spelling-caret", "ab\n");
+        support::press(&mut app, KeyCode::Right);
+        app.handle(obelus_app::event::Event::Spelling(
+            "ni".to_string(),
+            Some(1),
+        ));
+        assert_eq!(text(&app), "anib\n");
+        assert_eq!(
+            app.current_buffer().expect("a file").cursor().column.get(),
+            2,
+            "the caret is not after the n"
+        );
+        app.handle(obelus_app::event::Event::Spelling(
+            "nih".to_string(),
+            Some(3),
+        ));
+        assert_eq!(text(&app), "anihb\n");
+    }
+
+    /// What is being spelled in the file is underlined, and what is round
+    /// it is not -- and the line goes when the spelling does.
+    ///
+    /// Broken deliberately by leaving the check for `painting.spelled` out
+    /// of the editor's `draw_row`: nothing is underlined.
+    #[test]
+    fn what_is_being_spelled_in_a_file_is_underlined() {
+        let (_scratch, mut app) = reading("keys-spelling-line", "abc\n");
+        support::press(&mut app, KeyCode::Right);
+        app.handle(obelus_app::event::Event::Spelling("xyz".to_string(), None));
+        let cells = support::cells_of(&mut app, 40, 8);
+        let (x, y) = support::find(&cells, "axyzbc");
+        let underlined = |at: u16| {
+            cells
+                .cell((x + at, y))
+                .expect("a cell")
+                .modifier
+                .contains(ratatui::style::Modifier::UNDERLINED)
+        };
+        assert_eq!(
+            (0..6).map(underlined).collect::<Vec<_>>(),
+            [false, true, true, true, false, false],
+            "the line is not under the spelling alone"
+        );
+        app.handle(obelus_app::event::Event::Spelling(String::new(), None));
+        support::type_text(&mut app, "xyz");
+        let cells = support::cells_of(&mut app, 40, 8);
+        let (x, y) = support::find(&cells, "axyzbc");
+        assert!(
+            !cells
+                .cell((x + 1, y))
+                .expect("a cell")
+                .modifier
+                .contains(ratatui::style::Modifier::UNDERLINED),
+            "typed letters are underlined like a spelling"
+        );
     }
 
     /// A pasted function is one change, however many lines it is.

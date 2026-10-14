@@ -1567,13 +1567,24 @@ impl ChatView<'_> {
             // A ground laid under the cells already written rather than the
             // characters written again: written one at a time, a picture
             // lost the selector that `write` put in its cell with it.
-            if let Some(held) = &row.held {
+            //
+            // And what an input method is still spelling, underlined the same
+            // way: over the cells already written, in the ink.
+            if row.held.is_some() || row.spelled.is_some() {
                 let mut column = x;
                 for (at, (_, wide)) in obelus_text::drawn_widths(&row.said).enumerate() {
-                    if held.contains(&at) {
-                        for cell in column..column.saturating_add(wide) {
-                            if let Some(cell) = cells.cell_mut((cell, y)) {
+                    let held = row.held.as_ref().is_some_and(|held| held.contains(&at));
+                    let spelled = row
+                        .spelled
+                        .as_ref()
+                        .is_some_and(|spelled| spelled.contains(&at));
+                    for cell in column..column.saturating_add(wide) {
+                        if let Some(cell) = cells.cell_mut((cell, y)) {
+                            if held {
                                 cell.set_bg(self.theme.selection_background);
+                            }
+                            if spelled {
+                                cell.set_style(crate::spelling(cell.style()));
                             }
                         }
                     }

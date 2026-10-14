@@ -200,7 +200,12 @@ impl Widget for StatusView<'_> {
                         area.y,
                         &line,
                         style,
-                        &held_after(prompt.held(), &prompt.kind().label(), self.theme),
+                        &held_after(
+                            prompt.held(),
+                            prompt.spelled(),
+                            &prompt.kind().label(),
+                            self.theme,
+                        ),
                     );
                     self.render_landing(&line, area, cells, style);
                 }
@@ -584,7 +589,12 @@ pub fn prompt_row(
     // What is held, marked where it is: the prefix in front of the
     // query is not part of what was typed, so the run moves right by
     // however wide that is.
-    let marked = held_after(picker.query_held(), &typed(picker.question(), ""), theme);
+    let marked = held_after(
+        picker.query_held(),
+        picker.query_spelled(),
+        &typed(picker.question(), ""),
+        theme,
+    );
     write_marked(cells, area, area.x + 1, area.y, &line, style, &marked);
     hint(
         cells,
@@ -753,20 +763,22 @@ pub const fn choosing_question(naming: bool) -> &'static str {
     }
 }
 
-/// What is held in a box, marked on the row it is drawn in -- where
-/// whatever is in front of the box (`ahead`) moves it right by however
-/// many characters that is.
-fn held_after(held: Option<Range<usize>>, ahead: &str, theme: &Theme) -> Marked<'static> {
-    match held {
-        Some(held) => {
-            let ahead = ahead.chars().count();
-            Marked::run(
-                held.start + ahead..held.end + ahead,
-                theme.selection_background,
-            )
-        }
+/// What is held in a box, and what an input method is spelling in it,
+/// marked on the row it is drawn in -- where whatever is in front of the
+/// box (`ahead`) moves both right by however many characters that is.
+fn held_after(
+    held: Option<Range<usize>>,
+    spelled: Option<Range<usize>>,
+    ahead: &str,
+    theme: &Theme,
+) -> Marked<'static> {
+    let ahead = ahead.chars().count();
+    let moved = |range: Range<usize>| range.start + ahead..range.end + ahead;
+    let marked = match held {
+        Some(held) => Marked::run(moved(held), theme.selection_background),
         None => Marked::plain(),
-    }
+    };
+    marked.spelling(spelled.map(moved))
 }
 
 /// The same, in front of a question's answer.
@@ -1129,7 +1141,12 @@ impl StatusView<'_> {
         style: Style,
     ) {
         let said = settings.query();
-        let marked = held_after(settings.query_held(), &typed(None, ""), self.theme);
+        let marked = held_after(
+            settings.query_held(),
+            settings.query_spelled(),
+            &typed(None, ""),
+            self.theme,
+        );
         write_marked(
             cells,
             area,
@@ -1269,6 +1286,7 @@ impl StatusView<'_> {
             ink,
             &held_after(
                 choosing.held.clone(),
+                choosing.spelled.clone(),
                 &typed(Some(question), ""),
                 self.theme,
             ),
@@ -1431,7 +1449,12 @@ impl StatusView<'_> {
             area.y,
             &typed(None, &said),
             style,
-            &held_after(names.query().held(), &typed(None, ""), self.theme),
+            &held_after(
+                names.query().held(),
+                names.query().spelled(),
+                &typed(None, ""),
+                self.theme,
+            ),
         );
         hint(cells, area, None, names.invitation(), style, self.theme);
     }

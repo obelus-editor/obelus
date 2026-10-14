@@ -593,13 +593,39 @@ mod in_place {
         dispatch::dispatch(&mut app, Command::SearchFile);
         support::type_text(&mut app, "a ");
         for spelling in ["n", "ni"] {
-            app.handle(Event::Spelling(spelling.to_string()));
+            app.handle(Event::Spelling(spelling.to_string(), None));
         }
         assert_eq!(app.picker().expect("the list").query(), "a ni");
-        app.handle(Event::Spelling(String::new()));
+        app.handle(Event::Spelling(String::new(), None));
         assert_eq!(app.picker().expect("the list").query(), "a ");
         app.handle(Event::Paste("你".to_string()));
         assert_eq!(app.picker().expect("the list").query(), "a 你");
+    }
+
+    /// What is being spelled in a query is underlined on the status row,
+    /// past whatever stands in front of the box.
+    ///
+    /// Broken deliberately by not shifting the spelling past what is in
+    /// front of the box in `status::held_after`: the line is under the
+    /// prompt's own characters instead.
+    #[test]
+    fn what_is_being_spelled_in_a_box_is_underlined() {
+        let (_scratch, mut app) = open("field-spelling-line");
+        dispatch::dispatch(&mut app, Command::SearchFile);
+        support::type_text(&mut app, "qq");
+        app.handle(Event::Spelling("xyz".to_string(), None));
+        let cells = support::cells_of(&mut app, 60, 12);
+        let (x, y) = support::find(&cells, "qqxyz");
+        let underlined: Vec<bool> = (0..5)
+            .map(|at| {
+                cells
+                    .cell((x + at, y))
+                    .expect("a cell")
+                    .modifier
+                    .contains(ratatui::style::Modifier::UNDERLINED)
+            })
+            .collect();
+        assert_eq!(underlined, [false, false, true, true, true]);
     }
 
     /// A word an input method has begun takes what is held in a query, the
@@ -620,7 +646,7 @@ mod in_place {
         }
         assert_eq!(app.picker().expect("the list").query_held(), Some(6..11));
 
-        app.handle(Event::Spelling("n".to_string()));
+        app.handle(Event::Spelling("n".to_string(), None));
         assert_eq!(
             app.picker().expect("the list").query(),
             "hello n",

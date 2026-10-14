@@ -825,10 +825,12 @@ impl App {
     /// word are one step back, and what a word begun over a selection took
     /// is part of that step -- as it was when a word arrived alone.
     ///
-    /// The caret is left after the spelling rather than where the input
-    /// method puts its own inside it: where the spelling was written from
-    /// and where it ends are all there is to take it back out by.
-    pub(in crate::app) fn spell(&mut self, said: &str) {
+    /// The caret goes where the input method has its own, `caret`
+    /// characters into the spelling -- after all of it, where that is
+    /// `None` -- and the spelling is underlined, as every input method's
+    /// is, to say it is not a word yet.
+    pub(in crate::app) fn spell(&mut self, said: &str, caret: Option<usize>) {
+        let caret_after: String = said.chars().take(caret.unwrap_or(usize::MAX)).collect();
         let into = self.writing_into();
         let before = self.spelt.take().filter(|spelt| spelt.into == into);
         // A program is sent nothing until the word arrives, because what is
@@ -841,12 +843,12 @@ impl App {
         }
         match into {
             WritingInto::Nowhere | WritingInto::Terminal => {}
-            WritingInto::File => self.spell_into_the_file(before, said),
+            WritingInto::File => self.spell_into_the_file(before, said, &caret_after),
             _ => {
                 let mut over = false;
                 let from = self.spelled_into().map(|spelling| {
                     if let Some(before) = &before {
-                        over = spelling.hold_back_to(before.from, &before.said);
+                        over = spelling.hold_written(before.from, &before.said);
                     }
                     spelling.writes_from()
                 });
@@ -858,6 +860,9 @@ impl App {
                     return;
                 }
                 self.paste_text(said);
+                if let (Some(spelling), Some(from)) = (self.spelled_into(), from) {
+                    spelling.spelling(from, said, &caret_after);
+                }
                 self.spelt = from.filter(|_| !said.is_empty()).map(|from| Spelt {
                     said: said.to_string(),
                     from,
@@ -871,7 +876,7 @@ impl App {
     /// The same, into the file being read: through the one door a document
     /// changes by, where the box's own paste would make every spelling a
     /// step of its own.
-    fn spell_into_the_file(&mut self, before: Option<Spelt>, said: &str) {
+    fn spell_into_the_file(&mut self, before: Option<Spelt>, said: &str, caret: &str) {
         // The same thing the paste refuses.
         if self.settled.config.read_only {
             return;
@@ -885,15 +890,18 @@ impl App {
         // since: the version is what says the letters there are still it.
         let over = before.filter(|before| here.is_some() && before.file == here);
         let (span, doing) = match &over {
-            Some(before) => (
-                Span {
-                    line: before.from.line,
-                    column: before.from.column,
-                    end_line: cursor.line,
-                    end_column: cursor.column,
-                },
-                obelus_buffer::undo::Doing::Joined,
-            ),
+            Some(before) => {
+                let end = buffer.end_of_written(before.from, &before.said);
+                (
+                    Span {
+                        line: before.from.line,
+                        column: before.from.column,
+                        end_line: end.line,
+                        end_column: end.column,
+                    },
+                    obelus_buffer::undo::Doing::Joined,
+                )
+            }
             None => (
                 buffer.selection().unwrap_or(Span {
                     line: cursor.line,
@@ -913,6 +921,9 @@ impl App {
             ..cursor
         };
         self.change(span, said, doing);
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.spelling(from, said, caret);
+        }
         let after = self.current.zip(self.current_buffer().map(Buffer::version));
         match said.is_empty() {
             // Over, and the word it was for arrives next as a paste: it

@@ -1104,6 +1104,12 @@ impl Settings {
         self.query.held()
     }
 
+    /// Which characters of it an input method is still spelling.
+    #[must_use]
+    pub fn query_spelled(&self) -> Option<std::ops::Range<usize>> {
+        self.query.spelled()
+    }
+
     /// Whether delete is the filter's just now rather than the row's: it
     /// has something held, or something in front of its caret.
     #[must_use]

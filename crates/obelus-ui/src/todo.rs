@@ -648,7 +648,8 @@ impl TodoUi<'_> {
         let marked = match row.held.clone() {
             Some(held) => Marked::run(held, self.theme.selection_background),
             None => Marked::plain(),
-        };
+        }
+        .spelling(row.spelled.clone());
         write_marked(
             cells,
             Rect {

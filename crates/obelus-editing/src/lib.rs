@@ -682,6 +682,9 @@ pub struct Editing {
     /// means changing direction naturally shrinks the selection and can pass
     /// back through it without a special case.
     anchor: Option<Cursor>,
+    /// Where what an input method is spelling begins, and what it says --
+    /// see [`Editing::spelled`].
+    spelled: Option<(Cursor, String)>,
 }
 
 impl Editing {
@@ -701,6 +704,7 @@ impl Editing {
             text,
             cursor: Cursor::start(),
             anchor: None,
+            spelled: None,
         }
     }
 
@@ -856,21 +860,65 @@ impl Editing {
         })
     }
 
-    /// Takes hold of what runs from `from` to the caret, where that is
-    /// `said` -- and of nothing, where it is not.
+    /// Where `said`, written in from `from`, ends.
+    #[must_use]
+    pub fn end_of(&self, from: Cursor, said: &str) -> Cursor {
+        let (line, column) = self
+            .text
+            .position(self.text.char_offset(from.line, from.column).after(said));
+        Cursor {
+            line,
+            column,
+            ..from
+        }
+    }
+
+    /// Takes hold of `said`, written in from `from`, where that is still
+    /// what is there -- and of nothing, leaving the caret and the hold as
+    /// they were, where it is not.
     ///
-    /// What an input method's next spelling is written over: the last one,
-    /// which runs from where it was written in to the caret it left behind.
+    /// What an input method's next spelling is written over: the last one.
     /// Asked of the text rather than trusted, because something else may
     /// have changed it in between, and a spelling written over whatever is
     /// there now would take the reader's words with it.
-    pub fn hold_back_to(&mut self, from: Cursor, said: &str) -> bool {
-        self.hold_from(from);
+    pub fn hold_written(&mut self, from: Cursor, said: &str) -> bool {
+        let (cursor, anchor) = (self.cursor, self.anchor);
+        self.anchor = Some(from);
+        self.cursor = self.end_of(from, said);
         let there = self.selected().is_some_and(|held| held == said);
         if !there {
-            self.anchor = None;
+            self.cursor = cursor;
+            self.anchor = anchor;
         }
         there
+    }
+
+    /// Puts the caret `before` into what was written from `from`: where an
+    /// input method says its own caret is in what it is spelling.
+    pub fn place_after(&mut self, from: Cursor, before: &str, width: u16) {
+        let at = self.end_of(from, before);
+        self.anchor = None;
+        self.place(at.line, at.column, width);
+    }
+
+    /// Says that `said`, written in from `from`, is what an input method
+    /// is spelling -- or, with nothing said, that it is spelling nothing.
+    pub fn spelling(&mut self, from: Cursor, said: &str) {
+        self.spelled = (!said.is_empty()).then(|| (from, said.to_string()));
+    }
+
+    /// Where what an input method is spelling is, while it is still there.
+    ///
+    /// For the line drawn under it. Asked of the text rather than kept as a
+    /// span, so that nothing which changes the text afterwards has to
+    /// remember to take the line away: a spelling whose letters are not
+    /// where it was written any more is not underlined anywhere.
+    #[must_use]
+    pub fn spelled(&self) -> Option<Span> {
+        let (from, said) = self.spelled.as_ref()?;
+        let end = self.end_of(*from, said);
+        let span = span_between(*from, end)?;
+        (self.text.text_in(span) == *said).then_some(span)
     }
 
     /// Takes out whatever is held, and says what it was.

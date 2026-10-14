@@ -383,9 +383,9 @@ fn ctrl_v_pastes_into_the_program() {
 #[test]
 fn a_spelling_is_drawn_over_a_program_and_not_sent() {
     let (mut app, events) = a_shell();
-    app.handle(Event::Spelling("zz".to_string()));
+    app.handle(Event::Spelling("zz".to_string(), None));
     assert!(screen(&mut app).contains("zz"), "the spelling is not drawn");
-    app.handle(Event::Spelling(String::new()));
+    app.handle(Event::Spelling(String::new(), None));
     assert!(
         !screen(&mut app).contains("zz"),
         "the spelling stayed drawn"

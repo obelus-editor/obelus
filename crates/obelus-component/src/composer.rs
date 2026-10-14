@@ -50,6 +50,9 @@ pub struct Laid {
     /// Which of its characters are selected, counted from the start of the
     /// row rather than of the text.
     pub held: Option<Range<usize>>,
+    /// Which of them an input method is still spelling, counted the same
+    /// way -- what the line under a spelling is drawn under.
+    pub spelled: Option<Range<usize>>,
 }
 
 /// A picture the reader put in the box.
@@ -96,8 +99,17 @@ impl crate::spelling::Spells for Composer {
         self.writing.writes_from()
     }
 
-    fn hold_back_to(&mut self, from: obelus_editing::Cursor, said: &str) -> bool {
-        self.writing.hold_back_to(from, said)
+    fn hold_written(&mut self, from: obelus_editing::Cursor, said: &str) -> bool {
+        self.writing.hold_written(from, said)
+    }
+
+    fn spelling(&mut self, from: obelus_editing::Cursor, said: &str, before: &str) {
+        self.writing.spelling(from, said);
+        // Only into letters that landed: a box that refuses them -- a line
+        // number takes digits -- has nothing of the spelling to be in.
+        if self.writing.spelled().is_some() {
+            self.writing.place_after(from, before, u16::MAX);
+        }
     }
 }
 
@@ -457,7 +469,11 @@ impl Composer {
     /// with whatever the reader has hold of marked on each.
     #[must_use]
     pub fn laid(&self, width: u16) -> Vec<Laid> {
-        laid_out(self.writing.text(), width, self.writing.selection())
+        laid_out(
+            self.writing.text(),
+            width,
+            [self.writing.selection(), self.writing.spelled()],
+        )
     }
 
     /// The same, for a caller with nothing to say about a selection.
@@ -600,11 +616,12 @@ impl Composer {
 /// this one.
 #[must_use]
 pub fn wrapped(text: &str, width: u16) -> Vec<Laid> {
-    laid_out(&Text::from_string(text), width, None)
+    laid_out(&Text::from_string(text), width, [None, None])
 }
 
-/// The rows of a text at a width, with `held` broken up across them.
-fn laid_out(text: &Text, width: u16, held: Option<Span>) -> Vec<Laid> {
+/// The rows of a text at a width, with what is held and what is being
+/// spelled broken up across them.
+fn laid_out(text: &Text, width: u16, [held, spelled]: [Option<Span>; 2]) -> Vec<Laid> {
     let width = width.max(1);
     let mut rows = Vec::new();
     // Which picture the next mark stands for, counted across the whole box
@@ -621,9 +638,15 @@ fn laid_out(text: &Text, width: u16, held: Option<Span>) -> Vec<Laid> {
                 .skip(row.first.get())
                 .collect();
             let said = words.trim_end_matches('\n').to_string();
-            let held = held.and_then(|span| held_in(span, line, row.first, said.chars().count()));
-            let (said, held) = spelt_out(&said, &mut seen, held);
-            rows.push(Laid { held, said });
+            let shown = said.chars().count();
+            let marked = [held, spelled]
+                .map(|span| span.and_then(|span| held_in(span, line, row.first, shown)));
+            let (said, [held, spelled]) = spelt_out(&said, &mut seen, marked);
+            rows.push(Laid {
+                said,
+                held,
+                spelled,
+            });
         }
     }
     rows
@@ -653,7 +676,8 @@ fn label(which: usize) -> String {
     }
 }
 
-/// A row with its marks written out, and whatever is held moved to match.
+/// A row with its marks written out, and whatever is held -- and being
+/// spelled -- moved to match.
 ///
 /// The row that reaches the drawing is the row the reader sees, so the mark
 /// becomes its words here rather than three layers further on: everything
@@ -668,16 +692,13 @@ fn label(which: usize) -> String {
 fn spelt_out(
     said: &str,
     seen: &mut usize,
-    held: Option<Range<usize>>,
-) -> (String, Option<Range<usize>>) {
+    marked: [Option<Range<usize>>; 2],
+) -> (String, [Option<Range<usize>>; 2]) {
     if !said.contains(ATTACHED) {
-        return (said.to_string(), held);
+        return (said.to_string(), marked);
     }
     let mut out = String::with_capacity(said.len());
-    let (mut start, mut end) = (
-        held.clone().map_or(0, |range| range.start),
-        held.as_ref().map_or(0, |range| range.end),
-    );
+    let mut moved = marked.clone();
     for (index, character) in said.chars().enumerate() {
         if character != ATTACHED {
             out.push(character);
@@ -689,16 +710,18 @@ fn spelt_out(
         // or after it moves by eight.
         let grown = obelus_text::ATTACHED_WIDTH - 1;
         debug_assert_eq!(label(*seen).chars().count(), obelus_text::ATTACHED_WIDTH);
-        if held.is_some() {
-            if index < start {
-                start += grown;
-            }
-            if index < end {
-                end += grown;
+        for (range, was) in moved.iter_mut().zip(&marked) {
+            if let (Some(range), Some(was)) = (range.as_mut(), was) {
+                if index < was.start {
+                    range.start += grown;
+                }
+                if index < was.end {
+                    range.end += grown;
+                }
             }
         }
     }
-    (out, held.map(|_| start..end))
+    (out, moved)
 }
 
 /// Which line a laid-out row belongs to, and which of that line's rows it
