@@ -915,11 +915,17 @@ mod keys {
     }
 
     /// A word spelled while something else changed the file is not part of
-    /// that change: undoing the word does not undo what an agent wrote.
+    /// that change: the first undo takes the word and nothing else, and the
+    /// agent's edit is a step of its own after it.
+    ///
+    /// The second undo puts back the letters the word had when the agent
+    /// wrote: they went out with the agent's edit, which is what that step
+    /// was made against. The third takes them.
     ///
     /// Broken deliberately by joining every spelling after the first to the
     /// step before it in `App::spell_into_the_file`, whatever came between:
-    /// the agent's `zz` goes with the word.
+    /// giving the word up then forgets the agent's step along with it, and
+    /// the second undo takes the wrong two letters out.
     #[test]
     fn a_word_does_not_join_an_edit_made_under_it() {
         let (_scratch, mut app) = reading("keys-spelling-under", "ab\n");
@@ -940,12 +946,12 @@ mod keys {
         app.handle(obelus_app::event::Event::Spelling(String::new(), None));
         app.handle(obelus_app::event::Event::Paste("你".to_string()));
         assert_eq!(text(&app), "zza你b\n");
-        dispatch::dispatch(&mut app, Command::Undo);
-        assert!(
-            text(&app).starts_with("zz"),
-            "undoing the word undid the agent's edit: {:?}",
-            text(&app)
-        );
+        let mut undone = Vec::new();
+        for _ in 0..3 {
+            dispatch::dispatch(&mut app, Command::Undo);
+            undone.push(text(&app));
+        }
+        assert_eq!(undone, ["zzab\n", "anib\n", "ab\n"]);
     }
 
     /// A word given up, a move, and then something pasted: the paste is a
