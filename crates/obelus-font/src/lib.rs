@@ -275,16 +275,21 @@ impl Fonts {
     /// Nothing is refused: a name this machine does not have is stepped
     /// over when it comes to be drawn with, because one settings file is
     /// read on every machine the reader uses.
-    pub fn use_families(&mut self, names: &[String]) {
+    ///
+    /// Says whether anything changed: the same list is said again after
+    /// every change to the settings, and a cell measured again for nothing
+    /// is a screen thrown away for nothing.
+    pub fn use_families(&mut self, names: &[String]) -> bool {
         let wanted = chain(names, self.otherwise.as_deref());
         if self.families == wanted {
-            return;
+            return false;
         }
         self.after = rest(&self.cascade, &wanted);
         self.families = wanted;
         self.shaped.clear();
         self.measure();
         self.say_what_is_a_picture();
+        true
     }
 
     /// Tells the arithmetic which characters written as text are drawn as
@@ -1115,6 +1120,23 @@ mod tests {
                 cell.baseline
             );
         }
+    }
+
+    /// The faces said again as they are is no change, and says so; another
+    /// list is one. The window throws away the screen going out on a change
+    /// -- a change of theme with it -- and the same faces are said after
+    /// every change to the settings, the theme's included.
+    ///
+    /// Deliberate break: `use_families` saying `true` when the list is the
+    /// one in use, which is what the window used to assume.
+    #[test]
+    fn the_same_faces_said_again_are_no_change() {
+        let mut fonts = Fonts::new(16.0);
+        let named = ["Nobody's Face".to_string()];
+        assert!(fonts.use_families(&named), "another list");
+        assert!(!fonts.use_families(&named), "the same list again");
+        assert!(fonts.use_families(&[]), "back to none");
+        assert!(!fonts.use_families(&[]), "none again");
     }
 
     /// A character in none of the reader's faces, the machine's monospaced

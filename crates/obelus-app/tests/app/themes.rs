@@ -1256,6 +1256,81 @@ fn delete_takes_a_theme_away_but_not_the_one_worn() {
     assert!(!root.join("gone").exists(), "two presses did not take it");
 }
 
+/// Enter on a theme installed and current wears it, and keeps it -- the
+/// same as choosing it from the list of themes -- and the foot offers the
+/// key for it.
+///
+/// Deliberate breaks: the page's `WearTheme` handed to nothing (the theme
+/// is then still the one before), `may_be_worn` false for every card (enter
+/// then does nothing and the foot offers no `Use`), the foot saying
+/// another word beside the key (`Wear`), and `choose_theme`
+/// swapped for `set_theme` alone (nothing is written).
+#[test]
+fn enter_wears_a_theme_already_installed() {
+    let scratch = reader("themes-wear");
+    let root = support::Scratch::new("themes-wear-installed");
+    installed_as(root.path(), "spare", "bbb", "obelus");
+
+    let mut app = open(&scratch);
+    app.installed_themes_for_test(root.path().to_path_buf());
+    app.themes_index_for_test(vec![listed("spare", obelus_themes::Group::Obelus, "bbb")]);
+    assert_ne!(app.theme_name(), "spare");
+    on_the_themes_page(&mut app);
+    support::type_text(&mut app, "spare");
+
+    let dump = support::render(&mut app, 90, 30);
+    // The word beside the key on the foot, and not anywhere on the screen:
+    // a theme's description could say "Use" as well.
+    let beside_enter = support::text_block(&dump)
+        .lines()
+        .find_map(|row| row.split_once("Enter"))
+        .and_then(|(_, after)| after.split_whitespace().next());
+    assert_eq!(
+        beside_enter,
+        Some("Use"),
+        "the foot does not offer enter:\n{dump}"
+    );
+
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(app.theme_name(), "spare", "enter did not wear it");
+    let written = std::fs::read_to_string(scratch.join("config.toml")).expect("the settings");
+    assert!(
+        written.contains("theme = \"spare\""),
+        "the theme was worn and not kept:\n{written}"
+    );
+    let dump = support::render(&mut app, 90, 30);
+    assert!(
+        card_row(support::text_block(&dump), "spare").contains("In use"),
+        "{dump}"
+    );
+}
+
+/// Enter on a theme the registry no longer lists wears it too: it is still
+/// installed, still works, and is the reader's to keep.
+///
+/// Deliberate break: `may_be_worn` asking for `Installed` alone (enter then
+/// does nothing on it, and the theme is still the one before).
+#[test]
+fn enter_wears_a_theme_no_longer_listed() {
+    let scratch = reader("themes-wear-delisted");
+    let root = support::Scratch::new("themes-wear-delisted-installed");
+    installed_as(root.path(), "gone", "zzz", "obelus");
+
+    let mut app = open(&scratch);
+    app.installed_themes_for_test(root.path().to_path_buf());
+    app.themes_index_for_test(vec![listed("spare", obelus_themes::Group::Obelus, "bbb")]);
+    on_the_themes_page(&mut app);
+    support::type_text(&mut app, "gone");
+    let dump = support::render(&mut app, 90, 30);
+    assert!(
+        card_row(support::text_block(&dump), "gone").contains("No longer listed"),
+        "{dump}"
+    );
+
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(app.theme_name(), "gone", "enter did not wear it");
+}
+
 /// Whether the row the list is on is the one that goes for more themes.
 fn on_more_themes(app: &App) -> bool {
     matches!(

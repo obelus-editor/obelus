@@ -151,6 +151,20 @@ impl Card {
             Status::Missing | Status::Outdated | Status::Failed(_)
         )
     }
+
+    /// Whether pressing it would wear it: installed and current -- or one
+    /// the registry no longer lists, which still works and is the reader's
+    /// to keep -- and not the one worn already. Not one a theme of the
+    /// reader's own by that name stands in front of, because wearing the
+    /// name would wear theirs; and not one behind, where the press is the
+    /// update.
+    #[must_use]
+    pub const fn may_be_worn(&self) -> bool {
+        self.installed
+            && !self.worn
+            && !self.shadowed
+            && matches!(self.status, Status::Installed | Status::Delisted)
+    }
 }
 
 /// Where a theme the page shows stands, on this machine.

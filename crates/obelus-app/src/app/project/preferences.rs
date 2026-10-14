@@ -403,6 +403,10 @@ impl App {
                 self.take_theme_away(&name);
                 true
             }
+            SettingsOutcome::WearTheme(name) => {
+                self.choose_theme(&name);
+                true
+            }
             SettingsOutcome::Activate(id) => {
                 self.activate_agent(&id);
                 true
