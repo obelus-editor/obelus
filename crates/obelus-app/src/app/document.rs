@@ -115,6 +115,18 @@ impl Document {
         }
     }
 
+    /// The mark it wears wherever it is named -- its row in the list of
+    /// what is open, and its tab -- so the two are visibly one document.
+    #[must_use]
+    pub fn icon(&self) -> char {
+        match self {
+            Self::File(buffer) => obelus_icons::for_path(buffer.path()),
+            Self::Chat(_) => obelus_icons::ui::AGENT,
+            Self::Notes(_) => obelus_icons::for_command(obelus_command::Command::TodoOpen),
+            Self::Terminal(_) => obelus_icons::ui::TERMINAL,
+        }
+    }
+
     /// The notes, where this is them.
     #[must_use]
     pub const fn notes(&self) -> Option<&TodoView> {

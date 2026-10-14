@@ -2098,11 +2098,8 @@ impl ApplicationHandler<Waking> for Showing {
             WindowEvent::CursorMoved { position, .. } => {
                 self.over_the_title = crate::title::under(position.y, self.titled);
                 #[expect(clippy::cast_possible_truncation, reason = "pixels on a screen")]
-                let over = self
-                    .strip
-                    .at(position.x as f32)
-                    .filter(|_| self.over_the_title && !self.held);
-                if self.strip.hover(over) {
+                let over = (self.over_the_title && !self.held).then_some(position.x as f32);
+                if self.strip.point(over) {
                     self.redraw();
                 }
                 // Off the page, the way leaving the window is, so that a
@@ -2248,7 +2245,7 @@ impl ApplicationHandler<Waking> for Showing {
             // Out of the window -- or, on Windows, onto the part of the bar
             // that drags it, which the window does not hear the pointer on.
             WindowEvent::CursorLeft { .. } => {
-                if self.strip.hover(None) {
+                if self.strip.point(None) {
                     self.redraw();
                 }
             }

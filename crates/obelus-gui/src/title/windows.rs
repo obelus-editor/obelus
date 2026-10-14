@@ -140,9 +140,9 @@ impl Bar {
     /// Says where the tabs are, for the hit test: a press there is the
     /// page's, where anywhere else on the bar it is the system's to drag.
     pub(crate) fn tabs_are(&self, tabs: Option<(f32, f32)>) {
-        let (from, to) = tabs.unwrap_or((0.0, 0.0));
-        let word = (u64::from(from.to_bits()) << 32) | u64::from(to.to_bits());
-        self.shared.tabs.store(word, Ordering::Relaxed);
+        self.shared
+            .tabs
+            .store(tabs_holding(tabs), Ordering::Relaxed);
     }
 
     /// The bar as this frame draws it.
@@ -250,7 +250,14 @@ fn captioned(hwnd: HWND) -> bool {
     style & WS_CAPTION == WS_CAPTION
 }
 
-/// The tabs as `Shared` holds them.
+/// The tabs as `Shared` holds them: from and to in one word, and both
+/// nothing for none.
+fn tabs_holding(tabs: Option<(f32, f32)>) -> u64 {
+    let (from, to) = tabs.unwrap_or((0.0, 0.0));
+    (u64::from(from.to_bits()) << 32) | u64::from(to.to_bits())
+}
+
+/// The other way.
 fn tabs_held(word: u64) -> Option<(f32, f32)> {
     #[expect(
         clippy::cast_possible_truncation,
@@ -464,5 +471,23 @@ unsafe extern "system" fn listen(
             passed()
         }
         _ => passed(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Where the tabs are comes back out of the one word the hit test
+    /// reads it from as it went in, and none as none.
+    ///
+    /// Deliberate break: swap the halves in `tabs_held`. Every tab is then
+    /// from where it ends to where it starts, which is nowhere, and a
+    /// press on any of them drags the window.
+    #[test]
+    fn where_the_tabs_are_comes_back_as_it_went() {
+        let tabs = Some((8.0, 412.5));
+        assert_eq!(tabs_held(tabs_holding(tabs)), tabs);
+        assert_eq!(tabs_held(tabs_holding(None)), None);
     }
 }

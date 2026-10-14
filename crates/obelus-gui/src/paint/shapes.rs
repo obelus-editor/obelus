@@ -29,13 +29,32 @@ impl Painter {
     /// In the window's pixels less the grid's origin, which is where every
     /// quad is placed: the bar is above the grid, so its rows come out
     /// negative.
-    pub(super) fn title_bar(&mut self, across: f32, margin: [f32; 2], fonts: &mut Fonts) {
+    ///
+    /// `over_panes` where it is drawn over a pane whose glass runs up under
+    /// it. A tab cut by an end of the row is cut by painting the bar back
+    /// over what is past the end, which is the page there -- but over a
+    /// pane it is the pane's glass, which cannot be painted back. So there
+    /// only the tabs that are whole between the ends are drawn, which is
+    /// what a row looked like before it could cut one.
+    pub(super) fn title_bar(
+        &mut self,
+        across: f32,
+        margin: [f32; 2],
+        fonts: &mut Fonts,
+        over_panes: bool,
+    ) {
         if self.bar_left_out {
             return;
         }
         let dark = crate::title::dark(ground_of(self.ground));
         if let Some(strip) = self.strip.take() {
-            self.tab_strip(&strip, across, margin, fonts, dark);
+            match strip.cut.filter(|_| over_panes) {
+                Some(cut) => {
+                    let whole = crate::title::whole_between(&strip, cut);
+                    self.tab_strip(&whole, across, margin, fonts, dark);
+                }
+                None => self.tab_strip(&strip, across, margin, fonts, dark),
+            }
             self.strip = Some(strip);
         }
         let Some(bar) = self.bar else {

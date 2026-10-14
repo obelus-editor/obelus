@@ -36,7 +36,8 @@ impl App {
                 };
                 (Marking::Unwritten, glyph)
             }),
-            icon: obelus_icons::enabled().then(|| obelus_icons::for_path(buffer.path())),
+            // Said by `document_rows`, from `Document::icon`.
+            icon: None,
             label: relative(buffer.path(), root),
             // Which commit, for a buffer read from one. Two buffers can
             // wear a path -- the file, and the file as some commit had
@@ -190,7 +191,8 @@ impl App {
         PickerItem {
             prose: true,
             marker: Self::conversation_mark(talk, talker),
-            icon: obelus_icons::enabled().then_some(obelus_icons::ui::AGENT),
+            // Said by `document_rows`, from `Document::icon`.
+            icon: None,
             label: self
                 .conversation_name(talk, notes)
                 .unwrap_or_else(|| "A conversation".to_string()),
@@ -300,8 +302,8 @@ impl App {
         PickerItem {
             prose: false,
             marker: None,
-            icon: obelus_icons::enabled()
-                .then(|| obelus_icons::for_command(obelus_command::Command::TodoOpen)),
+            // Said by `document_rows`, from `Document::icon`.
+            icon: None,
             label: "Todo".to_string(),
             // How many are still to come back to, where a changed file puts
             // how much it moved: it is the one number about this row that
@@ -916,13 +918,19 @@ impl App {
         let notes = obelus_todo::read(&self.working_directory)
             .notes()
             .unwrap_or_default();
-        open.map(|(index, document)| match document {
-            Document::Chat(talk) => self.conversation_row(index, talk, talker, &notes),
-            Document::File(buffer) => {
-                Self::file_row(index, buffer, statuses, &self.working_directory)
-            }
-            Document::Notes(notes) => Self::notes_row(index, notes),
-            Document::Terminal(terminal) => Self::terminal_row(index, terminal),
+        open.map(|(index, document)| {
+            let mut row = match document {
+                Document::Chat(talk) => self.conversation_row(index, talk, talker, &notes),
+                Document::File(buffer) => {
+                    Self::file_row(index, buffer, statuses, &self.working_directory)
+                }
+                Document::Notes(notes) => Self::notes_row(index, notes),
+                Document::Terminal(terminal) => Self::terminal_row(index, terminal),
+            };
+            // The mark the document's tab wears too, from the one place
+            // that says it.
+            row.icon = obelus_icons::enabled().then(|| document.icon());
+            row
         })
         .collect()
     }

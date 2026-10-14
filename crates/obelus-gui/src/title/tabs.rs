@@ -94,6 +94,13 @@ impl Room {
         (self.words * 2.4).round()
     }
 
+    /// Whether there is room for a row at all: one of the narrowest tabs
+    /// and an arrow either side. Less, and the ends cross -- a window
+    /// dragged that narrow has its arrows drawn over each other.
+    fn holds_a_tab(&self) -> bool {
+        self.to - self.from >= self.narrowest() + 2.0 * self.arrow()
+    }
+
     /// How far a notch of the wheel scrolls the row.
     fn notch(&self) -> f32 {
         (self.words * 6.0).round()
@@ -143,7 +150,12 @@ pub(crate) struct Strip {
     /// tabs than room.
     arrows: Option<([f32; 2], [f32; 2])>,
     room: Option<Room>,
-    /// What the pointer is over.
+    /// Where the pointer is along the bar, while it is over it.
+    pointer: Option<f32>,
+    /// What it is over, asked again of every laying out: the row moves
+    /// under a pointer that does not -- the wheel, an arrow's slide, a tab
+    /// opened from the keys -- and what a press there is on is what is
+    /// under it on the screen, not what was when it last moved.
     hovered: Option<Spot>,
 }
 
@@ -209,10 +221,28 @@ impl Strip {
         now: Instant,
         animates: bool,
     ) {
+        let room = room.filter(Room::holds_a_tab);
+        // A screen of another density, which measures everything again in
+        // its own pixels: the row stays where it was along itself, rather
+        // than the same number of pixels along a row of another width.
+        if let (Some(was), Some(now)) = (self.room, room)
+            && was.words > 0.0
+            && (now.words - was.words).abs() > f32::EPSILON
+        {
+            let scale = now.words / was.words;
+            self.offset *= scale;
+            self.target *= scale;
+        }
         self.room = room;
         let Some(room) = room else {
             self.laid.clear();
             self.arrows = None;
+            // Arrived, with nothing to show the arriving on: a slide left
+            // under way would keep `sliding` true, and the window drawing
+            // frames for it, for as long as there is no bar -- the whole
+            // of a stay in full screen.
+            self.offset = self.target;
+            self.stepped = None;
             return;
         };
         self.widths = self
@@ -241,10 +271,17 @@ impl Strip {
         {
             let (start, end) = self.edges(keep);
             let span = self.span();
+            let was = self.target;
             if start < self.target {
                 self.target = start;
             } else if end > self.target + span {
                 self.target = end - span;
+            }
+            // Slid there like any other move, from now -- a row still since
+            // the last move has no step to count from, and would jump. Not
+            // on the first laying out, where there is no row yet to slide.
+            if self.target != was && !self.laid.is_empty() {
+                self.stepped.get_or_insert(now);
             }
         }
         self.target = self.target.clamp(0.0, self.most());
@@ -262,6 +299,7 @@ impl Strip {
             }
             x += width;
         }
+        self.hovered = self.pointer.and_then(|x| self.at(x));
     }
 
     /// Moves the row on towards where it is going, by as much of the way
@@ -400,8 +438,11 @@ impl Strip {
         self.hovered
     }
 
-    /// Says what the pointer is over. Whether that changed what is drawn.
-    pub(crate) fn hover(&mut self, spot: Option<Spot>) -> bool {
+    /// Says where the pointer is along the bar, or that it is not over
+    /// it. Whether that changed what it is over, which is what is drawn.
+    pub(crate) fn point(&mut self, x: Option<f32>) -> bool {
+        self.pointer = x;
+        let spot = x.and_then(|x| self.at(x));
         let changed = self.hovered != spot;
         self.hovered = spot;
         changed
@@ -453,6 +494,24 @@ impl Strip {
             arrows,
             active,
         })
+    }
+}
+
+/// The strip with only the tabs that are whole between `cut`'s ends, and
+/// nothing to paint back past them: for a bar drawn over a pane's glass,
+/// which cannot be painted back -- see `Painter::title_bar`.
+pub(crate) fn whole_between(strip: &Painted, (start, end): (f32, f32)) -> Painted {
+    Painted {
+        tabs: strip
+            .tabs
+            .iter()
+            .filter(|tab| {
+                tab.laid.left >= start - 0.5 && tab.laid.left + tab.laid.width <= end + 0.5
+            })
+            .cloned()
+            .collect(),
+        cut: None,
+        ..strip.clone()
     }
 }
 
@@ -579,6 +638,94 @@ mod tests {
         assert!(!strip.scroll(1.0));
     }
 
+    /// What the pointer is over is the tab under it on the screen, after
+    /// the row has moved under a pointer that has not.
+    ///
+    /// Deliberate break: leave the last line out of `lay`. The wheel moves
+    /// the row, the lit tab goes with it, and a press without a move opens
+    /// the tab that slid away rather than the one under the pointer.
+    #[test]
+    fn a_pointer_that_has_not_moved_is_over_what_is_under_it_now() {
+        let mut strip = strip(0);
+        strip.point(Some(30.0));
+        assert_eq!(strip.hovered(), Some(Spot::Tab(0)));
+        assert!(strip.scroll(1.0));
+        settle(&mut strip);
+        // Sixty along: the first tab's last thirty and the second's first.
+        assert_eq!(strip.hovered(), Some(Spot::Tab(0)));
+        assert!(strip.scroll(1.0));
+        settle(&mut strip);
+        assert_eq!(
+            strip.hovered(),
+            Some(Spot::Tab(1)),
+            "the next, slid under it"
+        );
+    }
+
+    /// What a press on the bar is the strip's is from its start to the end
+    /// of what is last on it: the last tab where they fit, the arrow where
+    /// they do not. Nothing where the window is too narrow for a tab.
+    ///
+    /// Deliberate breaks: answer `covers` with the room's whole width, and
+    /// the bar past the last tab is the page's and cannot drag the window;
+    /// leave `holds_a_tab` out of `lay`, and a window narrower than a tab
+    /// and two arrows draws them over each other.
+    #[test]
+    fn the_strip_covers_what_is_on_it() {
+        let mut few = Strip::default();
+        few.told((0..3).map(|at| tab(at, at == 0)).collect());
+        few.lay(Some(room()), |_, _| 4.0, Instant::now(), false);
+        assert_eq!(few.covers(), Some((0.0, 270.0)), "to the last tab");
+        assert_eq!(strip(0).covers(), Some((0.0, 650.0)), "to the arrow's end");
+        let narrow = Room {
+            to: 120.0,
+            ..room()
+        };
+        few.lay(Some(narrow), |_, _| 4.0, Instant::now(), false);
+        assert_eq!(few.covers(), None, "no room for a tab");
+    }
+
+    /// Over a different density the row is as far along itself as it was.
+    ///
+    /// Deliberate break: leave the scaling out of `lay`. Twice the density
+    /// is twice the pixels, and the row is left half as far along as it
+    /// was, with the tab being read part way off the end.
+    #[test]
+    fn another_density_keeps_the_row_where_it_was() {
+        let mut strip = strip(9);
+        let was = strip.target;
+        let doubled = Room {
+            to: 1300.0,
+            words: 20.0,
+            ..room()
+        };
+        strip.lay(Some(doubled), |_, _| 8.0, Instant::now(), false);
+        assert_eq!(strip.target, was * 2.0);
+    }
+
+    /// Over a pane's glass only the whole tabs are drawn, and nothing is
+    /// painted back past the ends.
+    ///
+    /// Deliberate break: keep `cut` in `whole_between`. The bar over a list
+    /// that runs up under it then paints two squares of the page over the
+    /// list's glass, at either end of the row.
+    #[test]
+    fn over_a_pane_only_whole_tabs_are_drawn() {
+        let painted = strip(0).painted(true).expect("a strip");
+        let cut = painted.cut.expect("tabs past the end");
+        let whole = whole_between(&painted, cut);
+        assert_eq!(whole.cut, None);
+        assert_eq!(
+            whole
+                .tabs
+                .iter()
+                .map(|tab| tab.laid.index)
+                .collect::<Vec<_>>(),
+            [0, 1, 2, 3, 4, 5],
+            "the seventh is cut by the end"
+        );
+    }
+
     /// The row slides to where it is going, a frame at a time, and stops
     /// there; where things do not move, it is there at once.
     ///
@@ -606,6 +753,23 @@ mod tests {
         );
         assert!(!strip.sliding(), "arrived");
         assert_eq!(strip.offset, strip.target);
+    }
+
+    /// A tab chosen where the end cuts it slides into sight, as an arrow's
+    /// step does; and a bar that goes in the middle of a slide ends it.
+    ///
+    /// Deliberate breaks: leave `stepped` unset in the reveal, and the row
+    /// jumps a tab's width under the pointer that chose the tab; leave the
+    /// arrival out of `lay`'s nowhere, and a window gone full screen in
+    /// the middle of a slide draws frames for it until it comes back.
+    #[test]
+    fn a_tab_chosen_slides_into_sight_and_no_bar_ends_the_slide() {
+        let mut strip = strip(0);
+        strip.told((0..10).map(|at| tab(at, at == 6)).collect());
+        strip.lay(Some(room()), |_, _| 4.0, Instant::now(), true);
+        assert!(strip.sliding(), "jumped to the tab chosen");
+        strip.lay(None, |_, _| 4.0, Instant::now(), true);
+        assert!(!strip.sliding(), "still sliding with no bar");
     }
 
     /// The tab being read is brought into sight when it changes, and only

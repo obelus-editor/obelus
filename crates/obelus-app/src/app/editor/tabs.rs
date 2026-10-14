@@ -54,9 +54,7 @@ impl App {
                         .conversation_name(talk, notes)
                         .unwrap_or_else(|| "A conversation".to_string()),
                     Document::Notes(_) => "Todo".to_string(),
-                    Document::Terminal(terminal) => {
-                        terminal.title().unwrap_or(terminal.said()).to_string()
-                    }
+                    Document::Terminal(terminal) => terminal.name().to_string(),
                 };
                 // Somebody else's text, an agent's name for a conversation
                 // or a program's for its terminal: one line, and capped, so
@@ -64,14 +62,7 @@ impl App {
                 let name = name.replace(['\n', '\r'], " ");
                 // The row's mark in the list of what is open, so the tab and
                 // the row are visibly one document.
-                let icon = obelus_icons::enabled().then(|| match document {
-                    Document::File(buffer) => obelus_icons::for_path(buffer.path()),
-                    Document::Chat(_) => obelus_icons::ui::AGENT,
-                    Document::Notes(_) => {
-                        obelus_icons::for_command(obelus_command::Command::TodoOpen)
-                    }
-                    Document::Terminal(_) => obelus_icons::ui::TERMINAL,
-                });
+                let icon = obelus_icons::enabled().then(|| document.icon());
                 Tab {
                     document: id,
                     name: obelus_ui::truncate_from_right(&name, TAB_NAME),

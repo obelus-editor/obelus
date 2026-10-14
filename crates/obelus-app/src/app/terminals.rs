@@ -473,8 +473,9 @@ impl App {
         PickerItem {
             prose: false,
             marker: None,
-            icon: obelus_icons::enabled().then_some(obelus_icons::ui::TERMINAL),
-            label: terminal.title().unwrap_or(terminal.said()).to_string(),
+            // Said by `document_rows`, from `Document::icon`.
+            icon: None,
+            label: terminal.name().to_string(),
             version: None,
             detail: None,
             trailing,

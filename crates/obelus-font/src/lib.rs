@@ -188,6 +188,10 @@ pub struct Fonts {
 /// system's sans serif, which is the nearest thing to the question.
 const CAPTION_FACES: &[&str] = &["Segoe UI"];
 
+/// How many lines of a window's own words are kept laid out -- see
+/// [`Fonts::caption`].
+const CAPTIONS: usize = 512;
+
 /// Every face by the families it goes by, in lower case.
 type Named = HashMap<String, Vec<fontdb::ID>>;
 
@@ -533,6 +537,13 @@ impl Fonts {
             );
             for glyph in &mut placed {
                 glyph.baseline = None;
+            }
+            // Begun again once it is this full, rather than kept for good:
+            // a tab's name is whatever a terminal's program last called
+            // itself, which can be a new one at every prompt. What a frame
+            // draws is a few dozen lines, laid again on the next frame.
+            if self.captions.len() >= CAPTIONS {
+                self.captions.clear();
             }
             self.captions.insert(key.clone(), (placed, wide));
         }

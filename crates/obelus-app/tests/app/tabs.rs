@@ -147,8 +147,7 @@ fn choosing_a_tab_goes_to_its_document_and_back() {
 }
 
 /// A tab chosen with a list open over the file puts the list away, the
-/// way a key naming another view does -- and one chosen while a question
-/// is being typed into leaves it where it is.
+/// way a key naming another view does.
 ///
 /// Deliberate break: leave `put_away_the_views` out of
 /// `App::choose_by_its_tab`. The file changes under the palette, which
@@ -166,6 +165,62 @@ fn a_tab_puts_away_the_list_over_the_file() {
     app.handle(Event::Chose(tab_for(&told, "two.rs")));
     assert!(app.picker().is_none(), "the palette stayed up");
     assert_eq!(app.current_buffer().map(Buffer::path), Some(two.as_path()));
+}
+
+/// A tab chosen while a question on the status row is being typed into
+/// leaves the question, and what is typed in it, where they are.
+///
+/// Deliberate break: leave the `gives_way_to_a_view` refusal out of
+/// `App::choose_by_its_tab`. The question stays -- putting views away does
+/// not reach it -- and the file it was asked about changes under it, so
+/// the answer goes somewhere the reader was not looking when they typed it.
+#[test]
+fn a_tab_does_not_take_a_question_away() {
+    let scratch = support::Scratch::new("tabs-over-a-question");
+    let one = scratch.write("one.rs", "fn one() {}\n");
+    let two = scratch.write("two.rs", "fn two() {}\n");
+    let (mut app, told) = open(&[one.clone(), two]);
+    support::lay_out(&mut app, 60, 12);
+
+    app.new_file();
+    support::type_text(&mut app, "half");
+    app.handle(Event::Chose(tab_for(&told, "two.rs")));
+    assert!(
+        app.prompt()
+            .is_some_and(|prompt| prompt.text().ends_with("half")),
+        "the question went"
+    );
+    assert_eq!(
+        app.current_buffer().map(Buffer::path),
+        Some(one.as_path()),
+        "the tab went to its file under the question"
+    );
+}
+
+/// A project let go of takes its tabs off the bar: the window is told
+/// there is nothing open, though the application that tells it was made
+/// again from nothing.
+///
+/// Deliberate break: leave `told_tabs` out of what
+/// `App::let_go_of_the_project` keeps. The new application has told
+/// nothing, sees nothing open, takes that for what the window was told,
+/// and the old project's tabs stay up over the page that asks which
+/// project is next.
+#[test]
+fn a_project_let_go_of_takes_its_tabs() {
+    let scratch = support::Scratch::new("tabs-let-go");
+    let one = scratch.write("one.rs", "fn one() {}\n");
+    let (mut app, told) = open(&[one]);
+    support::lay_out(&mut app, 60, 12);
+    assert_eq!(told.last().0, ["one.rs"]);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ProjectClose);
+    support::lay_out(&mut app, 60, 12);
+    assert!(
+        told.last().0.is_empty(),
+        "the old tabs stayed: {:?}",
+        told.last()
+    );
 }
 
 /// Two files with one name say which directory each is in; a file whose
