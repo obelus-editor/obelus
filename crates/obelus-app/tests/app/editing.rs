@@ -789,7 +789,7 @@ mod keys {
     ///
     /// Broken deliberately by not carrying the spelling across the edit in
     /// `Buffer::apply`: it is looked for where it was, is not found, and
-    /// the file says `zzanihnib`.
+    /// the file says `zznihanib`.
     #[test]
     fn a_spelling_is_followed_across_an_edit_before_it() {
         let (_scratch, mut app) = reading("keys-spelling-followed", "ab\n");
