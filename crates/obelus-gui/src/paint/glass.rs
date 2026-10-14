@@ -544,8 +544,9 @@ impl Painter {
         // Up to the top of the window, where the pane hangs from the top of
         // the page under a bar in it: the bar is the page's there,
         // and a pane over the whole page with a strip of the page left
-        // bare above it is a pane that stopped short. The bar is drawn over
-        // it -- see `bar_on_top` in `lay`.
+        // bare above it is a pane that stopped short. The tabs are under it,
+        // with the page, and the buttons Obelus draws are drawn over it --
+        // see `bar_on_top` in `lay`.
         if from_the_top(self.titled, behind.area.y, behind.joined) {
             top = -self.margin[1];
         }

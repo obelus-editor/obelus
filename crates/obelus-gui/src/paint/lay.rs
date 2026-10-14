@@ -310,7 +310,7 @@ impl Painter {
             self.slid(box_of(stack[nearest].area, cell), 0.0, 1.0 - along);
         }
 
-        // The bar over a pane that is simply there -- see `bar_on_top`.
+        // The buttons over a pane that is simply there -- see `bar_on_top`.
         if bar_on_top == Some(BarOnTop::Resting) {
             self.buttons_on_the_bar(across, margin);
         }
@@ -387,7 +387,7 @@ impl Painter {
         } else {
             self.going(moving.leaving);
         }
-        // The bar over a pane on its way in or out -- see `bar_on_top`.
+        // The buttons over a pane on its way in or out -- see `bar_on_top`.
         if matches!(bar_on_top, Some(BarOnTop::Arriving | BarOnTop::Leaving)) {
             let start = self.quads.len();
             self.buttons_on_the_bar(across, margin);
@@ -489,8 +489,10 @@ impl Painter {
     }
 }
 
-/// Where the bar Obelus draws goes over a pane whose glass runs up under it
-/// -- see `bar_on_top`.
+/// Where the buttons of the bar Obelus draws go over a pane whose glass
+/// runs up under it -- see `bar_on_top`. Not the tabs, which are always
+/// under, with the page; and nothing at all on macOS, which draws its own
+/// buttons over everything, though the answer is the same there.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BarOnTop {
     /// Over a pane on its way in, after everything that moves.
@@ -501,8 +503,8 @@ enum BarOnTop {
     Resting,
 }
 
-/// Where the bar goes on this frame, or `None` for first, under
-/// everything, where nothing runs up under it.
+/// Where the bar's buttons go on this frame, or `None` for first, under
+/// everything, where nothing runs up under the bar.
 ///
 /// `titled` is how tall the bar in the page is, and nothing where it is
 /// left out. `panes` are the frame's, furthest first, by the row each starts on
@@ -510,7 +512,7 @@ enum BarOnTop {
 /// `leaving` is one going that ran up under the bar. Over *every* pane
 /// that runs up under it and not only the one on top: a list standing on
 /// the status row over the settings leaves the settings' glass over the
-/// bar, and a bar drawn first was a smear under it.
+/// bar, and buttons drawn first were a smear under it.
 fn bar_on_top(
     titled: f32,
     panes: &[(u16, Joined)],
@@ -567,22 +569,23 @@ mod tests {
         assert!(!from_the_top(0.0, 0, Joined::Screen), "no bar in the page");
     }
 
-    /// The bar goes over a pane that runs up under it -- resting, coming
-    /// in or going out -- and first, under everything, where none does.
+    /// The bar's buttons go over a pane that runs up under it -- resting,
+    /// coming in or going out -- and first, under everything, where none
+    /// does.
     ///
     /// Deliberate breaks, each failing one line here: ask only the pane on
     /// top for `Resting` (the settings with a list on them, the smear the
     /// review found); drop `arriving` from the first arm (a list standing
-    /// on the status row coming in over the settings takes the bar with
-    /// it); put `Resting` before `Leaving` (the files going over the
-    /// settings draw the bar under their going pieces). And leave out the
+    /// on the status row coming in over the settings takes the buttons
+    /// with it); put `Resting` before `Leaving` (the files going over the
+    /// settings draw the buttons under their going pieces). And leave out the
     /// return where `titled` is nothing, which fails the last line and on
     /// its own changes nothing on the screen: with no bar in the page no
     /// pane runs up under one, the caller works `leaving` out by the same
     /// `from_the_top`, and there is nothing there to draw. It is there so
     /// that the answer does not hang on that.
     #[test]
-    fn the_bar_goes_over_every_pane_that_runs_up_under_it() {
+    fn the_buttons_go_over_every_pane_that_runs_up_under_the_bar() {
         let at = |panes: &[(u16, Joined)], arriving, leaving| {
             bar_on_top(TITLED, panes, arriving, leaving)
         };

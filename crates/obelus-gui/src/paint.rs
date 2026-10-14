@@ -261,8 +261,8 @@ pub(crate) struct Painter {
     left_lifted: Option<Whole>,
     /// Where each pane that went stood in it -- its glass, which is where
     /// it was cut from the screen under it -- and the edge it goes along.
-    /// And whether it hung from the top of the page, which under a bar
-    /// Obelus draws is a pane that goes up through the bar -- see
+    /// And whether it hung from the top of the page, which under a bar in
+    /// the page is a pane that goes up through the bar -- see
     /// `Painter::going`.
     gone: Vec<([f32; 4], Joined, bool)>,
     /// The same bindings with something else in the backdrop's place, for
@@ -348,8 +348,9 @@ struct Placed {
     /// going -- see `Painter::recolour`. Drawn last, over everything,
     /// because everything changed colour.
     recoloured: Option<Range<usize>>,
-    /// The bar Obelus draws, laid over a pane coming in or going out
-    /// through it rather than under it -- see `bar_on_top` in `lay`. Among
+    /// The buttons of the bar Obelus draws, laid over a pane coming in or
+    /// going out through it rather than under it -- see `bar_on_top` in
+    /// `lay`. Among
     /// the pieces where the screen is composed; drawn on its own after
     /// the panes that went where it is not.
     bar_over: Option<Range<usize>>,
