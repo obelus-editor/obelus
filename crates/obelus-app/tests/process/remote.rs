@@ -816,12 +816,13 @@ fn a_chat_that_is_set_is_connected_to_when_told() {
 /// thread the code began, and that group kept as the room. A wrong code
 /// lets nobody in.
 ///
-/// Broken deliberately four times. Leaving where to begin out of the word
+/// Broken deliberately five times. Leaving where to begin out of the word
 /// back: they were told they were paired and nothing about what next.
-/// Comparing the code as it was typed: the code
-/// sent in small letters without its dash let nobody in. Taking any
-/// code: the stranger's wrong one was taken, and they were asked their
-/// name. And not keeping the group: there was no room afterwards.
+/// Comparing the code as it was typed: the code sent split in two let
+/// nobody in. Taking any code: the stranger's wrong one was taken, and
+/// they were asked their name. Not keeping the group: there was no room
+/// afterwards. And drawing the code from letters again: it was not six
+/// digits.
 #[test]
 fn pairing_lets_in_whoever_sends_the_code() {
     let _turn = turn();
@@ -835,16 +836,29 @@ fn pairing_lets_in_whoever_sends_the_code() {
         .expect("a code on the row");
     let dump = support::render(&mut app, 66, 20);
     assert!(dump.contains(&code), "the code is not on the row:\n{dump}");
+    assert!(
+        code.len() == 6 && code.chars().all(|digit| digit.is_ascii_digit()),
+        "the code is not six digits: {code}"
+    );
 
+    // One digit off, so never the code by chance.
+    let wrong = code
+        .char_indices()
+        .map(|(at, digit)| match (at, digit) {
+            (0, '9') => '0',
+            (0, digit) => char::from(digit as u8 + 1),
+            (_, digit) => digit,
+        })
+        .collect::<String>();
     somebody_says("U0STRANGER", "C7", "hello?");
-    somebody_says("U0STRANGER", "C7", "ABC-DEF");
+    somebody_says("U0STRANGER", "C7", &wrong);
     let _ = support::render(&mut app, 66, 20);
     while let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(200)) {
         app.handle(event);
     }
     assert!(said_since().is_empty(), "a stranger was answered");
 
-    let sent = format!("  {}  ", code.replace('-', "").to_lowercase());
+    let sent = format!("  {} {}  ", &code[..3], &code[3..]);
     somebody_says("U04ABCDEF", "C7", &sent);
     until(
         &mut app,
