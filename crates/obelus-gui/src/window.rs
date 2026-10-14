@@ -1609,33 +1609,21 @@ impl ApplicationHandler<Waking> for Showing {
                 // And what is no longer on the screen is no longer kept.
                 let lanes: Vec<Lane> = self.scrolled.iter().map(Rolling::lane).collect();
                 self.motion.bands_drawn(&lanes);
-                // Both are said again after every change to the settings,
-                // and are nearly always what they already are -- so only a
-                // real change counts as one. Counting the saying was a
-                // change of theme from the settings page with no
-                // recolouring: the theme is a setting too, and the same
-                // change of settings said the faces and the size.
                 let refaced = faces.is_some_and(|names| {
                     self.fonts
                         .as_mut()
                         .is_some_and(|fonts| fonts.use_families(&names))
                 });
-                #[expect(
-                    clippy::cast_precision_loss,
-                    reason = "a size in points, which is two digits"
-                )]
-                let resized = sized
-                    .map(|points| points as f32)
-                    .filter(|points| (points - self.points).abs() > f32::EPSILON);
+                let regrid = Regrid::from(refaced, sized, self.points);
                 // A cell of another size is a screen the kept one was not
                 // laid out for, and a pane cut from it would be cut from the
                 // wrong place: what was leaving is simply gone, as it is
                 // when the window is resized.
-                if refaced || resized.is_some() {
+                if regrid.moved() {
                     self.left = None;
                     self.recolouring = None;
                 }
-                if refaced {
+                if regrid.refaced {
                     // Which faces text is drawn in decides how wide a cell
                     // is, so this is the same work a new size is: measure
                     // again, throw away the glyphs, and tell the
@@ -1647,7 +1635,7 @@ impl ApplicationHandler<Waking> for Showing {
                     self.tell(Event::Resize);
                     self.redraw();
                 }
-                if let Some(points) = resized {
+                if let Some(points) = regrid.resized {
                     self.redraw_at(points);
                 }
                 if drew {
@@ -2347,6 +2335,42 @@ fn marked(attributes: winit::window::WindowAttributes) -> winit::window::WindowA
     attributes.with_window_icon(icon)
 }
 
+/// What the faces and the size said with a batch of frames do to the grid.
+///
+/// Both are said again after every change to the settings, and are nearly
+/// always what they already are -- so only a real change counts as one.
+/// Counting the saying was a change of theme from the settings page with
+/// no recolouring: the theme is a setting too, and the same change of
+/// settings said the faces and the size.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Regrid {
+    /// Whether the faces are other ones, as `Fonts::use_families` says.
+    refaced: bool,
+    /// The size the text is to be drawn at, where it is another one.
+    resized: Option<f32>,
+}
+
+impl Regrid {
+    /// From whether the faces changed, the size said if one was, and the
+    /// size the text is drawn at now.
+    fn from(refaced: bool, sized: Option<usize>, points: f32) -> Self {
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "a size in points, which is two digits"
+        )]
+        let resized = sized
+            .map(|sized| sized as f32)
+            .filter(|sized| (sized - points).abs() > f32::EPSILON);
+        Self { refaced, resized }
+    }
+
+    /// Whether a cell is another size, so that what was kept of the screen
+    /// before was laid out for a grid that is not there any more.
+    const fn moved(self) -> bool {
+        self.refaced || self.resized.is_some()
+    }
+}
+
 /// The same icon at this many pixels to a side, for a bar Obelus draws to
 /// put at its left the way the system's bar does -- see `title::Bar`.
 /// From the largest of the file's sizes, which the decoder hands back.
@@ -2367,11 +2391,33 @@ mod tests {
     use ratatui::layout::Rect;
     use winit::event_loop::ControlFlow;
 
-    use super::{MARK, Rolling, control_flow, on_a_link, pairs_arrived, turning, wants_a_frame};
+    use super::{
+        MARK, Regrid, Rolling, control_flow, on_a_link, pairs_arrived, turning, wants_a_frame,
+    };
     use crate::{
         grid::{Behind, Page, Spun, Update},
         motion::{Motion, Wake},
     };
+
+    /// The faces and the size said again as they are leave the grid -- and
+    /// what was kept of the screen with it, a change of theme's included --
+    /// while either one changed moves it.
+    ///
+    /// Deliberate breaks: `from` keeping a size said as the one there is
+    /// (the size said again then moves the grid), and `moved` leaving the
+    /// faces out (other faces then keep a screen laid out for the old ones).
+    #[test]
+    fn the_faces_and_the_size_said_again_leave_the_grid() {
+        assert!(!Regrid::from(false, None, 14.0).moved(), "nothing said");
+        assert!(
+            !Regrid::from(false, Some(14), 14.0).moved(),
+            "the size said again"
+        );
+        assert_eq!(Regrid::from(false, Some(16), 14.0).resized, Some(16.0));
+        assert!(Regrid::from(false, Some(16), 14.0).moved(), "another size");
+        assert!(Regrid::from(true, Some(14), 14.0).moved(), "other faces");
+        assert_eq!(Regrid::from(true, Some(14), 14.0).resized, None);
+    }
 
     /// The pair the caret left is kept for its light to go out on, while
     /// its cell is still that bracket, and let go of once it has gone out.
