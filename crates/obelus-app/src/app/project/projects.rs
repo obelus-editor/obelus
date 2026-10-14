@@ -574,6 +574,11 @@ impl crate::app::App {
                 self.settle_on(&path);
                 return true;
             }
+            // Nothing said where it was not written. A list that would not
+            // read when the page opened offered no rows to forget, so the
+            // one way here is another Obelus spoiling the file between the
+            // page opening and the key -- and this page has no status row to
+            // say so on. `keep_only` puts it in the log.
             obelus_component::chooser::Outcome::Forgot(path) => {
                 strike(&path);
                 true
