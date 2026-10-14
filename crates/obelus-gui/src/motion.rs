@@ -91,7 +91,7 @@ const VEIL: Duration = Duration::from_millis(400);
 /// walked to in the list felt a beat behind the key. A picture takes its
 /// own time after the colours have changed, which is what a photograph
 /// coming up is for anyway.
-const RECOLOUR: Duration = Duration::from_millis(250);
+const RECOLOUR: Duration = Duration::from_millis(200);
 
 /// And how long it takes to go out.
 ///
