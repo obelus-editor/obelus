@@ -94,10 +94,10 @@ impl Painter {
         // Every pane and box, furthest first, each over the glass of those
         // before it -- see `drawn`, which four passes ask about.
         let stack = drawn(said.stack, page);
-        // Where the bar Obelus draws goes, which is over a pane whose glass
-        // runs up under it -- see `from_the_top` -- and never under one as
-        // well, which would be every letter of the title twice, once seen
-        // through the glass.
+        // Where the buttons of the bar Obelus draws go, which is over a pane
+        // whose glass runs up under it -- see `from_the_top` -- and never
+        // under one as well, which would be every stroke of them twice, once
+        // seen through the glass. The tabs are always under, with the page.
         //
         // At the end of everything while one is on its way in or out, so
         // that it is not in what moves; after the panes and before the
@@ -117,11 +117,14 @@ impl Painter {
             moving.pane.is_some(),
             moving.leaving.is_some() && self.gone.iter().any(|&(.., top)| top),
         );
-        // The bar's buttons, on the picture where there is one. With it in
-        // the quads every whole screen starts from, because the bar stands
-        // still the way the picture does: what slides is the page under it.
+        // The tabs, and the bar's buttons where nothing runs up under them,
+        // on the picture where there is one. With them in the quads every
+        // whole screen starts from, because the bar stands still the way
+        // the picture does: what slides is the page under it, or a pane
+        // over it.
+        self.tabs_on_the_bar(across, margin, fonts);
         if bar_on_top.is_none() {
-            self.title_bar(across, margin, fonts, false);
+            self.buttons_on_the_bar(across, margin);
         }
         // Where the picture's quads end, which every whole screen drawn
         // from this frame draws first -- and the one picture of the frame
@@ -309,7 +312,7 @@ impl Painter {
 
         // The bar over a pane that is simply there -- see `bar_on_top`.
         if bar_on_top == Some(BarOnTop::Resting) {
-            self.title_bar(across, margin, fonts, true);
+            self.buttons_on_the_bar(across, margin);
         }
         // Everything the frame says has been said. What is left is
         // putting it back on the screen in pieces, where a pane is on its
@@ -387,7 +390,7 @@ impl Painter {
         // The bar over a pane on its way in or out -- see `bar_on_top`.
         if matches!(bar_on_top, Some(BarOnTop::Arriving | BarOnTop::Leaving)) {
             let start = self.quads.len();
-            self.title_bar(across, margin, fonts, true);
+            self.buttons_on_the_bar(across, margin);
             self.placed.bar_over = Some(start..self.quads.len());
         }
         // Last, because none of it is drawn on the screen: the blurs are

@@ -56,8 +56,9 @@ mod windows;
 
 use std::time::{Duration, Instant};
 
+use obelus_ui::shapes::Joined;
 use ratatui::style::Color;
-pub(crate) use tabs::{Painted, Room, Shown, Spot, Strip, over_a_pane};
+pub(crate) use tabs::{Painted, Room, Spot, Strip};
 #[cfg(windows)]
 pub(crate) use windows::{Bar, drawn};
 use winit::window::{Theme, Window, WindowAttributes};
@@ -284,6 +285,19 @@ fn beside_the_buttons(window: &Window, scale: f32) -> Option<f32> {
 #[cfg(not(target_os = "macos"))]
 const fn beside_the_buttons(_window: &Window, _scale: f32) -> Option<f32> {
     None
+}
+
+/// Whether a pane runs up under the bar, which is a bar in the page -- `titled`
+/// is how tall -- and a pane hanging from the top of the page: its glass
+/// then goes on up to the top of the window, over the tabs, and the
+/// buttons Obelus draws are drawn over it.
+///
+/// Whoever draws the bar's buttons. Asked of the bar Obelus draws, it was
+/// Windows alone, and on macOS -- where the page runs up under a bar whose
+/// buttons are AppKit's -- the settings came down from under a strip of
+/// the page left standing above them, rather than from the window's top.
+pub(crate) fn from_the_top(titled: f32, row: u16, joined: Joined) -> bool {
+    titled > 0.0 && row == 0 && matches!(joined, Joined::Above | Joined::Screen)
 }
 
 /// Whether a place in the window, in pixels from the top, is on the title

@@ -1032,17 +1032,8 @@ fn cut(piece: [f32; 4], room: [f32; 4], into: &mut Vec<[f32; 4]>) {
     }
 }
 
-/// Whether a pane runs up under the bar, which is a bar in the page -- `titled`
-/// is how tall -- and a pane hanging from the top of the page: its glass
-/// then goes on up to the top of the window, and the bar is drawn over it.
-///
-/// Whoever draws the bar's buttons. Asked of the bar Obelus draws, it was
-/// Windows alone, and on macOS -- where the page runs up under a bar whose
-/// buttons are AppKit's -- the settings came down from under a strip of
-/// the page left standing above them, rather than from the window's top.
-pub(super) fn from_the_top(titled: f32, row: u16, joined: Joined) -> bool {
-    titled > 0.0 && row == 0 && matches!(joined, Joined::Above | Joined::Screen)
-}
+/// Asked here, and by the window of the tabs -- see `title::from_the_top`.
+pub(super) use crate::title::from_the_top;
 
 /// How much of a pane a slide has let through, which is the room its
 /// shadow falls from.

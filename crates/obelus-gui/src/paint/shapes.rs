@@ -21,44 +21,39 @@ const JOINS_THE_PAGE: u32 = 0b0101_0000;
 const STANDS_ON_THE_BAR: u32 = 0b1010_0000;
 
 impl Painter {
-    /// The bar along the top: the tabs on any bar the page runs up under,
-    /// and the three buttons on one Obelus draws -- see `title::Bar` --
-    /// over the picture and the page's colour, and over any pane whose
-    /// glass runs up under it -- see `bar_on_top` in `lay`.
+    /// The tabs along the top, on any bar the page runs up under -- see
+    /// `title::tabs` -- as part of the page: first, under everything, so
+    /// that a pane whose glass runs up under the bar is over them the way
+    /// it is over the rest of the page, and slides down over them coming
+    /// in. Seen through its glass they are blurred with everything else,
+    /// and nothing on the bar is theirs to press while it is there
+    /// (`Strip::cover`).
     ///
     /// In the window's pixels less the grid's origin, which is where every
     /// quad is placed: the bar is above the grid, so its rows come out
     /// negative.
-    ///
-    /// `over_panes` where it is drawn over a pane whose glass runs up under
-    /// it. A tab cut by an end of the row is cut by painting the bar back
-    /// over what is past the end, which is the page there -- but over a
-    /// pane it is the pane's glass, which cannot be painted back. So there
-    /// only the tabs that are whole between the ends are drawn, which is
-    /// what a row looked like before it could cut one -- and the tab being
-    /// read is joined to nothing, because what is under the bar is the
-    /// pane and not its page (`title::over_a_pane`).
-    pub(super) fn title_bar(
-        &mut self,
-        across: f32,
-        margin: [f32; 2],
-        fonts: &mut Fonts,
-        over_panes: bool,
-    ) {
+    pub(super) fn tabs_on_the_bar(&mut self, across: f32, margin: [f32; 2], fonts: &mut Fonts) {
         if self.bar_left_out {
             return;
         }
         let dark = crate::title::dark(ground_of(self.ground));
         if let Some(strip) = self.strip.take() {
-            match over_panes {
-                true => {
-                    let over = crate::title::over_a_pane(&strip);
-                    self.tab_strip(&over, across, margin, fonts, dark);
-                }
-                false => self.tab_strip(&strip, across, margin, fonts, dark),
-            }
+            self.tab_strip(&strip, across, margin, fonts, dark);
             self.strip = Some(strip);
         }
+    }
+
+    /// The three buttons on a bar Obelus draws -- see `title::Bar` -- over
+    /// the picture and the page's colour, and over any pane whose glass runs
+    /// up under the bar -- see `bar_on_top` in `lay`. A pane covers the
+    /// tabs and not these: the window has to be closable whatever is open.
+    ///
+    /// In the same pixels as the tabs.
+    pub(super) fn buttons_on_the_bar(&mut self, across: f32, margin: [f32; 2]) {
+        if self.bar_left_out {
+            return;
+        }
+        let dark = crate::title::dark(ground_of(self.ground));
         let Some(bar) = self.bar else {
             return;
         };
@@ -131,13 +126,10 @@ impl Painter {
             Some(_) => self.veil(),
             None => self.ground_colour(),
         };
-        // Which tabs have a shape of their own: the one under the pointer,
-        // and the one being read where it joins the page.
-        let shaped = |tab: &crate::title::Shown| tab.hovered || (tab.reading && strip.joined);
         for (at, tab) in strip.tabs.iter().enumerate() {
             let laid = tab.laid;
             let left = laid.left - margin[0];
-            if tab.hovered && !(tab.reading && strip.joined) {
+            if tab.hovered && !tab.reading {
                 // The tab's own shape, the whole of it, in a shade of the
                 // bar rather than the page's colour: a tab, lit, standing
                 // on the bar's foot with its foot square -- where the one
@@ -157,9 +149,12 @@ impl Painter {
             // own drawn: the one being read, or the one under the pointer,
             // says where it ends by its edge, and a line along that edge
             // is the same thing said twice.
-            if !shaped(tab)
-                && let Some(after) = strip.tabs.get(at + 1)
-                && !shaped(after)
+            let next = strip.tabs.get(at + 1);
+            if !tab.reading
+                && !tab.hovered
+                && let Some(after) = next
+                && !after.reading
+                && !after.hovered
             {
                 let pen = (room.words / 12.0).round().max(1.0);
                 let high = (tall * 0.68).round();
@@ -179,7 +174,7 @@ impl Painter {
         if let Some(laid) = strip
             .tabs
             .iter()
-            .find(|tab| tab.reading && strip.joined)
+            .find(|tab| tab.reading)
             .map(|tab| tab.laid)
         {
             let left = laid.left - margin[0];

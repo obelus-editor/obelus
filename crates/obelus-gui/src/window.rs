@@ -1901,6 +1901,12 @@ impl ApplicationHandler<Waking> for Showing {
                     let width = window.inner_size().width as f32;
                     crate::title::room(window, self.titled, width, drawn.as_ref())
                 });
+                // The tabs are the page's, and a pane that runs up under the
+                // bar is over them.
+                self.strip.cover(self.stack.iter().any(|over| {
+                    !over.is_a_box()
+                        && crate::title::from_the_top(self.titled, over.area.y, over.joined)
+                }));
                 self.strip.lay(
                     room,
                     |said, size| fonts.caption_width(said, size),

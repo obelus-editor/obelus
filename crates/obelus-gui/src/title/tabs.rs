@@ -152,6 +152,8 @@ pub(crate) struct Strip {
     room: Option<Room>,
     /// Where the pointer is along the bar, while it is over it.
     pointer: Option<f32>,
+    /// Whether a pane is over the bar -- see `cover`.
+    covered: bool,
     /// What it is over, asked again of every laying out: the row moves
     /// under a pointer that does not -- the wheel, an arrow's slide, a tab
     /// opened from the keys -- and what a press there is on is what is
@@ -173,9 +175,6 @@ pub(crate) struct Painted {
     pub(crate) arrows: Vec<([f32; 2], bool, bool, Spot)>,
     /// Whether the window has the reader's keys.
     pub(crate) active: bool,
-    /// Whether the tab being read joins the page under the bar -- not
-    /// where a pane is over the page: see `over_a_pane`.
-    pub(crate) joined: bool,
 }
 
 /// One tab as a frame paints it.
@@ -365,8 +364,21 @@ impl Strip {
         true
     }
 
+    /// Says whether a pane runs up under the bar, which puts the tabs
+    /// under its glass with the rest of the page (`Painter::tabs_on_the_bar`).
+    /// Nothing on the bar is theirs while it is there: a press, the pointer
+    /// and the wheel go to the bar, as they do where there are no tabs --
+    /// a press on a tab nobody can see was the file it named taking the
+    /// place of the settings.
+    pub(crate) const fn cover(&mut self, covered: bool) {
+        self.covered = covered;
+    }
+
     /// What is at a place on the bar, in pixels from the window's left.
     pub(crate) fn at(&self, x: f32) -> Option<Spot> {
+        if self.covered {
+            return None;
+        }
         let inside = |[left, width]: [f32; 2]| (left..left + width).contains(&x);
         if let Some((earlier, later)) = self.arrows {
             if inside(earlier) {
@@ -396,7 +408,7 @@ impl Strip {
     /// of whatever is last on it -- which is where a press is the strip's
     /// and not the bar's to drag.
     pub(crate) fn covers(&self) -> Option<(f32, f32)> {
-        let room = self.room?;
+        let room = self.room.filter(|_| !self.covered)?;
         let end = match self.arrows {
             Some((_, [left, width])) => left + width,
             None => self.laid.last().map(|laid| laid.left + laid.width)?,
@@ -407,7 +419,7 @@ impl Strip {
     /// Scrolls the row by some notches of the wheel, on towards the last
     /// tab where it is more than none. Whether that moved it.
     pub(crate) fn scroll(&mut self, notches: f32) -> bool {
-        let Some(room) = self.room.filter(|_| self.arrows.is_some()) else {
+        let Some(room) = self.room.filter(|_| self.arrows.is_some() && !self.covered) else {
             return false;
         };
         self.go_to(self.target + notches * room.notch())
@@ -416,7 +428,7 @@ impl Strip {
     /// Walks the row to the next tab one of its ends is cutting, or hiding,
     /// in the way an arrow points: that tab then whole at that end.
     pub(crate) fn step(&mut self, towards: Spot) -> bool {
-        if self.arrows.is_none() {
+        if self.arrows.is_none() || self.covered {
             return false;
         }
         let span = self.span();
@@ -501,39 +513,7 @@ impl Strip {
             cut: self.arrows.map(|_| self.view),
             arrows,
             active,
-            joined: true,
         })
-    }
-}
-
-/// The strip as it is drawn over a pane's glass -- see `Painter::title_bar`.
-///
-/// Only the tabs that are whole between the ends, and nothing to paint
-/// back past them: the glass cannot be painted back.
-///
-/// And the tab being read joined to nothing. Joined, it is a piece of the
-/// page standing up into the bar, in the page's colour -- and the page
-/// under the bar is the pane there, so it was the file's tab bending out
-/// into the settings. Only the nearest thing on screen wears the mark
-/// (`ui::in_front`): the tab keeps its ink, which says which file is
-/// behind, and gives up the shape that says the keys are in it.
-pub(crate) fn over_a_pane(strip: &Painted) -> Painted {
-    let tabs = match strip.cut {
-        Some((start, end)) => strip
-            .tabs
-            .iter()
-            .filter(|tab| {
-                tab.laid.left >= start - 0.5 && tab.laid.left + tab.laid.width <= end + 0.5
-            })
-            .cloned()
-            .collect(),
-        None => strip.tabs.clone(),
-    };
-    Painted {
-        tabs,
-        cut: None,
-        joined: false,
-        ..strip.clone()
     }
 }
 
@@ -723,6 +703,34 @@ mod tests {
         assert!(strip.painted(true).is_some(), "a tab, and the bar under it");
     }
 
+    /// Under a pane nothing on the bar is the tabs': not a press, not the
+    /// pointer, not the wheel -- and they are still painted, under its
+    /// glass, and theirs again when it goes.
+    ///
+    /// Deliberate breaks: leave `covered` out of `at`, and a press over a
+    /// tab under the settings opens its file in their place; out of
+    /// `covers`, and on Windows the bar over a covered tab will not drag
+    /// the window; out of `scroll`, and the wheel moves a row nobody sees.
+    #[test]
+    fn a_pane_over_the_bar_takes_it_from_the_tabs() {
+        let mut strip = strip(0);
+        strip.point(Some(30.0));
+        assert_eq!(strip.hovered(), Some(Spot::Tab(0)));
+        strip.cover(true);
+        settle(&mut strip);
+        assert_eq!(strip.hovered(), None, "nothing lit under the pane");
+        assert_eq!(strip.at(30.0), None);
+        assert_eq!(strip.at(5.0), None, "nor the arrows");
+        assert_eq!(strip.covers(), None);
+        assert!(!strip.scroll(1.0));
+        assert!(!strip.step(Spot::Later));
+        assert!(strip.painted(true).is_some(), "still painted, under it");
+        strip.cover(false);
+        settle(&mut strip);
+        assert_eq!(strip.hovered(), Some(Spot::Tab(0)), "theirs again");
+        assert!(strip.scroll(1.0));
+    }
+
     /// Over a different density the row is as far along itself as it was.
     ///
     /// Deliberate break: leave the scaling out of `lay`. Twice the density
@@ -739,50 +747,6 @@ mod tests {
         };
         strip.lay(Some(doubled), |_, _| 8.0, Instant::now(), false);
         assert_eq!(strip.target, was * 2.0);
-    }
-
-    /// Over a pane's glass only the whole tabs are drawn, and nothing is
-    /// painted back past the ends.
-    ///
-    /// Deliberate break: keep `cut` in `over_a_pane`. The bar over a list
-    /// that runs up under it then paints two squares of the page over the
-    /// list's glass, at either end of the row.
-    #[test]
-    fn over_a_pane_only_whole_tabs_are_drawn() {
-        let painted = strip(0).painted(true).expect("a strip");
-        assert!(painted.cut.is_some(), "tabs past the end");
-        let whole = over_a_pane(&painted);
-        assert_eq!(whole.cut, None);
-        assert_eq!(
-            whole
-                .tabs
-                .iter()
-                .map(|tab| tab.laid.index)
-                .collect::<Vec<_>>(),
-            [0, 1, 2, 3, 4, 5],
-            "the seventh is cut by the end"
-        );
-    }
-
-    /// Over a pane the tab being read is joined to nothing, and every tab
-    /// is still there where none is cut.
-    ///
-    /// Deliberate break: leave `joined: false` out of `over_a_pane`. The
-    /// file's tab then bends out into the settings' glass in the page's
-    /// colour, which is what the review of the bar over a pane on macOS
-    /// found. What wants a device is the painter reading `joined`, which
-    /// was checked by hand.
-    #[test]
-    fn over_a_pane_the_tab_being_read_joins_nothing() {
-        let mut few = Strip::default();
-        few.told((0..3).map(|at| tab(at, at == 1)).collect());
-        few.lay(Some(room()), |_, _| 4.0, Instant::now(), false);
-        let painted = few.painted(true).expect("a strip");
-        assert!(painted.joined, "over the page, it joins it");
-        let over = over_a_pane(&painted);
-        assert!(!over.joined);
-        assert_eq!(over.tabs.len(), 3, "nothing is cut, so nothing goes");
-        assert!(over.tabs[1].reading, "and it keeps its ink");
     }
 
     /// The row slides to where it is going, a frame at a time, and stops
