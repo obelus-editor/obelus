@@ -27,8 +27,9 @@
 //! **What an input method is spelling is on the page, and is not in the
 //! file.** Typing Chinese is spelling a word before it exists: several
 //! keypresses that are not characters, and then one character that is. The
-//! window draws that spelling itself, over the cells to the right of the
-//! caret, underlined, in the colours of the place it is going into -- and
+//! window draws that spelling itself, over the cells after the caret and
+//! wrapped where the box it is typed into wraps, underlined, in the colours
+//! of the place it is going into -- and
 //! the application is never told what it says. Not because it could not
 //! be: because what would arrive is half-typed pinyin in a buffer with an
 //! undo history and a file that has changed. What arrives instead, when the
@@ -786,18 +787,19 @@ impl Showing {
         };
         let cell = fonts.cell();
         // Past what is being spelled, so the candidates sit under the end
-        // of the word rather than under the character it started at.
-        let along = self.spelling.as_ref().map_or(0, Spelling::columns);
+        // of the word rather than under the character it started at -- on
+        // the row it wrapped to, where it wrapped.
+        let at = self
+            .spelling
+            .as_ref()
+            .and_then(|spelling| spelling.laid(&self.page))
+            .map_or(caret, |laid| laid.caret);
         // And put back on here, for the same reason: what an input method
         // is told is a place in the window, not a place in the grid.
         let margin = self.margin();
-        #[expect(
-            clippy::cast_precision_loss,
-            reason = "a caret is a few columns into what is being spelled"
-        )]
         let area = [
-            (f32::from(caret.x) + along as f32) * cell.width + margin[0],
-            f32::from(caret.y) * cell.height + margin[1],
+            f32::from(at.x) * cell.width + margin[0],
+            f32::from(at.y) * cell.height + margin[1],
             cell.width,
             cell.height,
         ];

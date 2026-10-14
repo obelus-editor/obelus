@@ -811,7 +811,7 @@ impl<'a> ChatView<'a> {
     /// Where the terminal should put its caret: in the box, or in the
     /// transcript while the reader is reading it.
     #[must_use]
-    pub fn caret(&self, area: Rect) -> Option<ratatui::layout::Position> {
+    pub fn caret(&self, area: Rect) -> Option<crate::Typing> {
         let chat = self.chat;
         // In the card, while one is up: it is what covers the box, and
         // what the reader is typing in is the half of it that takes words.
@@ -825,7 +825,12 @@ impl<'a> ChatView<'a> {
             // says there is "you are here" and nothing about where words
             // would go -- which is the same thing a caret says in a file
             // Obelus is reading.
-            Focus::Transcript(place) => return in_transcript(self, area, place),
+            Focus::Transcript(place) => {
+                // Nothing is typed there, so nothing is laid out in its
+                // lines but what is already on the page.
+                return in_transcript(self, area, place)
+                    .map(|at| crate::Typing { at, lines: area });
+            }
             // Nowhere, while the keys are walking the row of settings: a
             // caret left blinking in the box would say that what is typed
             // goes there, and it does not. What says where the keys are
@@ -840,9 +845,13 @@ impl<'a> ChatView<'a> {
         // the same row the caret arithmetic starts at.
         let first = row.saturating_sub(usize::from(writing.height).saturating_sub(1));
         let y = writing.y + u16::try_from(row - first).unwrap_or(0);
-        (y < writing.bottom()).then(|| ratatui::layout::Position {
-            x: (writing.x + MARGIN + indent() + cell.get()).min(writing.right().saturating_sub(1)),
-            y,
+        let left = writing.x + MARGIN + indent();
+        (y < writing.bottom()).then(|| {
+            let at = ratatui::layout::Position {
+                x: (left + cell.get()).min(writing.right().saturating_sub(1)),
+                y,
+            };
+            crate::Typing::within(at, left, width, writing)
         })
     }
 
@@ -3091,6 +3100,7 @@ mod caret {
         );
         let caret = viewing(&chat)
             .caret(area)
+            .map(|typing| typing.at)
             .expect("a caret in the transcript");
         assert!(
             caret.x < area.right() - 1,
@@ -3149,6 +3159,7 @@ mod caret {
         });
         let caret = viewing(&chat)
             .caret(area)
+            .map(|typing| typing.at)
             .expect("a caret in the transcript");
         assert_eq!(
             caret.x,
@@ -3169,6 +3180,7 @@ mod caret {
         press(&mut chat, KeyCode::Left);
         let caret = viewing(&chat)
             .caret(area)
+            .map(|typing| typing.at)
             .expect("a caret in the transcript");
         assert_eq!(
             caret.x,
@@ -3182,6 +3194,7 @@ mod caret {
         press(&mut chat, KeyCode::Left);
         let caret = viewing(&chat)
             .caret(area)
+            .map(|typing| typing.at)
             .expect("a caret in the transcript");
         assert_eq!(
             caret.x,
@@ -3193,6 +3206,7 @@ mod caret {
         press(&mut chat, KeyCode::Right);
         let next = viewing(&chat)
             .caret(area)
+            .map(|typing| typing.at)
             .expect("a caret in the transcript");
         assert_eq!(
             (next.x < caret.x, next.y),
@@ -3393,6 +3407,7 @@ mod caret {
         });
         let caret = viewing(&chat)
             .caret(area)
+            .map(|typing| typing.at)
             .expect("a caret in the transcript");
         let mut cells = ratatui::buffer::Buffer::empty(area);
         ratatui::widgets::Widget::render(viewing(&chat), area, &mut cells);
@@ -3444,7 +3459,10 @@ mod caret {
                     false,
                 );
             }
-            let caret = viewing(&chat).caret(area).expect("a caret in the box");
+            let caret = viewing(&chat)
+                .caret(area)
+                .map(|typing| typing.at)
+                .expect("a caret in the box");
             (super::offer(area, &chat), caret.x)
         };
         let area = Rect::new(0, 0, 60, 20);
@@ -3515,7 +3533,10 @@ mod caret {
         // is on the last of them.
         let last = super::ChatView::place_at(area, &chat, false, x, offer - 1);
         assert_eq!(last.map(|(row, _)| row), Some(7), "not the last line");
-        let caret = viewing(&chat).caret(area).map(|caret| caret.y);
+        let caret = viewing(&chat)
+            .caret(area)
+            .map(|typing| typing.at)
+            .map(|caret| caret.y);
         assert_eq!(caret, Some(offer - 1), "the caret is not on the last line");
 
         // Short words, and the offer beside them on the row they are on.

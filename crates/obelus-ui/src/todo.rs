@@ -102,7 +102,7 @@ pub fn text_width_in(area: Rect) -> u16 {
 /// the row the reader can see their typing in rather than a row the view
 /// happens to agree about.
 #[must_use]
-pub fn caret(area: Rect, notes: &Notes) -> Option<ratatui::layout::Position> {
+pub fn caret(area: Rect, notes: &Notes) -> Option<crate::Typing> {
     let composer = notes.writing()?;
     let at = notes.writing_at()?;
     let hints = hints(notes);
@@ -119,9 +119,13 @@ pub fn caret(area: Rect, notes: &Notes) -> Option<ratatui::layout::Position> {
         .rows()
         .get(at)
         .map_or(0, |row| row.depth * obelus_todo::INDENT);
-    (y < list.bottom()).then(|| ratatui::layout::Position {
-        x: (list.x + MARGIN + step + cell.get()).min(list.right().saturating_sub(1)),
-        y,
+    let left = list.x + MARGIN + step;
+    (y < list.bottom()).then(|| {
+        let at = ratatui::layout::Position {
+            x: (left + cell.get()).min(list.right().saturating_sub(1)),
+            y,
+        };
+        crate::Typing::within(at, left, notes.caret_width(), list)
     })
 }
 

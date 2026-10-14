@@ -399,9 +399,15 @@ impl App {
         // With the frame rather than with the key that changed it: what
         // the caret is doing depends on where it ended up, which is not
         // known until the frame has been laid out.
+        let typing = obelus_ui::typing_at(area, self);
         if let Some(drawing) = self.drawing.as_ref() {
-            drawing.caret_is(self.caret(), self.layers().nearest(), self.takes_text());
+            drawing.caret_is(
+                self.caret(),
+                self.layers().nearest(),
+                self.takes_text(),
+                typing.map(|typing| typing.lines),
+            );
         }
-        obelus_ui::cursor_position(area, self)
+        typing.map(|typing| typing.at)
     }
 }

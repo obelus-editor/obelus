@@ -261,12 +261,9 @@ impl Painter {
         // Inside the word being spelled, where the input method says it is:
         // a caret left at the start of it would be a caret in the wrong
         // half of what the reader is typing.
-        #[expect(
-            clippy::cast_possible_truncation,
-            reason = "a caret is a few columns into what is being spelled"
-        )]
-        let along = spelling.map_or(0, |spelling| spelling.columns() as u16);
-        let x = caret.x.saturating_add(along);
+        let at = spelling
+            .and_then(|spelling| spelling.laid(page))
+            .map_or(caret, |laid| laid.caret);
         let look = page.look(caret.x, caret.y);
         let ink = rgba(look.foreground, Ink::Foreground);
         // Where it is drawn, which is where the page put it only once it
@@ -274,8 +271,8 @@ impl Painter {
         // caret carries is drawn from these two, so a caret in flight
         // takes the character it is going to cover along with it rather
         // than leaving it behind on the cell.
-        let left = (f32::from(x) + drift.0) * cell.width;
-        let top = (f32::from(caret.y) + drift.1) * cell.height;
+        let left = (f32::from(at.x) + drift.0) * cell.width;
+        let top = (f32::from(at.y) + drift.1) * cell.height;
         // Inside a word being spelled the caret is always a bar: what is
         // under it there is the spelling itself, which is being written
         // rather than typed over, and a block would hide the character the
@@ -308,11 +305,12 @@ impl Painter {
 
     /// What an input method is spelling, drawn where the word will go.
     ///
-    /// Over the cells to the right of the caret rather than pushing them
-    /// along: the file has not changed, and a window that reflowed the line
-    /// for a word that may never be committed would be showing the reader a
-    /// file that does not exist. Underlined, which is what says these
-    /// characters are not in the file yet.
+    /// Over the cells after the caret rather than pushing them along: the
+    /// file has not changed, and a window that reflowed the line for a word
+    /// that may never be committed would be showing the reader a file that
+    /// does not exist. Underlined, which is what says these characters are
+    /// not in the file yet. Wrapped where the lines it is typed into wrap
+    /// -- see `Spelling::laid`.
     ///
     /// In the colours of the place it is being typed into, because that is
     /// the only theme the window has: the cells say what the page's ink and
@@ -321,24 +319,21 @@ impl Painter {
         let (Some(spelling), Some(caret)) = (spelling, page.caret()) else {
             return;
         };
+        let Some(laid) = spelling.laid(page) else {
+            return;
+        };
         let cell = fonts.cell();
         let look = page.look(caret.x, caret.y);
         let ink = rgba(look.foreground, Ink::Foreground);
-        let mut column = caret.x;
-        for character in spelling.text.chars() {
-            if column >= page.columns() {
-                // Off the edge. Clipped rather than wrapped: the row below
-                // belongs to the next line of the file.
-                break;
+        for (character, (at, wide)) in spelling.text.chars().zip(laid.characters) {
+            // Off the screen, which a word long enough to wrap past the
+            // foot of the screen is.
+            if at.x.saturating_add(wide) > page.columns() || at.y >= page.rows() {
+                continue;
             }
             let written = character.to_string();
-            #[expect(
-                clippy::cast_possible_truncation,
-                reason = "the width of one character, which is one or two"
-            )]
-            let wide = obelus_text::text_width(&written).max(1) as u16;
-            let left = f32::from(column) * cell.width;
-            let top = f32::from(caret.y) * cell.height;
+            let left = f32::from(at.x) * cell.width;
+            let top = f32::from(at.y) * cell.height;
             let width = f32::from(wide) * cell.width;
             // The page as it looks there, which over a picture is the
             // picture with the page laid on it.
@@ -354,11 +349,10 @@ impl Painter {
                 modifier: look.modifier.difference(Modifier::UNDERLINED),
                 underline: Color::Reset,
             };
-            self.glyphs(column, caret.y, over, ink, 0, fonts);
+            self.glyphs(at.x, at.y, over, ink, 0, fonts);
             // The line under it, which is what every input method's inline
             // spelling wears and what tells it apart from the file.
             self.underline(left, top, width, cell.height, ink);
-            column = column.saturating_add(wide);
         }
     }
 }

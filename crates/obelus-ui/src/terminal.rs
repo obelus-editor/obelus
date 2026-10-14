@@ -110,7 +110,7 @@ pub fn how_it_ended(ended: &obelus_terminal::Ended) -> String {
 /// Where the program's cursor is, if it is showing one and the view is on
 /// the screen it is on.
 #[must_use]
-pub fn caret(area: Rect, terminal: &Terminal) -> Option<Position> {
+pub fn caret(area: Rect, terminal: &Terminal) -> Option<crate::Typing> {
     let screen = terminal.screen();
     // Read back up the screen, the cursor is below what is shown; and a
     // program that has ended has no cursor to type at.
@@ -118,7 +118,12 @@ pub fn caret(area: Rect, terminal: &Terminal) -> Option<Position> {
         return None;
     }
     let (row, column) = screen.cursor_position();
-    (row < area.height && column < area.width).then(|| Position::new(area.x + column, area.y + row))
+    // Its lines are the program's whole screen, which is where a terminal
+    // wraps what is typed into it.
+    (row < area.height && column < area.width).then(|| crate::Typing {
+        at: Position::new(area.x + column, area.y + row),
+        lines: area,
+    })
 }
 
 /// How one cell is drawn.

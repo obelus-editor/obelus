@@ -4440,6 +4440,7 @@ impl obelus_app::app::Drawing for Told {
         _: obelus_app::app::Caret,
         _: Option<obelus_component::layers::Layer>,
         _: bool,
+        _: Option<ratatui::layout::Rect>,
     ) {
     }
 

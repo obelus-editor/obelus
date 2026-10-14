@@ -176,7 +176,7 @@ pub fn layout(card: &Card, area: Rect) -> Layout {
 /// Where the terminal should put its caret: in what is being written, when
 /// that is where the keys are going.
 #[must_use]
-pub fn caret(area: Rect, card: &Card) -> Option<ratatui::layout::Position> {
+pub fn caret(area: Rect, card: &Card) -> Option<crate::Typing> {
     let regions = chat::bands_for(area, card);
     let parts = layout(card, regions.writing);
     let words = parts.words?;
@@ -187,9 +187,12 @@ pub fn caret(area: Rect, card: &Card) -> Option<ratatui::layout::Position> {
     let height = usize::from(words.height).max(1);
     let first = row.saturating_sub(height - 1);
     let y = words.y + u16::try_from(row - first).unwrap_or(0);
-    (y < words.bottom()).then(|| ratatui::layout::Position {
-        x: (words.x + MARGIN + cell.get()).min(words.right().saturating_sub(1)),
-        y,
+    (y < words.bottom()).then(|| {
+        let at = ratatui::layout::Position {
+            x: (words.x + MARGIN + cell.get()).min(words.right().saturating_sub(1)),
+            y,
+        };
+        crate::Typing::within(at, words.x + MARGIN, width_of(words), words)
     })
 }
 

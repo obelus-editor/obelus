@@ -1567,7 +1567,11 @@ pub trait Drawing: std::fmt::Debug + Send + Sync {
     /// does not swallow keys that are not going to be a word. With the
     /// caret rather than on its own because it is the same kind of fact,
     /// about where the keys are going, and known at the same moment.
-    fn caret_is(&self, caret: Caret, whose: Option<Layer>, typing: bool);
+    ///
+    /// And the lines the caret is in -- where what is typed there wraps --
+    /// for a front end that draws something at the caret the application
+    /// is never told about: a word an input method is still spelling.
+    fn caret_is(&self, caret: Caret, whose: Option<Layer>, typing: bool, lines: Option<Rect>);
 
     /// Things arrive where they are going, or are simply there.
     ///

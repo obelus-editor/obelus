@@ -142,13 +142,57 @@ pub fn relative_to<'a>(path: &'a std::path::Path, root: &std::path::Path) -> &'a
 /// where the keys are going.
 #[must_use]
 pub fn cursor_position(area: Rect, app: &impl Screen) -> Option<Position> {
+    typing_at(area, app).map(|typing| typing.at)
+}
+
+/// Where the caret is, and the lines what is typed there is laid out in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Typing {
+    /// The cell the caret is in.
+    pub at: Position,
+    /// Where the words around it wrap: a row that reaches the right of this
+    /// goes on at its left, on the row below.
+    ///
+    /// Which a window needs for a word an input method is still spelling.
+    /// It draws that word itself, over the cells after the caret, and the
+    /// cells cannot say where the box they are in ends -- so a word that
+    /// ran off the side of the box went on off the side of the screen,
+    /// where the same word typed went onto the next row.
+    pub lines: Rect,
+}
+
+impl Typing {
+    /// A caret in a band of rows whose words begin at `left` and are
+    /// `width` wide.
+    pub(crate) fn within(at: Position, left: u16, width: u16, band: Rect) -> Self {
+        Self {
+            at,
+            lines: Rect {
+                x: left,
+                width,
+                ..band
+            },
+        }
+    }
+}
+
+/// [`cursor_position`], and the lines it is in.
+///
+/// One function for both, because they are one geometry: the caret is put
+/// from the same numbers the words around it are laid out from, and the
+/// box's edges asked anywhere else are a second answer to where it is.
+#[must_use]
+pub fn typing_at(area: Rect, app: &impl Screen) -> Option<Typing> {
     let regions = regions(area);
     // Most of them filter or answer by typing on the status row, so the
     // caret goes where that typing does.
     let on_the_status_row = |column: u16| {
-        (column < regions.status.width).then(|| Position {
-            x: regions.status.x + column,
-            y: regions.status.y,
+        (column < regions.status.width).then(|| Typing {
+            at: Position {
+                x: regions.status.x + column,
+                y: regions.status.y,
+            },
+            lines: regions.status,
         })
     };
 
@@ -277,14 +321,23 @@ pub fn cursor_position(area: Rect, app: &impl Screen) -> Option<Position> {
     // The rows an opened hunk draws are counted by the arithmetic that
     // answers this, so the caret comes back on the row it is really drawn
     // on: the text area knows what the view inserted.
-    let (row, cell) = buffer.cursor_screen_cell(app.text_area())?;
+    let text = app.text_area();
+    let (row, cell) = buffer.cursor_screen_cell(text)?;
     if row >= regions.editor.height || cell >= regions.editor.width - offset {
         return None;
     }
-    Some(Position {
+    let at = Position {
         x: regions.editor.x + offset + cell,
         y: regions.editor.y + row,
-    })
+    };
+    // As wide as a line is broken at, which stops short of the change map
+    // and the scrollbar on the right.
+    Some(Typing::within(
+        at,
+        regions.editor.x + offset,
+        text.width.min(regions.editor.width - offset),
+        regions.editor,
+    ))
 }
 
 /// Draws one frame into a cell grid.
