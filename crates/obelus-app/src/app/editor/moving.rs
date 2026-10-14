@@ -949,6 +949,9 @@ impl App {
 
     /// Puts back what the last change took away.
     pub fn undo(&mut self) {
+        if self.notes_undo(true) {
+            return;
+        }
         let Some(index) = self.current.map(DocumentId::get) else {
             return;
         };
@@ -963,6 +966,9 @@ impl App {
 
     /// Does again what [`undo`](Self::undo) put back.
     pub fn redo(&mut self) {
+        if self.notes_undo(false) {
+            return;
+        }
         let Some(index) = self.current.map(DocumentId::get) else {
             return;
         };
