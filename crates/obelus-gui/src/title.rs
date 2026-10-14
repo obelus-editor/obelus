@@ -57,7 +57,7 @@ mod windows;
 use std::time::{Duration, Instant};
 
 use ratatui::style::Color;
-pub(crate) use tabs::{Painted, Room, Spot, Strip, whole_between};
+pub(crate) use tabs::{Painted, Room, Shown, Spot, Strip, over_a_pane};
 #[cfg(windows)]
 pub(crate) use windows::{Bar, drawn};
 use winit::window::{Theme, Window, WindowAttributes};

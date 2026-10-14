@@ -35,7 +35,9 @@ impl Painter {
     /// over what is past the end, which is the page there -- but over a
     /// pane it is the pane's glass, which cannot be painted back. So there
     /// only the tabs that are whole between the ends are drawn, which is
-    /// what a row looked like before it could cut one.
+    /// what a row looked like before it could cut one -- and the tab being
+    /// read is joined to nothing, because what is under the bar is the
+    /// pane and not its page (`title::over_a_pane`).
     pub(super) fn title_bar(
         &mut self,
         across: f32,
@@ -48,12 +50,12 @@ impl Painter {
         }
         let dark = crate::title::dark(ground_of(self.ground));
         if let Some(strip) = self.strip.take() {
-            match strip.cut.filter(|_| over_panes) {
-                Some(cut) => {
-                    let whole = crate::title::whole_between(&strip, cut);
-                    self.tab_strip(&whole, across, margin, fonts, dark);
+            match over_panes {
+                true => {
+                    let over = crate::title::over_a_pane(&strip);
+                    self.tab_strip(&over, across, margin, fonts, dark);
                 }
-                None => self.tab_strip(&strip, across, margin, fonts, dark),
+                false => self.tab_strip(&strip, across, margin, fonts, dark),
             }
             self.strip = Some(strip);
         }
@@ -129,10 +131,13 @@ impl Painter {
             Some(_) => self.veil(),
             None => self.ground_colour(),
         };
+        // Which tabs have a shape of their own: the one under the pointer,
+        // and the one being read where it joins the page.
+        let shaped = |tab: &crate::title::Shown| tab.hovered || (tab.reading && strip.joined);
         for (at, tab) in strip.tabs.iter().enumerate() {
             let laid = tab.laid;
             let left = laid.left - margin[0];
-            if tab.hovered && !tab.reading {
+            if tab.hovered && !(tab.reading && strip.joined) {
                 // The tab's own shape, the whole of it, in a shade of the
                 // bar rather than the page's colour: a tab, lit, standing
                 // on the bar's foot with its foot square -- where the one
@@ -152,12 +157,9 @@ impl Painter {
             // own drawn: the one being read, or the one under the pointer,
             // says where it ends by its edge, and a line along that edge
             // is the same thing said twice.
-            let next = strip.tabs.get(at + 1);
-            if !tab.reading
-                && !tab.hovered
-                && let Some(after) = next
-                && !after.reading
-                && !after.hovered
+            if !shaped(tab)
+                && let Some(after) = strip.tabs.get(at + 1)
+                && !shaped(after)
             {
                 let pen = (room.words / 12.0).round().max(1.0);
                 let high = (tall * 0.68).round();
@@ -177,7 +179,7 @@ impl Painter {
         if let Some(laid) = strip
             .tabs
             .iter()
-            .find(|tab| tab.reading)
+            .find(|tab| tab.reading && strip.joined)
             .map(|tab| tab.laid)
         {
             let left = laid.left - margin[0];

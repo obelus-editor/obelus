@@ -173,6 +173,9 @@ pub(crate) struct Painted {
     pub(crate) arrows: Vec<([f32; 2], bool, bool, Spot)>,
     /// Whether the window has the reader's keys.
     pub(crate) active: bool,
+    /// Whether the tab being read joins the page under the bar -- not
+    /// where a pane is over the page: see `over_a_pane`.
+    pub(crate) joined: bool,
 }
 
 /// One tab as a frame paints it.
@@ -498,16 +501,25 @@ impl Strip {
             cut: self.arrows.map(|_| self.view),
             arrows,
             active,
+            joined: true,
         })
     }
 }
 
-/// The strip with only the tabs that are whole between `cut`'s ends, and
-/// nothing to paint back past them: for a bar drawn over a pane's glass,
-/// which cannot be painted back -- see `Painter::title_bar`.
-pub(crate) fn whole_between(strip: &Painted, (start, end): (f32, f32)) -> Painted {
-    Painted {
-        tabs: strip
+/// The strip as it is drawn over a pane's glass -- see `Painter::title_bar`.
+///
+/// Only the tabs that are whole between the ends, and nothing to paint
+/// back past them: the glass cannot be painted back.
+///
+/// And the tab being read joined to nothing. Joined, it is a piece of the
+/// page standing up into the bar, in the page's colour -- and the page
+/// under the bar is the pane there, so it was the file's tab bending out
+/// into the settings. Only the nearest thing on screen wears the mark
+/// (`ui::in_front`): the tab keeps its ink, which says which file is
+/// behind, and gives up the shape that says the keys are in it.
+pub(crate) fn over_a_pane(strip: &Painted) -> Painted {
+    let tabs = match strip.cut {
+        Some((start, end)) => strip
             .tabs
             .iter()
             .filter(|tab| {
@@ -515,7 +527,12 @@ pub(crate) fn whole_between(strip: &Painted, (start, end): (f32, f32)) -> Painte
             })
             .cloned()
             .collect(),
+        None => strip.tabs.clone(),
+    };
+    Painted {
+        tabs,
         cut: None,
+        joined: false,
         ..strip.clone()
     }
 }
@@ -727,14 +744,14 @@ mod tests {
     /// Over a pane's glass only the whole tabs are drawn, and nothing is
     /// painted back past the ends.
     ///
-    /// Deliberate break: keep `cut` in `whole_between`. The bar over a list
+    /// Deliberate break: keep `cut` in `over_a_pane`. The bar over a list
     /// that runs up under it then paints two squares of the page over the
     /// list's glass, at either end of the row.
     #[test]
     fn over_a_pane_only_whole_tabs_are_drawn() {
         let painted = strip(0).painted(true).expect("a strip");
-        let cut = painted.cut.expect("tabs past the end");
-        let whole = whole_between(&painted, cut);
+        assert!(painted.cut.is_some(), "tabs past the end");
+        let whole = over_a_pane(&painted);
         assert_eq!(whole.cut, None);
         assert_eq!(
             whole
@@ -745,6 +762,27 @@ mod tests {
             [0, 1, 2, 3, 4, 5],
             "the seventh is cut by the end"
         );
+    }
+
+    /// Over a pane the tab being read is joined to nothing, and every tab
+    /// is still there where none is cut.
+    ///
+    /// Deliberate break: leave `joined: false` out of `over_a_pane`. The
+    /// file's tab then bends out into the settings' glass in the page's
+    /// colour, which is what the review of the bar over a pane on macOS
+    /// found. What wants a device is the painter reading `joined`, which
+    /// was checked by hand.
+    #[test]
+    fn over_a_pane_the_tab_being_read_joins_nothing() {
+        let mut few = Strip::default();
+        few.told((0..3).map(|at| tab(at, at == 1)).collect());
+        few.lay(Some(room()), |_, _| 4.0, Instant::now(), false);
+        let painted = few.painted(true).expect("a strip");
+        assert!(painted.joined, "over the page, it joins it");
+        let over = over_a_pane(&painted);
+        assert!(!over.joined);
+        assert_eq!(over.tabs.len(), 3, "nothing is cut, so nothing goes");
+        assert!(over.tabs[1].reading, "and it keeps its ink");
     }
 
     /// The row slides to where it is going, a frame at a time, and stops
