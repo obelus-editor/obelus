@@ -479,6 +479,11 @@ struct Showing {
     /// kept it -- see `Painter::recolour`. Kept the way a pane's leaving
     /// is, and with nothing going: what goes is all of it.
     recolouring: Option<Recolouring>,
+    /// The marks said while it waits, in the new theme's ink: handed to the
+    /// painter only once it has kept the screen going, because a new ink is
+    /// every mark it had drawn let go, and the screen going would have them
+    /// in the colours it is going to.
+    carried: Vec<(String, bool, String, obelus_ui::image::Palette)>,
     /// And on the frame being laid out.
     paning: Vec<Joined>,
     /// And the ones the frame being laid out has asked for so far.
@@ -590,6 +595,7 @@ impl Showing {
             panes: Vec::new(),
             left: None,
             recolouring: None,
+            carried: Vec::new(),
             paning: Vec::new(),
             // The blink is asked once, on the way up: it is a question
             // about the system rather than about this window.
@@ -1293,7 +1299,9 @@ impl ApplicationHandler<Waking> for Showing {
                             svg,
                             palette,
                         } => {
-                            if let Some(painter) = self.painter.as_mut() {
+                            if self.recolouring.is_some() {
+                                self.carried.push((id, focused, svg, palette));
+                            } else if let Some(painter) = self.painter.as_mut() {
                                 painter.carries(id, focused, svg, palette);
                             }
                         }
@@ -1816,6 +1824,11 @@ impl ApplicationHandler<Waking> for Showing {
                         painter.titled(self.titled);
                         painter.recolour(&was.page, fonts, was.said(), going);
                     }
+                }
+                // Whether or not it was kept: a screen of another size lets
+                // go of it without a redraw, and these are the new theme's.
+                for (id, focused, svg, palette) in self.carried.drain(..) {
+                    painter.carries(id, focused, svg, palette);
                 }
                 // The picture that went has gone down into the page's colour,
                 // so what takes its place is hung, and comes up.
