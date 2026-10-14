@@ -1656,6 +1656,14 @@ impl ApplicationHandler<Waking> for Showing {
                         filled_with(window, self.ground);
                         window.set_visible(true);
                         self.shown = true;
+                        // Asked rather than assumed: a window the system
+                        // brought up behind the one the reader is in is
+                        // never told it lost the keys, because it never had
+                        // them -- see `elsewhere`. And `Focused(true)` says
+                        // so when it does get them.
+                        let focused = window.has_focus();
+                        self.active = focused;
+                        self.motion.focused(focused, Instant::now());
                     }
                     self.redraw();
                 } else if rehung && self.shown {
@@ -1925,11 +1933,12 @@ impl ApplicationHandler<Waking> for Showing {
                     self.redraw();
                 }
             }
-            // Drawn again for a bar Obelus draws, whose marks are fainter
-            // on a window without the keys.
+            // Drawn again for the caret, which a window without the keys
+            // does not show, and for a bar Obelus draws, whose marks are
+            // fainter there.
             WindowEvent::Focused(true) => {
                 self.active = true;
-                if self.bar.is_some() {
+                if self.motion.focused(true, Instant::now()) || self.bar.is_some() {
                     self.redraw();
                 }
             }
@@ -1940,7 +1949,7 @@ impl ApplicationHandler<Waking> for Showing {
             // words rather than reaching the program.
             WindowEvent::Focused(false) => {
                 self.active = false;
-                if self.bar.is_some() {
+                if self.motion.focused(false, Instant::now()) || self.bar.is_some() {
                     self.redraw();
                 }
                 if self.modifiers.shift_key() {

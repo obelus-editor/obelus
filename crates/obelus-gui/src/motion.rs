@@ -880,6 +880,12 @@ pub(crate) struct Motion {
     /// does, at the rate the system was asked for, and a reader who wants
     /// none says so to their desktop.
     animates: bool,
+    /// Whether the window has the reader's keys.
+    ///
+    /// A caret is where the next key goes, and a window without the keys
+    /// has no next key: one left lit there is a second caret on the
+    /// desktop, beside the one in the window the reader is typing in.
+    focused: bool,
     blink: Blinking,
     caret: Glide,
     pane: Arriving,
@@ -943,6 +949,7 @@ impl Motion {
         let now = Instant::now();
         Self {
             animates: true,
+            focused: true,
             blink: Blinking {
                 how: blink,
                 lit: true,
@@ -1018,6 +1025,26 @@ impl Motion {
         self.blink.stirred(now)
     }
 
+    /// The window has the reader's keys, or has lost them. Says whether
+    /// that alone is a reason to draw again.
+    ///
+    /// Coming back is a stir: the caret is solid at once and blinks from
+    /// there, rather than coming back in whatever half of the cycle it was
+    /// left in -- which could be the dark one. Going takes a flight in the
+    /// air with it, which would be every frame spent drawing no caret.
+    pub(crate) fn focused(&mut self, on: bool, now: Instant) -> bool {
+        let changed = self.focused != on;
+        self.focused = on;
+        if !on {
+            self.caret.from = None;
+            return changed;
+        }
+        // `|` and not `||`: the stir is owed whether or not anything
+        // changed, and one that lit a dark caret is a frame on its own --
+        // the system saying so twice is not a reason to leave it dark.
+        self.blink.stirred(now) | changed
+    }
+
     /// The page's caret is somewhere else than it was.
     pub(crate) fn caret_moved(
         &mut self,
@@ -1035,7 +1062,8 @@ impl Motion {
             self.caret.from = None;
             return;
         };
-        if self.animates && was != is {
+        // Nor in a window without the keys, where there is no caret to fly.
+        if self.animates && self.focused && was != is {
             self.caret.moved(was, is, now);
         }
     }
@@ -1237,7 +1265,7 @@ impl Motion {
         // gone out -- which is the frame that takes it off the screen.
         let unlit = !self.fading.is_empty();
         self.fading.retain(|fading| fading.lit(now).is_some());
-        let blinked = self.blink.advance(now, caret);
+        let blinked = self.blink.advance(now, caret && self.focused);
         // A step, which `advance` speaks for, because nothing else would
         // ask for the frame: the turn is a moment to `wake`, and a moment
         // arriving draws nothing on its own -- see `wants_a_frame`.
@@ -1285,7 +1313,9 @@ impl Motion {
         }
         soonest(
             soonest(
-                self.blink.wake(now, caret),
+                // Nothing to blink in a window without the keys, so
+                // nothing to wake for.
+                self.blink.wake(now, caret && self.focused),
                 self.sheen_due(now).map(Wake::At),
             ),
             // The step after a due one, which `advance` is about to draw:
@@ -1358,7 +1388,7 @@ impl Motion {
             // A caret on its way is drawn whatever half of the blink it is
             // in: one that went dark mid-flight is a caret the eye loses in
             // the middle of following it.
-            caret: self.blink.lit || self.caret.moving(now),
+            caret: self.focused && (self.blink.lit || self.caret.moving(now)),
             drift: self.caret.drift(now),
             pane: self.pane.along(now),
             leaving: self.leaving.along(now),
@@ -1908,6 +1938,53 @@ mod tests {
         assert!(motion.moving(base).caret);
         assert!(motion.advance(base + blinking().every, true));
         assert!(!motion.moving(base).caret);
+    }
+
+    /// Break: drop `self.focused &&` from `Motion::moving` and the caret
+    /// stays lit in a window the reader has left; from `advance` and it
+    /// goes on blinking there; from `wake` and that window wakes twice a
+    /// second to blink nothing; from `caret_moved`, or the `from = None` in
+    /// `Motion::focused`, and it wakes every frame to fly a caret nobody
+    /// sees.
+    #[test]
+    fn a_window_without_the_keys_has_no_caret_and_asks_for_nothing() {
+        let base = Instant::now();
+        let mut motion = Motion::new(Some(blinking()));
+        motion.stirred(base);
+        motion.caret_moved(Some(at(0, 0)), Some(at(0, 5)), base);
+        assert!(motion.focused(false, base), "losing the keys is a frame");
+        assert!(!motion.focused(false, base), "and losing them again is not");
+        assert!(!motion.moving(base).caret, "lit, and in flight, and away");
+        assert_eq!(motion.wake(base, true), None);
+        let later = base + blinking().every;
+        assert!(!motion.advance(later, true), "nothing blinks while away");
+        motion.caret_moved(Some(at(0, 5)), Some(at(0, 9)), later);
+        assert_eq!(motion.wake(later, true), None, "nor flies");
+    }
+
+    /// Break: drop the stir from `Motion::focused` and a caret left in the
+    /// dark half comes back dark; answer `changed` alone and a second
+    /// word that the window has the keys stirs a dark caret and draws
+    /// nothing for it.
+    #[test]
+    fn the_keys_coming_back_light_the_caret_and_say_so() {
+        let base = Instant::now();
+        let mut motion = Motion::new(Some(blinking()));
+        motion.stirred(base);
+        let dark = base + blinking().every;
+        assert!(motion.advance(dark, true));
+        assert!(motion.focused(true, dark), "already had them, but dark");
+        assert!(motion.moving(dark).caret);
+        assert!(!motion.focused(true, dark), "lit and had them: nothing new");
+        let again = dark + blinking().every;
+        assert!(motion.advance(again, true));
+        motion.focused(false, again);
+        assert!(motion.focused(true, again));
+        assert!(motion.moving(again).caret, "back with the keys, and lit");
+        assert_eq!(
+            motion.wake(again, true),
+            Some(Wake::At(again + blinking().every))
+        );
     }
 
     /// Break: drop the `settled` arm and a window nobody is at blinks all
