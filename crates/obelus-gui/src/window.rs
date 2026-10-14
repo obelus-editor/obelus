@@ -1656,6 +1656,14 @@ impl ApplicationHandler<Waking> for Showing {
                         filled_with(window, self.ground);
                         window.set_visible(true);
                         self.shown = true;
+                        // Asked rather than assumed: a window the system
+                        // brought up behind the one the reader is in is
+                        // never told it lost the keys, because it never had
+                        // them -- see `elsewhere`. And `Focused(true)` says
+                        // so when it does get them.
+                        let focused = window.has_focus();
+                        self.active = focused;
+                        self.motion.focused(focused, Instant::now());
                     }
                     self.redraw();
                 } else if rehung && self.shown {
