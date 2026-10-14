@@ -420,6 +420,8 @@ impl Painter {
             lifted: None,
             left: None,
             left_lifted: None,
+            before: None,
+            spare: None,
             gone: Vec::new(),
             plain_bindings,
             nothing,
@@ -554,6 +556,9 @@ impl Painter {
         self.left = None;
         self.left_lifted = None;
         self.gone.clear();
+        // And so is a theme that was going: the new one is simply there.
+        self.before = None;
+        self.spare = None;
     }
 
     /// A picture of the whole window, at the size it is now.
@@ -605,6 +610,8 @@ impl Painter {
         let lifted = (self.lifted.as_ref()).map(|whole| binder.bound(&whole.view, &self.nothing));
         let left_lifted =
             (self.left_lifted.as_ref()).map(|whole| binder.bound(&whole.view, &self.nothing));
+        let before = (self.before.as_ref()).map(|whole| binder.bound(&whole.view, &self.nothing));
+        let spare = (self.spare.as_ref()).map(|whole| binder.bound(&whole.view, &self.nothing));
         let plain = binder.bound(&self.nothing, &self.nothing);
         for (seen, bindings) in self.levels.iter_mut().zip(levels) {
             seen.bindings = bindings;
@@ -620,6 +627,12 @@ impl Painter {
             whole.bindings = bindings;
         }
         if let (Some(whole), Some(bindings)) = (self.left_lifted.as_mut(), left_lifted) {
+            whole.bindings = bindings;
+        }
+        if let (Some(whole), Some(bindings)) = (self.before.as_mut(), before) {
+            whole.bindings = bindings;
+        }
+        if let (Some(whole), Some(bindings)) = (self.spare.as_mut(), spare) {
             whole.bindings = bindings;
         }
         self.plain_bindings = plain;
@@ -683,6 +696,10 @@ impl Painter {
         if self.placed.going.is_none() {
             self.left = None;
             self.left_lifted = None;
+        }
+        if self.placed.recoloured.is_none() {
+            self.before = None;
+            self.spare = None;
         }
         let acquiring = Instant::now();
         let acquired = self.surface.get_current_texture();
@@ -797,6 +814,47 @@ impl Painter {
             self.encode(&mut encoder, &left.view);
         }
         self.queue.submit([encoder.finish()]);
+    }
+
+    /// The screen as it is, kept as a picture to draw going over the screen
+    /// in the theme that has just been chosen.
+    ///
+    /// Drawn once, the moment the theme changed, from the page as the
+    /// reader last saw it and while the painter still has the ground and
+    /// the hold's colours of the theme going -- the window calls this
+    /// before it hands over the new ones. `recoloured` is how far one
+    /// already going had got: then the picture kept is of the two of them
+    /// as they were being shown, the old one drawn into the new, so a
+    /// theme changed again part of the way through goes on from what was
+    /// on the screen rather than jumping back to all of the one before.
+    pub(crate) fn recolour(
+        &mut self,
+        page: &Page,
+        fonts: &mut Fonts,
+        said: Said<'_>,
+        recoloured: Option<f32>,
+    ) {
+        self.lay(
+            page,
+            fonts,
+            None,
+            Moving {
+                recoloured,
+                ..Moving::still()
+            },
+            said,
+        );
+        self.picture_while_wanted();
+        // Not the one being read: a pass cannot draw into what it samples.
+        let before = self.spare.take().unwrap_or_else(|| self.whole());
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("obelus recoloured"),
+            });
+        self.encode(&mut encoder, &before.view);
+        self.queue.submit([encoder.finish()]);
+        self.spare = self.before.replace(before);
     }
 
     /// What the passes that draw the laid-out frame are, into `target`.
@@ -983,6 +1041,16 @@ impl Painter {
                 }
             }
         }
+        // The screen in the theme it was in, going, over all of it --
+        // whichever way the frame under it was put together. A pass of its
+        // own for that reason, which only a frame with a theme going pays.
+        if let Some(recoloured) = placed.recoloured
+            && let Some(before) = &self.before
+        {
+            let mut pass = self.pass_over(encoder, "obelus recoloured", target);
+            pass.set_bind_group(0, &before.bindings, &[]);
+            drawing(&mut pass, recoloured);
+        }
     }
 
     /// What the page is drawn on, for the margin round the grid.
@@ -1070,6 +1138,35 @@ impl Painter {
         let right = at(rect[2] + self.margin[0], across).max(left);
         let bottom = at(rect[3] + self.margin[1], down).max(top);
         pass.set_scissor_rect(left, top, right - left, bottom - top);
+    }
+
+    /// A pass that draws over what is already in `target` rather than
+    /// clearing it first.
+    fn pass_over<'e>(
+        &self,
+        encoder: &'e mut wgpu::CommandEncoder,
+        label: &str,
+        target: &wgpu::TextureView,
+    ) -> wgpu::RenderPass<'e> {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some(label),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: target,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&self.pipeline);
+        pass.set_vertex_buffer(0, self.instances.slice(..));
+        pass
     }
 
     fn pass_on<'e>(

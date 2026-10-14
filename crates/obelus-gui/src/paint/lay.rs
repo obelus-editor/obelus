@@ -413,6 +413,15 @@ impl Painter {
             self.placed.glass_so_far = Some(self.quads.len());
             self.quads.push(glass);
         }
+        // The screen in the theme it was in, going over all of this -- see
+        // `Painter::recolour`. The whole window, margin and bar and all,
+        // because the theme is the colour of every part of it.
+        if let Some(gone) = moving.recoloured {
+            let start = self.quads.len();
+            let [left, top, wide, tall] = whole_window([across, down], margin);
+            self.slid([left, top, left + wide, top + tall], 0.0, 1.0 - gone);
+            self.placed.recoloured = Some(start..self.quads.len());
+        }
         // After the last glyph has been placed and before anything is drawn:
         // a glyph that found no room made the texture again, and every
         // binding is still reading the one before.

@@ -159,6 +159,19 @@ struct Left {
     going: Vec<Going>,
 }
 
+/// The screen in the theme that has just gone, and the two colours of that
+/// theme the window paints for itself -- see `Showing::recolouring`.
+///
+/// The colours with it rather than read off the painter when it is kept,
+/// because the painter is handed them at a redraw and the theme can change
+/// before the first: then what it had was the colour it starts at, and the
+/// screen going had a black margin round it.
+struct Recolouring {
+    was: Left,
+    ground: Color,
+    holding: (Color, Color),
+}
+
 impl Left {
     /// What it said, the way a frame being drawn says it.
     fn said(&self) -> Said<'_> {
@@ -462,6 +475,15 @@ struct Showing {
     panes: Vec<Joined>,
     /// The screen a pane has just gone from, until the painter has kept it.
     left: Option<Left>,
+    /// The screen in the theme that has just gone, until the painter has
+    /// kept it -- see `Painter::recolour`. Kept the way a pane's leaving
+    /// is, and with nothing going: what goes is all of it.
+    recolouring: Option<Recolouring>,
+    /// The marks said while it waits, in the new theme's ink: handed to the
+    /// painter only once it has kept the screen going, because a new ink is
+    /// every mark it had drawn let go, and the screen going would have them
+    /// in the colours it is going to.
+    carried: Vec<(String, bool, String, obelus_ui::image::Palette)>,
     /// And on the frame being laid out.
     paning: Vec<Joined>,
     /// And the ones the frame being laid out has asked for so far.
@@ -572,6 +594,8 @@ impl Showing {
             stacking: Vec::new(),
             panes: Vec::new(),
             left: None,
+            recolouring: None,
+            carried: Vec::new(),
             paning: Vec::new(),
             // The blink is asked once, on the way up: it is a question
             // about the system rather than about this window.
@@ -1198,6 +1222,33 @@ impl ApplicationHandler<Waking> for Showing {
                             self.page.drawn_on(ground);
                         }
                         Update::Holding { held, row } => self.holding = (held, row),
+                        // Kept now, while the page is the one the reader was
+                        // shown: the frame in the new colours is behind this
+                        // in the queue. The first of several, which is the
+                        // one on the screen.
+                        Update::Recoloured if self.shown && self.recolouring.is_none() => {
+                            let was = Left {
+                                page: Arc::new(self.page.clone()),
+                                marked: self.marked.clone(),
+                                capped: self.capped.clone(),
+                                ticked: self.ticked.clone(),
+                                spun: self.spun.clone(),
+                                showing: self.showing.clone(),
+                                ruled: self.ruled.clone(),
+                                sheened: self.sheened,
+                                parted: self.parted.clone(),
+                                stroked: self.stroked.clone(),
+                                paired: self.paired.clone(),
+                                stack: self.stack.clone(),
+                                going: Vec::new(),
+                            };
+                            self.recolouring = Some(Recolouring {
+                                was,
+                                ground: self.ground,
+                                holding: self.holding,
+                            });
+                        }
+                        Update::Recoloured => {}
                         Update::Wallpaper { number, hung } => {
                             if number > self.hung
                                 && let Some(painter) = self.painter.as_mut()
@@ -1248,7 +1299,9 @@ impl ApplicationHandler<Waking> for Showing {
                             svg,
                             palette,
                         } => {
-                            if let Some(painter) = self.painter.as_mut() {
+                            if self.recolouring.is_some() {
+                                self.carried.push((id, focused, svg, palette));
+                            } else if let Some(painter) = self.painter.as_mut() {
                                 painter.carries(id, focused, svg, palette);
                             }
                         }
@@ -1562,6 +1615,7 @@ impl ApplicationHandler<Waking> for Showing {
                 // when the window is resized.
                 if faces.is_some() || sized.is_some() {
                     self.left = None;
+                    self.recolouring = None;
                 }
                 if let Some(names) = faces {
                     // Which faces text is drawn in decides how wide a cell
@@ -1754,9 +1808,30 @@ impl ApplicationHandler<Waking> for Showing {
                 else {
                     return;
                 };
+                // The screen in the theme that went, before the painter is
+                // handed anything of the new one -- see `Painter::recolour`.
+                let now = Instant::now();
+                if let Some(Recolouring {
+                    was,
+                    ground,
+                    holding,
+                }) = self.recolouring.take()
+                {
+                    let going = self.motion.moving(now).recoloured;
+                    if self.motion.recolouring(now) {
+                        painter.drawn_on(ground);
+                        painter.holding(holding);
+                        painter.titled(self.titled);
+                        painter.recolour(&was.page, fonts, was.said(), going);
+                    }
+                }
+                // Whether or not it was kept: a screen of another size lets
+                // go of it without a redraw, and these are the new theme's.
+                for (id, focused, svg, palette) in self.carried.drain(..) {
+                    painter.carries(id, focused, svg, palette);
+                }
                 // The picture that went has gone down into the page's colour,
                 // so what takes its place is hung, and comes up.
-                let now = Instant::now();
                 if self.after_the_veil.is_some() && !self.motion.picture_still_going(now) {
                     let next = self.after_the_veil.take().flatten();
                     painter.hang(next.as_deref());
@@ -1813,6 +1888,7 @@ impl ApplicationHandler<Waking> for Showing {
                 // A screen of the old size, which a pane would leave from
                 // the wrong place: what was leaving is simply gone.
                 self.left = None;
+                self.recolouring = None;
                 if let Some(painter) = self.painter.as_mut() {
                     painter.resized(size.width, size.height);
                 }

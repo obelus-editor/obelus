@@ -116,6 +116,12 @@ pub(crate) enum Update {
         /// The picture, or nothing.
         hung: Option<Arc<crate::wallpaper::Hung>>,
     },
+    /// The theme is changing, and what is on the screen is in the one it
+    /// was in -- see `Drawing::recoloured`.
+    ///
+    /// The same journey as the ground, and ahead of it: what the window
+    /// keeps of the screen going is drawn in the ground it has until then.
+    Recoloured,
     /// What shape the caret is, and whose it is.
     ///
     /// Which is a fact about the frame it arrives with -- both depend on
@@ -1256,6 +1262,12 @@ impl obelus_app::app::Drawing for Telling {
         }
     }
 
+    fn recoloured(&self) {
+        if self.updates.send(Update::Recoloured).is_ok() {
+            (self.wake)();
+        }
+    }
+
     fn caret_is(&self, caret: Caret, whose: Option<Layer>, typing: bool) {
         // No wake: this arrives while a frame is being laid out, and the
         // frame's own end wakes the window a moment later. Waking here as
@@ -1826,6 +1838,10 @@ impl Page {
             }
             Update::Wallpaper { .. } => {
                 tracing::warn!("a wallpaper reached the page");
+                false
+            }
+            Update::Recoloured => {
+                tracing::warn!("a change of theme reached the page");
                 false
             }
         }

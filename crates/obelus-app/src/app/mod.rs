@@ -855,6 +855,13 @@ impl App {
         let Worn { colours, wallpaper } = worn.into();
         let moved = colours_said(&colours) != colours_said(&self.theme);
         let hung = wallpaper != self.wallpaper;
+        // Before the colours are said, so the front end is told while
+        // everything it has is still in the theme going.
+        if colours != self.theme
+            && let Some(drawing) = self.drawing.as_ref()
+        {
+            drawing.recoloured();
+        }
         self.theme_name = name.to_string();
         self.theme = colours;
         self.wallpaper = wallpaper;
@@ -1622,6 +1629,19 @@ pub trait Drawing: std::fmt::Debug + Send + Sync {
     /// file or its picture rewritten -- and once when the front end says
     /// who it is, the way the page's ground is.
     fn hang(&self, wallpaper: Option<&obelus_theme::Wallpaper>);
+
+    /// The theme is changing: what is on the screen now is in the one it
+    /// was in, and the next frame is in another.
+    ///
+    /// Said before anything else about the new theme, and only when a
+    /// colour in it is different -- a theme previewed is worn again on
+    /// every frame its list is open. A terminal has nothing to do with it:
+    /// it is drawn a cell at a time and is simply in the new colours. A
+    /// window keeps a picture of the screen it is leaving and lets it go
+    /// over the new one, so a change of theme is seen as one rather than
+    /// as every cell on the screen at once -- the cells cannot say this,
+    /// because scrolling a file changes as many of them.
+    fn recoloured(&self) {}
 }
 
 /// Lays out, scrolls and draws one frame.

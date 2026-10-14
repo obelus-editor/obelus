@@ -38,7 +38,7 @@ impl From<Theme> for Worn {
 }
 
 /// One colour per [`SyntaxKind`].
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SyntaxTheme {
     /// See [`SyntaxKind::Attribute`].
     pub attribute: Color,
@@ -191,7 +191,7 @@ pub const fn tint(base: Color, hue: Color, percent: u32) -> Color {
 }
 
 /// A complete set of colours.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Theme {
     /// Behind the text.
     pub background: Color,
