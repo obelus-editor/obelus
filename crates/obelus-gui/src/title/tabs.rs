@@ -449,8 +449,13 @@ impl Strip {
     }
 
     /// The strip as this frame paints it.
+    ///
+    /// Nothing while nothing is open -- the welcome screen, a start that
+    /// asks which project: the bar's shade is the ground the tabs stand on,
+    /// and drawn under none it is an empty row of tabs across the top of a
+    /// page that has nothing to put in it.
     pub(crate) fn painted(&self, active: bool) -> Option<Painted> {
-        let room = self.room?;
+        let room = self.room.filter(|_| !self.tabs.is_empty())?;
         let tabs = self
             .laid
             .iter()
@@ -683,6 +688,23 @@ mod tests {
         };
         few.lay(Some(narrow), |_, _| 4.0, Instant::now(), false);
         assert_eq!(few.covers(), None, "no room for a tab");
+    }
+
+    /// With nothing open there is nothing to paint, not an empty bar.
+    ///
+    /// Deliberate break: leave the filter out of `painted`. The strip is
+    /// painted with no tabs in it, which is the bar's shade drawn across
+    /// the top of the welcome screen.
+    #[test]
+    fn nothing_open_paints_no_strip() {
+        let mut strip = Strip::default();
+        strip.told(Vec::new());
+        strip.lay(Some(room()), |_, _| 4.0, Instant::now(), false);
+        assert_eq!(strip.painted(true), None);
+        assert_eq!(strip.covers(), None, "and the whole bar drags the window");
+        strip.told(vec![tab(0, true)]);
+        strip.lay(Some(room()), |_, _| 4.0, Instant::now(), false);
+        assert!(strip.painted(true).is_some(), "a tab, and the bar under it");
     }
 
     /// Over a different density the row is as far along itself as it was.
