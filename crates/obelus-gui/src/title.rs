@@ -167,11 +167,15 @@ fn tall(system: f64) -> f64 {
 ///
 /// Not an empty toolbar, which is how AppKit makes a bar taller of its own
 /// accord: the toolbar takes every press on the bar, so a tab could not be
-/// pressed and a press on one dragged the window. Asked again whenever the
-/// window is measured, because AppKit lays the bar out again at a resize
-/// and puts the buttons back where it keeps them. Left alone in full
-/// screen, where the bar is a window of its own that comes down when the
-/// pointer asks for it, and AppKit's layout there is the right one.
+/// pressed and a press on one dragged the window.
+///
+/// AppKit lays the bar out again whenever it likes and puts the buttons
+/// back at the top of it, so this is asked at every moment Zed found it
+/// does: whenever the window is measured, which is every resize and every
+/// way into and out of full screen; a new appearance (`follow`); and the
+/// window getting the keys or coming back into sight. Not in full screen
+/// itself, where the bar is a window of its own that comes down when the
+/// pointer asks for it, and has no room in the page to be the middle of.
 #[cfg(target_os = "macos")]
 pub(crate) fn centre_the_buttons(window: &Window) {
     use objc2_app_kit::{NSWindowButton, NSWindowStyleMask};
@@ -194,7 +198,8 @@ pub(crate) fn centre_the_buttons(window: &Window) {
     // taller from the top of the window down, or a button moved below its
     // foot would be one no press could reach.
     //
-    // Safe: AppKit's own views, asked on the thread it wants.
+    // Safe: `superview` is unsafe because AppKit does not keep the view it
+    // hands back alive for the caller, and objc2 retains it on the way out.
     let Some(bar) = (unsafe { close.superview().and_then(|buttons| buttons.superview()) }) else {
         return;
     };
