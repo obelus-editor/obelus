@@ -83,6 +83,15 @@ const UNVEIL: Duration = Duration::from_millis(700);
 /// it: quicker, because what is wanted is the next one.
 const VEIL: Duration = Duration::from_millis(400);
 
+/// How long the screen in the theme it was in takes to go, over the same
+/// screen in the one chosen.
+///
+/// The picture's going, so that a theme carrying one changes as one
+/// thing: its colours and its picture go down together, and the new
+/// picture comes up after them. On a clock of its own all the same, because
+/// most themes carry no picture and the colours change anyway.
+const RECOLOUR: Duration = VEIL;
+
 /// And how long it takes to go out.
 ///
 /// Slower than it came on, for the bar's reason: arriving is news and
@@ -406,6 +415,10 @@ pub(crate) struct Moving {
     /// And how much of the box with a frame round it is there, or `None`
     /// for one that is simply there. The same reason for the same shape.
     pub(crate) card: Option<f32>,
+    /// And how much of the screen in the theme it was in has gone, from
+    /// none to all of it, or `None` where the theme has not just changed --
+    /// see [`Motion::recolouring`].
+    pub(crate) recoloured: Option<f32>,
     /// And how bright the light round the cursor's pair of brackets is
     /// while it comes on, up to all of it, or `None` for one that is simply
     /// lit.
@@ -450,6 +463,7 @@ impl Moving {
             pane: None,
             leaving: None,
             card: None,
+            recoloured: None,
             pair: None,
             sheen: None,
             turn: None,
@@ -880,6 +894,8 @@ pub(crate) struct Motion {
     /// And going back down into it, before another takes its place or
     /// none does.
     veiling: Arriving,
+    /// The screen in the theme before going, over the one in the theme now.
+    recolouring: Arriving,
     /// The light round the cursor's pair of brackets, coming on.
     pair: Arriving,
     /// And how bright it was when it set out.
@@ -953,6 +969,10 @@ impl Motion {
                 opened: None,
                 takes: VEIL,
             },
+            recolouring: Arriving {
+                opened: None,
+                takes: RECOLOUR,
+            },
             pair: Arriving {
                 opened: None,
                 takes: LIGHT_UP,
@@ -984,6 +1004,7 @@ impl Motion {
             self.card.opened = None;
             self.unveiling.opened = None;
             self.veiling.opened = None;
+            self.recolouring.opened = None;
             self.pair.opened = None;
             self.fading.clear();
             self.bands.seen.clear();
@@ -1149,6 +1170,36 @@ impl Motion {
         self.unveiling.along(now).unwrap_or(1.0)
     }
 
+    /// The theme has changed, and the screen in the one it was in is to go
+    /// over the screen in this one rather than be gone at once. Says
+    /// whether it does, which is whether the window has to keep a picture
+    /// of the screen it is leaving: with nothing moving it simply changes.
+    ///
+    /// From the start again where one was still going: what is kept then
+    /// is the screen as it was being shown, part of the way through, so
+    /// the reader walking a list of themes with an arrow key sees each go
+    /// from where it had got to rather than come back at all of itself.
+    pub(crate) fn recolouring(&mut self, now: Instant) -> bool {
+        if !self.animates {
+            return false;
+        }
+        self.recolouring.opened = Some(now);
+        true
+    }
+
+    /// How much of the screen in the theme it was in has gone, or `None`
+    /// where none is going.
+    ///
+    /// In a straight line, the way a picture goes down into the page: what
+    /// goes is not arriving anywhere, and eased like a thing arriving the
+    /// old colours were mostly gone in the first few frames -- a change at
+    /// once with a smear after it.
+    fn recoloured(&self, now: Instant) -> Option<f32> {
+        let opened = self.recolouring.opened?;
+        let gone = now.duration_since(opened).as_secs_f32() / RECOLOUR.as_secs_f32();
+        (gone < 1.0).then_some(gone)
+    }
+
     /// A box with a frame round it opened over the page.
     ///
     /// The opening only: a box that is closed leaves nothing to draw --
@@ -1180,6 +1231,7 @@ impl Motion {
         let lit = self.pair.settle(now);
         let unveiled = self.unveiling.settle(now);
         let veiled = self.veiling.settle(now);
+        let recoloured = self.recolouring.settle(now);
         // Drawn differently while any is going out, and once the last has
         // gone out -- which is the frame that takes it off the screen.
         let unlit = !self.fading.is_empty();
@@ -1199,6 +1251,7 @@ impl Motion {
             || lit
             || unveiled
             || veiled
+            || recoloured
             || unlit
             || blinked
             || turned
@@ -1216,6 +1269,7 @@ impl Motion {
             || self.pair.moving(now)
             || self.unveiling.moving(now)
             || self.veiling.moving(now)
+            || self.recolouring.moving(now)
             || self.fading.iter().any(|fading| fading.lit(now).is_some())
             || self.bands.moving(now)
             || (self.animates && self.bars.moving(now))
@@ -1308,6 +1362,7 @@ impl Motion {
             pane: self.pane.along(now),
             leaving: self.leaving.along(now),
             card: self.card.along(now),
+            recoloured: self.recoloured(now),
             pair: self.pair_lit(now),
             sheen: self.sheen(now),
             turn: self.turn(now),
@@ -2790,5 +2845,58 @@ mod tests {
         still.picture_hung(base);
         assert_eq!(still.picture_shown(base), 1.0, "simply there");
         assert!(!still.picture_going(base), "simply gone");
+    }
+
+    /// The screen in the theme it was in goes in a straight line, wants
+    /// every frame while it does, and is then simply the new one.
+    ///
+    /// Deliberate breaks: leave the recolouring out of `wake`, and the
+    /// window stops drawing with the old colours a third of the way gone;
+    /// read `recolouring.along` (which eases) instead of the straight
+    /// line, and the half-way check fails; leave it out of `advance`, and
+    /// the frame it finishes on is not drawn, so the last of the old theme
+    /// stays on the screen.
+    #[test]
+    fn a_theme_goes_over_the_one_chosen_and_then_is_simply_gone() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        assert_eq!(motion.moving(base).recoloured, None, "nothing has changed");
+        assert!(motion.recolouring(base));
+        assert_eq!(motion.moving(base).recoloured, Some(0.0));
+        assert_eq!(motion.wake(base, false), Some(Wake::EveryFrame));
+        let half = motion
+            .moving(base + RECOLOUR / 2)
+            .recoloured
+            .expect("going");
+        assert!((half - 0.5).abs() < 0.01, "a straight line: {half}");
+        assert_eq!(motion.moving(base + RECOLOUR).recoloured, None);
+        assert_eq!(motion.wake(base + RECOLOUR, false), None);
+        assert!(
+            motion.advance(base + RECOLOUR, false),
+            "the frame it ends on"
+        );
+        assert!(
+            !motion.advance(base + RECOLOUR * 2, false),
+            "and then nothing"
+        );
+    }
+
+    /// With nothing moving a theme simply changes, and turning animation
+    /// off part of the way through finishes it at once.
+    ///
+    /// Deliberate break: leave the recolouring out of `animates`, and the
+    /// second check sees the old colours still going.
+    #[test]
+    fn a_theme_with_nothing_moving_simply_changes() {
+        let base = Instant::now();
+        let mut still = Motion::new(None);
+        still.animates(false);
+        assert!(!still.recolouring(base), "nothing to keep");
+        assert_eq!(still.moving(base).recoloured, None);
+
+        let mut motion = Motion::new(None);
+        motion.recolouring(base);
+        motion.animates(false);
+        assert_eq!(motion.moving(base + RECOLOUR / 4).recoloured, None);
     }
 }

@@ -462,6 +462,10 @@ struct Showing {
     panes: Vec<Joined>,
     /// The screen a pane has just gone from, until the painter has kept it.
     left: Option<Left>,
+    /// The screen in the theme that has just gone, until the painter has
+    /// kept it -- see `Painter::recolour`. Kept the way a pane's leaving
+    /// is, and with nothing going: what goes is all of it.
+    recolouring: Option<Left>,
     /// And on the frame being laid out.
     paning: Vec<Joined>,
     /// And the ones the frame being laid out has asked for so far.
@@ -572,6 +576,7 @@ impl Showing {
             stacking: Vec::new(),
             panes: Vec::new(),
             left: None,
+            recolouring: None,
             paning: Vec::new(),
             // The blink is asked once, on the way up: it is a question
             // about the system rather than about this window.
@@ -1198,6 +1203,28 @@ impl ApplicationHandler<Waking> for Showing {
                             self.page.drawn_on(ground);
                         }
                         Update::Holding { held, row } => self.holding = (held, row),
+                        // Kept now, while the page is the one the reader was
+                        // shown: the frame in the new colours is behind this
+                        // in the queue. The first of several, which is the
+                        // one on the screen.
+                        Update::Recoloured if self.shown && self.recolouring.is_none() => {
+                            self.recolouring = Some(Left {
+                                page: Arc::new(self.page.clone()),
+                                marked: self.marked.clone(),
+                                capped: self.capped.clone(),
+                                ticked: self.ticked.clone(),
+                                spun: self.spun.clone(),
+                                showing: self.showing.clone(),
+                                ruled: self.ruled.clone(),
+                                sheened: self.sheened,
+                                parted: self.parted.clone(),
+                                stroked: self.stroked.clone(),
+                                paired: self.paired.clone(),
+                                stack: self.stack.clone(),
+                                going: Vec::new(),
+                            });
+                        }
+                        Update::Recoloured => {}
                         Update::Wallpaper { number, hung } => {
                             if number > self.hung
                                 && let Some(painter) = self.painter.as_mut()
@@ -1562,6 +1589,7 @@ impl ApplicationHandler<Waking> for Showing {
                 // when the window is resized.
                 if faces.is_some() || sized.is_some() {
                     self.left = None;
+                    self.recolouring = None;
                 }
                 if let Some(names) = faces {
                     // Which faces text is drawn in decides how wide a cell
@@ -1754,9 +1782,17 @@ impl ApplicationHandler<Waking> for Showing {
                 else {
                     return;
                 };
+                // The screen in the theme that went, before the painter is
+                // handed anything of the new one -- see `Painter::recolour`.
+                let now = Instant::now();
+                if let Some(was) = self.recolouring.take() {
+                    let going = self.motion.moving(now).recoloured;
+                    if self.motion.recolouring(now) {
+                        painter.recolour(&was.page, fonts, was.said(), going);
+                    }
+                }
                 // The picture that went has gone down into the page's colour,
                 // so what takes its place is hung, and comes up.
-                let now = Instant::now();
                 if self.after_the_veil.is_some() && !self.motion.picture_still_going(now) {
                     let next = self.after_the_veil.take().flatten();
                     painter.hang(next.as_deref());
@@ -1813,6 +1849,7 @@ impl ApplicationHandler<Waking> for Showing {
                 // A screen of the old size, which a pane would leave from
                 // the wrong place: what was leaving is simply gone.
                 self.left = None;
+                self.recolouring = None;
                 if let Some(painter) = self.painter.as_mut() {
                     painter.resized(size.width, size.height);
                 }

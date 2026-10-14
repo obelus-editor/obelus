@@ -237,6 +237,10 @@ pub(crate) struct Painter {
     /// what it is drawn leaving out of (`keep`). Made there, and let go by
     /// the first frame with nothing leaving.
     left: Option<Whole>,
+    /// The screen in the theme it was in, drawn once at the moment the
+    /// theme changed and let go by the first frame it has gone from -- see
+    /// `recolour`. A window's worth of memory for the 400ms it is drawn.
+    before: Option<Whole>,
     /// And what was written on the panes that went, on nothing: `left`
     /// holds their glass and not what was on it, so the glass can stay
     /// over what it showed while what was on it goes -- the way a pane
@@ -327,6 +331,10 @@ struct Placed {
     kept_from: Option<usize>,
     /// And the pieces that put what was written on them back.
     going_lifted: Option<Range<usize>>,
+    /// The screen in the theme it was in, over the whole window and
+    /// going -- see `Painter::recolour`. Drawn last, over everything,
+    /// because everything changed colour.
+    recoloured: Option<Range<usize>>,
     /// The bar Obelus draws, laid over a pane coming in or going out
     /// through it rather than under it -- see `bar_on_top` in `lay`. Among
     /// the pieces where the screen is composed; drawn on its own after

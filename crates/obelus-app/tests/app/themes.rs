@@ -937,6 +937,91 @@ fn the_window_is_told_which_picture_is_under_the_page() {
     );
 }
 
+/// The window is told the theme is changing when a colour in it does --
+/// walking to another in the list, and escape putting the first back --
+/// and not when it is told who is drawing, nor on every frame the list is
+/// open, which wears the theme it is on again.
+///
+/// Deliberate breaks: `set_theme` telling the window every time (each of
+/// the list's frames then says it again), and telling it after the colours
+/// rather than before (the window's ground is then already the new one
+/// when it keeps the screen that is going, which the order checked here
+/// catches).
+#[test]
+fn the_window_is_told_when_the_theme_changes() {
+    let scratch = reader("recoloured");
+    std::fs::write(
+        scratch.join("config.toml"),
+        "theme = \"dark\"
+",
+    )
+    .expect("the settings");
+
+    let mut app = open(&scratch);
+    let told = std::sync::Arc::new(Recolours::default());
+    app.drawn_by(told.clone());
+    told.0.lock().expect("what was said").clear();
+
+    dispatch::dispatch(&mut app, Command::ThemeSelect);
+    let _ = support::render(&mut app, 70, 14);
+    assert_eq!(told.said(), Vec::<&str>::new(), "opening the list");
+    support::press(&mut app, KeyCode::Down);
+    let _ = support::render(&mut app, 70, 14);
+    let _ = support::render(&mut app, 70, 14);
+    assert_eq!(
+        told.said(),
+        vec!["recoloured", "ground"],
+        "walking to the next theme"
+    );
+
+    support::press(&mut app, KeyCode::Esc);
+    let _ = support::render(&mut app, 70, 14);
+    assert_eq!(
+        told.said(),
+        vec!["recoloured", "ground", "recoloured", "ground"],
+        "escape putting dark back"
+    );
+}
+
+/// What a window is told about the theme changing, in the order it is told.
+#[derive(Debug, Default)]
+struct Recolours(std::sync::Mutex<Vec<&'static str>>);
+
+impl obelus_app::app::Drawing for Recolours {
+    fn recoloured(&self) {
+        self.0.lock().expect("what was said").push("recoloured");
+    }
+
+    fn drawn_on(&self, _: ratatui::style::Color) {
+        self.0.lock().expect("what was said").push("ground");
+    }
+
+    // The rest are other tests' -- see `settings`.
+    fn hang(&self, _: Option<&obelus_theme::Wallpaper>) {}
+
+    fn text_size(&self, _: usize) {}
+
+    fn animates(&self, _: bool) {}
+
+    fn use_fonts(&self, _: &[String]) {}
+
+    fn holding(&self, _: ratatui::style::Color, _: ratatui::style::Color) {}
+
+    fn caret_is(
+        &self,
+        _: obelus_app::app::Caret,
+        _: Option<obelus_component::layers::Layer>,
+        _: bool,
+    ) {
+    }
+}
+
+impl Recolours {
+    fn said(&self) -> Vec<&'static str> {
+        self.0.lock().expect("what was said").clone()
+    }
+}
+
 /// One theme as the registry's index lists it.
 fn listed(name: &str, group: obelus_themes::Group, commit: &str) -> obelus_themes::Listed {
     obelus_themes::Listed {
