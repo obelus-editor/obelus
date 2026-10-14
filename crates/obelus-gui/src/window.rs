@@ -1925,11 +1925,12 @@ impl ApplicationHandler<Waking> for Showing {
                     self.redraw();
                 }
             }
-            // Drawn again for a bar Obelus draws, whose marks are fainter
-            // on a window without the keys.
+            // Drawn again for the caret, which a window without the keys
+            // does not show, and for a bar Obelus draws, whose marks are
+            // fainter there.
             WindowEvent::Focused(true) => {
                 self.active = true;
-                if self.bar.is_some() {
+                if self.motion.focused(true, Instant::now()) || self.bar.is_some() {
                     self.redraw();
                 }
             }
@@ -1940,7 +1941,7 @@ impl ApplicationHandler<Waking> for Showing {
             // words rather than reaching the program.
             WindowEvent::Focused(false) => {
                 self.active = false;
-                if self.bar.is_some() {
+                if self.motion.focused(false, Instant::now()) || self.bar.is_some() {
                     self.redraw();
                 }
                 if self.modifiers.shift_key() {
