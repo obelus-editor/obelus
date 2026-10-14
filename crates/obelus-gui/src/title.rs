@@ -836,6 +836,20 @@ mod tests {
         assert!(dark((0x64, 0x64, 0xff)), "a blue this pale is still dark");
     }
 
+    /// The system's bar is made taller, a taller one is left alone, and
+    /// full screen -- no bar, or a hair of one -- is still no bar.
+    ///
+    /// Deliberate breaks: `system > 0.0` for the first arm, and the hair
+    /// is a whole bar; `system` alone for its answer, and the system's bar
+    /// stays a sliver; `TALL` alone, and a taller one is cut down.
+    #[test]
+    fn the_bar_is_tall_enough_for_tabs_wherever_there_is_one() {
+        assert!((tall(28.0) - TALL).abs() < f64::EPSILON, "the system's bar");
+        assert!((tall(52.0) - 52.0).abs() < f64::EPSILON, "a taller one");
+        assert!(tall(0.0).abs() < f64::EPSILON, "full screen");
+        assert!(tall(1e-9).abs() < f64::EPSILON, "a hair of a bar");
+    }
+
     /// A window 1000 pixels wide with a bar 31 tall, buttons 46 wide and
     /// an edge of 8, which is the system's at its standard density.
     fn on(x: f32, y: f32, maximised: bool) -> Part {
