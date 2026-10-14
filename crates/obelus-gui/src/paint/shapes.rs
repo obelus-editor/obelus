@@ -29,13 +29,15 @@ impl Painter {
     /// and nothing on the bar is theirs to press while it is there
     /// (`Strip::cover`).
     ///
+    /// In the screen a pane went from as well, where the buttons are left
+    /// out: what the pane's glass over the bar read there is what it read
+    /// while it rested, and with the tabs left out of it too, the glass
+    /// going was the bar's shade and the tabs blinking off under it.
+    ///
     /// In the window's pixels less the grid's origin, which is where every
     /// quad is placed: the bar is above the grid, so its rows come out
     /// negative.
     pub(super) fn tabs_on_the_bar(&mut self, across: f32, margin: [f32; 2], fonts: &mut Fonts) {
-        if self.bar_left_out {
-            return;
-        }
         let dark = crate::title::dark(ground_of(self.ground));
         if let Some(strip) = self.strip.take() {
             self.tab_strip(&strip, across, margin, fonts, dark);
@@ -50,7 +52,7 @@ impl Painter {
     ///
     /// In the same pixels as the tabs.
     pub(super) fn buttons_on_the_bar(&mut self, across: f32, margin: [f32; 2]) {
-        if self.bar_left_out {
+        if self.buttons_left_out {
             return;
         }
         let dark = crate::title::dark(ground_of(self.ground));

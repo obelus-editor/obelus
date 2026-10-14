@@ -406,7 +406,7 @@ impl Painter {
             titled: 0.0,
             bar: None,
             strip: None,
-            bar_left_out: false,
+            buttons_left_out: false,
             holding: (Color::Reset, Color::Reset),
             quads: Vec::new(),
             placed: Placed::default(),
@@ -762,9 +762,9 @@ impl Painter {
     /// frame of the leaving reads the same one.
     pub(crate) fn keep(&mut self, page: &Page, fonts: &mut Fonts, said: Said<'_>, going: &[Going]) {
         let cell = fonts.cell();
-        self.bar_left_out = true;
+        self.buttons_left_out = true;
         self.lay(page, fonts, Moving::still(), said);
-        self.bar_left_out = false;
+        self.buttons_left_out = false;
         // Cut where its glass is, which is where it was cut from what was
         // under it: the half row above a list's rule is the file, and taken
         // along it would be a strip of the file going down with the list.

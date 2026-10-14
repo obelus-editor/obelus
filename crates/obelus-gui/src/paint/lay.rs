@@ -109,7 +109,7 @@ impl Painter {
             .map(|over| (over.area.y, over.joined))
             .collect();
         let bar_on_top = bar_on_top(
-            match self.bar_left_out {
+            match self.buttons_left_out {
                 true => 0.0,
                 false => self.titled,
             },

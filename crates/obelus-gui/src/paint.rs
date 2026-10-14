@@ -185,10 +185,12 @@ pub(crate) struct Painter {
     /// The tabs along the bar, on any bar the page runs up under -- see
     /// `title::tabs`.
     strip: Option<crate::title::Painted>,
-    /// Whether the bar is left out of the frame being laid, which is the
-    /// screen a pane went from being kept: the bar does not go with the
-    /// pane, and the frame it goes over draws its own -- see `keep`.
-    bar_left_out: bool,
+    /// Whether the bar's buttons are left out of the frame being laid,
+    /// which is the screen a pane went from being kept: they do not go with
+    /// the pane, and the frame it goes over draws its own -- see `keep`.
+    /// Not the tabs, which are the page's and under the pane's glass there
+    /// as they were while it rested (`tabs_on_the_bar`).
+    buttons_left_out: bool,
     /// Which two colours mean the reader has hold of something: a run of
     /// characters, and the row their keys are on -- see
     /// `Drawing::holding`.
