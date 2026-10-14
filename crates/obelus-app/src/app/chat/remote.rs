@@ -915,7 +915,12 @@ impl App {
     }
 }
 
-/// A code to pair with: six characters nobody misreads, in two halves.
+/// A code to pair with: six digits, because it is typed on a phone, and
+/// a phone's keyboard for digits is one press away.
+///
+/// Six and not four: nothing counts the wrong ones, and any group the bot
+/// is in may try while the code lasts, so ten thousand is a list a script
+/// gets through in five minutes and a million is not.
 ///
 /// From the hasher std seeds with randomness, the way a window's key is: a
 /// code lasts five minutes and is tried by typing it, so what it has to be
@@ -923,24 +928,13 @@ impl App {
 fn a_code() -> String {
     use std::hash::{BuildHasher as _, Hasher as _};
 
-    const LETTERS: &[u8] = b"ABCDEFGHJKMNPQRSTUVWXYZ23456789";
     let mut hasher = std::hash::RandomState::new().build_hasher();
     hasher.write_u32(std::process::id());
-    let mut drawn = hasher.finish();
-    let mut code = String::new();
-    for at in 0..6 {
-        if at == 3 {
-            code.push('-');
-        }
-        let index = usize::try_from(drawn % LETTERS.len() as u64).unwrap_or(0);
-        code.push(char::from(LETTERS[index]));
-        drawn /= LETTERS.len() as u64;
-    }
-    code
+    format!("{:06}", hasher.finish() % 1_000_000)
 }
 
-/// Whether what somebody sent is the code, however they typed it: in small
-/// letters, without the dash, with a space either side.
+/// Whether what somebody sent is the code, however they typed it: split
+/// in two, with a space either side.
 fn same_code(code: &str, sent: &str) -> bool {
     let plain = |said: &str| {
         said.chars()
