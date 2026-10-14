@@ -882,6 +882,8 @@ impl App {
                     said: said.to_string(),
                     from,
                     at: here,
+                    took: false,
+                    version: None,
                 });
             }
         }
@@ -903,10 +905,23 @@ impl App {
         // the buffer carries where it begins across whatever else changed
         // the file since, and says nothing where something changed the
         // letters themselves.
-        let over = before.and_then(|_| buffer.spelled());
+        let over = before.as_ref().and_then(|_| buffer.spelled());
+        // Part of the last spelling's step only where nothing else has
+        // changed the file since: a step joins whatever came before it, and
+        // an agent's edit made under a word being spelled is the agent's,
+        // not a thing the reader's undo of the word should take with it.
+        let ours = before
+            .as_ref()
+            .is_some_and(|before| before.version == Some(buffer.version()));
         let at = self.written_here();
         let (span, doing) = match over {
-            Some(span) => (span, obelus_buffer::undo::Doing::Joined),
+            Some(span) => (
+                span,
+                match ours {
+                    true => obelus_buffer::undo::Doing::Joined,
+                    false => obelus_buffer::undo::Doing::Whole,
+                },
+            ),
             None => (
                 buffer.selection().unwrap_or(Span {
                     line: cursor.line,
@@ -920,6 +935,14 @@ impl App {
         if said.is_empty() && over.is_none() {
             return;
         }
+        // Whether the step the spelling is in took anything of the
+        // reader's: what was held when the word began, or -- in a step of
+        // its own -- the last spelling.
+        let took = match (&before, over) {
+            (Some(before), Some(_)) if ours => before.took,
+            (_, Some(_)) => true,
+            (_, None) => span.line != span.end_line || span.column != span.end_column,
+        };
         let from = obelus_buffer::Cursor {
             line: span.line,
             column: span.column,
@@ -930,15 +953,25 @@ impl App {
             buffer.spelling(from, said, caret);
         }
         let after = self.current.zip(self.current_buffer().map(Buffer::version));
-        match said.is_empty() {
+        match (said.is_empty(), took) {
+            // Over, having taken nothing: the step is letters in and out
+            // again, and a press of undo that does nothing is forgotten.
+            // The word, if one comes, is a step of its own.
+            (true, false) => {
+                if let Some(buffer) = self.current_buffer_mut() {
+                    buffer.forget_the_last_step();
+                }
+            }
             // Over, and the word it was for arrives next as a paste: it
             // joins the step the spelling took, with nothing between.
-            true => self.spelled_over = after,
-            false => {
+            (true, true) => self.spelled_over = after,
+            (false, _) => {
                 self.spelt = Some(Spelt {
                     said: said.to_string(),
                     from,
                     at,
+                    took,
+                    version: after.map(|(_, version)| version),
                 });
             }
         }
@@ -969,10 +1002,26 @@ impl App {
         let (from, said) = (spelt.from, spelt.said.as_str());
         let spelling: Option<&mut dyn Spells> = match (spelt.at.into, spelt.at.document) {
             (WritingInto::File, Some(document)) => {
-                // Part of the step the spelling took, which then puts back
-                // nothing at all.
-                if let Some(span) = self.file(document).and_then(Buffer::spelled) {
-                    self.change_in(document.get(), span, "", obelus_buffer::undo::Doing::Joined);
+                let Some(buffer) = self.file(document) else {
+                    return;
+                };
+                let Some(span) = buffer.spelled() else {
+                    return;
+                };
+                // Part of the step the spelling took where nothing came
+                // between, and then a step that took nothing is forgotten
+                // -- the same as giving the word up where it was written.
+                let ours = spelt.version == Some(buffer.version());
+                let doing = match ours {
+                    true => obelus_buffer::undo::Doing::Joined,
+                    false => obelus_buffer::undo::Doing::Whole,
+                };
+                self.change_in(document.get(), span, "", doing);
+                if ours
+                    && !spelt.took
+                    && let Some(buffer) = self.file_mut(document)
+                {
+                    buffer.forget_the_last_step();
                 }
                 return;
             }
@@ -1295,4 +1344,11 @@ pub(in crate::app) struct Spelt {
     from: obelus_buffer::Cursor,
     /// Where it was written.
     at: Written,
+    /// Whether the step it is part of took anything of the reader's -- what
+    /// was held when the word began -- which is what says a word given up
+    /// leaves nothing behind to undo.
+    took: bool,
+    /// The version the spelling left the file at, where it was written
+    /// into one: what says nothing else has changed the file since.
+    version: Option<i32>,
 }

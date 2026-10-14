@@ -73,6 +73,12 @@ impl Buffer {
         self.editing.spelled()
     }
 
+    /// Forgets the most recent step to undo, which a word given up came to:
+    /// its letters went in and came out, and nothing else changed.
+    pub fn forget_the_last_step(&mut self) {
+        self.undo.forget_the_last();
+    }
+
     /// Puts the caret where a pointer landed, or drags the selection out
     /// to it.
     ///

@@ -897,6 +897,77 @@ mod keys {
         assert_eq!(text(&app), "ab\n", "the spelling was left in the file");
     }
 
+    /// A word given up leaves nothing to undo: its letters went in and came
+    /// out again, and the next press of undo is the reader's last change.
+    ///
+    /// Broken deliberately by not forgetting the step in
+    /// `App::spell_into_the_file`: undo spends itself on the word that was
+    /// never written, and the `x` stays.
+    #[test]
+    fn a_word_given_up_leaves_nothing_to_undo() {
+        let (_scratch, mut app) = reading("keys-spelling-given-up", "ab\n");
+        support::type_text(&mut app, "x");
+        app.handle(obelus_app::event::Event::Spelling("ni".to_string(), None));
+        app.handle(obelus_app::event::Event::Spelling(String::new(), None));
+        assert_eq!(text(&app), "xab\n");
+        dispatch::dispatch(&mut app, Command::Undo);
+        assert_eq!(text(&app), "ab\n", "undo did not reach the x");
+    }
+
+    /// A word spelled while something else changed the file is not part of
+    /// that change: undoing the word does not undo what an agent wrote.
+    ///
+    /// Broken deliberately by joining every spelling after the first to the
+    /// step before it in `App::spell_into_the_file`, whatever came between:
+    /// the agent's `zz` goes with the word.
+    #[test]
+    fn a_word_does_not_join_an_edit_made_under_it() {
+        let (_scratch, mut app) = reading("keys-spelling-under", "ab\n");
+        support::press(&mut app, KeyCode::Right);
+        app.handle(obelus_app::event::Event::Spelling("ni".to_string(), None));
+        let start = obelus_text::coordinates::Span {
+            line: obelus_text::coordinates::LineNumber::new(0),
+            column: obelus_text::coordinates::CharColumn::new(0),
+            end_line: obelus_text::coordinates::LineNumber::new(0),
+            end_column: obelus_text::coordinates::CharColumn::new(0),
+        };
+        app.current_buffer_mut().expect("a file").edit(
+            start,
+            "zz",
+            obelus_buffer::undo::Doing::Whole,
+        );
+        app.handle(obelus_app::event::Event::Spelling("nih".to_string(), None));
+        app.handle(obelus_app::event::Event::Spelling(String::new(), None));
+        app.handle(obelus_app::event::Event::Paste("你".to_string()));
+        assert_eq!(text(&app), "zza你b\n");
+        dispatch::dispatch(&mut app, Command::Undo);
+        assert!(
+            text(&app).starts_with("zz"),
+            "undoing the word undid the agent's edit: {:?}",
+            text(&app)
+        );
+    }
+
+    /// A word given up, a move, and then something pasted: the paste is a
+    /// step of its own, and undoing it does not put back what the given-up
+    /// word was spelled over.
+    ///
+    /// Broken deliberately by not letting go of `spelled_over` on a key in
+    /// `App::handle`: undoing the comma puts the `a` back as well.
+    #[test]
+    fn what_comes_after_a_word_given_up_and_a_move_is_its_own_step() {
+        let (_scratch, mut app) = reading("keys-spelling-moved-on", "ab\n");
+        support::press_shift(&mut app, KeyCode::Right);
+        app.handle(obelus_app::event::Event::Spelling("n".to_string(), None));
+        app.handle(obelus_app::event::Event::Spelling(String::new(), None));
+        assert_eq!(text(&app), "b\n");
+        support::press(&mut app, KeyCode::Right);
+        app.handle(obelus_app::event::Event::Paste(",".to_string()));
+        assert_eq!(text(&app), "b,\n");
+        dispatch::dispatch(&mut app, Command::Undo);
+        assert_eq!(text(&app), "b\n", "the undo took more than the comma");
+    }
+
     /// A pasted function is one change, however many lines it is.
     #[test]
     fn what_the_terminal_pastes_arrives_as_one_change() {
