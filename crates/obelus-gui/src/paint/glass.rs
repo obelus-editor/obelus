@@ -542,11 +542,11 @@ impl Painter {
             low = at;
         }
         // Up to the top of the window, where the pane hangs from the top of
-        // the page under a bar Obelus draws: the bar is the page's there,
+        // the page under a bar in it: the bar is the page's there,
         // and a pane over the whole page with a strip of the page left
         // bare above it is a pane that stopped short. The bar is drawn over
         // it -- see `bar_on_top` in `lay`.
-        if from_the_top(self.bar.is_some(), behind.area.y, behind.joined) {
+        if from_the_top(self.titled, behind.area.y, behind.joined) {
             top = -self.margin[1];
         }
         let glass = self.quads.len();
@@ -1032,11 +1032,16 @@ fn cut(piece: [f32; 4], room: [f32; 4], into: &mut Vec<[f32; 4]>) {
     }
 }
 
-/// Whether a pane runs up under the bar, which is a bar Obelus draws and a
-/// pane hanging from the top of the page: its glass then goes on up to the
-/// top of the window, and the bar is drawn over it.
-pub(super) fn from_the_top(bar: bool, row: u16, joined: Joined) -> bool {
-    bar && row == 0 && matches!(joined, Joined::Above | Joined::Screen)
+/// Whether a pane runs up under the bar, which is a bar in the page -- `titled`
+/// is how tall -- and a pane hanging from the top of the page: its glass
+/// then goes on up to the top of the window, and the bar is drawn over it.
+///
+/// Whoever draws the bar's buttons. Asked of the bar Obelus draws, it was
+/// Windows alone, and on macOS -- where the page runs up under a bar whose
+/// buttons are AppKit's -- the settings came down from under a strip of
+/// the page left standing above them, rather than from the window's top.
+pub(super) fn from_the_top(titled: f32, row: u16, joined: Joined) -> bool {
+    titled > 0.0 && row == 0 && matches!(joined, Joined::Above | Joined::Screen)
 }
 
 /// How much of a pane a slide has let through, which is the room its

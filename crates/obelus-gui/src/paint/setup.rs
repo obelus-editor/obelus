@@ -784,7 +784,7 @@ impl Painter {
                 (
                     level.map_or_else(|| box_of(gone.area, cell), |level| level.rect),
                     gone.joined,
-                    from_the_top(self.bar.is_some(), gone.area.y, gone.joined),
+                    from_the_top(self.titled, gone.area.y, gone.joined),
                 )
             })
             .collect();
