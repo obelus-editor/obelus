@@ -3370,6 +3370,80 @@ fn a_number_asked_on_its_own_says_what_it_takes_on_its_first_card() {
     );
 }
 
+/// What the agent suggests is where a card starts: on the answer it named,
+/// and with its number already in the box -- so enter twice takes both.
+///
+/// Deliberate breaks: `card_of` building a single choice without
+/// `prefer`, and the card starts on the first answer, so `fast` goes back;
+/// the box's suggestion read from `Takes::Words` alone, and the empty box
+/// leaves the number out of the answer.
+#[test]
+fn a_card_starts_with_what_the_agent_suggested() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    let value = |id: &str, name: &str| obelus_agent::acp::Value {
+        id: id.to_string(),
+        name: name.to_string(),
+        about: None,
+    };
+    let (answer, mut answered) = futures::channel::oneshot::channel();
+    app.handle(Event::Agent(obelus_agent::Event::Acp(
+        obelus_agent::acp::Incoming::Asked {
+            session: obelus_agent::acp::SessionId::new("s-1"),
+            question: obelus_agent::acp::Question::Ask {
+                message: "how should I go about it".to_string(),
+                fields: vec![
+                    obelus_agent::acp::Field {
+                        name: "pace".to_string(),
+                        title: "Pace".to_string(),
+                        about: None,
+                        takes: obelus_agent::acp::Takes::One {
+                            values: vec![value("fast", "Quickly"), value("slow", "Carefully")],
+                            suggested: Some("slow".to_string()),
+                        },
+                        required: true,
+                    },
+                    obelus_agent::acp::Field {
+                        name: "times".to_string(),
+                        title: "Times".to_string(),
+                        about: None,
+                        takes: obelus_agent::acp::Takes::Number {
+                            whole: true,
+                            least: None,
+                            most: None,
+                            suggested: Some("3".to_string()),
+                        },
+                        required: false,
+                    },
+                ],
+                answer,
+            },
+        },
+    )));
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    assert_eq!(
+        app.card().map(Card::on),
+        Some(On::Choice(1)),
+        "the card did not start on the suggested answer"
+    );
+
+    support::press(&mut app, KeyCode::Enter);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    support::press(&mut app, KeyCode::Enter);
+    let given = answered
+        .try_recv()
+        .expect("the answer was dropped")
+        .expect("nothing went back")
+        .expect("the form was declined");
+    assert_eq!(
+        format!("{given:?}"),
+        r#"[("pace", Value("slow")), ("times", Whole(3))]"#,
+        "the suggestions did not go back as the answer"
+    );
+}
+
 /// What the reader types goes in the box on the card, wherever they were.
 ///
 /// The box is the only thing on a card that takes characters, and a reader

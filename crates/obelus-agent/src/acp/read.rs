@@ -239,7 +239,7 @@ pub(crate) fn fields_of(schema: &ElicitationSchema) -> Result<Vec<Field>, String
                 match (text.one_of.as_ref(), text.enum_values.as_ref()) {
                     // Named values: the agent gave each one a title, and
                     // that is what the row says.
-                    (Some(named), _) => Takes::One(
+                    (Some(named), _) => one_of(
                         named
                             .iter()
                             .map(|option| Value {
@@ -248,9 +248,10 @@ pub(crate) fn fields_of(schema: &ElicitationSchema) -> Result<Vec<Field>, String
                                 about: said_twice(option.description.as_deref(), &option.title),
                             })
                             .collect(),
+                        text.default.as_deref(),
                     ),
                     // Bare values, which are their own names.
-                    (None, Some(values)) => Takes::One(
+                    (None, Some(values)) => one_of(
                         values
                             .iter()
                             .map(|value| Value {
@@ -259,6 +260,7 @@ pub(crate) fn fields_of(schema: &ElicitationSchema) -> Result<Vec<Field>, String
                                 about: None,
                             })
                             .collect(),
+                        text.default.as_deref(),
                     ),
                     (None, None) => Takes::Words(text.default.clone()),
                 },
@@ -275,6 +277,7 @@ pub(crate) fn fields_of(schema: &ElicitationSchema) -> Result<Vec<Field>, String
                     whole: false,
                     least: number.minimum,
                     most: number.maximum,
+                    suggested: within(number.default, number.minimum, number.maximum),
                 },
             ),
             ElicitationPropertySchema::Integer(number) => (
@@ -292,6 +295,7 @@ pub(crate) fn fields_of(schema: &ElicitationSchema) -> Result<Vec<Field>, String
                         reason = "a bound a reader is expected to type by hand"
                     )]
                     most: number.maximum.map(|most| most as f64),
+                    suggested: within(number.default, number.minimum, number.maximum),
                 },
             ),
             // Several of a list. The items come either as bare strings or
@@ -352,6 +356,34 @@ pub(crate) fn fields_of(schema: &ElicitationSchema) -> Result<Vec<Field>, String
         },
     );
     Ok(fields)
+}
+
+/// A number the agent suggested, as the box starts with it.
+///
+/// Only within its own bounds, for the reason [`one_of`] drops a value the
+/// list does not have: a box that starts with a number Obelus will refuse
+/// is a box the reader is led to send and then told off for.
+fn within<N: PartialOrd + ToString>(
+    suggested: Option<N>,
+    least: Option<N>,
+    most: Option<N>,
+) -> Option<String> {
+    suggested
+        .filter(|number| least.as_ref().is_none_or(|least| number >= least))
+        .filter(|number| most.as_ref().is_none_or(|most| number <= most))
+        .map(|number| number.to_string())
+}
+
+/// One of a field's values, starting on the one the agent suggested.
+///
+/// Only where it is one of them: a default the list does not have is not
+/// an answer the reader could give, and starting nowhere is what a field
+/// without one does anyway.
+fn one_of(values: Vec<Value>, suggested: Option<&str>) -> Takes {
+    let suggested = suggested
+        .filter(|id| values.iter().any(|value| value.id == *id))
+        .map(str::to_string);
+    Takes::One { values, suggested }
 }
 
 /// One setting, as the view offers it -- if it is one Obelus can show.
@@ -647,6 +679,74 @@ fn words(content: &ContentBlock) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::said::Takes;
+
+    /// What the agent suggests is what a field starts with, whatever kind of
+    /// field it is -- and a suggestion that is not one of the answers is
+    /// dropped rather than offered.
+    ///
+    /// Broken deliberately by reading a single choice's default as `None`,
+    /// and a number's the same: the card started on its first answer and
+    /// the box empty. By taking the filter out of `one_of`, and `unknown`
+    /// suggested `development`; and out of `within`, and `beyond` and
+    /// `below` suggested numbers Obelus would then refuse. And by writing
+    /// a number with `{:?}`, and `round` suggested `2.0`.
+    #[test]
+    fn a_field_starts_with_what_the_agent_suggested() {
+        let schema = serde_json::from_value(serde_json::json!({
+            "type": "object",
+            "properties": {
+                "named": {
+                    "type": "string",
+                    "oneOf": [
+                        { "const": "fast", "title": "Quickly" },
+                        { "const": "slow", "title": "Carefully" }
+                    ],
+                    "default": "slow"
+                },
+                "bare": {
+                    "type": "string",
+                    "enum": ["production", "staging"],
+                    "default": "staging"
+                },
+                "unknown": {
+                    "type": "string",
+                    "enum": ["production", "staging"],
+                    "default": "development"
+                },
+                "whole": { "type": "integer", "default": 3 },
+                "half": { "type": "number", "default": 0.5 },
+                "round": { "type": "number", "default": 2.0 },
+                "none": { "type": "integer" },
+                "beyond": { "type": "integer", "minimum": 1, "maximum": 5, "default": 10 },
+                "below": { "type": "number", "minimum": 1.5, "default": 1.0 },
+                "edge": { "type": "integer", "minimum": 1, "maximum": 5, "default": 5 }
+            }
+        }))
+        .expect("a schema");
+        let fields = super::fields_of(&schema).expect("fields");
+        let suggested = |name: &str| match &fields
+            .iter()
+            .find(|field| field.name == name)
+            .expect(name)
+            .takes
+        {
+            Takes::One { suggested, .. } | Takes::Number { suggested, .. } => suggested.clone(),
+            other => panic!("{name} is {other:?}"),
+        };
+        assert_eq!(suggested("named").as_deref(), Some("slow"));
+        assert_eq!(suggested("bare").as_deref(), Some("staging"));
+        assert_eq!(suggested("unknown"), None);
+        assert_eq!(suggested("whole").as_deref(), Some("3"));
+        assert_eq!(suggested("half").as_deref(), Some("0.5"));
+        // As a reader would type it, not `2.0`.
+        assert_eq!(suggested("round").as_deref(), Some("2"));
+        assert_eq!(suggested("none"), None);
+        assert_eq!(suggested("beyond"), None);
+        assert_eq!(suggested("below"), None);
+        assert_eq!(suggested("edge").as_deref(), Some("5"));
+    }
+
     /// Every shape Obelus refuses to hand to the machine's own launcher.
     ///
     /// The end-to-end test drives one of these through a real agent; this

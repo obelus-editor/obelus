@@ -227,11 +227,13 @@ impl Card {
         card
     }
 
-    /// Starts on the answer that is already in force.
+    /// Starts on the answer that is already in force, or the one the agent
+    /// suggested.
     ///
     /// Where it starts rather than what is chosen: nothing is chosen on a
     /// card until the reader says so. A switch that is on opens with the
-    /// reader on "on", which is one key from leaving it there.
+    /// reader on "on", which is one key from leaving it there, and a list
+    /// opens on the agent's suggestion, one key from taking it.
     pub fn prefer(&mut self, id: &str) {
         if let Some(at) = self.choices.iter().position(|choice| choice.id == id) {
             self.focus(On::Choice(at));

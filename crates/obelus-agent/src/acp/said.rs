@@ -835,7 +835,12 @@ pub struct Field {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Takes {
     /// One of these.
-    One(Vec<Value>),
+    One {
+        /// What there is to choose from.
+        values: Vec<Value>,
+        /// The one the agent suggested, by its id, if it is one of them.
+        suggested: Option<String>,
+    },
     /// Any of these, with how many of them the agent will take.
     Some {
         /// What there is to choose from.
@@ -859,6 +864,8 @@ pub enum Takes {
         least: Option<f64>,
         /// And the largest.
         most: Option<f64>,
+        /// What the box starts with, if the agent suggested anything.
+        suggested: Option<String>,
     },
 }
 
