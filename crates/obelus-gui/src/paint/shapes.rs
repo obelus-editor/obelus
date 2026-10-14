@@ -9,60 +9,60 @@ use ratatui::style::Modifier;
 use super::*;
 use crate::grid::{Barred, Capped, Look, Page, Parted, Ruled, Spun, Stroked, Ticked};
 
+/// How a tab being read turns its four corners, in the order `held` in
+/// the shader reads them: its own round corner at the top left and the top
+/// right, and at the foot on either side the corner that bends the other
+/// way, out into the bar -- the same shape a hold makes where the row
+/// under it reaches further.
+const JOINS_THE_PAGE: u32 = 0b0101_0000;
+
+/// And a tab under the pointer: round at the top, and square at its foot,
+/// where there is no corner because the bar carries on under it.
+const STANDS_ON_THE_BAR: u32 = 0b1010_0000;
+
 impl Painter {
-    /// The bar along the top of a window whose bar Obelus draws -- see
-    /// `title::Bar`: its icon, its title and its three buttons, over the
-    /// picture and the page's colour, and over any pane whose glass runs
-    /// up under it -- see `bar_on_top` in `lay`.
+    /// The bar along the top: the tabs on any bar the page runs up under,
+    /// and the three buttons on one Obelus draws -- see `title::Bar` --
+    /// over the picture and the page's colour, and over any pane whose
+    /// glass runs up under it -- see `bar_on_top` in `lay`.
     ///
     /// In the window's pixels less the grid's origin, which is where every
     /// quad is placed: the bar is above the grid, so its rows come out
     /// negative.
-    pub(super) fn title_bar(&mut self, across: f32, margin: [f32; 2], fonts: &mut Fonts) {
-        let Some(bar) = self.bar.filter(|_| !self.bar_left_out) else {
+    ///
+    /// `over_panes` where it is drawn over a pane whose glass runs up under
+    /// it. A tab cut by an end of the row is cut by painting the bar back
+    /// over what is past the end, which is the page there -- but over a
+    /// pane it is the pane's glass, which cannot be painted back. So there
+    /// only the tabs that are whole between the ends are drawn, which is
+    /// what a row looked like before it could cut one.
+    pub(super) fn title_bar(
+        &mut self,
+        across: f32,
+        margin: [f32; 2],
+        fonts: &mut Fonts,
+        over_panes: bool,
+    ) {
+        if self.bar_left_out {
+            return;
+        }
+        let dark = crate::title::dark(ground_of(self.ground));
+        if let Some(strip) = self.strip.take() {
+            match strip.cut.filter(|_| over_panes) {
+                Some(cut) => {
+                    let whole = crate::title::whole_between(&strip, cut);
+                    self.tab_strip(&whole, across, margin, fonts, dark);
+                }
+                None => self.tab_strip(&strip, across, margin, fonts, dark),
+            }
+            self.strip = Some(strip);
+        }
+        let Some(bar) = self.bar else {
             return;
         };
-        let dark = crate::title::dark(ground_of(self.ground));
-        // The icon and the title at the left, where the system's bar has
-        // them: the icon a frame's width in and middled in the bar's
-        // height, and the title after it.
-        let middle = self.titled / 2.0 - margin[1];
-        let icon_top = (middle - bar.icon / 2.0).round();
-        self.window_icon([bar.inset - margin[0], icon_top, bar.icon]);
-        // Where the system's own sits, measured off its bar at 250%: a
-        // little below the line its capitals would be middled on, and a
-        // little under half the size after the icon.
-        let baseline = (middle + bar.words * 0.39).round();
-        let start = bar.inset + bar.icon + (bar.words * 0.44).round() - margin[0];
-        let ink = crate::title::title_ink(&bar, dark);
-        let placed = fonts.caption(crate::title::TITLE, bar.words).to_vec();
-        for glyph in placed {
-            let Some(spot) = self.atlas.spot(fonts, glyph.key) else {
-                continue;
-            };
-            #[expect(clippy::cast_precision_loss, reason = "a glyph is a few pixels along")]
-            let (x, y) = (glyph.x as f32, glyph.y as f32);
-            self.quads.push(Quad {
-                rect: [
-                    start + x + spot.left,
-                    baseline + y - spot.top,
-                    spot.width,
-                    spot.height,
-                ],
-                uv: spot.uv,
-                colour: ink,
-                flags: match spot.colourful {
-                    true => COLOURFUL,
-                    false => 0,
-                },
-                radius: 0.0,
-                layer: spot.layer,
-                lower: 0.0,
-            });
-        }
         for button in crate::title::Button::ALL {
             let [left, top, wide, tall] =
-                crate::title::button_at(button, across, self.titled, bar.button);
+                crate::title::button_at(button, across, bar.captioned, bar.button);
             let (left, top) = (left - margin[0], top - margin[1]);
             let (behind, ink) = crate::title::inks(&bar, button, dark);
             if let Some(behind) = behind {
@@ -92,43 +92,217 @@ impl Painter {
         }
     }
 
-    /// The window's icon, at a place and a size in pixels -- made the first
-    /// time it is asked for at that size and kept where the marks are,
-    /// which is what it is: a picture with colours of its own.
-    fn window_icon(&mut self, [left, top, side]: [f32; 3]) {
-        #[expect(
-            clippy::cast_possible_truncation,
-            clippy::cast_sign_loss,
-            reason = "an icon is a few dozen pixels to a side"
-        )]
-        let pixels = side as u32;
-        let key = (format!("the window's icon at {pixels}"), false);
-        let spot = match self.atlas.mark(&key) {
-            Some(Some(spot)) => spot,
-            // Tried, and it would not draw.
-            Some(None) => return,
-            None => {
-                let Some(icon) = crate::window::icon(pixels) else {
-                    self.atlas.no_mark(key);
-                    return;
-                };
-                let spot = self.atlas.place(pixels, pixels, &icon, true);
-                self.atlas.marked(key, spot);
-                let Some(spot) = spot else {
-                    return;
-                };
-                spot
-            }
+    /// The tabs along the bar, and the arrows at its ends while there are
+    /// more of them than room -- see `title::tabs`.
+    fn tab_strip(
+        &mut self,
+        strip: &crate::title::Painted,
+        across: f32,
+        margin: [f32; 2],
+        fonts: &mut Fonts,
+        dark: bool,
+    ) {
+        let room = strip.room;
+        // The bar a shade darker than the page, across the whole of it, so
+        // that the tab being read -- the page's own colour, reaching down
+        // to the page -- is a piece of the page standing up into the bar.
+        self.block(
+            -margin[0],
+            -margin[1],
+            across,
+            room.titled,
+            crate::title::bar_shade(dark),
+        );
+        // A tab starts a little below the bar's top and runs to its foot,
+        // which is where the page begins.
+        let inset = (room.titled * 0.2).round();
+        let (top, foot) = (inset - margin[1], room.titled - margin[1]);
+        let tall = foot - top;
+        // Where the system writes its own title, measured off its bar at
+        // 250%: a little below the line its capitals would be middled on,
+        // here in the middle of the tab rather than of the bar.
+        let baseline = (top + tall / 2.0 + room.words * 0.39).round();
+        let corner = room.corner();
+        // What the page looks like where nothing is drawn on it: its colour,
+        // or its colour laid over the picture under it.
+        let page = match self.laid {
+            Some(_) => self.veil(),
+            None => self.ground_colour(),
         };
-        self.quads.push(Quad {
-            rect: [left, top, side, side],
-            uv: spot.uv,
-            colour: [1.0; 4],
-            flags: COLOURFUL,
-            radius: 0.0,
-            layer: spot.layer,
-            lower: 0.0,
-        });
+        for (at, tab) in strip.tabs.iter().enumerate() {
+            let laid = tab.laid;
+            let left = laid.left - margin[0];
+            if tab.hovered && !tab.reading {
+                // The tab's own shape, the whole of it, in a shade of the
+                // bar rather than the page's colour: a tab, lit, standing
+                // on the bar's foot with its foot square -- where the one
+                // being read bends out into the page. A piece of the page
+                // a little of the way in was a second tab half joined to it.
+                self.quads.push(Quad {
+                    rect: [left - corner, top, laid.width + 2.0 * corner, tall],
+                    uv: self.atlas.white,
+                    colour: crate::title::under_the_pointer(dark),
+                    flags: HELD_PLATE | (STANDS_ON_THE_BAR << HELD_TURNS),
+                    radius: corner,
+                    layer: 0,
+                    lower: 0.0,
+                });
+            }
+            // A seam between two tabs neither of which has a shape of its
+            // own drawn: the one being read, or the one under the pointer,
+            // says where it ends by its edge, and a line along that edge
+            // is the same thing said twice.
+            let next = strip.tabs.get(at + 1);
+            if !tab.reading
+                && !tab.hovered
+                && let Some(after) = next
+                && !after.reading
+                && !after.hovered
+            {
+                let pen = (room.words / 12.0).round().max(1.0);
+                let high = (tall * 0.68).round();
+                self.block(
+                    (left + laid.width - pen / 2.0).round(),
+                    (top + (tall - high) / 2.0).round(),
+                    pen,
+                    high,
+                    crate::title::seam(dark),
+                );
+            }
+        }
+        // The tab being read last of the shapes, so that the curves at its
+        // foot go over whatever its neighbours drew there. Its top corners
+        // round, and the two at its foot bending out into the bar, the way
+        // a tab joins what it is the tab of.
+        if let Some(laid) = strip
+            .tabs
+            .iter()
+            .find(|tab| tab.reading)
+            .map(|tab| tab.laid)
+        {
+            let left = laid.left - margin[0];
+            self.quads.push(Quad {
+                // A corner's width past the tab on either side, which is
+                // where the curves that bend outwards are drawn.
+                rect: [left - corner, top, laid.width + 2.0 * corner, tall],
+                uv: self.atlas.white,
+                colour: page,
+                flags: HELD_PLATE | (JOINS_THE_PAGE << HELD_TURNS),
+                radius: corner,
+                layer: 0,
+                lower: 0.0,
+            });
+        }
+        for tab in &strip.tabs {
+            let left = tab.laid.left - margin[0];
+            let ink = crate::title::tab_ink(tab.reading, strip.active, dark);
+            let end = left + tab.laid.width - room.padding() / 2.0;
+            let mut start = (left + room.padding()).round();
+            // The mark first, in the name's ink, as the list of what is
+            // open draws it before the same name.
+            if let Some(icon) = tab.icon {
+                let placed = fonts.caption_mark(icon, room.mark()).to_vec();
+                self.written(fonts, placed, [start, baseline], ink, end);
+                start += room.marked();
+            }
+            self.caption(fonts, &tab.said, room.words, [start, baseline], ink, end);
+        }
+        // What a tab cut by either end has past it goes under the bar
+        // again: the page as it is there, and the bar's shade over it --
+        // which is what was under the tab before it was drawn. Out to the
+        // window's own edges: a tab cut by the end can be wider than all
+        // the bar past it, and stopping a corner past the room left it
+        // standing between the arrow and the buttons, which are drawn
+        // after this and over it.
+        if let Some((start, end)) = strip.cut {
+            let shade = crate::title::bar_shade(dark);
+            for [from, to] in [[0.0, start], [end, across]] {
+                let rect = [from - margin[0], -margin[1], to - from, room.titled];
+                self.ground_back(rect, self.ground, None);
+                self.block(rect[0], rect[1], rect[2], rect[3], shade);
+            }
+        }
+        for ([left, width], more, hovered, which) in &strip.arrows {
+            let (behind, ink) = crate::title::arrow_inks(*more, *hovered, dark);
+            let left = left - margin[0];
+            if let Some(behind) = behind {
+                self.rounded(left, top, *width, tall - inset / 2.0, corner, behind);
+            }
+            // A small solid triangle, the way the system's own tabbed
+            // windows point along a row: a pointed bracket in the words'
+            // face was a letter, and read as one.
+            let (wide, high) = ((room.words * 0.45).round(), (room.words * 0.8).round());
+            self.quads.push(Quad {
+                rect: [
+                    (left + (width - wide) / 2.0).round(),
+                    (top + (tall - high) / 2.0).round(),
+                    wide,
+                    high,
+                ],
+                uv: self.atlas.white,
+                colour: ink,
+                flags: SOLID | WEDGE,
+                // Which way it points: the wedge's own sign.
+                radius: match which {
+                    crate::title::Spot::Earlier => -1.0,
+                    _ => 1.0,
+                },
+                layer: 0,
+                lower: 0.0,
+            });
+        }
+    }
+
+    /// A line in the face the system writes its own words in, from a place
+    /// on its baseline, and nothing of it past `end`.
+    fn caption(
+        &mut self,
+        fonts: &mut Fonts,
+        said: &str,
+        size: f32,
+        [start, baseline]: [f32; 2],
+        ink: [f32; 4],
+        end: f32,
+    ) {
+        let placed = fonts.caption(said, size).to_vec();
+        self.written(fonts, placed, [start, baseline], ink, end);
+    }
+
+    /// Glyphs laid out from a place on their baseline, and none of them
+    /// past `end`.
+    fn written(
+        &mut self,
+        fonts: &mut Fonts,
+        placed: Vec<font::Placed>,
+        [start, baseline]: [f32; 2],
+        ink: [f32; 4],
+        end: f32,
+    ) {
+        for glyph in placed {
+            let Some(spot) = self.atlas.spot(fonts, glyph.key) else {
+                continue;
+            };
+            #[expect(clippy::cast_precision_loss, reason = "a glyph is a few pixels along")]
+            let (x, y) = (glyph.x as f32, glyph.y as f32);
+            let left = start + x + spot.left;
+            // Whole glyphs or none: a letter cut in half at a tab's edge
+            // reads as another letter.
+            if left + spot.width > end {
+                break;
+            }
+            self.quads.push(Quad {
+                rect: [left, baseline + y - spot.top, spot.width, spot.height],
+                uv: spot.uv,
+                colour: ink,
+                flags: match spot.colourful {
+                    true => COLOURFUL,
+                    false => 0,
+                },
+                radius: 0.0,
+                layer: spot.layer,
+                lower: 0.0,
+            });
+        }
     }
 
     /// The line under every cell a view underlined.

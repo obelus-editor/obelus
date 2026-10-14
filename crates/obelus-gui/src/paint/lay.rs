@@ -125,7 +125,7 @@ impl Painter {
         // the quads every whole screen starts from, because the bar stands
         // still the way the picture does: what slides is the page under it.
         if bar_on_top.is_none() {
-            self.title_bar(across, margin, fonts);
+            self.title_bar(across, margin, fonts, false);
         }
         // Where the picture's quads end, which every whole screen drawn
         // from this frame draws first -- and the one picture of the frame
@@ -317,7 +317,7 @@ impl Painter {
 
         // The bar over a pane that is simply there -- see `bar_on_top`.
         if bar_on_top == Some(BarOnTop::Resting) {
-            self.title_bar(across, margin, fonts);
+            self.title_bar(across, margin, fonts, true);
         }
         // Everything the frame says has been said. What is left is
         // putting it back on the screen in pieces, where a pane is on its
@@ -395,7 +395,7 @@ impl Painter {
         // The bar over a pane on its way in or out -- see `bar_on_top`.
         if matches!(bar_on_top, Some(BarOnTop::Arriving | BarOnTop::Leaving)) {
             let start = self.quads.len();
-            self.title_bar(across, margin, fonts);
+            self.title_bar(across, margin, fonts, true);
             self.placed.bar_over = Some(start..self.quads.len());
         }
         // Last, because none of it is drawn on the screen: the blurs are

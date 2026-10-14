@@ -998,6 +998,12 @@ impl Motion {
         }
     }
 
+    /// Whether things move at all, for what moves on a clock of its own --
+    /// the tabs along the bar (`title::tabs`).
+    pub(crate) const fn animated(&self) -> bool {
+        self.animates
+    }
+
     /// The reader has said whether things arrive or are simply there.
     ///
     /// What is under way when they turn it off is dropped: a slide that

@@ -327,6 +327,8 @@ struct Showing {
     title_presses: crate::title::Presses,
     /// The bar along the top, where Obelus draws it -- see `title::Bar`.
     bar: Option<crate::title::Bar>,
+    /// What is open, as tabs along the bar -- see `title::tabs`.
+    strip: crate::title::Strip,
     /// How many pixels to a point the screen the window is on has, as it
     /// was last said -- which a change of screen is measured from.
     scale: f64,
@@ -547,6 +549,7 @@ impl Showing {
             over_the_title: false,
             pressed_on_the_title: false,
             title_presses: crate::title::Presses::default(),
+            strip: crate::title::Strip::default(),
             bar: None,
             scale: 1.0,
             active: true,
@@ -674,6 +677,23 @@ impl Showing {
             self.asked
                 .set(self.asked.get().or_else(|| Some(Instant::now())));
             window.request_redraw();
+        }
+    }
+
+    /// A press on a tab, which goes to its document, or on an arrow, which
+    /// slides the tabs on to the next one that end is cutting.
+    fn press_on_the_tabs(&mut self, spot: crate::title::Spot) {
+        match spot {
+            crate::title::Spot::Tab(index) => {
+                if let Some(document) = self.strip.document(index) {
+                    self.tell(Event::Chose(document));
+                }
+            }
+            towards => {
+                if self.strip.step(towards) {
+                    self.redraw();
+                }
+            }
         }
     }
 
@@ -1222,6 +1242,7 @@ impl ApplicationHandler<Waking> for Showing {
                             self.page.drawn_on(ground);
                         }
                         Update::Holding { held, row } => self.holding = (held, row),
+                        Update::Tabs(tabs) => self.strip.told(tabs),
                         // Kept now, while the page is the one the reader was
                         // shown: the frame in the new colours is behind this
                         // in the queue. The first of several, which is the
@@ -1732,8 +1753,19 @@ impl ApplicationHandler<Waking> for Showing {
     fn about_to_wait(&mut self, events: &ActiveEventLoop) {
         let now = Instant::now();
         let caret = self.page.caret().is_some();
-        let wake = self.motion.wake(now, caret);
-        if wants_a_frame(self.motion.advance(now, caret), wake, self.covered) {
+        // The tabs sliding to where an arrow sent them, which is a clock of
+        // their own and asked here the same way: from whether they are
+        // still on their way.
+        let sliding = self.strip.sliding();
+        let wake = match sliding {
+            true => Some(Wake::EveryFrame),
+            false => self.motion.wake(now, caret),
+        };
+        if wants_a_frame(
+            self.motion.advance(now, caret) || sliding,
+            wake,
+            self.covered,
+        ) {
             self.redraw();
         }
         events.set_control_flow(control_flow(wake));
@@ -1844,12 +1876,30 @@ impl ApplicationHandler<Waking> for Showing {
                 painter.unveiled(self.motion.picture_shown(now));
                 painter.drawn_on(self.ground);
                 painter.titled(self.titled);
-                painter.bar(
-                    self.bar
-                        .as_ref()
-                        .zip(self.window.as_ref())
-                        .map(|(bar, window)| bar.drawn(window, self.active)),
+                let drawn = self
+                    .bar
+                    .as_ref()
+                    .zip(self.window.as_ref())
+                    .map(|(bar, window)| bar.drawn(window, self.active));
+                // Laid out here, with the frame, because where the tabs go
+                // is a question about the window's width and the faces,
+                // and both are the frame's.
+                let room = self.window.as_ref().and_then(|window| {
+                    #[expect(clippy::cast_precision_loss, reason = "pixels on a screen")]
+                    let width = window.inner_size().width as f32;
+                    crate::title::room(window, self.titled, width, drawn.as_ref())
+                });
+                self.strip.lay(
+                    room,
+                    |said, size| fonts.caption_width(said, size),
+                    Instant::now(),
+                    self.motion.animated(),
                 );
+                if let Some(bar) = self.bar.as_ref() {
+                    bar.tabs_are(self.strip.covers());
+                }
+                painter.bar(drawn);
+                painter.tabs(self.strip.painted(self.active));
                 painter.holding(self.holding);
                 if let Some(left) = self.left.take() {
                     painter.keep(&left.page, fonts, left.said(), &left.going);
@@ -2056,6 +2106,11 @@ impl ApplicationHandler<Waking> for Showing {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.over_the_title = crate::title::under(position.y, self.titled);
+                #[expect(clippy::cast_possible_truncation, reason = "pixels on a screen")]
+                let over = (self.over_the_title && !self.held).then_some(position.x as f32);
+                if self.strip.point(over) {
+                    self.redraw();
+                }
                 // Off the page, the way leaving the window is, so that a
                 // link on the first row does not put a hand over the bar.
                 // Not while a drag is held: one that goes up past the page
@@ -2096,6 +2151,19 @@ impl ApplicationHandler<Waking> for Showing {
                 if state == ElementState::Pressed {
                     self.pressed_on_the_title = self.over_the_title;
                 }
+                // A tab, or an arrow walking them, on the press: what a tab
+                // does is not something a reader drags off to take back.
+                // And not counted towards a double click, which on the bar
+                // zooms the window: two quick presses on two tabs are two
+                // choices.
+                if self.pressed_on_the_title
+                    && let Some(spot) = self.strip.hovered()
+                {
+                    if state == ElementState::Pressed {
+                        self.press_on_the_tabs(spot);
+                    }
+                    return;
+                }
                 if self.pressed_on_the_title {
                     if state == ElementState::Pressed
                         && let Some(window) = self.window.as_ref()
@@ -2116,6 +2184,36 @@ impl ApplicationHandler<Waking> for Showing {
                     x,
                     y,
                 });
+            }
+            // The wheel over the tabs scrolls them: the page under the bar
+            // is not what the reader is pointing at. Whichever way the
+            // wheel turns further, so a wheel that only turns down still
+            // walks a row that runs across.
+            WindowEvent::MouseWheel { delta, .. } if self.over_the_title => {
+                let notches = match delta {
+                    MouseScrollDelta::LineDelta(across, down) => match across.abs() > down.abs() {
+                        true => across,
+                        false => -down,
+                    },
+                    // Pixels, from a touchpad, as the part of a notch they
+                    // are: the row is scrolled by the pixel either way.
+                    #[expect(
+                        clippy::cast_possible_truncation,
+                        clippy::cast_precision_loss,
+                        reason = "pixels under a finger, and a notch of three rows"
+                    )]
+                    MouseScrollDelta::PixelDelta(moved) => {
+                        let height = self.fonts.as_ref().map_or(1.0, |fonts| fonts.cell().height);
+                        let moved = match moved.x.abs() > moved.y.abs() {
+                            true => moved.x as f32,
+                            false => -moved.y as f32,
+                        };
+                        moved / (height * NOTCH as f32)
+                    }
+                };
+                if notches != 0.0 && self.strip.scroll(notches) {
+                    self.redraw();
+                }
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 let rows = match delta {
@@ -2151,6 +2249,13 @@ impl ApplicationHandler<Waking> for Showing {
                 };
                 if rows != 0 {
                     self.tell(Event::Scroll(rows));
+                }
+            }
+            // Out of the window -- or, on Windows, onto the part of the bar
+            // that drags it, which the window does not hear the pointer on.
+            WindowEvent::CursorLeft { .. } => {
+                if self.strip.point(None) {
+                    self.redraw();
                 }
             }
             WindowEvent::Destroyed => events.exit(),
@@ -2378,19 +2483,6 @@ impl Regrid {
     const fn moved(self) -> bool {
         self.refaced || self.resized.is_some()
     }
-}
-
-/// The same icon at this many pixels to a side, for a bar Obelus draws to
-/// put at its left the way the system's bar does -- see `title::Bar`.
-/// From the largest of the file's sizes, which the decoder hands back.
-pub(crate) fn icon(side: u32) -> Option<image::RgbaImage> {
-    let mark = image::load_from_memory_with_format(MARK, image::ImageFormat::Ico).ok()?;
-    Some(image::imageops::resize(
-        &mark.to_rgba8(),
-        side,
-        side,
-        image::imageops::FilterType::Lanczos3,
-    ))
 }
 
 #[cfg(test)]

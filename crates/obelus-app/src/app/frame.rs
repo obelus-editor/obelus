@@ -402,6 +402,7 @@ impl App {
         if let Some(drawing) = self.drawing.as_ref() {
             drawing.caret_is(self.caret(), self.layers().nearest(), self.takes_text());
         }
+        self.tell_the_tabs();
         obelus_ui::cursor_position(area, self)
     }
 }

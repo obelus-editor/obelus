@@ -11,6 +11,7 @@ pub(super) mod keys;
 pub(super) mod moving;
 pub(super) mod previewing;
 pub(super) mod searching;
+pub(super) mod tabs;
 
 /// What is being searched for, at which scope, and the answers on their way:
 /// the walk, what it has found, and the file each row's colours come from.

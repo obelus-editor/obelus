@@ -116,6 +116,12 @@ pub(crate) enum Update {
         /// The picture, or nothing.
         hung: Option<Arc<crate::wallpaper::Hung>>,
     },
+    /// What is open, for the tabs along the title bar -- see
+    /// `Drawing::tabs`.
+    ///
+    /// Down the same wire as the frame it changed with, so the tab that
+    /// says what is being read changes with the page that shows it.
+    Tabs(Vec<obelus_app::app::Tab>),
     /// The theme is changing, and what is on the screen is in the one it
     /// was in -- see `Drawing::recoloured`.
     ///
@@ -1268,6 +1274,12 @@ impl obelus_app::app::Drawing for Telling {
         }
     }
 
+    fn tabs(&self, tabs: &[obelus_app::app::Tab]) {
+        // No wake, the same as the caret's shape: said while a frame is
+        // being laid out, whose own end wakes the window.
+        let _ = self.updates.send(Update::Tabs(tabs.to_vec()));
+    }
+
     fn caret_is(&self, caret: Caret, whose: Option<Layer>, typing: bool) {
         // No wake: this arrives while a frame is being laid out, and the
         // frame's own end wakes the window a moment later. Waking here as
@@ -1842,6 +1854,10 @@ impl Page {
             }
             Update::Recoloured => {
                 tracing::warn!("a change of theme reached the page");
+                false
+            }
+            Update::Tabs(_) => {
+                tracing::warn!("the tabs reached the page");
                 false
             }
         }

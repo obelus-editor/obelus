@@ -178,14 +178,19 @@ pub struct Fonts {
     /// asks of every name in a list, for every character none of them had.
     named: Named,
     /// Lines in the face the system writes its own words in, by the text
-    /// and the size in pixels -- see [`Fonts::caption`].
-    captions: HashMap<(String, u32), Vec<Placed>>,
+    /// and the size in pixels, and how wide each is -- see
+    /// [`Fonts::caption`].
+    captions: HashMap<(String, u32), (Vec<Placed>, f32)>,
 }
 
 /// The faces a window's own words are written in, the first this machine
 /// has: what Windows draws a title bar's title in. Everywhere else the
 /// system's sans serif, which is the nearest thing to the question.
 const CAPTION_FACES: &[&str] = &["Segoe UI"];
+
+/// How many lines of a window's own words are kept laid out -- see
+/// [`Fonts::caption`].
+const CAPTIONS: usize = 512;
 
 /// Every face by the families it goes by, in lower case.
 type Named = HashMap<String, Vec<fontdb::ID>>;
@@ -485,15 +490,46 @@ impl Fonts {
     /// Each glyph is placed from the start of the line and from its
     /// baseline; where that baseline goes is the caller's.
     pub fn caption(&mut self, text: &str, size: f32) -> &[Placed] {
-        let key = (text.to_string(), size.to_bits());
+        &self.captioned(text, size).0
+    }
+
+    /// How wide that line is, in pixels.
+    pub fn caption_width(&mut self, text: &str, size: f32) -> f32 {
+        self.captioned(text, size).1
+    }
+
+    /// A mark beside a window's own words -- a tab's, at the size the words
+    /// are -- in the face the marks are carried in, whatever the system
+    /// writes its words in: no system face has them.
+    pub fn caption_mark(&mut self, mark: char, size: f32) -> &[Placed] {
+        &self.laid_in(&mark.to_string(), size, true).0
+    }
+
+    fn captioned(&mut self, text: &str, size: f32) -> &(Vec<Placed>, f32) {
+        self.laid_in(text, size, false)
+    }
+
+    /// A line in the system's face, or in the marks' -- kept apart in the
+    /// one map by the sign of the size, which is never negative otherwise.
+    fn laid_in(&mut self, text: &str, size: f32, marks: bool) -> &(Vec<Placed>, f32) {
+        let key = (
+            text.to_string(),
+            match marks {
+                true => (-size).to_bits(),
+                false => size.to_bits(),
+            },
+        );
         if !self.captions.contains_key(&key) {
-            let family = CAPTION_FACES
-                .iter()
-                .copied()
-                .find(|name| self.named.contains_key(&name.to_lowercase()))
-                .map_or(Family::SansSerif, Family::Name);
+            let family = match marks {
+                true => Family::Name(SYMBOLS_FAMILY),
+                false => CAPTION_FACES
+                    .iter()
+                    .copied()
+                    .find(|name| self.named.contains_key(&name.to_lowercase()))
+                    .map_or(Family::SansSerif, Family::Name),
+            };
             let metrics = Metrics::new(size, (size * LINE_HEIGHT).round());
-            let (mut placed, _) = lay(
+            let (mut placed, wide) = lay(
                 &mut self.system,
                 metrics,
                 text,
@@ -502,7 +538,14 @@ impl Fonts {
             for glyph in &mut placed {
                 glyph.baseline = None;
             }
-            self.captions.insert(key.clone(), placed);
+            // Begun again once it is this full, rather than kept for good:
+            // a tab's name is whatever a terminal's program last called
+            // itself, which can be a new one at every prompt. What a frame
+            // draws is a few dozen lines, laid again on the next frame.
+            if self.captions.len() >= CAPTIONS {
+                self.captions.clear();
+            }
+            self.captions.insert(key.clone(), (placed, wide));
         }
         &self.captions[&key]
     }

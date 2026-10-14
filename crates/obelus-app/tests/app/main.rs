@@ -59,6 +59,7 @@ mod serving;
 mod sessions;
 mod switching;
 mod syntax;
+mod tabs;
 mod terminal;
 mod themes;
 mod todo;
