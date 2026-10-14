@@ -95,19 +95,23 @@ pub(crate) fn height(window: &Window) -> f32 {
     let Some(shown) = appkit(window) else {
         return 0.0;
     };
-    // The frame is the whole window and the layout rectangle is the part
-    // the title bar does not cover, both in points.
-    let points = match (shown.frame().size.height - shown.contentLayoutRect().size.height).max(0.0)
-    {
-        0.0 => 0.0,
-        points => points.max(TALL),
-    };
+    let points = bar_points(&shown);
     #[expect(
         clippy::cast_possible_truncation,
         reason = "a title bar is tens of pixels"
     )]
     let pixels = (points * window.scale_factor()).round() as f32;
     pixels
+}
+
+/// How tall the bar is, in points -- the one answer the grid and the
+/// buttons both go by, or a bar AppKit made taller still would leave the
+/// buttons in the middle of less than the grid leaves.
+#[cfg(target_os = "macos")]
+fn bar_points(shown: &objc2_app_kit::NSWindow) -> f64 {
+    // The frame is the whole window and the layout rectangle is the part
+    // the title bar does not cover, both in points.
+    tall(shown.frame().size.height - shown.contentLayoutRect().size.height)
 }
 
 /// The window AppKit has behind winit's.
@@ -134,10 +138,30 @@ pub(crate) const fn height(_window: &Window) -> f32 {
 
 /// How tall the bar is on macOS, in points: what Safari gives its row of
 /// tabs. The system's own is twenty-eight, and a tab in it was a sliver.
-#[cfg(target_os = "macos")]
+#[cfg_attr(
+    not(any(target_os = "macos", test)),
+    expect(dead_code, reason = "only macOS asks")
+)]
 const TALL: f64 = 38.0;
 
-/// Stands the system's three buttons in the middle of a bar `TALL`, the
+/// How tall a bar AppKit says is this tall is drawn: at least `TALL`, and
+/// none at all where there is none, which is full screen.
+///
+/// Asked whether there is a point of it rather than whether it is nothing:
+/// it is a subtraction of two of AppKit's doubles, and a hair over nothing
+/// on the way into full screen would otherwise be a whole bar.
+#[cfg_attr(
+    not(any(target_os = "macos", test)),
+    expect(dead_code, reason = "only macOS asks")
+)]
+fn tall(system: f64) -> f64 {
+    match system >= 1.0 {
+        true => system.max(TALL),
+        false => 0.0,
+    }
+}
+
+/// Stands the system's three buttons in the middle of the bar, the
 /// way Zed does it, rather than at the top of the one AppKit lays them out
 /// on.
 ///
@@ -154,7 +178,8 @@ pub(crate) fn centre_the_buttons(window: &Window) {
     let Some(shown) = appkit(window) else {
         return;
     };
-    if shown.styleMask().contains(NSWindowStyleMask::FullScreen) {
+    let tall = bar_points(&shown);
+    if tall <= 0.0 || shown.styleMask().contains(NSWindowStyleMask::FullScreen) {
         return;
     }
     let [Some(close), Some(minimise), Some(zoom)] = [
@@ -174,12 +199,12 @@ pub(crate) fn centre_the_buttons(window: &Window) {
         return;
     };
     let mut frame = bar.frame();
-    frame.size.height = TALL;
-    frame.origin.y = shown.frame().size.height - TALL;
+    frame.size.height = tall;
+    frame.origin.y = shown.frame().size.height - tall;
     bar.setFrame(frame);
     for button in [&close, &minimise, &zoom] {
         let mut frame = button.frame();
-        frame.origin.y = (TALL - frame.size.height) / 2.0;
+        frame.origin.y = (tall - frame.size.height) / 2.0;
         button.setFrame(frame);
     }
     // Or a button goes on lighting up where it used to be.
