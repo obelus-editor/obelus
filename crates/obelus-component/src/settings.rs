@@ -1104,11 +1104,12 @@ impl Settings {
         self.query.held()
     }
 
-    /// Whether delete is the filter's just now rather than the row's: it
-    /// has something held, or something in front of its caret.
+    /// Whether the key the foot calls delete is the filter's just now
+    /// rather than the row's (`Field::delete_is_the_rows`): on a Mac that
+    /// is backspace, which the filter keeps while anything is in it.
     #[must_use]
     pub fn delete_is_the_filters(&self) -> bool {
-        self.query.takes_a_delete()
+        !self.query.delete_is_the_rows()
     }
 
     /// Puts a run of text into it, which is what a paste is.
@@ -1674,10 +1675,9 @@ impl Settings {
 
         // Enter and delete act on the row with the focus, which the wheel
         // may have left off the screen: there the press brings it back
-        // into view, and does nothing to it.
-        let acts = bare
-            && (key.code == KeyCode::Enter
-                || (key.code == KeyCode::Delete && !self.query.takes_a_delete()));
+        // into view, and does nothing to it. Delete as the filter judges it,
+        // which on a Mac is backspace too (`Field::leaves_to_the_row`).
+        let acts = (bare && key.code == KeyCode::Enter) || self.query.leaves_to_the_row(key);
         if acts && count > 0 && self.window.reach_for_the_focus() {
             return SettingsOutcome::Consumed;
         }
@@ -1762,7 +1762,9 @@ impl Settings {
             // And delete takes one away, where one may be: the same answer
             // the foot asks before it offers the key, so a key it does not
             // show does nothing.
-            KeyCode::Delete if bare && !self.query.takes_a_delete() && self.on_themes() => {
+            KeyCode::Delete | KeyCode::Backspace
+                if self.query.leaves_to_the_row(key) && self.on_themes() =>
+            {
                 match themes.get(self.window.focus()) {
                     Some(card) if card.may_be_taken_away() => {
                         SettingsOutcome::RemoveTheme(card.theme.name.clone())
@@ -1849,9 +1851,8 @@ impl Settings {
             // And on one of the agent's rows, wherever the page is: what
             // is left there is not a default of Obelus's but the agent's
             // own answer, so there is something to go back to.
-            KeyCode::Delete
-                if bare
-                    && !self.query.takes_a_delete()
+            KeyCode::Delete | KeyCode::Backspace
+                if self.query.leaves_to_the_row(key)
                     && let Some(Shown::Agent { offer, chosen, .. }) =
                         rows.get(self.window.focus()) =>
             {
@@ -1865,18 +1866,16 @@ impl Settings {
             }
             // A variable taken away, which is what `delete` means on the
             // agent's other rows too: this one is not said any more.
-            KeyCode::Delete
-                if bare
-                    && !self.query.takes_a_delete()
+            KeyCode::Delete | KeyCode::Backspace
+                if self.query.leaves_to_the_row(key)
                     && let Some(Shown::Variable { name, .. }) = rows.get(self.window.focus()) =>
             {
                 SettingsOutcome::RemoveVariable((*name).to_string())
             }
             // A field the reader set, forgotten: what `delete` means
             // everywhere else on this page.
-            KeyCode::Delete
-                if bare
-                    && !self.query.takes_a_delete()
+            KeyCode::Delete | KeyCode::Backspace
+                if self.query.leaves_to_the_row(key)
                     && let Some(Shown::Remote {
                         row: RemoteRow::Field(field),
                         ..
@@ -1887,9 +1886,8 @@ impl Settings {
                     false => SettingsOutcome::Consumed,
                 }
             }
-            KeyCode::Delete
-                if bare
-                    && !self.query.takes_a_delete()
+            KeyCode::Delete | KeyCode::Backspace
+                if self.query.leaves_to_the_row(key)
                     && self.on_project()
                     && !self.on_keys()
                     && !self.on_cards() =>

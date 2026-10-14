@@ -39,6 +39,10 @@ pub struct Choosing {
     /// Two boxes and two meanings, which is why this is a flag and not a
     /// guess from whether the text has a separator in it.
     pub naming: bool,
+    /// Whether delete would forget the project the reader is on, which is
+    /// the chooser's own answer: the foot offers the key exactly where the
+    /// key does it.
+    pub forgets: bool,
     /// Whether what is in that box is there at all.
     ///
     /// What the ink on the row says, so that a reader sees enter will

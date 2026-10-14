@@ -39,8 +39,8 @@
 //! so it holds both.
 //!
 //! **A project whose directory has gone is forgotten.** Asked when the
-//! screen opens, which is the moment a view reads what it shows: twenty
-//! `stat`s, not twenty reads, and a row offering a place that is not
+//! screen opens, which is the moment a view reads what it shows: a `stat`
+//! a row, not a read, and a row offering a place that is not
 //! there is a row whose one answer is a refusal. And taken out of the file
 //! as well as off the screen, which is a choice with a cost said out loud
 //! -- a disk that is not plugged in, or a share not mounted yet at the
@@ -55,15 +55,6 @@ use obelus_component::{
     chooser::Chooser,
     picker::{Picker, PickerItem, PickerLayout, PickerValue},
 };
-
-/// How many are kept.
-///
-/// A limit on the list is a limit on what can be found in it, so this is
-/// as many as a reader could plausibly recognise rather than as many as
-/// fit on the screen -- the filter is what reaches the ones below the
-/// fold. Past twenty, a row is a project the reader has forgotten having
-/// opened, and the way back to one of those is to type its path.
-const KEPT: usize = 20;
 
 /// Where the list lives.
 ///
@@ -214,11 +205,14 @@ fn spelled(path: &Path) -> PathBuf {
 /// missing until it is next chosen, which choosing puts right -- and a lock
 /// is whole-file on Windows, which is what a claim's cost last time.
 ///
+/// `kept` is how many the list holds, the setting's (`recent_projects`):
+/// the oldest past it go.
+///
 /// Answers whether anything was written, which is `false` for a directory
 /// that is not a worktree and for a list that would not read -- neither is
 /// a failure worth telling the reader about, and the caller uses it only
 /// to know whether to look again.
-pub(in crate::app) fn remember(root: &Path, now: i64) -> bool {
+pub(in crate::app) fn remember(root: &Path, now: i64, kept: usize) -> bool {
     // Not a worktree is not a project, and this is the one place that
     // judgement is made: the page puts Obelus on whatever directory was
     // typed, worktree or not.
@@ -249,7 +243,7 @@ pub(in crate::app) fn remember(root: &Path, now: i64) -> bool {
             last: Some(now),
         },
     );
-    projects.truncate(KEPT);
+    projects.truncate(kept);
     write(&path, &projects)
 }
 
@@ -283,6 +277,24 @@ fn gone(path: &Path) -> bool {
 /// Answers whether anything was written, which is `false` where nothing
 /// on the list had gone and where the list would not read.
 pub(in crate::app) fn forget(these: &[PathBuf]) -> bool {
+    keep_only(|project| !these.contains(&project.path) || !gone(&project.path))
+}
+
+/// Takes this project off the list, whatever is at its path: the reader
+/// said so, on the page that asks.
+///
+/// Answers whether anything was written, which is `false` where it was not
+/// on the list -- another Obelus took it off first -- and where the list
+/// would not read.
+pub(in crate::app) fn strike(this: &Path) -> bool {
+    keep_only(|project| project.path != this)
+}
+
+/// Writes the list back with only the projects `keep` says, where that
+/// leaves any out.
+///
+/// Read-modify-write for the reason [`remember`] is.
+fn keep_only(keep: impl Fn(&Project) -> bool) -> bool {
     let Some(path) = path() else {
         return false;
     };
@@ -291,7 +303,7 @@ pub(in crate::app) fn forget(these: &[PathBuf]) -> bool {
         return false;
     };
     let before = projects.len();
-    projects.retain(|project| !these.contains(&project.path) || !gone(&project.path));
+    projects.retain(keep);
     if projects.len() == before {
         return false;
     }
@@ -391,10 +403,16 @@ impl crate::app::App {
             // reader never opens it.
             self.amiss(&format!("The list of projects would not read: {why}"));
         }
-        let (here, went): (Vec<_>, Vec<_>) = reading
+        let (mut here, went): (Vec<_>, Vec<_>) = reading
             .rows()
             .into_iter()
             .partition(|project| !gone(&project.path));
+        // As many as the setting says, which the file holds more of where
+        // the reader has just made it fewer: the rest go the next time a
+        // project is written down, and come back meanwhile if it is made
+        // more again. Of those that are there, so that one which has gone
+        // leaves room for the next rather than a page one row short.
+        here.truncate(self.config().recent_projects);
         if !went.is_empty() {
             let went: Vec<PathBuf> = went.into_iter().map(|project| project.path).collect();
             forget(&went);
@@ -555,6 +573,15 @@ impl crate::app::App {
             obelus_component::chooser::Outcome::Chose(path) => {
                 self.settle_on(&path);
                 return true;
+            }
+            // Nothing said where it was not written. A list that would not
+            // read when the page opened offered no rows to forget, so the
+            // one way here is another Obelus spoiling the file between the
+            // page opening and the key -- and this page has no status row to
+            // say so on. `keep_only` puts it in the log.
+            obelus_component::chooser::Outcome::Forgot(path) => {
+                strike(&path);
+                true
             }
         };
         // A box that moved is a new question, so a list the reader shut
@@ -894,7 +921,11 @@ impl crate::app::App {
         self.which_project.naming_shut = false;
         // Here and not in `settle`, which going to another worktree
         // shares: only an answer to this page goes on its list.
-        remember(&root, jiff::Timestamp::now().as_second());
+        remember(
+            &root,
+            jiff::Timestamp::now().as_second(),
+            self.config().recent_projects,
+        );
         self.settle(root, &opening.files);
         // A first start's question about the keys, held back while this
         // page was the screen (`App::ask_for_a_keymap`).
@@ -976,6 +1007,7 @@ impl crate::app::App {
             caret: chooser.typing().caret().get(),
             held: chooser.typing().held(),
             naming: chooser.is_naming(),
+            forgets: chooser.forgets(),
             there: self.which_project.named_is_there,
             project: self.which_project.named_is_a_project,
             offering: self.which_project.naming_list.is_some(),
@@ -986,6 +1018,9 @@ impl crate::app::App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// How many a list holds where nothing says otherwise.
+    const KEPT: usize = obelus_config::DEFAULT_RECENT_PROJECTS;
 
     /// The tests here take turns.
     ///
@@ -1040,7 +1075,7 @@ mod tests {
         let (root, _turn) = scratch("round-trip");
         a_repository(&root);
 
-        assert!(remember(&root, 1000), "nothing was written");
+        assert!(remember(&root, 1000, KEPT), "nothing was written");
         let projects = read().rows();
         assert_eq!(projects.len(), 1, "the row does not come back");
         assert_eq!(projects[0].path, root, "the path does not come back");
@@ -1097,8 +1132,8 @@ mod tests {
         let (root, _turn) = scratch("again");
         a_repository(&root);
 
-        assert!(remember(&root, 10), "nothing was written");
-        assert!(remember(&root, 20), "nothing was written");
+        assert!(remember(&root, 10, KEPT), "nothing was written");
+        assert!(remember(&root, 20, KEPT), "nothing was written");
 
         let projects = read().rows();
         assert_eq!(projects.len(), 1, "the project is in the list twice");
@@ -1125,8 +1160,8 @@ mod tests {
         assert!(resolved.to_string_lossy().starts_with(r"\\?\"));
         let plain = dunce::simplified(&resolved).to_path_buf();
 
-        assert!(remember(&plain, 10), "nothing was written");
-        assert!(remember(&resolved, 20), "nothing was written");
+        assert!(remember(&plain, 10, KEPT), "nothing was written");
+        assert!(remember(&resolved, 20, KEPT), "nothing was written");
 
         let written = std::fs::read_to_string(path().expect("somewhere")).expect("the list");
         assert_eq!(
@@ -1152,7 +1187,7 @@ mod tests {
     fn a_directory_that_is_not_a_worktree_is_not_remembered() {
         let (root, _turn) = scratch("not-a-project");
 
-        assert!(!remember(&root, 10), "it was written down");
+        assert!(!remember(&root, 10, KEPT), "it was written down");
         assert!(read().rows().is_empty(), "it is in the list");
     }
 
@@ -1173,7 +1208,7 @@ mod tests {
         std::fs::create_dir_all(path.parent().expect("a directory")).expect("the directory");
         std::fs::write(&path, "[[opened]]\npath = \"half of a").expect("half a file");
 
-        assert!(!remember(&root, 10), "it was written over");
+        assert!(!remember(&root, 10, KEPT), "it was written over");
         assert_eq!(
             std::fs::read_to_string(&path).expect("still there"),
             "[[opened]]\npath = \"half of a",
@@ -1232,8 +1267,8 @@ mod tests {
                 .is_ok_and(|out| out.status.success());
         assert!(ok, "the worktree was not made");
 
-        assert!(remember(&main, 10), "nothing was written");
-        assert!(remember(&linked, 20), "nothing was written");
+        assert!(remember(&main, 10, KEPT), "nothing was written");
+        assert!(remember(&linked, 20, KEPT), "nothing was written");
 
         let projects = read().rows();
         assert_eq!(projects.len(), 2, "the two worktrees are one row");
@@ -1259,6 +1294,132 @@ mod tests {
         )
         .expect("a list");
         gone
+    }
+
+    /// The page offers as many as the setting says, newest first, though the
+    /// file holds more.
+    ///
+    /// Broken deliberately by taking the `take` out of `ask_which_project`:
+    /// the page offers both.
+    #[test]
+    fn the_page_offers_as_many_as_the_setting_says() {
+        let (root, _turn) = scratch("fewer");
+        let older = root.join("older");
+        std::fs::create_dir_all(&older).expect("a directory");
+        let path = path().expect("somewhere");
+        std::fs::create_dir_all(path.parent().expect("a directory")).expect("the directory");
+        std::fs::write(
+            &path,
+            to_toml(&[
+                Project {
+                    path: root.clone(),
+                    last: Some(20),
+                },
+                Project {
+                    path: older,
+                    last: Some(10),
+                },
+            ]),
+        )
+        .expect("a list");
+
+        let mut app = crate::app::App::new(Vec::new());
+        app.settled.config.recent_projects = 1;
+        app.ask_which_project();
+        let offered: Vec<PathBuf> = app
+            .which_project
+            .chooser
+            .as_ref()
+            .expect("asking")
+            .rows()
+            .into_iter()
+            .map(|(known, _)| known.path.clone())
+            .collect();
+        assert_eq!(offered, vec![root], "the page offers more than it keeps");
+        assert_eq!(read().rows().len(), 2, "making it fewer wrote the file");
+    }
+
+    /// A project that has gone leaves room for the next: the page offers as
+    /// many as the setting says of those that are there.
+    ///
+    /// Broken deliberately by taking as many as the setting says before
+    /// asking which have gone, as it first did: the page offers none.
+    #[test]
+    fn a_gone_project_leaves_room_for_the_next() {
+        let (root, _turn) = scratch("room");
+        // The gone one newest, so that it is the one taken.
+        let path = path().expect("somewhere");
+        std::fs::create_dir_all(path.parent().expect("a directory")).expect("the directory");
+        std::fs::write(
+            &path,
+            to_toml(&[
+                Project {
+                    path: root.join("gone"),
+                    last: Some(30),
+                },
+                Project {
+                    path: root.clone(),
+                    last: Some(20),
+                },
+            ]),
+        )
+        .expect("a list");
+
+        let mut app = crate::app::App::new(Vec::new());
+        app.settled.config.recent_projects = 1;
+        app.ask_which_project();
+        let offered: Vec<PathBuf> = app
+            .which_project
+            .chooser
+            .as_ref()
+            .expect("asking")
+            .rows()
+            .into_iter()
+            .map(|(known, _)| known.path.clone())
+            .collect();
+        assert_eq!(offered, vec![root], "a gone project took the only room");
+    }
+
+    /// Delete on a project takes it off the page and out of the file, and
+    /// leaves the reader on the row that took its place.
+    ///
+    /// Broken deliberately by taking the `strike` out of the chooser's
+    /// answer (the file keeps it, and the next start offers it again), and
+    /// by clamping the row to the count of projects rather than one less
+    /// (the reader lands on the row that opens another, where enter means
+    /// something else).
+    #[test]
+    fn delete_forgets_the_project_the_reader_is_on() {
+        let (root, _turn) = scratch("delete");
+        let (newer, older) = (root.join("newer"), root.join("older"));
+        for (each, when) in [(&older, 10), (&newer, 20)] {
+            std::fs::create_dir_all(each).expect("a directory");
+            a_repository(each);
+            assert!(remember(each, when, KEPT), "nothing was written");
+        }
+        let mut app = crate::app::App::new(Vec::new());
+        app.ask_which_project();
+        let press = |app: &mut crate::app::App, code| {
+            app.choosing_a_project(&KeyEvent::new(code, KeyModifiers::NONE))
+        };
+
+        assert!(press(&mut app, KeyCode::Down), "down was not taken");
+        assert!(press(&mut app, KeyCode::Delete), "delete was not taken");
+
+        let chooser = app.which_project.chooser.as_ref().expect("asking");
+        let offered: Vec<PathBuf> = chooser
+            .rows()
+            .into_iter()
+            .map(|(known, _)| known.path.clone())
+            .collect();
+        assert_eq!(offered, vec![newer.clone()], "the wrong row went");
+        assert_eq!(chooser.at(), 0, "the reader is not on a project");
+        let kept: Vec<PathBuf> = read()
+            .rows()
+            .into_iter()
+            .map(|project| project.path)
+            .collect();
+        assert_eq!(kept, vec![newer], "the file still has it");
     }
 
     /// A project whose directory has gone comes off the file.
@@ -1430,7 +1591,7 @@ mod tests {
         std::fs::create_dir_all(theirs.parent().expect("a directory")).expect("the directory");
         std::fs::write(&theirs, "another Obelus is halfway through this").expect("theirs");
 
-        assert!(remember(&root, 10), "nothing was written");
+        assert!(remember(&root, 10, KEPT), "nothing was written");
         assert_eq!(
             std::fs::read_to_string(&theirs).ok().as_deref(),
             Some("another Obelus is halfway through this"),
@@ -1463,25 +1624,62 @@ mod tests {
         assert!(beside.is_empty(), "it left {beside:?} behind");
     }
 
-    /// The list does not grow without end.
+    /// The list does not grow past what the setting says.
     ///
     /// Broken deliberately by taking the `truncate` out of `remember`:
     /// the file grows for ever and the screen's filter searches a
-    /// list of every directory the reader has ever opened.
+    /// list of every directory the reader has ever opened. And by
+    /// truncating to the default rather than to `kept`, which keeps eight.
     #[test]
-    fn the_list_stops_at_twenty() {
+    fn the_list_stops_where_the_setting_says() {
         let (root, _turn) = scratch("many");
-        for which in 0..KEPT + 5 {
+        let kept = 3;
+        for which in 0..kept + 5 {
             let each = root.join(format!("p{which}"));
             std::fs::create_dir_all(&each).expect("a directory");
             a_repository(&each);
             assert!(
-                remember(&each, i64::try_from(which).expect("a time")),
+                remember(&each, i64::try_from(which).expect("a time"), kept),
                 "nothing was written"
             );
         }
 
-        assert_eq!(read().rows().len(), KEPT, "the list is not capped");
+        let rows = read().rows();
+        assert_eq!(rows.len(), kept, "the list is not capped");
+        assert_eq!(
+            rows.first().map(|project| project.path.clone()),
+            Some(root.join("p7")),
+            "the newest is not the one kept first"
+        );
+    }
+
+    /// A project struck off the list is gone from the file, whatever is
+    /// at its path, and the rest stay.
+    ///
+    /// Broken deliberately by striking through `forget`, which keeps a
+    /// project whose directory is still there -- the row comes back the
+    /// next time the page opens.
+    #[test]
+    fn a_project_struck_off_stays_off() {
+        let (root, _turn) = scratch("struck");
+        let (one, two) = (root.join("one"), root.join("two"));
+        for (each, when) in [(&one, 10), (&two, 20)] {
+            std::fs::create_dir_all(each).expect("a directory");
+            a_repository(each);
+            assert!(remember(each, when, KEPT), "nothing was written");
+        }
+
+        assert!(strike(&one), "nothing was written");
+        let left: Vec<PathBuf> = read()
+            .rows()
+            .into_iter()
+            .map(|project| project.path)
+            .collect();
+        assert_eq!(left, vec![two.clone()], "the wrong project went");
+        assert!(
+            !strike(&one),
+            "a project not on the list was written off it"
+        );
     }
 
     /// Two threads writing the list at once leave a list that reads.

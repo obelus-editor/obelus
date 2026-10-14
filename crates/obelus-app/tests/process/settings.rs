@@ -4,7 +4,7 @@
 //! switch and the tab width for the whole process, and a test beside these
 //! drawing a screen would draw it with whatever the last one turned on.
 
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyModifiers};
 use obelus_app::{
     app::{App, dispatch},
     event::Event,
@@ -994,9 +994,16 @@ fn delete_takes_a_setting_out_and_leaves_the_heading() {
 /// filter now, and a delete pressed to take a letter out took a setting
 /// out instead.
 ///
+/// On a Mac the foot asks about the key with `delete` written on it, which
+/// is backspace and still the filter's at the end of a word; a forward
+/// delete there is the row's all the same. And a delete held down is never
+/// the row's, which would be a setting gone per repeat.
+///
 /// Deliberate breaks: the `takes_a_delete` guard taken off the project's
 /// arm, and the first delete takes `wrap` out of the file; `rows_delete`
-/// taken off the foot's `Unset`, and it is offered over the filter.
+/// taken off the foot's `Unset`, and it is offered over the filter; the
+/// `Repeat` taken out of `Field::leaves_to_the_row`, and the held delete
+/// takes `wrap` out.
 #[test]
 fn delete_takes_a_letter_out_of_the_filter_before_a_setting_out_of_the_file() {
     let _turn = crate::turn();
@@ -1025,12 +1032,21 @@ fn delete_takes_a_letter_out_of_the_filter_before_a_setting_out_of_the_file() {
     assert_eq!(app.settings().expect("the settings").query(), "rap");
     assert!(written().contains("wrap = true"), "a letter cost a setting");
 
-    // With nothing in front of the caret, it is the row's again.
+    // With nothing in front of the caret, it is the row's again -- the
+    // forward delete, and on a Mac not yet the key the foot names.
     support::press(&mut app, KeyCode::End);
     let text = foot(&mut app);
-    assert!(
+    assert_eq!(
         word_on(&text, "Unset"),
-        "the foot no longer offers to unset:\n{text}"
+        !cfg!(target_os = "macos"),
+        "the foot offers to unset where its key would not:\n{text}"
+    );
+    let mut held = crossterm::event::KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE);
+    held.kind = crossterm::event::KeyEventKind::Repeat;
+    app.handle(Event::Key(held));
+    assert!(
+        written().contains("wrap = true"),
+        "a held delete cost a setting"
     );
     support::press(&mut app, KeyCode::Delete);
     assert!(!written().contains("wrap"), "still there: {:?}", written());
