@@ -4566,9 +4566,9 @@ fn a_note_is_said_on_a_conversations_own_row() {
 /// A word an input method begins takes what is held in the box a message
 /// is written in, which is where most of the words typed that way go.
 ///
-/// Broken deliberately by answering `false` for the box in
-/// `App::holds_text`: nothing is asked to go, and the message keeps its
-/// words.
+/// Broken deliberately by taking the conversation's arm out of
+/// `App::writing_into`: the spelling goes nowhere, and the message keeps
+/// its words.
 #[test]
 fn a_word_begun_in_the_message_box_takes_what_is_held() {
     let (mut app, events) = talking();

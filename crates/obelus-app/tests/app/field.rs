@@ -585,7 +585,7 @@ mod in_place {
     /// and the word over the last.
     ///
     /// Broken deliberately by answering `false` from
-    /// `Editing::hold_back_to` whatever is there: the query reads `nni`,
+    /// `Editing::hold_written` whatever is there: the query reads `nni`,
     /// and giving the word up leaves it.
     #[test]
     fn each_spelling_is_written_over_the_last_in_a_box() {

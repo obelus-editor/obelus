@@ -2414,8 +2414,8 @@ fn the_notes_are_wrapped_to_the_width_of_the_frame_being_drawn() {
 /// A word an input method has begun takes what is held in a note's box,
 /// which is a composer like the message box and goes the same way.
 ///
-/// Broken deliberately by taking the notes' arm out of `App::holds_text`:
-/// nothing is asked to go, and the note keeps its words.
+/// Broken deliberately by taking the notes' arm out of `App::writing_into`:
+/// the spelling goes elsewhere, and the note keeps its words.
 #[test]
 fn a_word_begun_in_a_note_takes_what_is_held() {
     let scratch = tree(
