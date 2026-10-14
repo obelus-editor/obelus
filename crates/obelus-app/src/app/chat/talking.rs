@@ -3291,7 +3291,9 @@ impl App {
         }
         if let Some(field) = &words {
             let suggested = match &field.takes {
-                acp::Takes::Words(suggested) => suggested.clone(),
+                acp::Takes::Words(suggested) | acp::Takes::Number { suggested, .. } => {
+                    suggested.clone()
+                }
                 _ => None,
             };
             // Its title rather than its question: the row it names is one
@@ -3377,7 +3379,7 @@ impl App {
         let mut said: Vec<String> = Vec::new();
         if let Some(field) = &choice {
             match &field.takes {
-                acp::Takes::One(values) => match chosen.first() {
+                acp::Takes::One { values, .. } => match chosen.first() {
                     Some(id) => {
                         said.push(format!("{}: {}", field.title, called(values, id)));
                         given.push((field.name.clone(), acp::Reply::Value(id.clone())));
@@ -3424,7 +3426,9 @@ impl App {
                 // takes words. A complaint about a number nobody was
                 // asked for is Obelus insisting on its own behalf.
                 acp::Takes::Number { .. } if text.is_empty() && !field.required => {}
-                acp::Takes::Number { whole, least, most } => {
+                acp::Takes::Number {
+                    whole, least, most, ..
+                } => {
                     let Some(reply) = self.number_of(whose, field, &text, *whole, *least, *most)
                     else {
                         // The reader's slip, so it is said and the card
@@ -4787,7 +4791,10 @@ fn taken_back(question: &acp::Question) -> bool {
 /// finds out afterwards.
 fn question(field: &acp::Field) -> String {
     let mut asked = field.title.clone();
-    if let acp::Takes::Number { whole, least, most } = field.takes {
+    if let acp::Takes::Number {
+        whole, least, most, ..
+    } = field.takes
+    {
         let kind = match whole {
             true => "a whole number",
             false => "a number",
@@ -4821,7 +4828,16 @@ fn called(values: &[acp::Value], id: &str) -> String {
 /// One field's card, before it is told what the question is about.
 fn card_of(field: &acp::Field) -> Card {
     let mut card = match &field.takes {
-        acp::Takes::One(values) => Card::new(choices_of(values, &[]), false),
+        // The one the agent suggested is where the card starts, as a
+        // switch starts on the side it is on: one key from taking it, and
+        // nothing chosen until the reader takes it.
+        acp::Takes::One { values, suggested } => {
+            let mut card = Card::new(choices_of(values, &[]), false);
+            if let Some(id) = suggested {
+                card.prefer(id);
+            }
+            card
+        }
         acp::Takes::Some {
             values,
             least,
