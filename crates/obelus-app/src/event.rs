@@ -117,14 +117,13 @@ pub enum Event {
     /// Obelus copies *with* cannot be read back, so the terminal reading the
     /// clipboard is the way in.
     Paste(String),
-    /// An input method has begun spelling a word.
+    /// What an input method is spelling now, and nothing where it has
+    /// stopped -- which it always says before the word arrives as a paste.
     ///
     /// Only a window hears one: a terminal's input method is the
-    /// terminal's, and what reaches Obelus is the word. Not what is being
-    /// spelled, which stays on the window's page -- only that a word has
-    /// begun, because what the reader has hold of goes now rather than when
-    /// the word arrives (`App::spelling_begins`).
-    Spelling,
+    /// terminal's, and what reaches Obelus is the word. Written in where
+    /// the reader is writing, over what it spelled before (`App::spell`).
+    Spelling(String),
     /// A file was dropped on the window.
     ///
     /// Only a window hears one: a terminal types the file's path instead,
@@ -277,7 +276,7 @@ impl Event {
             Self::Scroll(_) => "Scroll",
             Self::Pointer { .. } => "Pointer",
             Self::Paste(_) => "Paste",
-            Self::Spelling => "Spelling",
+            Self::Spelling(_) => "Spelling",
             Self::Dropped(_) => "Dropped",
             Self::Tick => "Tick",
             Self::NotesSettled => "NotesSettled",

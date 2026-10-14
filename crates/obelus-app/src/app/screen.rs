@@ -190,6 +190,9 @@ impl Screen for App {
     fn theme(&self) -> &Theme {
         App::theme(self)
     }
+    fn spelling_over_a_program(&self) -> Option<&str> {
+        self.spelling_over_a_program.as_deref()
+    }
     fn themes_failure(&self) -> Option<&str> {
         App::themes_failure(self)
     }

@@ -134,9 +134,6 @@ pub(crate) enum Update {
         whose: Option<Layer>,
         /// Whether a character typed now goes into any text.
         typing: bool,
-        /// Where what is typed at the caret wraps -- see
-        /// `Drawing::caret_is`.
-        lines: Option<Rect>,
     },
     /// A mark the window may be asked to draw, and what it is drawn from.
     ///
@@ -1271,7 +1268,7 @@ impl obelus_app::app::Drawing for Telling {
         }
     }
 
-    fn caret_is(&self, caret: Caret, whose: Option<Layer>, typing: bool, lines: Option<Rect>) {
+    fn caret_is(&self, caret: Caret, whose: Option<Layer>, typing: bool) {
         // No wake: this arrives while a frame is being laid out, and the
         // frame's own end wakes the window a moment later. Waking here as
         // well would be a second wake for one screen.
@@ -1279,7 +1276,6 @@ impl obelus_app::app::Drawing for Telling {
             shape: caret,
             whose,
             typing,
-            lines,
         });
     }
 }
@@ -1485,7 +1481,6 @@ pub(crate) struct Page {
     shape: Caret,
     whose: Option<Layer>,
     typing: bool,
-    lines: Option<Rect>,
     /// What the page is drawn on, which is what a cell nobody has written
     /// yet is drawn on too -- see `blank`.
     ground: Color,
@@ -1509,113 +1504,10 @@ impl Default for Page {
             whose: None,
             // And nothing is typed into a screen with nothing on it.
             typing: false,
-            lines: None,
             ground: Color::Reset,
             put_over: Vec::new(),
         }
     }
-}
-
-/// What an input method is spelling, before it becomes a word.
-///
-/// Drawn by the window over the cells after the caret, which is where the
-/// word will go. It is not in the file and not in any cell: an
-/// application that was told about it would be an application with
-/// half-typed pinyin in a buffer's undo history.
-#[derive(Clone, Debug)]
-pub(crate) struct Spelling {
-    /// What has been typed so far.
-    pub(crate) text: String,
-    /// How many characters into it the input method's own caret is.
-    pub(crate) caret: usize,
-}
-
-impl Spelling {
-    /// What an input method said, as a spelling -- or nothing, where it
-    /// said the spelling is over.
-    ///
-    /// `caret` is as winit hands it on: a run of bytes, or nothing for a
-    /// caret the input method would rather not show. A run whose two ends
-    /// meet is a caret; one whose ends differ is text the input method is
-    /// highlighting, and the caret is its *far* end, which is where typing
-    /// carries on from. fcitx5 says `(0, 6)` for `ni hao` -- the whole of
-    /// it, ending where the next letter goes -- and a caret taken from the
-    /// near end sat at the front of the pinyin however much was typed.
-    ///
-    /// In characters rather than bytes: the window counts cells, and a
-    /// byte offset into what is being spelled is not one.
-    pub(crate) fn new(text: String, caret: Option<(usize, usize)>) -> Option<Self> {
-        if text.is_empty() {
-            return None;
-        }
-        let caret = match caret {
-            Some((_, end)) => text.get(..end).map_or(0, |before| before.chars().count()),
-            None => text.chars().count(),
-        };
-        Some(Self { text, caret })
-    }
-
-    /// Where each of its characters goes on this page, and where its
-    /// caret does -- or nothing, on a page with no caret to spell at.
-    ///
-    /// From the page's caret on, in the lines the caret is in: a character
-    /// that would cross their right goes on at their left, on the row
-    /// below, which is where it will be once it is a word. Clipped at the
-    /// side of the screen, a word spelled at the end of a row went on off
-    /// it, and the caret and the candidates with it.
-    ///
-    /// Past the foot of the lines if it has to be, over whatever is there:
-    /// it is gone again in a moment, and a word the reader cannot see is
-    /// the word they are choosing.
-    ///
-    /// One answer for the characters, the caret and the candidates, so the
-    /// three cannot come apart -- in cells and not in characters, because
-    /// a full-width character takes two.
-    pub(crate) fn laid(&self, page: &Page) -> Option<Laid> {
-        let caret = page.caret()?;
-        // Without lines, the rest of the screen's row.
-        let lines = page
-            .lines()
-            .unwrap_or_else(|| Rect::new(0, caret.y, page.columns(), 1));
-        let right = lines.right().max(caret.x.saturating_add(1));
-        let mut at = caret;
-        let mut places = Vec::new();
-        // And one place past the last character, for a caret at the end.
-        for character in self.text.chars().map(Some).chain([None]) {
-            #[expect(
-                clippy::cast_possible_truncation,
-                reason = "the width of one character, which is one or two"
-            )]
-            let wide = character.map_or(1, |character| {
-                obelus_text::text_width(character.encode_utf8(&mut [0; 4])).max(1) as u16
-            });
-            // Not at the left already, or a character wider than the lines
-            // would go down a row for ever.
-            if at.x.saturating_add(wide) > right && at.x > lines.x {
-                at = Position {
-                    x: lines.x,
-                    y: at.y.saturating_add(1),
-                };
-            }
-            places.push((at, wide));
-            at.x = at.x.saturating_add(wide);
-        }
-        let caret = places.get(self.caret).map_or(caret, |(at, _)| *at);
-        places.pop();
-        Some(Laid {
-            characters: places,
-            caret,
-        })
-    }
-}
-
-/// Where a spelling goes on the page -- see `Spelling::laid`.
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) struct Laid {
-    /// Each character's cell, and how many cells it takes, in order.
-    pub(crate) characters: Vec<(Position, u16)>,
-    /// Where the caret inside it is.
-    pub(crate) caret: Position,
 }
 
 /// One cell, as the painter reads it.
@@ -1689,11 +1581,6 @@ impl Page {
     /// Whether a character typed now goes into any text.
     pub(crate) const fn typing(&self) -> bool {
         self.typing
-    }
-
-    /// Where what is typed at the caret wraps.
-    pub(crate) const fn lines(&self) -> Option<Rect> {
-        self.lines
     }
 
     /// Makes room for a screen this size, keeping each cell at the place it
@@ -1841,12 +1728,10 @@ impl Page {
                 shape,
                 whose,
                 typing,
-                lines,
             } => {
                 self.shape = shape;
                 self.whose = whose;
                 self.typing = typing;
-                self.lines = lines;
                 false
             }
             // Neither is a cell: the window takes both out of the queue
@@ -1951,81 +1836,6 @@ impl Page {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// A page with its caret at `caret`, in `lines`.
-    fn spelled_on(caret: (u16, u16), lines: Option<Rect>) -> Page {
-        let mut page = Page::default();
-        page.resized(10, 4);
-        page.apply(Update::Caret(Some(Position::new(caret.0, caret.1))));
-        page.apply(Update::CaretIs {
-            shape: Caret::Bar,
-            whose: None,
-            typing: true,
-            lines,
-        });
-        page
-    }
-
-    /// Where the caret goes inside a word being spelled is counted in
-    /// cells, not in characters.
-    ///
-    /// Deliberate break: counting the characters before it -- which is
-    /// what the input method's own offset is -- puts the caret one column
-    /// short for every full-width character typed so far, so the caret
-    /// walks backwards through the word as it is spelled.
-    #[test]
-    fn a_spelling_is_measured_in_cells() {
-        let page = spelled_on((1, 0), None);
-        let caret = |caret| {
-            Spelling {
-                text: "\u{4e2d}a".to_string(),
-                caret,
-            }
-            .laid(&page)
-            .map(|laid| laid.caret)
-        };
-        assert_eq!(caret(2), Some(Position::new(4, 0)));
-        assert_eq!(caret(0), Some(Position::new(1, 0)));
-    }
-
-    /// A word spelled at the end of a row goes on at the left of the lines
-    /// it is typed into, on the row below, and the caret with it -- which
-    /// is where the word will be once it is one.
-    ///
-    /// Deliberate break: leave out the step down a row in
-    /// `Spelling::laid`, as it was. The word then runs on past the right
-    /// of the box, off the side of the screen, and the caret after it.
-    #[test]
-    fn a_spelling_wraps_where_its_lines_do() {
-        // A box from column two to column seven, caret near its end.
-        let page = spelled_on((5, 1), Some(Rect::new(2, 1, 6, 2)));
-        let laid = Spelling {
-            text: "nihao".to_string(),
-            caret: 5,
-        }
-        .laid(&page)
-        .expect("a caret to spell at");
-        let at = |x, y| (Position::new(x, y), 1);
-        assert_eq!(
-            laid.characters,
-            vec![at(5, 1), at(6, 1), at(7, 1), at(2, 2), at(3, 2)],
-            "the word wraps at the box's right, back to its left"
-        );
-        assert_eq!(laid.caret, Position::new(4, 2), "and the caret after it");
-        // A full-width character that would straddle the right goes down
-        // whole, rather than half on each row.
-        let laid = Spelling {
-            text: "ab\u{4f60}".to_string(),
-            caret: 3,
-        }
-        .laid(&page)
-        .expect("a caret to spell at");
-        assert_eq!(
-            laid.characters,
-            vec![at(5, 1), at(6, 1), (Position::new(2, 2), 2)],
-        );
-        assert_eq!(laid.caret, Position::new(4, 2));
-    }
 
     /// Rows of text written into a page, one character to a cell.
     fn written(rows: &[&str]) -> Page {
@@ -2805,24 +2615,6 @@ mod tests {
     fn a_frame_missing_a_corner_is_not_drawn() {
         let page = written(&["xx\u{256e}", "\u{2570}\u{2500}\u{256f}"]);
         assert!(!a_box(3, 2).framed(&page));
-    }
-
-    /// The caret in a spelling is at the far end of what the input method
-    /// named, which is where the next letter goes.
-    ///
-    /// Deliberate break: take the near end, `Some((start, _))`, as this
-    /// once did. The first case below is what fcitx5 actually sent, read
-    /// off the log, and with the near end the caret sat at the front of
-    /// the pinyin however much of it had been typed.
-    #[test]
-    fn a_spelling_carries_on_from_the_far_end_of_what_is_named() {
-        let caret = |text: &str, at| Spelling::new(text.to_string(), at).map(|it| it.caret);
-        assert_eq!(caret("ni hao", Some((0, 6))), Some(6), "fcitx5's whole run");
-        assert_eq!(caret("ni hao", Some((2, 2))), Some(2), "a caret of its own");
-        assert_eq!(caret("ni hao", None), Some(6), "a caret not shown");
-        // Bytes in, characters out: two characters of Chinese are six bytes.
-        assert_eq!(caret("\u{4f60}\u{597d}hao", Some((0, 6))), Some(2));
-        assert_eq!(caret("", Some((0, 0))), None, "nothing is being spelled");
     }
 
     /// A cap is about cells, and the cells are the truth.

@@ -666,9 +666,9 @@ mod keys {
         assert_eq!(text(&app), "abcfn main() {}\n");
     }
 
-    /// A word an input method has begun takes what is held, before the
-    /// word arrives: escape gives the word up and does not bring it back,
-    /// which is what every other editor's input method does.
+    /// A word an input method has begun is written over what is held,
+    /// before the word arrives: escape gives the word up and does not bring
+    /// it back, which is what every other editor's input method does.
     ///
     /// Broken deliberately by taking `Event::Spelling`'s arm out of
     /// `App::handle`: the selection is still there when the word begins.
@@ -678,12 +678,13 @@ mod keys {
         for _ in 0..2 {
             support::press_shift(&mut app, KeyCode::Right);
         }
-        app.handle(obelus_app::event::Event::Spelling);
+        app.handle(obelus_app::event::Event::Spelling("h".to_string()));
         assert_eq!(
             text(&app),
-            " main() {}\n",
+            "h main() {}\n",
             "beginning a word left what was held in the file"
         );
+        app.handle(obelus_app::event::Event::Spelling(String::new()));
         app.handle(obelus_app::event::Event::Paste("函数".to_string()));
         assert_eq!(text(&app), "函数 main() {}\n");
     }
@@ -699,7 +700,9 @@ mod keys {
         for _ in 0..2 {
             support::press_shift(&mut app, KeyCode::Right);
         }
-        app.handle(obelus_app::event::Event::Spelling);
+        for spelling in ["h", "han", "hans", ""] {
+            app.handle(obelus_app::event::Event::Spelling(spelling.to_string()));
+        }
         app.handle(obelus_app::event::Event::Paste("函数".to_string()));
         dispatch::dispatch(&mut app, Command::Undo);
         assert_eq!(
@@ -721,7 +724,8 @@ mod keys {
         for _ in 0..2 {
             support::press_shift(&mut app, KeyCode::Right);
         }
-        app.handle(obelus_app::event::Event::Spelling);
+        app.handle(obelus_app::event::Event::Spelling("h".to_string()));
+        app.handle(obelus_app::event::Event::Spelling(String::new()));
         support::type_text(&mut app, "x");
         app.handle(obelus_app::event::Event::Paste("函数".to_string()));
         assert_eq!(text(&app), "x函数 main() {}\n");
@@ -731,6 +735,46 @@ mod keys {
             "x main() {}\n",
             "the paste was joined to what came before the letter"
         );
+    }
+
+    /// What an input method spells is written into the file, each spelling
+    /// over the one before it, and taken back out when the spelling is
+    /// over -- so the word lands between what was there, and one undo
+    /// takes the whole of it.
+    ///
+    /// Broken deliberately by never writing over the last spelling in
+    /// `App::spell_into_the_file` (`over` always `None`): the file says
+    /// `anninihb`, and giving the word up leaves the letters.
+    #[test]
+    fn each_spelling_is_written_over_the_last() {
+        let (_scratch, mut app) = reading("keys-spelling-over", "ab\n");
+        support::press(&mut app, KeyCode::Right);
+        for spelling in ["n", "ni", "nih"] {
+            app.handle(obelus_app::event::Event::Spelling(spelling.to_string()));
+        }
+        assert_eq!(text(&app), "anihb\n", "the spelling is not in the file");
+        app.handle(obelus_app::event::Event::Spelling(String::new()));
+        assert_eq!(text(&app), "ab\n", "the spelling over left its letters");
+        app.handle(obelus_app::event::Event::Paste("你".to_string()));
+        assert_eq!(text(&app), "a你b\n");
+        dispatch::dispatch(&mut app, Command::Undo);
+        assert_eq!(text(&app), "ab\n", "one undo did not take the word");
+    }
+
+    /// A spelling is not written over what something else put there since:
+    /// the file changed under it, and the letters at the caret are not the
+    /// spelling's any more.
+    ///
+    /// Broken deliberately by not asking the version in
+    /// `App::spell_into_the_file`: the next spelling takes the `x` with it.
+    #[test]
+    fn a_spelling_is_not_written_over_what_came_after_it() {
+        let (_scratch, mut app) = reading("keys-spelling-moved", "ab\n");
+        support::press(&mut app, KeyCode::Right);
+        app.handle(obelus_app::event::Event::Spelling("n".to_string()));
+        support::type_text(&mut app, "x");
+        app.handle(obelus_app::event::Event::Spelling("ni".to_string()));
+        assert_eq!(text(&app), "anxnib\n");
     }
 
     /// A pasted function is one change, however many lines it is.

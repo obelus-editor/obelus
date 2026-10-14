@@ -580,6 +580,28 @@ mod in_place {
         );
     }
 
+    /// What an input method spells is written into a query, each spelling
+    /// over the one before it -- so the list narrows as the letters do --
+    /// and the word over the last.
+    ///
+    /// Broken deliberately by answering `false` from
+    /// `Editing::hold_back_to` whatever is there: the query reads `nni`,
+    /// and giving the word up leaves it.
+    #[test]
+    fn each_spelling_is_written_over_the_last_in_a_box() {
+        let (_scratch, mut app) = open("field-spelling-over");
+        dispatch::dispatch(&mut app, Command::SearchFile);
+        support::type_text(&mut app, "a ");
+        for spelling in ["n", "ni"] {
+            app.handle(Event::Spelling(spelling.to_string()));
+        }
+        assert_eq!(app.picker().expect("the list").query(), "a ni");
+        app.handle(Event::Spelling(String::new()));
+        assert_eq!(app.picker().expect("the list").query(), "a ");
+        app.handle(Event::Paste("你".to_string()));
+        assert_eq!(app.picker().expect("the list").query(), "a 你");
+    }
+
     /// A word an input method has begun takes what is held in a query, the
     /// way the first letter typed over it would.
     ///
@@ -598,10 +620,10 @@ mod in_place {
         }
         assert_eq!(app.picker().expect("the list").query_held(), Some(6..11));
 
-        app.handle(Event::Spelling);
+        app.handle(Event::Spelling("n".to_string()));
         assert_eq!(
             app.picker().expect("the list").query(),
-            "hello ",
+            "hello n",
             "beginning a word left what was held in the query"
         );
         assert_eq!(

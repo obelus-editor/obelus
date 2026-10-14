@@ -7,7 +7,7 @@ use obelus_ui::image::SLOT;
 use ratatui::style::Modifier;
 
 use super::*;
-use crate::grid::{Capped, Look, Marked, Page, Said, Spelling};
+use crate::grid::{Capped, Look, Marked, Page, Said};
 
 impl Painter {
     /// The text.
@@ -247,23 +247,11 @@ impl Painter {
     /// The block is the cell with its colours the other way round, which is
     /// what a terminal does and for the same reason: a block that hid the
     /// character under it would be a caret a reader cannot read past.
-    pub(super) fn caret(
-        &mut self,
-        page: &Page,
-        fonts: &mut Fonts,
-        spelling: Option<&Spelling>,
-        drift: (f32, f32),
-    ) {
+    pub(super) fn caret(&mut self, page: &Page, fonts: &mut Fonts, drift: (f32, f32)) {
         let Some(caret) = page.caret() else {
             return;
         };
         let cell = fonts.cell();
-        // Inside the word being spelled, where the input method says it is:
-        // a caret left at the start of it would be a caret in the wrong
-        // half of what the reader is typing.
-        let at = spelling
-            .and_then(|spelling| spelling.laid(page))
-            .map_or(caret, |laid| laid.caret);
         let look = page.look(caret.x, caret.y);
         let ink = rgba(look.foreground, Ink::Foreground);
         // Where it is drawn, which is where the page put it only once it
@@ -271,17 +259,9 @@ impl Painter {
         // caret carries is drawn from these two, so a caret in flight
         // takes the character it is going to cover along with it rather
         // than leaving it behind on the cell.
-        let left = (f32::from(at.x) + drift.0) * cell.width;
-        let top = (f32::from(at.y) + drift.1) * cell.height;
-        // Inside a word being spelled the caret is always a bar: what is
-        // under it there is the spelling itself, which is being written
-        // rather than typed over, and a block would hide the character the
-        // reader is in the middle of choosing.
-        let shape = match spelling.is_some() {
-            true => Caret::Bar,
-            false => page.shape(),
-        };
-        match shape {
+        let left = (f32::from(caret.x) + drift.0) * cell.width;
+        let top = (f32::from(caret.y) + drift.1) * cell.height;
+        match page.shape() {
             // Narrow, and never thinner than a pixel: a caret that rounds
             // to nothing is a caret nobody can find.
             Caret::Bar => self.block(
@@ -300,59 +280,6 @@ impl Painter {
                     self.glyphs_at((left, top), look, behind, 0, fonts, Size::Cell);
                 }
             }
-        }
-    }
-
-    /// What an input method is spelling, drawn where the word will go.
-    ///
-    /// Over the cells after the caret rather than pushing them along: the
-    /// file has not changed, and a window that reflowed the line for a word
-    /// that may never be committed would be showing the reader a file that
-    /// does not exist. Underlined, which is what says these characters are
-    /// not in the file yet. Wrapped where the lines it is typed into wrap
-    /// -- see `Spelling::laid`.
-    ///
-    /// In the colours of the place it is being typed into, because that is
-    /// the only theme the window has: the cells say what the page's ink and
-    /// paper are here.
-    pub(super) fn spelling(&mut self, page: &Page, fonts: &mut Fonts, spelling: Option<&Spelling>) {
-        let (Some(spelling), Some(caret)) = (spelling, page.caret()) else {
-            return;
-        };
-        let Some(laid) = spelling.laid(page) else {
-            return;
-        };
-        let cell = fonts.cell();
-        let look = page.look(caret.x, caret.y);
-        let ink = rgba(look.foreground, Ink::Foreground);
-        for (character, (at, wide)) in spelling.text.chars().zip(laid.characters) {
-            // Off the screen, which a word long enough to wrap past the
-            // foot of the screen is.
-            if at.x.saturating_add(wide) > page.columns() || at.y >= page.rows() {
-                continue;
-            }
-            let written = character.to_string();
-            let left = f32::from(at.x) * cell.width;
-            let top = f32::from(at.y) * cell.height;
-            let width = f32::from(wide) * cell.width;
-            // The page as it looks there, which over a picture is the
-            // picture with the page laid on it.
-            self.ground_back([left, top, width, cell.height], look.background, None);
-            let over = Look {
-                text: &written,
-                foreground: look.foreground,
-                background: look.background,
-                // Less the underline the cell under it may carry: what is
-                // being spelled wears its own, drawn below, and the word
-                // it is going into is not the word a server complained
-                // about yet.
-                modifier: look.modifier.difference(Modifier::UNDERLINED),
-                underline: Color::Reset,
-            };
-            self.glyphs(at.x, at.y, over, ink, 0, fonts);
-            // The line under it, which is what every input method's inline
-            // spelling wears and what tells it apart from the file.
-            self.underline(left, top, width, cell.height, ink);
         }
     }
 }

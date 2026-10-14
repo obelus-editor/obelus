@@ -845,6 +845,34 @@ impl Editing {
         self.put(what, width);
     }
 
+    /// Where what is written in now begins: at the start of what is held,
+    /// which it goes over, or at the caret.
+    #[must_use]
+    pub fn writes_from(&self) -> Cursor {
+        self.selection().map_or(self.cursor, |span| Cursor {
+            line: span.line,
+            column: span.column,
+            ..self.cursor
+        })
+    }
+
+    /// Takes hold of what runs from `from` to the caret, where that is
+    /// `said` -- and of nothing, where it is not.
+    ///
+    /// What an input method's next spelling is written over: the last one,
+    /// which runs from where it was written in to the caret it left behind.
+    /// Asked of the text rather than trusted, because something else may
+    /// have changed it in between, and a spelling written over whatever is
+    /// there now would take the reader's words with it.
+    pub fn hold_back_to(&mut self, from: Cursor, said: &str) -> bool {
+        self.hold_from(from);
+        let there = self.selected().is_some_and(|held| held == said);
+        if !there {
+            self.anchor = None;
+        }
+        there
+    }
+
     /// Takes out whatever is held, and says what it was.
     ///
     /// Nothing where nothing is held: what to do instead is a question about

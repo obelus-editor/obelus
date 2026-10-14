@@ -71,8 +71,8 @@ fn open(app: &mut App, layer: Layer) {
 /// letter, and an X11 window leaves its input method on anyway -- so a
 /// word begun and given up took the filter's held words for nothing.
 ///
-/// Broken deliberately by not asking `App::takes_text` in
-/// `App::spelling_begins`: the filter lost what it held.
+/// Broken deliberately by not asking `App::takes_text` in `App::spell`:
+/// the filter lost what it held.
 #[test]
 fn a_word_begun_where_nothing_is_typed_takes_nothing() {
     let mut app = reading();
@@ -88,7 +88,7 @@ fn a_word_begun_where_nothing_is_typed_takes_nothing() {
         "nothing is held in the filter"
     );
 
-    app.handle(obelus_app::event::Event::Spelling);
+    app.handle(obelus_app::event::Event::Spelling("n".to_string()));
     assert_eq!(
         app.settings().expect("the settings").query(),
         "choose-theme",

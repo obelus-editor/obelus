@@ -159,10 +159,10 @@ impl Painter {
 
     /// One line under one run of cells.
     ///
-    /// Two callers and one line: what a server says is wrong with a word,
-    /// and what an input method is in the middle of spelling. They are the
-    /// same mark, and a window that drew them two thicknesses would be
-    /// saying they were two different things.
+    /// One line for every underlined cell: what a server says is wrong
+    /// with a word and what an input method is in the middle of spelling
+    /// over a program are the same mark, and a window that drew them two
+    /// thicknesses would be saying they were two different things.
     pub(super) fn underline(
         &mut self,
         left: f32,

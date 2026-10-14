@@ -8,21 +8,14 @@ use super::{
     *,
 };
 use crate::{
-    grid::{Capped, Marked, Page, Said, Spelling, Spun, Ticked},
+    grid::{Capped, Marked, Page, Said, Spun, Ticked},
     motion::Moving,
 };
 
 impl Painter {
     /// Lays a page out as the quads that draw it, and hands them to the
     /// device.
-    pub(super) fn lay(
-        &mut self,
-        page: &Page,
-        fonts: &mut Fonts,
-        spelling: Option<&Spelling>,
-        moving: Moving,
-        said: Said<'_>,
-    ) {
+    pub(super) fn lay(&mut self, page: &Page, fonts: &mut Fonts, moving: Moving, said: Said<'_>) {
         let cell = fonts.cell();
         // Before anything is placed, which is the one moment starting the
         // glyphs again is safe: nothing from the last frame is read after it.
@@ -292,14 +285,10 @@ impl Painter {
             moving.card.unwrap_or(1.0),
             cell,
         );
-        // Over the cells and under the caret: the word being spelled is
-        // going in at the caret, so the caret belongs at the place in it
-        // the input method says.
-        self.spelling(page, fonts, spelling);
         // Off for half of every cycle, which is the blink. What is under it
         // is drawn either way, by the pass above.
         if moving.caret {
-            self.caret(page, fonts, spelling, moving.drift);
+            self.caret(page, fonts, moving.drift);
         }
 
         // A box put over the page travels nowhere, so what it does

@@ -447,6 +447,9 @@ pub trait Screen {
     fn slash(&self) -> Option<&Picker>;
     /// What Obelus is doing about an agent.
     fn talking(&self) -> Talking;
+    /// What an input method is spelling at a terminal's program, which is
+    /// drawn over its screen and not yet sent to it.
+    fn spelling_over_a_program(&self) -> Option<&str>;
     /// The room the text has, once the gutter has taken its columns.
     fn text_area(&self) -> TextArea;
     /// The colours currently in force.

@@ -883,7 +883,6 @@ impl obelus_app::app::Drawing for Hangs {
         _: obelus_app::app::Caret,
         _: Option<obelus_component::layers::Layer>,
         _: bool,
-        _: Option<ratatui::layout::Rect>,
     ) {
     }
 }
@@ -1013,7 +1012,6 @@ impl obelus_app::app::Drawing for Recolours {
         _: obelus_app::app::Caret,
         _: Option<obelus_component::layers::Layer>,
         _: bool,
-        _: Option<ratatui::layout::Rect>,
     ) {
     }
 }

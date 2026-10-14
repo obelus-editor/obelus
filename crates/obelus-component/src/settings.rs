@@ -1111,6 +1111,12 @@ impl Settings {
         self.query.takes_a_delete()
     }
 
+    /// What an input method's spelling is written into -- see
+    /// [`crate::spelling`].
+    pub fn spells(&mut self) -> &mut dyn crate::spelling::Spells {
+        &mut self.query
+    }
+
     /// Puts a run of text into it, which is what a paste is.
     pub fn put_in_query(&mut self, said: &str, offering: Option<&Offering>) {
         self.query.put(said);

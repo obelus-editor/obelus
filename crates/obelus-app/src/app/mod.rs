@@ -227,6 +227,12 @@ pub struct App {
     /// replaced the selection itself. The version is what says nothing came
     /// between them.
     spelled_over: Option<(DocumentId, i32)>,
+    /// What an input method last wrote in, so that what it spells next can
+    /// be written over it -- see [`App::spell`].
+    spelt: Option<editor::moving::Spelt>,
+    /// What an input method is spelling at a terminal's program, which is
+    /// drawn over its screen and sent nothing until it is a word.
+    spelling_over_a_program: Option<String>,
     /// The colours in force, and the name they answer to.
     ///
     /// Owned rather than borrowed from the built-in ones, because a theme
@@ -584,6 +590,8 @@ impl App {
             travelled: 0,
             looked_from: None,
             spelled_over: None,
+            spelt: None,
+            spelling_over_a_program: None,
             keymap: Keymap::new(),
             documents,
             current,
@@ -1567,11 +1575,7 @@ pub trait Drawing: std::fmt::Debug + Send + Sync {
     /// does not swallow keys that are not going to be a word. With the
     /// caret rather than on its own because it is the same kind of fact,
     /// about where the keys are going, and known at the same moment.
-    ///
-    /// And the lines the caret is in -- where what is typed there wraps --
-    /// for a front end that draws something at the caret the application
-    /// is never told about: a word an input method is still spelling.
-    fn caret_is(&self, caret: Caret, whose: Option<Layer>, typing: bool, lines: Option<Rect>);
+    fn caret_is(&self, caret: Caret, whose: Option<Layer>, typing: bool);
 
     /// Things arrive where they are going, or are simply there.
     ///

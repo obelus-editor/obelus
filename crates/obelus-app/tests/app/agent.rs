@@ -4585,9 +4585,10 @@ fn a_word_begun_in_the_message_box_takes_what_is_held() {
         Some("a message I typed")
     );
 
-    app.handle(Event::Spelling);
-    assert!(
-        app.chat().is_some_and(|chat| chat.writing().is_blank()),
+    app.handle(Event::Spelling("n".to_string()));
+    assert_eq!(
+        app.chat().map(|chat| chat.writing().text()).as_deref(),
+        Some("n"),
         "beginning a word left what was held in the message"
     );
 }
@@ -4595,8 +4596,8 @@ fn a_word_begun_in_the_message_box_takes_what_is_held() {
 /// And on a card, whose words cover the box: what is held there goes, and
 /// the message behind it is not touched.
 ///
-/// Broken deliberately by answering `false` for a card in
-/// `App::holds_text`: the card keeps its words.
+/// Broken deliberately by answering `None` for a card in
+/// `App::spelled_into`: the card keeps its words.
 #[test]
 fn a_word_begun_on_a_card_takes_what_is_held_there() {
     let (mut app, events) = talking();
@@ -4615,13 +4616,13 @@ fn a_word_begun_on_a_card_takes_what_is_held_there() {
         Some("held words")
     );
 
-    app.handle(Event::Spelling);
+    app.handle(Event::Spelling("n".to_string()));
     assert_eq!(
         app.card()
             .and_then(Card::copied)
             .map(|(words, _)| words)
             .as_deref(),
-        Some(""),
+        Some("n"),
         "beginning a word left what was held on the card"
     );
 }

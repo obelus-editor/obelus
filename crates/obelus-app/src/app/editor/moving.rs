@@ -4,6 +4,8 @@
 //! arrives somewhere -- a symbol, a line, a bracket, a change -- and the
 //! rule that all of them record where they left.
 
+use obelus_component::spelling::Spells;
+
 use crate::app::*;
 
 /// Which column of a line to land on.
@@ -770,76 +772,188 @@ impl App {
         }
     }
 
-    /// An input method has begun spelling a word, and what the reader has
-    /// hold of goes now rather than when the word arrives.
+    /// Where what is typed now goes: the places [`App::paste_text`] writes
+    /// into, in its order.
     ///
-    /// The way every other editor's input method does it: the spelling is
-    /// drawn where the held text was, and a word given up with escape does
-    /// not bring it back. Put in as a paste of nothing, because the word
-    /// arrives as a paste and this is the first half of the same change --
-    /// but only where something is held, because a paste of nothing has a
-    /// paste's other consequences: a card's box opens, a list goes back to
-    /// its top, a terminal's program is sent a paste. A word given up with
-    /// escape never arrives, and those would have happened for nothing.
-    pub(in crate::app) fn spelling_begins(&mut self) {
-        // Where something is typed into, as well as held: a window on X11
-        // leaves its input method on everywhere, and a key being bound has
-        // a filter that holds words and takes none.
-        if !(self.takes_text() && self.holds_text()) {
-            return;
+    /// Asked once, here, by the paste and by an input method's spelling --
+    /// which has to know where it wrote last time as well as where it is
+    /// writing now, and a second walk of the same layers in a second order
+    /// is how a word would land in one box and be taken back out of another.
+    #[must_use]
+    pub(in crate::app) fn writing_into(&self) -> WritingInto {
+        match self.layers().nearest() {
+            Some(Layer::Prompt) => WritingInto::Prompt,
+            Some(Layer::Settings) => WritingInto::Settings,
+            Some(Layer::Names) => WritingInto::Names,
+            Some(Layer::Picker) => WritingInto::Picker,
+            // Nothing is typed into the counts, nor into the page saying the
+            // project has gone -- and neither falls through to the file
+            // behind it for want of anywhere else.
+            Some(Layer::Counts | Layer::Gone) => WritingInto::Nowhere,
+            // Being asked which project, which is a page of its own and not
+            // a layer -- so this fell through to a file there is none of,
+            // and a path pasted or spelled into its box went nowhere.
+            None if self.which_project.chooser.is_some() => WritingInto::Chooser,
+            // Nothing over the document, so it goes into the document -- and
+            // a conversation is one. This asked about the *layers* and a
+            // conversation was one of those, so when it stopped being one
+            // the text stopped arriving anywhere: not in the box the reader
+            // was typing in, and not in the file behind it either.
+            None if self.conversation().is_some() => WritingInto::Conversation,
+            // And the notes, for the same reason and by the same route.
+            None if self.notes().is_some() => WritingInto::Notes,
+            None if self.terminal().is_some() => WritingInto::Terminal,
+            None => WritingInto::File,
         }
-        let version = |app: &Self| app.current.zip(app.current_buffer().map(Buffer::version));
-        let before = version(self);
-        self.paste_text("");
-        // A file it changed is one with an undo, and the word joins the step
-        // it took; a box has none.
-        let after = version(self);
-        self.spelled_over = after.filter(|_| after != before);
     }
 
-    /// Whether whatever a paste would go into has something held in it.
+    /// What an input method is spelling now, written in where the reader
+    /// is writing, over what it was spelling a moment ago -- and taken out
+    /// again, where it says nothing.
     ///
-    /// The places in [`App::paste_text`]'s order. Not a terminal's: what is
-    /// held there is the screen's, for copying, and none of the program's
-    /// input.
-    fn holds_text(&self) -> bool {
-        match self.layers().nearest() {
-            Some(Layer::Prompt) => self
-                .prompt
-                .as_ref()
-                .is_some_and(|prompt| prompt.held().is_some()),
-            Some(Layer::Settings) => self
-                .settings
-                .as_ref()
-                .is_some_and(|settings| settings.query_held().is_some()),
-            Some(Layer::Names) => self
-                .names
-                .as_ref()
-                .is_some_and(|(_, names)| names.query().held().is_some()),
-            Some(Layer::Picker) => self
-                .picker
-                .as_ref()
-                .is_some_and(|picker| picker.query_held().is_some()),
-            Some(Layer::Counts | Layer::Gone) => false,
-            None if self.which_project.chooser.is_some() => self
+    /// In for real, the way Zed does it: a spelling drawn over the cells
+    /// after the caret ran off the side of the box, where the same letters
+    /// typed went onto the next row and pushed the rest along. The word the
+    /// input method commits arrives afterwards as a paste, and an input
+    /// method always says its spelling is over first, so that paste lands
+    /// where the spelling was.
+    ///
+    /// Written in as a paste, because it is one in every way but the last:
+    /// what is held goes, a list narrows, a search asks again. What a paste
+    /// does not do is take its letters back, so the last spelling is held
+    /// first, and the paste goes over it. In a file the spellings and the
+    /// word are one step back, and what a word begun over a selection took
+    /// is part of that step -- as it was when a word arrived alone.
+    ///
+    /// The caret is left after the spelling rather than where the input
+    /// method puts its own inside it: where the spelling was written from
+    /// and where it ends are all there is to take it back out by.
+    pub(in crate::app) fn spell(&mut self, said: &str) {
+        let into = self.writing_into();
+        let before = self.spelt.take().filter(|spelt| spelt.into == into);
+        // A program is sent nothing until the word arrives, because what is
+        // sent to a program cannot be taken back: the letters are drawn
+        // over its screen instead, and the word goes down the pty.
+        self.spelling_over_a_program =
+            (into == WritingInto::Terminal && !said.is_empty()).then(|| said.to_string());
+        if !self.takes_text() {
+            return;
+        }
+        match into {
+            WritingInto::Nowhere | WritingInto::Terminal => {}
+            WritingInto::File => self.spell_into_the_file(before, said),
+            _ => {
+                let mut over = false;
+                let from = self.spelled_into().map(|spelling| {
+                    if let Some(before) = &before {
+                        over = spelling.hold_back_to(before.from, &before.said);
+                    }
+                    spelling.writes_from()
+                });
+                // Nothing written and nothing to take back: a paste of
+                // nothing has a paste's other consequences -- a list goes
+                // back to its top, a card's box opens -- and they would have
+                // happened for nothing.
+                if said.is_empty() && !over {
+                    return;
+                }
+                self.paste_text(said);
+                self.spelt = from.filter(|_| !said.is_empty()).map(|from| Spelt {
+                    said: said.to_string(),
+                    from,
+                    into,
+                    file: None,
+                });
+            }
+        }
+    }
+
+    /// The same, into the file being read: through the one door a document
+    /// changes by, where the box's own paste would make every spelling a
+    /// step of its own.
+    fn spell_into_the_file(&mut self, before: Option<Spelt>, said: &str) {
+        // The same thing the paste refuses.
+        if self.settled.config.read_only {
+            return;
+        }
+        let Some(buffer) = self.current_buffer() else {
+            return;
+        };
+        let here = self.current.zip(Some(buffer.version()));
+        let cursor = buffer.cursor();
+        // Over the last spelling only where nothing has changed the file
+        // since: the version is what says the letters there are still it.
+        let over = before.filter(|before| here.is_some() && before.file == here);
+        let (span, doing) = match &over {
+            Some(before) => (
+                Span {
+                    line: before.from.line,
+                    column: before.from.column,
+                    end_line: cursor.line,
+                    end_column: cursor.column,
+                },
+                obelus_buffer::undo::Doing::Joined,
+            ),
+            None => (
+                buffer.selection().unwrap_or(Span {
+                    line: cursor.line,
+                    column: cursor.column,
+                    end_line: cursor.line,
+                    end_column: cursor.column,
+                }),
+                obelus_buffer::undo::Doing::Whole,
+            ),
+        };
+        if said.is_empty() && over.is_none() {
+            return;
+        }
+        let from = obelus_buffer::Cursor {
+            line: span.line,
+            column: span.column,
+            ..cursor
+        };
+        self.change(span, said, doing);
+        let after = self.current.zip(self.current_buffer().map(Buffer::version));
+        match said.is_empty() {
+            // Over, and the word it was for arrives next as a paste: it
+            // joins the step the spelling took, with nothing between.
+            true => self.spelled_over = after,
+            false => {
+                self.spelt = Some(Spelt {
+                    said: said.to_string(),
+                    from,
+                    into: WritingInto::File,
+                    file: after,
+                });
+            }
+        }
+    }
+
+    /// The box a spelling is written into, where what is typed goes into a
+    /// box -- see [`App::writing_into`].
+    fn spelled_into(&mut self) -> Option<&mut dyn Spells> {
+        match self.writing_into() {
+            WritingInto::Prompt => self.prompt.as_mut().map(|prompt| prompt.spells()),
+            WritingInto::Settings => self.settings.as_mut().map(|settings| settings.spells()),
+            WritingInto::Names => self.names.as_mut().map(|(_, names)| names.spells()),
+            WritingInto::Picker => self.picker.as_mut().map(|picker| picker.spells()),
+            WritingInto::Chooser => self
                 .which_project
                 .chooser
-                .as_ref()
-                .is_some_and(|chooser| chooser.typing().held().is_some()),
-            None if self.conversation().is_some() => match self.card() {
-                Some(card) => card.selected().is_some(),
-                None => self
-                    .chat()
-                    .is_some_and(|chat| chat.writing().selected().is_some()),
-            },
-            None if self.notes().is_some() => self
-                .notes()
-                .and_then(|notes| notes.writing())
-                .is_some_and(|writing| writing.selected().is_some()),
-            None if self.terminal().is_some() => false,
-            None => self
-                .current_buffer()
-                .is_some_and(|buffer| buffer.selection().is_some()),
+                .as_mut()
+                .map(|chooser| chooser.spells()),
+            WritingInto::Conversation => {
+                let talk = self.conversation_mut()?;
+                if talk.card_in_front().is_some() {
+                    return talk.card_in_front_mut().and_then(|card| card.spells());
+                }
+                Some(talk.chat.writing_mut() as &mut dyn Spells)
+            }
+            WritingInto::Notes => self
+                .notes_mut()?
+                .writing_mut()
+                .map(|writing| writing as &mut dyn Spells),
+            WritingInto::Nowhere | WritingInto::Terminal | WritingInto::File => None,
         }
     }
 
@@ -850,14 +964,14 @@ impl App {
         // their text somewhere they cannot see it, and that is what this
         // did with a list or a conversation open: the guard asked about the
         // notes and a question, and about nothing else.
-        match self.layers().nearest() {
-            Some(Layer::Prompt) => {
+        match self.writing_into() {
+            WritingInto::Prompt => {
                 if let Some(prompt) = self.prompt.as_mut() {
                     prompt.put(what);
                 }
                 return;
             }
-            Some(Layer::Settings) => {
+            WritingInto::Settings => {
                 let offering = self.agent_offering();
                 if let Some(settings) = self.settings.as_mut() {
                     settings.put_in_query(what, offering.as_ref());
@@ -866,13 +980,13 @@ impl App {
             }
             // The query of the list a setting's names are built in, which
             // is the box the reader is typing in while it is open.
-            Some(Layer::Names) => {
+            WritingInto::Names => {
                 if let Some((_, names)) = self.names.as_mut() {
                     names.put_in_query(what);
                 }
                 return;
             }
-            Some(Layer::Picker) => {
+            WritingInto::Picker => {
                 // A search's rows come from the query, so a query that
                 // changed by being pasted into has to be asked again -- the
                 // same thing the key path does when a keystroke changes it.
@@ -885,42 +999,27 @@ impl App {
                 }
                 return;
             }
-            // Nothing is typed into the counts, so a paste has nowhere to
-            // go here -- and does not fall through to the file behind them
-            // for want of anywhere else. Nor into the page saying the
-            // project has gone, for the same reason.
-            Some(Layer::Counts | Layer::Gone) => return,
-            // Being asked which project, which is a page of its own and not
-            // a layer -- so this fell through to a file there is none of,
-            // and a path pasted or spelled into its box went nowhere.
-            None if self.which_project.chooser.is_some() => {
+            WritingInto::Nowhere => return,
+            WritingInto::Chooser => {
                 self.paste_into_the_chooser(what);
                 return;
             }
-            // Nothing over the document, so it goes into the document -- and
-            // a conversation is one. This asked about the *layers* and a
-            // conversation was one of those, so when it stopped being one
-            // the text stopped arriving anywhere: not in the box the reader
-            // was typing in, and not in the file behind it either.
-            None if self.conversation().is_some() => {
+            WritingInto::Conversation => {
                 self.paste_into_conversation(what);
                 return;
             }
-            // And the notes, for the same reason and by the same route:
-            // they were a layer, and the text stopped arriving anywhere the
-            // moment they stopped being one.
-            None if self.notes().is_some() => {
+            WritingInto::Notes => {
                 self.paste_into_notes(what);
                 return;
             }
             // A terminal's program, which reads a paste the way a terminal
             // hands it one. One whose program has ended takes nothing, and
             // what it is does not change into a file for want of one.
-            None if self.terminal().is_some() => {
+            WritingInto::Terminal => {
                 self.paste_into_terminal(what);
                 return;
             }
-            None => {}
+            WritingInto::File => {}
         }
         // The file, which a reader who has the agent make every change does
         // not paste into: here rather than in `offers`, because a terminal's
@@ -1078,4 +1177,43 @@ impl App {
             }
         }
     }
+}
+
+/// Where what is typed now goes -- see [`App::writing_into`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::app) enum WritingInto {
+    /// The question on the status row.
+    Prompt,
+    /// The settings' filter.
+    Settings,
+    /// The query of the list a setting's names are built in.
+    Names,
+    /// A list's query.
+    Picker,
+    /// Nowhere at all.
+    Nowhere,
+    /// The page that asks which project.
+    Chooser,
+    /// The box a message is written in, or the card over it.
+    Conversation,
+    /// The note being written.
+    Notes,
+    /// A terminal's program.
+    Terminal,
+    /// The file being read.
+    File,
+}
+
+/// A word an input method is spelling, as it was last written in.
+#[derive(Clone, Debug)]
+pub(in crate::app) struct Spelt {
+    /// What was written.
+    said: String,
+    /// Where it begins. It ends at the caret.
+    from: obelus_buffer::Cursor,
+    /// What it was written into.
+    into: WritingInto,
+    /// The file and the version the writing left it at, where it was a
+    /// file -- which is what says nothing has changed it since.
+    file: Option<(DocumentId, i32)>,
 }

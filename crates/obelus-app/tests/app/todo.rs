@@ -2437,10 +2437,10 @@ fn a_word_begun_in_a_note_takes_what_is_held() {
         Some("held words")
     );
 
-    app.handle(Event::Spelling);
+    app.handle(Event::Spelling("n".to_string()));
     assert_eq!(
         writing(&app).map(|written| written.text()).as_deref(),
-        Some(""),
+        Some("n"),
         "beginning a word left what was held in the note"
     );
 }

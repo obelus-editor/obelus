@@ -234,7 +234,7 @@ impl App {
             // One change for the whole of it, so undoing a paste is one
             // step rather than however many lines it happened to be.
             Event::Paste(text) => self.paste_text(&text),
-            Event::Spelling => self.spelling_begins(),
+            Event::Spelling(said) => self.spell(&said),
             Event::Dropped(path) => self.dropped(&path),
             // A frame of the one thing moving, and nothing else: what is
             // owed at a moment is owed on a machine with nothing animated

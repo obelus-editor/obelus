@@ -24,6 +24,7 @@ use crate::{Screen, fill};
 pub struct TerminalView<'a> {
     terminal: &'a Terminal,
     theme: &'a Theme,
+    spelling: Option<&'a str>,
 }
 
 impl<'a> TerminalView<'a> {
@@ -33,6 +34,7 @@ impl<'a> TerminalView<'a> {
         Some(Self {
             terminal: app.shown().terminal()?,
             theme: app.theme(),
+            spelling: app.spelling_over_a_program(),
         })
     }
 }
@@ -78,7 +80,47 @@ impl Widget for TerminalView<'_> {
                 cells.set_stringn(area.x + column, area.y + row, contents, room, style);
             }
         }
+        // What an input method is spelling, over what the program drew:
+        // nothing is sent to a program until it is a word, because what is
+        // sent cannot be taken back. Underlined, in the page's colours,
+        // which is what says it is not the program's.
+        if let (Some(spelling), Some(cursor)) = (self.spelling, cursor_of(area, self.terminal)) {
+            let style = page.add_modifier(Modifier::UNDERLINED);
+            for (at, character) in spelled(area, cursor, spelling).0 {
+                let mut buffer = [0; 4];
+                cells.set_stringn(at.x, at.y, character.encode_utf8(&mut buffer), 2, style);
+            }
+        }
     }
+}
+
+/// Where each character of a spelling goes over a program's screen, from
+/// its cursor on, and where the caret goes after them.
+///
+/// Wrapped at the side of the screen to its left on the row below, which
+/// is where the program will put the word once it has it; and what would
+/// go past the foot of the screen is left out.
+fn spelled(area: Rect, from: Position, spelling: &str) -> (Vec<(Position, char)>, Position) {
+    let mut at = from;
+    let mut placed = Vec::new();
+    for character in spelling.chars() {
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "the width of one character, which is one or two"
+        )]
+        let wide = text_width(character.encode_utf8(&mut [0; 4])).max(1) as u16;
+        if at.x + wide > area.right() && at.x > area.x {
+            at = Position::new(area.x, at.y + 1);
+        }
+        if at.y < area.bottom() {
+            placed.push((at, character));
+        }
+        at.x += wide;
+    }
+    if at.x >= area.right() {
+        at = Position::new(area.x, at.y + 1);
+    }
+    (placed, at)
 }
 
 /// A cell of a program's screen, as wide as the program was given it.
@@ -108,9 +150,20 @@ pub fn how_it_ended(ended: &obelus_terminal::Ended) -> String {
 }
 
 /// Where the program's cursor is, if it is showing one and the view is on
-/// the screen it is on.
+/// the screen it is on -- past whatever an input method is spelling there,
+/// which is where its candidates go.
 #[must_use]
-pub fn caret(area: Rect, terminal: &Terminal) -> Option<crate::Typing> {
+pub fn caret(area: Rect, terminal: &Terminal, spelling: Option<&str>) -> Option<Position> {
+    let cursor = cursor_of(area, terminal)?;
+    let Some(spelling) = spelling else {
+        return Some(cursor);
+    };
+    let (_, after) = spelled(area, cursor, spelling);
+    (after.y < area.bottom()).then_some(after)
+}
+
+/// Where the program's own cursor is on screen.
+fn cursor_of(area: Rect, terminal: &Terminal) -> Option<Position> {
     let screen = terminal.screen();
     // Read back up the screen, the cursor is below what is shown; and a
     // program that has ended has no cursor to type at.
@@ -118,12 +171,7 @@ pub fn caret(area: Rect, terminal: &Terminal) -> Option<crate::Typing> {
         return None;
     }
     let (row, column) = screen.cursor_position();
-    // Its lines are the program's whole screen, which is where a terminal
-    // wraps what is typed into it.
-    (row < area.height && column < area.width).then(|| crate::Typing {
-        at: Position::new(area.x + column, area.y + row),
-        lines: area,
-    })
+    (row < area.height && column < area.width).then(|| Position::new(area.x + column, area.y + row))
 }
 
 /// How one cell is drawn.
@@ -160,5 +208,34 @@ const fn colour_of(colour: vt100::Color, theme: &Theme) -> Option<Color> {
             None => Some(Color::Indexed(index)),
         },
         vt100::Color::Rgb(red, green, blue) => Some(Color::Rgb(red, green, blue)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A spelling over a program wraps at the side of its screen, to the
+    /// left of the row below, and the caret goes after it -- where the
+    /// program will put the word once it has it.
+    ///
+    /// Deliberate break: leave out the step down a row in `spelled`. The
+    /// `c` and the caret go on past the side of the screen.
+    #[test]
+    fn a_spelling_over_a_program_wraps_at_its_side() {
+        let area = Rect::new(1, 1, 4, 3);
+        let (placed, after) = spelled(area, Position::new(3, 1), "abc");
+        assert_eq!(
+            placed,
+            vec![
+                (Position::new(3, 1), 'a'),
+                (Position::new(4, 1), 'b'),
+                (Position::new(1, 2), 'c'),
+            ]
+        );
+        assert_eq!(after, Position::new(2, 2));
+        // A full-width character goes down whole rather than in halves.
+        let (placed, _) = spelled(area, Position::new(4, 1), "\u{4f60}");
+        assert_eq!(placed, vec![(Position::new(1, 2), '\u{4f60}')]);
     }
 }

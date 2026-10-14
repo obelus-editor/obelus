@@ -91,6 +91,16 @@ pub struct Composer {
     attached: Vec<Attached>,
 }
 
+impl crate::spelling::Spells for Composer {
+    fn writes_from(&self) -> obelus_editing::Cursor {
+        self.writing.writes_from()
+    }
+
+    fn hold_back_to(&mut self, from: obelus_editing::Cursor, said: &str) -> bool {
+        self.writing.hold_back_to(from, said)
+    }
+}
+
 impl Default for Composer {
     fn default() -> Self {
         Self::new()

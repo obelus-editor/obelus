@@ -24,20 +24,18 @@
 //! event to the loop it is parked in. That is what the proxy is for, and it
 //! is why the backend holds one.
 //!
-//! **What an input method is spelling is on the page, and is not in the
-//! file.** Typing Chinese is spelling a word before it exists: several
-//! keypresses that are not characters, and then one character that is. The
-//! window draws that spelling itself, over the cells after the caret and
-//! wrapped where the box it is typed into wraps, underlined, in the colours
-//! of the place it is going into -- and
-//! the application is never told what it says. Not because it could not
-//! be: because what would arrive is half-typed pinyin in a buffer with an
-//! undo history and a file that has changed. What arrives instead, when the
-//! input method commits, is a paste -- which is the same question Obelus
-//! already answered about where typed text goes when several things are on
-//! screen. The application is told only that a word has *begun*, because
-//! what the reader has hold of goes then, as it does in every other
-//! editor, and is not brought back by giving the word up.
+//! **What an input method is spelling is written in, the way Zed does it.**
+//! Typing Chinese is spelling a word before it exists: several keypresses
+//! that are not characters, and then one character that is. Every change to
+//! the spelling goes to the application, which writes it where the reader
+//! is writing, over the spelling before it -- so it wraps where the box
+//! wraps and pushes along what comes after it, as the word will. The window
+//! once drew it over the cells after the caret instead, and a word spelled
+//! at the end of a row ran on off the side of the box and of the screen.
+//! When the input method commits, the word arrives as a paste, which is the
+//! same question Obelus already answered about where typed text goes when
+//! several things are on screen; the application has already been told the
+//! spelling is over by then, and the word goes where it was.
 //!
 //! The keys during that spelling belong to the input method, so a plain
 //! character is swallowed while one is being composed: it is arriving
@@ -74,7 +72,7 @@ use crate::{
     blink::Blink,
     grid::{
         Barred, Behind, Capped, Cells, Going, Marked, Marking, Measured, Page, Paired, Parted,
-        Rolled, Ruled, Said, Sheened, Spelling, Spun, Stroked, Ticked, Update,
+        Rolled, Ruled, Said, Sheened, Spun, Stroked, Ticked, Update,
     },
     keys,
     motion::{Lane, Motion, Wake},
@@ -343,13 +341,6 @@ struct Showing {
     /// `o` is spelling one character, and passing those presses on as well
     /// would put the spelling in the file and the word after it.
     composing: bool,
-    /// What an input method is spelling, and where its own caret is in it.
-    ///
-    /// The window's, not the application's: the word is not in the file
-    /// yet, and telling the application about a word that may never be
-    /// committed would be putting somebody's half-typed pinyin into a
-    /// buffer with an undo history.
-    spelling: Option<Spelling>,
     /// Where the input method was last told the caret is, in pixels:
     /// left, top, width, height.
     ///
@@ -553,7 +544,6 @@ impl Showing {
             active: true,
             rolled: 0.0,
             composing: false,
-            spelling: None,
             pointed: None,
             allowed: false,
             on_x11: false,
@@ -762,10 +752,16 @@ impl Showing {
             // than waited for, because Windows takes the context away
             // without a word, and `composing` left standing swallows every
             // plain key after it.
-            false => {
-                self.composing = false;
-                self.spelling = None;
-            }
+            false => self.give_up_spelling(),
+        }
+    }
+
+    /// Says a word half spelled is over, where one was: its letters are
+    /// written in, and an input method that goes away without a word would
+    /// leave them there.
+    fn give_up_spelling(&mut self) {
+        if std::mem::take(&mut self.composing) {
+            self.tell(Event::Spelling(String::new()));
         }
     }
 
@@ -773,12 +769,9 @@ impl Showing {
     /// are drawn beside the word being typed rather than in the corner of
     /// the screen.
     ///
-    /// Asked on every frame and on every change to what is being spelled,
-    /// and said only when the answer moved -- see `pointed`. The spelling
-    /// is the one that matters: the window draws it without Obelus hearing
-    /// of it, so no frame comes while a word grows, and on macOS and
-    /// Windows the candidates go wherever this last said. Asked on frames
-    /// alone, they stayed at the first letter of the pinyin.
+    /// Asked on every frame, and said only when the answer moved -- see
+    /// `pointed`. The caret is the application's, after the spelling it has
+    /// written in, so the candidates follow the word as it grows and wraps.
     fn point_the_input_method(&mut self) {
         let (Some(window), Some(fonts), Some(caret)) =
             (self.window.as_ref(), self.fonts.as_ref(), self.page.caret())
@@ -786,20 +779,12 @@ impl Showing {
             return;
         };
         let cell = fonts.cell();
-        // Past what is being spelled, so the candidates sit under the end
-        // of the word rather than under the character it started at -- on
-        // the row it wrapped to, where it wrapped.
-        let at = self
-            .spelling
-            .as_ref()
-            .and_then(|spelling| spelling.laid(&self.page))
-            .map_or(caret, |laid| laid.caret);
-        // And put back on here, for the same reason: what an input method
-        // is told is a place in the window, not a place in the grid.
+        // The margin put back on: what an input method is told is a place
+        // in the window, not a place in the grid.
         let margin = self.margin();
         let area = [
-            f32::from(at.x) * cell.width + margin[0],
-            f32::from(at.y) * cell.height + margin[1],
+            f32::from(caret.x) * cell.width + margin[0],
+            f32::from(caret.y) * cell.height + margin[1],
             cell.width,
             cell.height,
         ];
@@ -1859,7 +1844,6 @@ impl ApplicationHandler<Waking> for Showing {
                 if let Err(error) = painter.paint(
                     &self.page,
                     fonts,
-                    self.spelling.as_ref(),
                     self.motion.moving(now),
                     Said {
                         marked: &self.marked,
@@ -1960,42 +1944,33 @@ impl ApplicationHandler<Waking> for Showing {
             WindowEvent::Ime(ime) => {
                 self.stir();
                 match ime {
-                    // The spelling so far, drawn in the file at the place the
-                    // word will go. An input method draws a window of its own
-                    // for the candidates and Obelus leaves that alone; what it
-                    // will not leave alone is *where the word is being typed*,
-                    // which belongs on the page with the code it is going into.
+                    // The spelling so far, written in where the word will go.
+                    // An input method draws a window of its own for the
+                    // candidates and Obelus leaves that alone; what it will
+                    // not leave alone is *where the word is being typed*,
+                    // which is in the box with the words it is going among.
                     Ime::Preedit(spelling, caret) => {
-                        // As it arrived: where an input method says its own
-                        // caret is differs by input method and by
-                        // compositor, and a caret drawn in the wrong place
-                        // is otherwise a question with no answer to look at.
+                        // As it arrived: what an input method sends differs
+                        // by input method and by compositor, and is otherwise
+                        // a question with no answer to look at.
                         tracing::debug!(?spelling, ?caret, "the input method is spelling");
-                        // A word begun takes what the reader has hold of,
-                        // the way the first letter typed over it would --
-                        // said before the spelling is drawn, so that it is
-                        // drawn where the held text was.
-                        if !self.composing && !spelling.is_empty() {
-                            self.tell(Event::Spelling);
+                        // Where nothing was being spelled and nothing is, an
+                        // input method saying so is news to nobody.
+                        if self.composing || !spelling.is_empty() {
+                            self.composing = !spelling.is_empty();
+                            self.tell(Event::Spelling(spelling));
                         }
-                        self.composing = !spelling.is_empty();
-                        self.spelling = Spelling::new(spelling, caret);
-                        self.point_the_input_method();
-                        self.redraw();
                     }
                     // The word. It goes in the way pasted text goes in --
                     // wherever the reader is writing, as one change -- because
                     // that is the same question and it is already answered.
+                    // An empty spelling has come first and taken the letters
+                    // back out.
                     Ime::Commit(word) => {
                         self.composing = false;
-                        self.spelling = None;
                         self.tell(Event::Paste(word));
                     }
-                    Ime::Enabled | Ime::Disabled => {
-                        self.composing = false;
-                        self.spelling = None;
-                        self.redraw();
-                    }
+                    Ime::Enabled | Ime::Disabled => self.give_up_spelling(),
                 }
             }
             WindowEvent::KeyboardInput {

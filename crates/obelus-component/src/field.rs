@@ -297,6 +297,16 @@ impl Field {
     }
 }
 
+impl crate::spelling::Spells for Field {
+    fn writes_from(&self) -> obelus_editing::Cursor {
+        self.writing.writes_from()
+    }
+
+    fn hold_back_to(&mut self, from: obelus_editing::Cursor, said: &str) -> bool {
+        self.writing.hold_back_to(from, said)
+    }
+}
+
 impl Default for Field {
     fn default() -> Self {
         Self::new()

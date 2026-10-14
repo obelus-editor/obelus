@@ -968,6 +968,14 @@ impl Card {
         });
     }
 
+    /// What an input method's spelling is written into, while the card
+    /// has a box -- see [`crate::spelling`].
+    pub fn spells(&mut self) -> Option<&mut dyn crate::spelling::Spells> {
+        self.words
+            .as_mut()
+            .map(|words| &mut words.composer as &mut dyn crate::spelling::Spells)
+    }
+
     fn write(&mut self, edit: impl FnOnce(&mut Composer)) {
         if let Some(words) = self.words.as_mut() {
             edit(&mut words.composer);

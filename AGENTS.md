@@ -866,8 +866,8 @@ crates/
                     · Obelus is drawn on two things and the loop knows neither
                       (main); a window started from a terminal gives the
                       terminal back (leaving); `App` crosses a thread and
-                      stays there, and what an input method is spelling is on
-                      the page and is not in the file (window); closing the
+                      stays there, and what an input method is spelling is
+                      written in, the way Zed does it (window); closing the
                       window is the key that leaves, and on macOS command is
                       control (keys); the page
                       is what Obelus said and motion is only how the window
