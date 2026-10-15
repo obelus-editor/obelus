@@ -596,7 +596,8 @@ crates/
                       is settled from what is open
                       (app/chat/conversations); a project is remembered
                       when it is chosen on the page that asks, and only a
-                      worktree, and what a start with nothing to go on asks
+                      worktree, and what a start with nothing to go on asks,
+                      and going from that list is going to a worktree
                       (app/project/projects); what was open is kept by the tree,
                       and the last window to change it wins (app/project/reopening);
                       what an agent offers is asked of it,

@@ -113,7 +113,8 @@ fn the_row_under_a_list_is_not_marked() {
 /// leaving opens nothing. It keeps the key on purpose now, which
 /// `leaving_closes_the_settings_and_asks` is about. Nor is `ctrl+p`: the
 /// palette goes in the page's place rather than over it (`app/switching`),
-/// so it is the box for a line.
+/// and so does another project on `ctrl+o` -- so it is the box for a line,
+/// and two control keys nothing is bound to.
 ///
 /// Broken deliberately by leaving the settings out of
 /// `App::is_showing_dialog`: the box for a line opens over the page.
@@ -123,7 +124,7 @@ fn nothing_of_obeluss_own_opens_over_the_settings() {
     let scratch = temporary("modal");
     let mut app = open(&settings_file(&scratch));
     let page = support::render(&mut app, 66, 12);
-    for key in ['o', 'e', 'l'] {
+    for key in ['k', 'e', 'l'] {
         support::press_control(&mut app, key);
     }
     assert!(app.picker().is_none(), "a list opened over the settings");

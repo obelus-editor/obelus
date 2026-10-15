@@ -15,7 +15,10 @@
 //! -- what a reader did outlives the window.
 //!
 //! **A project is remembered when it is chosen on that screen, and only
-//! then.** Not when an argument names it, not when Obelus is started
+//! then** -- or from the same list put over a project, which
+//! `switch-project` is: the question asked again of a window that already
+//! has an answer, with the answer it has left out. Not when an argument
+//! names it, not when Obelus is started
 //! standing in it, and not when a window goes to another worktree: the
 //! list is of the answers this page was given. It once held every project
 //! Obelus was put on, through [`App::work_in`], and what leaving the rest
@@ -47,14 +50,34 @@
 //! moment a launcher starts Obelus, looks exactly like a project that was
 //! deleted, and its row goes with it. A reader who chooses it here again
 //! has it back, because choosing it is how anything gets onto the list.
+//!
+//! **Going from that list is going to a worktree.** A project is a whole
+//! tree just as a worktree is, so the list is drawn and answered the way
+//! the worktrees are (`app/git/worktrees`): in a window, enter is a new
+//! window on it and `ctrl+enter` is this one going; in a terminal, enter
+//! is this one going, because it is all a terminal can do.
 
 use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use obelus_command::Command;
 use obelus_component::{
     chooser::Chooser,
-    picker::{Picker, PickerItem, PickerLayout, PickerValue},
+    picker::{Picker, PickerItem, PickerLayout, PickerValue, WorktreeEnter},
 };
+
+/// How tall the list of projects opened before may be.
+///
+/// The conversations' height, for their reason: a row is two lines -- the
+/// name and where it is -- and the runs of days have headings.
+const PROJECT_ROWS: u16 = 24;
+
+/// A path with its links followed, or as it was written where it cannot
+/// be: what decides whether a row of the list is the project this window
+/// is on, which may have been named either way.
+fn resolved(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
 
 /// Where the list lives.
 ///
@@ -426,6 +449,124 @@ impl crate::app::App {
             })
             .collect();
         self.which_project.chooser = Some(obelus_component::chooser::Chooser::new(known));
+    }
+
+    /// Offers the projects opened before, all but this one, to go to.
+    ///
+    /// The page that asks which project, as a list over this one: the same
+    /// rows, newest first and in the same runs of days, less the project
+    /// the window is on -- which is the one row nobody opens this list to
+    /// choose.
+    pub(in crate::app) fn open_recent_projects(&mut self) {
+        let reading = read();
+        if let Reading::Unreadable(why) = &reading {
+            self.amiss(&format!("The list of projects would not read: {why}"));
+        }
+        let here = resolved(&self.working_directory);
+        let (mut there, went): (Vec<_>, Vec<_>) = reading
+            .rows()
+            .into_iter()
+            .filter(|project| resolved(&project.path) != here)
+            .partition(|project| !gone(&project.path));
+        // As many as the page that asks would show, for the reason it
+        // does: the setting is how long the list is, wherever it is drawn.
+        there.truncate(self.config().recent_projects);
+        if !went.is_empty() {
+            let went: Vec<PathBuf> = went.into_iter().map(|project| project.path).collect();
+            forget(&went);
+        }
+        let windowed = self.windowed();
+        let now = std::time::SystemTime::now();
+        let zone = jiff::tz::TimeZone::system();
+        let today = jiff::Timestamp::now().to_zoned(zone.clone()).date();
+        let items = there
+            .into_iter()
+            .map(|project| {
+                let shown = obelus_ui::with_home_as_tilde(&project.path);
+                PickerItem {
+                    prose: false,
+                    marker: None,
+                    icon: obelus_icons::enabled().then_some(obelus_icons::ui::TREE),
+                    // The name, and where it is under it: what tells two
+                    // projects apart is the last part of the path, the
+                    // rule the page that asks draws its rows by.
+                    label: project
+                        .path
+                        .file_name()
+                        .map_or_else(|| shown.clone(), |name| name.to_string_lossy().into_owned()),
+                    version: None,
+                    detail: Some(shown),
+                    trailing: project.last.map(|last| obelus_git::how_long_ago(last, now)),
+                    changed: None,
+                    value: PickerValue::Project {
+                        path: project.path,
+                        enter: match windowed {
+                            true => WorktreeEnter::Open,
+                            false => WorktreeEnter::Switch,
+                        },
+                        switches: windowed,
+                    },
+                    enabled: true,
+                    colours: None,
+                    status: None,
+                    depth: 0,
+                    opens: None,
+                    kind: None,
+                    tab: None,
+                    section: Some(
+                        crate::app::conversations::when_said(project.last, today, &zone)
+                            .to_string(),
+                    ),
+                }
+            })
+            .collect();
+        let mut picker = Picker::new(items, PickerLayout::Compact { rows: PROJECT_ROWS });
+        // Wrapped, which is what draws a heading over each run of days --
+        // and a row's place under its name.
+        picker.wraps(None);
+        // Newest first whatever is typed, because the runs are days: the
+        // reason the conversations keep theirs.
+        picker.keeps_order(true);
+        picker.before_typing("Filter projects");
+        picker.when_empty("No other project has been opened");
+        picker.switches_in_place(windowed);
+        picker.opened_by(Command::ProjectList);
+        self.show_list(picker);
+    }
+
+    /// Goes to a project from that list, in this window.
+    ///
+    /// Remembered as it is chosen, as the page that asks remembers one --
+    /// before the question about what is unwritten here, which is a
+    /// question about leaving this project and not about choosing that
+    /// one.
+    pub(in crate::app) fn go_to_project(&mut self, path: &Path) {
+        if gone(path) {
+            forget(std::slice::from_ref(&path.to_path_buf()));
+            return;
+        }
+        remember(
+            path,
+            jiff::Timestamp::now().as_second(),
+            self.config().recent_projects,
+        );
+        self.go_to_tree(path.to_path_buf());
+    }
+
+    /// Opens a window on a project from that list, which is a choice of it
+    /// like any other: the window that opens is started on a path, and a
+    /// start on a path remembers nothing.
+    pub(in crate::app) fn open_project_elsewhere(&mut self, path: &Path) {
+        if gone(path) {
+            forget(std::slice::from_ref(&path.to_path_buf()));
+            return;
+        }
+        remember(
+            path,
+            jiff::Timestamp::now().as_second(),
+            self.config().recent_projects,
+        );
+        self.open_a_window_on(path);
     }
 
     /// Lets go of this project and asks which one next.
@@ -988,6 +1129,8 @@ impl crate::app::App {
     pub(in crate::app) fn what_is_being_chosen(&self) -> Option<obelus_ui::Choosing> {
         let chooser = self.which_project.chooser.as_ref()?;
         let now = std::time::SystemTime::now();
+        let zone = jiff::tz::TimeZone::system();
+        let today = jiff::Timestamp::now().to_zoned(zone.clone()).date();
         Some(obelus_ui::Choosing {
             known: chooser
                 .rows()
@@ -999,6 +1142,11 @@ impl crate::app::App {
                         .last
                         .map(|last| obelus_git::how_long_ago(last, now))
                         .unwrap_or_default(),
+                    // In the runs the conversations are in, by the same
+                    // reckoning of days: two lists of things last open
+                    // that disagreed about when yesterday ended would be
+                    // one too many.
+                    section: crate::app::conversations::when_said(known.last, today, &zone),
                 })
                 .collect(),
             at: chooser.at(),

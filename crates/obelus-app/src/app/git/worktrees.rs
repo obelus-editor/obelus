@@ -725,6 +725,15 @@ impl App {
         if same_tree(&path, &self.this_tree()) || obelus_git::is_gone(&path) {
             return;
         }
+        self.go_to_tree(path);
+    }
+
+    /// Puts this window on a tree, once the reader has said which: asking
+    /// first where something is unwritten here.
+    ///
+    /// Shared by a worktree's row and a project's, which are the same
+    /// going to a different list of places.
+    pub(in crate::app) fn go_to_tree(&mut self, path: PathBuf) {
         self.write_the_notes();
         let unsaved = self
             .documents
@@ -804,6 +813,19 @@ impl App {
                 windows.open(&path);
             }
             _ => {}
+        }
+    }
+
+    /// Whether this is a window, which can open another.
+    pub(in crate::app) fn windowed(&self) -> bool {
+        self.worktrees.windows.is_some()
+    }
+
+    /// Starts another Obelus, in a window of its own, on `tree`.
+    pub(in crate::app) fn open_a_window_on(&self, tree: &Path) {
+        if let Some(windows) = self.worktrees.windows.as_ref() {
+            tracing::info!(tree = %tree.display(), "opening a window on a project");
+            windows.open(tree);
         }
     }
 

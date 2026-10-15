@@ -198,7 +198,7 @@ const CONVERSATION_ROWS: u16 = 24;
 /// before that, which is the stretch a reader still remembers as recent.
 /// One from before Obelus wrote down when goes in the last run, which is
 /// where the order has already put it.
-fn when_said(
+pub(in crate::app) fn when_said(
     last: Option<i64>,
     today: jiff::civil::Date,
     zone: &jiff::tz::TimeZone,

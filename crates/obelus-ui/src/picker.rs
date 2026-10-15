@@ -654,21 +654,16 @@ impl PickerView<'_> {
             if above.headed
                 && let Some(heading) = &item.section
             {
-                // The settings page's heading, in its colour and weight: the
-                // same thing, a name over a run of rows, said the same way.
                 if y < rows.bottom() {
-                    crate::write(
+                    crate::heading(
                         cells,
-                        rows.x + 1,
-                        y,
-                        &crate::truncate_from_right(
-                            heading,
-                            usize::from(rows.width.saturating_sub(2)),
-                        ),
-                        Style::new()
-                            .fg(self.theme.status_foreground)
-                            .bg(self.theme.background)
-                            .add_modifier(ratatui::style::Modifier::BOLD),
+                        Rect {
+                            y,
+                            height: 1,
+                            ..rows
+                        },
+                        heading,
+                        self.theme,
                     );
                 }
                 y = y.saturating_add(2);
