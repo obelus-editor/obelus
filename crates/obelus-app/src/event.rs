@@ -110,6 +110,19 @@ pub enum Event {
     /// Only a window says this: the tabs are on its title bar, outside the
     /// cells, so the press is the window's to place and not a `Pointer`.
     Chose(obelus_buffer::DocumentId),
+    /// The reader dragged a document's tab to beside another one's.
+    ///
+    /// Said by what it goes beside and not by where in the row, because a
+    /// drag says it on every move of the pointer until the tabs it is told
+    /// have caught up: the same move said twice is still one move.
+    Placed {
+        /// The document whose tab is being dragged.
+        document: obelus_buffer::DocumentId,
+        /// The one it now goes beside.
+        beside: obelus_buffer::DocumentId,
+        /// After that one, rather than before it.
+        after: bool,
+    },
     /// Text the terminal pasted, all at once.
     ///
     /// Because Obelus asks for bracketed paste, which wraps what the
@@ -283,6 +296,7 @@ impl Event {
             Self::Scroll(_) => "Scroll",
             Self::Pointer { .. } => "Pointer",
             Self::Chose(_) => "Chose",
+            Self::Placed { .. } => "Placed",
             Self::Paste(_) => "Paste",
             Self::Spelling(..) => "Spelling",
             Self::Dropped(_) => "Dropped",

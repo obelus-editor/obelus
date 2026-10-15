@@ -209,6 +209,13 @@ pub struct App {
     /// opening a week later. A closed slot makes a stale id dead instead:
     /// whoever holds it gets nothing and does nothing.
     documents: Vec<Option<Document>>,
+    /// The order the reader has put what is open in, where they have moved
+    /// any of it -- see [`App::in_order`].
+    ///
+    /// Beside the slots and not by moving them, for the reason the slots
+    /// have holes: an id is an index, and moving a document to another
+    /// slot would be every holder of the old one naming something else.
+    placed: Vec<DocumentId>,
     current: Option<DocumentId>,
     /// Where the reader was looking before a list started showing them
     /// somewhere else, and which document they were looking at it in.
@@ -601,6 +608,7 @@ impl App {
             spelling_over_a_program: None,
             keymap: Keymap::new(),
             documents,
+            placed: Vec::new(),
             current,
             theme: builtin::DARK,
             theme_name: obelus_config::DEFAULT_THEME.to_string(),

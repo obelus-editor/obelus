@@ -425,6 +425,10 @@ impl App {
         };
         let here = self.current;
         let this_window = self.row_of_this_window();
+        // Only where there is something to move past: one document has no
+        // order, and a foot saying it could be moved is a row of the
+        // screen spent on a key that does nothing.
+        let moves = tab == Tab::Documents && self.in_order().len() > 1;
         let Some(picker) = self.picker.as_mut() else {
             return;
         };
@@ -439,6 +443,7 @@ impl App {
             Tab::Worktrees => picker.stops_previewing(),
         }
         picker.switches_in_place(tab == Tab::Worktrees && self.worktrees.windows.is_some());
+        picker.moves_rows(moves);
         picker.when_empty(empty);
         picker.before_typing(typing);
         // By the row itself rather than by its label, which is what

@@ -242,6 +242,11 @@ impl App {
             Event::Scroll(rows) => self.scroll(rows),
             Event::Pointer { kind, x, y } => self.on_pointer(kind, x, y),
             Event::Chose(id) => self.choose_by_its_tab(id),
+            Event::Placed {
+                document,
+                beside,
+                after,
+            } => self.place_by_its_tab(document, beside, after),
             // One change for the whole of it, so undoing a paste is one
             // step rather than however many lines it happened to be.
             Event::Paste(text) => self.paste_text(&text),

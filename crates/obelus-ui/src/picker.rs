@@ -114,6 +114,19 @@ fn every_hint(picker: &Picker) -> Vec<Hint> {
             Hint::new(enter(KeyModifiers::ALT), "Go there"),
         ];
     }
+    // The open documents, whose order is the tabs' and the reader's. The
+    // chord and the word the notes move a row with. Greyed while a query is
+    // typed: the rows are then in the order of how well they match, and
+    // the row above is not the document before.
+    if picker.rows_move() {
+        let alt = |code| obelus_keymap::KeyChord::new(code, KeyModifiers::ALT);
+        return vec![
+            Hint::new(alt(KeyCode::Up), "Move")
+                .or(alt(KeyCode::Down))
+                .when(picker.query().is_empty())
+                .kept(),
+        ];
+    }
     // The worktrees in a window, for the reason the two enters above are
     // said: here enter is not taking the row into this window but going to
     // another one, which is news, and the enter that does take it is the

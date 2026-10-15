@@ -316,6 +316,9 @@ struct Showing {
     /// reports it in pixels.
     pointer: Option<(u16, u16)>,
     held: bool,
+    /// The document whose tab is held down, which the pointer drags along
+    /// the bar until it is let go of.
+    dragging: Option<obelus_buffer::DocumentId>,
     /// Whether the pointer is over the title bar, where the page runs up
     /// under it -- see `title::under`. The page's cells stop below it, so a
     /// press there is not a press on the row underneath.
@@ -548,6 +551,7 @@ impl Showing {
             modifiers: ModifiersState::empty(),
             pointer: None,
             held: false,
+            dragging: None,
             over_the_title: false,
             pressed_on_the_title: false,
             title_presses: crate::title::Presses::default(),
@@ -699,6 +703,7 @@ impl Showing {
             crate::title::Spot::Tab(index) => {
                 if let Some(document) = self.strip.document(index) {
                     self.tell(Event::Chose(document));
+                    self.dragging = Some(document);
                 }
             }
             towards => {
@@ -2071,6 +2076,7 @@ impl ApplicationHandler<Waking> for Showing {
             // words rather than reaching the program.
             WindowEvent::Focused(false) => {
                 self.active = false;
+                self.dragging = None;
                 if self.motion.focused(false, Instant::now()) || self.bar.is_some() {
                     self.redraw();
                 }
@@ -2176,6 +2182,22 @@ impl ApplicationHandler<Waking> for Showing {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.over_the_title = crate::title::under(position.y, self.titled);
+                // A tab held down goes where the pointer takes it, by how
+                // far along the bar it is and wherever it is up or down: a
+                // drag along a row of tabs is never quite level, and one
+                // that strayed below the bar dropping the tab it held would
+                // be a tab let go of while the button was still down.
+                #[expect(clippy::cast_possible_truncation, reason = "pixels on a screen")]
+                let along = position.x as f32;
+                if let Some(document) = self.dragging
+                    && let Some((beside, after)) = self.strip.dropping(document, along)
+                {
+                    self.tell(Event::Placed {
+                        document,
+                        beside,
+                        after,
+                    });
+                }
                 #[expect(clippy::cast_possible_truncation, reason = "pixels on a screen")]
                 let over = (self.over_the_title && !self.held).then_some(position.x as f32);
                 if self.strip.point(over) {
@@ -2218,6 +2240,10 @@ impl ApplicationHandler<Waking> for Showing {
                 if state == ElementState::Pressed {
                     self.cut_the_stroke();
                 }
+                // Whatever the press was on, a tab is let go of with the
+                // button -- and a press is a button that was let go of
+                // somewhere this window never heard.
+                self.dragging = None;
                 // Asked again at every press rather than cleared at the
                 // release: a press that drags the window by its bar may
                 // never be let go of in the window at all.

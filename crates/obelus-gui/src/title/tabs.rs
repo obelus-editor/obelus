@@ -212,6 +212,16 @@ impl Strip {
         if reading(&tabs) != reading(&self.tabs) || tabs.len() != self.tabs.len() {
             self.reveal = true;
         }
+        // Where each tab went is by where it is in the list, so a list in
+        // another order makes every place the last laying out found a
+        // place for some other tab -- and a drag that asked about one
+        // before the next laying out would put its tab beside the wrong
+        // one. Nothing is anywhere until then.
+        let order = |tabs: &[Tab]| tabs.iter().map(|tab| tab.document).collect::<Vec<_>>();
+        if order(&tabs) != order(&self.tabs) {
+            self.laid.clear();
+            self.hovered = None;
+        }
         self.tabs = tabs;
     }
 
@@ -410,6 +420,34 @@ impl Strip {
     /// Which document a tab is.
     pub(crate) fn document(&self, index: usize) -> Option<obelus_buffer::DocumentId> {
         self.tabs.get(index).map(|tab| tab.document)
+    }
+
+    /// Where a tab being dragged goes, with the pointer at `x`: beside
+    /// which tab, and whether after it -- or nowhere, where it is where it
+    /// should be.
+    ///
+    /// Past the middle of the tab it is dragged onto, not onto its edge:
+    /// tabs are as wide as their names, so a narrow tab moved past a wide
+    /// one would land with the wide one under the pointer, and the next
+    /// move would put it back. The middle is somewhere the pointer has
+    /// already crossed from either side.
+    pub(crate) fn dropping(
+        &self,
+        dragged: obelus_buffer::DocumentId,
+        x: f32,
+    ) -> Option<(obelus_buffer::DocumentId, bool)> {
+        let from = self.tabs.iter().position(|tab| tab.document == dragged)?;
+        let Some(Spot::Tab(over)) = self.at(x) else {
+            return None;
+        };
+        let laid = self.laid.iter().find(|laid| laid.index == over)?;
+        let middle = laid.left + laid.width / 2.0;
+        let after = over > from;
+        let past = match after {
+            true => x > middle,
+            false => x < middle,
+        };
+        (over != from && past).then(|| (self.tabs[over].document, after))
     }
 
     /// Where on the bar the strip has something, from its start to the end
@@ -822,5 +860,79 @@ mod tests {
         strip.told((0..10).map(|at| tab(at, at == 8)).collect());
         settle(&mut strip);
         assert_eq!(strip.target, 810.0 - 602.0, "another");
+    }
+
+    /// Three tabs on that bar, the one named `wide` as wide as a tab may
+    /// be and the others as narrow, in the order given.
+    fn uneven(order: &[usize]) -> Strip {
+        let mut strip = Strip::default();
+        strip.told(
+            order
+                .iter()
+                .map(|&at| Tab {
+                    name: match at {
+                        1 => "wide".to_string(),
+                        _ => "ab".to_string(),
+                    },
+                    ..tab(at, at == 0)
+                })
+                .collect(),
+        );
+        lay_uneven(&mut strip);
+        strip
+    }
+
+    fn lay_uneven(strip: &mut Strip) {
+        strip.lay(
+            Some(room()),
+            |said, _| if said == "wide" { 180.0 } else { 4.0 },
+            Instant::now(),
+            false,
+        );
+    }
+
+    /// A dragged tab goes past another once the pointer is past the middle
+    /// of it, and not as soon as it is over its edge.
+    ///
+    /// Deliberate break: answer as soon as the pointer is over another tab,
+    /// in `Strip::dropping`. The narrow tab is put after the wide one at
+    /// 100 -- and then, the wide one being under the pointer where the
+    /// narrow one was, the next move puts it back.
+    #[test]
+    fn a_dragged_tab_goes_past_the_middle_of_another() {
+        let strip = uneven(&[0, 1, 2]);
+        let id = obelus_buffer::DocumentId::new;
+        // 0 is 0 to 90, the wide 1 is 90 to 290, and 2 is 290 to 380.
+        assert_eq!(strip.dropping(id(0), 100.0), None, "over its edge");
+        assert_eq!(strip.dropping(id(0), 200.0), Some((id(1), true)));
+        assert_eq!(strip.dropping(id(2), 150.0), Some((id(1), false)));
+        assert_eq!(strip.dropping(id(0), 40.0), None, "over itself");
+        // And put there, still past the middle: it stays.
+        let moved = uneven(&[1, 0, 2]);
+        assert_eq!(moved.dropping(id(0), 200.0), None, "moved back");
+    }
+
+    /// Told the tabs in another order, the strip has nowhere for any of
+    /// them until it lays them out again.
+    ///
+    /// Deliberate break: leave the clearing out of `told`. The places from
+    /// the last laying out are another order's, so a drag of the last tab
+    /// at 150 is over where the wide one was second and is now first: it
+    /// is put before the narrow one that took its place, which the pointer
+    /// is nowhere near.
+    #[test]
+    fn a_new_order_has_nowhere_until_it_is_laid() {
+        let mut strip = uneven(&[0, 1, 2]);
+        let id = obelus_buffer::DocumentId::new;
+        let wide = Tab {
+            name: "wide".to_string(),
+            ..tab(1, false)
+        };
+        strip.told(vec![wide, tab(0, true), tab(2, false)]);
+        assert_eq!(strip.dropping(id(2), 150.0), None, "a stale place");
+        lay_uneven(&mut strip);
+        // Laid: the wide one is 0 to 200, its middle 100.
+        assert_eq!(strip.dropping(id(2), 150.0), None);
+        assert_eq!(strip.dropping(id(2), 80.0), Some((id(1), false)));
     }
 }

@@ -941,6 +941,14 @@ pub struct Picker {
     /// because the other tab of that list is documents, which are only ever
     /// here.
     in_place: bool,
+    /// Whether the reader may move this list's rows, with `alt+up` and
+    /// `alt+down`.
+    ///
+    /// The open documents: their order is the tabs' along a window's bar,
+    /// and the reader's to choose. Said by whoever filled the list, and per
+    /// tab, because the other tab of that list is worktrees, whose order is
+    /// git's.
+    moves: bool,
     /// Whether this is a list of the agent's background work, and whether
     /// its rows can be stopped from here -- which is the one key of its own
     /// such a list has.
@@ -1052,6 +1060,7 @@ impl Picker {
             nests: false,
             opens: false,
             in_place: false,
+            moves: false,
             tasks: None,
             reads: false,
             filling: None,
@@ -1497,7 +1506,20 @@ impl Picker {
     /// says what each of them does.
     pub const fn switches_in_place(&mut self, in_place: bool) {
         self.in_place = in_place;
-        self.footed = in_place;
+        self.footed = in_place || self.moves;
+    }
+
+    /// Says whether the reader may move the rows, and so whether its foot
+    /// says how.
+    pub const fn moves_rows(&mut self, moves: bool) {
+        self.moves = moves;
+        self.footed = moves || self.in_place;
+    }
+
+    /// Whether they may.
+    #[must_use]
+    pub const fn rows_move(&self) -> bool {
+        self.moves
     }
 
     /// Whether it does.

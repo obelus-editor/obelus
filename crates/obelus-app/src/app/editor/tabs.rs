@@ -1,9 +1,11 @@
 //! What is open, as a row of tabs a window draws on its title bar.
 //!
 //! The same documents as the list of what is open, in the same order --
-//! the order they were opened in, which holds still -- and called what that
-//! list calls them, shortened: a tab is a few words wide, so a file is its
-//! name and not its path, unless another tab has the same name.
+//! the order they were opened in, which holds still until the reader moves
+//! one, by dragging its tab or by `alt+up` and `alt+down` on its row
+//! (`App::in_order`) -- and called what that list calls them, shortened: a tab
+//! is a few words wide, so a file is its name and not its path, unless another
+//! tab has the same name.
 //!
 //! A terminal has no title bar and is told nothing; the list is how it
 //! reaches the same documents. Choosing a tab is choosing that row of the
@@ -17,12 +19,11 @@ impl App {
     pub(in crate::app) fn tabs(&self) -> Vec<Tab> {
         let none = obelus_todo::Todo::default();
         let notes = self.notes.notes_kept.as_ref().unwrap_or(&none);
+        let order = self.in_order();
         let open = || {
-            self.documents
+            order
                 .iter()
-                .enumerate()
-                // Closed slots are holes, not tabs.
-                .filter_map(|(index, document)| Some((DocumentId::new(index), document.as_ref()?)))
+                .filter_map(|id| Some((*id, self.document(*id)?)))
         };
         // Which names more than one open file has: half the files in a
         // project are called `mod.rs`, and two tabs saying it are two tabs
@@ -112,6 +113,22 @@ impl App {
             self.record(from);
         }
         self.go_to_document(id);
+    }
+
+    /// Moves a document because the reader dragged its tab to beside
+    /// another.
+    ///
+    /// And the list of what is open with it, where that is up: the two are
+    /// one order, and a list left as it was is a list that has stopped
+    /// saying what is open.
+    pub(in crate::app) fn place_by_its_tab(
+        &mut self,
+        id: DocumentId,
+        beside: DocumentId,
+        after: bool,
+    ) {
+        self.place(id, beside, after);
+        self.relist_switching();
     }
 }
 

@@ -124,6 +124,7 @@ impl App {
                 self.scroll_preview_by_key(key)
                     || self.background_key(key)
                     || self.listing_key(key)
+                    || self.moving_key(key)
                     || self.searching_key(key)
                     || self.picker_key(key)
             }

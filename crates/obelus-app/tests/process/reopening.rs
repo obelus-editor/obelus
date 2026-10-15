@@ -150,6 +150,32 @@ fn the_files_come_back_with_their_carets() {
     assert_eq!(caret.line.get(), 5, "the caret is not where it was in b.rs");
 }
 
+/// What the reader moved comes back where they put it.
+///
+/// Deliberate break: write the record from the slots in
+/// `App::what_is_open`, as it was before tabs could move. `b.rs`, put
+/// first, comes back second.
+#[test]
+fn what_was_moved_comes_back_where_it_was_put() {
+    let _turn = crate::turn();
+    let scratch = tree("reopening-moved", true);
+    let root = scratch.path();
+
+    let mut first = startup::start(&[root.join("a.rs")], BUILT).expect("starting");
+    first.open_for_test(&root.join("b.rs"));
+    frame(&mut first);
+    first.handle(obelus_app::event::Event::Placed {
+        document: DocumentId::new(1),
+        beside: DocumentId::new(0),
+        after: false,
+    });
+    frame(&mut first);
+    drop(first);
+
+    let second = start_again(&[root.to_path_buf()]);
+    assert_eq!(files(&second), ["b.rs", "a.rs"], "not where it was put");
+}
+
 /// A file named on the command line is where the reader lands, and what
 /// was open comes back beside it.
 ///
