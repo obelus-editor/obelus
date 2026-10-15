@@ -183,6 +183,9 @@ pub(crate) struct Strip {
     settled: Option<Instant>,
     /// The tab held down, while it is.
     held: Option<Held>,
+    /// Whether the tabs have been told in another order since they were
+    /// last laid out -- see `told`.
+    stale: bool,
     /// When the row last scrolled under a tab carried to one of its ends,
     /// while it is scrolling.
     edged: Option<Instant>,
@@ -264,10 +267,16 @@ impl Strip {
         // another order makes every place the last laying out found a
         // place for some other tab -- and a drag that asked about one
         // before the next laying out would put its tab beside the wrong
-        // one. Nothing is anywhere until then.
-        let order = |tabs: &[Tab]| tabs.iter().map(|tab| tab.document).collect::<Vec<_>>();
-        if order(&tabs) != order(&self.tabs) {
-            self.laid.clear();
+        // one. Nothing is anywhere until then. Said rather than done by
+        // emptying the places: an empty row is also what a first laying
+        // out looks like, and the reveal does not slide on a first one,
+        // so opening a tab made the row jump to it.
+        if !tabs
+            .iter()
+            .map(|tab| tab.document)
+            .eq(self.tabs.iter().map(|tab| tab.document))
+        {
+            self.stale = true;
             self.hovered = None;
         }
         self.tabs = tabs;
@@ -300,6 +309,7 @@ impl Strip {
             }
         }
         self.room = room;
+        self.stale = false;
         let Some(room) = room else {
             self.laid.clear();
             self.arrows = None;
@@ -617,7 +627,7 @@ impl Strip {
 
     /// What is at a place on the bar, in pixels from the window's left.
     pub(crate) fn at(&self, x: f32) -> Option<Spot> {
-        if self.covered {
+        if self.covered || self.stale {
             return None;
         }
         let inside = |[left, width]: [f32; 2]| (left..left + width).contains(&x);
@@ -663,7 +673,7 @@ impl Strip {
         dragged: obelus_buffer::DocumentId,
         x: f32,
     ) -> Option<(obelus_buffer::DocumentId, bool)> {
-        if self.covered {
+        if self.covered || self.stale {
             return None;
         }
         let from = self.tabs.iter().position(|tab| tab.document == dragged)?;
@@ -1186,7 +1196,7 @@ mod tests {
     /// Told the tabs in another order, the strip has nowhere for any of
     /// them until it lays them out again.
     ///
-    /// Deliberate break: leave the clearing out of `told`. The places from
+    /// Deliberate break: leave `stale` unset in `told`. The places from
     /// the last laying out are another order's, so a drag of the last tab
     /// at 150 is over where the wide one was second and is now first: it
     /// is put before the narrow one that took its place, which the pointer
@@ -1366,5 +1376,20 @@ mod tests {
             true,
         );
         assert_eq!(strip.target, was);
+    }
+
+    /// A tab opened on a row longer than the bar slides into sight, as one
+    /// chosen does.
+    ///
+    /// Deliberate break: empty the places in `told` when the tabs are
+    /// another list, as it did, rather than marking them `stale`. The
+    /// reveal takes the empty row for a first laying out, and the row
+    /// jumps to the new tab.
+    #[test]
+    fn a_tab_opened_slides_into_sight() {
+        let mut strip = strip(0);
+        strip.told((0..11).map(|at| tab(at, at == 10)).collect());
+        strip.lay(Some(room()), |_, _| 4.0, Instant::now(), true);
+        assert!(strip.sliding(), "jumped to the tab opened");
     }
 }
