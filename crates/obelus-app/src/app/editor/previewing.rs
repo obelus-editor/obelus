@@ -892,6 +892,8 @@ impl App {
             // A tree is a whole checkout and no one file of it, and its tab
             // shows no preview -- see `refresh_switching`.
             | PickerValue::Worktree { .. }
+            // And so is a project, and this list is compact.
+            | PickerValue::Project { .. }
             | PickerValue::Command(_)
             // A conversation has no path and no cursor, and this list is
             // compact anyway: there is no room under it to show one in.

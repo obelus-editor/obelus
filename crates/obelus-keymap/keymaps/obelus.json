@@ -87,6 +87,11 @@
       // own gives up for it, below.
       { "command": "run-command", "context": "normal", "key": "ctrl+p" },
       { "command": "close-document", "context": "normal", "key": "ctrl+w" },
+      // `ctrl+o` for another project, on the letter of "open": what
+      // it opens is the whole of what the window is on, which is no
+      // function key's -- those are the things to read *in* a
+      // project, and every one of the twelve is spoken for.
+      { "command": "switch-project", "context": "normal", "key": "ctrl+o" },
       // And the same key in the list of what is open, where it
       // closes the one on the row. One key that means "close
       // this" everywhere beats a second key that works in one

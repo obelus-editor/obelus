@@ -37,6 +37,8 @@ pub enum Command {
     DocumentClose,
     /// Let go of this project and choose another.
     ProjectClose,
+    /// Go to a project opened before.
+    ProjectList,
     /// Call the file being read something else, or put it somewhere else.
     FileRename,
     /// Show this file as rendered markdown, or stop.
@@ -456,6 +458,11 @@ pub const ALL: &[CommandSpec] = &[
         title: "Close this project",
     },
     CommandSpec {
+        command: Command::ProjectList,
+        name: "switch-project",
+        title: "Go to a project opened before",
+    },
+    CommandSpec {
         command: Command::FileRename,
         name: "rename-file",
         title: "Call this file something else, or move it",
@@ -818,6 +825,7 @@ impl Command {
             | Self::DocumentList
             | Self::DocumentClose
             | Self::ProjectClose
+            | Self::ProjectList
             | Self::FileRename
             | Self::PreviewToggle
             | Self::ThemeSelect
@@ -916,6 +924,7 @@ impl Command {
             | Self::SymbolMenu
             | Self::CodeActions
             | Self::SymbolTroubles
+            | Self::ProjectList
             // And a way into a conversation: `f4` is where the reader goes
             // to talk, from wherever they are, and a key that was dead inside
             // every view would be the one way to the agent that sometimes
@@ -1031,6 +1040,7 @@ impl Command {
             | Self::FileSave
             | Self::DocumentClose
             | Self::ProjectClose
+            | Self::ProjectList
             | Self::FileRename
             | Self::FileNew
             | Self::PreviewToggle
@@ -1101,6 +1111,7 @@ impl Command {
             | Self::WorktreeList
             | Self::DocumentClose
             | Self::ProjectClose
+            | Self::ProjectList
             | Self::FileRename
             | Self::PreviewToggle
             // A question about the project's files, asked before any of them
@@ -1352,7 +1363,10 @@ impl Command {
             | Self::ConfigProject
             // There has to be one to let go of: on the page asking which,
             // this would be asking it again.
-            | Self::ProjectClose => Requires::AProject,
+            | Self::ProjectClose
+            // The list leaves out the project this window is on, and on
+            // the page asking which project it is that page's own list.
+            | Self::ProjectList => Requires::AProject,
             // A project, and not whether `gh` is there or signed in: that
             // takes running it, and the list it opens says which of the two
             // is missing -- a row greyed here would say neither.
@@ -1449,6 +1463,7 @@ mod tests {
             Command::RemoteDisconnect,
             Command::DocumentClose,
             Command::ProjectClose,
+            Command::ProjectList,
             Command::FileRename,
             Command::PreviewToggle,
             Command::ThemeSelect,

@@ -23,6 +23,7 @@ mod remote;
 mod reopening;
 mod settings;
 mod starting;
+mod switching_projects;
 mod tabs;
 mod title_bar;
 

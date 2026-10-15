@@ -260,22 +260,22 @@ impl Chooser {
     }
 
     /// Moves the window over the projects if the reader's row has left
-    /// it, for a list `height` rows tall.
+    /// it, for a list `room` rows tall whose projects take `heights` --
+    /// one each, and the heading over the first of a run of days.
     ///
     /// Over the projects only: the row that opens another is held under
     /// them rather than scrolled with them, so while the reader is on it
     /// the window keeps the last of the projects -- which is the row the
     /// arrow above it goes to.
-    pub fn settle(&mut self, height: u16) {
-        let rows = self.rows().len();
-        self.window.set_count(rows);
+    pub fn settle(&mut self, heights: &[u16], room: u16) {
+        self.window.set_count(heights.len());
         // Only where it moved, because this is once a frame: see
         // `Window::set_focus`.
-        let at = self.at.min(rows.saturating_sub(1));
+        let at = self.at.min(heights.len().saturating_sub(1));
         if at != self.window.focus() {
             self.window.set_focus(at);
         }
-        self.window.settle(height);
+        self.window.settle_by_height(heights, room);
     }
 
     /// Puts the reader on one of the rows: the projects from nought, and

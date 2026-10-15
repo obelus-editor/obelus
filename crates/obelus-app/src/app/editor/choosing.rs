@@ -520,11 +520,19 @@ impl App {
                 self.accept(value);
                 true
             }
-            // Only the worktrees say this window can go to their rows.
+            // Only the worktrees and the projects say this window can go
+            // to their rows.
             PickerOutcome::InPlace(value) => {
-                if let PickerValue::Worktree { at, .. } = value {
-                    self.leave(Layer::Picker);
-                    self.go_to_worktree(at);
+                match value {
+                    PickerValue::Worktree { at, .. } => {
+                        self.leave(Layer::Picker);
+                        self.go_to_worktree(at);
+                    }
+                    PickerValue::Project { path, .. } => {
+                        self.leave(Layer::Picker);
+                        self.go_to_project(&path);
+                    }
+                    _ => {}
                 }
                 true
             }
@@ -723,6 +731,11 @@ impl App {
             PickerValue::Worktree { at, enter, .. } => match enter {
                 WorktreeEnter::Switch => self.go_to_worktree(at),
                 WorktreeEnter::Open | WorktreeEnter::Bring => self.go_elsewhere(at),
+                WorktreeEnter::Stay => {}
+            },
+            PickerValue::Project { path, enter, .. } => match enter {
+                WorktreeEnter::Switch => self.go_to_project(&path),
+                WorktreeEnter::Open | WorktreeEnter::Bring => self.open_project_elsewhere(&path),
                 WorktreeEnter::Stay => {}
             },
             PickerValue::Task { id, .. } => self.open_background_output(&id),

@@ -233,10 +233,11 @@ impl App {
         // The window over the projects, while Obelus is asking which: the
         // rule every window follows, on the page's own count of the rows it
         // has.
-        if self.which_project.chooser.is_some() {
+        if let Some(choosing) = self.what_is_being_chosen() {
             let rows = self.chooser_rows();
+            let heights = obelus_ui::projects::heights(&choosing);
             if let Some(chooser) = self.which_project.chooser.as_mut() {
-                chooser.settle(rows);
+                chooser.settle(&heights, rows);
             }
         }
         // Unconditionally, because with no list open the geometry is `None`

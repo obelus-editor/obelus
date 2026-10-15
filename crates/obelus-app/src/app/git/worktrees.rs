@@ -503,7 +503,7 @@ impl App {
     }
 
     /// The tree this window is on.
-    fn this_tree(&self) -> PathBuf {
+    pub(in crate::app) fn this_tree(&self) -> PathBuf {
         obelus_git::worktree(&self.working_directory)
             .unwrap_or_else(|| self.working_directory.clone())
     }
@@ -725,6 +725,15 @@ impl App {
         if same_tree(&path, &self.this_tree()) || obelus_git::is_gone(&path) {
             return;
         }
+        self.go_to_tree(path);
+    }
+
+    /// Puts this window on a tree, once the reader has said which: asking
+    /// first where something is unwritten here.
+    ///
+    /// Shared by a worktree's row and a project's, which are the same
+    /// going to a different list of places.
+    pub(in crate::app) fn go_to_tree(&mut self, path: PathBuf) {
         self.write_the_notes();
         let unsaved = self
             .documents
@@ -736,6 +745,20 @@ impl App {
         if unsaved > 0 {
             self.worktrees.going = Some(path);
             self.ask_before_switching(unsaved);
+            return;
+        }
+        // And a program still running in a terminal, which going stops:
+        // asked for the reason closing the project asks.
+        let running = self.terminals_running();
+        if running > 0 {
+            self.worktrees.going = Some(path);
+            self.ask_before_stopping_them(
+                running,
+                "switch",
+                obelus_component::question::Answer::Switching(
+                    obelus_component::question::Leaving::Discard,
+                ),
+            );
             return;
         }
         self.move_to_tree(&path);
@@ -804,6 +827,19 @@ impl App {
                 windows.open(&path);
             }
             _ => {}
+        }
+    }
+
+    /// Whether this is a window, which can open another.
+    pub(in crate::app) fn windowed(&self) -> bool {
+        self.worktrees.windows.is_some()
+    }
+
+    /// Starts another Obelus, in a window of its own, on `tree`.
+    pub(in crate::app) fn open_a_window_on(&self, tree: &Path) {
+        if let Some(windows) = self.worktrees.windows.as_ref() {
+            tracing::info!(tree = %tree.display(), "opening a window on a project");
+            windows.open(tree);
         }
     }
 
@@ -878,7 +914,7 @@ fn worktree_row(shown: Shown) -> PickerItem {
 /// added by and a window its own, and one may be through a link the other
 /// is not. A tree that has gone resolves to nothing, and is taken as it
 /// was written.
-fn same_tree(one: &Path, other: &Path) -> bool {
+pub(in crate::app) fn same_tree(one: &Path, other: &Path) -> bool {
     one == other || resolved(one) == resolved(other)
 }
 

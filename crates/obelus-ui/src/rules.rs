@@ -9,6 +9,25 @@ use super::*;
 /// crossed it would have to work out whether to join.
 pub(crate) const BAR: char = '\u{2588}';
 
+/// A name over a run of rows: the day a list of conversations or projects
+/// was last open, in the settings page's colour and weight for its own
+/// groups -- the same thing, said the same way.
+///
+/// One writer, because two lists drew it and the third would have been
+/// a copy of one of them.
+pub(crate) fn heading(cells: &mut CellBuffer, row: Rect, name: &str, theme: &Theme) {
+    write(
+        cells,
+        row.x + 1,
+        row.y,
+        &truncate_from_right(name, usize::from(row.width.saturating_sub(2))),
+        Style::new()
+            .fg(theme.status_foreground)
+            .bg(theme.background)
+            .add_modifier(ratatui::style::Modifier::BOLD),
+    );
+}
+
 /// One row of rule, saying that what is above it and what is below it are
 /// different things.
 ///

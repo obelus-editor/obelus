@@ -78,7 +78,9 @@ use crate::{
     window::{Move, Window, Wrap},
 };
 
-/// What enter does on a row of the worktrees.
+/// What enter does on a row of the worktrees, or of the projects opened
+/// before -- which are the same question about a whole tree, asked of
+/// every project rather than of one repository's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WorktreeEnter {
     /// Puts this window on the tree: a terminal's one way of going.
@@ -211,6 +213,18 @@ pub enum PickerValue {
         /// What enter does.
         enter: WorktreeEnter,
         /// Whether `ctrl+enter` puts this window on the row's tree.
+        switches: bool,
+    },
+    /// A project opened before, to go to.
+    ///
+    /// By its path rather than its place in the list: unlike a worktree's
+    /// row, nothing about it is the application's to look up.
+    Project {
+        /// Where it is.
+        path: std::path::PathBuf,
+        /// What enter does.
+        enter: WorktreeEnter,
+        /// Whether `ctrl+enter` puts this window on it.
         switches: bool,
     },
     /// A piece of the agent's background work: choosing it opens what it
@@ -1504,7 +1518,9 @@ impl Picker {
             .filter(|item| item.enabled)
             .map(|item| &item.value)
         {
-            Some(PickerValue::Worktree { enter, .. }) => Some(*enter),
+            Some(PickerValue::Worktree { enter, .. } | PickerValue::Project { enter, .. }) => {
+                Some(*enter)
+            }
             _ => None,
         }
     }
@@ -1519,7 +1535,10 @@ impl Picker {
                 self.selected_item()
                     .filter(|item| item.enabled)
                     .map(|item| &item.value),
-                Some(PickerValue::Worktree { switches: true, .. })
+                Some(
+                    PickerValue::Worktree { switches: true, .. }
+                        | PickerValue::Project { switches: true, .. }
+                )
             )
     }
 

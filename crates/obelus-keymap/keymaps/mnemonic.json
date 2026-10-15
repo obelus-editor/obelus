@@ -38,5 +38,9 @@
     // next letter of "pull" that nothing has: every control letter but it is
     // taken, by a command, by tmux, or by the wire.
     { "command": "review-pull-request", "keys": ["ctrl+u"] },
+    // Off `ctrl+o`, which the files have here, and onto `ctrl+k`, which
+    // nothing has -- not a command, not tmux, not the wire -- and so is the
+    // last control letter there is: none of "project" is free.
+    { "command": "switch-project", "keys": ["ctrl+k"] },
   ],
 }

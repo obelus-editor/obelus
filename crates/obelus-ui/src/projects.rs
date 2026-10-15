@@ -138,7 +138,14 @@ fn laid(area: Rect, choosing: &crate::Choosing, hints: &[Hint]) -> Laid {
     // on a machine with nothing remembered no list at all, so the row that
     // opens one is the first row under the rule.
     let listed = match headed(choosing) {
-        true => u16::try_from(choosing.known.len().max(1)).unwrap_or(u16::MAX),
+        true => u16::try_from(
+            heights(choosing)
+                .iter()
+                .map(|height| usize::from(*height))
+                .sum::<usize>()
+                .max(1),
+        )
+        .unwrap_or(u16::MAX),
         false => 0,
     };
     let gap = u16::from(listed > 0);
@@ -166,8 +173,34 @@ fn laid(area: Rect, choosing: &crate::Choosing, hints: &[Hint]) -> Laid {
     }
 }
 
-/// How many projects the page has room for in `area`, which is what the
-/// paging keys move by.
+/// How tall each project's row is, with the heading over the first of a
+/// run of days and a blank under it, as a list's runs are headed -- and a
+/// blank over that, where a run went before it.
+///
+/// One answer, asked by the drawing, by a press and by the window over the
+/// rows: a heading counted in one and not another is a press that lands a
+/// row away from where it looks like it landed.
+#[must_use]
+pub fn heights(choosing: &crate::Choosing) -> Vec<u16> {
+    let mut before: Option<&str> = None;
+    choosing
+        .known
+        .iter()
+        .map(|opened| {
+            let headed = before != Some(opened.section);
+            let height = 1 + match (headed, before) {
+                (false, _) => 0,
+                (true, None) => 2,
+                (true, Some(_)) => 3,
+            };
+            before = Some(opened.section);
+            height
+        })
+        .collect()
+}
+
+/// How many rows the page has for its projects in `area`, which is what
+/// the paging keys move by and what the window over them is settled in.
 #[must_use]
 pub fn list_height(area: Rect, choosing: &crate::Choosing, keymap: &Keymap) -> u16 {
     laid(area, choosing, &hints(choosing, keymap)).list.height
@@ -195,8 +228,24 @@ pub fn row_at(
     if !headed(choosing) || !laid.list.contains(point) {
         return None;
     }
-    let at = choosing.top.min(choosing.known.len()) + usize::from(y - laid.list.y);
-    (at < choosing.known.len()).then_some(at)
+    // Walked from the top in rows, because a heading is a row that is no
+    // project's: a press on one takes the project under it, which is the
+    // one it is about.
+    let heights = heights(choosing);
+    let mut bottom = laid.list.y;
+    for (at, height) in heights.iter().enumerate().skip(choosing.top) {
+        bottom = bottom.saturating_add(*height);
+        // One that does not fit is not drawn, so the rows it would have
+        // begun on are nobody's: a press there taking it would stand the
+        // reader on a project they cannot see.
+        if bottom > laid.list.bottom() {
+            return None;
+        }
+        if y < bottom {
+            return Some(at);
+        }
+    }
+    None
 }
 
 /// The page.
@@ -288,37 +337,54 @@ impl ProjectsView<'_> {
             return;
         }
         let names = self.name_width(choosing, list.width);
+        let heights = heights(choosing);
         let first = choosing.top.min(total);
-        for (offset, (at, opened)) in choosing
-            .known
-            .iter()
-            .enumerate()
-            .skip(first)
-            .take(usize::from(list.height))
-            .enumerate()
-        {
-            let Ok(offset) = u16::try_from(offset) else {
+        let mut y = list.y;
+        for (at, opened) in choosing.known.iter().enumerate().skip(first) {
+            let height = heights[at];
+            if y.saturating_add(height) > list.bottom() {
                 break;
-            };
+            }
+            // The blank over a heading is the first of the rows it takes,
+            // then the heading and the blank under it: the project is the
+            // row at the foot of its own height.
+            if height > 1 {
+                let heading = Rect {
+                    y: y + height - 3,
+                    height: 1,
+                    ..list
+                };
+                crate::heading(cells, heading, opened.section, self.theme);
+            }
             let row = Rect {
-                y: list.y + offset,
+                y: y + height - 1,
                 height: 1,
                 ..list
             };
             let style = self.row_style(cells, row, at == choosing.at);
             self.row(cells, row, names, opened, style);
+            y = y.saturating_add(height);
         }
-        if total > usize::from(list.height) {
-            crate::scrollbar(
+        let all: usize = heights.iter().map(|height| usize::from(*height)).sum();
+        if all > usize::from(list.height) {
+            // In rows rather than in projects, both of them, as a list whose
+            // rows wrap counts them: the bar says how much of the page is
+            // above, and a heading is some of it.
+            let above: usize = heights[..first]
+                .iter()
+                .map(|height| usize::from(*height))
+                .sum();
+            let bar = crate::scrollbar(
                 cells,
                 Rect {
                     width: list.width + 1,
                     ..list
                 },
-                first,
-                total,
+                above,
+                all,
                 self.theme,
             );
+            crate::bars::in_items(bar, &heights);
         }
     }
 

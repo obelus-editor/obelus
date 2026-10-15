@@ -82,6 +82,9 @@ pub struct Opened {
     /// When it was last opened, in words. Empty for a row that does not
     /// say.
     pub when: String,
+    /// The run of days it was last opened in, which heads the first row of
+    /// each run: `Today`, `Yesterday`, and so on.
+    pub section: &'static str,
 }
 
 /// What a preview is, for the view that draws it.

@@ -1257,9 +1257,34 @@ mod tests {
         }
         // And nothing else moved: every key the obelus table has that is
         // not a function key means the same in the mnemonic one, in the
-        // same context -- `ctrl+p` is bound in two of them.
+        // same context -- `ctrl+p` is bound in two of them. Except where
+        // a function key's command took the letter, which moves what was
+        // there and may not leave it with no key: `ctrl+o` is the files
+        // here, and another project went to `ctrl+k`.
+        //
+        // Broken deliberately by taking `switch-project` out of the
+        // layout's `move`, which left it with no key at all.
+        let opened = |command| {
+            (1..=12).any(|number| {
+                obelus.command_on(KeyChord::new(KeyCode::F(number), KeyModifiers::NONE))
+                    == Some(command)
+            })
+        };
         for binding in obelus.bindings() {
             if matches!(binding.chord.code, KeyCode::F(_)) {
+                continue;
+            }
+            if let Some(took) = mnemonic.find(binding.chord, binding.context)
+                && took != binding.command
+                && opened(took)
+            {
+                assert!(
+                    mnemonic.chord_for(binding.command).is_some(),
+                    "{} lost {} to {} and has no key",
+                    binding.command.name(),
+                    binding.chord.label_in(false),
+                    took.name(),
+                );
                 continue;
             }
             assert_eq!(
