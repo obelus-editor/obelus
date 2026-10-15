@@ -135,9 +135,16 @@ fn the_list_is_every_other_project_in_runs_of_days() {
     );
     let dump = support::render(&mut app, 80, 30);
     let text = support::text_block(&dump);
+    // By what a row begins with, past its number and the margin: a row is
+    // a name or a heading, and the path under a name may say anything --
+    // macOS's temporary directory is under `/var/folders`, which has `old`
+    // in it.
     let at = |needle: &str| {
         text.lines()
-            .position(|row| row.contains(needle))
+            .position(|row| {
+                row.split_once('|')
+                    .is_some_and(|(_, row)| row.trim_start().starts_with(needle))
+            })
             .unwrap_or_else(|| panic!("{needle:?} is not on screen:\n{dump}"))
     };
     assert!(at("Today") < at("recent"), "{dump}");
