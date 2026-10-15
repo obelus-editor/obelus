@@ -224,8 +224,12 @@ fn measured(hwnd: HWND) -> Measured {
         false => edge,
     };
     Measured {
-        // Or the height a row of tabs wants, where that is more.
-        titled: metric(SM_CYCAPTION).max(tabbed) + above,
+        // Or the height a row of tabs wants, where that is more and the bar
+        // holds them.
+        titled: match super::is_tabbed() {
+            true => metric(SM_CYCAPTION).max(tabbed),
+            false => metric(SM_CYCAPTION),
+        } + above,
         edge,
         button,
         captioned: metric(SM_CYCAPTION) + above,

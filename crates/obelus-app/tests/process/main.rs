@@ -24,6 +24,7 @@ mod reopening;
 mod settings;
 mod starting;
 mod tabs;
+mod title_bar;
 
 /// The one turn at the process, held for the whole of a test.
 ///

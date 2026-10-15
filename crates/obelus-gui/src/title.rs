@@ -5,6 +5,9 @@
 //! the bar has room for instead is a tab for each open document, and a
 //! press on one goes to it (`tabs`). A terminal has no title bar and so no
 //! tabs, and reaches the same documents through the list of what is open.
+//! Nor does a window, unless the reader turns `bar_tabs` on: a row of tabs
+//! wants a bar taller than the system's own, and off -- the default -- the
+//! bar is the system's height and holds nothing (`TABBED`).
 //! What is Obelus's too is what is *under* the bar -- a grey bar across
 //! the top of a page drawn in a theme is a frame round the theme in
 //! somebody else's colours, and a picture under the page stopping short of
@@ -54,7 +57,10 @@ mod tabs;
 #[cfg(windows)]
 mod windows;
 
-use std::time::{Duration, Instant};
+use std::{
+    sync::atomic::{AtomicBool, Ordering},
+    time::{Duration, Instant},
+};
 
 use obelus_ui::shapes::Joined;
 use ratatui::style::Color;
@@ -66,6 +72,28 @@ use winit::window::{Theme, Window, WindowAttributes};
 /// What the window is called: what a taskbar, a switcher and a list of
 /// windows say about it. Not on its bar, which has the tabs instead.
 pub(crate) const TITLE: &str = "Obelus";
+
+/// Whether the bar holds a tab for each open document: the reader's
+/// setting, `bar_tabs`, and off until the application says it.
+///
+/// Off, the bar is the height the system's own is and has no room for
+/// tabs -- the strip is laid out in none (`room`) -- and everything that
+/// measures the bar asks this: the grid under it, the buttons in its
+/// middle on macOS, the hit test on Windows. One flag for the window, read
+/// where the window is measured and where the system asks what a press is,
+/// which on Windows is a subclass that holds nothing of the window's but a
+/// pointer -- so a static, for the reason the glyph switch is one.
+static TABBED: AtomicBool = AtomicBool::new(false);
+
+/// Says whether the bar holds the tabs. Whether that changed it.
+pub(crate) fn tabbed(on: bool) -> bool {
+    TABBED.swap(on, Ordering::Relaxed) != on
+}
+
+/// Whether the bar holds the tabs.
+pub(crate) fn is_tabbed() -> bool {
+    TABBED.load(Ordering::Relaxed)
+}
 
 /// The window as it is asked for, with the page running up under the title
 /// bar where the platform allows it.
@@ -112,7 +140,10 @@ pub(crate) fn height(window: &Window) -> f32 {
 fn bar_points(shown: &objc2_app_kit::NSWindow) -> f64 {
     // The frame is the whole window and the layout rectangle is the part
     // the title bar does not cover, both in points.
-    tall(shown.frame().size.height - shown.contentLayoutRect().size.height)
+    tall(
+        shown.frame().size.height - shown.contentLayoutRect().size.height,
+        is_tabbed(),
+    )
 }
 
 /// The window AppKit has behind winit's.
@@ -145,7 +176,8 @@ pub(crate) const fn height(_window: &Window) -> f32 {
 )]
 const TALL: f64 = 38.0;
 
-/// How tall a bar AppKit says is this tall is drawn: at least `TALL`, and
+/// How tall a bar AppKit says is this tall is drawn: at least `TALL` where
+/// it holds the tabs and the system's own height where it does not, and
 /// none at all where there is none, which is full screen.
 ///
 /// Asked whether there is a point of it rather than whether it is nothing:
@@ -155,10 +187,11 @@ const TALL: f64 = 38.0;
     not(any(target_os = "macos", test)),
     expect(dead_code, reason = "only macOS asks")
 )]
-fn tall(system: f64) -> f64 {
-    match system >= 1.0 {
-        true => system.max(TALL),
-        false => 0.0,
+fn tall(system: f64, tabbed: bool) -> f64 {
+    match (system >= 1.0, tabbed) {
+        (true, true) => system.max(TALL),
+        (true, false) => system,
+        (false, _) => 0.0,
     }
 }
 
@@ -228,8 +261,10 @@ pub(crate) const fn centre_the_buttons(_window: &Window) {}
 ///
 /// Nowhere, where there is no bar in the page: a window in full screen,
 /// and on Linux, where the bar is the compositor's.
+///
+/// Nor where the bar does not hold them -- see `TABBED`.
 pub(crate) fn room(window: &Window, titled: f32, width: f32, bar: Option<&Drawn>) -> Option<Room> {
-    if titled <= 0.0 {
+    if titled <= 0.0 || !is_tabbed() {
         return None;
     }
     #[expect(
@@ -858,6 +893,18 @@ mod tests {
         assert!(dark((0x64, 0x64, 0xff)), "a blue this pale is still dark");
     }
 
+    /// A bar without the tabs is the system's own, and full screen is no
+    /// bar either way.
+    ///
+    /// Deliberate break: leave `tabbed` out of `tall`. The bar is made
+    /// taller for tabs it is not holding, which is the strip the setting is
+    /// for taking away.
+    #[test]
+    fn a_bar_without_tabs_is_the_systems() {
+        assert!((tall(28.0, false) - 28.0).abs() < f64::EPSILON);
+        assert!(tall(0.0, false).abs() < f64::EPSILON, "full screen");
+    }
+
     /// The system's bar is made taller, a taller one is left alone, and
     /// full screen -- no bar, or a hair of one -- is still no bar.
     ///
@@ -866,10 +913,16 @@ mod tests {
     /// stays a sliver; `TALL` alone, and a taller one is cut down.
     #[test]
     fn the_bar_is_tall_enough_for_tabs_wherever_there_is_one() {
-        assert!((tall(28.0) - TALL).abs() < f64::EPSILON, "the system's bar");
-        assert!((tall(52.0) - 52.0).abs() < f64::EPSILON, "a taller one");
-        assert!(tall(0.0).abs() < f64::EPSILON, "full screen");
-        assert!(tall(1e-9).abs() < f64::EPSILON, "a hair of a bar");
+        assert!(
+            (tall(28.0, true) - TALL).abs() < f64::EPSILON,
+            "the system's bar"
+        );
+        assert!(
+            (tall(52.0, true) - 52.0).abs() < f64::EPSILON,
+            "a taller one"
+        );
+        assert!(tall(0.0, true).abs() < f64::EPSILON, "full screen");
+        assert!(tall(1e-9, true).abs() < f64::EPSILON, "a hair of a bar");
     }
 
     /// A window 1000 pixels wide with a bar 31 tall, buttons 46 wide and

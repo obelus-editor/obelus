@@ -99,6 +99,13 @@ pub struct Config {
     /// terminal can draw a step of. On by default, because what it is for
     /// is following something with the eye rather than finding it again.
     pub animation: bool,
+    /// Whether a window's title bar holds a tab for each open document.
+    ///
+    /// A window's setting, for the reason `animation` is one: a terminal
+    /// has no bar. Off by default, because the bar has to be taller to hold
+    /// a row of tabs than the system's own, and what is open is a key away
+    /// in the list of it either way.
+    pub bar_tabs: bool,
     /// How wide a tab is drawn, and how many spaces the tab key puts in.
     pub tab_width: usize,
     /// The faces text is drawn in, tried in the order they are written.
@@ -369,6 +376,8 @@ impl Default for Config {
             // On, because what it is for is following something
             // with the eye rather than finding it again.
             animation: true,
+            // Off: see the field.
+            bar_tabs: false,
             // What the code Obelus is written in uses, which is also what
             // the rest of the program laid a tab out at before a reader
             // could say otherwise.
@@ -853,6 +862,15 @@ pub const ALL: &[Setting] = &[
         drawn: Drawn::InAWindow,
     },
     Setting {
+        key: "bar_tabs",
+        name: "Tabs on the title bar",
+        about: "A tab on the window's title bar for each open document, which makes the bar taller",
+        group: Group::Appearance,
+        reach: Reach::Anywhere,
+        kind: Kind::Switch,
+        drawn: Drawn::InAWindow,
+    },
+    Setting {
         key: "font_size",
         name: "Text size",
         about: "How big the text is in a window, in points",
@@ -1062,6 +1080,7 @@ impl Config {
             "conversation_days" => Some(Value::Count(self.conversation_days)),
             "recent_projects" => Some(Value::Count(self.recent_projects)),
             "animation" => Some(Value::Switch(self.animation)),
+            "bar_tabs" => Some(Value::Switch(self.bar_tabs)),
             "read_only" => Some(Value::Switch(self.read_only)),
             "language_servers" => Some(Value::Switch(self.language_servers)),
             "format_on_save" => Some(Value::Switch(self.format_on_save)),
@@ -1098,6 +1117,7 @@ impl Config {
             ("font_size", Value::Count(points)) => self.font_size = *points,
             ("fonts", Value::Names(names)) => self.fonts = names.clone(),
             ("animation", Value::Switch(on)) => self.animation = *on,
+            ("bar_tabs", Value::Switch(on)) => self.bar_tabs = *on,
             ("read_only", Value::Switch(on)) => self.read_only = *on,
             ("language_servers", Value::Switch(on)) => self.language_servers = *on,
             ("format_on_save", Value::Switch(on)) => self.format_on_save = *on,
@@ -1671,6 +1691,11 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
     {
         config.animation = on;
     }
+    if let Some(on) = table.get("bar_tabs").and_then(toml::Value::as_bool)
+        && allowed("bar_tabs")
+    {
+        config.bar_tabs = on;
+    }
     if let Some(on) = table.get("read_only").and_then(toml::Value::as_bool)
         && allowed("read_only")
     {
@@ -2082,6 +2107,11 @@ fn lay(existing: &str, config: &Config, every: bool) -> String {
         "animation",
         config.animation != default.animation,
         toml_edit::value(config.animation),
+    );
+    put(
+        "bar_tabs",
+        config.bar_tabs != default.bar_tabs,
+        toml_edit::value(config.bar_tabs),
     );
     put(
         "read_only",
@@ -3027,6 +3057,22 @@ mod tests {
         );
     }
 
+    /// The tabs on a window's bar are off until the reader turns them on,
+    /// and only a window offers them.
+    ///
+    /// Deliberate breaks: default the field to true, and every window
+    /// starts with the taller bar; mark the row `Anywhere`, and a terminal,
+    /// which has no bar, offers a switch that changes nothing.
+    #[test]
+    fn the_tabs_on_the_bar_are_off_and_a_windows() {
+        assert!(!Config::default().bar_tabs);
+        let row = crate::ALL
+            .iter()
+            .find(|setting| setting.key == "bar_tabs")
+            .expect("the row");
+        assert_eq!(row.drawn, crate::Drawn::InAWindow);
+    }
+
     /// Written and read back is the same config: the file is the only place
     /// a setting survives, so anything that does not survive the round trip
     /// is a setting the reader has to set twice.
@@ -3038,6 +3084,7 @@ mod tests {
             blame_margin: false,
             wrap: true,
             animation: false,
+            bar_tabs: true,
             tab_width: 8,
             fonts: vec!["JetBrains Mono".to_string(), "Noto Sans CJK SC".to_string()],
             font_size: 18,

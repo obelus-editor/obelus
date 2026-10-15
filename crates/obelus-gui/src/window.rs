@@ -1248,6 +1248,9 @@ impl ApplicationHandler<Waking> for Showing {
                 let mut left = None;
                 let mut drew = false;
                 let mut sized = None;
+                // Whether the bar came to hold the tabs, or stopped: a bar
+                // of another height, which is a grid of another size.
+                let mut retabbed = false;
                 let mut faces = None;
                 // A picture arrives on its own, with no frame behind it --
                 // it was being decoded while the frames went by -- so it
@@ -1258,6 +1261,7 @@ impl ApplicationHandler<Waking> for Showing {
                         // Not cells, so the page never sees them.
                         Update::TextSize(points) => sized = Some(points),
                         Update::Animates(on) => self.motion.animates(on),
+                        Update::BarTabs(on) => retabbed |= crate::title::tabbed(on),
                         Update::Fonts(names) => faces = Some(names),
                         Update::Ground(ground) => {
                             // Said again after every change to the
@@ -1700,6 +1704,12 @@ impl ApplicationHandler<Waking> for Showing {
                 }
                 if let Some(points) = regrid.resized {
                     self.redraw_at(points);
+                }
+                if retabbed {
+                    self.left = None;
+                    self.remeasure();
+                    self.tell(Event::Resize);
+                    self.redraw();
                 }
                 if drew {
                     self.allow_the_input_method();
