@@ -44,6 +44,7 @@ mod keys;
 mod leaving;
 mod motion;
 mod paint;
+mod stroke;
 mod title;
 mod wallpaper;
 mod window;

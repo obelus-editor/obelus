@@ -339,6 +339,9 @@ struct Showing {
     /// Wheels that report pixels rather than lines, added up until they
     /// amount to a row.
     rolled: f32,
+    /// Where a touchpad's stroke is, so that what is left of one the
+    /// reader has turned away from is not heard by what they turned to.
+    stroke: crate::stroke::Stroke,
     /// Whether an input method is in the middle of a word.
     ///
     /// While it is, the keys belong to it: a reader typing `n` `i` `h` `a`
@@ -553,6 +556,7 @@ impl Showing {
             scale: 1.0,
             active: true,
             rolled: 0.0,
+            stroke: crate::stroke::Stroke::default(),
             composing: false,
             pointed: None,
             allowed: false,
@@ -2155,6 +2159,7 @@ impl ApplicationHandler<Waking> for Showing {
                 if self.composing && plain {
                     return;
                 }
+                self.stroke.cut();
                 self.tell(match keys::by_command(self.modifiers) {
                     true => Event::Command(key),
                     false => Event::Key(key),
@@ -2201,6 +2206,9 @@ impl ApplicationHandler<Waking> for Showing {
                     return;
                 }
                 self.stir();
+                if state == ElementState::Pressed {
+                    self.stroke.cut();
+                }
                 // Asked again at every press rather than cleared at the
                 // release: a press that drags the window by its bar may
                 // never be let go of in the window at all.
@@ -2245,7 +2253,10 @@ impl ApplicationHandler<Waking> for Showing {
             // is not what the reader is pointing at. Whichever way the
             // wheel turns further, so a wheel that only turns down still
             // walks a row that runs across.
-            WindowEvent::MouseWheel { delta, .. } if self.over_the_title => {
+            WindowEvent::MouseWheel { delta, phase, .. } if self.over_the_title => {
+                if !self.stroke.heard(phase, Instant::now()) {
+                    return;
+                }
                 let notches = match delta {
                     MouseScrollDelta::LineDelta(across, down) => match across.abs() > down.abs() {
                         true => across,
@@ -2271,7 +2282,10 @@ impl ApplicationHandler<Waking> for Showing {
                     self.redraw();
                 }
             }
-            WindowEvent::MouseWheel { delta, .. } => {
+            WindowEvent::MouseWheel { delta, phase, .. } => {
+                if !self.stroke.heard(phase, Instant::now()) {
+                    return;
+                }
                 let rows = match delta {
                     // A notch, which is what a mouse sends.
                     MouseScrollDelta::LineDelta(_, lines) => {
