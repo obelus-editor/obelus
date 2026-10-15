@@ -145,6 +145,32 @@ fn the_list_is_every_other_project_in_runs_of_days() {
     assert!(at("Earlier") < at("old"), "{dump}");
 }
 
+/// A window started inside a project is on the project, and its row is
+/// left out too: `ob` typed in `crates` is on the tree whose top the list
+/// remembers.
+///
+/// Broken deliberately by comparing the rows against the working directory
+/// rather than `this_tree` in `open_recent_projects`: the project the
+/// window is on is offered to it.
+#[test]
+fn a_window_started_inside_its_project_is_not_offered_it() {
+    let _turn = crate::turn();
+    let scratch = Scratch::new("switching-inside");
+    let (here, other) = (project(&scratch, "here"), project(&scratch, "other"));
+    let inside = here.join("crates");
+    std::fs::create_dir_all(&inside).expect("a directory inside");
+    keep(&[(&here, now()), (&other, now())]);
+    let mut app = on(&inside);
+
+    dispatch::dispatch(&mut app, Command::ProjectList);
+
+    assert_eq!(
+        rows(&app),
+        [("other".to_string(), Some("Today".to_string()))],
+        "the project the window is on was offered to it"
+    );
+}
+
 /// In a terminal, enter puts this window on the project -- and choosing it
 /// puts it at the top of the list, as choosing one on the page does.
 ///

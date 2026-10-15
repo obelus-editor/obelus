@@ -503,7 +503,7 @@ impl App {
     }
 
     /// The tree this window is on.
-    fn this_tree(&self) -> PathBuf {
+    pub(in crate::app) fn this_tree(&self) -> PathBuf {
         obelus_git::worktree(&self.working_directory)
             .unwrap_or_else(|| self.working_directory.clone())
     }
@@ -900,7 +900,7 @@ fn worktree_row(shown: Shown) -> PickerItem {
 /// added by and a window its own, and one may be through a link the other
 /// is not. A tree that has gone resolves to nothing, and is taken as it
 /// was written.
-fn same_tree(one: &Path, other: &Path) -> bool {
+pub(in crate::app) fn same_tree(one: &Path, other: &Path) -> bool {
     one == other || resolved(one) == resolved(other)
 }
 

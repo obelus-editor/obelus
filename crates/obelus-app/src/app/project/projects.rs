@@ -72,13 +72,6 @@ use obelus_component::{
 /// name and where it is -- and the runs of days have headings.
 const PROJECT_ROWS: u16 = 24;
 
-/// A path with its links followed, or as it was written where it cannot
-/// be: what decides whether a row of the list is the project this window
-/// is on, which may have been named either way.
-fn resolved(path: &Path) -> PathBuf {
-    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
-}
-
 /// Where the list lives.
 ///
 /// Obelus's own state rather than the reader's preferences, so it is in
@@ -462,11 +455,14 @@ impl crate::app::App {
         if let Reading::Unreadable(why) = &reading {
             self.amiss(&format!("The list of projects would not read: {why}"));
         }
-        let here = resolved(&self.working_directory);
+        // The tree and not the directory the window began in: `ob` started
+        // in `crates` of a project is on the project, whose row says its
+        // top.
+        let here = self.this_tree();
         let (mut there, went): (Vec<_>, Vec<_>) = reading
             .rows()
             .into_iter()
-            .filter(|project| resolved(&project.path) != here)
+            .filter(|project| !crate::app::worktrees::same_tree(&project.path, &here))
             .partition(|project| !gone(&project.path));
         // As many as the page that asks would show, for the reason it
         // does: the setting is how long the list is, wherever it is drawn.
@@ -541,6 +537,11 @@ impl crate::app::App {
     /// question about leaving this project and not about choosing that
     /// one.
     pub(in crate::app) fn go_to_project(&mut self, path: &Path) {
+        // Where the window already is, which going to would let go of the
+        // project only to settle on it again.
+        if crate::app::worktrees::same_tree(path, &self.this_tree()) {
+            return;
+        }
         if gone(path) {
             forget(std::slice::from_ref(&path.to_path_buf()));
             return;
