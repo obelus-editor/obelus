@@ -1651,10 +1651,10 @@ pub trait Drawing: std::fmt::Debug + Send + Sync {
     /// What colour the caret is drawn in.
     ///
     /// Said the way the page's ground is and at the same two moments,
-    /// because it is the theme's and not the frame's. Nothing to a
-    /// terminal, whose caret is the terminal's own -- which is why it does
-    /// nothing unless a front end says otherwise.
-    fn caret_in(&self, _colour: Color) {}
+    /// because it is the theme's and not the frame's. Only a window is
+    /// told, as only a window is told anything: a terminal's caret is the
+    /// terminal's own, in the colour the reader gave the terminal.
+    fn caret_in(&self, colour: Color);
 
     /// The theme is changing: what is on the screen now is in the one it
     /// was in, and the next frame is in another.

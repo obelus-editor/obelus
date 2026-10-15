@@ -258,9 +258,7 @@ impl Painter {
         };
         let cell = fonts.cell();
         let look = page.look(caret.x, caret.y);
-        // The cell's ink only for the moment before the application has
-        // said the theme's, which is the first frame and nothing after it.
-        let ink = rgba(page.caret_ink().unwrap_or(look.foreground), Ink::Foreground);
+        let ink = rgba(page.caret_colour(caret.x, caret.y), Ink::Foreground);
         // Where it is drawn, which is where the page put it only once it
         // has got there -- see `motion::Moving::drift`. Everything the
         // caret carries is drawn from these two, so a caret in flight

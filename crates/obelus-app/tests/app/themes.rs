@@ -879,6 +879,8 @@ impl obelus_app::app::Drawing for Hangs {
 
     fn holding(&self, _: ratatui::style::Color, _: ratatui::style::Color) {}
 
+    fn caret_in(&self, _: ratatui::style::Color) {}
+
     fn caret_is(
         &self,
         _: obelus_app::app::Caret,
@@ -1007,6 +1009,8 @@ impl obelus_app::app::Drawing for Recolours {
     fn use_fonts(&self, _: &[String]) {}
 
     fn holding(&self, _: ratatui::style::Color, _: ratatui::style::Color) {}
+
+    fn caret_in(&self, _: ratatui::style::Color) {}
 
     fn caret_is(
         &self,

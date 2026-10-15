@@ -1521,7 +1521,7 @@ pub(crate) struct Page {
     whose: Option<Layer>,
     typing: bool,
     /// What the caret is drawn in, and the reset colour until the
-    /// application has said -- see `Page::caret_ink`.
+    /// application has said -- see `Page::caret_colour`.
     ink: Color,
     /// What the page is drawn on, which is what a cell nobody has written
     /// yet is drawn on too -- see `blank`.
@@ -1626,13 +1626,17 @@ impl Page {
         self.typing
     }
 
-    /// What colour the caret is drawn in, which is the theme's -- or `None`
-    /// before the application has said, when the painter has only the
-    /// cells to go by.
-    pub(crate) const fn caret_ink(&self) -> Option<Color> {
+    /// What colour a caret on this cell is drawn in: the theme's, whatever
+    /// the cell's own ink is -- and that ink only before the application
+    /// has said the theme's, which is the first frame and nothing after it.
+    ///
+    /// Here rather than in the painter, which is the one place it is
+    /// asked, because the painter cannot be run without a device and this
+    /// is the half of it that can be wrong.
+    pub(crate) fn caret_colour(&self, x: u16, y: u16) -> Color {
         match self.ink {
-            Color::Reset => None,
-            ink => Some(ink),
+            Color::Reset => self.look(x, y).foreground,
+            ink => ink,
         }
     }
 
@@ -1957,18 +1961,33 @@ mod tests {
     /// the cell it is on -- and a frame clearing the page does not take
     /// that colour with it, because it is the theme's and not the frame's.
     ///
-    /// Deliberate breaks: the arm for it not keeping the colour (nothing is
-    /// said, so the painter falls back to the cell's ink), and `Cleared`
-    /// resetting it with the cells (the second assertion is `None`).
+    /// Deliberate breaks: the arm for it not keeping the colour, and
+    /// `caret_colour` answering the cell's ink as the painter once did --
+    /// both draw it in the keyword's purple. The last
+    /// assertion is a guard against a `Cleared` taught to reset everything
+    /// the page holds, which no break of the code as it is can show.
     #[test]
     fn the_caret_is_in_the_colour_it_was_told() {
-        let mut page = written(&["ab"]);
-        assert_eq!(page.caret_ink(), None, "nothing has been said yet");
+        let keyword = Color::Rgb(192, 132, 252);
+        let mut page = Page::default();
+        page.resized(1, 1);
+        let mut cell = Cell::default();
+        cell.set_symbol("f").set_fg(keyword);
+        page.apply(Update::Cell {
+            x: 0,
+            y: 0,
+            cell: Box::new(cell),
+        });
+        assert_eq!(
+            page.caret_colour(0, 0),
+            keyword,
+            "before the theme's is said, the cell's ink is all there is"
+        );
         let rosewater = Color::Rgb(245, 224, 220);
         page.apply(Update::CaretInk(rosewater));
-        assert_eq!(page.caret_ink(), Some(rosewater));
+        assert_eq!(page.caret_colour(0, 0), rosewater, "the keyword's colour");
         page.apply(Update::Cleared);
-        assert_eq!(page.caret_ink(), Some(rosewater), "a frame took it away");
+        assert_eq!(page.caret_colour(0, 0), rosewater, "a frame took it away");
     }
 
     /// A window that goes smaller and back before Obelus draws has every
