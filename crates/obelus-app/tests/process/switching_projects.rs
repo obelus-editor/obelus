@@ -340,3 +340,93 @@ fn the_page_heads_its_runs_of_days_and_a_press_lands_under_them() {
     press(&mut app, KeyCode::Up);
     assert_eq!(app.choosing().expect("still asking").at, 1);
 }
+
+/// A page asking about these projects, `today` of them opened just now and
+/// `earlier` long ago, drawn at 60 by `height`.
+fn page_of(today: usize, earlier: usize, height: u16) -> (App, String) {
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(PathBuf::from("/tmp/obelus"));
+    let known = |name: String, last: i64| Known {
+        path: PathBuf::from(format!("/tmp/obelus/{name}")),
+        shown: format!("/tmp/obelus/{name}"),
+        last: Some(last),
+    };
+    app.ask_about_these_projects_for_test(
+        (1..=today)
+            .map(|at| known(format!("new-{at}"), now()))
+            .chain((1..=earlier).map(|at| known(format!("old-{at}"), 2_000)))
+            .collect(),
+    );
+    let dump = support::render(&mut app, 60, height);
+    (app, dump)
+}
+
+/// Which row of the screen these words are on, if they are on it.
+fn row_of(dump: &str, words: &str) -> Option<u16> {
+    support::text_block(dump)
+        .lines()
+        .find(|row| row.contains(words))
+        .and_then(|row| row.split_once('|'))
+        .and_then(|(at, _)| at.trim().parse().ok())
+}
+
+/// On a page too short for every project, the window over them is settled
+/// in rows: the last project, under two headings, is on screen once the
+/// reader is on it.
+///
+/// Broken deliberately by settling the chooser's window by count
+/// (`self.window.settle(room)`) in `Chooser::settle`: the window leaves
+/// the last project's headings out of its sums, and the project is below
+/// the foot of the list.
+#[test]
+fn a_page_too_short_for_its_projects_scrolls_to_the_last_of_them() {
+    let _turn = crate::turn();
+    let (mut app, _) = page_of(6, 6, 16);
+    // From the first project, up is the row that opens another, and up
+    // again the last project.
+    press(&mut app, KeyCode::Up);
+    press(&mut app, KeyCode::Up);
+    assert_eq!(app.choosing().expect("still asking").at, 11);
+
+    let dump = support::render(&mut app, 60, 16);
+    assert!(
+        row_of(&dump, "old-6").is_some(),
+        "the project the reader is on is off the page:\n{dump}"
+    );
+}
+
+/// A press on the rows a project did not fit in stands on nothing: what
+/// was not drawn is not there to stand on.
+///
+/// The page is made so that the run of today's projects fills the list
+/// but one row, and the first of the earlier ones -- a blank, its heading,
+/// a blank and itself -- does not fit in it.
+///
+/// Broken deliberately by taking the `bottom > laid.list.bottom()` guard
+/// out of `projects::row_at`: the press stands on the first earlier
+/// project, which is nowhere on screen.
+#[test]
+fn a_press_where_a_project_did_not_fit_stands_on_nothing() {
+    let _turn = crate::turn();
+    // How tall the list is on this page, from where the row that opens
+    // another lands under a list longer than it.
+    let (_, dump) = page_of(20, 0, 16);
+    let opening = row_of(&dump, "Open another").expect("the opening row");
+    let room = usize::from(opening - 1 - 2);
+    // A heading and a blank over the first, and the rest a row each.
+    let (mut app, dump) = page_of(room - 3, 3, 16);
+    assert!(row_of(&dump, "old-1").is_none(), "{dump}");
+    let last = row_of(&dump, &format!("new-{}", room - 3)).expect("the last of today's");
+    assert!(last + 1 < opening - 1, "no row is left over:\n{dump}");
+
+    app.handle(obelus_app::event::Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: 6,
+        y: last + 1,
+    });
+    assert_eq!(
+        app.choosing().expect("still asking").at,
+        0,
+        "the press stood on a project that is not drawn"
+    );
+}

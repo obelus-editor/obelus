@@ -235,6 +235,12 @@ pub fn row_at(
     let mut bottom = laid.list.y;
     for (at, height) in heights.iter().enumerate().skip(choosing.top) {
         bottom = bottom.saturating_add(*height);
+        // One that does not fit is not drawn, so the rows it would have
+        // begun on are nobody's: a press there taking it would stand the
+        // reader on a project they cannot see.
+        if bottom > laid.list.bottom() {
+            return None;
+        }
         if y < bottom {
             return Some(at);
         }
