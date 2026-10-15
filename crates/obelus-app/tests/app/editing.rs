@@ -2306,7 +2306,8 @@ mod closing_the_others {
     }
 
     /// Something unwritten among the others is asked about once, by name,
-    /// and nothing closes until it is answered.
+    /// and nothing closes until it is answered. The deliberate break was
+    /// never asking in `close_the_others`, which closed one.rs unwritten.
     #[test]
     fn something_unwritten_among_them_asks_first() {
         let (_scratch, mut app, paths) = reading_three("close-others-ask");
@@ -2331,7 +2332,7 @@ mod closing_the_others {
     }
 
     /// And thrown away, when that is the answer: the file on disk is left
-    /// as it was.
+    /// as it was. The deliberate break was saving on that answer too.
     #[test]
     fn something_unwritten_among_them_can_be_thrown_away() {
         let (_scratch, mut app, paths) = reading_three("close-others-discard");
@@ -2385,7 +2386,9 @@ mod closing_the_others {
     }
 
     /// By its name in the palette, which is the only way to it until a
-    /// reader binds a key: the row is there, live, and enter runs it.
+    /// reader binds a key: the row is there, live, and enter runs it. The
+    /// deliberate break was dispatching it to `close_current`, which closed
+    /// one.rs and kept the other two.
     #[test]
     fn the_palette_runs_it_by_name() {
         let (_scratch, mut app, paths) = reading_three("close-others-palette");
