@@ -126,6 +126,61 @@ impl App {
         );
     }
 
+    /// Asks before closing everything but one document, with something
+    /// unwritten or still running among the rest.
+    ///
+    /// One question for all of them rather than one per file: the reader
+    /// pressed one key, and a run of questions after it would have them
+    /// answering the same thing four times.
+    pub(in crate::app) fn ask_before_closing_the_others(
+        &mut self,
+        keep: DocumentId,
+        unsaved: usize,
+        running: usize,
+    ) {
+        let only = |app: &Self| {
+            (0..app.documents.len())
+                .map(DocumentId::new)
+                .filter(|id| *id != keep)
+                .find(|id| app.file(*id).is_some_and(Buffer::is_dirty))
+        };
+        let what = match unsaved {
+            0 => None,
+            1 => Some(match only(self) {
+                Some(id) => format!("{} is unsaved", self.file_path(id)),
+                None => "1 file is unsaved".to_string(),
+            }),
+            many => Some(format!("{many} files are unsaved")),
+        };
+        let what = match (what, running) {
+            (Some(what), 0) => what,
+            (Some(what), 1) => format!("{what}, and a terminal is still running"),
+            (Some(what), many) => format!("{what}, and {many} terminals are still running"),
+            (None, 1) => "A terminal is still running".to_string(),
+            (None, many) => format!("{many} terminals are still running"),
+        };
+        let question = Question::new(what);
+        // Nothing to write where only programs are running: the one way
+        // out is stopping them, as closing one terminal asks.
+        let question = match unsaved {
+            0 => question.way(
+                "Stop them and close the others",
+                Answer::ClosingTheOthers(keep, Leaving::Discard),
+            ),
+            _ => question
+                .way(
+                    "Save everything and close the others",
+                    Answer::ClosingTheOthers(keep, Leaving::SaveAll),
+                )
+                .way(
+                    "Close the others without saving",
+                    Answer::ClosingTheOthers(keep, Leaving::Discard),
+                )
+                .saying("Loses your changes"),
+        };
+        self.stop_to_ask(question);
+    }
+
     /// Asks before writing over a file that moved while it was being edited.
     ///
     /// The one question with no safe answer: each way out keeps one of the
@@ -198,6 +253,12 @@ impl App {
                 }
             }
             Answer::ClosingTheProject(Leaving::Discard) => self.leave_the_project(),
+            Answer::ClosingTheOthers(keep, Leaving::SaveAll) => {
+                if self.save_all_but(keep) {
+                    self.close_all_but(keep);
+                }
+            }
+            Answer::ClosingTheOthers(keep, Leaving::Discard) => self.close_all_but(keep),
             Answer::Saving(id, Saving::Mine) => self.save_now(id.get()),
             Answer::Saving(id, Saving::Theirs) => self.take_what_is_on_disk(id.get()),
             Answer::Writing(id, Writing::Back) => self.save_now(id.get()),
@@ -258,6 +319,24 @@ impl App {
         if self.save_everything() {
             self.should_quit = true;
         }
+    }
+
+    /// Writes every unwritten document but one, and says whether they all
+    /// went.
+    ///
+    /// Not [`App::save_everything`]: the one being kept stays open, so
+    /// whether it is written is still the reader's to say.
+    fn save_all_but(&mut self, keep: DocumentId) -> bool {
+        for index in 0..self.documents.len() {
+            let unwritten = DocumentId::new(index) != keep
+                && self
+                    .file(DocumentId::new(index))
+                    .is_some_and(|buffer| buffer.is_dirty() && buffer.content().is_file());
+            if unwritten && !self.write_now(index) {
+                return false;
+            }
+        }
+        true
     }
 
     /// Writes every unwritten document, and says whether they all went.

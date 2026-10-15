@@ -219,6 +219,7 @@ impl App {
             // Not `current_buffer`, which is the point of the distinction: a
             // conversation is something open and is not a file.
             Requires::ADocumentOpen => !self.reading_nothing(),
+            Requires::AnotherDocument => self.documents.iter().flatten().nth(1).is_some(),
             // A project before the walk, for all three of these: git asked
             // about a tree that has gone looks in the directory above it,
             // and that may well be some other repository.

@@ -16,8 +16,8 @@ screen 60x20  editor 60x18  status 60x1
 13| switch-document         Switch to something already o  F2  
 14| switch-worktree         Go to another worktree of this re  
 15| close-document          Close what is being read   Ctrl+w  
-16| close-project           Close this project                 
-17| switch-project          Go to a project opened be  Ctrl+o  
+16| close-other-documents   Close all but what is being read   
+17| close-project           Close this project                 
 18|────────────────────────────────────────────────────────────
 19| > Filter commands                                          
 -- style --
@@ -37,8 +37,8 @@ screen 60x20  editor 60x18  status 60x1
 13|aaaaaaaaaaaaaaaaaaaaaaaaacccccccccccccccccccccccccccccaaccaa
 14|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccca
 15|aaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccccccccccccccaaaccccccaa
-16|aaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccccccccaaaaaaaaaaaaaaaaa
-17|aaaaaaaaaaaaaaaaaaaaaaaaacccccccccccccccccccccccccaaccccccaa
+16|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccca
+17|aaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccccccccaaaaaaaaaaaaaaaaa
 18|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 19|iiiccccccccccccccciiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii
 -- legend --

@@ -2230,6 +2230,143 @@ mod closing {
     }
 }
 
+/// Closing everything but what is being read.
+mod closing_the_others {
+    use crossterm::event::KeyCode;
+    use obelus_app::app::{App, dispatch};
+    use obelus_buffer::Buffer;
+    use obelus_command::Command;
+
+    use super::support;
+
+    /// Three files open, on the first of them, and the paths in order.
+    fn reading_three(name: &str) -> (support::Scratch, App, Vec<std::path::PathBuf>) {
+        let scratch = support::Scratch::new(name);
+        let paths: Vec<_> = ["one.rs", "two.rs", "three.rs"]
+            .iter()
+            .map(|file| {
+                let path = scratch.path().join(file);
+                std::fs::write(&path, "fn main() {}\n").expect("writing the file");
+                path
+            })
+            .collect();
+        let mut app = App::new(
+            paths
+                .iter()
+                .map(|path| Buffer::open(path).expect("opening it"))
+                .collect(),
+        );
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        support::lay_out(&mut app, 70, 12);
+        (scratch, app, paths)
+    }
+
+    /// Goes to a file by way of the list of what is open, as a reader would.
+    fn switch_to(app: &mut App, name: &str) {
+        dispatch::dispatch(app, Command::DocumentList);
+        support::type_text(app, name);
+        support::press(app, KeyCode::Enter);
+    }
+
+    fn open(app: &App) -> Vec<std::path::PathBuf> {
+        app.buffers_for_test()
+            .into_iter()
+            .map(|(path, _)| path)
+            .collect()
+    }
+
+    /// The one being read stays, and is still the one being read. The
+    /// deliberate break was keeping `keep` out of the comparison in
+    /// `close_all_but`, which closed all three.
+    #[test]
+    fn everything_but_what_is_being_read_closes() {
+        let (_scratch, mut app, paths) = reading_three("close-others");
+        switch_to(&mut app, "two.rs");
+        dispatch::dispatch(&mut app, Command::DocumentCloseOthers);
+
+        assert_eq!(open(&app), vec![paths[1].clone()], "the wrong ones closed");
+        assert_eq!(
+            app.current_buffer().map(Buffer::path),
+            Some(paths[1].as_path()),
+            "the reader was moved off what they were reading"
+        );
+    }
+
+    /// With nothing else open there are no others, and the row is dim. The
+    /// deliberate break was answering `AnotherDocument` with `true`.
+    #[test]
+    fn with_one_open_there_is_nothing_to_close() {
+        let (_scratch, mut app, _paths) = reading_three("close-others-one");
+        assert!(app.offers(Command::DocumentCloseOthers));
+        dispatch::dispatch(&mut app, Command::DocumentCloseOthers);
+        assert!(
+            !app.offers(Command::DocumentCloseOthers),
+            "it offers to close others when there are none"
+        );
+    }
+
+    /// Something unwritten among the others is asked about once, by name,
+    /// and nothing closes until it is answered.
+    #[test]
+    fn something_unwritten_among_them_asks_first() {
+        let (_scratch, mut app, paths) = reading_three("close-others-ask");
+        support::type_text(&mut app, "x");
+        switch_to(&mut app, "two.rs");
+        dispatch::dispatch(&mut app, Command::DocumentCloseOthers);
+
+        assert_eq!(open(&app).len(), 3, "it closed before asking");
+        let dump = support::render(&mut app, 70, 12);
+        assert!(
+            support::text_block(&dump).contains("one.rs is unsaved"),
+            "the question does not name the file closing would lose:\n{dump}"
+        );
+
+        support::answer(&mut app, "Save everything and close the others");
+        assert_eq!(open(&app), vec![paths[1].clone()]);
+        assert_eq!(
+            std::fs::read_to_string(&paths[0]).expect("reading it"),
+            "xfn main() {}\n",
+            "it closed without writing what it said it would write"
+        );
+    }
+
+    /// And thrown away, when that is the answer: the file on disk is left
+    /// as it was.
+    #[test]
+    fn something_unwritten_among_them_can_be_thrown_away() {
+        let (_scratch, mut app, paths) = reading_three("close-others-discard");
+        support::type_text(&mut app, "x");
+        switch_to(&mut app, "three.rs");
+        dispatch::dispatch(&mut app, Command::DocumentCloseOthers);
+        support::answer(&mut app, "Close the others without saving");
+
+        assert_eq!(open(&app), vec![paths[2].clone()]);
+        assert_eq!(
+            std::fs::read_to_string(&paths[0]).expect("reading it"),
+            "fn main() {}\n",
+            "it wrote the file it was told to throw away"
+        );
+    }
+
+    /// What is being read is not one of the others: unwritten there, it
+    /// is neither asked about nor written. The deliberate break was
+    /// dropping the `!= keep` filter from the count in `close_the_others`,
+    /// which put a question in the way.
+    #[test]
+    fn what_is_being_read_is_not_asked_about() {
+        let (_scratch, mut app, paths) = reading_three("close-others-kept");
+        support::type_text(&mut app, "x");
+        dispatch::dispatch(&mut app, Command::DocumentCloseOthers);
+
+        assert_eq!(open(&app), vec![paths[0].clone()], "it asked, or closed it");
+        assert_eq!(
+            std::fs::read_to_string(&paths[0]).expect("reading it"),
+            "fn main() {}\n",
+            "it wrote the file being kept"
+        );
+    }
+}
+
 /// What a file was written with, it is written back with.
 mod bytes {
     use obelus_app::app::{App, dispatch};

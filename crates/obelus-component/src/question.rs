@@ -125,6 +125,9 @@ pub enum Answer {
     Switching(Leaving),
     /// Letting go of the project with something unwritten in it.
     ClosingTheProject(Leaving),
+    /// Closing every document but one, with something unwritten in the
+    /// others.
+    ClosingTheOthers(DocumentId, Leaving),
     /// Saving over a file that moved while it was being edited.
     Saving(DocumentId, Saving),
     /// Saving a file somebody else took away.

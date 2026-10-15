@@ -270,6 +270,8 @@ pub fn for_command(command: obelus_command::Command) -> char {
         // same folder the counts hang their languages from.
         Command::WorktreeList => ui::TREE,
         Command::DocumentClose => '\u{f0b98}',
+        // `md-close_box_multiple`: the cross, on more than one.
+        Command::DocumentCloseOthers => '\u{f0c5d}',
         // A folder with a cross on it: what the row above it does to a
         // file, done to the project.
         Command::ProjectClose => '\u{f0258}',

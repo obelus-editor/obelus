@@ -35,6 +35,8 @@ pub enum Command {
     WorktreeList,
     /// Stop showing the current document.
     DocumentClose,
+    /// Stop showing every document but the current one.
+    DocumentCloseOthers,
     /// Let go of this project and choose another.
     ProjectClose,
     /// Go to a project opened before.
@@ -297,6 +299,8 @@ pub enum Requires {
     /// instead: the key that closes what is being read went dim inside a
     /// conversation, and so did the key that lists what is open.
     ADocumentOpen,
+    /// Something else has to be open beside what is being read.
+    AnotherDocument,
     /// The open file has to be in a language Obelus can parse.
     AKnownLanguage,
     /// The open file has to have a reading, or be showing one.
@@ -451,6 +455,11 @@ pub const ALL: &[CommandSpec] = &[
         command: Command::DocumentClose,
         name: "close-document",
         title: "Close what is being read",
+    },
+    CommandSpec {
+        command: Command::DocumentCloseOthers,
+        name: "close-other-documents",
+        title: "Close all but what is being read",
     },
     CommandSpec {
         command: Command::ProjectClose,
@@ -824,6 +833,7 @@ impl Command {
             | Self::FileSave
             | Self::DocumentList
             | Self::DocumentClose
+            | Self::DocumentCloseOthers
             | Self::ProjectClose
             | Self::ProjectList
             | Self::FileRename
@@ -950,6 +960,7 @@ impl Command {
             | Self::FileReload
             | Self::FileSave
             | Self::DocumentClose
+            | Self::DocumentCloseOthers
             | Self::ProjectClose
             | Self::FileRename
             | Self::FileNew
@@ -1039,6 +1050,7 @@ impl Command {
             | Self::FileReload
             | Self::FileSave
             | Self::DocumentClose
+            | Self::DocumentCloseOthers
             | Self::ProjectClose
             | Self::ProjectList
             | Self::FileRename
@@ -1110,6 +1122,7 @@ impl Command {
             | Self::DocumentList
             | Self::WorktreeList
             | Self::DocumentClose
+            | Self::DocumentCloseOthers
             | Self::ProjectClose
             | Self::ProjectList
             | Self::FileRename
@@ -1238,6 +1251,9 @@ impl Command {
             // exists to stop: a key that runs and reports why it did not.
             Self::LspRestart | Self::SymbolMenu => Requires::AFileOpen,
             Self::DocumentClose => Requires::ADocumentOpen,
+            // Two, because with one there are no others: the row would run
+            // and close nothing.
+            Self::DocumentCloseOthers => Requires::AnotherDocument,
             // A file to reload, a line to go to. Neither means anything in
             // a conversation, and the key says so by doing nothing.
             // A file to reload, a line to go to. Neither means anything in
@@ -1462,6 +1478,7 @@ mod tests {
             Command::RemoteConnect,
             Command::RemoteDisconnect,
             Command::DocumentClose,
+            Command::DocumentCloseOthers,
             Command::ProjectClose,
             Command::ProjectList,
             Command::FileRename,
