@@ -58,7 +58,10 @@ use obelus_app::{
 };
 use obelus_font::Fonts;
 use obelus_ui::shapes::{Bar, Joined};
-use ratatui::{layout::Rect, style::Color};
+use ratatui::{
+    layout::{Position, Rect},
+    style::Color,
+};
 use winit::{
     application::ApplicationHandler,
     dpi::{LogicalSize, PhysicalPosition, PhysicalSize},
@@ -285,6 +288,21 @@ impl Rolling {
     /// the conversation.
     fn is(&self, was: &Self) -> bool {
         self.room == was.room && self.layer == was.layer && self.under == was.under
+    }
+
+    /// How many rows down its list it has got since it was `was`, or
+    /// `None` where that is not a scroll.
+    ///
+    /// Not where it has not moved, and not further than it is tall: a
+    /// list that moved by more than a screenful did not scroll -- it went
+    /// somewhere else, and sliding the distance would be a second of rows
+    /// nobody is reading. It is also the one bound that makes the drawing
+    /// possible: the rows it left behind exist on one page, and that page
+    /// is a screenful. One answer, for the slide and for the caret it
+    /// carries, so that the two cannot disagree about whether it moved.
+    fn scrolled_since(&self, was: &Self) -> Option<i64> {
+        (self.top != was.top && self.top.abs_diff(was.top) <= u64::from(self.room.height))
+            .then_some(self.top - was.top)
     }
 
     /// Which band it is to the clock its slide runs on.
@@ -1585,26 +1603,6 @@ impl ApplicationHandler<Waking> for Showing {
                 // And the pointer asked again: what is under it changes with
                 // the page as well as with it.
                 self.point_at_links();
-                // Where the caret is is the page's; whether it walked
-                // there or simply appeared is the window's own question,
-                // and it is asked of the drain as a whole rather than of
-                // each update in it. Several frames may have been waiting
-                // -- a key and the answer it provoked -- and what the
-                // reader is owed is the walk from where they last saw the
-                // caret to where it is now, not one per frame they never
-                // saw.
-                self.motion
-                    // Nothing where the caret changed hands: a list
-                    // opening over the page puts the caret in its own
-                    // box, which is a different caret at a different
-                    // place. Walked from one to the other, it goes down
-                    // the screen from where the reader was reading to
-                    // where the list came up.
-                    .caret_moved(
-                        was.filter(|_| whose_was == self.page.whose()),
-                        self.page.caret(),
-                        Instant::now(),
-                    );
                 // A pane opening is the one thing on the screen that
                 // arrives rather than changes, and it is worked out from
                 // what is there rather than announced: a frame with a pane
@@ -1646,13 +1644,8 @@ impl ApplicationHandler<Waking> for Showing {
                 // part of its list. The same band, because a list that was
                 // replaced by another one in the same place has not
                 // scrolled -- it has been swapped, and sliding between two
-                // unrelated lists would say they were one.
-                // And no further than the band is tall. A list that
-                // moved by more than a screenful did not scroll -- it went
-                // somewhere else, and sliding the distance would be a
-                // second of rows nobody is reading. It is also the one
-                // bound that makes the drawing possible: the rows it left
-                // behind exist on one page, and that page is a screenful.
+                // unrelated lists would say they were one. And no further
+                // than the band is tall -- see `Rolling::scrolled_since`.
                 let now = Instant::now();
                 for band in &mut self.scrolled {
                     let Some(was) = was_at.iter().find(|was| band.is(was)) else {
@@ -1666,16 +1659,14 @@ impl ApplicationHandler<Waking> for Showing {
                     // the bar was *drawn* at, or the mark sets out from
                     // somewhere it never was and steps back to catch up.
                     band.origin = was.origin;
-                    if band.top == was.top
-                        || band.top.abs_diff(was.top) > u64::from(band.room.height)
-                    {
+                    let Some(rows) = band.scrolled_since(was) else {
                         continue;
-                    }
+                    };
                     #[expect(
                         clippy::cast_precision_loss,
                         reason = "a list is rows, and a scroll is a few of them"
                     )]
-                    let rows = (band.top - was.top) as f32;
+                    let rows = rows as f32;
                     // Only where this begins a fresh slide: one already
                     // under way keeps the page it started with, because
                     // that is the page the rows it scrolled past are on
@@ -1691,6 +1682,34 @@ impl ApplicationHandler<Waking> for Showing {
                 // And what is no longer on the screen is no longer kept.
                 let lanes: Vec<Lane> = self.scrolled.iter().map(Rolling::lane).collect();
                 self.motion.bands_drawn(&lanes);
+                // Where the caret is is the page's; whether it walked
+                // there or simply appeared is the window's own question,
+                // and it is asked of the drain as a whole rather than of
+                // each update in it. Several frames may have been waiting
+                // -- a key and the answer it provoked -- and what the
+                // reader is owed is the walk from where they last saw the
+                // caret to where it is now, not one per frame they never
+                // saw.
+                //
+                // And from where its band carried it: the caret is drawn
+                // into the frame and slid with the band's rows, so a caret
+                // that only scrolled has not moved at all -- it rides.
+                // Asked from the cell it was on, a notch of the wheel was a
+                // glide as well as a slide, the caret drawn behind its line
+                // by both at once, trailing the text.
+                self.motion
+                    // Nothing where the caret changed hands: a list
+                    // opening over the page puts the caret in its own
+                    // box, which is a different caret at a different
+                    // place. Walked from one to the other, it goes down
+                    // the screen from where the reader was reading to
+                    // where the list came up.
+                    .caret_moved(
+                        was.filter(|_| whose_was == self.page.whose())
+                            .map(|was| carried(was, &self.scrolled, &was_at)),
+                        self.page.caret(),
+                        now,
+                    );
                 let refaced = faces.is_some_and(|names| {
                     self.fonts
                         .as_mut()
@@ -2387,6 +2406,35 @@ fn pairs_arrived(
     unpaired.retain(|half| half.still_there(page) && motion.fading(half.pair, now).is_some());
 }
 
+/// Where a caret that was at `was` would be now had it stayed on its
+/// character: carried up or down by however far the band it was in has
+/// scrolled since the bands it was drawn among, `were`.
+///
+/// Worked out from the bands themselves rather than from what the slides
+/// made of them, so that it can be asked before them or after and say the
+/// same. The innermost band, where one is inside another -- a hover over
+/// the file it is about scrolls on its own. Not one with a pane over it:
+/// what is in the pane stays where it is while the band slides under it,
+/// and so does a caret in it. And signed, because a line carried past the
+/// top of the screen is still where the caret rides: asked about from the
+/// cell it was on instead, a caret that also moved in its text that frame
+/// took the band's slide and a flight of its own both.
+fn carried(was: Position, bands: &[Rolling], were: &[Rolling]) -> (i32, i32) {
+    let rows = bands
+        .iter()
+        .filter(|band| band.under == 0 && band.room.contains(was))
+        .filter_map(|band| {
+            let rows = band.scrolled_since(were.iter().find(|was| band.is(was))?)?;
+            Some((band.room.area(), rows))
+        })
+        .min_by_key(|&(area, _)| area)
+        .map_or(0, |(_, rows)| rows);
+    // No further than a band is tall -- see `Rolling::scrolled_since` --
+    // so this is never the fallback in practice.
+    let y = i32::try_from(i64::from(was.y) - rows).unwrap_or(i32::from(was.y));
+    (i32::from(was.x), y)
+}
+
 /// Whether a cell is among the words of a link the frame said, and still
 /// is.
 ///
@@ -2625,6 +2673,57 @@ mod tests {
         assert_eq!(caret_in("ni hao", None), None, "a caret not shown");
         // Bytes in, characters out: two characters of Chinese are six bytes.
         assert_eq!(caret_in("\u{4f60}\u{597d}hao", Some((0, 6))), Some(2));
+    }
+
+    /// A caret its band carried is where it was, as far as its own flight
+    /// is concerned: the band's slide is what moves it on the screen.
+    ///
+    /// Deliberate breaks, each failing here: answer `(was.x, was.y)` from
+    /// `carried`, as the window did by asking about the caret from the
+    /// cell it was on, and a notch of the wheel is a caret three rows from
+    /// where it was -- a glide on top of the slide that already carries
+    /// it; drop the `band.under == 0` and a caret in a list over the file
+    /// is carried by the file scrolling under it; drop the bound in
+    /// `Rolling::scrolled_since` and a jump of a screenful carries a caret
+    /// whose band never slid; clamp the row at zero and a caret carried
+    /// above the screen sets out from the top row.
+    #[test]
+    fn a_caret_its_band_carried_has_not_moved() {
+        use ratatui::layout::Position;
+
+        use super::{Rolling, carried};
+        let band = |room, top, under| Rolling {
+            room,
+            top,
+            before: None,
+            bar: None,
+            origin: None,
+            under,
+            layer: 0,
+        };
+        let file = Rect::new(0, 1, 80, 30);
+        let hover = Rect::new(10, 5, 30, 6);
+        let at = |x, y| Position { x, y };
+        let were = [band(file, 100, 0), band(hover, 0, 0)];
+        let scrolled = |file_top, hover_top| [band(file, file_top, 0), band(hover, hover_top, 0)];
+        // Three rows down the file: the line it is on went up by three.
+        assert_eq!(carried(at(4, 20), &scrolled(103, 0), &were), (4, 17));
+        // And back up.
+        assert_eq!(carried(at(4, 20), &scrolled(97, 0), &were), (4, 23));
+        // A band that did not move carries nothing.
+        assert_eq!(carried(at(4, 20), &scrolled(100, 2), &were), (4, 20));
+        // Inside two, the inner one is the one it rides.
+        assert_eq!(carried(at(12, 6), &scrolled(103, 1), &were), (12, 5));
+        // Carried off the top, it is still on its line, above the screen.
+        assert_eq!(carried(at(4, 2), &scrolled(105, 0), &were), (4, -3));
+        // Further than a screenful is a jump, which nothing slid.
+        assert_eq!(carried(at(4, 20), &scrolled(140, 0), &were), (4, 20));
+        // Under a pane, the band slides and the caret in the pane does not.
+        let covered = [band(file, 100, 1)];
+        assert_eq!(carried(at(4, 20), &[band(file, 103, 1)], &covered), (4, 20));
+        // And a band that is another one -- a list where there was none --
+        // has not scrolled at all.
+        assert_eq!(carried(at(4, 20), &[band(file, 103, 0)], &covered), (4, 20));
     }
 
     use std::time::{Duration, Instant};

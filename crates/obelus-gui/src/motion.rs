@@ -518,7 +518,13 @@ impl Glide {
     }
 
     /// The page says the caret is somewhere else now.
-    fn moved(&mut self, was: Position, is: Position, now: Instant) {
+    ///
+    /// `was` is signed, for the reason `Motion::caret_moved` gives.
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "a cell is a few thousand at most"
+    )]
+    fn moved(&mut self, was: (i32, i32), is: Position, now: Instant) {
         let drift = self.drift(now);
         // From where it is being *drawn*, not from where the page last
         // said it was: a caret that moves again mid-flight carries on from
@@ -526,8 +532,8 @@ impl Glide {
         // out from. Which is what makes a held-down arrow key one
         // movement instead of a stutter.
         self.from = Some((
-            f32::from(was.x) - f32::from(is.x) + drift.0,
-            f32::from(was.y) - f32::from(is.y) + drift.1,
+            was.0 as f32 - f32::from(is.x) + drift.0,
+            was.1 as f32 - f32::from(is.y) + drift.1,
         ));
         self.started = now;
     }
@@ -1052,9 +1058,15 @@ impl Motion {
     }
 
     /// The page's caret is somewhere else than it was.
+    ///
+    /// `was` is a cell, and signed: it is where the caret would be on this
+    /// page had it stayed on its character, which a scroll can carry above
+    /// the top of the screen -- and a caret set out from there is still
+    /// riding with its line, where one set out from the top row would be
+    /// a flight on top of the band's slide.
     pub(crate) fn caret_moved(
         &mut self,
-        was: Option<Position>,
+        was: Option<(i32, i32)>,
         is: Option<Position>,
         now: Instant,
     ) {
@@ -1069,7 +1081,7 @@ impl Motion {
             return;
         };
         // Nor in a window without the keys, where there is no caret to fly.
-        if self.animates && self.focused && was != is {
+        if self.animates && self.focused && was != (i32::from(is.x), i32::from(is.y)) {
             self.caret.moved(was, is, now);
         }
     }
@@ -1861,7 +1873,7 @@ mod tests {
     fn a_caret_that_changed_hands_is_not_still_on_its_way() {
         let base = Instant::now();
         let mut motion = Motion::new(None);
-        motion.caret_moved(Some(at(0, 10)), Some(at(0, 0)), base);
+        motion.caret_moved(Some((0, 10)), Some(at(0, 0)), base);
         let midway = base + GLIDE / 2;
         assert_ne!(motion.moving(midway).drift, (0.0, 0.0), "on its way");
         // Which is what the window says by leaving out where it was.
@@ -1875,12 +1887,30 @@ mod tests {
     fn a_caret_that_moves_glides_and_arrives() {
         let base = Instant::now();
         let mut motion = Motion::new(Some(blinking()));
-        motion.caret_moved(Some(at(0, 10)), Some(at(0, 0)), base);
+        motion.caret_moved(Some((0, 10)), Some(at(0, 0)), base);
         // Ten rows below where it is going, which is where it was.
         assert_eq!(motion.moving(base).drift, (0.0, 10.0));
         let half = motion.moving(base + GLIDE / 2).drift;
         assert!(half.1 > 0.0 && half.1 < 10.0, "{half:?}");
         assert_eq!(motion.moving(base + GLIDE).drift, (0.0, 0.0));
+    }
+
+    /// A caret whose line a scroll carried above the screen sets out from
+    /// there, even when it lands on the top row.
+    ///
+    /// Break: clamp `was` to the top row in `Motion::caret_moved`, as a
+    /// cell that could not be above the screen did, and the first sets out
+    /// two rows short of its line -- and the second, the same cell as where
+    /// it lands, takes no flight at all.
+    #[test]
+    fn a_caret_carried_above_the_screen_sets_out_from_there() {
+        let base = Instant::now();
+        let mut motion = Motion::new(Some(blinking()));
+        motion.caret_moved(Some((0, -2)), Some(at(0, 3)), base);
+        assert_eq!(motion.moving(base).drift, (0.0, -5.0));
+        let mut still = Motion::new(Some(blinking()));
+        still.caret_moved(Some((0, -2)), Some(at(0, 0)), base);
+        assert_eq!(still.moving(base).drift, (0.0, -2.0));
     }
 
     /// Break: drop the `|| self.caret.moving(now)` from `Motion::moving`
@@ -1894,7 +1924,7 @@ mod tests {
         let dark = base + blinking().every;
         assert!(motion.advance(dark, true));
         assert!(!motion.moving(dark).caret, "the blink should have taken it");
-        motion.caret_moved(Some(at(0, 1)), Some(at(0, 2)), dark);
+        motion.caret_moved(Some((0, 1)), Some(at(0, 2)), dark);
         assert!(motion.moving(dark).caret);
     }
 
@@ -1906,13 +1936,13 @@ mod tests {
     fn a_caret_that_moves_again_carries_on_from_where_it_is() {
         let base = Instant::now();
         let mut motion = Motion::new(None);
-        motion.caret_moved(Some(at(0, 0)), Some(at(0, 10)), base);
+        motion.caret_moved(Some((0, 0)), Some(at(0, 10)), base);
         let midway = base + GLIDE / 2;
         // Which row it is drawn on at that moment: its destination, plus
         // how far from the destination it still is.
         let drawn = 10.0 + motion.moving(midway).drift.1;
         assert!(drawn > 0.0 && drawn < 10.0, "{drawn}");
-        motion.caret_moved(Some(at(0, 10)), Some(at(0, 20)), midway);
+        motion.caret_moved(Some((0, 10)), Some(at(0, 20)), midway);
         let carried = 20.0 + motion.moving(midway).drift.1;
         assert!((carried - drawn).abs() < 0.001, "{drawn} then {carried}");
     }
@@ -1927,7 +1957,7 @@ mod tests {
         motion.stirred(base);
         let flip = base + blinking().every;
         assert_eq!(motion.wake(base, true), Some(Wake::At(flip)));
-        motion.caret_moved(Some(at(0, 0)), Some(at(0, 5)), base);
+        motion.caret_moved(Some((0, 0)), Some(at(0, 5)), base);
         assert_eq!(motion.wake(base, true), Some(Wake::EveryFrame));
         assert_eq!(motion.wake(base + GLIDE, true), Some(Wake::At(flip)));
     }
@@ -1957,14 +1987,14 @@ mod tests {
         let base = Instant::now();
         let mut motion = Motion::new(Some(blinking()));
         motion.stirred(base);
-        motion.caret_moved(Some(at(0, 0)), Some(at(0, 5)), base);
+        motion.caret_moved(Some((0, 0)), Some(at(0, 5)), base);
         assert!(motion.focused(false, base), "losing the keys is a frame");
         assert!(!motion.focused(false, base), "and losing them again is not");
         assert!(!motion.moving(base).caret, "lit, and in flight, and away");
         assert_eq!(motion.wake(base, true), None);
         let later = base + blinking().every;
         assert!(!motion.advance(later, true), "nothing blinks while away");
-        motion.caret_moved(Some(at(0, 5)), Some(at(0, 9)), later);
+        motion.caret_moved(Some((0, 5)), Some(at(0, 9)), later);
         assert_eq!(motion.wake(later, true), None, "nor flies");
     }
 
@@ -2584,7 +2614,7 @@ mod tests {
         let mut motion = Motion::new(None);
         motion.animates(false);
 
-        motion.caret_moved(Some(at(0, 10)), Some(at(0, 0)), base);
+        motion.caret_moved(Some((0, 10)), Some(at(0, 0)), base);
         assert_eq!(motion.moving(base).drift, (0.0, 0.0), "the caret");
         motion.pane_opened(base);
         assert_eq!(motion.moving(base).pane, None, "a pane");
@@ -2600,7 +2630,7 @@ mod tests {
         // that finished itself afterwards would be the switch taking a
         // moment to mean anything.
         let mut motion = Motion::new(None);
-        motion.caret_moved(Some(at(0, 10)), Some(at(0, 0)), base);
+        motion.caret_moved(Some((0, 10)), Some(at(0, 0)), base);
         motion.band_moved(a_band(0), 3.0, 20.0, base);
         motion.pane_opened(base);
         motion.card_opened(base);
