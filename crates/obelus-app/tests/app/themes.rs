@@ -1266,11 +1266,14 @@ fn delete_takes_a_theme_away_but_not_the_one_worn() {
 }
 
 /// The theme being worn, when it is behind, says both: that it is in use,
-/// and that there is an update to take.
+/// and that there is an update to take -- and once enter takes it, how far
+/// the update has got.
 ///
-/// Deliberate break: `theme_state` without its arm for a worn theme that is
+/// Deliberate breaks: `theme_state` without its arm for a worn theme that is
 /// behind, as it was (the card then says `In use` and nothing about an
-/// update, though enter would take one).
+/// update, though enter would take one), and its arm for an install on its
+/// way moved after the worn ones, as it was (the card then says `In use`
+/// while it updates).
 #[test]
 fn the_theme_worn_says_when_it_is_behind() {
     let scratch = reader("themes-worn-behind");
@@ -1293,6 +1296,13 @@ fn the_theme_worn_says_when_it_is_behind() {
     assert!(
         row.contains("Update"),
         "the update is not on the card:\n{dump}"
+    );
+
+    support::press(&mut app, KeyCode::Enter);
+    let dump = support::render(&mut app, 90, 30);
+    assert!(
+        card_row(support::text_block(&dump), "current").contains("Updating"),
+        "the update is on its way and the card does not say so:\n{dump}"
     );
 }
 
