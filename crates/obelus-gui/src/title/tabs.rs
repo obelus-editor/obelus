@@ -20,12 +20,24 @@
 //! being read is brought whole into sight whenever it changes: the reader
 //! chose it, and a choice they cannot see is one they cannot check.
 //!
-//! The slide is the window's own clock and none of the application's, and
-//! it runs only while the row is somewhere other than where it is going --
-//! asked every frame from that (`Strip::sliding`), the way everything that
-//! moves in the window is.
+//! A tab held down is dragged: it is drawn where the pointer has it, over
+//! the others, and they slide aside as it passes their middles -- which is
+//! when the application is told to put it there (`Strip::dropping`). Let
+//! go of, it slides into the place it has been given. Carried to either
+//! end of a row longer than the bar, or out past it, the row scrolls that
+//! way under it -- faster the further out it is -- and what scrolls under
+//! the pointer is passed as though the pointer had moved over it
+//! (`Strip::edging`). Every tab slides to
+//! its place when the order changes, whoever changed it: a tab that jumped
+//! is a tab the reader has to find again, and the one they are carrying
+//! is the order changing under their hand.
+//!
+//! The slides are the window's own clock and none of the application's,
+//! and they run only while something is somewhere other than where it is
+//! going -- asked every frame from that (`Strip::sliding`), the way
+//! everything that moves in the window is.
 
-use std::time::Instant;
+use std::{collections::HashMap, time::Instant};
 
 use obelus_app::app::Tab;
 
@@ -162,7 +174,36 @@ pub(crate) struct Strip {
     /// opened from the keys -- and what a press there is on is what is
     /// under it on the screen, not what was when it last moved.
     hovered: Option<Spot>,
+    /// Where each tab is drawn along the row, unscrolled, on its way to
+    /// its place: by document, because a tab is still itself when the
+    /// order changes, and its place is what moved.
+    shown: HashMap<obelus_buffer::DocumentId, f32>,
+    /// When the tabs last stepped towards their places, while any of them
+    /// is on its way.
+    settled: Option<Instant>,
+    /// The tab held down, while it is.
+    held: Option<Held>,
+    /// Whether the tabs have been told in another order since they were
+    /// last laid out -- see `told`.
+    stale: bool,
+    /// Where the tab carried was last said to go, until the tabs come back
+    /// in another order: a drag finds the same place on every move of the
+    /// pointer and every frame of a scroll until the application has
+    /// answered, and each saying of it was a frame of the application's.
+    asked: Option<(obelus_buffer::DocumentId, obelus_buffer::DocumentId, bool)>,
+    /// When the row last scrolled under a tab carried to one of its ends,
+    /// while it is scrolling.
+    edged: Option<Instant>,
 }
+
+/// How far into the row from either end a tab carried there starts it
+/// scrolling, in arrows' widths: the arrow itself and as much again, so
+/// that it starts before the pointer is over the arrow.
+const EDGE: f32 = 2.0;
+
+/// How fast the row scrolls under a tab carried right out past an end, in
+/// the words' size a second: about a tab a quarter of a second.
+const EDGE_SPEED: f32 = 40.0;
 
 /// The strip as one frame paints it.
 #[derive(Clone, Debug, PartialEq)]
@@ -193,7 +234,35 @@ pub(crate) struct Shown {
     pub(crate) reading: bool,
     /// Whether it is the one under the pointer.
     pub(crate) hovered: bool,
+    /// Whether it is held, and dragged: drawn over every other tab.
+    pub(crate) lifted: bool,
 }
+
+/// A tab held down, and where the pointer has it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Held {
+    /// Which document's tab.
+    document: obelus_buffer::DocumentId,
+    /// How far into the tab the press was, so that it stays under the
+    /// pointer at the place it was taken hold of rather than jumping its
+    /// left edge there.
+    grab: f32,
+    /// Where the pointer is along the bar.
+    x: f32,
+    /// Where it was pressed.
+    from: f32,
+    /// Whether it has gone far enough from there to be a drag -- see
+    /// `DRAG`.
+    moved: bool,
+}
+
+/// How far a tab held has to be carried before it is being dragged, in the
+/// words' size: half a letter. Until then it is a press -- one on a tab
+/// cut by an end, to bring it into sight, is the commonest there is, and
+/// a hand that does not move is a press however long it is held. Taken
+/// for a drag, it scrolled the row from under the reader and could put
+/// the tab somewhere else.
+const DRAG: f32 = 0.5;
 
 /// What a tab says: its name, and a mark after it where the file has
 /// changes that are not on disk -- the mark the list of what is open puts
@@ -211,6 +280,32 @@ impl Strip {
         let reading = |tabs: &[Tab]| tabs.iter().find(|tab| tab.reading).map(|tab| tab.document);
         if reading(&tabs) != reading(&self.tabs) || tabs.len() != self.tabs.len() {
             self.reveal = true;
+        }
+        // Where each tab went is by where it is in the list, so a list in
+        // another order makes every place the last laying out found a
+        // place for some other tab -- and a drag that asked about one
+        // before the next laying out would put its tab beside the wrong
+        // one. Nothing is anywhere until then. Said rather than done by
+        // emptying the places: an empty row is also what a first laying
+        // out looks like, and the reveal does not slide on a first one,
+        // so opening a tab made the row jump to it.
+        if !tabs
+            .iter()
+            .map(|tab| tab.document)
+            .eq(self.tabs.iter().map(|tab| tab.document))
+        {
+            self.stale = true;
+            self.hovered = None;
+            self.asked = None;
+        }
+        // A tab carried whose document has gone -- closed by a key the
+        // other hand pressed, or by an agent -- is carried no longer: what
+        // it held is not on the bar to put anywhere.
+        if self
+            .held
+            .is_some_and(|held| !tabs.iter().any(|tab| tab.document == held.document))
+        {
+            self.held = None;
         }
         self.tabs = tabs;
     }
@@ -237,17 +332,26 @@ impl Strip {
             let scale = now.words / was.words;
             self.offset *= scale;
             self.target *= scale;
+            for along in self.shown.values_mut() {
+                *along *= scale;
+            }
         }
         self.room = room;
+        self.stale = false;
         let Some(room) = room else {
             self.laid.clear();
             self.arrows = None;
             // Arrived, with nothing to show the arriving on: a slide left
             // under way would keep `sliding` true, and the window drawing
             // frames for it, for as long as there is no bar -- the whole
-            // of a stay in full screen.
+            // of a stay in full screen. And the same for the tabs' own
+            // slides, a tab held -- whose button may come up while there
+            // is no bar to let go of it on -- and a row scrolling under it.
             self.offset = self.target;
             self.stepped = None;
+            self.settled = None;
+            self.edged = None;
+            self.held = None;
             return;
         };
         self.widths = self
@@ -290,6 +394,7 @@ impl Strip {
             }
         }
         self.target = self.target.clamp(0.0, self.most());
+        self.edge(now);
         self.slide(now, animates);
         let (start, end) = self.view;
         let mut x = start - self.offset;
@@ -304,7 +409,184 @@ impl Strip {
             }
             x += width;
         }
+        self.settle(now, animates);
         self.hovered = self.pointer.and_then(|x| self.at(x));
+    }
+
+    /// Scrolls the row under a tab carried to one of its ends, by as much as
+    /// the time since the last frame says -- straight there, not slid: the
+    /// pointer is what is moving it, and it follows the pointer.
+    fn edge(&mut self, now: Instant) {
+        let Some(speed) = self.edging() else {
+            self.edged = None;
+            return;
+        };
+        let since = self.edged.map_or(0.0, |since| {
+            now.saturating_duration_since(since).as_secs_f32()
+        });
+        self.target = (self.target + speed * since).clamp(0.0, self.most());
+        self.offset = self.target;
+        self.stepped = None;
+        self.edged = Some(now);
+    }
+
+    /// How fast the row scrolls under the tab carried, in pixels a second
+    /// and signed the way it goes: nothing unless one is carried to an end
+    /// of a row with more than there is room for, and nothing once the row
+    /// is as far that way as it goes -- or the window would draw frames for
+    /// a row that cannot move.
+    fn edging(&self) -> Option<f32> {
+        let (held, room) = (self.dragged()?, self.room?);
+        if self.arrows.is_none() || self.covered {
+            return None;
+        }
+        let zone = EDGE * room.arrow();
+        let (start, end) = self.view;
+        // How far into the zone, from nothing at its inner edge to all of
+        // it an arrow's width past the outer one.
+        let into = |depth: f32| (depth / zone).clamp(0.0, 1.0);
+        let fastest = EDGE_SPEED * room.words;
+        let speed = match () {
+            () if held.x < start - room.arrow() + zone => {
+                -fastest * into(start - room.arrow() + zone - held.x)
+            }
+            () if held.x > end + room.arrow() - zone => {
+                fastest * into(held.x - (end + room.arrow() - zone))
+            }
+            () => return None,
+        };
+        let open = match speed < 0.0 {
+            true => self.target > 0.5,
+            false => self.target < self.most() - 0.5,
+        };
+        (speed != 0.0 && open).then_some(speed)
+    }
+
+    /// Moves every tab on towards its place, as the row's own slide moves,
+    /// and the one held to where the pointer has it.
+    fn settle(&mut self, now: Instant, animates: bool) {
+        let since = self
+            .settled
+            .map(|since| now.saturating_duration_since(since).as_secs_f32());
+        let held = self
+            .held
+            .filter(|held| held.moved)
+            .and_then(|held| Some((held.document, self.lifted_at(held)?)));
+        let mut shown = HashMap::with_capacity(self.tabs.len());
+        let mut moving = false;
+        for (index, tab) in self.tabs.iter().enumerate() {
+            let place = self.edges(index).0;
+            let was = self.shown.get(&tab.document).copied();
+            let at = match (held, was) {
+                (Some((document, along)), _) if document == tab.document => along,
+                // From where it was last drawn, which is where the eye has
+                // it -- by as much of the way as the time since the last
+                // step says, or not at all where the clock has only now
+                // started: a tab put somewhere new since the last frame.
+                (_, Some(was)) if animates => match since {
+                    Some(since) => place + (was - place) * (-since / SLIDE).exp(),
+                    None => was,
+                },
+                _ => place,
+            };
+            // The last half pixel is arriving, as the row's slide says.
+            let at = match (at - place).abs() < 0.5 {
+                true => place,
+                false => at,
+            };
+            if at != place && held.is_none_or(|(document, _)| document != tab.document) {
+                moving = true;
+            }
+            shown.insert(tab.document, at);
+        }
+        self.shown = shown;
+        self.settled = moving.then_some(now);
+    }
+
+    /// Where the tab held is along the row, unscrolled: under the pointer,
+    /// at the place it was taken hold of -- and no further than either end
+    /// of the row, which is where a tab dragged out past them waits.
+    fn lifted_at(&self, held: Held) -> Option<f32> {
+        let index = self
+            .tabs
+            .iter()
+            .position(|tab| tab.document == held.document)?;
+        let width = self.widths.get(index).copied()?;
+        let along = held.x - held.grab - self.view.0 + self.offset;
+        let total: f32 = self.widths.iter().sum();
+        Some(along.clamp(0.0, (total - width).max(0.0)))
+    }
+
+    /// Takes hold of a tab, under the pointer, which then drags it until
+    /// it is let go of.
+    pub(crate) fn hold(&mut self, index: usize) {
+        let (Some(x), Some(laid), Some(tab)) = (
+            self.pointer,
+            self.laid.iter().find(|laid| laid.index == index),
+            self.tabs.get(index),
+        ) else {
+            return;
+        };
+        self.held = Some(Held {
+            document: tab.document,
+            grab: x - laid.left,
+            x,
+            from: x,
+            moved: false,
+        });
+    }
+
+    /// The document whose tab is held, while one is.
+    pub(crate) fn holding(&self) -> Option<obelus_buffer::DocumentId> {
+        self.dragged().map(|held| held.document)
+    }
+
+    /// The tab held, once it is being dragged.
+    fn dragged(&self) -> Option<Held> {
+        self.held.filter(|held| held.moved)
+    }
+
+    /// Where the tab carried goes, with the pointer where it is now: asked
+    /// when the pointer moves, and on every frame the row scrolls under a
+    /// pointer that does not. Only somewhere not already said -- see
+    /// `asked`.
+    pub(crate) fn carried(
+        &mut self,
+    ) -> Option<(obelus_buffer::DocumentId, obelus_buffer::DocumentId, bool)> {
+        let held = self.dragged()?;
+        let (beside, after) = self.dropping(held.document, held.x)?;
+        let going = (held.document, beside, after);
+        if self.asked == Some(going) {
+            return None;
+        }
+        self.asked = Some(going);
+        Some(going)
+    }
+
+    /// Drags the tab held to where the pointer is now. Whether one is
+    /// held, which is whether there is anything new to draw.
+    pub(crate) fn drag(&mut self, x: f32) -> bool {
+        let far = self.room.map_or(0.0, |room| DRAG * room.words);
+        let Some(held) = self.held.as_mut() else {
+            return false;
+        };
+        held.x = x;
+        let was = held.moved;
+        held.moved |= (x - held.from).abs() >= far;
+        held.moved || was
+    }
+
+    /// Lets go of the tab held, which slides from where it was dropped
+    /// into the place it was given. Whether one was held.
+    pub(crate) fn let_go(&mut self) -> bool {
+        let was = self.held.take().is_some();
+        if was {
+            // From now, so that the first frame after it is already on its
+            // way: with no clock a tab stays where it was last drawn for a
+            // frame, which here is a tab that hangs where it was dropped.
+            self.settled = Some(Instant::now());
+        }
+        was
     }
 
     /// Moves the row on towards where it is going, by as much of the way
@@ -320,16 +602,22 @@ impl Strip {
         };
         // The last half pixel is arriving, not sliding: a curve that only
         // ever comes most of the way would keep the window drawing.
-        if !self.sliding() {
+        if !self.scrolling() {
             self.offset = self.target;
         }
         self.offset = self.offset.clamp(0.0, self.most());
-        self.stepped = self.sliding().then_some(now);
+        self.stepped = self.scrolling().then_some(now);
     }
 
     /// Whether the row is still on its way somewhere: what keeps the window
     /// drawing frames for it.
     pub(crate) fn sliding(&self) -> bool {
+        self.scrolling() || self.settled.is_some() || self.edging().is_some()
+    }
+
+    /// Whether the row itself is on its way somewhere, which is the slide
+    /// the arrows and the wheel start.
+    fn scrolling(&self) -> bool {
         (self.offset - self.target).abs() >= 0.5
     }
 
@@ -384,7 +672,7 @@ impl Strip {
 
     /// What is at a place on the bar, in pixels from the window's left.
     pub(crate) fn at(&self, x: f32) -> Option<Spot> {
-        if self.covered {
+        if self.covered || self.stale {
             return None;
         }
         let inside = |[left, width]: [f32; 2]| (left..left + width).contains(&x);
@@ -410,6 +698,43 @@ impl Strip {
     /// Which document a tab is.
     pub(crate) fn document(&self, index: usize) -> Option<obelus_buffer::DocumentId> {
         self.tabs.get(index).map(|tab| tab.document)
+    }
+
+    /// Where a tab being dragged goes, with the pointer at `x`: beside
+    /// which tab, and whether after it -- or nowhere, where it is where it
+    /// should be.
+    ///
+    /// Past the middle of the tab it is dragged onto, not onto its edge:
+    /// tabs are as wide as their names, so a narrow tab moved past a wide
+    /// one would land with the wide one under the pointer, and the next
+    /// move would put it back. The middle is somewhere the pointer has
+    /// already crossed from either side.
+    ///
+    /// Over an arrow or out past an end, by the end of the row in sight:
+    /// the row scrolls there, and what it brings past the end is what the
+    /// tab is being carried past.
+    pub(crate) fn dropping(
+        &self,
+        dragged: obelus_buffer::DocumentId,
+        x: f32,
+    ) -> Option<(obelus_buffer::DocumentId, bool)> {
+        if self.covered || self.stale {
+            return None;
+        }
+        let from = self.tabs.iter().position(|tab| tab.document == dragged)?;
+        let x = x.clamp(self.view.0, (self.view.1 - 1.0).max(self.view.0));
+        let laid = self
+            .laid
+            .iter()
+            .find(|laid| (laid.left..laid.left + laid.width).contains(&x))?;
+        let over = laid.index;
+        let middle = laid.left + laid.width / 2.0;
+        let after = over > from;
+        let past = match after {
+            true => x > middle,
+            false => x < middle,
+        };
+        (over != from && past).then(|| (self.tabs[over].document, after))
     }
 
     /// Where on the bar the strip has something, from its start to the end
@@ -479,20 +804,37 @@ impl Strip {
     /// page that has nothing to put in it.
     pub(crate) fn painted(&self, active: bool) -> Option<Painted> {
         let room = self.room.filter(|_| !self.tabs.is_empty())?;
-        let tabs = self
+        let held = self.holding();
+        let start = self.view.0 - self.offset;
+        let mut tabs: Vec<Shown> = self
             .laid
             .iter()
             .filter_map(|laid| {
                 let tab = self.tabs.get(laid.index)?;
+                let along = self.shown.get(&tab.document).copied();
                 Some(Shown {
                     said: said(tab),
                     icon: tab.icon,
-                    laid: *laid,
+                    laid: Laid {
+                        left: along.map_or(laid.left, |along| start + along),
+                        ..*laid
+                    },
                     reading: tab.reading,
-                    hovered: self.hovered == Some(Spot::Tab(laid.index)),
+                    // Nothing lit while a tab is carried: what is under
+                    // the pointer is the tab in the reader's hand.
+                    hovered: held.is_none() && self.hovered == Some(Spot::Tab(laid.index)),
+                    lifted: held == Some(tab.document),
                 })
             })
             .collect();
+        // Left to right as they are drawn, so that a seam is between two
+        // neighbours on the screen -- and the one carried last, over every
+        // other.
+        tabs.sort_by(|one, other| {
+            one.lifted
+                .cmp(&other.lifted)
+                .then(one.laid.left.total_cmp(&other.laid.left))
+        });
         // Whether there is anything that way, by where the row is going:
         // an arrow that went dim only once the slide had arrived would say
         // the reader could press it again for the whole of the slide.
@@ -795,15 +1137,37 @@ mod tests {
     /// Deliberate breaks: leave `stepped` unset in the reveal, and the row
     /// jumps a tab's width under the pointer that chose the tab; leave the
     /// arrival out of `lay`'s nowhere, and a window gone full screen in
-    /// the middle of a slide draws frames for it until it comes back.
+    /// the middle of a slide draws frames for it until it comes back --
+    /// and leave `settled` or `held` alone there, and so does one gone full
+    /// screen while the tabs slide to a new order, or while one is held.
     #[test]
     fn a_tab_chosen_slides_into_sight_and_no_bar_ends_the_slide() {
-        let mut strip = strip(0);
-        strip.told((0..10).map(|at| tab(at, at == 6)).collect());
-        strip.lay(Some(room()), |_, _| 4.0, Instant::now(), true);
-        assert!(strip.sliding(), "jumped to the tab chosen");
-        strip.lay(None, |_, _| 4.0, Instant::now(), true);
-        assert!(!strip.sliding(), "still sliding with no bar");
+        let mut chosen = strip(0);
+        chosen.told((0..10).map(|at| tab(at, at == 6)).collect());
+        chosen.lay(Some(room()), |_, _| 4.0, Instant::now(), true);
+        assert!(chosen.sliding(), "jumped to the tab chosen");
+        chosen.lay(None, |_, _| 4.0, Instant::now(), true);
+        assert!(!chosen.sliding(), "still sliding with no bar");
+
+        let mut moved = strip(0);
+        moved.told(
+            [1, 0]
+                .into_iter()
+                .chain(2..10)
+                .map(|at| tab(at, at == 0))
+                .collect(),
+        );
+        moved.lay(Some(room()), |_, _| 4.0, Instant::now(), true);
+        assert!(moved.sliding(), "the tabs jumped to their new order");
+        moved.lay(None, |_, _| 4.0, Instant::now(), true);
+        assert!(!moved.sliding(), "the tabs still sliding with no bar");
+
+        let mut held = strip(0);
+        held.point(Some(30.0));
+        held.hold(0);
+        held.lay(None, |_, _| 4.0, Instant::now(), true);
+        held.let_go();
+        assert!(!held.sliding(), "let go of with no bar, and sliding");
     }
 
     /// The tab being read is brought into sight when it changes, and only
@@ -822,5 +1186,324 @@ mod tests {
         strip.told((0..10).map(|at| tab(at, at == 8)).collect());
         settle(&mut strip);
         assert_eq!(strip.target, 810.0 - 602.0, "another");
+    }
+
+    /// Three tabs on that bar, the one named `wide` as wide as a tab may
+    /// be and the others as narrow, in the order given.
+    fn uneven(order: &[usize]) -> Strip {
+        let mut strip = Strip::default();
+        strip.told(
+            order
+                .iter()
+                .map(|&at| Tab {
+                    name: match at {
+                        1 => "wide".to_string(),
+                        _ => "ab".to_string(),
+                    },
+                    ..tab(at, at == 0)
+                })
+                .collect(),
+        );
+        lay_uneven(&mut strip);
+        strip
+    }
+
+    fn lay_uneven(strip: &mut Strip) {
+        strip.lay(
+            Some(room()),
+            |said, _| if said == "wide" { 180.0 } else { 4.0 },
+            Instant::now(),
+            false,
+        );
+    }
+
+    /// A dragged tab goes past another once the pointer is past the middle
+    /// of it, and not as soon as it is over its edge.
+    ///
+    /// Deliberate break: answer as soon as the pointer is over another tab,
+    /// in `Strip::dropping`. The narrow tab is put after the wide one at
+    /// 100 -- and then, the wide one being under the pointer where the
+    /// narrow one was, the next move puts it back.
+    #[test]
+    fn a_dragged_tab_goes_past_the_middle_of_another() {
+        let strip = uneven(&[0, 1, 2]);
+        let id = obelus_buffer::DocumentId::new;
+        // 0 is 0 to 90, the wide 1 is 90 to 290, and 2 is 290 to 380.
+        assert_eq!(strip.dropping(id(0), 100.0), None, "over its edge");
+        assert_eq!(strip.dropping(id(0), 200.0), Some((id(1), true)));
+        assert_eq!(strip.dropping(id(2), 150.0), Some((id(1), false)));
+        assert_eq!(strip.dropping(id(0), 40.0), None, "over itself");
+        // And put there, still past the middle: it stays.
+        let moved = uneven(&[1, 0, 2]);
+        assert_eq!(moved.dropping(id(0), 200.0), None, "moved back");
+    }
+
+    /// Told the tabs in another order, the strip has nowhere for any of
+    /// them until it lays them out again.
+    ///
+    /// Deliberate break: leave `stale` unset in `told`. The places from
+    /// the last laying out are another order's, so a drag of the last tab
+    /// at 150 is over where the wide one was second and is now first: it
+    /// is put before the narrow one that took its place, which the pointer
+    /// is nowhere near.
+    #[test]
+    fn a_new_order_has_nowhere_until_it_is_laid() {
+        let mut strip = uneven(&[0, 1, 2]);
+        let id = obelus_buffer::DocumentId::new;
+        let wide = Tab {
+            name: "wide".to_string(),
+            ..tab(1, false)
+        };
+        strip.told(vec![wide, tab(0, true), tab(2, false)]);
+        assert_eq!(strip.dropping(id(2), 150.0), None, "a stale place");
+        lay_uneven(&mut strip);
+        // Laid: the wide one is 0 to 200, its middle 100.
+        assert_eq!(strip.dropping(id(2), 150.0), None);
+        assert_eq!(strip.dropping(id(2), 80.0), Some((id(1), false)));
+    }
+
+    /// Where a tab is drawn this frame, by its document.
+    fn drawn_at(strip: &Strip, document: usize) -> Option<(f32, bool)> {
+        strip.painted(true)?.tabs.into_iter().find_map(|shown| {
+            let tab = strip.tabs.get(shown.laid.index)?;
+            (tab.document == obelus_buffer::DocumentId::new(document))
+                .then_some((shown.laid.left, shown.lifted))
+        })
+    }
+
+    /// A tab held down is drawn where the pointer has it, at the place it
+    /// was taken hold of, and over every other tab; let go of, it slides
+    /// back into its place rather than jumping there.
+    ///
+    /// Deliberate breaks: leave the held tab at its place in `settle`, and
+    /// it stays put under a pointer that has moved on; leave out the
+    /// sorting in `painted`, and it is drawn before the tab it is over;
+    /// and leave `settled` unset in `let_go`, and it hangs for a frame
+    /// where it was dropped before it starts home.
+    #[test]
+    fn a_held_tab_follows_the_pointer_and_slides_home() {
+        let mut strip = Strip::default();
+        strip.told((0..3).map(|at| tab(at, at == 0)).collect());
+        let start = Instant::now();
+        strip.lay(Some(room()), |_, _| 4.0, start, true);
+        strip.point(Some(10.0));
+        strip.hold(0);
+        assert!(strip.drag(150.0));
+        strip.lay(Some(room()), |_, _| 4.0, start, true);
+        assert_eq!(drawn_at(&strip, 0), Some((140.0, true)));
+        let painted = strip.painted(true).expect("a strip");
+        assert!(
+            painted.tabs.last().is_some_and(|shown| shown.lifted),
+            "not drawn over the others"
+        );
+        assert!(!strip.sliding(), "nothing but the hand is moving it");
+
+        assert!(strip.let_go());
+        strip.lay(
+            Some(room()),
+            |_, _| 4.0,
+            Instant::now() + Duration::from_millis(30),
+            true,
+        );
+        let (left, lifted) = drawn_at(&strip, 0).expect("drawn");
+        assert!(!lifted, "still carried");
+        assert!(left > 0.0 && left < 140.0, "jumped home: at {left}");
+        assert!(strip.sliding(), "the window was not told to keep drawing");
+        strip.lay(
+            Some(room()),
+            |_, _| 4.0,
+            Instant::now() + Duration::from_secs(2),
+            true,
+        );
+        assert_eq!(drawn_at(&strip, 0), Some((0.0, false)));
+        assert!(!strip.sliding(), "arrived");
+    }
+
+    /// Told a new order, a tab slides from where it was to its new place,
+    /// and where nothing animates it is simply there.
+    ///
+    /// Deliberate break: draw every tab at its place in `settle`. The tab
+    /// passed over jumps a tab's width the frame the order changes.
+    #[test]
+    fn a_tab_slides_to_a_new_place() {
+        let mut strip = Strip::default();
+        strip.told((0..3).map(|at| tab(at, at == 0)).collect());
+        let start = Instant::now();
+        strip.lay(Some(room()), |_, _| 4.0, start, true);
+        strip.told(vec![tab(1, false), tab(0, true), tab(2, false)]);
+        strip.lay(Some(room()), |_, _| 4.0, start, true);
+        assert_eq!(drawn_at(&strip, 1), Some((90.0, false)), "jumped");
+        assert!(strip.sliding());
+        strip.lay(
+            Some(room()),
+            |_, _| 4.0,
+            start + Duration::from_millis(30),
+            true,
+        );
+        let left = drawn_at(&strip, 1).expect("drawn").0;
+        assert!(left > 0.0 && left < 90.0, "not on its way: at {left}");
+
+        let mut still = Strip::default();
+        still.told((0..3).map(|at| tab(at, at == 0)).collect());
+        still.lay(Some(room()), |_, _| 4.0, start, false);
+        still.told(vec![tab(1, false), tab(0, true), tab(2, false)]);
+        still.lay(Some(room()), |_, _| 4.0, start, false);
+        assert_eq!(drawn_at(&still, 1), Some((0.0, false)));
+        assert!(!still.sliding());
+    }
+
+    /// A tab carried to the end of a row longer than the bar scrolls the
+    /// row that way, and is put past what scrolls under it; brought back
+    /// in, the row stops, and at the row's end it stops by itself.
+    ///
+    /// Deliberate breaks: leave `edge` out of `lay`, and the row stays
+    /// where it was however long the tab is held at its end; leave the
+    /// clamping out of `dropping`, and a tab carried out past the bar is
+    /// put nowhere while the row scrolls under it; leave the row's end out of
+    /// `edging`, and the window draws frames for a row that cannot move.
+    #[test]
+    fn a_tab_carried_to_an_end_scrolls_the_row() {
+        let mut strip = strip(0);
+        let start = Instant::now();
+        assert_eq!(strip.target, 0.0);
+        strip.point(Some(30.0));
+        strip.hold(0);
+        // Right out past the end of the bar, as a hand carrying a tab
+        // somewhere goes: over no tab and no arrow.
+        strip.drag(760.0);
+        strip.lay(Some(room()), |_, _| 4.0, start, true);
+        strip.lay(
+            Some(room()),
+            |_, _| 4.0,
+            start + Duration::from_millis(100),
+            true,
+        );
+        assert!(strip.target > 0.0, "the row did not scroll");
+        assert!(strip.sliding(), "the window was not told to keep drawing");
+        // Frame by frame, as a window draws them: what scrolls past the
+        // end under the pointer is passed, without the pointer moving.
+        let carried = (1..60).find_map(|frame| {
+            strip.lay(
+                Some(room()),
+                |_, _| 4.0,
+                start + Duration::from_millis(100 + 16 * frame),
+                true,
+            );
+            strip.carried()
+        });
+        let (document, _, after) = carried.expect("put nowhere");
+        assert_eq!(document, obelus_buffer::DocumentId::new(0));
+        assert!(after);
+
+        // At the end of the row there is nowhere further to go.
+        strip.lay(
+            Some(room()),
+            |_, _| 4.0,
+            start + Duration::from_secs(10),
+            true,
+        );
+        assert_eq!(strip.target, strip.most());
+        strip.lay(
+            Some(room()),
+            |_, _| 4.0,
+            start + Duration::from_secs(12),
+            true,
+        );
+        assert!(!strip.sliding(), "still drawing at the end of the row");
+
+        // Brought back in, the row stays where it got to.
+        strip.drag(300.0);
+        let was = strip.target;
+        strip.lay(
+            Some(room()),
+            |_, _| 4.0,
+            start + Duration::from_secs(13),
+            true,
+        );
+        assert_eq!(strip.target, was);
+    }
+
+    /// A tab opened on a row longer than the bar slides into sight, as one
+    /// chosen does.
+    ///
+    /// Deliberate break: empty the places in `told` when the tabs are
+    /// another list, as it did, rather than marking them `stale`. The
+    /// reveal takes the empty row for a first laying out, and the row
+    /// jumps to the new tab.
+    #[test]
+    fn a_tab_opened_slides_into_sight() {
+        let mut strip = strip(0);
+        strip.told((0..11).map(|at| tab(at, at == 10)).collect());
+        strip.lay(Some(room()), |_, _| 4.0, Instant::now(), true);
+        assert!(strip.sliding(), "jumped to the tab opened");
+    }
+
+    /// A tab pressed and held without moving is a press: at the end of a
+    /// row it does not scroll the row and is put nowhere, and only once it
+    /// has gone half a letter is it carried.
+    ///
+    /// Deliberate break: make every hold `moved` from the start, in
+    /// `Strip::hold`. A press on the tab cut by the end is a drag before
+    /// the hand has moved, and scrolls the row from under the reader for
+    /// as long as it is held.
+    #[test]
+    fn a_press_held_still_is_not_a_drag() {
+        let mut strip = strip(0);
+        let start = Instant::now();
+        // Over the tab the end cuts, inside where a tab carried scrolls.
+        strip.point(Some(600.0));
+        assert_eq!(strip.hovered(), Some(Spot::Tab(6)));
+        strip.hold(6);
+        assert!(!strip.drag(603.0), "a press is drawn as a drag");
+        for frame in 0..30 {
+            strip.lay(
+                Some(room()),
+                |_, _| 4.0,
+                start + Duration::from_millis(16 * frame),
+                true,
+            );
+        }
+        assert_eq!(strip.target, 0.0, "a press scrolled the row");
+        assert_eq!(strip.carried(), None, "a press put the tab somewhere");
+        assert_eq!(strip.holding(), None);
+
+        assert!(strip.drag(606.0));
+        assert_eq!(strip.holding(), Some(obelus_buffer::DocumentId::new(6)));
+        assert!(strip.edging().is_some(), "carried, and not scrolling");
+    }
+
+    /// Where a tab carried goes is said once, until the tabs come back in
+    /// another order; and a tab carried whose document goes is let go of.
+    ///
+    /// Deliberate breaks: leave the `asked` check out of `carried`, and the
+    /// same place is said again on the next move; leave the letting go out
+    /// of `told`, and the bar goes on scrolling under a hand holding a tab
+    /// that is not there.
+    #[test]
+    fn a_place_is_said_once_and_a_tab_gone_is_let_go_of() {
+        let id = obelus_buffer::DocumentId::new;
+        let mut short = Strip::default();
+        short.told((0..3).map(|at| tab(at, at == 0)).collect());
+        short.lay(Some(room()), |_, _| 4.0, Instant::now(), false);
+        short.point(Some(10.0));
+        short.hold(0);
+        short.drag(150.0);
+        assert_eq!(short.carried(), Some((id(0), id(1), true)));
+        short.drag(151.0);
+        assert_eq!(short.carried(), None, "said again");
+        // The application's answer, and a move back past the middle.
+        short.told(vec![tab(1, false), tab(0, true), tab(2, false)]);
+        short.lay(Some(room()), |_, _| 4.0, Instant::now(), false);
+        short.drag(30.0);
+        assert_eq!(short.carried(), Some((id(0), id(1), false)));
+
+        let mut long = strip(0);
+        long.point(Some(30.0));
+        long.hold(0);
+        long.drag(760.0);
+        assert!(long.edging().is_some());
+        long.told((1..10).map(|at| tab(at, at == 1)).collect());
+        assert_eq!(long.holding(), None, "still holding a tab that has gone");
+        assert!(long.edging().is_none());
     }
 }

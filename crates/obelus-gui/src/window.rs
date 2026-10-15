@@ -717,6 +717,7 @@ impl Showing {
             crate::title::Spot::Tab(index) => {
                 if let Some(document) = self.strip.document(index) {
                     self.tell(Event::Chose(document));
+                    self.strip.hold(index);
                 }
             }
             towards => {
@@ -724,6 +725,19 @@ impl Showing {
                     self.redraw();
                 }
             }
+        }
+    }
+
+    /// Puts the tab carried where the pointer has it, if that is somewhere
+    /// new -- after the pointer moves, and after a frame that scrolled the
+    /// row under it at one end.
+    fn carry(&mut self) {
+        if let Some((document, beside, after)) = self.strip.carried() {
+            self.tell(Event::Placed {
+                document,
+                beside,
+                after,
+            });
         }
     }
 
@@ -1984,6 +1998,18 @@ impl ApplicationHandler<Waking> for Showing {
                     Instant::now(),
                     self.motion.animated(),
                 );
+                // The row may have scrolled under a tab carried to its end,
+                // which is a move the pointer did not make. Said by hand
+                // rather than through `carry`: the painter is borrowed.
+                if let (Some((document, beside, after)), Some(doing)) =
+                    (self.strip.carried(), self.doing.as_ref())
+                {
+                    let _ = doing.send(Event::Placed {
+                        document,
+                        beside,
+                        after,
+                    });
+                }
                 if let Some(bar) = self.bar.as_ref() {
                     bar.tabs_are(self.strip.covers());
                 }
@@ -2090,6 +2116,7 @@ impl ApplicationHandler<Waking> for Showing {
             // words rather than reaching the program.
             WindowEvent::Focused(false) => {
                 self.active = false;
+                self.strip.let_go();
                 if self.motion.focused(false, Instant::now()) || self.bar.is_some() {
                     self.redraw();
                 }
@@ -2195,6 +2222,17 @@ impl ApplicationHandler<Waking> for Showing {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.over_the_title = crate::title::under(position.y, self.titled);
+                // A tab held down goes where the pointer takes it, by how
+                // far along the bar it is and wherever it is up or down: a
+                // drag along a row of tabs is never quite level, and one
+                // that strayed below the bar dropping the tab it held would
+                // be a tab let go of while the button was still down.
+                #[expect(clippy::cast_possible_truncation, reason = "pixels on a screen")]
+                let along = position.x as f32;
+                if self.strip.drag(along) {
+                    self.redraw();
+                    self.carry();
+                }
                 #[expect(clippy::cast_possible_truncation, reason = "pixels on a screen")]
                 let over = (self.over_the_title && !self.held).then_some(position.x as f32);
                 if self.strip.point(over) {
@@ -2236,6 +2274,12 @@ impl ApplicationHandler<Waking> for Showing {
                 self.stir();
                 if state == ElementState::Pressed {
                     self.cut_the_stroke();
+                }
+                // Whatever the press was on, a tab is let go of with the
+                // button -- and a press is a button that was let go of
+                // somewhere this window never heard.
+                if self.strip.let_go() {
+                    self.redraw();
                 }
                 // Asked again at every press rather than cleared at the
                 // release: a press that drags the window by its bar may

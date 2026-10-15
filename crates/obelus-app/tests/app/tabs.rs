@@ -242,3 +242,176 @@ fn two_files_with_one_name_say_their_directories() {
     support::lay_out(&mut app, 60, 12);
     assert_eq!(told.last().0, ["app/mod.rs", "ui/mod.rs", "lib.rs"]);
 }
+
+/// The rows of the list of what is open, by the last part of each label,
+/// and the one the reader is on.
+fn rows(app: &App) -> (Vec<String>, Option<String>) {
+    let picker = app.picker().expect("the list of what is open");
+    let name = |label: &str| {
+        label
+            .rsplit(['/', '\\'])
+            .next()
+            .unwrap_or(label)
+            .to_string()
+    };
+    (
+        picker.matches().map(|item| name(&item.label)).collect(),
+        picker.selected_item().map(|item| name(&item.label)),
+    )
+}
+
+/// A tab dragged past another stays where it was put, on the bar and in
+/// the list of what is open, and the same move said twice is one move.
+///
+/// Deliberate breaks: build the tabs from the slots again, ignoring
+/// `in_order`, in `App::tabs` -- the bar never moves; and the list's rows
+/// from the slots in `App::document_rows` -- the bar moves and the list
+/// says the old order.
+#[test]
+fn a_dragged_tab_stays_where_it_was_put() {
+    let scratch = support::Scratch::new("tabs-dragged");
+    let one = scratch.write("one.rs", "\n");
+    let two = scratch.write("two.rs", "\n");
+    let three = scratch.write("three.rs", "\n");
+    let (mut app, told) = open(&[one, two, three]);
+    app.worktrees_for_test(false);
+    support::lay_out(&mut app, 60, 12);
+
+    let (document, beside) = (tab_for(&told, "one.rs"), tab_for(&told, "two.rs"));
+    let placed = || Event::Placed {
+        document,
+        beside,
+        after: true,
+    };
+    app.handle(placed());
+    support::lay_out(&mut app, 60, 12);
+    assert_eq!(told.last().0, ["two.rs", "one.rs", "three.rs"]);
+    // Said again, as a drag says it until the bar has caught up.
+    app.handle(placed());
+    support::lay_out(&mut app, 60, 12);
+    assert_eq!(told.last().0, ["two.rs", "one.rs", "three.rs"]);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentList);
+    assert_eq!(rows(&app).0, ["two.rs", "one.rs", "three.rs"]);
+}
+
+/// `alt+down` and `alt+up` on the list of what is open move the row the
+/// reader is on, and its tab with it, and the reader stays on it.
+///
+/// Deliberate breaks: leave `moving_key` out of what the list hears, in
+/// `App::hear` -- the key walks the selection the way a bare arrow does
+/// and nothing moves; and select the row where the list opens rather than
+/// the one carried, in `App::moving_key` (`refresh_switching` for
+/// `relist_switching`) -- the second press moves the file being read
+/// instead.
+#[test]
+fn alt_and_an_arrow_move_a_row_of_what_is_open() {
+    let scratch = support::Scratch::new("tabs-alt-arrows");
+    let one = scratch.write("one.rs", "\n");
+    let two = scratch.write("two.rs", "\n");
+    let three = scratch.write("three.rs", "\n");
+    let (mut app, told) = open(&[one, two, three]);
+    app.worktrees_for_test(false);
+    support::lay_out(&mut app, 60, 12);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentList);
+    support::press(&mut app, KeyCode::Down);
+    assert_eq!(rows(&app).1.as_deref(), Some("two.rs"));
+
+    support::press_alt_key(&mut app, KeyCode::Down);
+    assert_eq!(
+        rows(&app),
+        (
+            vec![
+                "one.rs".to_string(),
+                "three.rs".to_string(),
+                "two.rs".to_string()
+            ],
+            Some("two.rs".to_string())
+        )
+    );
+    support::press_alt_key(&mut app, KeyCode::Up);
+    support::press_alt_key(&mut app, KeyCode::Up);
+    assert_eq!(rows(&app).0, ["two.rs", "one.rs", "three.rs"]);
+    // Already first: nowhere further up, and still on it.
+    support::press_alt_key(&mut app, KeyCode::Up);
+    assert_eq!(
+        rows(&app),
+        (
+            vec![
+                "two.rs".to_string(),
+                "one.rs".to_string(),
+                "three.rs".to_string()
+            ],
+            Some("two.rs".to_string())
+        )
+    );
+
+    support::lay_out(&mut app, 60, 12);
+    assert_eq!(told.last().0, ["two.rs", "one.rs", "three.rs"]);
+}
+
+/// With something typed into the list, the rows are in the order of how
+/// well they match, so `alt+down` moves nothing -- and does not walk the
+/// selection either.
+///
+/// Deliberate break: drop the query's refusal from `App::moving_key`. The
+/// row is moved past whatever ranked under it, which is not the document
+/// after it on the bar.
+#[test]
+fn a_typed_list_moves_nothing() {
+    let scratch = support::Scratch::new("tabs-alt-typed");
+    let one = scratch.write("one.rs", "\n");
+    let two = scratch.write("two.rs", "\n");
+    let three = scratch.write("three.rs", "\n");
+    let (mut app, told) = open(&[one, two, three]);
+    app.worktrees_for_test(false);
+    support::lay_out(&mut app, 60, 12);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentList);
+    support::type_text(&mut app, "o");
+    let before = rows(&app);
+    support::press_alt_key(&mut app, KeyCode::Down);
+    assert_eq!(rows(&app), before);
+    support::press(&mut app, KeyCode::Esc);
+    support::lay_out(&mut app, 60, 12);
+    assert_eq!(told.last().0, ["one.rs", "two.rs", "three.rs"]);
+}
+
+/// Closing the document being read goes to the one before it in the order
+/// the reader put them in, not in the order they were opened.
+///
+/// Deliberate break: go to the nearest slot in `App::close`, as it did
+/// before the tabs could move. Closing `three.rs`, put second, then goes
+/// to `two.rs`, which was opened before it but is now after it.
+#[test]
+fn closing_goes_to_the_neighbour_the_reader_sees() {
+    let scratch = support::Scratch::new("tabs-closed-moved");
+    let one = scratch.write("one.rs", "\n");
+    let two = scratch.write("two.rs", "\n");
+    let three = scratch.write("three.rs", "\n");
+    let (mut app, told) = open(&[one.clone(), two, three]);
+    support::lay_out(&mut app, 60, 12);
+
+    app.handle(Event::Placed {
+        document: tab_for(&told, "three.rs"),
+        beside: tab_for(&told, "one.rs"),
+        after: true,
+    });
+    app.handle(Event::Chose(tab_for(&told, "three.rs")));
+    support::lay_out(&mut app, 60, 12);
+    assert_eq!(
+        told.last(),
+        (
+            vec![
+                "one.rs".to_string(),
+                "three.rs".to_string(),
+                "two.rs".to_string()
+            ],
+            Some("three.rs".to_string())
+        )
+    );
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentClose);
+    assert_eq!(app.current_buffer().map(Buffer::path), Some(one.as_path()));
+}

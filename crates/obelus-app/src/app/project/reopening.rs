@@ -307,8 +307,10 @@ impl App {
     /// What is open now, as the record would say it.
     fn what_is_open(&self) -> Record {
         let mut record = Record::default();
-        for (at, document) in self.documents.iter().enumerate() {
-            let open = match document {
+        // In the order the reader has them, which a window that opens them
+        // again opens them in.
+        for at in self.in_order() {
+            let open = match self.document(at) {
                 Some(Document::File(buffer)) if buffer.content().is_file() => {
                     let path = buffer.path();
                     let cursor = buffer.cursor();
@@ -333,7 +335,7 @@ impl App {
                 Some(Document::File(_) | Document::Terminal(_)) | None => None,
             };
             if let Some(open) = open {
-                if self.current == Some(DocumentId::new(at)) {
+                if self.current == Some(at) {
                     record.current = Some(record.open.len());
                 }
                 record.open.push(open);

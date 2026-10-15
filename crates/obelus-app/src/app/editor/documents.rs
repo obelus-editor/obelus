@@ -567,6 +567,56 @@ impl App {
         true
     }
 
+    /// `alt+up` and `alt+down` on the list of what is open: the row the
+    /// reader is on moves past the one above or below it, and its tab with
+    /// it, because the two are one order.
+    ///
+    /// The notes' chord for moving a row, so that one key means one thing
+    /// on both lists. Taken and nothing done while a query is typed -- the
+    /// rows are then ranked, and the one above is not the document before
+    /// -- rather than let through to a picker that would walk on it as
+    /// though it were a bare arrow.
+    pub(in crate::app) fn moving_key(&mut self, key: &KeyEvent) -> bool {
+        if key.modifiers != KeyModifiers::ALT {
+            return false;
+        }
+        let after = match key.code {
+            KeyCode::Up => false,
+            KeyCode::Down => true,
+            _ => return false,
+        };
+        let Some(picker) = self.picker.as_ref().filter(|picker| picker.rows_move()) else {
+            return false;
+        };
+        if !picker.query().is_empty() {
+            return true;
+        }
+        let rows: Vec<DocumentId> = picker
+            .matches()
+            .filter_map(|item| match item.value {
+                PickerValue::Document(id) => Some(id),
+                _ => None,
+            })
+            .collect();
+        let Some(id) = self.selected_document() else {
+            return true;
+        };
+        let Some(at) = rows.iter().position(|each| *each == id) else {
+            return true;
+        };
+        let beside = match after {
+            true => rows.get(at + 1),
+            false => at.checked_sub(1).and_then(|before| rows.get(before)),
+        };
+        if let Some(&beside) = beside {
+            self.place(id, beside, after);
+            // On the row that moved, which is the one the reader is
+            // carrying: a second press moves it on again.
+            self.relist_switching();
+        }
+        true
+    }
+
     /// The rows of the flat listing, from what the walk has found.
     fn found_rows(&self) -> Vec<PickerItem> {
         self.files
@@ -898,19 +948,18 @@ impl App {
     pub(in crate::app) fn document_rows(&mut self) -> Vec<PickerItem> {
         // Before the buffers are borrowed to build the rows.
         self.gather_statuses();
-        // In the order they were opened, which is the order the slots are
-        // in. Not sorted by how often each has been come back to: that
-        // reorders the list under a reader between one press of the key and
-        // the next, so the row they are reaching for is never where it was
-        // last time. A list worth learning is a list that holds still --
-        // and the one file whose place they might have to hunt for, the one
+        // In the order they were opened, or where the reader has put them
+        // since (`in_order`). Not sorted by how often each has been come
+        // back to: that reorders the list under a reader between one press
+        // of the key and the next, so the row they are reaching for is
+        // never where it was last time. A list worth learning is a list
+        // that holds still -- unless the reader is the one moving it -- and
+        // the one file whose place they might have to hunt for, the one
         // they are in, is the row the list opens on anyway.
         let open = self
-            .documents
-            .iter()
-            .enumerate()
-            // Closed slots are holes, not rows.
-            .filter_map(|(index, document)| Some((index, document.as_ref()?)));
+            .in_order()
+            .into_iter()
+            .filter_map(|id| Some((id.get(), self.document(id)?)));
 
         let statuses = &self.files.statuses;
         let talker = self.agent.talker.as_ref();
@@ -1109,6 +1158,8 @@ impl App {
         {
             self.do_to_the_notes(changes);
         }
+        // Where it stood, while it is still there to be found.
+        let order = self.in_order();
         let Some(document) = self.documents.get_mut(id.get()).and_then(Option::take) else {
             return;
         };
@@ -1168,19 +1219,52 @@ impl App {
 
         // Whichever document is nearest, before the closed one for
         // preference: closing the last of several usually means going back
-        // to the one before it.
+        // to the one before it. Nearest in the order the reader sees them
+        // in, which is not the slots' once they have moved a tab: the
+        // neighbour they were looking at is the one they expect.
         if self.current == Some(id) {
-            self.current = self.nearest_open(id.get());
+            let at = order.iter().position(|each| *each == id).unwrap_or(0);
+            self.current = order[..at].last().or_else(|| order.get(at + 1)).copied();
         }
     }
 
-    /// Whatever is open nearest to a slot, looking back first.
-    fn nearest_open(&self, from: usize) -> Option<DocumentId> {
-        (0..from)
-            .rev()
-            .chain(from + 1..self.documents.len())
-            .find(|index| self.documents.get(*index).is_some_and(Option::is_some))
-            .map(DocumentId::new)
+    /// What is open, in the order the reader has it: the order it was
+    /// opened in, less what they have moved since.
+    ///
+    /// What the tabs, the list of what is open and the record kept for the
+    /// next window all read, so that the three cannot disagree about it.
+    /// Anything opened after the last move goes on the end, as everything
+    /// opened does -- a slot is never filled twice, so one past every
+    /// placed document is one nobody has placed.
+    pub(in crate::app) fn in_order(&self) -> Vec<DocumentId> {
+        let open = |id: &DocumentId| self.document(*id).is_some();
+        let mut order: Vec<DocumentId> = self.placed.iter().copied().filter(open).collect();
+        order.extend(
+            (0..self.documents.len())
+                .map(DocumentId::new)
+                .filter(|id| open(id) && !self.placed.contains(id)),
+        );
+        order
+    }
+
+    /// Moves one open document to beside another: a tab dragged across the
+    /// bar, or a row of the list of what is open moved up or down.
+    ///
+    /// By what it goes beside rather than by a position, because the
+    /// window's drag says it again on every move of the pointer until the
+    /// tabs it is told catch up -- and "after that one" said twice is one
+    /// move, where "third" said twice is a tab put back.
+    pub(in crate::app) fn place(&mut self, id: DocumentId, beside: DocumentId, after: bool) {
+        if id == beside || self.document(id).is_none() || self.document(beside).is_none() {
+            return;
+        }
+        let mut order = self.in_order();
+        order.retain(|each| *each != id);
+        let Some(at) = order.iter().position(|each| *each == beside) else {
+            return;
+        };
+        order.insert(at + usize::from(after), id);
+        self.placed = order;
     }
 
     /// Shows the current file as whatever reading it has, or stops.
