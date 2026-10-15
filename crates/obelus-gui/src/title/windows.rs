@@ -31,7 +31,7 @@ use windows_sys::Win32::{
         WindowsAndMessaging::{
             GWL_STYLE, GetClientRect, GetWindowLongW, HTCAPTION, HTCLIENT, HTCLOSE, HTMAXBUTTON,
             HTMINBUTTON, HTTOP, IsZoomed, NCCALCSIZE_PARAMS, PostMessageW, SC_CLOSE, SC_MAXIMIZE,
-            SC_MINIMIZE, SC_RESTORE, SM_CXPADDEDBORDER, SM_CYCAPTION, SM_CYSIZEFRAME,
+            SC_MINIMIZE, SC_RESTORE, SM_CXPADDEDBORDER, SM_CXSMICON, SM_CYCAPTION, SM_CYSIZEFRAME,
             SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos,
             WM_MOUSEMOVE, WM_NCCALCSIZE, WM_NCDESTROY, WM_NCHITTEST, WM_NCLBUTTONDBLCLK,
             WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_SYSCOMMAND,
@@ -177,6 +177,7 @@ impl Bar {
                 true => scale.floor(),
                 false => pixels(|measured| measured.edge),
             },
+            icon: pixels(|measured| measured.icon),
             words: (WORDS * scale).round(),
             hovered: held(self.shared.hovered.load(Ordering::Relaxed)),
             pressed: held(self.shared.pressed.load(Ordering::Relaxed)),
@@ -194,6 +195,8 @@ struct Measured {
     edge: i32,
     /// How wide each button is.
     button: i32,
+    /// How big the window's icon is drawn on it, where it has no tabs.
+    icon: i32,
     /// How tall the bar the system would have drawn is, which is how tall
     /// the buttons are.
     captioned: i32,
@@ -232,6 +235,7 @@ fn measured(hwnd: HWND) -> Measured {
         } + above,
         edge,
         button,
+        icon: metric(SM_CXSMICON),
         captioned: metric(SM_CYCAPTION) + above,
     }
 }

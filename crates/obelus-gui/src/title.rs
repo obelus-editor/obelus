@@ -39,8 +39,12 @@
 //!
 //! So the buttons stand where each system puts them: on the right on
 //! Windows, which Obelus draws, and on the left on macOS, which AppKit
-//! draws and the tabs start after. The title is hidden on macOS, and on
-//! Windows nothing writes one. The buttons' ink is the system's on macOS,
+//! draws and the tabs start after. Where there are tabs the title is
+//! hidden on macOS, and on Windows nothing writes one; where there are
+//! none, the bar says what the system's own would -- AppKit writes the
+//! title on macOS (`show_the_title`), and on Windows Obelus writes the
+//! icon and the title at the left, where the system would, in the
+//! system's face and at its size. The buttons' ink is the system's on macOS,
 //! so what Obelus tells it is whether the page is dark; the tabs are
 //! written in the page's ink on both, in the face the system writes its
 //! own words in.
@@ -101,10 +105,12 @@ pub(crate) fn asked_for(attributes: WindowAttributes) -> WindowAttributes {
     #[cfg(target_os = "macos")]
     {
         use winit::platform::macos::WindowAttributesExtMacOS;
+        // The title shown, which is a bar without the tabs -- the setting's
+        // default, and what it is until the application says otherwise
+        // (`show_the_title`).
         attributes
             .with_titlebar_transparent(true)
             .with_fullsize_content_view(true)
-            .with_title_hidden(true)
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -256,6 +262,26 @@ pub(crate) fn centre_the_buttons(window: &Window) {
 /// Nothing: the buttons are where the system put them.
 #[cfg(not(target_os = "macos"))]
 pub(crate) const fn centre_the_buttons(_window: &Window) {}
+
+/// Has AppKit write the window's title on its bar where the bar holds no
+/// tabs, the way it does on any window, and not where it does: the tabs
+/// are what the bar says then.
+#[cfg(target_os = "macos")]
+pub(crate) fn show_the_title(window: &Window) {
+    use objc2_app_kit::NSWindowTitleVisibility;
+    let Some(shown) = appkit(window) else {
+        return;
+    };
+    shown.setTitleVisibility(match is_tabbed() {
+        true => NSWindowTitleVisibility::Hidden,
+        false => NSWindowTitleVisibility::Visible,
+    });
+}
+
+/// Nothing: the title is written by whoever draws the bar -- Obelus on
+/// Windows, and the compositor elsewhere.
+#[cfg(not(target_os = "macos"))]
+pub(crate) const fn show_the_title(_window: &Window) {}
 
 /// Where on a bar this tall the tabs may go, on a window this wide.
 ///
@@ -471,8 +497,11 @@ pub(crate) struct Drawn {
     /// How wide the pen the marks are drawn with is, in pixels.
     pub(crate) pen: f32,
     /// How far in from the left the tabs start, in pixels: as far as the
-    /// frame is wide, which is where the system puts its own icon.
+    /// frame is wide, which is where the system puts its own icon -- and
+    /// where the window's icon stands on a bar without them.
     pub(crate) inset: f32,
+    /// How wide and tall the window's icon is, on a bar without the tabs.
+    pub(crate) icon: f32,
     /// How big a tab's name is written, in pixels.
     pub(crate) words: f32,
     /// The button the pointer is over.
@@ -584,6 +613,20 @@ pub(crate) fn arrow_inks(more: bool, hovered: bool, dark: bool) -> (Option<[f32;
         (true, true) => (Some([r, g, b, 0.06]), [r, g, b, 0.9]),
         (true, false) => (None, [r, g, b, 0.7]),
         (false, _) => (None, [r, g, b, 0.2]),
+    }
+}
+
+/// What the title is written in on a bar without the tabs, on a page this
+/// dark: the page's ink, at full strength on a window with the reader's
+/// keys and faint on one without, as the marks on the buttons are.
+pub(crate) fn title_ink(drawn: &Drawn, dark: bool) -> [f32; 4] {
+    let strength = match drawn.active {
+        true => 1.0,
+        false => 0.36,
+    };
+    match dark {
+        true => [1.0, 1.0, 1.0, strength],
+        false => [0.0, 0.0, 0.0, strength],
     }
 }
 
@@ -980,6 +1023,21 @@ mod tests {
         assert_eq!(on(999.0, 0.0, true), Part::Button(Button::Close));
     }
 
+    /// The title on a bar without the tabs is in the page's ink, and
+    /// fainter on a window without the reader's keys.
+    ///
+    /// Deliberate break: leave `active` out of `title_ink`. A window in the
+    /// background writes its title as boldly as the one being typed in, and
+    /// a reader has the buttons alone to tell the two apart by.
+    #[test]
+    fn the_title_is_in_the_pages_ink_and_fainter_without_the_keys() {
+        let on = title_ink(&drawn(None, None, true), true);
+        let off = title_ink(&drawn(None, None, false), true);
+        assert_eq!(on[..3], [1.0, 1.0, 1.0], "a dark page is written light");
+        assert!(off[3] < on[3], "{off:?} is not fainter than {on:?}");
+        assert_eq!(title_ink(&drawn(None, None, true), false)[..3], [0.0; 3]);
+    }
+
     /// A bar on a page of this darkness, with the pointer as given.
     fn drawn(hovered: Option<Button>, pressed: Option<Button>, active: bool) -> Drawn {
         Drawn {
@@ -988,6 +1046,7 @@ mod tests {
             mark: 10.0,
             pen: 1.0,
             inset: 8.0,
+            icon: 16.0,
             words: 12.0,
             hovered,
             pressed,

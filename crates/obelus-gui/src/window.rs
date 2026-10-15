@@ -726,6 +726,7 @@ impl Showing {
         let size = window.inner_size();
         let cell = fonts.cell();
         crate::title::centre_the_buttons(window);
+        crate::title::show_the_title(window);
         self.titled = match self.bar.as_ref() {
             Some(bar) => bar.height(window),
             None => crate::title::height(window),
@@ -2558,6 +2559,20 @@ fn caret_in(spelling: &str, caret: Option<(usize, usize)>) -> Option<usize> {
             .get(..end)
             .map_or(0, |before| before.chars().count()),
     )
+}
+
+/// The same icon at this many pixels to a side, for a bar Obelus draws to
+/// put at its left the way the system's bar does, where the bar holds no
+/// tabs -- see `title::Bar`. From the largest of the file's sizes, which
+/// the decoder hands back.
+pub(crate) fn icon(side: u32) -> Option<image::RgbaImage> {
+    let mark = image::load_from_memory_with_format(MARK, image::ImageFormat::Ico).ok()?;
+    Some(image::imageops::resize(
+        &mark.to_rgba8(),
+        side,
+        side,
+        image::imageops::FilterType::Lanczos3,
+    ))
 }
 
 #[cfg(test)]
