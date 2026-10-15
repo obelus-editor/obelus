@@ -306,9 +306,14 @@ impl Strip {
             // Arrived, with nothing to show the arriving on: a slide left
             // under way would keep `sliding` true, and the window drawing
             // frames for it, for as long as there is no bar -- the whole
-            // of a stay in full screen.
+            // of a stay in full screen. And the same for the tabs' own
+            // slides, a tab held -- whose button may come up while there
+            // is no bar to let go of it on -- and a row scrolling under it.
             self.offset = self.target;
             self.stepped = None;
+            self.settled = None;
+            self.edged = None;
+            self.held = None;
             return;
         };
         self.widths = self
@@ -1077,15 +1082,37 @@ mod tests {
     /// Deliberate breaks: leave `stepped` unset in the reveal, and the row
     /// jumps a tab's width under the pointer that chose the tab; leave the
     /// arrival out of `lay`'s nowhere, and a window gone full screen in
-    /// the middle of a slide draws frames for it until it comes back.
+    /// the middle of a slide draws frames for it until it comes back --
+    /// and leave `settled` or `held` alone there, and so does one gone full
+    /// screen while the tabs slide to a new order, or while one is held.
     #[test]
     fn a_tab_chosen_slides_into_sight_and_no_bar_ends_the_slide() {
-        let mut strip = strip(0);
-        strip.told((0..10).map(|at| tab(at, at == 6)).collect());
-        strip.lay(Some(room()), |_, _| 4.0, Instant::now(), true);
-        assert!(strip.sliding(), "jumped to the tab chosen");
-        strip.lay(None, |_, _| 4.0, Instant::now(), true);
-        assert!(!strip.sliding(), "still sliding with no bar");
+        let mut chosen = strip(0);
+        chosen.told((0..10).map(|at| tab(at, at == 6)).collect());
+        chosen.lay(Some(room()), |_, _| 4.0, Instant::now(), true);
+        assert!(chosen.sliding(), "jumped to the tab chosen");
+        chosen.lay(None, |_, _| 4.0, Instant::now(), true);
+        assert!(!chosen.sliding(), "still sliding with no bar");
+
+        let mut moved = strip(0);
+        moved.told(
+            [1, 0]
+                .into_iter()
+                .chain(2..10)
+                .map(|at| tab(at, at == 0))
+                .collect(),
+        );
+        moved.lay(Some(room()), |_, _| 4.0, Instant::now(), true);
+        assert!(moved.sliding(), "the tabs jumped to their new order");
+        moved.lay(None, |_, _| 4.0, Instant::now(), true);
+        assert!(!moved.sliding(), "the tabs still sliding with no bar");
+
+        let mut held = strip(0);
+        held.point(Some(30.0));
+        held.hold(0);
+        held.lay(None, |_, _| 4.0, Instant::now(), true);
+        held.let_go();
+        assert!(!held.sliding(), "let go of with no bar, and sliding");
     }
 
     /// The tab being read is brought into sight when it changes, and only
