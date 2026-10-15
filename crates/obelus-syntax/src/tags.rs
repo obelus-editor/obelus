@@ -231,6 +231,7 @@ fn tags_query(language: LanguageId) -> Option<&'static tree_sitter::Query> {
         }
         LanguageId::Php => compiled!(PHP, tree_sitter_php::TAGS_QUERY),
         LanguageId::Ruby => compiled!(RUBY, tree_sitter_ruby::TAGS_QUERY),
+        LanguageId::Swift => compiled!(SWIFT, tree_sitter_swift::TAGS_QUERY),
         // Data languages, whose grammars ship no tags query. A file of them
         // has structure but no *definitions*, and an outline of every key in
         // a YAML file is the file again.
@@ -285,7 +286,7 @@ mod tests {
         // A number rather than a list, and asserted so that a language whose
         // query is quietly dropped to `None` is a failure rather than a
         // silent loss of its outline.
-        assert_eq!(found, 14, "a language stopped offering an outline");
+        assert_eq!(found, 15, "a language stopped offering an outline");
     }
 
     /// A word both tables know means the same thing in both.

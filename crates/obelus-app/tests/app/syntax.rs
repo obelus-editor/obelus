@@ -416,6 +416,13 @@ fn every_language_highlights_its_own_sample() {
             LanguageId::Scala,
             "// c\nobject Greeter { val name = \"hi\" }\n",
         ),
+        // A `guard`, because a `func` with a string in it is a line Scala's
+        // grammar parses without an error too, and then the sample cannot
+        // tell the two apart.
+        (
+            LanguageId::Swift,
+            "// c\nfunc greet(name: String?) -> String {\n    guard let name else { return \"hi\" }\n    return \"hi \\(name)\"\n}\n",
+        ),
         // Markdown has no comments and no strings of its own: the *block*
         // grammar is what Obelus parses, and what it names is structure --
         // a heading, a fenced block, a list. So this one is checked by the
