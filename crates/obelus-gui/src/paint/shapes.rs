@@ -22,28 +22,32 @@ const STANDS_ON_THE_BAR: u32 = 0b1010_0000;
 
 /// The shadow a tab standing up out of the bar casts -- the one being read,
 /// and the one carried -- from its rectangle, in the painter's pixels, and
-/// how round its top corners are.
+/// how round its corners are.
 ///
 /// Off its top and its sides, so that it stands up out of the bar rather
-/// than being cut out of it, and none off its foot, which is the page it is
-/// a piece of: the quad stops there rather than casting down over the
-/// first row. As far as a corner is round, which is a tab's own measure
-/// and grows with the words, where a pane's is a row's.
+/// than being cut out of it, and along the curves at its foot that bend out
+/// into the bar -- `standing` in the shader, which the plate's flag asks
+/// for -- and none off the foot itself, which is the page it is a piece
+/// of: the quad stops there rather than casting down over the first row.
+/// As far as a corner is round, which is a tab's own measure and grows
+/// with the words, where a pane's is a row's -- said in `lower`, because
+/// the quad reaches a curve further than that past the tab either side.
 fn tab_shadow([left, top, width, tall]: [f32; 4], corner: f32) -> Quad {
     let spread = corner.max(1.0);
+    let aside = spread + corner;
     Quad {
         rect: [
-            left - spread,
+            left - aside,
             top - spread,
-            spread.mul_add(2.0, width),
+            aside.mul_add(2.0, width),
             tall + spread,
         ],
         uv: [left, top, left + width, top + tall],
         colour: [0.0, 0.0, 0.0, SHADOW_INK],
-        flags: SHADOW,
+        flags: SHADOW | HELD_PLATE,
         radius: corner,
         layer: 0,
-        lower: 0.0,
+        lower: spread,
     }
 }
 
@@ -1194,20 +1198,28 @@ pub(super) fn underline_ink(look: &Look<'_>) -> Option<[f32; 4]> {
 mod tests {
     use super::*;
 
-    /// A tab's shadow falls off its top and its sides and stops at its
-    /// foot, where the page it is a piece of starts.
+    /// A tab's shadow falls off its top, its sides and the curves at its
+    /// foot, and stops at the foot, where the page it is a piece of starts.
     ///
-    /// Deliberate break: give the quad a spread's height under the foot
+    /// Deliberate breaks: give the quad a spread's height under the foot
     /// too, as a pane's shadow has -- a band of grey across the top of the
-    /// first row under the tab, fails the foot; and casting from no
-    /// rectangle fails the box.
+    /// first row under the tab -- and it fails the foot; reach only a
+    /// spread past the tab, as the first of these did, and the shadow
+    /// along a curve is cut off where the quad ends; leave out the plate's
+    /// flag and the shader casts from the rectangle, which is the curves
+    /// with nothing under them.
     #[test]
-    fn a_tab_casts_up_and_aside_and_not_down_onto_the_page() {
+    fn a_tab_casts_up_aside_and_round_its_curves_and_not_onto_the_page() {
         let (left, top, width, tall, corner) = (100.0, 8.0, 160.0, 30.0, 8.0);
         let quad = tab_shadow([left, top, width, tall], corner);
         let [x, y, wide, high] = quad.rect;
-        assert!(y < top, "nothing above the tab");
-        assert!(x < left && x + wide > left + width, "nothing beside it");
+        let spread = quad.lower;
+        assert!(spread > 0.0 && y <= top - spread, "nothing above the tab");
+        assert!(
+            x <= left - corner - spread && x + wide >= left + width + corner + spread,
+            "cut off along the curves: {:?}",
+            quad.rect
+        );
         assert!(
             (y + high - (top + tall)).abs() < f32::EPSILON,
             "past its foot, over the page: {:?}",
@@ -1215,8 +1227,9 @@ mod tests {
         );
         assert_eq!(quad.uv, [left, top, left + width, top + tall]);
         assert_eq!(
-            quad.flags, SHADOW,
-            "cast from one edge rather than round the tab"
+            quad.flags,
+            SHADOW | HELD_PLATE,
+            "cast from the rectangle rather than the tab's shape"
         );
     }
 }

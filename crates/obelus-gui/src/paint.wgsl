@@ -164,6 +164,29 @@ fn outside(point: vec2<f32>, half_size: vec2<f32>, radius: f32, joined: f32) -> 
     return length(max(corner, vec2<f32>(0.0))) + min(max(corner.x, corner.y), 0.0) - radius;
 }
 
+// How far outside a tab standing up out of the bar a point is: round at
+// its top, and at its foot the two corners that bend out into the bar,
+// whose tips are where the outline ends. Its shadow is cast from this, so
+// that it follows those curves too -- cast from the tab's rectangle, it
+// had faded out by the time it reached them, and the curves stood in the
+// bar with nothing under them.
+//
+// Nearest of the three things a point can be nearest: the tab itself, a
+// tip, and the curve, where the point is in the square a curve is cut
+// from. Nothing under the foot is asked, because nothing is drawn there.
+fn standing(point: vec2<f32>, half_size: vec2<f32>, radius: f32) -> f32 {
+    let round = select(0.0, radius, point.y < 0.0);
+    let corner = abs(point) - half_size + vec2<f32>(round);
+    let body = length(max(corner, vec2<f32>(0.0))) + min(max(corner.x, corner.y), 0.0) - round;
+    let at = vec2<f32>(abs(point.x), point.y);
+    var distance = min(body, length(at - vec2<f32>(half_size.x + radius, half_size.y)));
+    let middle = vec2<f32>(half_size.x + radius, half_size.y - radius);
+    if (at.x >= half_size.x && at.x <= middle.x && at.y >= middle.y) {
+        distance = min(distance, radius - length(at - middle));
+    }
+    return distance;
+}
+
 // How far outside a run the reader has hold of a point is.
 //
 // A hold is one rectangle per row of it, and the rows are not the same
@@ -583,7 +606,11 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
         } else if ((in.flags & 128u) != 0u) {
             joined = -1.0;
         }
-        let distance = outside(middle, half, in.radius, joined);
+        var distance = outside(middle, half, in.radius, joined);
+        // A tab's, which is a shape of its own -- see `standing`.
+        if ((in.flags & 4096u) != 0u) {
+            distance = standing(middle, half, in.radius);
+        }
         // Nothing under the thing itself: a shadow is what falls on what
         // is behind it, and the glass is already drawn.
         if (distance <= 0.0) {
