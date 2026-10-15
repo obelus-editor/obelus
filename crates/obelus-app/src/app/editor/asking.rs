@@ -162,8 +162,12 @@ impl App {
         let question = Question::new(what);
         // Nothing to write where only programs are running: the one way
         // out is stopping them, as closing one terminal asks.
-        let question = match unsaved {
-            0 => question.way(
+        let question = match (unsaved, running) {
+            (0, 1) => question.way(
+                "Stop it and close the others",
+                Answer::ClosingTheOthers(keep, Leaving::Discard),
+            ),
+            (0, _) => question.way(
                 "Stop them and close the others",
                 Answer::ClosingTheOthers(keep, Leaving::Discard),
             ),

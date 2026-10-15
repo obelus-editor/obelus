@@ -2348,6 +2348,44 @@ mod closing_the_others {
         );
     }
 
+    /// By its name in the palette, which is the only way to it until a
+    /// reader binds a key: the row is there, live, and enter runs it.
+    #[test]
+    fn the_palette_runs_it_by_name() {
+        let (_scratch, mut app, paths) = reading_three("close-others-palette");
+        dispatch::dispatch(&mut app, Command::CommandPalette);
+        support::type_text(&mut app, "close-other-documents");
+        support::press(&mut app, KeyCode::Enter);
+
+        assert_eq!(
+            open(&app),
+            vec![paths[0].clone()],
+            "the palette did not run it"
+        );
+    }
+
+    /// From the list of what is open, the row under the selection is the
+    /// one kept, as it is the one `close-document` closes there -- and the
+    /// list stays up. The deliberate break was keeping `self.current` in
+    /// `close_the_others` instead, which kept one.rs.
+    #[test]
+    fn from_the_list_of_what_is_open_the_selected_row_is_kept() {
+        let (_scratch, mut app, paths) = reading_three("close-others-list");
+        dispatch::dispatch(&mut app, Command::DocumentList);
+        support::type_text(&mut app, "three.rs");
+        dispatch::dispatch(&mut app, Command::DocumentCloseOthers);
+
+        assert_eq!(open(&app), vec![paths[2].clone()], "the wrong one was kept");
+        let selected = app
+            .picker()
+            .and_then(|picker| picker.selected_item())
+            .map(|item| item.label.clone());
+        assert!(
+            selected.is_some_and(|label| label.contains("three.rs")),
+            "the list went away, or is on the wrong row"
+        );
+    }
+
     /// What is being read is not one of the others: unwritten there, it
     /// is neither asked about nor written. The deliberate break was
     /// dropping the `!= keep` filter from the count in `close_the_others`,
