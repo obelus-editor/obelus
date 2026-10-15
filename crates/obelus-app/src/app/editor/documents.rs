@@ -1025,25 +1025,15 @@ impl App {
                     .position(|item| matches!(item.value, PickerValue::Document(row) if row == id))
             });
             self.close(id);
-            // Rebuilt rather than patched, keeping whatever was typed: a
-            // patched list would have to agree with the buffers about which
-            // slots are holes.
-            let query = self
-                .picker
-                .as_ref()
-                .map(|picker| picker.query().to_string())
-                .unwrap_or_default();
-            self.open_document_picker();
-            if let Some(picker) = self.picker.as_mut() {
-                picker.set_query(&query);
-                // Where the closed row was, which is the row after it, or
-                // the one before where it was the last. Not where a list
-                // opens, on what is being read: that is usually the first
-                // row, and closing three in a row walked back up to it
-                // between each.
-                if let Some(at) = at {
-                    picker.select_row(at);
-                }
+            self.list_what_is_open_again();
+            // Where the closed row was, which is the row after it, or the
+            // one before where it was the last. Not where a list opens, on
+            // what is being read: that is usually the first row, and
+            // closing three in a row walked back up to it between each.
+            if let Some(picker) = self.picker.as_mut()
+                && let Some(at) = at
+            {
+                picker.select_row(at);
             }
             return;
         }
@@ -1055,33 +1045,54 @@ impl App {
         self.close(id);
     }
 
+    /// The list of what is open, built again over one that just lost rows.
+    ///
+    /// Rebuilt rather than patched, keeping whatever was typed: a patched
+    /// list would have to agree with the buffers about which slots are
+    /// holes.
+    fn list_what_is_open_again(&mut self) {
+        let query = self
+            .picker
+            .as_ref()
+            .map(|picker| picker.query().to_string())
+            .unwrap_or_default();
+        self.open_document_picker();
+        if let Some(picker) = self.picker.as_mut() {
+            picker.set_query(&query);
+        }
+    }
+
     /// Stops showing everything but what is being read.
     ///
     /// Which, with the list of what is open up, is the row under the
     /// selection, for the reason [`App::close_current`] gives. Asked about
     /// first where anything going would take unwritten work or a running
-    /// program with it -- once, about all of them.
+    /// program with it -- once, about all of them, as closing the project
+    /// asks.
     pub fn close_the_others(&mut self) {
         let Some(keep) = self.selected_document().or(self.current) else {
             return;
         };
-        let others = || {
-            self.documents
-                .iter()
-                .enumerate()
-                .filter(move |(index, _)| *index != keep.get())
-                .filter_map(|(_, document)| document.as_ref())
-        };
-        let unsaved = others()
-            .filter_map(Document::file)
-            .filter(|buffer| buffer.is_dirty())
+        let unsaved = (0..self.documents.len())
+            .map(DocumentId::new)
+            .filter(|id| *id != keep)
+            .filter(|id| self.file(*id).is_some_and(Buffer::is_dirty))
             .count();
-        let running = others()
-            .filter_map(Document::terminal)
-            .filter(|terminal| terminal.ended().is_none())
-            .count();
-        if unsaved > 0 || running > 0 {
-            self.ask_before_closing_the_others(keep, unsaved, running);
+        if unsaved > 0 {
+            self.ask_before_closing_the_others(keep, unsaved);
+            return;
+        }
+        let running = self.terminals_running_except(Some(keep));
+        if running > 0 {
+            self.ask_before_stopping_them(
+                running,
+                "close the others",
+                obelus_component::question::Answer::ClosingTheOthers(
+                    keep,
+                    obelus_component::question::Leaving::Discard,
+                ),
+                Some(keep),
+            );
             return;
         }
         self.close_all_but(keep);
@@ -1099,15 +1110,7 @@ impl App {
         // The list stays up where it was asked from, now one row long:
         // the reader was in it, and closing is not choosing.
         if listing {
-            let query = self
-                .picker
-                .as_ref()
-                .map(|picker| picker.query().to_string())
-                .unwrap_or_default();
-            self.open_document_picker();
-            if let Some(picker) = self.picker.as_mut() {
-                picker.set_query(&query);
-            }
+            self.list_what_is_open_again();
         }
     }
 

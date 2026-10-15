@@ -41,24 +41,9 @@ impl App {
 
     /// Asks before leaving with unwritten changes anywhere.
     pub(in crate::app) fn ask_before_leaving(&mut self, unsaved: usize) {
-        let what = match unsaved {
-            // Which one, when there is only one. A count is all a prompt
-            // can say about several, but about a single file it would be
-            // saying less than it knows -- and the reader is about to
-            // decide whether to write it.
-            1 => match self.first_unsaved() {
-                Some(id) => format!("{} is unsaved", self.file_path(id)),
-                None => "1 file is unsaved".to_string(),
-            },
-            many => format!("{many} files are unsaved"),
-        };
         // And what else leaving stops, said in the same question: either
         // answer leaves, and leaving takes the programs with it.
-        let what = match self.terminals_running() {
-            0 => what,
-            1 => format!("{what}, and a terminal is still running"),
-            many => format!("{what}, and {many} terminals are still running"),
-        };
+        let what = self.what_would_be_lost(unsaved, self.terminals_running(), None);
         self.stop_to_ask(
             Question::new(what)
                 .way(
@@ -75,15 +60,8 @@ impl App {
     /// there to write what is unwritten into, and the reader says whether it
     /// is.
     pub(in crate::app) fn ask_before_switching(&mut self, unsaved: usize) {
-        let what = match unsaved {
-            1 => match self.first_unsaved() {
-                Some(id) => format!("{} is unsaved", self.file_path(id)),
-                None => "1 file is unsaved".to_string(),
-            },
-            many => format!("{many} files are unsaved"),
-        };
         self.stop_to_ask(
-            Question::new(what)
+            Question::new(self.what_would_be_lost(unsaved, 0, None))
                 .way(
                     "Save everything and switch",
                     Answer::Switching(Leaving::SaveAll),
@@ -98,20 +76,9 @@ impl App {
     /// The question going to another worktree asks, for the same reason:
     /// the tree is still there to write into.
     pub(in crate::app) fn ask_before_closing_the_project(&mut self, unsaved: usize) {
-        let what = match unsaved {
-            1 => match self.first_unsaved() {
-                Some(id) => format!("{} is unsaved", self.file_path(id)),
-                None => "1 file is unsaved".to_string(),
-            },
-            many => format!("{many} files are unsaved"),
-        };
         // And what else closing stops, as leaving says it: either answer
         // closes, and closing takes the programs with it.
-        let what = match self.terminals_running() {
-            0 => what,
-            1 => format!("{what}, and a terminal is still running"),
-            many => format!("{what}, and {many} terminals are still running"),
-        };
+        let what = self.what_would_be_lost(unsaved, self.terminals_running(), None);
         self.stop_to_ask(
             Question::new(what)
                 .way(
@@ -127,51 +94,22 @@ impl App {
     }
 
     /// Asks before closing everything but one document, with something
-    /// unwritten or still running among the rest.
+    /// unwritten among the rest.
     ///
-    /// One question for all of them rather than one per file: the reader
-    /// pressed one key, and a run of questions after it would have them
-    /// answering the same thing four times.
+    /// The question closing the project asks, about everything but `keep`:
+    /// what is being read stays, so it is neither counted nor written.
     pub(in crate::app) fn ask_before_closing_the_others(
         &mut self,
         keep: DocumentId,
         unsaved: usize,
-        running: usize,
     ) {
-        let only = |app: &Self| {
-            (0..app.documents.len())
-                .map(DocumentId::new)
-                .filter(|id| *id != keep)
-                .find(|id| app.file(*id).is_some_and(Buffer::is_dirty))
-        };
-        let what = match unsaved {
-            0 => None,
-            1 => Some(match only(self) {
-                Some(id) => format!("{} is unsaved", self.file_path(id)),
-                None => "1 file is unsaved".to_string(),
-            }),
-            many => Some(format!("{many} files are unsaved")),
-        };
-        let what = match (what, running) {
-            (Some(what), 0) => what,
-            (Some(what), 1) => format!("{what}, and a terminal is still running"),
-            (Some(what), many) => format!("{what}, and {many} terminals are still running"),
-            (None, 1) => "A terminal is still running".to_string(),
-            (None, many) => format!("{many} terminals are still running"),
-        };
-        let question = Question::new(what);
-        // Nothing to write where only programs are running: the one way
-        // out is stopping them, as closing one terminal asks.
-        let question = match (unsaved, running) {
-            (0, 1) => question.way(
-                "Stop it and close the others",
-                Answer::ClosingTheOthers(keep, Leaving::Discard),
-            ),
-            (0, _) => question.way(
-                "Stop them and close the others",
-                Answer::ClosingTheOthers(keep, Leaving::Discard),
-            ),
-            _ => question
+        let what = self.what_would_be_lost(
+            unsaved,
+            self.terminals_running_except(Some(keep)),
+            Some(keep),
+        );
+        self.stop_to_ask(
+            Question::new(what)
                 .way(
                     "Save everything and close the others",
                     Answer::ClosingTheOthers(keep, Leaving::SaveAll),
@@ -181,8 +119,37 @@ impl App {
                     Answer::ClosingTheOthers(keep, Leaving::Discard),
                 )
                 .saying("Loses your changes"),
+        );
+    }
+
+    /// What a question about unwritten work says would be lost: the files,
+    /// and the programs that would stop with them -- leaving `except` out,
+    /// where that one stays.
+    ///
+    /// One sentence for every question that asks it, so that four of them
+    /// say it the same way.
+    fn what_would_be_lost(
+        &self,
+        unsaved: usize,
+        running: usize,
+        except: Option<DocumentId>,
+    ) -> String {
+        let what = match unsaved {
+            // Which one, when there is only one. A count is all a prompt
+            // can say about several, but about a single file it would be
+            // saying less than it knows -- and the reader is about to
+            // decide whether to write it.
+            1 => match self.first_unsaved_except(except) {
+                Some(id) => format!("{} is unsaved", self.file_path(id)),
+                None => "1 file is unsaved".to_string(),
+            },
+            many => format!("{many} files are unsaved"),
         };
-        self.stop_to_ask(question);
+        match running {
+            0 => what,
+            1 => format!("{what}, and a terminal is still running"),
+            many => format!("{what}, and {many} terminals are still running"),
+        }
     }
 
     /// Asks before writing over a file that moved while it was being edited.
@@ -258,7 +225,7 @@ impl App {
             }
             Answer::ClosingTheProject(Leaving::Discard) => self.leave_the_project(),
             Answer::ClosingTheOthers(keep, Leaving::SaveAll) => {
-                if self.save_all_but(keep) {
+                if self.save_everything_except(Some(keep)) {
                     self.close_all_but(keep);
                 }
             }
@@ -292,8 +259,14 @@ impl App {
     ///
     /// Which is the only one, where the caller has counted one.
     pub(in crate::app) fn first_unsaved(&self) -> Option<DocumentId> {
+        self.first_unsaved_except(None)
+    }
+
+    /// The first document but `except` with something unwritten in it.
+    fn first_unsaved_except(&self, except: Option<DocumentId>) -> Option<DocumentId> {
         (0..self.documents.len())
             .map(DocumentId::new)
+            .filter(|id| Some(*id) != except)
             .find(|id| self.file(*id).is_some_and(Buffer::is_dirty))
     }
 
@@ -325,30 +298,22 @@ impl App {
         }
     }
 
-    /// Writes every unwritten document but one, and says whether they all
-    /// went.
+    /// Writes every unwritten document, and says whether they all went.
+    fn save_everything(&mut self) -> bool {
+        self.save_everything_except(None)
+    }
+
+    /// Writes every unwritten document but `except`, and says whether they
+    /// all went.
     ///
-    /// Not [`App::save_everything`]: the one being kept stays open, so
-    /// whether it is written is still the reader's to say.
-    fn save_all_but(&mut self, keep: DocumentId) -> bool {
+    /// The one left out stays open, so whether it is written is still the
+    /// reader's to say.
+    fn save_everything_except(&mut self, except: Option<DocumentId>) -> bool {
         for index in 0..self.documents.len() {
-            let unwritten = DocumentId::new(index) != keep
+            let unwritten = Some(DocumentId::new(index)) != except
                 && self
                     .file(DocumentId::new(index))
                     .is_some_and(|buffer| buffer.is_dirty() && buffer.content().is_file());
-            if unwritten && !self.write_now(index) {
-                return false;
-            }
-        }
-        true
-    }
-
-    /// Writes every unwritten document, and says whether they all went.
-    fn save_everything(&mut self) -> bool {
-        for index in 0..self.documents.len() {
-            let unwritten = self
-                .file(DocumentId::new(index))
-                .is_some_and(|buffer| buffer.is_dirty() && buffer.content().is_file());
             if unwritten && !self.write_now(index) {
                 return false;
             }
