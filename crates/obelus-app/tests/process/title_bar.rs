@@ -29,6 +29,8 @@ impl obelus_app::app::Drawing for Told {
 
     fn holding(&self, _: ratatui::style::Color, _: ratatui::style::Color) {}
 
+    fn caret_in(&self, _: ratatui::style::Color) {}
+
     fn hang(&self, _: Option<&obelus_theme::Wallpaper>) {}
 
     fn caret_is(
