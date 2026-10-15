@@ -442,6 +442,25 @@ impl App {
             && key.code == crossterm::event::KeyCode::Down
             && key.modifiers.is_empty()
             && self.stuck_at_the_end();
+        let tree = listing
+            && before.1.is_empty()
+            && self.files.listing.get(before.0).copied()
+                == Some(obelus_component::picker::Listing::All);
+        // Left and right are the query's caret, and a tree is only drawn
+        // while the query is empty -- where the caret has nowhere to go. So
+        // in a tree they are the tree's: they open and shut what the reader
+        // is on, the way every tree a reader has used does.
+        if tree
+            && obelus_keymap::modifiers_of(key).is_some_and(|held| held.is_empty())
+            && let Some(right) = match key.code {
+                crossterm::event::KeyCode::Left => Some(false),
+                crossterm::event::KeyCode::Right => Some(true),
+                _ => None,
+            }
+        {
+            self.walk_the_tree(right);
+            return true;
+        }
         let Some(picker) = self.picker.as_mut() else {
             return false;
         };
@@ -449,10 +468,6 @@ impl App {
         // typed letter filters the rows the list already has, so by the
         // time the query has changed the row the reader was on is not
         // among them any more.
-        let tree = listing
-            && before.1.is_empty()
-            && self.files.listing.get(before.0).copied()
-                == Some(obelus_component::picker::Listing::All);
         let standing = tree
             .then(|| picker.selected_item())
             .flatten()
