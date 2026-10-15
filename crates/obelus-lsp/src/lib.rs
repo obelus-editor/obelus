@@ -74,7 +74,7 @@ impl ServerState {
 ///
 /// The arguments are the reason this is a struct: most servers speak the
 /// protocol on stdio only when told to (`--stdio`, `start`), and a table that
-/// held a bare command name could describe four of the twenty-five languages
+/// held a bare command name could describe four of the twenty-six languages
 /// Obelus can highlight.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Server {

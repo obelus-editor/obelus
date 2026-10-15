@@ -3,14 +3,14 @@
 //! The floor under the outline. A language server knows more -- nesting,
 //! containers, the difference between a method and a free function that
 //! happens to look like one -- but it has to be installed, started and
-//! finished indexing, and Obelus can highlight twenty-five languages while
+//! finished indexing, and Obelus can highlight twenty-six languages while
 //! knowing how to start a server for nine programs. The tree is already in
 //! the buffer, so this answer costs a query over one file and is available
 //! the moment the file is open.
 //!
 //! It comes from each grammar's own `TAGS_QUERY`, which is shipped for the
 //! languages people write code in and absent for the ones they write data
-//! in: fourteen of the twenty-five have one. A language without one has no
+//! in: fifteen of the twenty-six have one. A language without one has no
 //! outline, which the caller has to say out loud.
 
 use obelus_text::{
@@ -231,7 +231,10 @@ fn tags_query(language: LanguageId) -> Option<&'static tree_sitter::Query> {
         }
         LanguageId::Php => compiled!(PHP, tree_sitter_php::TAGS_QUERY),
         LanguageId::Ruby => compiled!(RUBY, tree_sitter_ruby::TAGS_QUERY),
-        LanguageId::Swift => compiled!(SWIFT, tree_sitter_swift::TAGS_QUERY),
+        // Obelus's own, for the reason the file says at its top: upstream's
+        // captures a class's members as the whole class, which an outline
+        // reads as each member enclosing the next.
+        LanguageId::Swift => compiled!(SWIFT, include_str!("../queries/swift/tags.scm")),
         // Data languages, whose grammars ship no tags query. A file of them
         // has structure but no *definitions*, and an outline of every key in
         // a YAML file is the file again.

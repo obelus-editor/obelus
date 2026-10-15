@@ -194,8 +194,12 @@ tree-sitter-scala = "0.26"
 # the one every editor that reads Swift uses -- helix, zed, neovim. Its crate
 # ships the generated parser and both queries Obelus asks for, the highlights
 # and the tags, written in the same repository as the grammar, so the reason
-# for preferring the organisation's holds for it too.
-tree-sitter-swift = "0.7"
+# for preferring the organisation's holds for it too. Pinned exactly for
+# Julia's reason above: the tags query is Obelus's own, in
+# `obelus-syntax/queries/swift/`, because upstream's does not suit an
+# outline, and a query sitting still while a caret range moves the grammar
+# underneath it is a crash the first time a node is renamed.
+tree-sitter-swift = "=0.7.4"
 # Markdown is two grammars, a block one and an inline one, which is why it
 # is a pair of `LanguageId`s and not one: the block grammar parses the
 # structure of a document, and what is inside a paragraph is parsed from the

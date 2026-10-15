@@ -405,7 +405,7 @@ fn first_written(text: &Text, line: LineNumber, first: CharColumn, end: CharColu
 /// Whether a character is part of a word rather than between words.
 ///
 /// Deliberately not a language's own idea of an identifier: Obelus asks
-/// servers about twenty-five languages and has no table of what each calls a
+/// servers about twenty-six languages and has no table of what each calls a
 /// word, and every one of them agrees about letters, digits and an
 /// underscore.
 #[must_use]

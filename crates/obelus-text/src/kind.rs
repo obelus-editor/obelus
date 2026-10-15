@@ -6,7 +6,7 @@
 //! is here rather than with any of them because a kind belongs to none of
 //! them -- put it with the theme and a grammar cannot name what it found
 //! without the colours; put it with the grammars and the theme carries
-//! twenty-five C parsers to name an enum with no dependencies at all.
+//! twenty-six C parsers to name an enum with no dependencies at all.
 
 /// What a highlighted span is.
 ///
@@ -89,6 +89,11 @@ impl SyntaxKind {
             // character is still a string: what a reader wants is to see
             // where the quotes are, which is what the string colour says.
             "character" => Some(Self::String),
+            // The one leaf of `character` that is not a character: Swift's
+            // query puts it on the `_` of a wildcard -- `let _ =`, `case _`
+            // -- and falling back to the string colour draws a lone `_` as
+            // though somebody had forgotten its quotes.
+            "character.special" => Some(Self::Punctuation),
             "comment" => Some(Self::Comment),
             // The older names for a keyword, which the queries written
             // against nvim-treesitter's vocabulary use and the newer ones
