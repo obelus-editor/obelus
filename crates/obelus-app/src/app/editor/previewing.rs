@@ -549,10 +549,13 @@ impl App {
     /// cursor or the selection left where it was put. A conversation is a
     /// document like the file is, and the two say that the same way.
     pub(in crate::app) fn scroll(&mut self, rows: isize) {
-        // What a server said about a place, while it is up: it is what the
-        // reader is looking at, and the file behind it is not going
-        // anywhere.
-        if self.hover().is_some() {
+        // What a server said about a place, while the pointer is on it. Only
+        // then: a notch anywhere else is the reader looking around the file,
+        // and a box that took every notch held the file still for as long as
+        // it was up. One the pointer asked for lets go as the file moves,
+        // the word it was about no longer being under the pointer; one a
+        // key asked for goes with the caret's line.
+        if self.pointer_on_hover() {
             self.scroll_hover(rows);
             return;
         }

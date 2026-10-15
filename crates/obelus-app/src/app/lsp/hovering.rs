@@ -147,6 +147,19 @@ impl App {
             .is_some_and(|resting| self.inside_hover(resting.x, resting.y))
     }
 
+    /// Whether the pointer is over the answer's box now, which is where a
+    /// notch of the wheel reads the rest of it.
+    ///
+    /// Not `pointer_in_hover`, which is where the pointer last rested in
+    /// the file: a notch is about where the pointer is when it turns.
+    pub(in crate::app) fn pointer_on_hover(&self) -> bool {
+        self.hover().is_some()
+            && self
+                .pointing
+                .pointer
+                .is_some_and(|(x, y)| self.inside_hover(x, y))
+    }
+
     /// Whether a cell is inside it.
     fn inside_hover(&self, x: u16, y: u16) -> bool {
         obelus_ui::hover::layout(self, self.editor_area)
@@ -155,9 +168,8 @@ impl App {
 
     /// Scrolls the answer by a notch of the wheel.
     ///
-    /// The answer rather than the file behind it: while it is up it is
-    /// what the reader is looking at, which is the rule the list of
-    /// candidates follows too.
+    /// Asked only with the pointer on it (`pointer_on_hover`): elsewhere a
+    /// notch is the file's.
     pub(in crate::app) fn scroll_hover(&mut self, rows: isize) {
         if let Some(hover) = self.lsp.hover.as_mut() {
             hover.scroll(rows);

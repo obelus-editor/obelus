@@ -359,8 +359,30 @@ fn a_pointed_answer_is_drawn_beside_the_word_it_is_about() {
     assert_ne!(corner.0, 1, "the box is hung off the caret: {rows:?}");
 }
 
-/// The wheel reads the rest of it. While the answer is up it is what the
-/// reader is looking at, and the file behind it is not going anywhere.
+/// Puts the pointer inside the box, a little way in from its corner.
+fn pointer_in_the_box(app: &mut App, dump: &str) {
+    let rows: Vec<String> = support::text_block(dump)
+        .lines()
+        .filter_map(|row| row.split_once('|').map(|(_, cells)| cells.to_string()))
+        .collect();
+    let (y, x) = rows
+        .iter()
+        .enumerate()
+        .find_map(|(y, row)| {
+            row.find(support::PANEL_CORNER)
+                .map(|at| (y, row[..at].chars().count()))
+        })
+        .unwrap_or_else(|| panic!("no box:\n{dump}"));
+    app.handle(obelus_app::event::Event::Pointer {
+        kind: obelus_app::event::Pointer::Moved,
+        x: u16::try_from(x + 2).expect("a column"),
+        y: u16::try_from(y + 2).expect("a row"),
+    });
+}
+
+/// The wheel reads the rest of it, with the pointer on it: there the
+/// answer is what the reader is looking at, and the file behind it is not
+/// going anywhere.
 #[test]
 fn the_wheel_scrolls_the_answer_rather_than_the_file() {
     let (_scratch, mut app) = editing("hover-wheel", SOURCE);
@@ -368,6 +390,7 @@ fn the_wheel_scrolls_the_answer_rather_than_the_file() {
     app.hover_for_test(answered(None));
     let first = support::render(&mut app, 76, 18);
     let top = app.current_buffer().expect("a buffer").viewport().top.get();
+    pointer_in_the_box(&mut app, &first);
 
     app.handle(obelus_app::event::Event::Scroll(3));
     let rolled = support::render(&mut app, 76, 18);
@@ -408,6 +431,41 @@ fn the_wheel_scrolls_the_answer_rather_than_the_file() {
         support::text_block(&first),
         support::text_block(&back),
         "rolling back did not come back"
+    );
+}
+
+/// Off the box the wheel is the file's. A box that took every notch held
+/// the file still for as long as it was up, and a reader looking around
+/// had to get rid of it first.
+///
+/// Broken deliberately by giving the answer the notch whenever it is up,
+/// wherever the pointer is: the file stayed where it was.
+#[test]
+fn the_wheel_off_the_answer_scrolls_the_file() {
+    let long = format!("{SOURCE}{}", "// more\n".repeat(60));
+    let (_scratch, mut app) = editing("hover-wheel-off", &long);
+    at_the_word(&mut app);
+    app.hover_for_test(answered(None));
+    let first = support::render(&mut app, 76, 18);
+    let top = app.current_buffer().expect("a buffer").viewport().top.get();
+    // On the first line of the file, which the box is not over: there is
+    // no room for it above the word, so it hangs below.
+    app.handle(obelus_app::event::Event::Pointer {
+        kind: obelus_app::event::Pointer::Moved,
+        x: 12,
+        y: 0,
+    });
+    assert_ne!(
+        inside_the_top(&first),
+        "",
+        "the box is not where this expects it:\n{first}"
+    );
+
+    app.handle(obelus_app::event::Event::Scroll(3));
+    assert_ne!(
+        app.current_buffer().expect("a buffer").viewport().top.get(),
+        top,
+        "the answer took the notch with the pointer off it"
     );
 }
 
