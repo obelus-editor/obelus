@@ -20,6 +20,33 @@ const JOINS_THE_PAGE: u32 = 0b0101_0000;
 /// where there is no corner because the bar carries on under it.
 const STANDS_ON_THE_BAR: u32 = 0b1010_0000;
 
+/// The shadow a tab standing up out of the bar casts -- the one being read,
+/// and the one carried -- from its rectangle, in the painter's pixels, and
+/// how round its top corners are.
+///
+/// Off its top and its sides, so that it stands up out of the bar rather
+/// than being cut out of it, and none off its foot, which is the page it is
+/// a piece of: the quad stops there rather than casting down over the
+/// first row. As far as a corner is round, which is a tab's own measure
+/// and grows with the words, where a pane's is a row's.
+fn tab_shadow([left, top, width, tall]: [f32; 4], corner: f32) -> Quad {
+    let spread = corner.max(1.0);
+    Quad {
+        rect: [
+            left - spread,
+            top - spread,
+            spread.mul_add(2.0, width),
+            tall + spread,
+        ],
+        uv: [left, top, left + width, top + tall],
+        colour: [0.0, 0.0, 0.0, SHADOW_INK],
+        flags: SHADOW,
+        radius: corner,
+        layer: 0,
+        lower: 0.0,
+    }
+}
+
 impl Painter {
     /// The tabs along the top, on any bar the page runs up under -- see
     /// `title::tabs` -- as part of the page: first, under everything, so
@@ -255,6 +282,11 @@ impl Painter {
         // a tab joins what it is the tab of.
         let plate = |painter: &mut Self, laid: crate::title::Laid| {
             let left = laid.left - margin[0];
+            // Under the plate, which covers the shadow's own share of the
+            // curves at the foot.
+            painter
+                .quads
+                .push(tab_shadow([left, top, laid.width, tall], corner));
             painter.quads.push(Quad {
                 // A corner's width past the tab on either side, which is
                 // where the curves that bend outwards are drawn.
@@ -1156,4 +1188,35 @@ pub(super) fn underline_ink(look: &Look<'_>) -> Option<[f32; 4]> {
         Color::Reset => rgba(look.foreground, Ink::Foreground),
         colour => rgba(colour, Ink::Foreground),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A tab's shadow falls off its top and its sides and stops at its
+    /// foot, where the page it is a piece of starts.
+    ///
+    /// Deliberate break: give the quad a spread's height under the foot
+    /// too, as a pane's shadow has -- a band of grey across the top of the
+    /// first row under the tab, fails the foot; and casting from no
+    /// rectangle fails the box.
+    #[test]
+    fn a_tab_casts_up_and_aside_and_not_down_onto_the_page() {
+        let (left, top, width, tall, corner) = (100.0, 8.0, 160.0, 30.0, 8.0);
+        let quad = tab_shadow([left, top, width, tall], corner);
+        let [x, y, wide, high] = quad.rect;
+        assert!(y < top, "nothing above the tab");
+        assert!(x < left && x + wide > left + width, "nothing beside it");
+        assert!(
+            (y + high - (top + tall)).abs() < f32::EPSILON,
+            "past its foot, over the page: {:?}",
+            quad.rect
+        );
+        assert_eq!(quad.uv, [left, top, left + width, top + tall]);
+        assert_eq!(
+            quad.flags, SHADOW,
+            "cast from one edge rather than round the tab"
+        );
+    }
 }
