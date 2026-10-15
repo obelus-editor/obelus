@@ -2010,7 +2010,8 @@ impl SettingsView<'_> {
             name_at = left + 3;
         }
 
-        let (state, colour) = self.theme_state(card);
+        let pieces = self.theme_state(card);
+        let state: String = pieces.iter().map(|(words, _)| words.as_str()).collect();
         let taken = u16::try_from(text_width(&state)).unwrap_or(0);
         let room = inner.saturating_sub(taken + 2 + (name_at - left));
         write_marked(
@@ -2032,7 +2033,11 @@ impl SettingsView<'_> {
         if let Ok(offset) = u16::try_from(
             usize::from(area.width).saturating_sub(text_width(&state) + usize::from(INDENT)),
         ) {
-            write(cells, area.x + offset, area.y, &state, plain.fg(colour));
+            let mut x = area.x + offset;
+            for (words, colour) in &pieces {
+                write(cells, x, area.y, words, plain.fg(*colour));
+                x = x.saturating_add(u16::try_from(text_width(words)).unwrap_or(u16::MAX));
+            }
             crate::turning_at(area.x + offset, area.y, &state);
         }
 
@@ -2107,27 +2112,37 @@ impl SettingsView<'_> {
     }
 
     /// What a theme card's right-hand corner says, and in what colour.
-    fn theme_state(&self, card: &ThemeCard) -> (String, ratatui::style::Color) {
+    ///
+    /// The theme being worn says so, and not instead of what can be done to
+    /// it: one that is behind says `Update` beside it, and one on its way says
+    /// how far -- the corner is the one place a card says either, and a worn
+    /// theme that hid them was updated by a key nothing on the card offered.
+    /// It is a piece at a time, each in its own colour, so that `In use`
+    /// keeps the green it is said in everywhere beside an update's yellow.
+    fn theme_state(&self, card: &ThemeCard) -> Vec<(String, ratatui::style::Color)> {
         use obelus_themes::Status;
+        let in_use = ("\u{25cf} In use".to_string(), self.theme.change_added);
+        let update = ("Update \u{25b8}".to_string(), self.theme.change_modified);
         match &card.status {
-            _ if card.worn => ("\u{25cf} In use".to_string(), self.theme.change_added),
-            Status::Installed => ("Installed".to_string(), self.theme.gutter),
-            Status::Delisted => ("No longer listed".to_string(), self.theme.gutter),
-            Status::Outdated => ("Update \u{25b8}".to_string(), self.theme.change_modified),
-            Status::Missing | Status::Failed(_) if card.installed => {
-                ("Update \u{25b8}".to_string(), self.theme.change_modified)
-            }
-            Status::Missing | Status::Failed(_) => {
-                ("Install \u{25b8}".to_string(), self.theme.foreground)
-            }
-            Status::Installing(progress) => (
+            Status::Installing(progress) => vec![(
                 format!(
                     "{} {}",
                     crate::spinning(self.phase),
                     how_far(card.installed, *progress)
                 ),
                 self.theme.foreground,
-            ),
+            )],
+            _ if card.worn && card.may_be_installed() => {
+                vec![in_use, (" \u{b7} ".to_string(), self.theme.gutter), update]
+            }
+            _ if card.worn => vec![in_use],
+            Status::Installed => vec![("Installed".to_string(), self.theme.gutter)],
+            Status::Delisted => vec![("No longer listed".to_string(), self.theme.gutter)],
+            Status::Outdated => vec![update],
+            Status::Missing | Status::Failed(_) if card.installed => vec![update],
+            Status::Missing | Status::Failed(_) => {
+                vec![("Install \u{25b8}".to_string(), self.theme.foreground)]
+            }
         }
     }
 }

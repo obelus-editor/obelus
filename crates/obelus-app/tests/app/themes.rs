@@ -1265,6 +1265,67 @@ fn delete_takes_a_theme_away_but_not_the_one_worn() {
     assert!(!root.join("gone").exists(), "two presses did not take it");
 }
 
+/// The theme being worn, when it is behind, says both: that it is in use,
+/// and that there is an update to take -- and once enter takes it, how far
+/// the update has got.
+///
+/// Deliberate breaks: `theme_state` without its arm for a worn theme that is
+/// behind, as it was (the card then says `In use` and nothing about an
+/// update, though enter would take one), and its arm for an install on its
+/// way moved after the worn ones, as it was (the card then says `In use`
+/// while it updates), and the corner written in one colour (`In use` then
+/// goes yellow).
+#[test]
+fn the_theme_worn_says_when_it_is_behind() {
+    let scratch = reader("themes-worn-behind");
+    let root = support::Scratch::new("themes-worn-behind-installed");
+    installed_as(root.path(), "current", "aaa", "obelus");
+
+    let mut app = open(&scratch);
+    app.installed_themes_for_test(root.path().to_path_buf());
+    app.themes_index_for_test(vec![listed("current", obelus_themes::Group::Obelus, "bbb")]);
+    dispatch::dispatch(&mut app, Command::ThemeSelect);
+    support::type_text(&mut app, "current");
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(app.theme_name(), "current");
+
+    on_the_themes_page(&mut app);
+    support::type_text(&mut app, "current");
+    let dump = support::render(&mut app, 90, 30);
+    let row = card_row(support::text_block(&dump), "current");
+    assert!(row.contains("In use"), "{dump}");
+    assert!(
+        row.contains("Update"),
+        "the update is not on the card:\n{dump}"
+    );
+    // Each in its own colour: `In use` in the green it is said in where
+    // there is nothing to update, and the update in the yellow of the rest.
+    let cells = support::cells_of(&mut app, 90, 30);
+    let ink_of = |needle: &str| {
+        (0..30)
+            .find_map(|y| {
+                let row: String = (0..90).map(|x| cells[(x, y)].symbol()).collect();
+                let from = row.find(needle)?;
+                let x = u16::try_from(row[..from].chars().count()).ok()?;
+                Some(cells[(x, y)].fg)
+            })
+            .unwrap_or_else(|| panic!("{needle:?} is not on the screen"))
+    };
+    assert_eq!(ink_of("In use"), app.theme().change_added, "{dump}");
+    assert_eq!(
+        ink_of("Update \u{25b8}"),
+        app.theme().change_modified,
+        "{dump}"
+    );
+
+    support::press(&mut app, KeyCode::Enter);
+    let dump = support::render(&mut app, 90, 30);
+    assert!(
+        card_row(support::text_block(&dump), "current").contains("Updating"),
+        "the update is on its way and the card does not say so:\n{dump}"
+    );
+}
+
 /// Enter on a theme installed and current wears it, and keeps it -- the
 /// same as choosing it from the list of themes -- and the foot offers the
 /// key for it.
