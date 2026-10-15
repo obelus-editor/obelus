@@ -710,6 +710,19 @@ impl Showing {
         }
     }
 
+    /// Puts the tab carried where the pointer has it, if that is somewhere
+    /// new -- after the pointer moves, and after a frame that scrolled the
+    /// row under it at one end.
+    fn carry(&self) {
+        if let Some((document, beside, after)) = self.strip.carried() {
+            self.tell(Event::Placed {
+                document,
+                beside,
+                after,
+            });
+        }
+    }
+
     /// Tells Obelus what the reader did.
     ///
     /// A send that fails is Obelus's loop having ended, which the window
@@ -1966,6 +1979,18 @@ impl ApplicationHandler<Waking> for Showing {
                     Instant::now(),
                     self.motion.animated(),
                 );
+                // The row may have scrolled under a tab carried to its end,
+                // which is a move the pointer did not make. Said by hand
+                // rather than through `carry`: the painter is borrowed.
+                if let (Some((document, beside, after)), Some(doing)) =
+                    (self.strip.carried(), self.doing.as_ref())
+                {
+                    let _ = doing.send(Event::Placed {
+                        document,
+                        beside,
+                        after,
+                    });
+                }
                 if let Some(bar) = self.bar.as_ref() {
                     bar.tabs_are(self.strip.covers());
                 }
@@ -2187,15 +2212,7 @@ impl ApplicationHandler<Waking> for Showing {
                 let along = position.x as f32;
                 if self.strip.drag(along) {
                     self.redraw();
-                }
-                if let Some(document) = self.strip.holding()
-                    && let Some((beside, after)) = self.strip.dropping(document, along)
-                {
-                    self.tell(Event::Placed {
-                        document,
-                        beside,
-                        after,
-                    });
+                    self.carry();
                 }
                 #[expect(clippy::cast_possible_truncation, reason = "pixels on a screen")]
                 let over = (self.over_the_title && !self.held).then_some(position.x as f32);
