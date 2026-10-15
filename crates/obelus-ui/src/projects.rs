@@ -174,7 +174,8 @@ fn laid(area: Rect, choosing: &crate::Choosing, hints: &[Hint]) -> Laid {
 }
 
 /// How tall each project's row is, with the heading over the first of a
-/// run of days -- and a blank over that, where a run went before it.
+/// run of days and a blank under it, as a list's runs are headed -- and a
+/// blank over that, where a run went before it.
 ///
 /// One answer, asked by the drawing, by a press and by the window over the
 /// rows: a heading counted in one and not another is a press that lands a
@@ -189,8 +190,8 @@ pub fn heights(choosing: &crate::Choosing) -> Vec<u16> {
             let headed = before != Some(opened.section);
             let height = 1 + match (headed, before) {
                 (false, _) => 0,
-                (true, None) => 1,
-                (true, Some(_)) => 2,
+                (true, None) => 2,
+                (true, Some(_)) => 3,
             };
             before = Some(opened.section);
             height
@@ -339,11 +340,11 @@ impl ProjectsView<'_> {
                 break;
             }
             // The blank over a heading is the first of the rows it takes,
-            // and the heading the last but one: the project is the row
-            // at the foot of its own height.
+            // then the heading and the blank under it: the project is the
+            // row at the foot of its own height.
             if height > 1 {
                 let heading = Rect {
-                    y: y + height - 2,
+                    y: y + height - 3,
                     height: 1,
                     ..list
                 };

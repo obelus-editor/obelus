@@ -3,11 +3,11 @@ screen 64x20  editor 64x18  status 64x1
  0|  Open a project                                                
  1|────────────────────────────────────────────────────────────────
  2| Earlier                                                        
- 3|  obelus  /tmp/obelus/work                                      
- 4|  indeed  /tmp/obelus/work/something/rather/deeply/nested       
- 5|                                                                
- 6|  Open another…                                                 
- 7|                                                                
+ 3|                                                                
+ 4|  obelus  /tmp/obelus/work                                      
+ 5|  indeed  /tmp/obelus/work/something/rather/deeply/nested       
+ 6|                                                                
+ 7|  Open another…                                                 
  8|                                                                
  9|                                                                
 10|                                                                
@@ -24,9 +24,9 @@ screen 64x20  editor 64x18  status 64x1
  0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
  2|acccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 3|ddddddddddeeeeeeeeeeeeeeeeddddddddddddddddddddddddddddddddddddda
- 4|aaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaaa
- 5|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 3|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 4|ddddddddddeeeeeeeeeeeeeeeeddddddddddddddddddddddddddddddddddddda
+ 5|aaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaaa
  6|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  7|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  8|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
