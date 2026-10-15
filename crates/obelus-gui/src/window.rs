@@ -2412,19 +2412,20 @@ fn pairs_arrived(
 /// scrolled.
 ///
 /// The innermost band, where one is inside another -- a hover over the
-/// file it is about scrolls on its own. And where it rides, not where it
-/// is: a caret carried past the top of the screen has no cell to set out
-/// from, and is asked about as the cell it was on, which is what it was
-/// before there was any carrying.
-fn carried(was: Position, rolled: &[(Rect, i64)]) -> Position {
-    let Some(&(_, rows)) = rolled
+/// file it is about scrolls on its own. And signed, because a line carried
+/// past the top of the screen is still where the caret rides: asked about
+/// from the cell it was on instead, a caret that also moved in its text
+/// that frame took the band's slide and a flight of its own both.
+fn carried(was: Position, rolled: &[(Rect, i64)]) -> (i32, i32) {
+    let rows = rolled
         .iter()
         .filter(|(room, _)| room.contains(was))
         .min_by_key(|(room, _)| room.area())
-    else {
-        return was;
-    };
-    u16::try_from(i64::from(was.y) - rows).map_or(was, |y| Position { y, ..was })
+        .map_or(0, |&(_, rows)| rows);
+    // No further than a band is tall, which the window has already held
+    // it to -- so this is never the fallback in practice.
+    let y = i32::try_from(i64::from(was.y) - rows).unwrap_or(i32::from(was.y));
+    (i32::from(was.x), y)
 }
 
 /// Whether a cell is among the words of a link the frame said, and still
@@ -2682,16 +2683,17 @@ mod tests {
         let file = Rect::new(0, 1, 80, 30);
         let hover = Rect::new(10, 5, 30, 6);
         let at = |x, y| Position { x, y };
+        let cell = |x: u16, y: i32| (i32::from(x), y);
         // Three rows down the file: the line it is on went up by three.
-        assert_eq!(carried(at(4, 20), &[(file, 3)]), at(4, 17));
+        assert_eq!(carried(at(4, 20), &[(file, 3)]), cell(4, 17));
         // And back up.
-        assert_eq!(carried(at(4, 20), &[(file, -3)]), at(4, 23));
+        assert_eq!(carried(at(4, 20), &[(file, -3)]), cell(4, 23));
         // A band it is not in carries nothing.
-        assert_eq!(carried(at(4, 20), &[(hover, 3)]), at(4, 20));
+        assert_eq!(carried(at(4, 20), &[(hover, 3)]), cell(4, 20));
         // Inside two, the inner one is the one it rides.
-        assert_eq!(carried(at(12, 6), &[(file, 3), (hover, 1)]), at(12, 5));
-        // Carried off the top, it is asked about from where it was.
-        assert_eq!(carried(at(4, 2), &[(file, 5)]), at(4, 2));
+        assert_eq!(carried(at(12, 6), &[(file, 3), (hover, 1)]), cell(12, 5));
+        // Carried off the top, it is still on its line, above the screen.
+        assert_eq!(carried(at(4, 2), &[(file, 5)]), cell(4, -3));
     }
 
     use std::time::{Duration, Instant};
