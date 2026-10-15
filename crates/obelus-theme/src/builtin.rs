@@ -44,6 +44,7 @@ pub const DARK: Theme = Theme {
     change_modified_background: tint(DARK_PAGE, DARK_MODIFIED, WASH),
     change_removed_background: tint(DARK_PAGE, DARK_REMOVED, WASH),
     bracket_background: Color::Rgb(63, 63, 70),
+    caret: None,
     syntax: SyntaxTheme {
         attribute: Color::Rgb(251, 146, 60),
         boolean: Color::Rgb(244, 114, 182),
@@ -94,6 +95,7 @@ pub const LIGHT: Theme = Theme {
     change_modified_background: tint(LIGHT_PAGE, LIGHT_MODIFIED, WASH),
     change_removed_background: tint(LIGHT_PAGE, LIGHT_REMOVED, WASH),
     bracket_background: Color::Rgb(212, 212, 216),
+    caret: None,
     syntax: SyntaxTheme {
         attribute: Color::Rgb(194, 65, 12),
         boolean: Color::Rgb(190, 24, 93),
@@ -150,6 +152,7 @@ pub const GRUVBOX_DARK: Theme = Theme {
     change_modified_background: tint(GRUVBOX_DARK_PAGE, GRUVBOX_DARK_MODIFIED, WASH),
     change_removed_background: tint(GRUVBOX_DARK_PAGE, GRUVBOX_DARK_REMOVED, WASH),
     bracket_background: Color::Rgb(80, 73, 69),
+    caret: None,
     syntax: SyntaxTheme {
         attribute: Color::Rgb(250, 189, 47),
         boolean: Color::Rgb(211, 134, 155),
@@ -202,6 +205,7 @@ pub const GRUVBOX_LIGHT: Theme = Theme {
     change_modified_background: tint(GRUVBOX_LIGHT_PAGE, GRUVBOX_LIGHT_MODIFIED, WASH),
     change_removed_background: tint(GRUVBOX_LIGHT_PAGE, GRUVBOX_LIGHT_REMOVED, WASH),
     bracket_background: Color::Rgb(213, 196, 161),
+    caret: None,
     syntax: SyntaxTheme {
         attribute: Color::Rgb(181, 118, 20),
         boolean: Color::Rgb(143, 63, 113),
@@ -258,6 +262,8 @@ pub const CATPPUCCIN_MOCHA: Theme = Theme {
     change_modified_background: tint(CATPPUCCIN_MOCHA_PAGE, CATPPUCCIN_MOCHA_MODIFIED, WASH),
     change_removed_background: tint(CATPPUCCIN_MOCHA_PAGE, CATPPUCCIN_MOCHA_REMOVED, WASH),
     bracket_background: Color::Rgb(69, 71, 90),
+    // Rosewater, which is what catppuccin's own ports draw the cursor in.
+    caret: Some(Color::Rgb(245, 224, 220)),
     syntax: SyntaxTheme {
         attribute: Color::Rgb(249, 226, 175),
         boolean: Color::Rgb(250, 179, 135),
@@ -310,6 +316,8 @@ pub const CATPPUCCIN_LATTE: Theme = Theme {
     change_modified_background: tint(CATPPUCCIN_LATTE_PAGE, CATPPUCCIN_LATTE_MODIFIED, WASH),
     change_removed_background: tint(CATPPUCCIN_LATTE_PAGE, CATPPUCCIN_LATTE_REMOVED, WASH),
     bracket_background: Color::Rgb(188, 192, 204),
+    // Rosewater, for the same reason.
+    caret: Some(Color::Rgb(220, 138, 120)),
     syntax: SyntaxTheme {
         attribute: Color::Rgb(223, 142, 29),
         boolean: Color::Rgb(254, 100, 11),
@@ -366,6 +374,7 @@ pub const NORD: Theme = Theme {
     change_modified_background: tint(NORD_PAGE, NORD_MODIFIED, WASH),
     change_removed_background: tint(NORD_PAGE, NORD_REMOVED, WASH),
     bracket_background: Color::Rgb(76, 86, 106),
+    caret: None,
     syntax: SyntaxTheme {
         attribute: Color::Rgb(208, 135, 112),
         boolean: Color::Rgb(180, 142, 173),
@@ -418,6 +427,7 @@ pub const TOKYO_NIGHT: Theme = Theme {
     change_modified_background: tint(TOKYO_NIGHT_PAGE, TOKYO_NIGHT_MODIFIED, WASH),
     change_removed_background: tint(TOKYO_NIGHT_PAGE, TOKYO_NIGHT_REMOVED, WASH),
     bracket_background: Color::Rgb(59, 66, 97),
+    caret: None,
     syntax: SyntaxTheme {
         attribute: Color::Rgb(224, 175, 104),
         boolean: Color::Rgb(255, 158, 100),
@@ -474,6 +484,7 @@ pub const SOLARIZED_DARK: Theme = Theme {
     change_modified_background: tint(SOLARIZED_DARK_PAGE, SOLARIZED_DARK_MODIFIED, WASH),
     change_removed_background: tint(SOLARIZED_DARK_PAGE, SOLARIZED_DARK_REMOVED, WASH),
     bracket_background: Color::Rgb(88, 110, 117),
+    caret: None,
     syntax: SyntaxTheme {
         attribute: Color::Rgb(181, 137, 0),
         boolean: Color::Rgb(211, 54, 130),
@@ -526,6 +537,7 @@ pub const SOLARIZED_LIGHT: Theme = Theme {
     change_modified_background: tint(SOLARIZED_LIGHT_PAGE, SOLARIZED_LIGHT_MODIFIED, WASH),
     change_removed_background: tint(SOLARIZED_LIGHT_PAGE, SOLARIZED_LIGHT_REMOVED, WASH),
     bracket_background: tint(SOLARIZED_LIGHT_PAGE, Color::Rgb(147, 161, 161), 45),
+    caret: None,
     syntax: SyntaxTheme {
         attribute: Color::Rgb(181, 137, 0),
         boolean: Color::Rgb(211, 54, 130),
@@ -585,6 +597,7 @@ pub const HIGH_CONTRAST: Theme = Theme {
     change_modified_background: tint(HIGH_CONTRAST_PAGE, HIGH_CONTRAST_MODIFIED, WASH),
     change_removed_background: tint(HIGH_CONTRAST_PAGE, HIGH_CONTRAST_REMOVED, WASH),
     bracket_background: Color::Rgb(74, 74, 74),
+    caret: None,
     syntax: SyntaxTheme {
         attribute: Color::Rgb(255, 158, 61),
         boolean: Color::Rgb(255, 122, 198),

@@ -244,16 +244,21 @@ impl Painter {
     /// both, and a mode with no sign is a mode the reader is in without
     /// knowing.
     ///
-    /// The block is the cell with its colours the other way round, which is
-    /// what a terminal does and for the same reason: a block that hid the
-    /// character under it would be a caret a reader cannot read past.
+    /// In the theme's colour for it, and not the ink of the cell it is on:
+    /// that made a bar the colour of whatever came next, keyword or string,
+    /// and a caret changing colour as it moves is one the eye loses.
+    ///
+    /// The block is drawn in the same colour, with the character under it
+    /// again in the colour behind it -- what a terminal does and for the
+    /// same reason: a block that hid the character under it would be a
+    /// caret a reader cannot read past.
     pub(super) fn caret(&mut self, page: &Page, fonts: &mut Fonts, drift: (f32, f32)) {
         let Some(caret) = page.caret() else {
             return;
         };
         let cell = fonts.cell();
         let look = page.look(caret.x, caret.y);
-        let ink = rgba(look.foreground, Ink::Foreground);
+        let ink = rgba(page.caret_colour(caret.x, caret.y), Ink::Foreground);
         // Where it is drawn, which is where the page put it only once it
         // has got there -- see `motion::Moving::drift`. Everything the
         // caret carries is drawn from these two, so a caret in flight

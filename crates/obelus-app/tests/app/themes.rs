@@ -564,6 +564,7 @@ fn the_template_for_omarchy_names_colours_obelus_has() {
         theme.change_modified_background,
         theme.change_removed_background,
         theme.bracket_background,
+        theme.caret(),
     ];
     let syntax = theme.syntax;
     got.extend([
@@ -880,6 +881,8 @@ impl obelus_app::app::Drawing for Hangs {
 
     fn holding(&self, _: ratatui::style::Color, _: ratatui::style::Color) {}
 
+    fn caret_in(&self, _: ratatui::style::Color) {}
+
     fn caret_is(
         &self,
         _: obelus_app::app::Caret,
@@ -1010,6 +1013,8 @@ impl obelus_app::app::Drawing for Recolours {
     fn use_fonts(&self, _: &[String]) {}
 
     fn holding(&self, _: ratatui::style::Color, _: ratatui::style::Color) {}
+
+    fn caret_in(&self, _: ratatui::style::Color) {}
 
     fn caret_is(
         &self,
