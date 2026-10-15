@@ -1592,6 +1592,13 @@ pub trait Drawing: std::fmt::Debug + Send + Sync {
     /// act on and the application does not read it back.
     fn animates(&self, on: bool);
 
+    /// The title bar holds a tab for each open document, or holds none and
+    /// is as tall as the system's own.
+    ///
+    /// A setting, said the same way and at the same moments as the size.
+    /// Nothing to a terminal, which has no bar.
+    fn bar_tabs(&self, on: bool);
+
     /// The text is drawn in these faces, tried in this order.
     ///
     /// A setting, like the size, and said the same way and at the same

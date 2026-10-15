@@ -31,7 +31,7 @@ use windows_sys::Win32::{
         WindowsAndMessaging::{
             GWL_STYLE, GetClientRect, GetWindowLongW, HTCAPTION, HTCLIENT, HTCLOSE, HTMAXBUTTON,
             HTMINBUTTON, HTTOP, IsZoomed, NCCALCSIZE_PARAMS, PostMessageW, SC_CLOSE, SC_MAXIMIZE,
-            SC_MINIMIZE, SC_RESTORE, SM_CXPADDEDBORDER, SM_CYCAPTION, SM_CYSIZEFRAME,
+            SC_MINIMIZE, SC_RESTORE, SM_CXPADDEDBORDER, SM_CXSMICON, SM_CYCAPTION, SM_CYSIZEFRAME,
             SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos,
             WM_MOUSEMOVE, WM_NCCALCSIZE, WM_NCDESTROY, WM_NCHITTEST, WM_NCLBUTTONDBLCLK,
             WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_SYSCOMMAND,
@@ -177,6 +177,7 @@ impl Bar {
                 true => scale.floor(),
                 false => pixels(|measured| measured.edge),
             },
+            icon: pixels(|measured| measured.icon),
             words: (WORDS * scale).round(),
             hovered: held(self.shared.hovered.load(Ordering::Relaxed)),
             pressed: held(self.shared.pressed.load(Ordering::Relaxed)),
@@ -194,6 +195,8 @@ struct Measured {
     edge: i32,
     /// How wide each button is.
     button: i32,
+    /// How big the window's icon is drawn on it, where it has no tabs.
+    icon: i32,
     /// How tall the bar the system would have drawn is, which is how tall
     /// the buttons are.
     captioned: i32,
@@ -224,11 +227,21 @@ fn measured(hwnd: HWND) -> Measured {
         false => edge,
     };
     Measured {
-        // Or the height a row of tabs wants, where that is more.
-        titled: metric(SM_CYCAPTION).max(tabbed) + above,
+        titled: bar_height(metric(SM_CYCAPTION), tabbed, super::is_tabbed()) + above,
         edge,
         button,
+        icon: metric(SM_CXSMICON),
         captioned: metric(SM_CYCAPTION) + above,
+    }
+}
+
+/// How tall the bar is below the edge above it: the system's caption, or
+/// the height a row of tabs wants where that is more and the bar holds
+/// them -- see `title::HOLDS_TABS`.
+const fn bar_height(caption: i32, tabbed: i32, holds_tabs: bool) -> i32 {
+    match holds_tabs && tabbed > caption {
+        true => tabbed,
+        false => caption,
     }
 }
 
@@ -489,5 +502,20 @@ mod tests {
         let tabs = Some((8.0, 412.5));
         assert_eq!(tabs_held(tabs_holding(tabs)), tabs);
         assert_eq!(tabs_held(tabs_holding(None)), None);
+    }
+
+    /// A bar holding the tabs is as tall as a row of them wants, or the
+    /// system's caption where that is taller, and one without them is the
+    /// caption.
+    ///
+    /// Deliberate breaks: leave `holds_tabs` out of `bar_height`, and the
+    /// bar is made taller for tabs it does not hold; take the tabs' height
+    /// alone where it holds them, and a caption the reader made taller is
+    /// cut down to it.
+    #[test]
+    fn a_bar_is_as_tall_as_what_it_holds() {
+        assert_eq!(bar_height(22, 34, false), 22, "no tabs");
+        assert_eq!(bar_height(22, 34, true), 34, "tabs");
+        assert_eq!(bar_height(40, 34, true), 40, "a taller caption");
     }
 }

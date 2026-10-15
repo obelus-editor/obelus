@@ -1,10 +1,16 @@
 //! The strip along the top of the window, and what is open along it.
 //!
-//! No title: a window's title is the program's name, which the reader
-//! knows, and the system's icon beside it says the same thing again. What
-//! the bar has room for instead is a tab for each open document, and a
-//! press on one goes to it (`tabs`). A terminal has no title bar and so no
-//! tabs, and reaches the same documents through the list of what is open.
+//! Two bars, by the reader's setting, `bar_tabs` (`HOLDS_TABS`). Off,
+//! which is the default, the bar is the one any window has: the system's
+//! height, the title, and on Windows the icon before it. On, it holds a
+//! tab for each open document instead, and a press on one goes to it
+//! (`tabs`) -- and no title, because a window's title is the program's
+//! name, which the reader knows, and the system's icon beside it says the
+//! same thing again. A row of tabs wants a bar taller than the system's
+//! own, which is what makes it a setting rather than the bar: what is open
+//! is a key away in the list of it either way. A terminal has no title
+//! bar and so no tabs, and reaches the same documents through that list.
+//!
 //! What is Obelus's too is what is *under* the bar -- a grey bar across
 //! the top of a page drawn in a theme is a frame round the theme in
 //! somebody else's colours, and a picture under the page stopping short of
@@ -36,8 +42,12 @@
 //!
 //! So the buttons stand where each system puts them: on the right on
 //! Windows, which Obelus draws, and on the left on macOS, which AppKit
-//! draws and the tabs start after. The title is hidden on macOS, and on
-//! Windows nothing writes one. The buttons' ink is the system's on macOS,
+//! draws and the tabs start after. Where there are tabs the title is
+//! hidden on macOS, and on Windows nothing writes one; where there are
+//! none, the bar says what the system's own would -- AppKit writes the
+//! title on macOS (`show_the_title`), and on Windows Obelus writes the
+//! icon and the title at the left, where the system would, in the
+//! system's face and at its size. The buttons' ink is the system's on macOS,
 //! so what Obelus tells it is whether the page is dark; the tabs are
 //! written in the page's ink on both, in the face the system writes its
 //! own words in.
@@ -54,7 +64,10 @@ mod tabs;
 #[cfg(windows)]
 mod windows;
 
-use std::time::{Duration, Instant};
+use std::{
+    sync::atomic::{AtomicBool, Ordering},
+    time::{Duration, Instant},
+};
 
 use obelus_ui::shapes::Joined;
 use ratatui::style::Color;
@@ -64,8 +77,31 @@ pub(crate) use windows::{Bar, drawn};
 use winit::window::{Theme, Window, WindowAttributes};
 
 /// What the window is called: what a taskbar, a switcher and a list of
-/// windows say about it. Not on its bar, which has the tabs instead.
+/// windows say about it -- and its bar, where the bar holds no tabs:
+/// AppKit writes it on macOS, and Obelus on Windows.
 pub(crate) const TITLE: &str = "Obelus";
+
+/// Whether the bar holds a tab for each open document: the reader's
+/// setting, `bar_tabs`, and off until the application says it.
+///
+/// Off, the bar is the height the system's own is and has no room for
+/// tabs -- the strip is laid out in none (`room`) -- and everything that
+/// measures the bar asks this: the grid under it, the buttons in its
+/// middle on macOS, the hit test on Windows. One flag for the window, read
+/// where the window is measured and where the system asks what a press is,
+/// which on Windows is a subclass that holds nothing of the window's but a
+/// pointer -- so a static, for the reason the glyph switch is one.
+static HOLDS_TABS: AtomicBool = AtomicBool::new(false);
+
+/// Says whether the bar holds the tabs. Whether that changed it.
+pub(crate) fn tabbed(on: bool) -> bool {
+    HOLDS_TABS.swap(on, Ordering::Relaxed) != on
+}
+
+/// Whether the bar holds the tabs.
+pub(crate) fn is_tabbed() -> bool {
+    HOLDS_TABS.load(Ordering::Relaxed)
+}
 
 /// The window as it is asked for, with the page running up under the title
 /// bar where the platform allows it.
@@ -73,10 +109,12 @@ pub(crate) fn asked_for(attributes: WindowAttributes) -> WindowAttributes {
     #[cfg(target_os = "macos")]
     {
         use winit::platform::macos::WindowAttributesExtMacOS;
+        // The title shown, which is a bar without the tabs -- the setting's
+        // default, and what it is until the application says otherwise
+        // (`show_the_title`).
         attributes
             .with_titlebar_transparent(true)
             .with_fullsize_content_view(true)
-            .with_title_hidden(true)
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -90,7 +128,7 @@ pub(crate) fn asked_for(attributes: WindowAttributes) -> WindowAttributes {
 /// Nothing, except where the page runs up under it. Asked of AppKit rather
 /// than written down, because in full screen the bar is gone until the
 /// pointer asks for it, which the same question answers with nothing --
-/// and where there is a bar, it is made `TALL`.
+/// and where there is a bar that holds the tabs, it is made `TALL`.
 #[cfg(target_os = "macos")]
 pub(crate) fn height(window: &Window) -> f32 {
     let Some(shown) = appkit(window) else {
@@ -112,7 +150,10 @@ pub(crate) fn height(window: &Window) -> f32 {
 fn bar_points(shown: &objc2_app_kit::NSWindow) -> f64 {
     // The frame is the whole window and the layout rectangle is the part
     // the title bar does not cover, both in points.
-    tall(shown.frame().size.height - shown.contentLayoutRect().size.height)
+    tall(
+        shown.frame().size.height - shown.contentLayoutRect().size.height,
+        is_tabbed(),
+    )
 }
 
 /// The window AppKit has behind winit's.
@@ -145,7 +186,8 @@ pub(crate) const fn height(_window: &Window) -> f32 {
 )]
 const TALL: f64 = 38.0;
 
-/// How tall a bar AppKit says is this tall is drawn: at least `TALL`, and
+/// How tall a bar AppKit says is this tall is drawn: at least `TALL` where
+/// it holds the tabs and the system's own height where it does not, and
 /// none at all where there is none, which is full screen.
 ///
 /// Asked whether there is a point of it rather than whether it is nothing:
@@ -155,16 +197,19 @@ const TALL: f64 = 38.0;
     not(any(target_os = "macos", test)),
     expect(dead_code, reason = "only macOS asks")
 )]
-fn tall(system: f64) -> f64 {
-    match system >= 1.0 {
-        true => system.max(TALL),
-        false => 0.0,
+fn tall(system: f64, tabbed: bool) -> f64 {
+    match (system >= 1.0, tabbed) {
+        (true, true) => system.max(TALL),
+        (true, false) => system,
+        (false, _) => 0.0,
     }
 }
 
 /// Stands the system's three buttons in the middle of the bar, the
 /// way Zed does it, rather than at the top of the one AppKit lays them out
-/// on.
+/// on -- where the bar holds the tabs, and is taller than AppKit's for it.
+/// Where it does not, they are AppKit's, as they were before there were
+/// tabs: put back once if they were moved, and otherwise left alone.
 ///
 /// Not an empty toolbar, which is how AppKit makes a bar taller of its own
 /// accord: the toolbar takes every press on the bar, so a tab could not be
@@ -204,32 +249,126 @@ pub(crate) fn centre_the_buttons(window: &Window) {
     let Some(bar) = (unsafe { close.superview().and_then(|buttons| buttons.superview()) }) else {
         return;
     };
+    let buttons = [&close, &minimise, &zoom];
+    let mut kept = KEPT
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    // A bar without the tabs is AppKit's to lay out, as any window's is:
+    // where Obelus moved them, they go back where AppKit had them, once,
+    // and after that nothing touches them.
+    if !is_tabbed() {
+        if let Some(was) = kept.take() {
+            let mut frame = bar.frame();
+            frame.size.height = was.height;
+            frame.origin.y = shown.frame().size.height - was.gap;
+            bar.setFrame(frame);
+            for (button, y) in buttons.iter().zip(was.buttons) {
+                let mut frame = button.frame();
+                frame.origin.y = y;
+                button.setFrame(frame);
+            }
+            bar.updateTrackingAreas();
+            for button in buttons {
+                button.updateTrackingAreas();
+            }
+        }
+        return;
+    }
+    // Where AppKit had them, before they are first moved: the bar by how
+    // far down from the window's top its foot is, which holds while the
+    // window is resized under it.
+    if kept.is_none() {
+        let frame = bar.frame();
+        *kept = Some(Kept {
+            gap: shown.frame().size.height - frame.origin.y,
+            height: frame.size.height,
+            buttons: buttons.map(|button| button.frame().origin.y),
+        });
+    }
     let mut frame = bar.frame();
     frame.size.height = tall;
     frame.origin.y = shown.frame().size.height - tall;
     bar.setFrame(frame);
-    for button in [&close, &minimise, &zoom] {
+    for button in buttons {
         let mut frame = button.frame();
         frame.origin.y = (tall - frame.size.height) / 2.0;
         button.setFrame(frame);
     }
     // Or a button goes on lighting up where it used to be.
     bar.updateTrackingAreas();
-    for button in [&close, &minimise, &zoom] {
+    for button in buttons {
         button.updateTrackingAreas();
     }
+}
+
+/// Where AppKit had the bar and its buttons before `centre_the_buttons`
+/// first moved them, for putting them back when the bar stops holding the
+/// tabs. Nothing until they have been moved.
+#[cfg(target_os = "macos")]
+static KEPT: std::sync::Mutex<Option<Kept>> = std::sync::Mutex::new(None);
+
+/// What `KEPT` keeps, in AppKit's points.
+#[cfg(target_os = "macos")]
+#[derive(Clone, Copy)]
+struct Kept {
+    /// How far the view the bar is in starts from the window's top.
+    gap: f64,
+    /// And how tall it was.
+    height: f64,
+    /// Where each button stood up its height, close first.
+    buttons: [f64; 3],
 }
 
 /// Nothing: the buttons are where the system put them.
 #[cfg(not(target_os = "macos"))]
 pub(crate) const fn centre_the_buttons(_window: &Window) {}
 
+/// Has AppKit write the window's title on its bar where the bar holds no
+/// tabs, the way it does on any window, and not where it does: the tabs
+/// are what the bar says then.
+///
+/// Asked before `centre_the_buttons`, and the bar laid out again here and
+/// now: a title shown or hidden is a new layout of the bar, which puts the
+/// buttons back at the top of it -- and left to the next pass AppKit makes,
+/// that came after they were centred, and they stayed at the top until
+/// the window next had the keys.
+#[cfg(target_os = "macos")]
+pub(crate) fn show_the_title(window: &Window) {
+    use objc2_app_kit::{NSWindowButton, NSWindowTitleVisibility};
+    let Some(shown) = appkit(window) else {
+        return;
+    };
+    let wanted = match is_tabbed() {
+        true => NSWindowTitleVisibility::Hidden,
+        false => NSWindowTitleVisibility::Visible,
+    };
+    if shown.titleVisibility() == wanted {
+        return;
+    }
+    shown.setTitleVisibility(wanted);
+    // Safe: `superview` is unsafe because AppKit does not keep the view it
+    // hands back alive for the caller, and objc2 retains it on the way out.
+    let bar = shown
+        .standardWindowButton(NSWindowButton::CloseButton)
+        .and_then(|close| unsafe { close.superview().and_then(|buttons| buttons.superview()) });
+    if let Some(bar) = bar {
+        bar.layoutSubtreeIfNeeded();
+    }
+}
+
+/// Nothing: the title is written by whoever draws the bar -- Obelus on
+/// Windows, and the compositor elsewhere.
+#[cfg(not(target_os = "macos"))]
+pub(crate) const fn show_the_title(_window: &Window) {}
+
 /// Where on a bar this tall the tabs may go, on a window this wide.
 ///
 /// Nowhere, where there is no bar in the page: a window in full screen,
 /// and on Linux, where the bar is the compositor's.
+///
+/// Nor where the bar does not hold them -- see `HOLDS_TABS`.
 pub(crate) fn room(window: &Window, titled: f32, width: f32, bar: Option<&Drawn>) -> Option<Room> {
-    if titled <= 0.0 {
+    if titled <= 0.0 || !is_tabbed() {
         return None;
     }
     #[expect(
@@ -436,8 +575,11 @@ pub(crate) struct Drawn {
     /// How wide the pen the marks are drawn with is, in pixels.
     pub(crate) pen: f32,
     /// How far in from the left the tabs start, in pixels: as far as the
-    /// frame is wide, which is where the system puts its own icon.
+    /// frame is wide, which is where the system puts its own icon -- and
+    /// where the window's icon stands on a bar without them.
     pub(crate) inset: f32,
+    /// How wide and tall the window's icon is, on a bar without the tabs.
+    pub(crate) icon: f32,
     /// How big a tab's name is written, in pixels.
     pub(crate) words: f32,
     /// The button the pointer is over.
@@ -549,6 +691,20 @@ pub(crate) fn arrow_inks(more: bool, hovered: bool, dark: bool) -> (Option<[f32;
         (true, true) => (Some([r, g, b, 0.06]), [r, g, b, 0.9]),
         (true, false) => (None, [r, g, b, 0.7]),
         (false, _) => (None, [r, g, b, 0.2]),
+    }
+}
+
+/// What the title is written in on a bar without the tabs, on a page this
+/// dark: the page's ink, at full strength on a window with the reader's
+/// keys and faint on one without, as the marks on the buttons are.
+pub(crate) fn title_ink(drawn: &Drawn, dark: bool) -> [f32; 4] {
+    let strength = match drawn.active {
+        true => 1.0,
+        false => 0.36,
+    };
+    match dark {
+        true => [1.0, 1.0, 1.0, strength],
+        false => [0.0, 0.0, 0.0, strength],
     }
 }
 
@@ -858,6 +1014,18 @@ mod tests {
         assert!(dark((0x64, 0x64, 0xff)), "a blue this pale is still dark");
     }
 
+    /// A bar without the tabs is the system's own, and full screen is no
+    /// bar either way.
+    ///
+    /// Deliberate break: leave `tabbed` out of `tall`. The bar is made
+    /// taller for tabs it is not holding, which is the strip the setting is
+    /// for taking away.
+    #[test]
+    fn a_bar_without_tabs_is_the_systems() {
+        assert!((tall(28.0, false) - 28.0).abs() < f64::EPSILON);
+        assert!(tall(0.0, false).abs() < f64::EPSILON, "full screen");
+    }
+
     /// The system's bar is made taller, a taller one is left alone, and
     /// full screen -- no bar, or a hair of one -- is still no bar.
     ///
@@ -866,10 +1034,16 @@ mod tests {
     /// stays a sliver; `TALL` alone, and a taller one is cut down.
     #[test]
     fn the_bar_is_tall_enough_for_tabs_wherever_there_is_one() {
-        assert!((tall(28.0) - TALL).abs() < f64::EPSILON, "the system's bar");
-        assert!((tall(52.0) - 52.0).abs() < f64::EPSILON, "a taller one");
-        assert!(tall(0.0).abs() < f64::EPSILON, "full screen");
-        assert!(tall(1e-9).abs() < f64::EPSILON, "a hair of a bar");
+        assert!(
+            (tall(28.0, true) - TALL).abs() < f64::EPSILON,
+            "the system's bar"
+        );
+        assert!(
+            (tall(52.0, true) - 52.0).abs() < f64::EPSILON,
+            "a taller one"
+        );
+        assert!(tall(0.0, true).abs() < f64::EPSILON, "full screen");
+        assert!(tall(1e-9, true).abs() < f64::EPSILON, "a hair of a bar");
     }
 
     /// A window 1000 pixels wide with a bar 31 tall, buttons 46 wide and
@@ -927,6 +1101,21 @@ mod tests {
         assert_eq!(on(999.0, 0.0, true), Part::Button(Button::Close));
     }
 
+    /// The title on a bar without the tabs is in the page's ink, and
+    /// fainter on a window without the reader's keys.
+    ///
+    /// Deliberate break: leave `active` out of `title_ink`. A window in the
+    /// background writes its title as boldly as the one being typed in, and
+    /// a reader has the buttons alone to tell the two apart by.
+    #[test]
+    fn the_title_is_in_the_pages_ink_and_fainter_without_the_keys() {
+        let on = title_ink(&drawn(None, None, true), true);
+        let off = title_ink(&drawn(None, None, false), true);
+        assert_eq!(on[..3], [1.0, 1.0, 1.0], "a dark page is written light");
+        assert!(off[3] < on[3], "{off:?} is not fainter than {on:?}");
+        assert_eq!(title_ink(&drawn(None, None, true), false)[..3], [0.0; 3]);
+    }
+
     /// A bar on a page of this darkness, with the pointer as given.
     fn drawn(hovered: Option<Button>, pressed: Option<Button>, active: bool) -> Drawn {
         Drawn {
@@ -935,6 +1124,7 @@ mod tests {
             mark: 10.0,
             pen: 1.0,
             inset: 8.0,
+            icon: 16.0,
             words: 12.0,
             hovered,
             pressed,

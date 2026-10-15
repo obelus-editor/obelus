@@ -725,6 +725,9 @@ impl Showing {
         };
         let size = window.inner_size();
         let cell = fonts.cell();
+        // The title first: showing or hiding it lays the bar out again,
+        // which would put the buttons back where they are being moved from.
+        crate::title::show_the_title(window);
         crate::title::centre_the_buttons(window);
         self.titled = match self.bar.as_ref() {
             Some(bar) => bar.height(window),
@@ -1248,6 +1251,9 @@ impl ApplicationHandler<Waking> for Showing {
                 let mut left = None;
                 let mut drew = false;
                 let mut sized = None;
+                // Whether the bar came to hold the tabs, or stopped: a bar
+                // of another height, which is a grid of another size.
+                let mut retabbed = false;
                 let mut faces = None;
                 // A picture arrives on its own, with no frame behind it --
                 // it was being decoded while the frames went by -- so it
@@ -1258,6 +1264,7 @@ impl ApplicationHandler<Waking> for Showing {
                         // Not cells, so the page never sees them.
                         Update::TextSize(points) => sized = Some(points),
                         Update::Animates(on) => self.motion.animates(on),
+                        Update::BarTabs(on) => retabbed |= crate::title::tabbed(on),
                         Update::Fonts(names) => faces = Some(names),
                         Update::Ground(ground) => {
                             // Said again after every change to the
@@ -1700,6 +1707,12 @@ impl ApplicationHandler<Waking> for Showing {
                 }
                 if let Some(points) = regrid.resized {
                     self.redraw_at(points);
+                }
+                if retabbed {
+                    self.left = None;
+                    self.remeasure();
+                    self.tell(Event::Resize);
+                    self.redraw();
                 }
                 if drew {
                     self.allow_the_input_method();
@@ -2548,6 +2561,20 @@ fn caret_in(spelling: &str, caret: Option<(usize, usize)>) -> Option<usize> {
             .get(..end)
             .map_or(0, |before| before.chars().count()),
     )
+}
+
+/// The same icon at this many pixels to a side, for a bar Obelus draws to
+/// put at its left the way the system's bar does, where the bar holds no
+/// tabs -- see `title::Bar`. From the largest of the file's sizes, which
+/// the decoder hands back.
+pub(crate) fn icon(side: u32) -> Option<image::RgbaImage> {
+    let mark = image::load_from_memory_with_format(MARK, image::ImageFormat::Ico).ok()?;
+    Some(image::imageops::resize(
+        &mark.to_rgba8(),
+        side,
+        side,
+        image::imageops::FilterType::Lanczos3,
+    ))
 }
 
 #[cfg(test)]

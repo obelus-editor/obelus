@@ -84,6 +84,11 @@ pub(crate) enum Update {
     /// The same journey again: a setting the application cannot act on
     /// because there is nothing in a terminal for it to mean.
     Animates(bool),
+    /// Whether the title bar holds a tab for each open document.
+    ///
+    /// The same journey again, and the window's alone: it decides how tall
+    /// the bar is, and so where the page starts.
+    BarTabs(bool),
     /// What the page is drawn on, for the margin round the grid.
     ///
     /// The same journey once more. A terminal never asks: there the cells
@@ -1271,6 +1276,11 @@ impl obelus_app::app::Drawing for Telling {
         (self.wake)();
     }
 
+    fn bar_tabs(&self, on: bool) {
+        let _ = self.updates.send(Update::BarTabs(on));
+        (self.wake)();
+    }
+
     fn hang(&self, wallpaper: Option<&obelus_theme::Wallpaper>) {
         // The page lets go of its picture at once where it is not the one
         // wanted -- see `Decoder::ask` -- and that none is numbered like
@@ -1768,7 +1778,7 @@ impl Page {
             }
             // Nor is this: it is a setting, and the window takes it out
             // of the queue with the size and the faces.
-            Update::Animates(on) => {
+            Update::Animates(on) | Update::BarTabs(on) => {
                 tracing::warn!(on, "a setting reached the page");
                 false
             }

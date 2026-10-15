@@ -4451,6 +4451,8 @@ impl obelus_app::app::Drawing for Told {
     /// crate that draws one.
     fn animates(&self, _: bool) {}
 
+    fn bar_tabs(&self, _: bool) {}
+
     fn caret_is(
         &self,
         _: obelus_app::app::Caret,

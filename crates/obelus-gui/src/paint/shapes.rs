@@ -45,13 +45,15 @@ impl Painter {
         }
     }
 
-    /// The three buttons on a bar Obelus draws -- see `title::Bar` -- over
-    /// the picture and the page's colour, and over any pane whose glass runs
-    /// up under the bar -- see `bar_on_top` in `lay`. A pane covers the
-    /// tabs and not these: the window has to be closable whatever is open.
+    /// The three buttons on a bar Obelus draws -- see `title::Bar` -- and
+    /// on one without the tabs the window's icon and title before them,
+    /// over the picture and the page's colour, and over any pane whose
+    /// glass runs up under the bar -- see `bar_on_top` in `lay`. A pane
+    /// covers the tabs and not these: the window has to be closable
+    /// whatever is open.
     ///
     /// In the same pixels as the tabs.
-    pub(super) fn buttons_on_the_bar(&mut self, across: f32, margin: [f32; 2]) {
+    pub(super) fn buttons_on_the_bar(&mut self, across: f32, margin: [f32; 2], fonts: &mut Fonts) {
         if self.buttons_left_out {
             return;
         }
@@ -59,6 +61,11 @@ impl Painter {
         let Some(bar) = self.bar else {
             return;
         };
+        // A bar without the tabs says what the system's own would, where
+        // it would: the icon and the title at the left.
+        if !crate::title::is_tabbed() {
+            self.icon_and_title(&bar, margin, fonts, dark);
+        }
         for button in crate::title::Button::ALL {
             let [left, top, wide, tall] =
                 crate::title::button_at(button, across, bar.captioned, bar.button);
@@ -89,6 +96,74 @@ impl Painter {
                 lower: bar.pen,
             });
         }
+    }
+
+    /// The window's icon and its title at the left of a bar without the
+    /// tabs, where the system's bar has them: the icon a frame's width in
+    /// and middled in the bar's height, and the title after it.
+    fn icon_and_title(
+        &mut self,
+        bar: &crate::title::Drawn,
+        margin: [f32; 2],
+        fonts: &mut Fonts,
+        dark: bool,
+    ) {
+        let middle = self.titled / 2.0 - margin[1];
+        let icon_top = (middle - bar.icon / 2.0).round();
+        self.window_icon([bar.inset - margin[0], icon_top, bar.icon]);
+        // Where the system's own sits, measured off its bar at 250%: a
+        // little below the line its capitals would be middled on, and a
+        // little under half the size after the icon.
+        let baseline = (middle + bar.words * 0.39).round();
+        let start = bar.inset + bar.icon + (bar.words * 0.44).round() - margin[0];
+        let ink = crate::title::title_ink(bar, dark);
+        self.caption(
+            fonts,
+            crate::title::TITLE,
+            bar.words,
+            [start, baseline],
+            ink,
+            f32::INFINITY,
+        );
+    }
+
+    /// The window's icon, at a place and a size in pixels -- made the first
+    /// time it is asked for at that size and kept where the marks are,
+    /// which is what it is: a picture with colours of its own.
+    fn window_icon(&mut self, [left, top, side]: [f32; 3]) {
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "an icon is a few dozen pixels to a side"
+        )]
+        let pixels = side as u32;
+        let key = (format!("the window's icon at {pixels}"), false);
+        let spot = match self.atlas.mark(&key) {
+            Some(Some(spot)) => spot,
+            // Tried, and it would not draw.
+            Some(None) => return,
+            None => {
+                let Some(icon) = crate::window::icon(pixels) else {
+                    self.atlas.no_mark(key);
+                    return;
+                };
+                let spot = self.atlas.place(pixels, pixels, &icon, true);
+                self.atlas.marked(key, spot);
+                let Some(spot) = spot else {
+                    return;
+                };
+                spot
+            }
+        };
+        self.quads.push(Quad {
+            rect: [left, top, side, side],
+            uv: spot.uv,
+            colour: [1.0; 4],
+            flags: COLOURFUL,
+            radius: 0.0,
+            layer: spot.layer,
+            lower: 0.0,
+        });
     }
 
     /// The tabs along the bar, and the arrows at its ends while there are
