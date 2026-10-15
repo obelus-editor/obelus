@@ -524,6 +524,11 @@ pub enum Drawn {
     InATerminal,
     /// Only where Obelus draws its own pixels.
     InAWindow,
+    /// Only in a window whose title bar Obelus has a say in: on Windows,
+    /// where it draws the bar, and on macOS, where the page runs up under
+    /// it. Elsewhere the bar is the compositor's, or there is none -- a
+    /// tiling compositor draws no bar round a window at all.
+    OnAWindowsBar,
 }
 
 impl Drawn {
@@ -533,10 +538,17 @@ impl Drawn {
     /// setting, and a command.
     #[must_use]
     pub fn here(self) -> bool {
+        self.where_drawn(in_a_window(), cfg!(any(windows, target_os = "macos")))
+    }
+
+    /// The same, for a window or not, on a system whose bar a window has a
+    /// say in or not -- the answer `here` asks with what is true here.
+    const fn where_drawn(self, window: bool, bar: bool) -> bool {
         match self {
             Self::Anywhere => true,
-            Self::InATerminal => !in_a_window(),
-            Self::InAWindow => in_a_window(),
+            Self::InATerminal => !window,
+            Self::InAWindow => window,
+            Self::OnAWindowsBar => window && bar,
         }
     }
 }
@@ -868,7 +880,7 @@ pub const ALL: &[Setting] = &[
         group: Group::Appearance,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
-        drawn: Drawn::InAWindow,
+        drawn: Drawn::OnAWindowsBar,
     },
     Setting {
         key: "font_size",
@@ -3058,11 +3070,14 @@ mod tests {
     }
 
     /// The tabs on a window's bar are off until the reader turns them on,
-    /// and only a window offers them.
+    /// and only a window whose bar Obelus has a say in offers them: not a
+    /// terminal, which has no bar, nor a window on Linux, whose bar is the
+    /// compositor's.
     ///
     /// Deliberate breaks: default the field to true, and every window
-    /// starts with the taller bar; mark the row `Anywhere`, and a terminal,
-    /// which has no bar, offers a switch that changes nothing.
+    /// starts with the taller bar; mark the row `InAWindow`, and a window
+    /// on Linux offers a switch that changes nothing; leave `bar` out of
+    /// `where_drawn`, and so does the same row drawn from it.
     #[test]
     fn the_tabs_on_the_bar_are_off_and_a_windows() {
         assert!(!Config::default().bar_tabs);
@@ -3070,7 +3085,10 @@ mod tests {
             .iter()
             .find(|setting| setting.key == "bar_tabs")
             .expect("the row");
-        assert_eq!(row.drawn, crate::Drawn::InAWindow);
+        assert_eq!(row.drawn, crate::Drawn::OnAWindowsBar);
+        assert!(row.drawn.where_drawn(true, true), "Windows and macOS");
+        assert!(!row.drawn.where_drawn(true, false), "a window on Linux");
+        assert!(!row.drawn.where_drawn(false, true), "a terminal");
     }
 
     /// Written and read back is the same config: the file is the only place

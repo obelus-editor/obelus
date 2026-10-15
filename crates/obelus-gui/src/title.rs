@@ -1,13 +1,16 @@
 //! The strip along the top of the window, and what is open along it.
 //!
-//! No title: a window's title is the program's name, which the reader
-//! knows, and the system's icon beside it says the same thing again. What
-//! the bar has room for instead is a tab for each open document, and a
-//! press on one goes to it (`tabs`). A terminal has no title bar and so no
-//! tabs, and reaches the same documents through the list of what is open.
-//! Nor does a window, unless the reader turns `bar_tabs` on: a row of tabs
-//! wants a bar taller than the system's own, and off -- the default -- the
-//! bar is the system's height and holds nothing (`TABBED`).
+//! Two bars, by the reader's setting, `bar_tabs` (`HOLDS_TABS`). Off,
+//! which is the default, the bar is the one any window has: the system's
+//! height, the title, and on Windows the icon before it. On, it holds a
+//! tab for each open document instead, and a press on one goes to it
+//! (`tabs`) -- and no title, because a window's title is the program's
+//! name, which the reader knows, and the system's icon beside it says the
+//! same thing again. A row of tabs wants a bar taller than the system's
+//! own, which is what makes it a setting rather than the bar: what is open
+//! is a key away in the list of it either way. A terminal has no title
+//! bar and so no tabs, and reaches the same documents through that list.
+//!
 //! What is Obelus's too is what is *under* the bar -- a grey bar across
 //! the top of a page drawn in a theme is a frame round the theme in
 //! somebody else's colours, and a picture under the page stopping short of
@@ -74,7 +77,8 @@ pub(crate) use windows::{Bar, drawn};
 use winit::window::{Theme, Window, WindowAttributes};
 
 /// What the window is called: what a taskbar, a switcher and a list of
-/// windows say about it. Not on its bar, which has the tabs instead.
+/// windows say about it -- and its bar, where the bar holds no tabs:
+/// AppKit writes it on macOS, and Obelus on Windows.
 pub(crate) const TITLE: &str = "Obelus";
 
 /// Whether the bar holds a tab for each open document: the reader's
@@ -87,16 +91,16 @@ pub(crate) const TITLE: &str = "Obelus";
 /// where the window is measured and where the system asks what a press is,
 /// which on Windows is a subclass that holds nothing of the window's but a
 /// pointer -- so a static, for the reason the glyph switch is one.
-static TABBED: AtomicBool = AtomicBool::new(false);
+static HOLDS_TABS: AtomicBool = AtomicBool::new(false);
 
 /// Says whether the bar holds the tabs. Whether that changed it.
 pub(crate) fn tabbed(on: bool) -> bool {
-    TABBED.swap(on, Ordering::Relaxed) != on
+    HOLDS_TABS.swap(on, Ordering::Relaxed) != on
 }
 
 /// Whether the bar holds the tabs.
 pub(crate) fn is_tabbed() -> bool {
-    TABBED.load(Ordering::Relaxed)
+    HOLDS_TABS.load(Ordering::Relaxed)
 }
 
 /// The window as it is asked for, with the page running up under the title
@@ -124,7 +128,7 @@ pub(crate) fn asked_for(attributes: WindowAttributes) -> WindowAttributes {
 /// Nothing, except where the page runs up under it. Asked of AppKit rather
 /// than written down, because in full screen the bar is gone until the
 /// pointer asks for it, which the same question answers with nothing --
-/// and where there is a bar, it is made `TALL`.
+/// and where there is a bar that holds the tabs, it is made `TALL`.
 #[cfg(target_os = "macos")]
 pub(crate) fn height(window: &Window) -> f32 {
     let Some(shown) = appkit(window) else {
@@ -362,7 +366,7 @@ pub(crate) const fn show_the_title(_window: &Window) {}
 /// Nowhere, where there is no bar in the page: a window in full screen,
 /// and on Linux, where the bar is the compositor's.
 ///
-/// Nor where the bar does not hold them -- see `TABBED`.
+/// Nor where the bar does not hold them -- see `HOLDS_TABS`.
 pub(crate) fn room(window: &Window, titled: f32, width: f32, bar: Option<&Drawn>) -> Option<Room> {
     if titled <= 0.0 || !is_tabbed() {
         return None;

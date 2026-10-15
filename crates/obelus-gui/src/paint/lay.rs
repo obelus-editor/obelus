@@ -117,8 +117,9 @@ impl Painter {
             moving.pane.is_some(),
             moving.leaving.is_some() && self.gone.iter().any(|&(.., top)| top),
         );
-        // The tabs, and the bar's buttons where nothing runs up under them,
-        // on the picture where there is one. With them in the quads every
+        // The tabs, and the bar's buttons -- and on a bar without the tabs,
+        // the icon and the title -- where nothing runs up under them, on
+        // the picture where there is one. With them in the quads every
         // whole screen starts from, because the bar stands still the way
         // the picture does: what slides is the page under it, or a pane
         // over it.

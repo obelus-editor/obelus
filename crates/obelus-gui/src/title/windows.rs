@@ -227,16 +227,21 @@ fn measured(hwnd: HWND) -> Measured {
         false => edge,
     };
     Measured {
-        // Or the height a row of tabs wants, where that is more and the bar
-        // holds them.
-        titled: match super::is_tabbed() {
-            true => metric(SM_CYCAPTION).max(tabbed),
-            false => metric(SM_CYCAPTION),
-        } + above,
+        titled: bar_height(metric(SM_CYCAPTION), tabbed, super::is_tabbed()) + above,
         edge,
         button,
         icon: metric(SM_CXSMICON),
         captioned: metric(SM_CYCAPTION) + above,
+    }
+}
+
+/// How tall the bar is below the edge above it: the system's caption, or
+/// the height a row of tabs wants where that is more and the bar holds
+/// them -- see `title::HOLDS_TABS`.
+const fn bar_height(caption: i32, tabbed: i32, holds_tabs: bool) -> i32 {
+    match holds_tabs && tabbed > caption {
+        true => tabbed,
+        false => caption,
     }
 }
 
@@ -497,5 +502,20 @@ mod tests {
         let tabs = Some((8.0, 412.5));
         assert_eq!(tabs_held(tabs_holding(tabs)), tabs);
         assert_eq!(tabs_held(tabs_holding(None)), None);
+    }
+
+    /// A bar holding the tabs is as tall as a row of them wants, or the
+    /// system's caption where that is taller, and one without them is the
+    /// caption.
+    ///
+    /// Deliberate breaks: leave `holds_tabs` out of `bar_height`, and the
+    /// bar is made taller for tabs it does not hold; take the tabs' height
+    /// alone where it holds them, and a caption the reader made taller is
+    /// cut down to it.
+    #[test]
+    fn a_bar_is_as_tall_as_what_it_holds() {
+        assert_eq!(bar_height(22, 34, false), 22, "no tabs");
+        assert_eq!(bar_height(22, 34, true), 34, "tabs");
+        assert_eq!(bar_height(40, 34, true), 40, "a taller caption");
     }
 }

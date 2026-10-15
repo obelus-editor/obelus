@@ -41,26 +41,26 @@ impl obelus_app::app::Drawing for Told {
 }
 
 /// The window is told whether its bar holds the tabs when it says who it
-/// is, and again when the setting changes.
+/// is -- what the settings say then, which is the setting turned on here --
+/// and again when the setting changes.
 ///
-/// Deliberate breaks: leave `bar_tabs` out of `App::drawn_by`, and a window
-/// started with the setting on keeps the system's bar until the settings
-/// next change; out of `apply_config`, and turning it on does nothing until
-/// the next start.
+/// Deliberate breaks: tell `false` from `App::drawn_by` whatever the
+/// setting, and a window started with it on keeps the system's bar until
+/// the settings next change; leave `bar_tabs` out of `apply_config`, and
+/// turning it off does nothing until the next start.
 #[test]
 fn the_window_is_told_whether_its_bar_holds_the_tabs() {
     let _turn = crate::turn();
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    let tabbed = |on| obelus_config::Config {
+        bar_tabs: on,
+        ..obelus_config::Config::default()
+    };
+    app.configure(tabbed(true), Vec::new());
     let told = Arc::new(Told::default());
     app.drawn_by(told.clone());
-    assert_eq!(told.0.lock().expect("said").as_slice(), [false]);
+    assert_eq!(told.0.lock().expect("said").as_slice(), [true]);
 
-    app.configure(
-        obelus_config::Config {
-            bar_tabs: true,
-            ..obelus_config::Config::default()
-        },
-        Vec::new(),
-    );
-    assert_eq!(told.0.lock().expect("said").last(), Some(&true));
+    app.configure(tabbed(false), Vec::new());
+    assert_eq!(told.0.lock().expect("said").last(), Some(&false));
 }

@@ -1597,7 +1597,7 @@ pub trait Drawing: std::fmt::Debug + Send + Sync {
     ///
     /// A setting, said the same way and at the same moments as the size.
     /// Nothing to a terminal, which has no bar.
-    fn bar_tabs(&self, _on: bool) {}
+    fn bar_tabs(&self, on: bool);
 
     /// The text is drawn in these faces, tried in this order.
     ///
