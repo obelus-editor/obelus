@@ -255,12 +255,25 @@ impl App {
     /// How many terminals have a program still running, which is what
     /// leaving would stop.
     pub(super) fn terminals_running(&self) -> usize {
+        self.terminals_running_except(None)
+    }
+
+    /// The same, leaving out the document `except`, where that one stays.
+    pub(super) fn terminals_running_except(&self, except: Option<DocumentId>) -> usize {
+        self.running_terminals_except(except).count()
+    }
+
+    /// Every terminal whose program has not ended, but the one in `except`.
+    fn running_terminals_except(
+        &self,
+        except: Option<DocumentId>,
+    ) -> impl Iterator<Item = &Terminal> {
         self.documents
             .iter()
-            .flatten()
-            .filter_map(Document::terminal)
+            .enumerate()
+            .filter(move |(index, _)| Some(DocumentId::new(*index)) != except)
+            .filter_map(|(_, document)| document.as_ref()?.terminal())
             .filter(|terminal| terminal.ended().is_none())
-            .count()
     }
 
     /// Words pasted into the terminal being read, which go to its program.
@@ -356,19 +369,22 @@ impl App {
         true
     }
 
-    /// Asks before leaving, or closing the project, with programs still
-    /// running in terminals: `then` is the word for which, and `answer`
-    /// what saying yes does.
+    /// Asks before leaving, closing the project or closing the others, with
+    /// programs still running in terminals: `then` is the word for which,
+    /// `answer` what saying yes does, and `except` a terminal that stays.
     ///
     /// Which one, when there is only one -- the words it was started with
     /// are what the reader would recognise -- and a count otherwise.
-    pub(super) fn ask_before_stopping_them(&mut self, running: usize, then: &str, answer: Answer) {
+    pub(super) fn ask_before_stopping_them(
+        &mut self,
+        running: usize,
+        then: &str,
+        answer: Answer,
+        except: Option<DocumentId>,
+    ) {
         let only = self
-            .documents
-            .iter()
-            .flatten()
-            .filter_map(Document::terminal)
-            .find(|terminal| terminal.ended().is_none())
+            .running_terminals_except(except)
+            .next()
             .map(|terminal| terminal.said().to_string());
         let (what, way) = match (running, only) {
             (1, Some(said)) => (

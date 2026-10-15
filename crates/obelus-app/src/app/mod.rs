@@ -761,6 +761,7 @@ impl App {
                 obelus_component::question::Answer::Leaving(
                     obelus_component::question::Leaving::Discard,
                 ),
+                None,
             );
             return;
         }

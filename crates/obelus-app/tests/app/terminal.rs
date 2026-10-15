@@ -290,6 +290,81 @@ fn closing_the_project_asks_about_a_running_terminal_first() {
     assert!(!app.has_a_project(), "the answer did not close the project");
 }
 
+/// Closing the others asks about a program still running in one of them,
+/// and not about the one being read.
+///
+/// Broken deliberately by leaving the count of running terminals out of
+/// `App::close_the_others`: the other shell closed at the first
+/// press.
+#[test]
+fn closing_the_others_asks_about_a_running_terminal_first() {
+    let (mut app, events) = a_shell();
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TerminalOpen);
+    support::type_text(&mut app, "echo second-$((40 + 3))");
+    press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    pump(&mut app, &events, "the second shell", |app| {
+        on_the_terminal(app).contains("second-43")
+    });
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentCloseOthers);
+    assert!(
+        app.offers(obelus_command::Command::DocumentCloseOthers),
+        "closed without asking"
+    );
+    assert_eq!(
+        support::ways(&app),
+        ["Stop it and close the others", "cancel"],
+        "the question was not about the one terminal"
+    );
+    support::answer(&mut app, "Stop it and close the others");
+    assert!(
+        !app.offers(obelus_command::Command::DocumentCloseOthers),
+        "the answer did not close the other"
+    );
+    assert!(
+        on_the_terminal(&app).contains("second-43"),
+        "the terminal being read is not the one left"
+    );
+}
+
+/// Something unwritten and a program running among the others are one
+/// question, which says both -- as closing the project's does.
+///
+/// Broken deliberately by passing no terminals to `what_would_be_lost` in
+/// `App::ask_before_closing_the_others`: the question says the file and
+/// not the shell that would stop with it.
+#[test]
+fn closing_the_others_asks_about_a_file_and_a_terminal_at_once() {
+    let (mut app, _events) = a_shell();
+    let scratch = support::Scratch::new("terminal-close-others");
+    // So the question names the file by its name, and fits its row.
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    let unwritten = scratch.path().join("unwritten.rs");
+    let kept = scratch.path().join("kept.rs");
+    std::fs::write(&unwritten, "fn main() {}\n").expect("writing the file");
+    std::fs::write(&kept, "fn main() {}\n").expect("writing the file");
+    app.open_for_test(&unwritten);
+    support::type_text(&mut app, "x");
+    app.open_for_test(&kept);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentCloseOthers);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        support::said(&dump).contains("unwritten.rs is unsaved, and a terminal is still running"),
+        "the question does not say both:\n{dump}"
+    );
+    support::answer(&mut app, "Close the others without saving");
+    assert!(
+        !app.offers(obelus_command::Command::DocumentCloseOthers),
+        "the answer did not close the others"
+    );
+    assert_eq!(
+        app.current_buffer().map(obelus_buffer::Buffer::path),
+        Some(kept.as_path()),
+        "the file being read is not the one left"
+    );
+}
+
 /// Where the terminal's cells are on screen: the whole document region.
 fn terminal_area(app: &mut App) -> ratatui::layout::Rect {
     let cells = support::cells_of(app, WIDTH, HEIGHT);

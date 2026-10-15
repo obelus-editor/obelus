@@ -598,6 +598,7 @@ impl crate::app::App {
                 obelus_component::question::Answer::ClosingTheProject(
                     obelus_component::question::Leaving::Discard,
                 ),
+                None,
             );
             return;
         }
