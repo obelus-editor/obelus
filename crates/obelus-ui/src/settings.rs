@@ -2107,9 +2107,26 @@ impl SettingsView<'_> {
     }
 
     /// What a theme card's right-hand corner says, and in what colour.
+    ///
+    /// The theme being worn says so, and not instead of what can be done to
+    /// it: one that is behind says `Update` beside it, and one on its way says
+    /// how far -- the corner is the one place a card says either, and a worn
+    /// theme that hid them was updated by a key nothing on the card offered.
     fn theme_state(&self, card: &ThemeCard) -> (String, ratatui::style::Color) {
         use obelus_themes::Status;
         match &card.status {
+            Status::Installing(progress) => (
+                format!(
+                    "{} {}",
+                    crate::spinning(self.phase),
+                    how_far(card.installed, *progress)
+                ),
+                self.theme.foreground,
+            ),
+            _ if card.worn && card.may_be_installed() => (
+                "\u{25cf} In use \u{b7} Update \u{25b8}".to_string(),
+                self.theme.change_modified,
+            ),
             _ if card.worn => ("\u{25cf} In use".to_string(), self.theme.change_added),
             Status::Installed => ("Installed".to_string(), self.theme.gutter),
             Status::Delisted => ("No longer listed".to_string(), self.theme.gutter),
@@ -2120,14 +2137,6 @@ impl SettingsView<'_> {
             Status::Missing | Status::Failed(_) => {
                 ("Install \u{25b8}".to_string(), self.theme.foreground)
             }
-            Status::Installing(progress) => (
-                format!(
-                    "{} {}",
-                    crate::spinning(self.phase),
-                    how_far(card.installed, *progress)
-                ),
-                self.theme.foreground,
-            ),
         }
     }
 }

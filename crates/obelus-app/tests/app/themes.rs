@@ -1265,6 +1265,37 @@ fn delete_takes_a_theme_away_but_not_the_one_worn() {
     assert!(!root.join("gone").exists(), "two presses did not take it");
 }
 
+/// The theme being worn, when it is behind, says both: that it is in use,
+/// and that there is an update to take.
+///
+/// Deliberate break: `theme_state` without its arm for a worn theme that is
+/// behind, as it was (the card then says `In use` and nothing about an
+/// update, though enter would take one).
+#[test]
+fn the_theme_worn_says_when_it_is_behind() {
+    let scratch = reader("themes-worn-behind");
+    let root = support::Scratch::new("themes-worn-behind-installed");
+    installed_as(root.path(), "current", "aaa", "obelus");
+
+    let mut app = open(&scratch);
+    app.installed_themes_for_test(root.path().to_path_buf());
+    app.themes_index_for_test(vec![listed("current", obelus_themes::Group::Obelus, "bbb")]);
+    dispatch::dispatch(&mut app, Command::ThemeSelect);
+    support::type_text(&mut app, "current");
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(app.theme_name(), "current");
+
+    on_the_themes_page(&mut app);
+    support::type_text(&mut app, "current");
+    let dump = support::render(&mut app, 90, 30);
+    let row = card_row(support::text_block(&dump), "current");
+    assert!(row.contains("In use"), "{dump}");
+    assert!(
+        row.contains("Update"),
+        "the update is not on the card:\n{dump}"
+    );
+}
+
 /// Enter on a theme installed and current wears it, and keeps it -- the
 /// same as choosing it from the list of themes -- and the foot offers the
 /// key for it.
