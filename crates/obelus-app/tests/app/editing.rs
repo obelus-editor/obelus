@@ -2348,6 +2348,42 @@ mod closing_the_others {
         );
     }
 
+    /// A save that did not go closes nothing, not even the others that had
+    /// nothing to write: the reader said to keep the work, and is left
+    /// where they can see that it was not kept. The deliberate break was
+    /// closing whatever `save_everything_except` answered, which closed
+    /// all but two.rs and lost the edit to one.rs.
+    #[test]
+    fn a_save_that_does_not_go_closes_nothing() {
+        let scratch = support::Scratch::new("close-others-fail");
+        let gone = scratch.path().join("gone");
+        std::fs::create_dir(&gone).expect("the directory");
+        let paths = [
+            gone.join("one.rs"),
+            scratch.path().join("two.rs"),
+            scratch.path().join("three.rs"),
+        ];
+        for path in &paths {
+            std::fs::write(path, "fn main() {}\n").expect("writing the file");
+        }
+        let mut app = App::new(
+            paths
+                .iter()
+                .map(|path| Buffer::open(path).expect("opening it"))
+                .collect(),
+        );
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        support::lay_out(&mut app, 70, 12);
+        support::type_text(&mut app, "x");
+        switch_to(&mut app, "two.rs");
+        std::fs::remove_dir_all(&gone).expect("taking the directory away");
+
+        dispatch::dispatch(&mut app, Command::DocumentCloseOthers);
+        support::answer(&mut app, "Save everything and close the others");
+
+        assert_eq!(open(&app).len(), 3, "it closed on a save that failed");
+    }
+
     /// By its name in the palette, which is the only way to it until a
     /// reader binds a key: the row is there, live, and enter runs it.
     #[test]
