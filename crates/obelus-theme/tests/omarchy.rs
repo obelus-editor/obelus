@@ -107,7 +107,9 @@ fn colour(palette: &str, name: &str) -> Color {
 /// Broken deliberately by mapping the template's `keyword` to `{{ blue }}`
 /// (the keyword assertion fails), and by misspelling `{{ background }}` as
 /// `{{ backgruond }}` (the placeholder is left behind, which is caught
-/// before the page -- the built-in dark one's grey -- is looked at).
+/// before the page -- the built-in dark one's grey -- is looked at), and
+/// by taking the template's `caret` line out (the caret is Midnight's
+/// `foreground`, not the white omarchy gives its cursors).
 #[test]
 fn midnight_is_the_colours_omarchy_gives_its_editors() {
     let (said, theme) = rendered(MIDNIGHT);
@@ -126,6 +128,8 @@ fn midnight_is_the_colours_omarchy_gives_its_editors() {
     assert_eq!(theme.syntax.type_name, colour(MIDNIGHT, "yellow"));
     assert_eq!(theme.syntax.string, colour(MIDNIGHT, "green"));
     assert_eq!(theme.syntax.variable, colour(MIDNIGHT, "foreground"));
+    // And the caret is in the colour omarchy draws its cursors in.
+    assert_eq!(theme.caret(), colour(MIDNIGHT, "bright_foreground"));
     // What the template leaves out is the dark theme's.
     assert_eq!(
         theme.change_added_background,

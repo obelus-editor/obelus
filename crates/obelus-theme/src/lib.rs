@@ -290,6 +290,21 @@ pub struct Theme {
     /// went looking for", and two cells that mean different things should
     /// not look the same.
     pub bracket_background: Color,
+    /// What the caret is drawn in, where a window draws it; `None` is the
+    /// text's own colour, [`Theme::foreground`] -- see [`Theme::caret`].
+    ///
+    /// Its own colour rather than the ink of the cell it stands on, which
+    /// is what it was: a caret that turns purple before a keyword and green
+    /// before a string is a caret whose colour says something about the
+    /// next character, when what the reader is looking for is where it is.
+    ///
+    /// Optional the way the sixteen are, and for the same reason: a file
+    /// that sets its own page and ink and says nothing about the caret
+    /// means its own ink, not the base's -- which on a light file over
+    /// `dark` would be a light caret on a light page.
+    ///
+    /// A terminal's caret is the terminal's, and never reads this.
+    pub caret: Option<Color>,
     /// The syntax colours.
     pub syntax: SyntaxTheme,
     /// The sixteen colours a program in a terminal of Obelus's own names by
@@ -358,6 +373,16 @@ impl Theme {
             6 => self.syntax.property,
             _ => self.foreground,
         })
+    }
+
+    /// The colour the caret is drawn in: the theme's where it gave one, and
+    /// the text's own otherwise.
+    #[must_use]
+    pub const fn caret(&self) -> Color {
+        match self.caret {
+            Some(caret) => caret,
+            None => self.foreground,
+        }
     }
 
     /// The colour a change's marker is drawn in, wherever it is drawn.

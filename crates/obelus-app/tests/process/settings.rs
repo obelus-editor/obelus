@@ -4431,6 +4431,8 @@ struct Told {
     grounds: std::sync::Mutex<Vec<ratatui::style::Color>>,
     /// And every pair of colours a hold is drawn in.
     holds: std::sync::Mutex<Vec<(ratatui::style::Color, ratatui::style::Color)>>,
+    /// And every colour the caret is drawn in.
+    carets: std::sync::Mutex<Vec<ratatui::style::Color>>,
 }
 
 impl obelus_app::app::Drawing for Told {
@@ -4444,6 +4446,10 @@ impl obelus_app::app::Drawing for Told {
 
     fn holding(&self, held: ratatui::style::Color, row: ratatui::style::Color) {
         self.holds.lock().expect("what was said").push((held, row));
+    }
+
+    fn caret_in(&self, colour: ratatui::style::Color) {
+        self.carets.lock().expect("what was said").push(colour);
     }
 
     /// Nothing: what this is a test of is the size, and the shape of the
@@ -4490,6 +4496,11 @@ impl Told {
     /// And the last pair a hold is drawn in.
     fn holds(&self) -> Option<(ratatui::style::Color, ratatui::style::Color)> {
         self.holds.lock().expect("what was said").last().copied()
+    }
+
+    /// And the last colour the caret is drawn in.
+    fn caret(&self) -> Option<ratatui::style::Color> {
+        self.carets.lock().expect("what was said").last().copied()
     }
 }
 
@@ -4656,6 +4667,50 @@ fn the_colours_a_hold_is_drawn_in_reach_whatever_is_drawing() {
     );
     assert_ne!(light, dark, "the two themes hold in the same colours");
     assert_eq!(told.holds(), Some(dark), "the pair it was changed to");
+}
+
+/// And so does the colour the caret is drawn in, which only a window draws
+/// a caret in at all.
+///
+/// The theme's caret, which is not its ink: catppuccin's is rosewater.
+///
+/// Deliberate breaks: the call taken out of `say_the_colours` (nothing is
+/// said), and `Theme::caret` answering the ink (the second is catppuccin's
+/// ink, not its rosewater).
+#[test]
+fn the_colour_the_caret_is_drawn_in_reaches_whatever_is_drawing() {
+    let _taken = crate::turn();
+    let scratch = temporary("caret");
+    let file = settings_file(&scratch);
+    std::fs::write(
+        &file,
+        "theme = \"dark\"
+",
+    )
+    .expect("the settings");
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.config_file_for_test(file.clone());
+    let told = std::sync::Arc::new(Told::default());
+    app.drawn_by(told.clone());
+    assert_eq!(
+        told.caret(),
+        Some(app.theme().foreground),
+        "dark leaves the caret to its ink"
+    );
+
+    std::fs::write(
+        &file,
+        "theme = \"catppuccin-mocha\"
+",
+    )
+    .expect("the settings");
+    app.config_file_for_test(file);
+    assert_eq!(
+        told.caret(),
+        Some(ratatui::style::Color::Rgb(245, 224, 220)),
+        "catppuccin's caret is its rosewater"
+    );
 }
 
 /// A settings file that will not read is a problem marked on that file.

@@ -14,6 +14,11 @@ base = "{{ mode }}"
 background = "{{ background }}"
 foreground = "{{ foreground }}"
 
+# The caret, in the colour omarchy gives every other cursor it themes:
+# its `cursor` is this, and only an omarchy that resolves its palette
+# before rendering has a word for it.
+caret = "{{ bright_foreground }}"
+
 # Line numbers: the dim ones, and the cursor's own.
 gutter = "{{ dark_foreground }}"
 gutter_current = "{{ light_foreground }}"

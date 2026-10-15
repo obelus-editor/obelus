@@ -128,6 +128,13 @@ pub(crate) enum Update {
     /// The same journey as the ground, and ahead of it: what the window
     /// keeps of the screen going is drawn in the ground it has until then.
     Recoloured,
+    /// What colour the caret is drawn in.
+    ///
+    /// The theme's, said with the ground and at the same moments, and kept
+    /// by the page rather than the window because it is the page that is
+    /// kept when the theme goes -- see `Drawing::recoloured` -- and the
+    /// screen going is in the caret it had.
+    CaretInk(Color),
     /// What shape the caret is, and whose it is.
     ///
     /// Which is a fact about the frame it arrives with -- both depend on
@@ -1294,6 +1301,12 @@ impl obelus_app::app::Drawing for Telling {
         let _ = self.updates.send(Update::Tabs(tabs.to_vec()));
     }
 
+    fn caret_in(&self, colour: Color) {
+        if self.updates.send(Update::CaretInk(colour)).is_ok() {
+            (self.wake)();
+        }
+    }
+
     fn caret_is(&self, caret: Caret, whose: Option<Layer>, typing: bool) {
         // No wake: this arrives while a frame is being laid out, and the
         // frame's own end wakes the window a moment later. Waking here as
@@ -1507,6 +1520,9 @@ pub(crate) struct Page {
     shape: Caret,
     whose: Option<Layer>,
     typing: bool,
+    /// What the caret is drawn in, and the reset colour until the
+    /// application has said -- see `Page::caret_ink`.
+    ink: Color,
     /// What the page is drawn on, which is what a cell nobody has written
     /// yet is drawn on too -- see `blank`.
     ground: Color,
@@ -1530,6 +1546,7 @@ impl Default for Page {
             whose: None,
             // And nothing is typed into a screen with nothing on it.
             typing: false,
+            ink: Color::Reset,
             ground: Color::Reset,
             put_over: Vec::new(),
         }
@@ -1607,6 +1624,16 @@ impl Page {
     /// Whether a character typed now goes into any text.
     pub(crate) const fn typing(&self) -> bool {
         self.typing
+    }
+
+    /// What colour the caret is drawn in, which is the theme's -- or `None`
+    /// before the application has said, when the painter has only the
+    /// cells to go by.
+    pub(crate) const fn caret_ink(&self) -> Option<Color> {
+        match self.ink {
+            Color::Reset => None,
+            ink => Some(ink),
+        }
     }
 
     /// Makes room for a screen this size, keeping each cell at the place it
@@ -1758,6 +1785,10 @@ impl Page {
                 self.shape = shape;
                 self.whose = whose;
                 self.typing = typing;
+                false
+            }
+            Update::CaretInk(ink) => {
+                self.ink = ink;
                 false
             }
             // Neither is a cell: the window takes both out of the queue
@@ -1920,6 +1951,24 @@ mod tests {
         page.resized(1, 2);
         assert_eq!(page.look(0, 0).text, "a");
         assert_eq!(page.look(0, 1).text, "c");
+    }
+
+    /// The caret is drawn in the colour the theme said, whatever the ink of
+    /// the cell it is on -- and a frame clearing the page does not take
+    /// that colour with it, because it is the theme's and not the frame's.
+    ///
+    /// Deliberate breaks: the arm for it not keeping the colour (nothing is
+    /// said, so the painter falls back to the cell's ink), and `Cleared`
+    /// resetting it with the cells (the second assertion is `None`).
+    #[test]
+    fn the_caret_is_in_the_colour_it_was_told() {
+        let mut page = written(&["ab"]);
+        assert_eq!(page.caret_ink(), None, "nothing has been said yet");
+        let rosewater = Color::Rgb(245, 224, 220);
+        page.apply(Update::CaretInk(rosewater));
+        assert_eq!(page.caret_ink(), Some(rosewater));
+        page.apply(Update::Cleared);
+        assert_eq!(page.caret_ink(), Some(rosewater), "a frame took it away");
     }
 
     /// A window that goes smaller and back before Obelus draws has every

@@ -436,6 +436,10 @@ fn over_noting(table: &toml::Table) -> (Theme, Noted) {
         ),
         change_removed_background: of("change_removed_background", base.change_removed_background),
         bracket_background: of("bracket_background", base.bracket_background),
+        // What the file names, and what the base names where it does not --
+        // the sixteen's rule, and for their reason: a caret left to the ink
+        // is *this* file's ink.
+        caret: read("", Some(table), "caret").or(base.caret),
         syntax: SyntaxTheme {
             attribute: syn(SyntaxKind::Attribute, base.syntax.attribute),
             boolean: syn(SyntaxKind::Boolean, base.syntax.boolean),
@@ -780,5 +784,32 @@ mod tests {
         assert_eq!(theme.terminal_colour(7), Some(theme.foreground));
         // Past the sixteen, a colour is exactly what it says.
         assert_eq!(theme.terminal_colour(16), None);
+    }
+
+    /// A caret a file names is the file's; one it does not is the file's
+    /// own ink where its base left the caret to the ink, and the base's
+    /// where the base named one.
+    ///
+    /// Broken deliberately three times: `caret` not read (the first is the
+    /// ink, and the name is noted as a misspelling), the base's ink taken
+    /// in place of the file's (the second is dark's ink on a light page),
+    /// and the base's caret not kept (the third is the file's ink, not
+    /// rosewater).
+    #[test]
+    fn a_caret_is_the_files_or_its_ink() {
+        let read = |said: &str| {
+            let table: toml::Table = said.parse().expect("a table");
+            let (theme, noted) = super::over_noting(&table);
+            assert!(noted.is_empty(), "something was noted in {said:?}");
+            theme
+        };
+        let named = read("caret = \"#123456\"\nforeground = \"#abcdef\"\n");
+        assert_eq!(named.caret(), Color::Rgb(0x12, 0x34, 0x56));
+
+        let inked = read("base = \"dark\"\nforeground = \"#101010\"\n");
+        assert_eq!(inked.caret(), Color::Rgb(0x10, 0x10, 0x10));
+
+        let kept = read("base = \"catppuccin-mocha\"\nforeground = \"#101010\"\n");
+        assert_eq!(kept.caret(), Color::Rgb(245, 224, 220));
     }
 }

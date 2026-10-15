@@ -565,11 +565,12 @@ pub(crate) fn file_in_mut(
 /// What a front end is told about a theme -- see `App::say_the_colours` --
 /// as one value, so that whether it has changed is one comparison of the
 /// very things that would be said.
-const fn colours_said(theme: &Theme) -> (Color, Color, Color) {
+const fn colours_said(theme: &Theme) -> (Color, Color, Color, Color) {
     (
         theme.background,
         theme.selection_background,
         theme.selected_row_background,
+        theme.caret(),
     )
 }
 
@@ -909,13 +910,15 @@ impl App {
         }
     }
 
-    /// The two things about the theme a front end paints for itself: the
-    /// ground outside the cells, and the colours a hold is drawn in.
+    /// The three things about the theme a front end paints for itself: the
+    /// ground outside the cells, the colours a hold is drawn in, and the
+    /// caret's.
     pub(crate) fn say_the_colours(&self) {
         if let Some(drawing) = self.drawing.as_ref() {
-            let (ground, held, row) = colours_said(&self.theme);
+            let (ground, held, row, caret) = colours_said(&self.theme);
             drawing.drawn_on(ground);
             drawing.holding(held, row);
+            drawing.caret_in(caret);
         }
     }
 
@@ -1644,6 +1647,14 @@ pub trait Drawing: std::fmt::Debug + Send + Sync {
     /// file or its picture rewritten -- and once when the front end says
     /// who it is, the way the page's ground is.
     fn hang(&self, wallpaper: Option<&obelus_theme::Wallpaper>);
+
+    /// What colour the caret is drawn in.
+    ///
+    /// Said the way the page's ground is and at the same two moments,
+    /// because it is the theme's and not the frame's. Nothing to a
+    /// terminal, whose caret is the terminal's own -- which is why it does
+    /// nothing unless a front end says otherwise.
+    fn caret_in(&self, _colour: Color) {}
 
     /// The theme is changing: what is on the screen now is in the one it
     /// was in, and the next frame is in another.

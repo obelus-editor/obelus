@@ -564,6 +564,7 @@ fn the_template_for_omarchy_names_colours_obelus_has() {
         theme.change_modified_background,
         theme.change_removed_background,
         theme.bracket_background,
+        theme.caret(),
     ];
     let syntax = theme.syntax;
     got.extend([
