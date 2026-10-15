@@ -713,7 +713,7 @@ impl Showing {
     /// Puts the tab carried where the pointer has it, if that is somewhere
     /// new -- after the pointer moves, and after a frame that scrolled the
     /// row under it at one end.
-    fn carry(&self) {
+    fn carry(&mut self) {
         if let Some((document, beside, after)) = self.strip.carried() {
             self.tell(Event::Placed {
                 document,

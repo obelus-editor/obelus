@@ -186,6 +186,11 @@ pub(crate) struct Strip {
     /// Whether the tabs have been told in another order since they were
     /// last laid out -- see `told`.
     stale: bool,
+    /// Where the tab carried was last said to go, until the tabs come back
+    /// in another order: a drag finds the same place on every move of the
+    /// pointer and every frame of a scroll until the application has
+    /// answered, and each saying of it was a frame of the application's.
+    asked: Option<(obelus_buffer::DocumentId, obelus_buffer::DocumentId, bool)>,
     /// When the row last scrolled under a tab carried to one of its ends,
     /// while it is scrolling.
     edged: Option<Instant>,
@@ -291,6 +296,16 @@ impl Strip {
         {
             self.stale = true;
             self.hovered = None;
+            self.asked = None;
+        }
+        // A tab carried whose document has gone -- closed by a key the
+        // other hand pressed, or by an agent -- is carried no longer: what
+        // it held is not on the bar to put anywhere.
+        if self
+            .held
+            .is_some_and(|held| !tabs.iter().any(|tab| tab.document == held.document))
+        {
+            self.held = None;
         }
         self.tabs = tabs;
     }
@@ -533,13 +548,19 @@ impl Strip {
 
     /// Where the tab carried goes, with the pointer where it is now: asked
     /// when the pointer moves, and on every frame the row scrolls under a
-    /// pointer that does not.
+    /// pointer that does not. Only somewhere not already said -- see
+    /// `asked`.
     pub(crate) fn carried(
-        &self,
+        &mut self,
     ) -> Option<(obelus_buffer::DocumentId, obelus_buffer::DocumentId, bool)> {
         let held = self.dragged()?;
         let (beside, after) = self.dropping(held.document, held.x)?;
-        Some((held.document, beside, after))
+        let going = (held.document, beside, after);
+        if self.asked == Some(going) {
+            return None;
+        }
+        self.asked = Some(going);
+        Some(going)
     }
 
     /// Drags the tab held to where the pointer is now. Whether one is
@@ -1449,5 +1470,40 @@ mod tests {
         assert!(strip.drag(606.0));
         assert_eq!(strip.holding(), Some(obelus_buffer::DocumentId::new(6)));
         assert!(strip.edging().is_some(), "carried, and not scrolling");
+    }
+
+    /// Where a tab carried goes is said once, until the tabs come back in
+    /// another order; and a tab carried whose document goes is let go of.
+    ///
+    /// Deliberate breaks: leave the `asked` check out of `carried`, and the
+    /// same place is said again on the next move; leave the letting go out
+    /// of `told`, and the bar goes on scrolling under a hand holding a tab
+    /// that is not there.
+    #[test]
+    fn a_place_is_said_once_and_a_tab_gone_is_let_go_of() {
+        let id = obelus_buffer::DocumentId::new;
+        let mut short = Strip::default();
+        short.told((0..3).map(|at| tab(at, at == 0)).collect());
+        short.lay(Some(room()), |_, _| 4.0, Instant::now(), false);
+        short.point(Some(10.0));
+        short.hold(0);
+        short.drag(150.0);
+        assert_eq!(short.carried(), Some((id(0), id(1), true)));
+        short.drag(151.0);
+        assert_eq!(short.carried(), None, "said again");
+        // The application's answer, and a move back past the middle.
+        short.told(vec![tab(1, false), tab(0, true), tab(2, false)]);
+        short.lay(Some(room()), |_, _| 4.0, Instant::now(), false);
+        short.drag(30.0);
+        assert_eq!(short.carried(), Some((id(0), id(1), false)));
+
+        let mut long = strip(0);
+        long.point(Some(30.0));
+        long.hold(0);
+        long.drag(760.0);
+        assert!(long.edging().is_some());
+        long.told((1..10).map(|at| tab(at, at == 1)).collect());
+        assert_eq!(long.holding(), None, "still holding a tab that has gone");
+        assert!(long.edging().is_none());
     }
 }
