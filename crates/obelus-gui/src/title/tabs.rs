@@ -244,7 +244,20 @@ struct Held {
     grab: f32,
     /// Where the pointer is along the bar.
     x: f32,
+    /// Where it was pressed.
+    from: f32,
+    /// Whether it has gone far enough from there to be a drag -- see
+    /// `DRAG`.
+    moved: bool,
 }
+
+/// How far a tab held has to be carried before it is being dragged, in the
+/// words' size: half a letter. Until then it is a press -- one on a tab
+/// cut by an end, to bring it into sight, is the commonest there is, and
+/// a hand that does not move is a press however long it is held. Taken
+/// for a drag, it scrolled the row from under the reader and could put
+/// the tab somewhere else.
+const DRAG: f32 = 0.5;
 
 /// What a tab says: its name, and a mark after it where the file has
 /// changes that are not on disk -- the mark the list of what is open puts
@@ -408,7 +421,7 @@ impl Strip {
     /// is as far that way as it goes -- or the window would draw frames for
     /// a row that cannot move.
     fn edging(&self) -> Option<f32> {
-        let (held, room) = (self.held?, self.room?);
+        let (held, room) = (self.dragged()?, self.room?);
         if self.arrows.is_none() || self.covered {
             return None;
         }
@@ -442,6 +455,7 @@ impl Strip {
             .map(|since| now.saturating_duration_since(since).as_secs_f32());
         let held = self
             .held
+            .filter(|held| held.moved)
             .and_then(|held| Some((held.document, self.lifted_at(held)?)));
         let mut shown = HashMap::with_capacity(self.tabs.len());
         let mut moving = false;
@@ -502,12 +516,19 @@ impl Strip {
             document: tab.document,
             grab: x - laid.left,
             x,
+            from: x,
+            moved: false,
         });
     }
 
     /// The document whose tab is held, while one is.
     pub(crate) fn holding(&self) -> Option<obelus_buffer::DocumentId> {
-        self.held.map(|held| held.document)
+        self.dragged().map(|held| held.document)
+    }
+
+    /// The tab held, once it is being dragged.
+    fn dragged(&self) -> Option<Held> {
+        self.held.filter(|held| held.moved)
     }
 
     /// Where the tab carried goes, with the pointer where it is now: asked
@@ -516,7 +537,7 @@ impl Strip {
     pub(crate) fn carried(
         &self,
     ) -> Option<(obelus_buffer::DocumentId, obelus_buffer::DocumentId, bool)> {
-        let held = self.held?;
+        let held = self.dragged()?;
         let (beside, after) = self.dropping(held.document, held.x)?;
         Some((held.document, beside, after))
     }
@@ -524,11 +545,14 @@ impl Strip {
     /// Drags the tab held to where the pointer is now. Whether one is
     /// held, which is whether there is anything new to draw.
     pub(crate) fn drag(&mut self, x: f32) -> bool {
+        let far = self.room.map_or(0.0, |room| DRAG * room.words);
         let Some(held) = self.held.as_mut() else {
             return false;
         };
         held.x = x;
-        true
+        let was = held.moved;
+        held.moved |= (x - held.from).abs() >= far;
+        held.moved || was
     }
 
     /// Lets go of the tab held, which slides from where it was dropped
@@ -1391,5 +1415,39 @@ mod tests {
         strip.told((0..11).map(|at| tab(at, at == 10)).collect());
         strip.lay(Some(room()), |_, _| 4.0, Instant::now(), true);
         assert!(strip.sliding(), "jumped to the tab opened");
+    }
+
+    /// A tab pressed and held without moving is a press: at the end of a
+    /// row it does not scroll the row and is put nowhere, and only once it
+    /// has gone half a letter is it carried.
+    ///
+    /// Deliberate break: make every hold `moved` from the start, in
+    /// `Strip::hold`. A press on the tab cut by the end is a drag before
+    /// the hand has moved, and scrolls the row from under the reader for
+    /// as long as it is held.
+    #[test]
+    fn a_press_held_still_is_not_a_drag() {
+        let mut strip = strip(0);
+        let start = Instant::now();
+        // Over the tab the end cuts, inside where a tab carried scrolls.
+        strip.point(Some(600.0));
+        assert_eq!(strip.hovered(), Some(Spot::Tab(6)));
+        strip.hold(6);
+        assert!(!strip.drag(603.0), "a press is drawn as a drag");
+        for frame in 0..30 {
+            strip.lay(
+                Some(room()),
+                |_, _| 4.0,
+                start + Duration::from_millis(16 * frame),
+                true,
+            );
+        }
+        assert_eq!(strip.target, 0.0, "a press scrolled the row");
+        assert_eq!(strip.carried(), None, "a press put the tab somewhere");
+        assert_eq!(strip.holding(), None);
+
+        assert!(strip.drag(606.0));
+        assert_eq!(strip.holding(), Some(obelus_buffer::DocumentId::new(6)));
+        assert!(strip.edging().is_some(), "carried, and not scrolling");
     }
 }
