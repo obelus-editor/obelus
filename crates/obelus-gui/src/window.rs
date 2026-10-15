@@ -2390,7 +2390,10 @@ impl ApplicationHandler<Waking> for Showing {
                     }
                 };
                 if rows != 0 {
-                    self.tell(Event::Scroll(rows));
+                    self.tell(Event::Scroll {
+                        rows,
+                        at: self.pointer,
+                    });
                 }
             }
             // Out of the window -- or, on Windows, onto the part of the bar

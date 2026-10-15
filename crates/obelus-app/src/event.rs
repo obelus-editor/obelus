@@ -89,7 +89,16 @@ pub enum Event {
     /// reader had chosen stays where they put it. Which is only knowable
     /// because Obelus asks the terminal to report the mouse -- without that
     /// the wheel arrives as arrow keys.
-    Scroll(isize),
+    Scroll {
+        /// How many rows.
+        rows: isize,
+        /// The cell the pointer was over as it turned, where the front end
+        /// knows: what a notch goes to can depend on what is under it, and
+        /// the last place the pointer was reported is only where it was
+        /// when it last moved -- the last click, in a terminal that does
+        /// not report a pointer moving with no button down.
+        at: Option<(u16, u16)>,
+    },
     /// The pointer, over the screen.
     ///
     /// Where rather than what: which region a click lands in is the
@@ -293,7 +302,7 @@ impl Event {
             Self::Closed => "Closed",
             Self::Stopped => "Stopped",
             Self::Shifted(_) => "Shifted",
-            Self::Scroll(_) => "Scroll",
+            Self::Scroll { .. } => "Scroll",
             Self::Pointer { .. } => "Pointer",
             Self::Chose(_) => "Chose",
             Self::Placed { .. } => "Placed",
@@ -407,8 +416,14 @@ impl Event {
                     })
                 };
                 match mouse.kind {
-                    MouseEventKind::ScrollDown => Some(Self::Scroll(3)),
-                    MouseEventKind::ScrollUp => Some(Self::Scroll(-3)),
+                    MouseEventKind::ScrollDown => Some(Self::Scroll {
+                        rows: 3,
+                        at: Some((mouse.column, mouse.row)),
+                    }),
+                    MouseEventKind::ScrollUp => Some(Self::Scroll {
+                        rows: -3,
+                        at: Some((mouse.column, mouse.row)),
+                    }),
                     // The left button only. The others are the terminal's
                     // own -- a paste on middle click, a menu on right --
                     // and taking them would be taking them away.

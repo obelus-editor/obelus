@@ -228,7 +228,7 @@ fn the_foot_of_the_bar_is_the_end_of_a_wrapped_file() {
 #[test]
 fn a_press_on_the_mark_moves_nothing() {
     let (_scratch, mut app) = reading("bar-press-mark", 200);
-    app.handle(Event::Scroll(15));
+    app.handle(Event::Scroll { rows: 15, at: None });
     support::lay_out(&mut app, WIDTH, HEIGHT);
     let before = top_line(&app);
     let x = WIDTH - 1;

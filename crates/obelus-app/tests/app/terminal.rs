@@ -583,7 +583,7 @@ fn the_wheel_over_a_pager_is_arrow_keys() {
     pump(&mut app, &events, "the pty to be raw", |app| {
         on_the_terminal(app).contains("go-8")
     });
-    app.handle(Event::Scroll(1));
+    app.handle(Event::Scroll { rows: 1, at: None });
     pump(&mut app, &events, "the arrow to be read back", |app| {
         on_the_terminal(app).contains("033   [   B")
     });

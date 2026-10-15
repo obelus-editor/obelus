@@ -1418,7 +1418,7 @@ fn the_wheel_scrolls_the_settings_and_not_the_file_behind() {
     };
     let top = behind(&app);
 
-    app.handle(Event::Scroll(3));
+    app.handle(Event::Scroll { rows: 3, at: None });
     support::render(&mut app, 66, 12);
     // One entry: the first is a heading, a name, what it does and a
     // blank, which is more than the three rows a notch is.
@@ -1427,7 +1427,7 @@ fn the_wheel_scrolls_the_settings_and_not_the_file_behind() {
     assert_eq!(behind(&app), top, "a notch scrolled the file behind");
 
     for _ in 0..3 {
-        app.handle(Event::Scroll(-3));
+        app.handle(Event::Scroll { rows: -3, at: None });
     }
     support::render(&mut app, 66, 12);
     assert_eq!(page(&app), 0, "the wheel did not come back to the top");
@@ -1449,7 +1449,7 @@ fn enter_on_a_setting_scrolled_away_shows_it_first() {
     support::render(&mut app, 66, 12);
     let page = |app: &App| app.settings().expect("the settings").window().top();
     for _ in 0..4 {
-        app.handle(Event::Scroll(3));
+        app.handle(Event::Scroll { rows: 3, at: None });
     }
     support::render(&mut app, 66, 12);
     assert!(
@@ -2862,7 +2862,7 @@ fn alt_backspace_on_a_row_scrolled_away_shows_it_first() {
     }
     support::render(&mut app, 66, 12);
     for _ in 0..6 {
-        app.handle(Event::Scroll(3));
+        app.handle(Event::Scroll { rows: 3, at: None });
     }
     support::render(&mut app, 66, 12);
     let both = [

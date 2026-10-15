@@ -2623,7 +2623,7 @@ fn the_wheel_scrolls_the_transcript_and_leaves_the_cursor() {
         "the transcript fits, so nothing here means anything"
     );
 
-    app.handle(Event::Scroll(-3));
+    app.handle(Event::Scroll { rows: -3, at: None });
     support::lay_out(&mut app, WIDTH, short);
     assert_eq!(
         app.chat().expect("the chat").top(),
@@ -2637,7 +2637,7 @@ fn the_wheel_scrolls_the_transcript_and_leaves_the_cursor() {
     );
 
     // And back down to the end, which is where a transcript sits.
-    app.handle(Event::Scroll(3));
+    app.handle(Event::Scroll { rows: 3, at: None });
     support::lay_out(&mut app, WIDTH, short);
     assert_eq!(
         app.chat().expect("the chat").top(),
@@ -14963,7 +14963,7 @@ fn a_drag_in_the_box_keeps_the_keys_there() {
     // Up from the end, with the wheel, which leaves the keys in the box: at
     // the end, the tick's scroll carries the window past the last row and
     // the drag it hands on lands on nothing.
-    app.handle(Event::Scroll(-9));
+    app.handle(Event::Scroll { rows: -9, at: None });
 
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     let y = row_of(&dump, "a draft");
