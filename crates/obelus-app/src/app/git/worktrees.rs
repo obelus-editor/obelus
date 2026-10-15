@@ -747,6 +747,20 @@ impl App {
             self.ask_before_switching(unsaved);
             return;
         }
+        // And a program still running in a terminal, which going stops:
+        // asked for the reason closing the project asks.
+        let running = self.terminals_running();
+        if running > 0 {
+            self.worktrees.going = Some(path);
+            self.ask_before_stopping_them(
+                running,
+                "switch",
+                obelus_component::question::Answer::Switching(
+                    obelus_component::question::Leaving::Discard,
+                ),
+            );
+            return;
+        }
         self.move_to_tree(&path);
     }
 

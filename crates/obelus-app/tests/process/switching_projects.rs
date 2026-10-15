@@ -205,6 +205,47 @@ fn enter_in_a_terminal_goes_there_and_remembers_it() {
     );
 }
 
+/// Going asks first about a program still running in a terminal, which
+/// would go with the project -- the question closing the project asks.
+///
+/// A shell that has only just started is running, which is all this needs:
+/// what it has printed is `terminal.rs`'s, which is Unix's alone.
+///
+/// Broken deliberately by leaving the count of running terminals out of
+/// `App::go_to_tree`: the window goes at the first enter, and the shell
+/// with it.
+#[test]
+fn going_asks_about_a_running_terminal_first() {
+    let _turn = crate::turn();
+    let scratch = Scratch::new("switching-running");
+    let (here, there) = (project(&scratch, "here"), project(&scratch, "there"));
+    keep(&[(&here, now()), (&there, now())]);
+    let mut app = on(&here);
+    let _events = support::drive(&mut app);
+    app.shell_for_test(PathBuf::from(match cfg!(windows) {
+        true => "cmd.exe",
+        false => "/bin/sh",
+    }));
+    dispatch::dispatch(&mut app, Command::TerminalOpen);
+    assert!(app.terminal().is_some(), "no terminal opened");
+
+    dispatch::dispatch(&mut app, Command::ProjectList);
+    press(&mut app, KeyCode::Enter);
+
+    assert_eq!(app.working_directory(), here, "went without asking");
+    assert_eq!(
+        support::ways(&app).first().map(String::as_str),
+        Some("Stop it and switch"),
+        "the question was not about the terminal"
+    );
+    support::answer(&mut app, "Stop it and switch");
+    assert_eq!(
+        app.working_directory(),
+        there,
+        "the answer did not go there"
+    );
+}
+
 /// In a window, enter opens another window on the project and leaves this
 /// one where it is; `ctrl+enter` is this one going.
 ///
