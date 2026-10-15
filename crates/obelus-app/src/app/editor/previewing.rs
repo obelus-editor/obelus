@@ -552,13 +552,16 @@ impl App {
         // What a server said about a place, while the pointer is on it. Only
         // then: a notch anywhere else is the reader looking around the file,
         // and a box that took every notch held the file still for as long as
-        // it was up. One the pointer asked for lets go as the file moves,
-        // the word it was about no longer being under the pointer; one a
-        // key asked for goes with the caret's line.
+        // it was up.
         if self.pointer_on_hover() {
             self.scroll_hover(rows);
             return;
         }
+        // And anywhere else the box goes. Left up, it rode along with the
+        // line it was about and came to rest under the pointer, so the next
+        // notch was the box's after all -- and kept it, because a pointer in
+        // the box is a reader reading it.
+        self.lsp.hover = None;
         // What could be typed next, which is a list beside the cursor: a
         // notch scrolls it, the way a notch scrolls any list in Obelus.
         if let Some(completion) = self.lsp.completion.as_mut() {

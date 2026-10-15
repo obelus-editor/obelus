@@ -467,6 +467,13 @@ fn the_wheel_off_the_answer_scrolls_the_file() {
         top,
         "the answer took the notch with the pointer off it"
     );
+    // And the box goes with it. Left up it rides along with its line and
+    // comes to rest under the pointer, which then has it take the next
+    // notch. Broken deliberately by leaving it up: this failed.
+    assert!(
+        app.hover().is_none(),
+        "the answer stayed up over a file that moved"
+    );
 }
 
 /// An answer about a place the reader has left is dropped: a box appearing
