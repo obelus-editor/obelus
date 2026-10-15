@@ -203,7 +203,9 @@ fn tall(system: f64, tabbed: bool) -> f64 {
 
 /// Stands the system's three buttons in the middle of the bar, the
 /// way Zed does it, rather than at the top of the one AppKit lays them out
-/// on.
+/// on -- where the bar holds the tabs, and is taller than AppKit's for it.
+/// Where it does not, they are AppKit's, as they were before there were
+/// tabs: put back once if they were moved, and otherwise left alone.
 ///
 /// Not an empty toolbar, which is how AppKit makes a bar taller of its own
 /// accord: the toolbar takes every press on the bar, so a tab could not be
@@ -243,20 +245,74 @@ pub(crate) fn centre_the_buttons(window: &Window) {
     let Some(bar) = (unsafe { close.superview().and_then(|buttons| buttons.superview()) }) else {
         return;
     };
+    let buttons = [&close, &minimise, &zoom];
+    let mut kept = KEPT
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    // A bar without the tabs is AppKit's to lay out, as any window's is:
+    // where Obelus moved them, they go back where AppKit had them, once,
+    // and after that nothing touches them.
+    if !is_tabbed() {
+        if let Some(was) = kept.take() {
+            let mut frame = bar.frame();
+            frame.size.height = was.height;
+            frame.origin.y = shown.frame().size.height - was.gap;
+            bar.setFrame(frame);
+            for (button, y) in buttons.iter().zip(was.buttons) {
+                let mut frame = button.frame();
+                frame.origin.y = y;
+                button.setFrame(frame);
+            }
+            bar.updateTrackingAreas();
+            for button in buttons {
+                button.updateTrackingAreas();
+            }
+        }
+        return;
+    }
+    // Where AppKit had them, before they are first moved: the bar by how
+    // far down from the window's top its foot is, which holds while the
+    // window is resized under it.
+    if kept.is_none() {
+        let frame = bar.frame();
+        *kept = Some(Kept {
+            gap: shown.frame().size.height - frame.origin.y,
+            height: frame.size.height,
+            buttons: buttons.map(|button| button.frame().origin.y),
+        });
+    }
     let mut frame = bar.frame();
     frame.size.height = tall;
     frame.origin.y = shown.frame().size.height - tall;
     bar.setFrame(frame);
-    for button in [&close, &minimise, &zoom] {
+    for button in buttons {
         let mut frame = button.frame();
         frame.origin.y = (tall - frame.size.height) / 2.0;
         button.setFrame(frame);
     }
     // Or a button goes on lighting up where it used to be.
     bar.updateTrackingAreas();
-    for button in [&close, &minimise, &zoom] {
+    for button in buttons {
         button.updateTrackingAreas();
     }
+}
+
+/// Where AppKit had the bar and its buttons before `centre_the_buttons`
+/// first moved them, for putting them back when the bar stops holding the
+/// tabs. Nothing until they have been moved.
+#[cfg(target_os = "macos")]
+static KEPT: std::sync::Mutex<Option<Kept>> = std::sync::Mutex::new(None);
+
+/// What `KEPT` keeps, in AppKit's points.
+#[cfg(target_os = "macos")]
+#[derive(Clone, Copy)]
+struct Kept {
+    /// How far the view the bar is in starts from the window's top.
+    gap: f64,
+    /// And how tall it was.
+    height: f64,
+    /// Where each button stood up its height, close first.
+    buttons: [f64; 3],
 }
 
 /// Nothing: the buttons are where the system put them.
