@@ -725,8 +725,10 @@ impl Showing {
         };
         let size = window.inner_size();
         let cell = fonts.cell();
-        crate::title::centre_the_buttons(window);
+        // The title first: showing or hiding it lays the bar out again,
+        // which would put the buttons back where they are being moved from.
         crate::title::show_the_title(window);
+        crate::title::centre_the_buttons(window);
         self.titled = match self.bar.as_ref() {
             Some(bar) => bar.height(window),
             None => crate::title::height(window),

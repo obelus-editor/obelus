@@ -322,16 +322,34 @@ pub(crate) const fn centre_the_buttons(_window: &Window) {}
 /// Has AppKit write the window's title on its bar where the bar holds no
 /// tabs, the way it does on any window, and not where it does: the tabs
 /// are what the bar says then.
+///
+/// Asked before `centre_the_buttons`, and the bar laid out again here and
+/// now: a title shown or hidden is a new layout of the bar, which puts the
+/// buttons back at the top of it -- and left to the next pass AppKit makes,
+/// that came after they were centred, and they stayed at the top until
+/// the window next had the keys.
 #[cfg(target_os = "macos")]
 pub(crate) fn show_the_title(window: &Window) {
-    use objc2_app_kit::NSWindowTitleVisibility;
+    use objc2_app_kit::{NSWindowButton, NSWindowTitleVisibility};
     let Some(shown) = appkit(window) else {
         return;
     };
-    shown.setTitleVisibility(match is_tabbed() {
+    let wanted = match is_tabbed() {
         true => NSWindowTitleVisibility::Hidden,
         false => NSWindowTitleVisibility::Visible,
-    });
+    };
+    if shown.titleVisibility() == wanted {
+        return;
+    }
+    shown.setTitleVisibility(wanted);
+    // Safe: `superview` is unsafe because AppKit does not keep the view it
+    // hands back alive for the caller, and objc2 retains it on the way out.
+    let bar = shown
+        .standardWindowButton(NSWindowButton::CloseButton)
+        .and_then(|close| unsafe { close.superview().and_then(|buttons| buttons.superview()) });
+    if let Some(bar) = bar {
+        bar.layoutSubtreeIfNeeded();
+    }
 }
 
 /// Nothing: the title is written by whoever draws the bar -- Obelus on
