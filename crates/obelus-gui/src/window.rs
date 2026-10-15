@@ -658,6 +658,14 @@ impl Showing {
             .unwrap_or(Ok(()))
     }
 
+    /// The reader did something else, so what is left of a touchpad's
+    /// stroke is nobody's -- and nor are the pixels of it that had not yet
+    /// made a row, which would otherwise be the start of the next one.
+    fn cut_the_stroke(&mut self) {
+        self.stroke.cut();
+        self.rolled = 0.0;
+    }
+
     /// The reader did something, so the caret is solid again and the
     /// blinking starts over.
     ///
@@ -2110,6 +2118,7 @@ impl ApplicationHandler<Waking> for Showing {
                     // back out.
                     Ime::Commit(word) => {
                         self.composing = false;
+                        self.cut_the_stroke();
                         self.tell(Event::Paste(word));
                     }
                     Ime::Enabled | Ime::Disabled => self.give_up_spelling(),
@@ -2159,7 +2168,7 @@ impl ApplicationHandler<Waking> for Showing {
                 if self.composing && plain {
                     return;
                 }
-                self.stroke.cut();
+                self.cut_the_stroke();
                 self.tell(match keys::by_command(self.modifiers) {
                     true => Event::Command(key),
                     false => Event::Key(key),
@@ -2207,7 +2216,7 @@ impl ApplicationHandler<Waking> for Showing {
                 }
                 self.stir();
                 if state == ElementState::Pressed {
-                    self.stroke.cut();
+                    self.cut_the_stroke();
                 }
                 // Asked again at every press rather than cleared at the
                 // release: a press that drags the window by its bar may

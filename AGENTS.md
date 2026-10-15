@@ -876,8 +876,9 @@ crates/
                       is showing it, a moment and a rate are two kinds of
                       waiting, and none of it crosses to the application
                       (motion); a coast is the end of the stroke it came
-                      from, and a key cuts it (stroke); a full-width character takes the
-                      cells it covers with it, because the diff will not
+                      from, and a key cuts it (stroke); a full-width
+                      character takes the cells it covers with it, because
+                      the diff will not
                       (grid); the colours go through untouched, only a window
                       can draw the caret's shape, a pane joined to the page has
                       one edge and so no corners while a box joined to nothing
