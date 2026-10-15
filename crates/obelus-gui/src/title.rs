@@ -71,7 +71,7 @@ use std::{
 
 use obelus_ui::shapes::Joined;
 use ratatui::style::Color;
-pub(crate) use tabs::{Painted, Room, Spot, Strip};
+pub(crate) use tabs::{Laid, Painted, Room, Shown, Spot, Strip};
 #[cfg(windows)]
 pub(crate) use windows::{Bar, drawn};
 use winit::window::{Theme, Window, WindowAttributes};

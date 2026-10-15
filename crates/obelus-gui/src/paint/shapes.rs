@@ -203,7 +203,12 @@ impl Painter {
             Some(_) => self.veil(),
             None => self.ground_colour(),
         };
-        for (at, tab) in strip.tabs.iter().enumerate() {
+        // The tab carried is drawn after all the rest, shape and name, so
+        // that it is over them as it passes: drawn with them, the names
+        // it passed over were written across it.
+        let (lying, lifted): (Vec<&crate::title::Shown>, Vec<&crate::title::Shown>) =
+            strip.tabs.iter().partition(|tab| !tab.lifted);
+        for (at, tab) in lying.iter().enumerate() {
             let laid = tab.laid;
             let left = laid.left - margin[0];
             if tab.hovered && !tab.reading {
@@ -226,7 +231,7 @@ impl Painter {
             // own drawn: the one being read, or the one under the pointer,
             // says where it ends by its edge, and a line along that edge
             // is the same thing said twice.
-            let next = strip.tabs.get(at + 1);
+            let next = lying.get(at + 1);
             if !tab.reading
                 && !tab.hovered
                 && let Some(after) = next
@@ -248,26 +253,21 @@ impl Painter {
         // foot go over whatever its neighbours drew there. Its top corners
         // round, and the two at its foot bending out into the bar, the way
         // a tab joins what it is the tab of.
-        if let Some(laid) = strip
-            .tabs
-            .iter()
-            .find(|tab| tab.reading)
-            .map(|tab| tab.laid)
-        {
+        let plate = |painter: &mut Self, laid: crate::title::Laid| {
             let left = laid.left - margin[0];
-            self.quads.push(Quad {
+            painter.quads.push(Quad {
                 // A corner's width past the tab on either side, which is
                 // where the curves that bend outwards are drawn.
                 rect: [left - corner, top, laid.width + 2.0 * corner, tall],
-                uv: self.atlas.white,
+                uv: painter.atlas.white,
                 colour: page,
                 flags: HELD_PLATE | (JOINS_THE_PAGE << HELD_TURNS),
                 radius: corner,
                 layer: 0,
                 lower: 0.0,
             });
-        }
-        for tab in &strip.tabs {
+        };
+        let name = |painter: &mut Self, fonts: &mut Fonts, tab: &crate::title::Shown| {
             let left = tab.laid.left - margin[0];
             let ink = crate::title::tab_ink(tab.reading, strip.active, dark);
             let end = left + tab.laid.width - room.padding() / 2.0;
@@ -276,10 +276,23 @@ impl Painter {
             // open draws it before the same name.
             if let Some(icon) = tab.icon {
                 let placed = fonts.caption_mark(icon, room.mark()).to_vec();
-                self.written(fonts, placed, [start, baseline], ink, end);
+                painter.written(fonts, placed, [start, baseline], ink, end);
                 start += room.marked();
             }
-            self.caption(fonts, &tab.said, room.words, [start, baseline], ink, end);
+            painter.caption(fonts, &tab.said, room.words, [start, baseline], ink, end);
+        };
+        if let Some(tab) = lying.iter().find(|tab| tab.reading) {
+            plate(self, tab.laid);
+        }
+        for tab in &lying {
+            name(self, fonts, tab);
+        }
+        // Carried, the page's colour whether or not it is the one being
+        // read -- the press that took hold of it chose it, and the bar
+        // hears so a frame later -- so that it covers what it passes.
+        for tab in &lifted {
+            plate(self, tab.laid);
+            name(self, fonts, tab);
         }
         // What a tab cut by either end has past it goes under the bar
         // again: the page as it is there, and the bar's shade over it --
