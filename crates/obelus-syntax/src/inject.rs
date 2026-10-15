@@ -197,7 +197,11 @@ fn query(language: LanguageId) -> Option<&'static Query> {
         | LanguageId::OcamlInterface
         | LanguageId::Php
         | LanguageId::Ruby
-        | LanguageId::Scala => None,
+        | LanguageId::Scala
+        // Swift's ships one too, into `regex` and `comment`: grammars
+        // something else is written in, which the workspace's `Cargo.toml`
+        // says arrive through here or not at all -- and Obelus has neither.
+        | LanguageId::Swift => None,
     }
 }
 

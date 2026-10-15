@@ -416,6 +416,13 @@ fn every_language_highlights_its_own_sample() {
             LanguageId::Scala,
             "// c\nobject Greeter { val name = \"hi\" }\n",
         ),
+        // A `guard`, because a `func` with a string in it is a line Scala's
+        // grammar parses without an error too, and then the sample cannot
+        // tell the two apart.
+        (
+            LanguageId::Swift,
+            "// c\nfunc greet(name: String?) -> String {\n    guard let name else { return \"hi\" }\n    return \"hi \\(name)\"\n}\n",
+        ),
         // Markdown has no comments and no strings of its own: the *block*
         // grammar is what Obelus parses, and what it names is structure --
         // a heading, a fenced block, a list. So this one is checked by the
@@ -733,6 +740,81 @@ const NAMED: u32 = 1;
     let yaml = Text::from_string("key: 1\n");
     let state = SyntaxState::new(LanguageId::Yaml, &yaml).expect("parsing");
     assert!(tags::outline(&state, &yaml).is_empty());
+}
+
+/// A Swift type's members sit one level inside it, side by side, and what a
+/// function keeps in its body is not in the outline.
+///
+/// The query is Obelus's own because upstream's gets both wrong: it
+/// captures every member as the whole class, so each one encloses the next
+/// and the outline steps a level deeper a row, and it takes every `let` in a
+/// body for a property.
+///
+/// Broken deliberately by putting upstream's `TAGS_QUERY` back behind
+/// Swift, which fails on the depths and on `local`; and by dropping the
+/// `class_body` parent from the property pattern, which fails on `local`
+/// alone; and by letting a function's name be anything under `name:`,
+/// which lists each return type as a definition too.
+#[test]
+fn a_swift_outline_puts_members_side_by_side_inside_their_type() {
+    use obelus_syntax::tags;
+
+    let source = "\
+protocol Greeting {
+    func greet() -> String
+}
+
+class Greeter {
+    let name: String
+    init(name: String) { self.name = name }
+    func greet() -> String {
+        let local = name
+        return local
+    }
+    deinit {}
+}
+
+func top() {}
+";
+    let text = Text::from_string(source);
+    let state = SyntaxState::new(LanguageId::Swift, &text).expect("parsing");
+    let found = tags::outline(&state, &text);
+    let rows: Vec<(&str, usize)> = found
+        .iter()
+        .map(|symbol| (symbol.name.as_str(), symbol.depth))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("Greeting", 0),
+            ("greet", 1),
+            ("Greeter", 0),
+            ("name", 1),
+            ("init", 1),
+            ("greet", 1),
+            ("deinit", 1),
+            ("top", 0),
+        ],
+        "not each member once, one level inside its type"
+    );
+}
+
+/// The `_` of a wildcard is not a string.
+///
+/// Swift's query captures it as `character.special`, which nothing named, so
+/// it fell back a segment to `character` -- the string colour.
+///
+/// Broken deliberately by deleting the `character.special` arm from
+/// `SyntaxKind::exact`.
+#[test]
+fn a_swift_wildcard_is_not_drawn_as_a_string() {
+    let source = "let _ = 1\n";
+    let text = Text::from_string(source);
+    let state = SyntaxState::new(LanguageId::Swift, &text).expect("parsing");
+    let kinds = kinds(&text, &state);
+    let wildcard = source.find('_').expect("a wildcard");
+    assert_ne!(kinds[wildcard], Some(SyntaxKind::String));
+    assert_eq!(kinds[wildcard], Some(SyntaxKind::Punctuation));
 }
 
 /// A range with nothing in it colours nothing, and does not panic.

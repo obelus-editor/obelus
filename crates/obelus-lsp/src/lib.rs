@@ -74,7 +74,7 @@ impl ServerState {
 ///
 /// The arguments are the reason this is a struct: most servers speak the
 /// protocol on stdio only when told to (`--stdio`, `start`), and a table that
-/// held a bare command name could describe four of the twenty-five languages
+/// held a bare command name could describe four of the twenty-six languages
 /// Obelus can highlight.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Server {
@@ -134,7 +134,7 @@ pub const fn server_for(language: LanguageId) -> Option<Server> {
         // taplo and the JSON server exist, and neither is installed often
         // enough to be worth a row that only ever fails to find them.
         LanguageId::Toml | LanguageId::Json | LanguageId::Markdown => None,
-        // A grammar and a server are two decisions, and these ten have had
+        // A grammar and a server are two decisions, and these eleven have had
         // only the first. Every row above was written against a server
         // somebody had actually started -- what a program spells its stdio
         // switch, whether it wants a `start`, whether it can be run at all
@@ -151,7 +151,8 @@ pub const fn server_for(language: LanguageId) -> Option<Server> {
         | LanguageId::OcamlInterface
         | LanguageId::Php
         | LanguageId::Ruby
-        | LanguageId::Scala => None,
+        | LanguageId::Scala
+        | LanguageId::Swift => None,
         // No file is written in it: it is where the markdown grammar points
         // for what is inside a paragraph, and a server is started for a file.
         LanguageId::MarkdownInline => None,

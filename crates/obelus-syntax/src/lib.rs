@@ -80,6 +80,8 @@ pub enum LanguageId {
     Ruby,
     /// Scala.
     Scala,
+    /// Swift.
+    Swift,
     /// Markdown, block structure only.
     Markdown,
     /// What is inside a markdown paragraph.
@@ -142,6 +144,7 @@ impl LanguageId {
             "php" | "php4" | "php5" | "phtml" | "ctp" => Some(Self::Php),
             "rb" | "rake" | "gemspec" | "podspec" | "rbi" | "ru" | "ruby" => Some(Self::Ruby),
             "scala" | "sbt" | "sc" => Some(Self::Scala),
+            "swift" => Some(Self::Swift),
             "md" | "markdown" => Some(Self::Markdown),
             _ => None,
         }
@@ -189,7 +192,8 @@ impl LanguageId {
             | Self::CSharp
             | Self::Java
             | Self::Php
-            | Self::Scala => Some("//"),
+            | Self::Scala
+            | Self::Swift => Some("//"),
             Self::Python | Self::Bash | Self::Toml | Self::Yaml | Self::Julia | Self::Ruby => {
                 Some("#")
             }
@@ -235,6 +239,7 @@ impl LanguageId {
             Self::Php => "php",
             Self::Ruby => "ruby",
             Self::Scala => "scala",
+            Self::Swift => "swift",
             Self::Markdown => "markdown",
             Self::MarkdownInline => "markdown-inline",
         }
@@ -270,6 +275,7 @@ impl LanguageId {
         Self::Php,
         Self::Ruby,
         Self::Scala,
+        Self::Swift,
         Self::Markdown,
         Self::MarkdownInline,
     ];
@@ -388,6 +394,7 @@ pub fn grammar(language: LanguageId) -> &'static Grammar {
     static PHP: OnceLock<Grammar> = OnceLock::new();
     static RUBY: OnceLock<Grammar> = OnceLock::new();
     static SCALA: OnceLock<Grammar> = OnceLock::new();
+    static SWIFT: OnceLock<Grammar> = OnceLock::new();
 
     match language {
         LanguageId::Rust => RUST.get_or_init(|| {
@@ -563,6 +570,12 @@ pub fn grammar(language: LanguageId) -> &'static Grammar {
                 tree_sitter_scala::HIGHLIGHTS_QUERY,
             )
         }),
+        LanguageId::Swift => SWIFT.get_or_init(|| {
+            Grammar::new(
+                tree_sitter_swift::LANGUAGE.into(),
+                tree_sitter_swift::HIGHLIGHTS_QUERY,
+            )
+        }),
         // The block grammar: the structure of a document. What is inside a
         // paragraph is the other one below, reached the way every second
         // language in a file is -- through the ranges this one's injection
@@ -685,6 +698,10 @@ mod tests {
         assert_eq!(
             LanguageId::for_path(Path::new("site.css")),
             Some(LanguageId::Css)
+        );
+        assert_eq!(
+            LanguageId::for_path(Path::new("Sources/App.swift")),
+            Some(LanguageId::Swift)
         );
         assert_eq!(
             LanguageId::for_path(Path::new("Gemfile.rb")),
