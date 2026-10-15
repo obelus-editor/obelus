@@ -1380,7 +1380,7 @@ fn the_wheel_scrolls_without_moving_the_cursor() {
     };
     let before = status(&start);
 
-    app.handle(obelus_app::event::Event::Scroll(3));
+    app.handle(obelus_app::event::Event::Scroll { rows: 3, at: None });
     let scrolled = support::render(&mut app, 40, 12);
     assert_eq!(
         status(&scrolled),
@@ -1395,7 +1395,7 @@ fn the_wheel_scrolls_without_moving_the_cursor() {
 
     // Back up, and the screen is where it started: three rows down and three
     // rows up is nowhere.
-    app.handle(obelus_app::event::Event::Scroll(-3));
+    app.handle(obelus_app::event::Event::Scroll { rows: -3, at: None });
     assert_eq!(
         support::text_block(&support::render(&mut app, 40, 12)),
         support::text_block(&start),
@@ -1404,7 +1404,7 @@ fn the_wheel_scrolls_without_moving_the_cursor() {
 
     // And a cursor move afterwards brings the screen back to the cursor,
     // like any other detour.
-    app.handle(obelus_app::event::Event::Scroll(9));
+    app.handle(obelus_app::event::Event::Scroll { rows: 9, at: None });
     press(&mut app, KeyCode::Down);
     let back = support::render(&mut app, 40, 12);
     assert!(
@@ -1438,20 +1438,20 @@ fn the_wheel_scrolls_a_list_and_leaves_the_selection() {
     let top = |app: &App| app.picker().expect("the palette").window().top();
     let first = chosen(&app);
 
-    app.handle(obelus_app::event::Event::Scroll(3));
+    app.handle(obelus_app::event::Event::Scroll { rows: 3, at: None });
     support::render(&mut app, 60, 20);
     assert_eq!(chosen(&app), first, "the wheel moved the selection");
     assert_eq!(top(&app), 3, "the wheel did not move the rows");
 
     // And it stops at the top: a wheel is rolled without looking.
     for _ in 0..10 {
-        app.handle(obelus_app::event::Event::Scroll(-3));
+        app.handle(obelus_app::event::Event::Scroll { rows: -3, at: None });
     }
     support::render(&mut app, 60, 20);
     assert_eq!(top(&app), 0, "the wheel went past the top of the list");
 
     // A key moves the choice, and the view goes back to it.
-    app.handle(obelus_app::event::Event::Scroll(9));
+    app.handle(obelus_app::event::Event::Scroll { rows: 9, at: None });
     support::render(&mut app, 60, 20);
     support::press(&mut app, KeyCode::Down);
     support::render(&mut app, 60, 20);

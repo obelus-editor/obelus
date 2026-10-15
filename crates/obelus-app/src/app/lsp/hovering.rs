@@ -147,17 +147,13 @@ impl App {
             .is_some_and(|resting| self.inside_hover(resting.x, resting.y))
     }
 
-    /// Whether the pointer is over the answer's box now, which is where a
-    /// notch of the wheel reads the rest of it.
+    /// Whether a cell is on the answer's box, where a notch of the wheel
+    /// turned over it reads the rest of it.
     ///
     /// Not `pointer_in_hover`, which is where the pointer last rested in
     /// the file: a notch is about where the pointer is when it turns.
-    pub(in crate::app) fn pointer_on_hover(&self) -> bool {
-        self.hover().is_some()
-            && self
-                .pointing
-                .pointer
-                .is_some_and(|(x, y)| self.inside_hover(x, y))
+    pub(in crate::app) fn over_hover(&self, x: u16, y: u16) -> bool {
+        self.hover().is_some() && self.inside_hover(x, y)
     }
 
     /// Whether a cell is inside it.
@@ -168,7 +164,7 @@ impl App {
 
     /// Scrolls the answer by a notch of the wheel.
     ///
-    /// Asked only with the pointer on it (`pointer_on_hover`): elsewhere a
+    /// Asked only with the pointer on it (`over_hover`): elsewhere a
     /// notch is the file's.
     pub(in crate::app) fn scroll_hover(&mut self, rows: isize) {
         if let Some(hover) = self.lsp.hover.as_mut() {

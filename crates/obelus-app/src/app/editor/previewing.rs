@@ -548,19 +548,22 @@ impl App {
     /// something -- and otherwise the document. By rows either way, with the
     /// cursor or the selection left where it was put. A conversation is a
     /// document like the file is, and the two say that the same way.
-    pub(in crate::app) fn scroll(&mut self, rows: isize) {
-        // What a server said about a place, while the pointer is on it. Only
+    pub(in crate::app) fn scroll(&mut self, rows: isize, at: Option<(u16, u16)>) {
+        // What a server said about a place, while the pointer is on it -- as
+        // the wheel turns, and not as it last moved. Only
         // then: a notch anywhere else is the reader looking around the file,
         // and a box that took every notch held the file still for as long as
         // it was up.
-        if self.pointer_on_hover() {
+        if at.is_some_and(|(x, y)| self.over_hover(x, y)) {
             self.scroll_hover(rows);
             return;
         }
         // And anywhere else the box goes. Left up, it rode along with the
         // line it was about and came to rest under the pointer, so the next
         // notch was the box's after all -- and kept it, because a pointer in
-        // the box is a reader reading it.
+        // the box is a reader reading it. Even one the signature is drawn
+        // over, which nothing sees until that goes: by then it is about a
+        // place the file has scrolled away from.
         self.lsp.hover = None;
         // What could be typed next, which is a list beside the cursor: a
         // notch scrolls it, the way a notch scrolls any list in Obelus.

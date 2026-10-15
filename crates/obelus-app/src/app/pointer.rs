@@ -826,7 +826,8 @@ impl App {
         // no other way to ask for more, and one row a tick is a minute to
         // cross a morning's conversation.
         let rows = past.signum() * (1 + past.abs().min(4));
-        self.scroll(isize::try_from(rows).unwrap_or(0));
+        // Nowhere a box could be: the pointer is past the edge of the band.
+        self.scroll(isize::try_from(rows).unwrap_or(0), None);
         // Against the edge rather than where the pointer really is, which
         // is off the band: what is being asked is "carry on to here", and
         // here is as far as the band goes.

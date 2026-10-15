@@ -119,7 +119,7 @@ fn the_wheel_moves_the_candidates_and_not_the_choice() {
     app.complete_for_test(labels(&names));
     support::render(&mut app, 60, 16);
     for _ in 0..4 {
-        app.handle(obelus_app::event::Event::Scroll(3));
+        app.handle(obelus_app::event::Event::Scroll { rows: 3, at: None });
     }
     let dump = support::render(&mut app, 60, 16);
     assert!(

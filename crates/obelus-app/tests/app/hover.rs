@@ -359,40 +359,62 @@ fn a_pointed_answer_is_drawn_beside_the_word_it_is_about() {
     assert_ne!(corner.0, 1, "the box is hung off the caret: {rows:?}");
 }
 
-/// Puts the pointer inside the box, a little way in from its corner.
-fn pointer_in_the_box(app: &mut App, dump: &str) {
+/// The cell of the box's top left corner.
+fn the_corner(dump: &str) -> (u16, u16) {
     let rows: Vec<String> = support::text_block(dump)
         .lines()
         .filter_map(|row| row.split_once('|').map(|(_, cells)| cells.to_string()))
         .collect();
-    let (y, x) = rows
+    let (x, y) = rows
         .iter()
         .enumerate()
         .find_map(|(y, row)| {
             row.find(support::PANEL_CORNER)
-                .map(|at| (y, row[..at].chars().count()))
+                .map(|at| (row[..at].chars().count(), y))
         })
-        .unwrap_or_else(|| panic!("no box:\n{dump}"));
-    app.handle(obelus_app::event::Event::Pointer {
-        kind: obelus_app::event::Pointer::Moved,
-        x: u16::try_from(x + 2).expect("a column"),
-        y: u16::try_from(y + 2).expect("a row"),
-    });
+        .unwrap_or_else(|| {
+            panic!(
+                "no box:
+{dump}"
+            )
+        });
+    (
+        u16::try_from(x).expect("a column"),
+        u16::try_from(y).expect("a row"),
+    )
 }
 
-/// The wheel reads the rest of it, with the pointer on it: there the
-/// answer is what the reader is looking at, and the file behind it is not
-/// going anywhere.
+/// A file long enough to scroll, so that a file which did not is a file
+/// that was not asked to rather than one with nowhere to go.
+fn long() -> String {
+    format!(
+        "{SOURCE}{}",
+        "// more
+"
+        .repeat(60)
+    )
+}
+
+/// The wheel reads the rest of it, turned over it: there the answer is
+/// what the reader is looking at, and the file behind it is not going
+/// anywhere.
+///
+/// Broken deliberately by turning the wheel off the box: the answer did
+/// not move.
 #[test]
 fn the_wheel_scrolls_the_answer_rather_than_the_file() {
-    let (_scratch, mut app) = editing("hover-wheel", SOURCE);
+    use obelus_app::event::Event;
+
+    let (_scratch, mut app) = editing("hover-wheel", &long());
     at_the_word(&mut app);
     app.hover_for_test(answered(None));
     let first = support::render(&mut app, 76, 18);
     let top = app.current_buffer().expect("a buffer").viewport().top.get();
-    pointer_in_the_box(&mut app, &first);
+    let (x, y) = the_corner(&first);
+    // A little way in from the corner, where the words are.
+    let at = Some((x + 2, y + 2));
 
-    app.handle(obelus_app::event::Event::Scroll(3));
+    app.handle(Event::Scroll { rows: 3, at });
     let rolled = support::render(&mut app, 76, 18);
     assert_ne!(
         support::text_block(&first),
@@ -402,7 +424,8 @@ fn the_wheel_scrolls_the_answer_rather_than_the_file() {
     assert_ne!(
         inside_the_top(&rolled),
         inside_the_top(&first),
-        "the answer did not move:\n{rolled}"
+        "the answer did not move:
+{rolled}"
     );
     assert_eq!(
         app.current_buffer().expect("a buffer").viewport().top.get(),
@@ -414,17 +437,18 @@ fn the_wheel_scrolls_the_answer_rather_than_the_file() {
     // itself is an empty box, and the notches spent going past it are
     // notches to spend coming back.
     for _ in 0..10 {
-        app.handle(obelus_app::event::Event::Scroll(3));
+        app.handle(Event::Scroll { rows: 3, at });
     }
     let far = support::render(&mut app, 76, 18);
     assert!(
         says_something(&far),
-        "the answer was scrolled past itself:\n{far}"
+        "the answer was scrolled past itself:
+{far}"
     );
 
     // And back up, which stops at the top rather than running past it.
     for _ in 0..12 {
-        app.handle(obelus_app::event::Event::Scroll(-3));
+        app.handle(Event::Scroll { rows: -3, at });
     }
     let back = support::render(&mut app, 76, 18);
     assert_eq!(
@@ -438,30 +462,39 @@ fn the_wheel_scrolls_the_answer_rather_than_the_file() {
 /// the file still for as long as it was up, and a reader looking around
 /// had to get rid of it first.
 ///
-/// Broken deliberately by giving the answer the notch whenever it is up,
-/// wherever the pointer is: the file stayed where it was.
+/// And off it is where the wheel turns, not where the pointer was last
+/// reported: a terminal that says nothing of a pointer moving with no
+/// button down last said where it was clicked, which can be on the box.
+/// Broken deliberately by asking where the pointer last moved to: the
+/// file stayed where it was.
 #[test]
 fn the_wheel_off_the_answer_scrolls_the_file() {
-    let long = format!("{SOURCE}{}", "// more\n".repeat(60));
-    let (_scratch, mut app) = editing("hover-wheel-off", &long);
+    use obelus_app::event::{Event, Pointer};
+
+    let (_scratch, mut app) = editing("hover-wheel-off", &long());
     at_the_word(&mut app);
     app.hover_for_test(answered(None));
     let first = support::render(&mut app, 76, 18);
     let top = app.current_buffer().expect("a buffer").viewport().top.get();
-    // On the first line of the file, which the box is not over: there is
-    // no room for it above the word, so it hangs below.
-    app.handle(obelus_app::event::Event::Pointer {
-        kind: obelus_app::event::Pointer::Moved,
-        x: 12,
-        y: 0,
+    let (x, y) = the_corner(&first);
+    // Last seen on the box ...
+    app.handle(Event::Pointer {
+        kind: Pointer::Moved,
+        x: x + 2,
+        y: y + 2,
     });
-    assert_ne!(
-        inside_the_top(&first),
-        "",
-        "the box is not where this expects it:\n{first}"
+    // ... and turned on the first line of the file, above it: there is no
+    // room for the box above the word, so it hangs below.
+    assert!(
+        y > 0,
+        "the box is over the first line:
+{first}"
     );
 
-    app.handle(obelus_app::event::Event::Scroll(3));
+    app.handle(Event::Scroll {
+        rows: 3,
+        at: Some((12, 0)),
+    });
     assert_ne!(
         app.current_buffer().expect("a buffer").viewport().top.get(),
         top,

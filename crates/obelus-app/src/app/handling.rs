@@ -239,7 +239,14 @@ impl App {
             }
             Event::Counted(counted) => self.on_counted(*counted),
             Event::Shifted(held) => self.pointing.shifted = held,
-            Event::Scroll(rows) => self.scroll(rows),
+            Event::Scroll { rows, at } => {
+                // Where the pointer is now, as much as a move there would
+                // have said so.
+                if at.is_some() {
+                    self.pointing.pointer = at;
+                }
+                self.scroll(rows, at);
+            }
             Event::Pointer { kind, x, y } => self.on_pointer(kind, x, y),
             Event::Chose(id) => self.choose_by_its_tab(id),
             // One change for the whole of it, so undoing a paste is one

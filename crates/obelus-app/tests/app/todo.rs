@@ -3575,12 +3575,12 @@ fn the_wheel_scrolls_the_notes_and_a_key_comes_back() {
     let focus = |app: &App| app.notes().expect("the notes").window().focus();
     let chosen = focus(&app);
 
-    app.handle(Event::Scroll(3));
+    app.handle(Event::Scroll { rows: 3, at: None });
     let dump = support::render(&mut app, 60, 12);
     assert_eq!(top(&app), 3, "a notch did not scroll the notes:\n{dump}");
     assert_eq!(focus(&app), chosen, "a notch moved the caret's note");
     for _ in 0..3 {
-        app.handle(Event::Scroll(3));
+        app.handle(Event::Scroll { rows: 3, at: None });
     }
     support::render(&mut app, 60, 12);
     assert!(
