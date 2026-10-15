@@ -873,6 +873,8 @@ impl obelus_app::app::Drawing for Hangs {
 
     fn animates(&self, _: bool) {}
 
+    fn bar_tabs(&self, _: bool) {}
+
     fn use_fonts(&self, _: &[String]) {}
 
     fn drawn_on(&self, _: ratatui::style::Color) {}
@@ -1005,6 +1007,8 @@ impl obelus_app::app::Drawing for Recolours {
     fn text_size(&self, _: usize) {}
 
     fn animates(&self, _: bool) {}
+
+    fn bar_tabs(&self, _: bool) {}
 
     fn use_fonts(&self, _: &[String]) {}
 

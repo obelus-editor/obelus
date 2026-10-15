@@ -30,6 +30,8 @@ impl obelus_app::app::Drawing for Told {
 
     fn animates(&self, _: bool) {}
 
+    fn bar_tabs(&self, _: bool) {}
+
     fn use_fonts(&self, _: &[String]) {}
 
     fn drawn_on(&self, _: ratatui::style::Color) {}

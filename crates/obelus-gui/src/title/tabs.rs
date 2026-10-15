@@ -1,6 +1,9 @@
 //! What is open, along the title bar: a tab for each document, and a press
 //! on one goes to it.
 //!
+//! Where the reader has turned `bar_tabs` on: off, the bar has no room for
+//! a row of tabs (`title::room`), and this is laid out in none.
+//!
 //! The application says what the tabs are -- `Drawing::tabs` -- and the
 //! window says where they go, because only the window knows how wide a
 //! name is in the face the bar is written in, and where on the bar the

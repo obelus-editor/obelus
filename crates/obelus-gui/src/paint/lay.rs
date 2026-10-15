@@ -117,14 +117,15 @@ impl Painter {
             moving.pane.is_some(),
             moving.leaving.is_some() && self.gone.iter().any(|&(.., top)| top),
         );
-        // The tabs, and the bar's buttons where nothing runs up under them,
-        // on the picture where there is one. With them in the quads every
+        // The tabs, and the bar's buttons -- and on a bar without the tabs,
+        // the icon and the title -- where nothing runs up under them, on
+        // the picture where there is one. With them in the quads every
         // whole screen starts from, because the bar stands still the way
         // the picture does: what slides is the page under it, or a pane
         // over it.
         self.tabs_on_the_bar(across, margin, fonts);
         if bar_on_top.is_none() {
-            self.buttons_on_the_bar(across, margin);
+            self.buttons_on_the_bar(across, margin, fonts);
         }
         // Where the picture's quads end, which every whole screen drawn
         // from this frame draws first -- and the one picture of the frame
@@ -312,7 +313,7 @@ impl Painter {
 
         // The buttons over a pane that is simply there -- see `bar_on_top`.
         if bar_on_top == Some(BarOnTop::Resting) {
-            self.buttons_on_the_bar(across, margin);
+            self.buttons_on_the_bar(across, margin, fonts);
         }
         // Everything the frame says has been said. What is left is
         // putting it back on the screen in pieces, where a pane is on its
@@ -390,7 +391,7 @@ impl Painter {
         // The buttons over a pane on its way in or out -- see `bar_on_top`.
         if matches!(bar_on_top, Some(BarOnTop::Arriving | BarOnTop::Leaving)) {
             let start = self.quads.len();
-            self.buttons_on_the_bar(across, margin);
+            self.buttons_on_the_bar(across, margin, fonts);
             self.placed.bar_over = Some(start..self.quads.len());
         }
         // Last, because none of it is drawn on the screen: the blurs are
