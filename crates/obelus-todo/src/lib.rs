@@ -1235,10 +1235,13 @@ pub fn where_now(root: &Path, at: &At) -> Option<LineNumber> {
         // is left of where it pointed.
         return Some(at.line);
     };
-    let Ok(now) = std::fs::read_to_string(&full) else {
+    // Read the way the file opens, which is the way `text_at` read the
+    // commit's: a file in GBK was not text to `read_to_string`, and its
+    // notes stayed at the number they were made at however it moved.
+    let Ok(now) = obelus_encoding::read_file(&full) else {
         return Some(at.line);
     };
-    obelus_git::Changes::between(&then, &now).working_line(at.line)
+    obelus_git::Changes::between(&then, &now.text).working_line(at.line)
 }
 
 /// The commit a note made now should carry, where the project has one.

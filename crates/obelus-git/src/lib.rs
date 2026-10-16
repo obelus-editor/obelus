@@ -875,8 +875,21 @@ fn fold(statuses: &mut HashMap<PathBuf, Standing>, path: PathBuf, standing: Stan
 /// agree about which line endings are changes.
 #[must_use]
 pub fn counted_against_head(paths: &[PathBuf]) -> HashMap<PathBuf, (usize, usize)> {
+    let paths: Vec<(PathBuf, Option<obelus_encoding::Written>)> =
+        paths.iter().map(|path| (path.clone(), None)).collect();
+    counted_against_head_read_as(&paths)
+}
+
+/// [`counted_against_head`], each file read in the encoding beside it where
+/// there is one: an open document's, which may be the reader's word against
+/// the guess, so the count agrees with the margin drawn beside that
+/// document.
+#[must_use]
+pub fn counted_against_head_read_as(
+    paths: &[(PathBuf, Option<obelus_encoding::Written>)],
+) -> HashMap<PathBuf, (usize, usize)> {
     let mut counts = HashMap::new();
-    let Some(first) = paths.first() else {
+    let Some((first, _)) = paths.first() else {
         return counts;
     };
     // Converting a blob the way a checkout would is a place a repository's
@@ -889,24 +902,35 @@ pub fn counted_against_head(paths: &[PathBuf]) -> HashMap<PathBuf, (usize, usize
         return counts;
     };
     let mut checkout = Checkout::of(&repository);
-    for path in paths {
+    for (path, written) in paths {
+        let written = *written;
         let Some(relative) = in_repository(&repository, path) else {
             continue;
         };
         let mut tree = head.clone();
         let mut base = match tree.peel_to_entry_by_path(&relative) {
             Ok(Some(entry)) => match entry.object() {
-                // Not text, so it has no lines to count.
-                Ok(object) if std::str::from_utf8(&object.data).is_err() => continue,
-                Ok(object) => checkout.base(&object.data, &relative),
+                Ok(object) => match checkout.base(&object.data, &relative, written) {
+                    Some(base) => base,
+                    // Not text, so it has no lines to count.
+                    None => continue,
+                },
                 Err(_) => continue,
             },
             // The commit does not have it: everything in it arrived.
-            Ok(None) => checkout.base(b"", &relative),
+            Ok(None) => match checkout.base(b"", &relative, None) {
+                Some(base) => base,
+                None => continue,
+            },
             Err(_) => continue,
         };
         // A file that is gone reads as empty, which makes its lines removed.
-        let now = std::fs::read_to_string(path).unwrap_or_default();
+        // Read the way a buffer reads it, so a file in GBK is its lines and
+        // not none of them.
+        let now = std::fs::read(path)
+            .ok()
+            .and_then(|bytes| text_of(&bytes, written))
+            .unwrap_or_default();
         counts.insert(
             path.clone(),
             change::counted(&change::drawn(&base.text.clone(), &base.as_compared(&now))),
@@ -931,12 +955,36 @@ pub fn head_text(path: &Path) -> Option<String> {
 /// content is not text.
 #[must_use]
 pub fn head(path: &Path) -> Option<Base> {
+    head_read_as(path, None)
+}
+
+/// [`head`], with the committed bytes read in the encoding the reader's
+/// buffer is in where they can be: what the margin is drawn from.
+///
+/// The buffer's encoding first because it may be the reader's word against
+/// the guess, and a commit read one way beside a file read another marks
+/// every line that is not ASCII as changed.
+#[must_use]
+pub fn head_read_as(path: &Path, written: Option<obelus_encoding::Written>) -> Option<Base> {
     let repository = without_running_anything(path)?;
     let relative = in_repository(&repository, path)?;
     let mut tree = repository.head_tree().ok()?;
     let entry = tree.peel_to_entry_by_path(&relative).ok()??;
     let object = entry.object().ok()?;
-    Some(Checkout::of(&repository).base(&object.data, &relative))
+    Checkout::of(&repository).base(&object.data, &relative, written)
+}
+
+/// What a stored blob says, in `written` where it is that and in whatever it
+/// looks like otherwise -- or `None` where it is not text.
+///
+/// The one reading of a stored version, so a commit's file and the file on
+/// disk are read by the same rule (`obelus_encoding`'s) and their lines can
+/// be compared.
+pub(crate) fn text_of(bytes: &[u8], written: Option<obelus_encoding::Written>) -> Option<String> {
+    written
+        .and_then(|written| written.read(bytes))
+        .or_else(|| obelus_encoding::read(bytes))
+        .map(|read| read.text.into_owned())
 }
 
 /// What a text is compared with to say what has changed in it.
@@ -1118,13 +1166,18 @@ impl<'repo> Checkout<'repo> {
         }
     }
 
-    fn base(&mut self, data: &[u8], relative: &Path) -> Base {
-        let text = self.written(data, relative);
-        Base {
+    fn base(
+        &mut self,
+        data: &[u8],
+        relative: &Path,
+        written: Option<obelus_encoding::Written>,
+    ) -> Option<Base> {
+        let text = self.written(data, relative, written)?;
+        Some(Base {
             returns: text.contains('\r'),
             text,
             rewrite: self.rewrite(relative),
-        }
+        })
     }
 
     /// A stored blob as it would be on disk.
@@ -1141,8 +1194,17 @@ impl<'repo> Checkout<'repo> {
     /// The bytes unchanged where there is nothing to convert or the
     /// conversion fails, which is what the diff had before and is never
     /// worse than it.
-    fn written(&mut self, data: &[u8], relative: &Path) -> String {
-        let text = || String::from_utf8_lossy(data).into_owned();
+    ///
+    /// `None` where the blob is not text. It was read lossily once, and a
+    /// file in GBK was compared against a base of replacement characters,
+    /// every line of it changed.
+    fn written(
+        &mut self,
+        data: &[u8],
+        relative: &Path,
+        written: Option<obelus_encoding::Written>,
+    ) -> Option<String> {
+        let text = || text_of(data, written);
         let Some((pipeline, _)) = self.pipeline.as_mut() else {
             return text();
         };
@@ -1151,7 +1213,7 @@ impl<'repo> Checkout<'repo> {
         else {
             return text();
         };
-        read_all(converted).map_or_else(text, |out| String::from_utf8_lossy(&out).into_owned())
+        read_all(converted).map_or_else(text, |out| text_of(&out, written))
     }
 
     fn rewrite(&self, relative: &Path) -> Option<Rewrite> {

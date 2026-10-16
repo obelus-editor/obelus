@@ -910,13 +910,26 @@ impl App {
                 // opening the repository and resolving the head tree is most
                 // of the cost, and doing it per row would pay it as many
                 // times as the tree has changed files.
-                let counts = obelus_git::counted_against_head(
+                //
+                // Each in the encoding its open document is in, where it is
+                // open: the reader may have said which, and a count read
+                // another way would disagree with the margin beside it.
+                let counts = obelus_git::counted_against_head_read_as(
                     &self
                         .files
                         .statuses
                         .keys()
-                        .cloned()
-                        .collect::<Vec<std::path::PathBuf>>(),
+                        .map(|path| {
+                            let written = self
+                                .documents
+                                .iter()
+                                .flatten()
+                                .filter_map(Document::file)
+                                .find(|buffer| buffer.path() == path && buffer.content().is_file())
+                                .map(Buffer::written);
+                            (path.clone(), written)
+                        })
+                        .collect::<Vec<_>>(),
                 );
                 // What the last commit is, for the rows naming a file that
                 // is not there any more: the only version of it left is the
@@ -2058,9 +2071,21 @@ impl App {
                 // Worked out before it is said, because saying it is a
                 // method on the application and the buffer is borrowed out
                 // of the application to have been saved at all.
-                let said = match buffer.path().file_name() {
-                    Some(name) => format!("{}: not saved", name.to_string_lossy()),
-                    None => "Not saved".to_string(),
+                //
+                // Except a character the file's encoding cannot write, which
+                // is the one reason the reader can do something about here
+                // and now, and short enough to say: which character, and
+                // which encoding. The way out is choose-encoding.
+                let unwritable = error.downcast_ref::<obelus_encoding::Unwritable>();
+                let said = match (buffer.path().file_name(), unwritable) {
+                    (Some(name), Some(why)) => format!(
+                        "{} not saved: {} cannot write {}",
+                        name.to_string_lossy(),
+                        why.written.name(),
+                        why.character
+                    ),
+                    (Some(name), None) => format!("{}: not saved", name.to_string_lossy()),
+                    (None, _) => "Not saved".to_string(),
                 };
                 self.wrong(said);
                 false

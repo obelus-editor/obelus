@@ -938,8 +938,21 @@ impl StatusView<'_> {
                 false => " [stale]".to_string(),
             });
         }
+        // What the bytes are written in, where it is anything but UTF-8,
+        // under the encoding's own name: what says a save will not write
+        // UTF-8. Next to the name and in the dim ink of an aside, not in
+        // the marker's -- a file in GBK is in GBK for good, and a word that
+        // never goes away drawn in the colour of the ones that ask for
+        // something is a warning nobody can act on, which teaches the eye
+        // to pass over `unsaved` beside it.
+        let written = buffer.written();
+        let encoding = match written.is_plain() {
+            true => String::new(),
+            false => format!("  {}", written.name()),
+        };
+        let encoding_width = text_width(&encoding);
         let marker = marker.as_str();
-        let marker_width = text_width(marker);
+        let marker_width = encoding_width + text_width(marker);
 
         // What the server is doing, between the file and the position. It is
         // there so that an empty answer during indexing can be told from an
@@ -1055,12 +1068,19 @@ impl StatusView<'_> {
             .saturating_add(branch_width)
             .saturating_add(text_width(&path));
         if let Ok(offset) = u16::try_from(after_path)
-            && !marker.is_empty()
+            && marker_width > 0
             && after_path + marker_width <= right_start
         {
             write(
                 cells,
                 area.x + offset,
+                area.y,
+                &encoding,
+                style.fg(self.theme.gutter),
+            );
+            write(
+                cells,
+                area.x + offset + u16::try_from(encoding_width).unwrap_or(0),
                 area.y,
                 marker,
                 style.fg(self.theme.status_stale),

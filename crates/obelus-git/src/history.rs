@@ -705,7 +705,7 @@ fn texts_of(change: &gix::object::tree::diff::Change<'_, '_, '_>) -> Option<(Str
     let text = |id: gix::Id<'_>| {
         id.object()
             .ok()
-            .and_then(|object| String::from_utf8(object.data.clone()).ok())
+            .and_then(|object| super::text_of(&object.data, None))
     };
     let (was, now, mode) = match change {
         Change::Addition { id, entry_mode, .. } => (None, Some(*id), *entry_mode),
@@ -752,7 +752,7 @@ pub fn text_at(within: &Path, id: gix::ObjectId, path: &Path) -> Option<String> 
     let mut tree = commit.tree().ok()?;
     let entry = tree.peel_to_entry_by_path(relative).ok()??;
     let object = entry.object().ok()?;
-    String::from_utf8(object.data.clone()).ok()
+    super::text_of(&object.data, None)
 }
 
 /// Which of these commits the remote already has.

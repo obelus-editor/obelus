@@ -18,6 +18,7 @@ obelus-command.workspace = true
 obelus-component.workspace = true
 obelus-config.workspace = true
 obelus-editing.workspace = true
+obelus-encoding.workspace = true
 obelus-git.workspace = true
 obelus-github.workspace = true
 obelus-icons.workspace = true
@@ -68,6 +69,8 @@ unicode-width.workspace = true
 # else, which is all Obelus wants and is not enough for a test that has
 # to explain why a platform woke the loop -- see `watch.rs`.
 notify.workspace = true
+# For the tests that write a file in another encoding.
+encoding_rs.workspace = true
 # For the remote tests, which stand in for a chat platform and have to be
 # handed what one is handed.
 obelus-ui.workspace = true

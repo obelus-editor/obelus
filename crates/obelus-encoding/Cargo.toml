@@ -1,0 +1,14 @@
+[package]
+name = "obelus-encoding"
+description = "Which encoding a file's bytes are written in, and writing them back the same way"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Cargo inherits nothing here on its own; every member says it.
+[lints]
+workspace = true
+
+[dependencies]
+chardetng.workspace = true
+encoding_rs.workspace = true

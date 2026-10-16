@@ -280,6 +280,9 @@ pub fn for_command(command: obelus_command::Command) -> char {
         Command::ProjectList => '\u{f0aba}',
         Command::PreviewToggle => '\u{f0354}',
         Command::ThemeSelect => '\u{f03d8}',
+        // `md-unicode`: what the bytes are written in. Checked against the
+        // font's own names.
+        Command::EncodingSelect => '\u{f0ed0}',
         Command::CommandPalette => '\u{f018d}',
         // The menu is the questions themselves; each question is what it
         // does. A definition is a place to land on, a type is a shape, an
