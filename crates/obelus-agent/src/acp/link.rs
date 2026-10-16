@@ -106,9 +106,9 @@ use agent_client_protocol::{
             ElicitationCapabilities, ElicitationContentValue, ElicitationFormCapabilities,
             ElicitationMode, ElicitationScope, ElicitationUrlCapabilities, FileSystemCapabilities,
             ImageContent, Implementation, InitializeRequest, KillTerminalRequest,
-            KillTerminalResponse, LoadSessionRequest, McpCapabilities, McpServer, McpServerHttp,
-            McpServerSse, NewSessionRequest, PermissionOptionId, PromptRequest,
-            ReadTextFileRequest, ReadTextFileResponse, ReleaseTerminalRequest,
+            KillTerminalResponse, ListSessionsRequest, LoadSessionRequest, McpCapabilities,
+            McpServer, McpServerHttp, McpServerSse, NewSessionRequest, PermissionOptionId,
+            PromptRequest, ReadTextFileRequest, ReadTextFileResponse, ReleaseTerminalRequest,
             ReleaseTerminalResponse, RequestPermissionOutcome, RequestPermissionRequest,
             RequestPermissionResponse, ResumeSessionRequest, SelectedPermissionOutcome,
             SessionConfigId, SessionConfigOptionValue, SessionConfigOptionsCapabilities, SessionId,
@@ -197,6 +197,75 @@ fn taking_up(agent: &agent_client_protocol::schema::v1::AgentCapabilities, words
         return Again::Remembered;
     }
     Again::Not
+}
+
+/// Every conversation the agent keeps about this checkout, every page of
+/// them.
+///
+/// All of them rather than the first page: a limit on a list is a limit on
+/// what can be found in it, and an agent may page as it likes. A
+/// cursor handed back twice is an agent going round in a circle, and ends
+/// the walk rather than the process -- and so does one that hands back a
+/// new cursor for ever, at [`PAGES`].
+///
+/// Only the ones had in this directory, whatever the agent answered: the
+/// directory is a filter the protocol asks the agent to apply, and one
+/// that did not would put another project's conversations in this list,
+/// to be taken up here.
+async fn listed(
+    connection: &ConnectionTo<agent_client_protocol::Agent>,
+    root: &std::path::Path,
+) -> Result<Vec<super::Listed>, agent_client_protocol::Error> {
+    let here = std::fs::canonicalize(root).ok();
+    let mut sessions = Vec::new();
+    let mut cursor: Option<String> = None;
+    let mut seen = std::collections::HashSet::new();
+    for _ in 0..PAGES {
+        let page = connection
+            .send_request(
+                ListSessionsRequest::new()
+                    .cwd(root.to_path_buf())
+                    .cursor(cursor.clone()),
+            )
+            .block_task()
+            .await?;
+        sessions.extend(
+            page.sessions
+                .into_iter()
+                .filter(|info| info.cwd == root || std::fs::canonicalize(&info.cwd).ok() == here)
+                .map(|info| super::Listed {
+                    session: info.session_id.0.to_string(),
+                    title: info.title.filter(|title| !title.trim().is_empty()),
+                    last: info.updated_at.as_deref().and_then(seconds_of),
+                }),
+        );
+        match page.next_cursor {
+            Some(next) if seen.insert(next.clone()) => cursor = Some(next),
+            _ => return Ok(sessions),
+        }
+    }
+    tracing::warn!(
+        pages = PAGES,
+        "the agent's conversations go on past every page Obelus asks for"
+    );
+    Ok(sessions)
+}
+
+/// How many pages of conversations are asked for before the rest are given
+/// up on.
+///
+/// Far past any directory a reader has talked in -- claude-agent-acp's
+/// page is a thousand -- and only there so that an agent handing back a fresh
+/// cursor every time is a list that ends.
+const PAGES: usize = 50;
+
+/// An ISO 8601 moment, in seconds since the epoch -- or nothing, for one
+/// that does not read: a row with no time goes last, where a made-up one
+/// would put it somewhere on no evidence.
+fn seconds_of(when: &str) -> Option<i64> {
+    when.parse::<jiff::Timestamp>()
+        .ok()
+        .map(jiff::Timestamp::as_second)
 }
 
 /// Starts an agent on a thread of its own, and says how to talk to it.
@@ -1023,6 +1092,38 @@ async fn talk(
                                 }
                             }
                         }
+                        // Only of an agent that said it can be asked: the
+                        // capability is the answer for one that cannot, and
+                        // a request sent to be refused is an error in the
+                        // log about nothing the reader did.
+                        //
+                        // And off this loop, because nothing after it waits
+                        // on its answer and the walk is several requests:
+                        // waited for here, an interruption pressed while it
+                        // ran went after the last page.
+                        Ask::List if capabilities.session_capabilities.list.is_some() => {
+                            let asking = connection.clone();
+                            let root = root.clone();
+                            let told = events.clone();
+                            connection.spawn(async move {
+                                match listed(&asking, &root).await {
+                                    Ok(sessions) => {
+                                        let _ = told.send(Event::Acp(Incoming::Listed(sessions)));
+                                    }
+                                    // Not a failure the reader is shown: the
+                                    // list is drawn from what Obelus wrote
+                                    // down either way, and this is only more
+                                    // of it. Nor one that ends the
+                                    // connection, which an error from a task
+                                    // does.
+                                    Err(error) => {
+                                        tracing::warn!(%error, "the agent would not list its conversations");
+                                    }
+                                }
+                                Ok(())
+                            })?;
+                        }
+                        Ask::List => {}
                         // Gone, because the note it was about is. Two ways
                         // to say it and they mean different things: `delete`
                         // is "forget this", `close` is "I am done talking in

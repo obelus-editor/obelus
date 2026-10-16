@@ -225,7 +225,9 @@ pub struct Config {
     /// coming back to it a season later is coming back to that
     /// conversation. What is forgotten is Obelus's own line about it and the
     /// page it kept: the agent keeps its own account, and nothing is asked
-    /// of it.
+    /// of it. Which is why the same number holds what the agent lists of
+    /// its own (`App::rows_only_the_agent_kept`): there, nothing can be
+    /// forgotten, only left out.
     pub conversation_days: usize,
     /// How many projects the page that asks which one remembers.
     ///
@@ -1051,7 +1053,7 @@ pub const ALL: &[Setting] = &[
     Setting {
         key: "conversation_days",
         name: "Forget conversations",
-        about: "How long after anything was last said in it a conversation about no note is forgotten. The agent still has it, but Obelus forgets the way back and the page it kept, and making this longer does not bring either back. One about a note goes when the note does",
+        about: "How long after anything was last said in it a conversation about no note is left out of the list, whether Obelus or the agent kept it. Obelus forgets the page it kept, and making this longer does not bring that back; where the agent can say what it keeps, making this longer lists the conversation again. One about a note goes when the note does",
         group: Group::Agent,
         // The reader's alone: it decides what Obelus forgets of theirs, and
         // a project that could shorten it would be a downloaded file

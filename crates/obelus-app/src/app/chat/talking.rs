@@ -232,7 +232,7 @@ impl App {
     }
 
     /// Whether the agent the settings name has an install to start.
-    fn the_chosen_agent_is_installed(&self) -> bool {
+    pub(in crate::app) fn the_chosen_agent_is_installed(&self) -> bool {
         self.settled
             .config
             .agent
@@ -511,6 +511,21 @@ impl App {
     /// a moment to answer: without the second half of that, the second
     /// press opened a conversation the first press was already opening.
     pub(in crate::app) fn ask_for_a_session(&mut self, whose: Whose, had: Option<String>) {
+        self.ask_for_a_session_called(whose, had, None);
+    }
+
+    /// The same, for one Obelus wrote nothing down about and the agent
+    /// named in the list it was chosen from: a replay is not obliged to say
+    /// the name again, and the row it was chosen by had one.
+    ///
+    /// Handed over rather than looked up, because by the time this is
+    /// asked the list -- and what the agent said in it -- has gone.
+    pub(in crate::app) fn ask_for_a_session_called(
+        &mut self,
+        whose: Whose,
+        had: Option<String>,
+        called: Option<String>,
+    ) {
         let settled = self
             .talk(whose)
             .is_some_and(|talk| talk.session.is_some() || talk.asked_for.is_some() || talk.opening);
@@ -529,15 +544,18 @@ impl App {
         let tools = self.tools_for(whose);
         // By the session rather than by the note, because a conversation
         // about no note is taken up too, and it is named by nothing else.
-        let title = had.as_ref().and_then(|session| {
-            let agent = self.agent.talker.as_ref()?.id();
-            self.sessions()?
-                .all()
-                .find(|(_, by, tree, kept)| {
-                    *by == agent && *tree == self.working_directory && kept.session == *session
-                })
-                .and_then(|(_, _, _, kept)| kept.title.clone())
-        });
+        let title = had
+            .as_ref()
+            .and_then(|session| {
+                let agent = self.agent.talker.as_ref()?.id();
+                self.sessions()?
+                    .all()
+                    .find(|(_, by, tree, kept)| {
+                        *by == agent && *tree == self.working_directory && kept.session == *session
+                    })
+                    .and_then(|(_, _, _, kept)| kept.title.clone())
+            })
+            .or(called);
         if self.agent.talker.is_none() {
             return;
         }
@@ -3649,6 +3667,8 @@ impl App {
             // conversation it was asked on was opened for the asking and
             // let go before this arrived.
             | acp::Incoming::Offers { .. }
+            // And which conversations it keeps is about the checkout.
+            | acp::Incoming::Listed(_)
             | acp::Incoming::Failed(..)
             // What this agent tells of background work is about the agent,
             // and asking for one to stop is answered in the handle.
@@ -4142,6 +4162,10 @@ impl App {
             self.agents.asking = None;
             return;
         }
+        if let acp::Incoming::Listed(sessions) = incoming {
+            self.hear_what_the_agent_keeps(sessions);
+            return;
+        }
         // And again whenever the agent says what it offers, which is the
         // message that actually carries it: a session opens before an
         // agent has said a word about what it can be set to.
@@ -4417,7 +4441,8 @@ impl App {
             // conversation to name, the other because there is none.
             acp::Incoming::Ready { .. }
             | acp::Incoming::Started { .. }
-            | acp::Incoming::Offers { .. } => {}
+            | acp::Incoming::Offers { .. }
+            | acp::Incoming::Listed(_) => {}
             // Asking for one to stop came to nothing: a list of the work
             // stops saying it is stopping.
             acp::Incoming::NotStopped { .. } => self.refresh_background_tasks(),

@@ -56,6 +56,21 @@
 //! round, and a row that names `obelus` beside its time is a row that says
 //! where to go.
 //!
+//! **And what the agent keeps that Obelus did not write down.** An agent
+//! that says at the handshake it can list its conversations is asked, each
+//! time the list opens, which it keeps about this checkout -- which for
+//! claude-agent-acp is every conversation Claude Code had here, in a
+//! terminal as much as in Obelus. The ones Obelus has no row for are rows
+//! about no note, taken up like any other; an agent that cannot be asked
+//! is not, and the list is what Obelus wrote down. The answer arrives after
+//! the list is up and moves its rows, with the reader kept on theirs. And
+//! the setting that forgets an old conversation holds these too: Obelus
+//! forgetting its own row is not the agent forgetting anything, so a row
+//! the setting took away would otherwise come straight back. Nor can a
+//! note's going make the agent forget its conversation where the agent
+//! offers no `session/delete`, only `close`: there that conversation comes
+//! back as one about no note, which is what it now is.
+//!
 //! **Which conversations there are is a snapshot; which of them can be
 //! taken up is not.** The rows are made once, as the list opens, because
 //! making them reads the table and the notes and walks the claims -- and
@@ -218,6 +233,49 @@ pub(in crate::app) fn when_said(
     }
 }
 
+/// One conversation's row, whichever of Obelus and the agent kept it.
+///
+/// One writer for both, so that a row the agent kept cannot come to be
+/// drawn differently from one Obelus wrote down by one of them being
+/// changed and the other not.
+fn conversation_row(
+    marker: Option<(Marking, String)>,
+    label: String,
+    detail: Option<String>,
+    trailing: Option<String>,
+    enabled: bool,
+    section: &str,
+) -> PickerItem {
+    PickerItem {
+        // A sentence, which loses its end where it has to lose anything:
+        // cut from the front, a title is the half of it that does not say
+        // what it was about.
+        prose: true,
+        marker,
+        icon: None,
+        label,
+        version: None,
+        detail,
+        trailing,
+        changed: None,
+        enabled,
+        colours: None,
+        status: None,
+        depth: 0,
+        opens: None,
+        kind: None,
+        tab: None,
+        section: Some(section.to_string()),
+        // Stands for its place in the list rather than for the
+        // conversation, the way a server's offered actions do: what a row
+        // stands for is Obelus's own bookkeeping -- a note or a session id,
+        // a claim, where it is already open -- and a list of rows is not
+        // where that belongs. Which place it is is not known until they are
+        // sorted, which is after this.
+        value: PickerValue::Conversation(0),
+    }
+}
+
 /// The list of conversations, while it is the list showing.
 ///
 /// Two halves of one thing: which agent each tab names, and what each row
@@ -234,6 +292,14 @@ pub(in crate::app) struct Conversing {
     rows: Vec<Listed>,
     /// Whether what Obelus wrote down about this project would not read.
     unreadable: bool,
+    /// What the agent in use said it keeps about this checkout, once it has
+    /// answered, and which agent that was.
+    ///
+    /// Asked each time the list opens and never kept past it: a
+    /// conversation had in the agent's own program is written where no
+    /// watcher of Obelus's is listening, so the only honest answer is a
+    /// fresh one.
+    pub kept_by_the_agent: Option<(String, Vec<obelus_agent::acp::Listed>)>,
 }
 
 /// What one row of the list stands for.
@@ -258,6 +324,9 @@ struct Listed {
     /// Which checkout and when, as the row was built: nothing a frame
     /// asks again moves it.
     trailing: Option<String>,
+    /// What the agent called it in its list, for one Obelus wrote nothing
+    /// down about -- the one name it has until the agent says another.
+    called: Option<String>,
 }
 
 impl App {
@@ -373,6 +442,68 @@ impl App {
         let conversing = std::mem::take(&mut self.conversing);
         self.show_list(picker);
         self.conversing = conversing;
+        self.ask_what_the_agent_keeps();
+    }
+
+    /// Asks the agent in use which conversations it keeps about this
+    /// checkout, for the rows Obelus wrote nothing down about: the ones had
+    /// in the agent's own program, in a terminal, before Obelus was open.
+    ///
+    /// Started for it where it is installed and has not been started yet,
+    /// because taking one of these up is what this list is for and that
+    /// starts it anyway -- and the rows it answers with are the reason a
+    /// reader opens the list having talked to the agent somewhere else. But
+    /// not one that has stopped: that is started again by talking to it,
+    /// and one that dies as it starts would otherwise die again at every
+    /// opening of a list, saying so into whatever conversation is showing.
+    ///
+    /// One that cannot be asked is asked nothing (`Ask::List`), and nor is
+    /// one running that is not the agent in use: its answer would be about
+    /// a tab the reader cannot take anything up from.
+    fn ask_what_the_agent_keeps(&mut self) {
+        let in_use = self.settled.config.agent.clone().unwrap_or_default();
+        if in_use.is_empty() {
+            return;
+        }
+        if self.agent.talker.is_none() {
+            if !self.the_chosen_agent_is_installed() {
+                return;
+            }
+            self.start_agent();
+        }
+        if let Some(talker) = self
+            .agent
+            .talker
+            .as_ref()
+            .filter(|talker| talker.id() == in_use && !talker.has_exited())
+        {
+            talker.list();
+        }
+    }
+
+    /// Puts what the agent said it keeps into the list, where the list is
+    /// still up to take it.
+    ///
+    /// The rows were a snapshot and this moves them, which is what a list
+    /// arriving does -- so the reader is kept on the row they were on, the
+    /// way a name arriving keeps them.
+    pub(in crate::app) fn hear_what_the_agent_keeps(
+        &mut self,
+        sessions: Vec<obelus_agent::acp::Listed>,
+    ) {
+        let Some(agent) = self
+            .agent
+            .talker
+            .as_ref()
+            .map(|talker| talker.id().to_string())
+        else {
+            return;
+        };
+        if self.conversing.agents.is_empty() || self.picker.is_none() {
+            return;
+        }
+        self.conversing.kept_by_the_agent = Some((agent, sessions));
+        self.relist_keeping_the_reader();
     }
 
     /// Fills the list again for the tab the reader has walked onto.
@@ -408,6 +539,11 @@ impl App {
     /// one would be a list that moved under them.
     pub(in crate::app) fn say_the_new_name(&mut self) {
         self.relist_switching();
+        self.relist_keeping_the_reader();
+    }
+
+    /// Builds this list again, with the reader on the row they were on.
+    fn relist_keeping_the_reader(&mut self) {
         if self.conversing.agents.is_empty() || self.picker.is_none() {
             return;
         }
@@ -588,39 +724,18 @@ impl App {
                     }),
                     None => when,
                 };
-                let item = PickerItem {
-                    // A sentence, which loses its end where it has to lose
-                    // anything: cut from the front, a title is the half of
-                    // it that does not say what it was about.
-                    prose: true,
-                    marker: self.listed_mark(open, elsewhere),
-                    icon: None,
+                let item = conversation_row(
+                    self.listed_mark(open, elsewhere),
                     label,
-                    version: None,
                     detail,
                     trailing,
-                    changed: None,
                     // All three say the same thing in the ink: a row that
                     // belongs to another agent or another checkout cannot
                     // be taken up, and one another Obelus is in is not this
                     // window's to enter.
-                    enabled: mine && there.is_none() && !elsewhere,
-                    colours: None,
-                    status: None,
-                    depth: 0,
-                    opens: None,
-                    kind: None,
-                    tab: None,
-                    section: Some(when_said(kept.last, today, &zone).to_string()),
-                    // Stands for its place in the list rather than for
-                    // the conversation, the way a server's offered actions
-                    // do: what a row stands for is Obelus's own
-                    // bookkeeping -- a note or a session id, a claim,
-                    // where it is already open -- and a list of rows is
-                    // not where that belongs. Which place it is is not
-                    // known until they are sorted, just below.
-                    value: PickerValue::Conversation(0),
-                };
+                    mine && there.is_none() && !elsewhere,
+                    when_said(kept.last, today, &zone),
+                );
                 (
                     kept.last,
                     Listed {
@@ -629,11 +744,22 @@ impl App {
                         open,
                         there: there.is_some(),
                         trailing: item.trailing.clone(),
+                        called: None,
                     },
                     item,
                 )
             })
             .collect();
+        if mine {
+            rows.extend(self.rows_only_the_agent_kept(
+                &whose,
+                &remembered,
+                &held,
+                now,
+                &today,
+                &zone,
+            ));
+        }
         // Newest first, and the ones from before Obelus wrote down when
         // last. A made-up time would have put those somewhere in the order
         // on no evidence at all.
@@ -647,6 +773,117 @@ impl App {
         }
         self.conversing.rows = stands_for;
         items
+    }
+
+    /// The rows for what the agent keeps that Obelus wrote nothing down
+    /// about -- conversations had in the agent's own program, most of them.
+    ///
+    /// Each is one about no note, because nothing says it was about one,
+    /// and is claimed by its session like any other loose one. Left out:
+    /// one Obelus already has a row for, under whatever it is about, and
+    /// one open here about a note, which is that note's conversation not
+    /// written down *yet*. And one nothing has been said in for longer than the
+    /// setting keeps a conversation: this is the other half of that setting,
+    /// because Obelus forgetting a row of its own is not the agent
+    /// forgetting the conversation, and without this the agent's answer
+    /// put back every row the setting had taken away.
+    fn rows_only_the_agent_kept(
+        &self,
+        whose: &str,
+        remembered: &obelus_agent::acp::sessions::Remembered,
+        held: &std::collections::BTreeMap<obelus_agent::chats::ChatId, Option<PathBuf>>,
+        now: std::time::SystemTime,
+        today: &jiff::civil::Date,
+        zone: &jiff::tz::TimeZone,
+    ) -> Vec<(Option<i64>, Listed, PickerItem)> {
+        let Some((_, sessions)) = self
+            .conversing
+            .kept_by_the_agent
+            .as_ref()
+            .filter(|(agent, _)| agent == whose)
+        else {
+            return Vec::new();
+        };
+        let days = i64::try_from(self.config().conversation_days).unwrap_or(i64::MAX);
+        let since = (days > 0).then(|| {
+            jiff::Timestamp::now()
+                .as_second()
+                .saturating_sub(days.saturating_mul(24 * 60 * 60))
+        });
+        sessions
+            .iter()
+            .filter(|listed| {
+                !remembered
+                    .all()
+                    .any(|(_, agent, _, kept)| agent == whose && kept.session == listed.session)
+            })
+            .filter(|listed| match (since, listed.last) {
+                (Some(since), Some(last)) => last >= since,
+                _ => true,
+            })
+            .filter_map(|listed| {
+                let which = obelus_agent::chats::ChatId::Loose(listed.session.clone());
+                let open = match self.conversation_here_holding(&listed.session) {
+                    Some((at, held)) if held.as_ref() == Some(&which) => Some(at),
+                    Some(_) => return None,
+                    None => None,
+                };
+                Some((listed, which, open))
+            })
+            .map(|(listed, which, open)| {
+                let elsewhere = open.is_none() && held.contains_key(&which);
+                let trailing = listed.last.map(|last| obelus_git::how_long_ago(last, now));
+                let item = conversation_row(
+                    self.listed_mark(open, elsewhere),
+                    listed
+                        .title
+                        .clone()
+                        .unwrap_or_else(|| "Untitled".to_string()),
+                    None,
+                    trailing.clone(),
+                    !elsewhere,
+                    when_said(listed.last, *today, zone),
+                );
+                (
+                    listed.last,
+                    Listed {
+                        which,
+                        session: listed.session.clone(),
+                        open,
+                        there: false,
+                        trailing,
+                        called: listed.title.clone(),
+                    },
+                    item,
+                )
+            })
+            .collect()
+    }
+
+    /// The conversation open in this Obelus that has this session, or is
+    /// asking for it, and what it is about.
+    ///
+    /// What it is about decides what the agent's row for it is: one about
+    /// no note *is* that row, open here, and is not written down until
+    /// something is said in it -- left out, the conversation the reader had
+    /// just taken up was missing from the list they took it up from. One
+    /// about a note is that note's conversation, which the list has a row
+    /// for already, under the note.
+    fn conversation_here_holding(
+        &self,
+        session: &str,
+    ) -> Option<(DocumentId, Option<obelus_agent::chats::ChatId>)> {
+        self.documents
+            .iter()
+            .enumerate()
+            .filter_map(|(at, document)| Some((at, document.as_ref()?.chat()?)))
+            .find(|(_, talk)| {
+                [talk.session.as_ref(), talk.asked_for.as_ref()]
+                    .into_iter()
+                    .flatten()
+                    .any(|held| held.0.as_ref() == session)
+            })
+            .map(|(at, talk)| (DocumentId::new(at), talk.which()))
     }
 
     /// Asks again which conversations somebody else has open, while the
@@ -1028,7 +1265,7 @@ impl App {
         if self.agent.talker.is_none() {
             self.start_agent();
         }
-        self.ask_for_a_session(Whose::One(at), Some(listed.session.clone()));
+        self.ask_for_a_session_called(Whose::One(at), Some(listed.session), listed.called);
         true
     }
 }

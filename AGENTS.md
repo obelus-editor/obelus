@@ -606,8 +606,9 @@ crates/
                       its session, and saying something makes it the reader's
                       (app/chat/talking); what a reader said outlives the window,
                       newest first, a conversation belongs to the agent that
-                      had it and to the checkout it was had in, and a watch
-                      is settled from what is open
+                      had it and to the checkout it was had in, and what the
+                      agent keeps that Obelus did not write down, and a
+                      watch is settled from what is open
                       (app/chat/conversations); a project is remembered
                       when it is chosen on the page that asks, and only a
                       worktree, and what a start with nothing to go on asks,
