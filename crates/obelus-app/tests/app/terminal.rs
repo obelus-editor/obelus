@@ -1219,3 +1219,21 @@ fn not_signing_in_ends_the_conversation() {
     });
     assert!(said_in_transcript(&app, "Not signed in"));
 }
+
+/// Escape on the sign-in card is "Not now" -- and so are words from the
+/// chat's thread, which give up on whatever the conversation is asking the
+/// same way.
+///
+/// Broken deliberately by giving it up as a form, as it was: the card went
+/// and the agent was never told, so the conversation waited for ever with
+/// nothing on screen to answer.
+#[test]
+fn escape_on_the_sign_in_card_is_not_now() {
+    let marker = marker("escaped");
+    let (mut app, events) = asked_to_sign_in(&marker);
+    press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+    pump(&mut app, &events, "the conversation to end", |app| {
+        app.talking() == obelus_agent::Talking::Gone
+    });
+    assert!(said_in_transcript(&app, "Not signed in"));
+}

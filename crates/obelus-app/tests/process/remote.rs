@@ -1829,15 +1829,13 @@ fn a_question_is_answered_in_its_own_conversation() {
 
 /// The card is the answer: put to the thread as a question with the
 /// agent's own ids on it, a press on it answering for the reader on the
-/// list and nobody else, the card closed with what was chosen -- and words
-/// in the thread while it is up pointed back at it rather than read. On
-/// Feishu, which is set up with fields of its own.
+/// list and nobody else, the card closed with what was chosen. On Feishu,
+/// which is set up with fields of its own.
 ///
-/// Broken deliberately four ways. Not hearing presses: the permission was
-/// never given and the turn never ended. Reading words as the answer: the
-/// `1` answered it, and nobody was told to use the card. Taking a press from
-/// anybody: the stranger's answered it. And not closing the card: no `Settle`
-/// came, and it could be pressed again.
+/// Broken deliberately three ways. Not hearing presses: the permission was
+/// never given and the turn never ended. Taking a press from anybody: the
+/// stranger's answered it. And not closing the card: no `Settle` came, and
+/// it could be pressed again.
 #[test]
 fn a_question_is_a_card_and_the_card_is_the_answer() {
     let _turn = turn();
@@ -1871,16 +1869,6 @@ fn a_question_is_a_card_and_the_card_is_the_answer() {
             .contains(&("once".to_string(), "Allow once".to_string())),
         "the card does not carry the agent's own answers: {question:#?}"
     );
-
-    let _ = platform.send(obelus_remote::Event::Heard {
-        from: "U1".to_string(),
-        room: "C1".to_string(),
-        at: obelus_remote::model::Where::Thread("F1".to_string()),
-        text: "1".to_string(),
-    });
-    said_until(&mut app, &events, "words pointed at the card", |said| {
-        in_thread(said, "F1", "Answer on the card above.")
-    });
 
     let press = |from: &str| obelus_remote::Event::Answered {
         from: from.to_string(),
@@ -1917,6 +1905,148 @@ fn a_question_is_a_card_and_the_card_is_the_answer() {
         in_thread(said, "F1", "and I was allowed")
     });
     assert!(settled(&said), "the card was not closed: {said:#?}");
+}
+
+/// Words in the thread while a question's card is up are cancel on the
+/// card and then the words: the card closed as not answered, the agent told
+/// no, and the words its next prompt -- never read as the answer, though
+/// `1` is the number of an answer on it.
+///
+/// Broken deliberately twice. Pointing the words back at the card, as it
+/// once did: they never reached the agent. And leaving the question to go
+/// with the stopped turn instead of cancelling it: the card was closed as
+/// no longer asked rather than as not answered.
+#[test]
+fn words_while_a_card_is_up_cancel_it_and_are_said() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-words-over-card");
+    let (mut app, events, log) = paired_on_feishu_with_an_agent(&scratch);
+    let platform = the_platform();
+    let _ = platform.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        text: "what is in here".to_string(),
+    });
+    let said = said_until(&mut app, &events, "the question as a card", |said| {
+        asked_with(said, "F1", "Allow once").is_some()
+    });
+    let asked = asked_with(&said, "F1", "Allow once").expect("asked");
+
+    let _ = platform.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Thread("F1".to_string()),
+        text: "1 -- no, read the README instead".to_string(),
+    });
+    let reached = || {
+        std::fs::read_to_string(&log).is_ok_and(|logged| logged.contains("read the README instead"))
+    };
+    let said = said_until(&mut app, &events, "the words at the agent", |said| {
+        reached() && in_thread(said, "F1", "and I was refused")
+    });
+    assert!(
+        said.iter().any(|out| matches!(
+            out,
+            obelus_remote::model::Out::Settle { asked: closed, said, .. }
+                if *closed == asked && said.contains("Not answered")
+        )),
+        "the card was not closed as not answered: {said:#?}"
+    );
+    assert!(
+        !in_thread(&said, "F1", "and I was allowed") && !in_thread(&said, "F1", "card above"),
+        "the words were read as the answer, or pointed at the card: {said:#?}"
+    );
+}
+
+/// Words in the thread over a question with another waiting behind it give
+/// up on both: the one behind goes with the stopped turn and is never put
+/// to the thread.
+///
+/// Broken deliberately by putting up what was waiting, as a card does when
+/// it is cancelled: a second card came to the thread and was taken back.
+#[test]
+fn words_over_a_question_take_the_ones_behind_it_too() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-words-over-two");
+    let (mut app, events, log) = paired_with_an_agent(&scratch);
+    let platform = the_platform();
+    let _ = platform.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        text: "/pair".to_string(),
+    });
+    said_until(&mut app, &events, "the first question", |said| {
+        !asks_in(said, "F1").is_empty()
+    });
+    // A turn that answers with nothing, so that no question of its own
+    // comes to be counted.
+    let _ = platform.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Thread("F1".to_string()),
+        text: "neither, go slowly".to_string(),
+    });
+    let mut said = said_until(&mut app, &events, "the words at the agent", |_| {
+        std::fs::read_to_string(&log).is_ok_and(|logged| logged.contains("neither, go slowly"))
+    });
+    let until = std::time::Instant::now() + std::time::Duration::from_millis(500);
+    while std::time::Instant::now() < until {
+        if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(50)) {
+            app.handle(event);
+        }
+        support::lay_out(&mut app, 76, 24);
+        said.extend(said_since());
+    }
+    assert_eq!(
+        asks_in(&said, "F1").len(),
+        0,
+        "a question behind the one passed by was put to the thread: {said:#?}"
+    );
+}
+
+/// Words in the thread while the agent works stop the turn and are said
+/// once it has stopped -- `ctrl+enter` here -- rather than waiting for a
+/// turn that may never end on its own.
+///
+/// Broken deliberately by queueing them for the turn's end, as it once did:
+/// the fake's turn never ends, and the words never reached it.
+#[test]
+fn words_into_a_running_turn_stop_it() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-words-stop");
+    let (mut app, events, log) = paired_with_an_agent(&scratch);
+    let platform = the_platform();
+    let _ = platform.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        text: "take this slowly".to_string(),
+    });
+    let logged =
+        |words: &str| std::fs::read_to_string(&log).is_ok_and(|logged| logged.contains(words));
+    said_until(&mut app, &events, "the turn under way", |_| {
+        logged("take this slowly")
+    });
+
+    let _ = platform.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Thread("F1".to_string()),
+        text: "something else first".to_string(),
+    });
+    said_until(&mut app, &events, "the words at the agent", |_| {
+        logged("something else first")
+    });
+    let logged = std::fs::read_to_string(&log).unwrap_or_default();
+    let cancelled = logged
+        .find("session/cancel")
+        .expect("the turn was not stopped");
+    assert!(
+        cancelled < logged.find("something else first").expect("said"),
+        "the words went before the turn was stopped:\n{logged}"
+    );
 }
 
 /// A form answered on its cards from the chat -- in a conversation begun
@@ -2048,16 +2178,17 @@ fn cancel_on_a_card_gives_up_on_the_question() {
 }
 
 /// Words in a thread whose question the chat was never given -- a page
-/// to open on the machine -- are told so, rather than sent to a card that
-/// is not there.
+/// to open on the machine -- cancel it all the same, said in words where
+/// there is no card to close, and are said.
 ///
-/// Broken deliberately by asking only whether a card is up: the thread was
-/// told to answer on the card above, where there was none.
+/// Broken deliberately by cancelling only a question the thread has a card
+/// for: the page went with the stopped turn, and nothing said it was not
+/// answered.
 #[test]
 fn a_question_the_chat_was_never_given_is_said_to_be_the_machines() {
     let _turn = turn();
     let scratch = support::Scratch::new("remote-only-here");
-    let (mut app, events, _log) = paired_with_an_agent(&scratch);
+    let (mut app, events, log) = paired_with_an_agent(&scratch);
     let platform = the_platform();
     let _ = platform.send(obelus_remote::Event::Heard {
         from: "U1".to_string(),
@@ -2081,27 +2212,44 @@ fn a_question_the_chat_was_never_given_is_said_to_be_the_machines() {
         from: "U1".to_string(),
         room: "C1".to_string(),
         at: obelus_remote::model::Where::Thread("F1".to_string()),
-        text: "done".to_string(),
+        text: "never mind signing in".to_string(),
     });
-    let said = said_until(&mut app, &events, "the words answered", |said| {
-        in_thread(said, "F1", "on the machine") || in_thread(said, "F1", "card above")
+    passed_by(&mut app, &events, &log, "never mind signing in");
+}
+
+/// Waits for words in a thread with a question up and no card for it to
+/// have cancelled the question -- said in the thread, there being no card
+/// to close -- and reached the agent.
+fn passed_by(
+    app: &mut App,
+    events: &std::sync::mpsc::Receiver<Event>,
+    log: &std::path::Path,
+    words: &str,
+) {
+    let said = said_until(app, events, "the question passed by", |said| {
+        in_thread(said, "F1", "Not answered")
+            && std::fs::read_to_string(log).is_ok_and(|logged| logged.contains(words))
     });
     assert!(
-        in_thread(&said, "F1", "can only be answered on the machine"),
+        !in_thread(&said, "F1", "card above")
+            && !said
+                .iter()
+                .any(|out| matches!(out, obelus_remote::model::Out::Settle { .. })),
         "the thread was pointed at a card it never had: {said:#?}"
     );
 }
 
 /// A question the platform would not take as a card is said in words by
-/// the platform, and the thread is not pointed at a card it never got.
+/// the platform, and words after it cancel it in words too -- there is no
+/// card it got to close.
 ///
-/// Broken deliberately by not hearing that the card was refused: the
-/// reader was told to answer on a card above that was never there.
+/// Broken deliberately by not hearing that the card was refused: a card
+/// that was never there was closed.
 #[test]
 fn a_card_the_platform_refused_is_not_pointed_at() {
     let _turn = turn();
     let scratch = support::Scratch::new("remote-refused-card");
-    let (mut app, events, _log) = paired_with_an_agent(&scratch);
+    let (mut app, events, log) = paired_with_an_agent(&scratch);
     let platform = the_platform();
     let _ = platform.send(obelus_remote::Event::Heard {
         from: "U1".to_string(),
@@ -2118,15 +2266,9 @@ fn a_card_the_platform_refused_is_not_pointed_at() {
         from: "U1".to_string(),
         room: "C1".to_string(),
         at: obelus_remote::model::Where::Thread("F1".to_string()),
-        text: "yes".to_string(),
+        text: "look somewhere else".to_string(),
     });
-    let said = said_until(&mut app, &events, "the words answered", |said| {
-        in_thread(said, "F1", "on the machine") || in_thread(said, "F1", "card above")
-    });
-    assert!(
-        in_thread(&said, "F1", "can only be answered on the machine"),
-        "the thread was pointed at a card it never got: {said:#?}"
-    );
+    passed_by(&mut app, &events, &log, "look somewhere else");
 }
 
 /// A question's card in the chat is closed when nothing is waiting on it any
@@ -2464,8 +2606,9 @@ fn a_thread_finds_its_conversation_while_its_agent_is_gone() {
     );
 }
 
-/// Words from the chat that waited for a turn, and came back to the box
-/// here when the reader stopped it, are the reader's once they send them:
+/// Words from the chat that waited for the turn they stopped to end, and
+/// came back to the box here when the reader pressed escape in between, are
+/// the reader's once they send them:
 /// nothing tells the agent they came from the chat, and the thread hears
 /// them as said on this machine.
 ///
@@ -2487,21 +2630,18 @@ fn words_from_the_chat_taken_back_here_are_the_readers() {
     said_until(&mut app, &events, "the words before the call", |said| {
         in_thread(said, "F1", "looking at it first")
     });
-    let _ = platform.send(obelus_remote::Event::Heard {
+    app.go_to_document_for_test(obelus_buffer::DocumentId::new(
+        app.document_count_for_test() - 1,
+    ));
+    // Handed straight in, and escape pressed before anything else is heard:
+    // words from the chat stop the turn the moment they arrive, so the one
+    // moment they wait to be taken back is between the stop and its end.
+    app.handle(Event::Remote(obelus_remote::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
         at: obelus_remote::model::Where::Thread("F1".to_string()),
         text: "and later".to_string(),
-    });
-    for _ in 0..10 {
-        if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(30)) {
-            app.handle(event);
-        }
-        support::lay_out(&mut app, 76, 24);
-    }
-    app.go_to_document_for_test(obelus_buffer::DocumentId::new(
-        app.document_count_for_test() - 1,
-    ));
+    }));
     support::press(&mut app, KeyCode::Esc);
     until(&mut app, &events, "the turn to stop", |app| {
         app.talking() == obelus_agent::Talking::Ready
@@ -2535,7 +2675,8 @@ fn words_from_the_chat_taken_back_here_are_the_readers() {
 }
 
 /// Words from the chat and the reader's own, waiting on one turn, go to the
-/// agent together when it ends -- with nothing saying they came from the
+/// agent together when it ends -- which the chat's words make it do -- with
+/// nothing saying they came from the
 /// chat, since the reader is evidently at the machine -- and the thread
 /// hears the reader's own, and only those, as said on this machine.
 ///

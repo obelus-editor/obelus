@@ -3741,30 +3741,56 @@ impl App {
     /// Gives up on the question up in a conversation: escape on its card,
     /// or cancel on its card in the chat.
     pub(in crate::app) fn give_up_the_question(&mut self, whose: Whose) {
-        match self
-            .talk(whose)
-            .is_some_and(|talk| talk.permission.is_some())
-        {
-            true => self.refuse_permission(whose),
-            false => self.refuse_asking(whose),
-        }
+        self.refuse_the_question(whose);
         self.ask_the_next(whose);
     }
 
-    /// Says words that came from a chat in a conversation: now, or when the
-    /// turn it is in the middle of is over -- the way the reader's own wait
-    /// on the page.
-    pub(in crate::app) fn say_from_afar(&mut self, whose: Whose, parts: &[Part]) {
-        let running = self.talk(whose).is_some_and(|talk| {
+    /// Gives up on the question up in a conversation and puts up nothing in
+    /// its place: for a turn about to be stopped, whose questions go with it.
+    pub(in crate::app) fn refuse_the_question(&mut self, whose: Whose) {
+        let Some(talk) = self.talk(whose) else {
+            return;
+        };
+        // A sign-in is "Not now": `refuse_asking` took its card away and
+        // left the agent waiting on it, and the conversation waiting with
+        // nothing on screen to answer.
+        if talk.signing_in.is_some() {
+            self.answer_signing_in(whose, None);
+        } else if talk.permission.is_some() {
+            self.refuse_permission(whose);
+        } else {
+            self.refuse_asking(whose);
+        }
+    }
+
+    /// Whether a conversation is in the middle of a turn.
+    pub(in crate::app) fn in_a_turn(&self, whose: Whose) -> bool {
+        self.talk(whose).is_some_and(|talk| {
             self.agent
                 .talker
                 .as_ref()
                 .is_some_and(|talker| talker.is_thinking(talk.session.as_ref(), talk.requested))
-        });
-        if running {
+        })
+    }
+
+    /// Says words that came from a chat in a conversation: now, or -- in the
+    /// middle of a turn -- by stopping it and saying them once it has
+    /// stopped, which is `ctrl+enter` here (`send_now`).
+    ///
+    /// Stopped rather than waited for: a reader on their phone has no
+    /// escape to press, so words sent into a running turn are the only way
+    /// they have of turning the agent round, and a turn that ran on to its
+    /// end -- or sat on a question they had chosen to pass by -- answered
+    /// what they had stopped asking. A question up is the caller's to give
+    /// up on first (`heard_in_thread`): the words are never its answer.
+    pub(in crate::app) fn say_from_afar(&mut self, id: DocumentId, parts: &[Part]) {
+        let whose = Whose::One(id);
+        if self.in_a_turn(whose) {
             if let Some(talk) = self.talk_mut(whose) {
+                talk.stopped_to_say = true;
                 talk.chat.will_say_from_afar(parts);
             }
+            self.stop_the_turn(id);
             return;
         }
         self.about_to_say_from_afar(whose);
