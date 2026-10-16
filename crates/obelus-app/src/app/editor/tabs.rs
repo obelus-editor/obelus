@@ -115,6 +115,44 @@ impl App {
         self.go_to_document(id);
     }
 
+    /// Closes a document because the reader pressed the cross on its tab.
+    ///
+    /// What the key that closes does, to that document rather than to
+    /// whichever one is being read: asked about first where closing would
+    /// take unwritten work or a running program with it. A list over the
+    /// file is left where it is unless the asking needs the room -- the
+    /// reader closed a tab, they did not leave the list -- and the list of
+    /// what is open is told, because it has lost a row.
+    pub(in crate::app) fn close_by_its_tab(&mut self, id: DocumentId) {
+        if self.document(id).is_none() {
+            return;
+        }
+        let in_front = self.layers().nearest().is_some();
+        if in_front && !self.gives_way_to_a_view() {
+            return;
+        }
+        if self.file(id).is_some_and(Buffer::is_dirty) {
+            if in_front {
+                self.put_away_the_views();
+            }
+            self.ask_before_closing(id);
+            return;
+        }
+        let running = self
+            .document(id)
+            .and_then(Document::terminal)
+            .is_some_and(|terminal| terminal.ended().is_none());
+        if running {
+            if in_front {
+                self.put_away_the_views();
+            }
+            self.ask_before_stopping(id);
+            return;
+        }
+        self.close(id);
+        self.relist_switching();
+    }
+
     /// Moves a document because the reader dragged its tab to beside
     /// another.
     ///

@@ -119,6 +119,11 @@ pub enum Event {
     /// Only a window says this: the tabs are on its title bar, outside the
     /// cells, so the press is the window's to place and not a `Pointer`.
     Chose(obelus_buffer::DocumentId),
+    /// The reader pressed the cross on a document's tab, and let go of it
+    /// there.
+    ///
+    /// Only a window says this, for the reason it alone says `Chose`.
+    Shut(obelus_buffer::DocumentId),
     /// The reader dragged a document's tab to beside another one's.
     ///
     /// Said by what it goes beside and not by where in the row, because a
@@ -305,6 +310,7 @@ impl Event {
             Self::Scroll { .. } => "Scroll",
             Self::Pointer { .. } => "Pointer",
             Self::Chose(_) => "Chose",
+            Self::Shut(_) => "Shut",
             Self::Placed { .. } => "Placed",
             Self::Paste(_) => "Paste",
             Self::Spelling(..) => "Spelling",

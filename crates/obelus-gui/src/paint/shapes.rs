@@ -311,7 +311,9 @@ impl Painter {
         let name = |painter: &mut Self, fonts: &mut Fonts, tab: &crate::title::Shown| {
             let left = tab.laid.left - margin[0];
             let ink = crate::title::tab_ink(tab.reading, strip.active, dark);
-            let end = left + tab.laid.width - room.padding() / 2.0;
+            // Up to the cross, whether or not it is drawn: room is kept for
+            // it on every tab, so that a name does not run on under it.
+            let end = tab.laid.shut(&room)[0] - margin[0];
             let mut start = (left + room.padding()).round();
             // The mark first, in the name's ink, as the list of what is
             // open draws it before the same name.
@@ -321,6 +323,9 @@ impl Painter {
                 start += room.marked();
             }
             painter.caption(fonts, &tab.said, room.words, [start, baseline], ink, end);
+            if tab.crossed {
+                painter.cross(tab, room, [top, tall], margin[0], ink, dark);
+            }
         };
         if let Some(tab) = lying.iter().find(|tab| tab.reading) {
             plate(self, tab.laid);
@@ -379,6 +384,50 @@ impl Painter {
                 lower: 0.0,
             });
         }
+    }
+
+    /// The cross at a tab's end that closes it, in the name's ink, on a
+    /// light of its own while the pointer is over it -- the arrows' light,
+    /// for the same reason: it is something on the bar to press.
+    fn cross(
+        &mut self,
+        tab: &crate::title::Shown,
+        room: crate::title::Room,
+        [top, tall]: [f32; 2],
+        margin: f32,
+        ink: [f32; 4],
+        dark: bool,
+    ) {
+        let [left, wide] = tab.laid.shut(&room);
+        let left = left - margin;
+        let side = wide.min(tall);
+        let above = (top + (tall - side) / 2.0).round();
+        if let Some(behind) = crate::title::cross_light(tab.on_the_cross, tab.pressing, dark) {
+            self.rounded(left, above, wide, side, (side * 0.25).round(), behind);
+        }
+        // The pen the seams are drawn with, and the mark the same oddness
+        // as it, so that the strokes are on whole pixels -- see the
+        // buttons' own in `title::windows`.
+        let pen = (room.words / 12.0).round().max(1.0);
+        let mut mark = (room.words * 0.75).round();
+        if (mark - pen).rem_euclid(2.0) != 0.0 {
+            mark += 1.0;
+        }
+        self.quads.push(Quad {
+            rect: [
+                (left + (wide - mark) / 2.0).round(),
+                (above + (side - mark) / 2.0).round(),
+                mark,
+                mark,
+            ],
+            uv: self.atlas.white,
+            colour: ink,
+            flags: CAPTION,
+            // The cross, of the buttons' four marks.
+            radius: 3.0,
+            layer: 0,
+            lower: pen,
+        });
     }
 
     /// A line in the face the system writes its own words in, from a place

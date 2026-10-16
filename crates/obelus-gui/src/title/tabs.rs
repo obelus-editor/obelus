@@ -32,6 +32,16 @@
 //! is a tab the reader has to find again, and the one they are carrying
 //! is the order changing under their hand.
 //!
+//! Each tab has a cross at its end that closes it, drawn on the tab being
+//! read and the one under the pointer and kept room for on every other:
+//! a cross on every tab is a row of them, and one that came and went with
+//! room of its own would push the name along under the pointer. It closes
+//! when it is let go of where it was pressed, as a button does, rather
+//! than as it is pressed, the way a tab is chosen: what a slip of the hand
+//! takes away is the document and what was in it, and the press is said
+//! to the application -- which asks first where that would lose anything
+//! (`App::close_by_its_tab`).
+//!
 //! The slides are the window's own clock and none of the application's,
 //! and they run only while something is somewhere other than where it is
 //! going -- asked every frame from that (`Strip::sliding`), the way
@@ -46,6 +56,8 @@ use obelus_app::app::Tab;
 pub(crate) enum Spot {
     /// A tab, by where it is in the list.
     Tab(usize),
+    /// The cross at the end of one, which closes it.
+    Shut(usize),
     /// The arrow that walks back towards the first tab.
     Earlier,
     /// And the one that walks on towards the last.
@@ -99,6 +111,12 @@ impl Room {
         self.mark() + (self.words * 0.6).round()
     }
 
+    /// How wide the cross at a tab's end is, and the room for a press on
+    /// it.
+    pub(crate) fn shut(&self) -> f32 {
+        (self.words * 1.4).round()
+    }
+
     /// And how wide, so that one long name does not take the bar.
     fn widest(&self) -> f32 {
         (self.words * 20.0).round()
@@ -132,6 +150,15 @@ pub(crate) struct Laid {
     pub(crate) left: f32,
     /// How wide it is, all of it.
     pub(crate) width: f32,
+}
+
+impl Laid {
+    /// Where the cross that closes it is, as left and width: at its end,
+    /// half a padding in from its edge.
+    pub(crate) fn shut(&self, room: &Room) -> [f32; 2] {
+        let width = room.shut();
+        [self.left + self.width - room.padding() / 2.0 - width, width]
+    }
 }
 
 /// How long the slide takes to come most of the way: the gap left after
@@ -194,6 +221,8 @@ pub(crate) struct Strip {
     /// When the row last scrolled under a tab carried to one of its ends,
     /// while it is scrolling.
     edged: Option<Instant>,
+    /// The tab whose cross is pressed, until the button comes up.
+    shutting: Option<obelus_buffer::DocumentId>,
 }
 
 /// How far into the row from either end a tab carried there starts it
@@ -236,6 +265,12 @@ pub(crate) struct Shown {
     pub(crate) hovered: bool,
     /// Whether it is held, and dragged: drawn over every other tab.
     pub(crate) lifted: bool,
+    /// Whether its cross is drawn.
+    pub(crate) crossed: bool,
+    /// Whether the pointer is over its cross.
+    pub(crate) on_the_cross: bool,
+    /// Whether its cross is pressed, and the pointer still over it.
+    pub(crate) pressing: bool,
 }
 
 /// A tab held down, and where the pointer has it.
@@ -307,6 +342,12 @@ impl Strip {
         {
             self.held = None;
         }
+        if self
+            .shutting
+            .is_some_and(|shutting| !tabs.iter().any(|tab| tab.document == shutting))
+        {
+            self.shutting = None;
+        }
         self.tabs = tabs;
     }
 
@@ -352,6 +393,7 @@ impl Strip {
             self.settled = None;
             self.edged = None;
             self.held = None;
+            self.shutting = None;
             return;
         };
         self.widths = self
@@ -362,7 +404,7 @@ impl Strip {
                     Some(_) => room.marked(),
                     None => 0.0,
                 };
-                (wide(&said(tab), room.words).ceil() + marked + 2.0 * room.padding())
+                (wide(&said(tab), room.words).ceil() + marked + 2.0 * room.padding() + room.shut())
                     .clamp(room.narrowest(), room.widest())
             })
             .collect();
@@ -689,10 +731,31 @@ impl Strip {
         if !(self.view.0..self.view.1).contains(&x) {
             return None;
         }
+        let room = self.room?;
         self.laid
             .iter()
             .find(|laid| inside([laid.left, laid.width]))
-            .map(|laid| Spot::Tab(laid.index))
+            .map(|laid| match inside(laid.shut(&room)) {
+                true => Spot::Shut(laid.index),
+                false => Spot::Tab(laid.index),
+            })
+    }
+
+    /// The cross on a tab pressed: nothing is closed until it is let go of
+    /// over the same cross -- see `shut`.
+    pub(crate) fn press_the_cross(&mut self, index: usize) {
+        self.shutting = self.document(index);
+    }
+
+    /// The button come up: the document whose cross it went down on, where
+    /// it came up over that cross too. Nothing otherwise -- dragged off the
+    /// cross before letting go, the way a button anywhere is given up on.
+    pub(crate) fn shut(&mut self) -> Option<obelus_buffer::DocumentId> {
+        let shutting = self.shutting.take()?;
+        match self.hovered {
+            Some(Spot::Shut(index)) => self.document(index).filter(|&over| over == shutting),
+            _ => None,
+        }
     }
 
     /// Which document a tab is.
@@ -776,7 +839,7 @@ impl Strip {
                 .iter()
                 .find(|(_, end)| *end > self.target + span + 0.5)
                 .map(|(_, end)| end - span),
-            Spot::Tab(_) => None,
+            Spot::Tab(_) | Spot::Shut(_) => None,
         };
         target.is_some_and(|target| self.go_to(target))
     }
@@ -812,6 +875,11 @@ impl Strip {
             .filter_map(|laid| {
                 let tab = self.tabs.get(laid.index)?;
                 let along = self.shown.get(&tab.document).copied();
+                // Nothing lit while a tab is carried: what is under the
+                // pointer is the tab in the reader's hand.
+                let over = held.is_none().then_some(self.hovered).flatten();
+                let on_the_cross = over == Some(Spot::Shut(laid.index));
+                let hovered = on_the_cross || over == Some(Spot::Tab(laid.index));
                 Some(Shown {
                     said: said(tab),
                     icon: tab.icon,
@@ -820,10 +888,11 @@ impl Strip {
                         ..*laid
                     },
                     reading: tab.reading,
-                    // Nothing lit while a tab is carried: what is under
-                    // the pointer is the tab in the reader's hand.
-                    hovered: held.is_none() && self.hovered == Some(Spot::Tab(laid.index)),
+                    hovered,
                     lifted: held == Some(tab.document),
+                    crossed: tab.reading || hovered,
+                    on_the_cross,
+                    pressing: on_the_cross && self.shutting == Some(tab.document),
                 })
             })
             .collect();
@@ -958,6 +1027,91 @@ mod tests {
         assert!(
             strip.laid.iter().any(|laid| laid.index == 6),
             "cut, and in sight"
+        );
+    }
+
+    /// The end of a tab is its cross, and the rest of it is the tab.
+    ///
+    /// Deliberate break: leave the cross out of `at`. A press on it is then
+    /// a press on the tab, which chooses it and closes nothing.
+    #[test]
+    fn a_press_at_a_tab_s_end_is_on_its_cross() {
+        let mut strip = Strip::default();
+        strip.told((0..3).map(|at| tab(at, at == 0)).collect());
+        settle(&mut strip);
+        // A tab of 90, its cross 14 wide and 5 in from its end: 71 to 85.
+        assert_eq!(strip.at(60.0), Some(Spot::Tab(0)));
+        assert_eq!(strip.at(80.0), Some(Spot::Shut(0)));
+        assert_eq!(strip.at(170.0), Some(Spot::Shut(1)));
+        assert_eq!(strip.at(178.0), Some(Spot::Tab(1)), "the end's padding");
+    }
+
+    /// A cross closes its tab when the button comes up over it, and over
+    /// nothing else: not the rest of the tab, not another tab's cross.
+    ///
+    /// Deliberate break: hand back what was pressed in `shut` whatever is
+    /// under the pointer. A press dragged off the cross to take it back
+    /// then closes the tab anyway.
+    #[test]
+    fn a_cross_closes_only_where_it_is_let_go_of() {
+        let mut strip = Strip::default();
+        strip.told((0..3).map(|at| tab(at, at == 0)).collect());
+        settle(&mut strip);
+        let second = obelus_buffer::DocumentId::new(1);
+
+        strip.point(Some(170.0));
+        strip.press_the_cross(1);
+        assert_eq!(strip.shut(), Some(second));
+        assert_eq!(strip.shut(), None, "said once");
+
+        strip.press_the_cross(1);
+        strip.point(Some(150.0));
+        assert_eq!(strip.shut(), None, "let go of on the tab");
+
+        strip.press_the_cross(1);
+        strip.point(Some(260.0));
+        assert_eq!(strip.at(260.0), Some(Spot::Shut(2)));
+        assert_eq!(strip.shut(), None, "let go of on another cross");
+    }
+
+    /// The cross is drawn on the tab being read and the one under the
+    /// pointer, and on no other; pressed, it says so only while the
+    /// pointer is still on it.
+    ///
+    /// Deliberate break: draw every tab's cross in `painted`. The third
+    /// tab, neither read nor under the pointer, wears one.
+    #[test]
+    fn a_cross_is_drawn_where_it_is_wanted() {
+        let mut strip = Strip::default();
+        strip.told((0..3).map(|at| tab(at, at == 0)).collect());
+        settle(&mut strip);
+        strip.point(Some(170.0));
+        strip.press_the_cross(1);
+        let crosses = |strip: &Strip| {
+            strip
+                .painted(true)
+                .expect("painted")
+                .tabs
+                .iter()
+                .map(|shown| (shown.crossed, shown.on_the_cross, shown.pressing))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            crosses(&strip),
+            [
+                (true, false, false),
+                (true, true, true),
+                (false, false, false)
+            ]
+        );
+        strip.point(Some(150.0));
+        assert_eq!(
+            crosses(&strip),
+            [
+                (true, false, false),
+                (true, false, false),
+                (false, false, false)
+            ]
         );
     }
 

@@ -249,6 +249,7 @@ impl App {
             }
             Event::Pointer { kind, x, y } => self.on_pointer(kind, x, y),
             Event::Chose(id) => self.choose_by_its_tab(id),
+            Event::Shut(id) => self.close_by_its_tab(id),
             Event::Placed {
                 document,
                 beside,

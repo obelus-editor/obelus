@@ -710,10 +710,15 @@ impl Showing {
         }
     }
 
-    /// A press on a tab, which goes to its document, or on an arrow, which
-    /// slides the tabs on to the next one that end is cutting.
+    /// A press on a tab, which goes to its document, on its cross, which
+    /// closes it when it comes up there, or on an arrow, which slides the
+    /// tabs on to the next one that end is cutting.
     fn press_on_the_tabs(&mut self, spot: crate::title::Spot) {
         match spot {
+            crate::title::Spot::Shut(index) => {
+                self.strip.press_the_cross(index);
+                self.redraw();
+            }
             crate::title::Spot::Tab(index) => {
                 if let Some(document) = self.strip.document(index) {
                     self.tell(Event::Chose(document));
@@ -2280,6 +2285,15 @@ impl ApplicationHandler<Waking> for Showing {
                 // somewhere this window never heard.
                 if self.strip.let_go() {
                     self.redraw();
+                }
+                // And a tab's cross, which closes on the way up and only
+                // over the cross it went down on. Taken at a press as well,
+                // for a release this window never heard.
+                if let Some(document) = self.strip.shut() {
+                    self.redraw();
+                    if state == ElementState::Released {
+                        self.tell(Event::Shut(document));
+                    }
                 }
                 // Asked again at every press rather than cleared at the
                 // release: a press that drags the window by its bar may
