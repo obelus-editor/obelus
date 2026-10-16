@@ -25,8 +25,14 @@
 //! that instead. What does not give way is what is waiting on the reader --
 //! a question, and what went wrong on the way up -- because leaving one by
 //! another key is an answer nobody gave (`Picker::gives_way`); nor what is
-//! being typed into, a box or a list of names, which a key that goes
-//! elsewhere would throw away.
+//! being typed into, a box, which a key that goes elsewhere would throw away.
+//!
+//! A list of names being built is the one that is both. Every name it adds,
+//! takes out or moves is written the moment it happens, so going from it
+//! loses nothing -- which is what a setting's choices over the settings
+//! already did, and `f1` left the themes and not the fonts. But what is
+//! typed into its query is itself an answer, a name no face here is called,
+//! so with something typed it is a box and keeps the key.
 //!
 //! **Except the palette, which opens over the view rather than instead of
 //! it.** Its first tab is that view's own keys, so the view has to be there
@@ -70,18 +76,24 @@ impl App {
             // Whichever layout it was given: a band over the file is as much
             // somewhere the reader chose to be as a list instead of it.
             Some(Layer::Picker) => self.picker.as_ref().is_some_and(Picker::gives_way),
+            // Whatever it has been given is written already, so only what is
+            // being typed into its query is left to lose.
+            Some(Layer::Names) => self
+                .names
+                .as_ref()
+                .is_some_and(|(_, names)| names.query().is_empty()),
             // Something being typed, which a key that went elsewhere would
             // throw away. And nothing at all, which is the file's own table.
-            Some(Layer::Names) | Some(Layer::Prompt) | None => false,
+            Some(Layer::Prompt) | None => false,
             // Never asked: the page saying the project has gone takes every
             // key before a swap is looked for, and swaps with nothing.
             Some(Layer::Gone) => false,
         }
     }
 
-    /// Whether a key is the palette's, over the one view that keeps every
-    /// other key that names a view: a list of names being built, which a
-    /// key that went elsewhere would throw away and the palette does not.
+    /// Whether a key is the palette's, over a list of names with something
+    /// typed into it: that keeps every other key that names a view, because
+    /// what is typed would be thrown away, and the palette opens over it.
     pub(super) fn palette_opens_over_the_names(&self, key: &KeyEvent) -> bool {
         self.layers().nearest() == Some(Layer::Names)
             && self.keymap.lookup(key, Context::Normal) == Some(Command::CommandPalette)

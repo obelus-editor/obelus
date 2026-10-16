@@ -196,18 +196,19 @@ fn a_press_on_the_query_is_in_the_palette() {
     );
 }
 
-/// A key naming a view, from the palette over a list of names being built,
-/// does nothing: the names do not give way, and the palette is the reader
-/// still in them.
+/// A key naming a view, from the palette over a list of names with a name
+/// being typed into it, does nothing: the names keep the key while what is
+/// typed would be lost, and the palette is the reader still in them.
 ///
 /// Broken deliberately by having the palette answer for itself in
 /// `gives_way_to_a_view`, as it did: `f1` put the names and the settings
-/// away and opened the files.
+/// away, and the name half typed with them.
 #[test]
 fn the_palette_over_the_names_does_not_give_them_away() {
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     support::lay_out(&mut app, WIDTH, HEIGHT);
     app.open_names("fonts");
+    support::type_text(&mut app, "Some Face");
     support::press_control(&mut app, 'p');
     assert!(
         app.palette().is_some(),
