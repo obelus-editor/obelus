@@ -740,6 +740,52 @@ fn escape_on_the_question_stops_the_turn() {
     assert!(text.contains("Stopped"), "the turn did not stop:\n{text}");
 }
 
+/// Escape on a sign-in is "Not now", even with the reader's words already
+/// said and waiting for the session the sign-in stands in front of -- which
+/// counts as a turn, and escape on a card in a turn stops it.
+///
+/// Here rather than beside the other sign-in tests, which are Unix's alone
+/// for the terminal a way in may run in; this one never runs it.
+///
+/// Deliberate break: let escape on a sign-in stop the turn. The card goes,
+/// there is no session to stop, and the conversation waits on the sign-in
+/// for ever with nothing on screen saying so.
+#[test]
+fn escape_on_a_sign_in_with_words_waiting_is_not_now() {
+    let marker = std::env::temp_dir().join(format!(
+        "obelus-signing-in-escaped-waiting-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&marker);
+    let (mut app, events) = wired();
+    app.talk_to(
+        "signing-in",
+        Path::new(support::sh()),
+        &[
+            "tests/fixtures/signing-in-agent.sh".to_string(),
+            marker.display().to_string(),
+        ],
+    );
+    app.new_conversation();
+    support::type_text(&mut app, "hello");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the sign-in card", |app| {
+        app.card()
+            .is_some_and(|card| card.choices().iter().any(|choice| choice.name == "Not now"))
+    });
+    assert_eq!(
+        app.talking(),
+        obelus_agent::Talking::Thinking,
+        "the words are not waiting, so this is not the case it is about"
+    );
+
+    support::press(&mut app, KeyCode::Esc);
+    pump(&mut app, &events, "the conversation to end", |app| {
+        app.talking() == obelus_agent::Talking::Gone
+    });
+    assert!(said_in_transcript(&app, "Not signed in"));
+}
+
 /// Escape stops what is happening, and never closes the conversation.
 ///
 /// Mid-turn it is the interrupt; with nothing in flight it does nothing at
@@ -3904,6 +3950,12 @@ fn declining_a_form_tells_the_agent_no_and_the_turn_goes_on() {
     assert!(
         !text.contains("Stopped"),
         "declining stopped the turn:\n{text}"
+    );
+    // And the page says which no it was. Broken by noting "Not answered"
+    // for it, as escape between turns does.
+    assert!(
+        text.contains("Declined"),
+        "the page does not say it was declined:\n{text}"
     );
 }
 
@@ -14828,6 +14880,42 @@ fn an_ordinary_end_leaves_the_question_up() {
     assert!(
         app.is_asking_permission(),
         "an ordinary end took the question down"
+    );
+}
+
+/// Escape on a question asked between turns gives up on that question and
+/// puts up the one behind it: there is no turn for it to stop.
+///
+/// Deliberate break: stop the turn whether or not one is running -- the
+/// stop is a no-op between turns, and the second question goes with the
+/// first instead of coming up.
+#[test]
+fn escape_between_turns_puts_up_the_next_question() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/endwith end_turn");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the end of the turn", |app| {
+        permission_in_front(app)
+            && app.talking() == obelus_agent::Talking::Ready
+            && said_in_transcript(app, "Read the sixth file")
+    });
+
+    support::press(&mut app, KeyCode::Esc);
+    pump(&mut app, &events, "the first answer", |app| {
+        said_in_transcript(app, "the fifth was")
+    });
+    assert!(
+        said_in_transcript(&app, "the fifth was [cancelled]"),
+        "escape did not give up on the first:\n{}",
+        screen(&mut app)
+    );
+    assert!(
+        app.is_asking_permission(),
+        "the second question never went up after the first:\n{}",
+        screen(&mut app)
     );
 }
 

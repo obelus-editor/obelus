@@ -2707,36 +2707,47 @@ impl App {
             // "stop". Saying no to the question alone is the card's own row.
             //
             // A question asked between turns has no turn to stop, so there
-            // escape is still the question given up on.
+            // escape is still the question given up on. So is a sign-in,
+            // which is not a turn's question: words said while a new
+            // conversation waits for its session count as a turn, and
+            // stopping that took the card down with nothing to stop and
+            // left the conversation waiting on a sign-in for ever.
             CardOutcome::Cancelled => {
-                match self.current.filter(|_| self.in_a_turn(Whose::Whoever)) {
+                let stops = self.in_a_turn(Whose::Whoever)
+                    && self
+                        .talk(Whose::Whoever)
+                        .is_some_and(|talk| talk.signing_in.is_none());
+                match self.current.filter(|_| stops) {
                     Some(id) => {
-                        self.mirror_answered_here(Whose::Whoever, "Stopped");
+                        self.mirror_given_up_here(Whose::Whoever, "Stopped", false);
                         // Settled in the thread just now, so the card goes
                         // without the thread also hearing the agent gave up.
                         if let Some(talk) = self.talk_mut(Whose::Whoever) {
                             talk.card = None;
                         }
-                        // The stop first, and then every question the turn
-                        // has up or waiting, as the protocol's "cancelled":
-                        // the order the protocol gives, and the other way
-                        // round the agent can hear the call refused and end
-                        // its turn before it hears the stop. Both before
-                        // the stop lands rather than when it does, so the
-                        // next card does not come up in the meantime.
+                        // The stop, and then every question the turn has up
+                        // or waiting, as the protocol's "cancelled" -- the
+                        // order the protocol gives them in. Asked in that
+                        // order and not promised on the wire: the two go out
+                        // from two tasks. Nothing here hangs on which lands
+                        // first, because the stop ends the turn on this side
+                        // at once. Both now rather than when the stop lands,
+                        // so the next card does not come up in the meantime.
                         self.interrupt_agent(id);
                         self.give_up_the_questions(Whose::Whoever);
                     }
                     None => {
-                        self.mirror_answered_here(Whose::Whoever, "Not answered");
+                        self.mirror_given_up_here(Whose::Whoever, "Not answered", true);
                         self.give_up_the_question(Whose::Whoever);
                     }
                 }
                 true
             }
+            // Only a form has the row, so this is the form refused.
             CardOutcome::Declined => {
-                self.mirror_answered_here(Whose::Whoever, "Declined");
-                self.give_up_the_question(Whose::Whoever);
+                self.mirror_given_up_here(Whose::Whoever, "Declined", true);
+                self.refuse_asking(Whose::Whoever, "Declined");
+                self.ask_the_next(Whose::Whoever);
                 true
             }
             CardOutcome::Answered { chosen, words } => {
@@ -3568,8 +3579,9 @@ impl App {
         }
     }
 
-    /// Says no to the form, whichever field the reader was on.
-    pub(in crate::app) fn refuse_asking(&mut self, whose: Whose) {
+    /// Says no to the form, whichever field the reader was on, and puts
+    /// `said` on the page for it.
+    pub(in crate::app) fn refuse_asking(&mut self, whose: Whose, said: &str) {
         if let Some(talk) = self.talk_mut(whose) {
             talk.card = None;
         }
@@ -3586,7 +3598,7 @@ impl App {
             return;
         };
         if let Some(talk) = self.talk_mut(whose) {
-            talk.chat.note("Not answered");
+            talk.chat.note(said);
         }
         let _ = asking.answer.send(None);
     }
@@ -3791,8 +3803,10 @@ impl App {
         self.ask_the_next(whose);
     }
 
-    /// Gives up on the question up in a conversation: escape on its card,
-    /// or cancel on its card in the chat.
+    /// Gives up on the question up in a conversation: escape on its card
+    /// between turns, or cancel on its card in the chat -- which is a
+    /// form's `Decline` rather than escape's stop, because a reader on
+    /// their phone stops a turn by saying something into it.
     pub(in crate::app) fn give_up_the_question(&mut self, whose: Whose) {
         self.refuse_the_question(whose);
         self.ask_the_next(whose);
@@ -3812,7 +3826,7 @@ impl App {
         } else if talk.permission.is_some() {
             self.refuse_permission(whose);
         } else {
-            self.refuse_asking(whose);
+            self.refuse_asking(whose, "Not answered");
         }
     }
 

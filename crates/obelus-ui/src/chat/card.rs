@@ -149,12 +149,17 @@ pub fn layout(card: &Card, area: Rect) -> Layout {
     // it needs, and the answers have the rest. A card given less than it
     // asked for scrolls its answers, because they are the part there can
     // be many of.
-    let about = u16::try_from(card.about_rows(width))
+    //
+    // The foot before the prose, though: the keys walk to its rows whether
+    // or not they are drawn, and a row the reader can stand on and not see
+    // is one enter acts on without saying what it does.
+    let foot = u16::try_from(card.foot_rows())
         .unwrap_or(0)
         .min(area.height);
-    let mut left = area.height - about;
-    let foot = u16::try_from(card.foot_rows()).unwrap_or(0).min(left);
-    left -= foot;
+    let about = u16::try_from(card.about_rows(width))
+        .unwrap_or(0)
+        .min(area.height - foot);
+    let mut left = area.height - about - foot;
     let complaint = match card.has_submit() || card.complaint().is_none() {
         true => 0,
         false => 1.min(left),
@@ -505,5 +510,38 @@ mod tests {
             + complaint.map_or(0, |row| row.height)
             + foot.map_or(0, |row| row.height);
         assert_eq!(laid, band.height, "the parts do not fill the card");
+    }
+
+    /// A card given too little room keeps the rows at its foot and gives up
+    /// its prose first: the keys walk to `Submit` and `Decline` whether or
+    /// not they are drawn.
+    ///
+    /// Deliberate break: lay the prose out before the foot, as it was. Four
+    /// rows go to the question and the rule under it, and neither row at
+    /// the foot is drawn.
+    #[test]
+    fn a_short_card_keeps_its_foot() {
+        let choices = ["one", "two"]
+            .into_iter()
+            .map(|name| Choice {
+                id: name.to_string(),
+                name: name.to_string(),
+                about: None,
+                icon: None,
+                chosen: false,
+            })
+            .collect();
+        let mut card = Card::new(choices, true);
+        card.about("one\ntwo\nthree");
+        card.declinable();
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width: 40,
+            height: 4,
+        };
+        let laid = layout(&card, area);
+        assert!(laid.submit.is_some(), "Submit is not drawn");
+        assert!(laid.decline.is_some(), "Decline is not drawn");
     }
 }
