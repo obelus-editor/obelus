@@ -59,6 +59,7 @@ fn prompt(picker: &Picker, phase: u32) -> String {
         ratatui::style::Style::new(),
         &DARK,
         phase,
+        None,
     );
     (0..area.width)
         .map(|x| cells[(x, 0)].symbol())

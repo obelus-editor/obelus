@@ -77,6 +77,9 @@ pub struct StatusView<'a> {
     /// Whether what Obelus has to say is about something that would not
     /// go, which is the ink it is drawn in.
     note_is_wrong: bool,
+    /// The palette's key, as the key table writes it, for the rows that say
+    /// a view's own keys are behind it (`more`).
+    palette: Option<String>,
     /// The notes, while they are what is being read.
     shown: crate::Shown<'a>,
     /// Which of them is nearest the reader, and so whose row this is.
@@ -134,6 +137,7 @@ impl<'a> StatusView<'a> {
             prompt: app.prompt(),
             making_in: app.making_in(),
             note_is_wrong: app.note_is_wrong(),
+            palette: palette_key(app),
             shown: app.shown(),
             choosing: app.choosing(),
             nearest: app.layers().nearest(),
@@ -575,6 +579,7 @@ pub fn prompt_row(
     style: Style,
     theme: &Theme,
     phase: u32,
+    palette: Option<&str>,
 ) {
     // A list that is only read is not typed into, so its row is not a box:
     // what the list is, and at the far end the one key that does anything
@@ -628,8 +633,71 @@ pub fn prompt_row(
             tally,
             theme,
         ),
-        None => switches(cells, area, picker, &said, theme),
+        None => {
+            let until = switches(cells, area, picker, &said, theme);
+            // Only while the words that stand in for nothing typed are
+            // there, and only for a list with keys of its own: the switches
+            // keep the row's end, and this goes where it fits before them.
+            if let (Some(invitation), Some(key)) = (picker.invitation(), palette)
+                && crate::picker::keys(picker).iter().any(|key| key.here)
+            {
+                let from = usize::from(typed_inset(picker.question())) + text_width(invitation);
+                more(cells, area, from + AFTER_WORDS, until, key, theme);
+            }
+        }
     }
+}
+
+/// What a row says to point at the palette: its key in a cap, and one word.
+///
+/// The palette over a view leads with that view's own keys, and nothing at
+/// the view's foot says them any more -- so the row a reader looks at
+/// before typing says where they went. In the cap the key table writes, so
+/// a reader who moved the palette sees the key they moved it to.
+const MORE: &str = "More";
+
+/// Where [`MORE`] goes on a row: from `at` cells in, and before `until`, or
+/// not at all. Dropped whole, like every aside on these rows -- half a key
+/// is no key.
+pub(crate) fn more(
+    cells: &mut CellBuffer,
+    area: Rect,
+    at: usize,
+    until: u16,
+    key: &str,
+    theme: &Theme,
+) {
+    let Ok(at) = u16::try_from(at) else {
+        return;
+    };
+    let at = area.x.saturating_add(at);
+    let wanted = crate::cap_width(key) + 1 + text_width(MORE);
+    let Ok(wanted) = u16::try_from(wanted) else {
+        return;
+    };
+    if at.saturating_add(wanted).saturating_add(2) > until.min(area.right()) {
+        return;
+    }
+    let after = crate::capped(cells, at, area.y, key, theme);
+    write(
+        cells,
+        after + 1,
+        area.y,
+        MORE,
+        Style::new().fg(theme.gutter).bg(theme.background),
+    );
+}
+
+/// How far [`MORE`] stands from the words it follows, so the two are not
+/// read as one sentence.
+const AFTER_WORDS: usize = 4;
+
+/// The palette's key as the key table writes it, if it has one: a reader
+/// who unbound it has no key to be pointed at.
+pub(crate) fn palette_key(app: &impl Screen) -> Option<String> {
+    app.keymap()
+        .chord_for(obelus_command::Command::CommandPalette)
+        .map(obelus_keymap::KeyChord::label)
 }
 
 /// The switches a list has on, at the far end of the row its query is typed
@@ -644,14 +712,23 @@ pub fn prompt_row(
 ///
 /// Dropped whole where it would reach what was typed or the mark after it,
 /// the way a list's count is.
-fn switches(cells: &mut CellBuffer, area: Rect, picker: &Picker, words: &str, theme: &Theme) {
+///
+/// Answers the column they start at, or the row's end where there are none,
+/// so what goes before them knows where to stop.
+fn switches(
+    cells: &mut CellBuffer,
+    area: Rect,
+    picker: &Picker,
+    words: &str,
+    theme: &Theme,
+) -> u16 {
     let on: Vec<&str> = crate::picker::keys(picker)
         .into_iter()
         .filter(|key| key.here && key.usable && key.switched == Some(true))
         .filter_map(|key| key.does)
         .collect();
     if on.is_empty() {
-        return;
+        return area.right();
     }
     let typed_here = match words.is_empty() {
         true => picker.invitation().unwrap_or(words),
@@ -672,13 +749,14 @@ fn switches(cells: &mut CellBuffer, area: Rect, picker: &Picker, words: &str, th
         .sum::<usize>()
         .saturating_add(BETWEEN_SWITCHES * on.len().saturating_sub(1));
     if taken.saturating_add(wanted).saturating_add(1) > usize::from(area.width) {
-        return;
+        return area.right();
     }
     let Ok(wanted) = u16::try_from(wanted) else {
-        return;
+        return area.right();
     };
     let style = Style::new().fg(theme.foreground).bg(theme.background);
-    let mut x = area.right().saturating_sub(1).saturating_sub(wanted);
+    let start = area.right().saturating_sub(1).saturating_sub(wanted);
+    let mut x = start;
     for (at, word) in on.iter().enumerate() {
         if at > 0 {
             x = x.saturating_add(u16::try_from(BETWEEN_SWITCHES).unwrap_or(0));
@@ -686,6 +764,7 @@ fn switches(cells: &mut CellBuffer, area: Rect, picker: &Picker, words: &str, th
         x = crate::ticked(cells, x, area.y, true, style);
         x = write(cells, x, area.y, word, style);
     }
+    start
 }
 
 /// The blank between two switches on the query's row: as wide as the one
@@ -1229,6 +1308,17 @@ impl StatusView<'_> {
             style,
             self.theme,
         );
+        if let (Some(filtered), Some(key)) = (settings.what_is_filtered(), &self.palette) {
+            let from = usize::from(typed_inset(None)) + text_width(filtered);
+            more(
+                cells,
+                area,
+                from + AFTER_WORDS,
+                area.right(),
+                key,
+                self.theme,
+            );
+        }
     }
 
     /// The notes, where a file would have its path.
@@ -1422,6 +1512,19 @@ impl StatusView<'_> {
         // screen cannot simply be changed here. Dropped whole where it does
         // not fit between the two, because half a place is no place.
         let Some(holder) = notes.selected_holder() else {
+            // Nothing to say about where the note is talked about, so the
+            // room after the name is the palette's key: the notes have no
+            // box of their own for it to follow.
+            if let (Some(key), Ok(end)) = (&self.palette, u16::try_from(count_at)) {
+                more(
+                    cells,
+                    area,
+                    1 + text_width(&name) + AFTER_WORDS,
+                    area.x.saturating_add(end),
+                    key,
+                    self.theme,
+                );
+            }
             return;
         };
         let held = match holder {
@@ -1519,6 +1622,17 @@ impl StatusView<'_> {
             ),
         );
         hint(cells, area, None, names.invitation(), style, self.theme);
+        if let (Some(invitation), Some(key)) = (names.invitation(), &self.palette) {
+            let from = usize::from(typed_inset(None)) + text_width(invitation);
+            more(
+                cells,
+                area,
+                from + AFTER_WORDS,
+                area.right(),
+                key,
+                self.theme,
+            );
+        }
     }
 
     /// A list's prompt, on whatever row it is given -- see
@@ -1530,7 +1644,15 @@ impl StatusView<'_> {
         cells: &mut CellBuffer,
         style: Style,
     ) {
-        prompt_row(picker, area, cells, style, self.theme, self.phase);
+        prompt_row(
+            picker,
+            area,
+            cells,
+            style,
+            self.theme,
+            self.phase,
+            self.palette.as_deref(),
+        );
     }
 }
 

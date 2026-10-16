@@ -19,7 +19,7 @@ screen 66x20  editor 66x18  status 66x1
 16|                                                                  
 17|                                                                  
 18|──────────────────────────────────────────────────────────────────
-19| > Filter remote settings                                         
+19| > Filter remote settings     Ctrl+p  More                        
 -- style --
  0|aaaaaaaaaaaaaaaaabbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -40,12 +40,13 @@ screen 66x20  editor 66x18  status 66x1
 16|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 17|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 18|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-19|dddaaaaaaaaaaaaaaaaaaaaaaddddddddddddddddddddddddddddddddddddddddd
+19|dddaaaaaaaaaaaaaaaaaaaaaaddddffffffffdaaaadddddddddddddddddddddddd
 -- legend --
 a fg=#52525b bg=#18181b
 b fg=#e4e4e7 bg=#27272a
 c fg=#e4e4e7 bg=#18181b
 d fg=#d4d4d8 bg=#18181b
 e fg=#52525b bg=#27272a
+f fg=#a1a1aa bg=#27272a
 -- cursor --
 none

@@ -23,7 +23,7 @@ screen 76x24  editor 76x22  status 76x1
 20|                                                                            
 21|                                                                            
 22|────────────────────────────────────────────────────────────────────────────
-23| Todo                                                     2 to come back to 
+23| Todo     Ctrl+p  More                                    2 to come back to 
 -- style --
  0|abcdcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  1|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
@@ -48,12 +48,13 @@ screen 76x24  editor 76x22  status 76x1
 20|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 21|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 22|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
-23|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+23|eeeeeeeeeffffffffeddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 -- legend --
 a fg=#312e81 bg=#18181b
 b fg=#f87171 bg=#18181b
 c fg=#e4e4e7 bg=#18181b
 d fg=#52525b bg=#18181b
 e fg=#d4d4d8 bg=#18181b
+f fg=#a1a1aa bg=#27272a
 -- cursor --
 8,0

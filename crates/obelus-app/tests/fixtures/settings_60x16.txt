@@ -15,7 +15,7 @@ screen 60x16  editor 60x14  status 60x1
 12|     Ask GitHub once a day whether a newer Obelus is out,   
 13|     and say so on the welcome screen                       
 14|────────────────────────────────────────────────────────────
-15| > Filter settings                                          
+15| > Filter settings     Ctrl+p  More                         
 -- style --
  0|abbbbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -32,7 +32,7 @@ screen 60x16  editor 60x14  status 60x1
 12|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccc
 13|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccccccccccccc
 14|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-15|dddaaaaaaaaaaaaaaadddddddddddddddddddddddddddddddddddddddddd
+15|dddaaaaaaaaaaaaaaaddddggggggggdaaaaddddddddddddddddddddddddd
 -- legend --
 a fg=#52525b bg=#18181b
 b fg=#e4e4e7 bg=#27272a
@@ -40,5 +40,6 @@ c fg=#e4e4e7 bg=#18181b
 d fg=#d4d4d8 bg=#18181b
 e fg=#a1a1aa bg=#18181b
 f fg=#52525b bg=#27272a
+g fg=#a1a1aa bg=#27272a
 -- cursor --
 none

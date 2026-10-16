@@ -26,15 +26,28 @@ fn reading(name: &str) -> (support::Scratch, App) {
     (scratch, app)
 }
 
-/// The row a list is typed into, as it is drawn.
+/// The row a list is typed into, as it is drawn -- up to where it points at
+/// the palette, which is not what typing does and is `palette`'s to test.
 fn row(app: &mut App) -> String {
     let dump = support::render(app, 70, 14);
-    support::text_block(&dump)
+    let row = support::text_block(&dump)
         .lines()
         .rfind(|row| row.contains('|'))
         .map(|row| row[row.find('|').expect("a divider") + 1..].trim())
         .unwrap_or_default()
-        .to_string()
+        .to_string();
+    let key =
+        obelus_keymap::KeyChord::new(KeyCode::Char('p'), crossterm::event::KeyModifiers::CONTROL)
+            .label();
+    match row.strip_suffix("More") {
+        Some(before) => before
+            .trim_end()
+            .strip_suffix(key.as_str())
+            .unwrap_or(before)
+            .trim_end()
+            .to_string(),
+        None => row,
+    }
 }
 
 /// Each list says what typing into it does, and says it in its own words.
