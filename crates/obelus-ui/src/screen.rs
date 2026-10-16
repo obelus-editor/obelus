@@ -124,28 +124,22 @@ pub struct Previewed<'a> {
     /// in a row is a row nobody can read -- so the box is where the whole
     /// of it fits.
     pub complaint: Option<Complained<'a>>,
-    /// What is shown instead of the buffer where the subject is a reading
-    /// rather than a file -- a pull request's description, laid out as the
-    /// markdown it is.
+    /// What is shown instead of the buffer where the subject is a pull
+    /// request or an issue: the page choosing the row opens, with no cursor
+    /// in it.
     ///
-    /// Drawn by [`reading::draw`], which draws a markdown file read as one,
-    /// so a description and a README look the same because they are drawn
-    /// by the same code.
+    /// Drawn by [`crate::discussion::draw`], which draws the page itself, so
+    /// the preview cannot show something other than what choosing the row
+    /// gives.
     pub reading: Option<Reading<'a>>,
 }
 
-/// A reading in a preview, for the view that draws it.
+/// A pull request or an issue in a preview, for the view that draws it.
 pub struct Reading<'a> {
     /// Its rows, laid out.
-    pub rows: &'a [obelus_row::Row],
+    pub rows: &'a [obelus_component::discussion::Row],
     /// The first of them on screen.
     pub top: usize,
-    /// A row that says something is on its way, with two blank cells at
-    /// its head for the mark that turns to be drawn in.
-    ///
-    /// Drawn here rather than laid out in the row: the rows are laid out
-    /// once and kept, and a mark in them would stand still.
-    pub turning: Option<usize>,
 }
 
 /// What is wrong with the line the reader is on, for the box that says so.
@@ -261,6 +255,8 @@ pub enum Shown<'a> {
     Notes(&'a TodoView),
     /// A terminal.
     Terminal(&'a obelus_terminal::Terminal),
+    /// A pull request or an issue, read as a page.
+    Discussion(&'a obelus_component::discussion::DiscussionView),
     /// Nothing is open.
     Nothing,
 }
@@ -280,6 +276,15 @@ impl<'a> Shown<'a> {
     pub const fn notes(self) -> Option<&'a TodoView> {
         match self {
             Self::Notes(notes) => Some(notes),
+            _ => None,
+        }
+    }
+
+    /// The pull request or issue, if that is what is on screen.
+    #[must_use]
+    pub const fn discussion(self) -> Option<&'a obelus_component::discussion::DiscussionView> {
+        match self {
+            Self::Discussion(page) => Some(page),
             _ => None,
         }
     }

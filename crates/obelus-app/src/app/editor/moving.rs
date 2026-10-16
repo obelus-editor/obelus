@@ -395,6 +395,13 @@ impl App {
             }
             return;
         }
+        // What is held on a page, which is the one thing on it to copy.
+        if self.discussion().is_some() {
+            if let Some(text) = self.held_on_the_page() {
+                self.copied(&text, "selection");
+            }
+            return;
+        }
         let width = obelus_ui::chat::reading_width(self.editor_area);
         // What is held on a card, which covers the box a message is
         // written in: before this, a copy over a card took what was in the

@@ -633,9 +633,12 @@ crates/
                       (app/project/themes); pull requests and issues are two tabs of
                       one errand, asked of `gh` and not of GitHub, a page
                       when the reader gets to the end of the last one,
-                      choosing one opens the review or the answer and says
-                      nothing yet, and what goes to GitHub goes on the
-                      reader's word (app/git/pulls); one window talks to the
+                      choosing one opens it and the review is a key of its
+                      page that says nothing yet, and what goes to GitHub goes
+                      on the reader's word (app/git/pulls); reading one and
+                      asking an agent about it are two different acts, and
+                      what `gh` says is kept once, by the list
+                      (app/git/discussions); one window talks to the
                       chat and every
                       window is heard in it, which project a thread begun
                       there is for is the reader's to say, a window joined
@@ -710,8 +713,9 @@ crates/
                     obelus-app's, in src/app/dispatch.rs
   obelus-component/ picker (one component, several instantiations), settings,
                     the conversation, the box a message is written in, the
-                    window every list shares, and the cursor every page of
-                    laid-out rows shares (page)
+                    window every list shares, the cursor every page of
+                    laid-out rows shares (page), and a pull request or an
+                    issue read as one (discussion)
                     · a query is about the rows the list is of, whether it
                       ranks is settled per tab, a list still arriving sits
                       still, say "still reading" where it moves nothing, which
@@ -728,7 +732,11 @@ crates/
                       a click and not by enter (chat); the cursor is a place
                       on the screen and a selection is a place in the words,
                       and the arrows walk every row drawn and tab goes to what
-                      acts (page); the page is Obelus's,
+                      acts (page); reading one and asking an agent about it
+                      are two different acts, a page with a cursor like the
+                      transcript, what enter does is open or shut or copy,
+                      and laid out once and kept (discussion); the page is
+                      Obelus's,
                       and so is the record of it (chat/kept); folding is one
                       act and the notes are the fourth place it happens, a note
                       somebody else is talking about is read here and not

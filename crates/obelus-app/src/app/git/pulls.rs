@@ -27,12 +27,14 @@
 //! draws: what a preview wants is asked for the row the reader is on, and
 //! kept until the list says that row has changed.
 //!
-//! **Choosing one opens the review, and says nothing yet.** The conversation
-//! is a note's shape -- claimed by the pull request's number before there is
-//! a session, and found again by it -- and the box offers the words that
-//! start the review, the way a note's offers `Look into this`: a reader who
-//! wants it looked at for one thing in particular says so before anything
-//! is read.
+//! **Choosing one opens it; the review is a key of its page, and says
+//! nothing yet.** Choosing a row opens the pull request or issue as a page
+//! (`app::git::discussions`), and `alt+a` there opens the conversation. That
+//! conversation is a note's shape -- claimed by the pull request's number
+//! before there is a session, and found again by it -- and the box offers the
+//! words that start the review, the way a note's offers `Look into this`: a
+//! reader who wants it looked at for one thing in particular says so before
+//! anything is read.
 //!
 //! **What goes to GitHub goes on the reader's word.** The opening asks the
 //! agent for the review on the page first and a card before it is sent, and
@@ -40,8 +42,9 @@
 //! asks about. Obelus sends nothing itself.
 
 use obelus_command::Command;
-use obelus_component::picker::{
-    Marking, Picker, PickerItem, PickerLayout, PickerValue, Remark, Said,
+use obelus_component::{
+    discussion::unlisted,
+    picker::{Marking, Picker, PickerItem, PickerLayout, PickerValue, Remark, Said},
 };
 pub use obelus_github::{
     Asked, Check, Comment, Decision, Did, Discussion, Issue, Listed, PAGE, Page, PullRequest,
@@ -526,7 +529,7 @@ pub(in crate::app) struct Pulls {
     /// key is one thing. Kept for the window's life the way the list is:
     /// shown at once the next time the row is chosen, and asked about again
     /// only where the list says it has changed since (`App::kept_is_current`).
-    discussions: std::collections::HashMap<u64, Discussion>,
+    pub(in crate::app) discussions: std::collections::HashMap<u64, Discussion>,
     /// Which have been asked about since the list opened, so that walking
     /// back onto a row does not ask again -- a check still running is asked
     /// about once an opening, not once a frame.
@@ -536,7 +539,7 @@ pub(in crate::app) struct Pulls {
     asking_about: Option<u64>,
     /// Why the last asking about one got nothing, by its number, for a
     /// preview with nothing kept to show instead.
-    refused: std::collections::HashMap<u64, Unlisted>,
+    pub(in crate::app) refused: std::collections::HashMap<u64, Unlisted>,
     /// What to run in `gh`'s place, and what to tell it first, for a test:
     /// one that ran the real `gh` would be asking GitHub about whatever
     /// directory it ran in.
@@ -673,6 +676,7 @@ impl App {
             }
         }
         self.lay_the_preview_out_again(number);
+        self.tell_the_pages(number);
     }
 
     /// Asks `gh`, on the blocking pool, for one tab's list to grow
@@ -1038,7 +1042,9 @@ impl App {
         }
         Said {
             marker,
-            enabled: !elsewhere,
+            // Whoever has the conversation about it, it can be read: the
+            // lock says where it is talked about, and the page is anybody's.
+            enabled: true,
             trailing: Some(trailing),
         }
     }
@@ -1087,13 +1093,15 @@ impl App {
         }
         Said {
             marker: elsewhere.then(crate::app::conversations::locked),
-            enabled: !elsewhere,
+            // Whoever has the conversation about it, it can be read: the
+            // lock says where it is talked about, and the page is anybody's.
+            enabled: true,
             trailing: Some(trailing),
         }
     }
 
     /// Whether another Obelus has this conversation, and this one does not.
-    fn taken_up_elsewhere(&self, which: &obelus_agent::chats::ChatId) -> bool {
+    pub(in crate::app) fn taken_up_elsewhere(&self, which: &obelus_agent::chats::ChatId) -> bool {
         let mine = self
             .documents
             .iter()
@@ -1160,156 +1168,52 @@ impl App {
             .find(|issue| issue.number == number)
     }
 
-    /// What a pull request says about itself, laid out at `width` for the
-    /// preview under the list.
-    ///
-    /// Two rows naming it, in the shape a commit's message names its commit
-    /// -- which, who, from where to where, how long ago, and how much it
-    /// changes -- and then its title and its description as the markdown
-    /// they are, laid out by the same code a markdown file is. How much it
-    /// changes and what it says are asked for the row the reader is on
-    /// (`VIEWED`), so until `gh` has said the title stands alone.
-    ///
-    /// Then, each after a rule, how its checks stand and what has been said
-    /// on it -- or, while `gh` has not said yet, one row saying so, whose
-    /// place is handed back so that the view can turn a mark at its head.
-    /// The rows are laid out once and kept, and a mark in them would stand
-    /// still.
-    pub(in crate::app) fn pull_request_reading(
+    /// The page choosing a pull request or an issue opens, laid out at
+    /// `width` for the list's preview of it: the same rows, with nothing
+    /// opened or shut, so the preview cannot show something other than what
+    /// choosing the row gives.
+    pub(in crate::app) fn discussion_preview(
         &self,
-        number: u64,
+        asked: Asked,
         width: u16,
-    ) -> (Vec<obelus_row::Row>, Option<usize>) {
-        use obelus_row::{Ink, Row, Span};
+    ) -> Vec<obelus_component::discussion::Row> {
+        use obelus_component::discussion::{Folding, Heard, lay_out};
 
-        let Some(pull) = self.pull_request(number) else {
-            return (Vec::new(), None);
+        let Some(about) = self.about(asked) else {
+            return Vec::new();
         };
-        let mut named = format!(
-            "#{}   {}   {} \u{2192} {}",
-            pull.number, pull.author, pull.head, pull.base
-        );
-        if let Some(updated) = pull.updated {
-            named.push_str(&format!(
-                "   {}",
-                obelus_git::how_long_ago(updated, std::time::SystemTime::now())
-            ));
-        }
-        let kept = self.pulls.discussions.get(&number);
-        let mut rows = vec![Row::of(vec![Span::new(named, Ink::Aside)])];
-        if let Some(kept) = kept {
-            let files = match kept.files {
-                1 => "1 file".to_string(),
-                files => format!("{files} files"),
-            };
-            rows.push(Row::of(vec![
-                Span::new(format!("+{}", kept.additions), Ink::Added),
-                Span::new(" ", Ink::Aside),
-                Span::new(format!("\u{2212}{}", kept.deletions), Ink::Removed),
-                Span::new(format!(" \u{b7} {files}"), Ink::Aside),
-            ]));
-        }
-        rows.push(Row::default());
-        rows.extend(described(
-            &pull.title,
-            kept.map(|kept| kept.body.as_str()),
-            width,
-        ));
-        self.what_has_happened_since(rows, number, true, width)
+        let number = asked.number();
+        let heard = match (
+            self.pulls.discussions.get(&number),
+            self.pulls.refused.get(&number),
+        ) {
+            (Some(said), _) => Heard::Said(said),
+            (None, Some(why)) => Heard::Refused(why),
+            (None, None) => Heard::Asking,
+        };
+        lay_out(&about, heard, &Folding::default(), width)
     }
 
-    /// What an issue says about itself, laid out at `width`: a pull
-    /// request's reading, with what it has been labelled where the counts
-    /// would be, and no checks -- an issue has no commit to run them on.
-    pub(in crate::app) fn issue_reading(
+    /// The row the list has for a pull request or an issue, as what a page
+    /// about it is about.
+    pub(in crate::app) fn about(
         &self,
-        number: u64,
-        width: u16,
-    ) -> (Vec<obelus_row::Row>, Option<usize>) {
-        use obelus_row::{Ink, Row, Span};
+        asked: Asked,
+    ) -> Option<obelus_component::discussion::About> {
+        use obelus_component::discussion::About;
 
-        let Some(issue) = self.issue(number) else {
-            return (Vec::new(), None);
-        };
-        let mut named = format!("#{}   {}", issue.number, issue.author);
-        if let Some(updated) = issue.updated {
-            named.push_str(&format!(
-                "   {}",
-                obelus_git::how_long_ago(updated, std::time::SystemTime::now())
-            ));
+        match asked {
+            Asked::PullRequest(number) => {
+                self.pull_request(number).cloned().map(About::PullRequest)
+            }
+            Asked::Issue(number) => self.issue(number).cloned().map(About::Issue),
         }
-        let mut rows = vec![Row::of(vec![Span::new(named, Ink::Aside)])];
-        if !issue.labels.is_empty() {
-            rows.push(Row::of(vec![Span::new(
-                issue.labels.join(" \u{b7} "),
-                Ink::Key,
-            )]));
-        }
-        rows.push(Row::default());
-        rows.extend(described(
-            &issue.title,
-            self.pulls
-                .discussions
-                .get(&number)
-                .map(|kept| kept.body.as_str()),
-            width,
-        ));
-        self.what_has_happened_since(rows, number, false, width)
     }
 
     /// Whether `gh` has yet to say anything about a pull request or an
     /// issue, which is when its reading ends in a line that waits.
     pub(in crate::app) fn still_asking_about(&self, number: u64) -> bool {
         !self.pulls.discussions.contains_key(&number) && !self.pulls.refused.contains_key(&number)
-    }
-
-    /// The parts of a reading after the description: how the checks stand
-    /// where there are any to ask about, and what has been said -- each
-    /// after a rule, the way markdown's `---` is drawn, because they are
-    /// separate things and not one long page.
-    ///
-    /// Or, while `gh` has not said yet, one row saying so, whose place is
-    /// handed back so that the view can turn a mark at its head. The rows
-    /// are laid out once and kept, and a mark in them would stand still.
-    fn what_has_happened_since(
-        &self,
-        mut rows: Vec<obelus_row::Row>,
-        number: u64,
-        with_checks: bool,
-        width: u16,
-    ) -> (Vec<obelus_row::Row>, Option<usize>) {
-        use obelus_row::{Ink, Row, Span};
-
-        let rule = Row {
-            spans: Vec::new(),
-            rule: true,
-            code: None,
-            links: Vec::new(),
-        };
-        rows.push(rule.clone());
-        let Some(discussion) = self.pulls.discussions.get(&number) else {
-            match self.pulls.refused.get(&number) {
-                Some(why) => rows.push(Row::of(vec![Span::new(unlisted(why), Ink::Aside)])),
-                None => {
-                    let turning = rows.len();
-                    // Two blanks in front, where the view puts the mark and
-                    // the one blank after it.
-                    let waiting = match with_checks {
-                        true => "  Asking GitHub for its description, checks and comments",
-                        false => "  Asking GitHub for its description and comments",
-                    };
-                    rows.push(Row::of(vec![Span::new(waiting, Ink::Aside)]));
-                    return (rows, Some(turning));
-                }
-            }
-            return (rows, None);
-        };
-        if with_checks {
-            rows.extend(checks(&discussion.checks));
-            rows.push(rule);
-        }
-        rows.extend(comments(&discussion.said, width));
-        (rows, None)
     }
 
     /// What a review is called before the agent has called it anything.
@@ -1391,114 +1295,6 @@ fn widest(numbers: impl Iterator<Item = u64>) -> usize {
         .map(|number| format!("#{number}").len())
         .max()
         .unwrap_or(0)
-}
-
-/// A title as the heading it is, and the description after it as its
-/// author wrote it -- a description with headings of its own keeps them
-/// under this one.
-///
-/// With no description until `gh` has said what it is: "No description"
-/// is a thing to say about one that came back empty, not one still asked.
-fn described(title: &str, body: Option<&str>, width: u16) -> Vec<obelus_row::Row> {
-    use obelus_row::{Ink, Row, Span};
-
-    let source = format!("# {title}\n\n{}", body.unwrap_or_default());
-    let mut rows = obelus_markdown::render(&source, width);
-    if body.is_some_and(|body| body.trim().is_empty()) {
-        rows.push(Row::default());
-        rows.push(Row::of(vec![Span::new("No description", Ink::Aside)]));
-    }
-    rows
-}
-
-/// How a pull request's checks stand, as rows: a count of each kind on one
-/// row, and under it by name every one that has not passed.
-///
-/// Not every name: a check that passed is one nobody has to do anything
-/// about, and fourteen rows of them would push what was said off the
-/// preview for a fact one count says.
-fn checks(checks: &[Check]) -> Vec<obelus_row::Row> {
-    use obelus_row::{Ink, Row, Span};
-
-    let heading = Span::new("Checks  ", Ink::Heading(2));
-    if checks.is_empty() {
-        return vec![Row::of(vec![heading, Span::new("None", Ink::Aside)])];
-    }
-    let count = |stands: Stands| checks.iter().filter(|check| check.stands == stands).count();
-    // Worst first, so the count that matters is the one the eye lands on.
-    let kinds = [
-        (Stands::Failed, "\u{2717}", "failed", Ink::Removed),
-        (Stands::Running, "\u{25cc}", "running", Ink::Doubtful),
-        (Stands::Passed, "\u{2713}", "passed", Ink::Added),
-        (Stands::Skipped, "\u{2013}", "skipped", Ink::Aside),
-    ];
-    let mut summary = vec![heading];
-    for (stands, mark, said, ink) in kinds {
-        let count = count(stands);
-        if count == 0 {
-            continue;
-        }
-        if summary.len() > 1 {
-            summary.push(Span::new(" \u{b7} ", Ink::Aside));
-        }
-        summary.push(Span::new(format!("{mark} {count} {said}"), ink));
-    }
-    let mut rows = vec![Row::of(summary)];
-    for (stands, mark, _, ink) in &kinds[..2] {
-        for check in checks.iter().filter(|check| check.stands == *stands) {
-            rows.push(Row::of(vec![
-                Span::new(format!("  {mark} "), *ink),
-                Span::new(check.name.clone(), Ink::Plain),
-            ]));
-        }
-    }
-    rows
-}
-
-/// What has been said on a pull request, as rows, newest first: who and
-/// what they did, then what they wrote, laid out as the markdown it is.
-fn comments(said: &[Comment], width: u16) -> Vec<obelus_row::Row> {
-    use obelus_row::{Ink, Row, Span};
-
-    if said.is_empty() {
-        return vec![Row::of(vec![Span::new("No comments", Ink::Aside)])];
-    }
-    let now = std::time::SystemTime::now();
-    let mut rows = Vec::new();
-    for (at, comment) in said.iter().enumerate() {
-        if at > 0 {
-            rows.push(Row::default());
-        }
-        let mut did = format!("  {}", what_it_did(comment.did));
-        if let Some(when) = comment.when {
-            did.push_str(&format!(" \u{b7} {}", obelus_git::how_long_ago(when, now)));
-        }
-        rows.push(Row::of(vec![
-            Span::new(comment.author.clone(), Ink::Name),
-            Span::new(did, Ink::Aside),
-        ]));
-        rows.extend(obelus_markdown::render(&comment.body, width));
-    }
-    rows
-}
-
-/// What the empty list says about why it is empty.
-fn unlisted(why: &Unlisted) -> String {
-    match why {
-        Unlisted::NoGh => "Listing pull requests needs gh, which is not installed".to_string(),
-        Unlisted::SignedOut => "Not signed in to GitHub: gh auth login signs in".to_string(),
-        Unlisted::Failed(why) => format!("GitHub would not answer: {why}"),
-    }
-}
-
-/// What the row naming a comment says it did.
-const fn what_it_did(did: Did) -> &'static str {
-    match did {
-        Did::Commented => "commented",
-        Did::Approved => "approved",
-        Did::RequestedChanges => "requested changes",
-        Did::Dismissed => "was dismissed",
-    }
 }
 
 #[cfg(test)]

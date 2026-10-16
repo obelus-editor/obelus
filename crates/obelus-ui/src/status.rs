@@ -226,6 +226,9 @@ impl Widget for StatusView<'_> {
                 crate::Shown::Terminal(terminal) => {
                     self.render_terminal(terminal, area, cells, style);
                 }
+                crate::Shown::Discussion(page) => {
+                    self.render_discussion(page, area, cells, style);
+                }
                 crate::Shown::File(_)
                 | crate::Shown::Reading(_)
                 | crate::Shown::Chat(_)
@@ -1491,6 +1494,43 @@ impl StatusView<'_> {
                 area.y,
                 hint,
                 style.fg(self.theme.gutter),
+            );
+        }
+    }
+
+    /// A pull request's or an issue's row: which it is, by the number it
+    /// is typed by, and the palette's key, which is where its own keys are
+    /// said.
+    fn render_discussion(
+        &self,
+        page: &obelus_component::discussion::DiscussionView,
+        area: Rect,
+        cells: &mut CellBuffer,
+        style: Style,
+    ) {
+        let what = match page.about() {
+            obelus_component::discussion::About::PullRequest(_) => "Pull request",
+            obelus_component::discussion::About::Issue(_) => "Issue",
+        };
+        let name = match obelus_icons::enabled() {
+            true => format!(
+                "{}{}{what} #{}",
+                obelus_icons::for_command(obelus_command::Command::PullRequestReview),
+                crate::after_a_glyph(),
+                page.number()
+            ),
+            false => format!("{what} #{}", page.number()),
+        };
+        write(cells, area.x + 1, area.y, &name, style);
+        let end = self.remote_at_end(area, cells, style);
+        if let (Some(key), Ok(end)) = (&self.palette, u16::try_from(end + 1)) {
+            more(
+                cells,
+                area,
+                1 + text_width(&name) + AFTER_WORDS,
+                area.x.saturating_add(end),
+                key,
+                self.theme,
             );
         }
     }

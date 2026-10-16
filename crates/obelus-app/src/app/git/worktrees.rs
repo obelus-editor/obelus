@@ -351,6 +351,7 @@ impl App {
                 .unwrap_or_else(|| "A conversation".to_string()),
             Some(Document::Notes(_)) => "Todo".to_string(),
             Some(Document::Terminal(terminal)) => terminal.name().to_string(),
+            Some(Document::Discussion(page)) => page.name(),
             None => String::new(),
         };
         // One line of a file that is read a line at a time.

@@ -1012,6 +1012,7 @@ impl App {
             // their bars are in plain sight and the keys are the list's.
             Whose::Document
             | Whose::Conversation
+            | Whose::Discussion
             | Whose::Notes
             | Whose::Projects
             | Whose::Naming
@@ -1153,6 +1154,12 @@ impl App {
         // nothing rather than letting it through to the code behind.
         if self.notes().is_some() {
             self.pointer_in_notes(kind, x, y);
+            return;
+        }
+        // A pull request or an issue: a page with a cursor and nothing to
+        // type into, which takes the pointer the way a transcript does.
+        if self.discussion().is_some() {
+            self.pointer_in_discussion(kind, x, y);
             return;
         }
         // A conversation is what is being read rather than something over

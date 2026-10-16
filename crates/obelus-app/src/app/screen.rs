@@ -103,6 +103,7 @@ impl Screen for App {
             Some(Document::Chat(talk)) => Shown::Chat(&talk.chat),
             Some(Document::Notes(notes)) => Shown::Notes(notes),
             Some(Document::Terminal(terminal)) => Shown::Terminal(terminal),
+            Some(Document::Discussion(page)) => Shown::Discussion(page),
             Some(Document::File(buffer)) => match App::rendering(self) {
                 Some(rows) => Shown::Reading(rows),
                 None => Shown::File(buffer),

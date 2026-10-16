@@ -411,7 +411,7 @@ fn where_the_keys_are(hints: &[(String, &'static str)]) -> Vec<usize> {
 
 /// A row of keys as one run of text, which is what is written and
 /// measured.
-fn joined(hints: &[(String, &'static str)]) -> Option<String> {
+pub(crate) fn joined(hints: &[(String, &'static str)]) -> Option<String> {
     match hints.is_empty() {
         true => None,
         false => Some(
@@ -433,7 +433,13 @@ fn joined(hints: &[(String, &'static str)]) -> Option<String> {
 /// On `ground`, the colour of the row it is on, as the settings' caps are:
 /// a key a row hands back is offered only on the row the reader is on, and
 /// a cap in the page's colour cut a hole in the mark that says so.
-fn cap_the_keys(at: u16, y: u16, hints: &[(String, &'static str)], ground: Color, theme: &Theme) {
+pub(crate) fn cap_the_keys(
+    at: u16,
+    y: u16,
+    hints: &[(String, &'static str)],
+    ground: Color,
+    theme: &Theme,
+) {
     for (along, (keys, _)) in where_the_keys_are(hints).into_iter().zip(hints) {
         if let Ok(x) = u16::try_from(usize::from(at) + along) {
             crate::cap_around(x, y, keys, text_width(keys), ground, ground, theme.gutter);
@@ -442,7 +448,7 @@ fn cap_the_keys(at: u16, y: u16, hints: &[(String, &'static str)], ground: Color
 }
 
 /// A key as it is written.
-fn chord(code: KeyCode, modifiers: KeyModifiers) -> String {
+pub(crate) fn chord(code: KeyCode, modifiers: KeyModifiers) -> String {
     obelus_keymap::KeyChord::new(code, modifiers).label()
 }
 

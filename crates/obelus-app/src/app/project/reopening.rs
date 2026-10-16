@@ -333,6 +333,9 @@ impl App {
                 // and starting it again would be running something the
                 // reader did not ask for this time.
                 Some(Document::File(_) | Document::Terminal(_)) | None => None,
+                // Not yet: a window that opens one again has no row of the
+                // list to name it by until `gh` has been asked for that too.
+                Some(Document::Discussion(_)) => None,
             };
             if let Some(open) = open {
                 if self.current == Some(at) {

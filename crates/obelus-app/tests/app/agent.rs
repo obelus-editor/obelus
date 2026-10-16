@@ -16406,18 +16406,21 @@ fn the_list_has_answered(app: &App) -> bool {
         .is_none_or(|said| said != "Still asking GitHub")
 }
 
-/// A pull request chosen from the list opens a review that has said
-/// nothing, offers the words that start it, and tells the agent which pull
-/// request it is about with the reader's first message -- and once it has
-/// been pushed to, offers a second look and says where from.
+/// A pull request chosen from the list opens its page, and `alt+a` there
+/// opens a review that has said nothing, offers the words that start it,
+/// and tells the agent which pull request it is about with the reader's
+/// first message -- and once it has been pushed to, offers a second look and
+/// says where from.
 ///
-/// Broken deliberately four ways, each failing here. Answering `None` for
+/// Broken deliberately six ways, each failing here. Answering `None` for
 /// a pull request in `about_the_topic` sends the message with nothing about
 /// the pull request in it. Offering nothing in `what_the_box_offers` leaves
 /// the box empty. Calling a commit that differs from the one told "the
-/// same" never offers the second look. And opening a second review rather
-/// than going back to the first -- `review` not looking for one open --
-/// fails the count of documents.
+/// same" never offers the second look. Opening a second review rather than
+/// going back to the first -- `take_up` not looking for one open -- or a
+/// second page rather than the first -- `open_the_discussion` not looking
+/// -- fails the count of documents. And taking the review up on enter, as
+/// the list used to, opens it before the page.
 #[test]
 fn a_pull_request_is_reviewed_on_the_readers_word() {
     let scratch = support::Scratch::new("agent-pull-request-review");
@@ -16441,7 +16444,18 @@ fn a_pull_request_is_reviewed_on_the_readers_word() {
     );
 
     support::press(&mut app, KeyCode::Enter);
-    assert!(app.chat().is_some(), "choosing the row opened no review");
+    assert!(
+        app.chat().is_none(),
+        "choosing the row opened the review rather than the pull request"
+    );
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Pull request #123")
+            && text.contains("Keep the fold when a hunk is reverted"),
+        "choosing the row opened no page:\n{text}"
+    );
+    support::press_alt(&mut app, 'a');
+    assert!(app.chat().is_some(), "alt+a on the page opened no review");
     assert_eq!(
         app.what_this_conversation_is_called().as_deref(),
         Some("Review #123: Keep the fold when a hunk is reverted")
@@ -16485,10 +16499,12 @@ fn a_pull_request_is_reviewed_on_the_readers_word() {
     });
     let documents = app.document_count_for_test();
     support::press(&mut app, KeyCode::Enter);
+    assert!(app.chat().is_none(), "choosing it again went to the review");
+    support::press_alt(&mut app, 'a');
     assert_eq!(
         app.document_count_for_test(),
         documents,
-        "choosing it again opened a second review"
+        "choosing it again opened a second page or a second review"
     );
     let _ = screen(&mut app);
     assert_eq!(
@@ -16712,8 +16728,9 @@ fn one_issue(stamp: &str) -> String {
 /// The issues are the list's second tab: an issue there is described under
 /// the list without checks, and choosing it opens an answer that has said
 /// nothing, offers the words that start it, and tells the agent which
-/// issue with the reader's first message -- and once the issue has been
-/// commented on, offers a second look and says since when.
+/// issue with the reader's first message, once `alt+a` on its page asks
+/// for it -- and once the issue has been commented on, offers a second look
+/// and says since when.
 ///
 /// Broken deliberately seven ways, each failing here. Not filling the list
 /// again when the tab moves leaves the pull requests' rows under the issues'
@@ -16805,7 +16822,15 @@ fn an_issue_is_answered_on_the_readers_word() {
     support::lay_out(&mut app, WIDTH, HEIGHT);
 
     support::press(&mut app, KeyCode::Enter);
-    assert!(app.chat().is_some(), "choosing the issue opened nothing");
+    assert!(
+        app.chat().is_none(),
+        "choosing the issue opened the answer rather than the issue"
+    );
+    support::press_alt(&mut app, 'a');
+    assert!(
+        app.chat().is_some(),
+        "alt+a on the issue's page opened nothing"
+    );
     assert_eq!(
         app.what_this_conversation_is_called().as_deref(),
         Some("Issue #348: Translate a message I cannot read")
@@ -16856,10 +16881,11 @@ fn an_issue_is_answered_on_the_readers_word() {
     assert_eq!(asked_saying(&answer, "since=2026-10-08T00:00:00Z"), 1);
     let documents = app.document_count_for_test();
     support::press(&mut app, KeyCode::Enter);
+    support::press_alt(&mut app, 'a');
     assert_eq!(
         app.document_count_for_test(),
         documents,
-        "choosing it again opened a second answer"
+        "choosing it again opened a second page or a second answer"
     );
     let _ = screen(&mut app);
     assert_eq!(
@@ -17416,80 +17442,77 @@ fn what_was_kept_is_asked_again_only_when_it_has_changed() {
     );
 }
 
-/// A review another Obelus walked into after the list was drawn is not this
-/// window's to enter, and the row says so.
+/// A pull request whose review another Obelus has can still be read: its
+/// row is offered and opens its page, and `alt+a` there takes nothing up,
+/// because a conversation is not a thing two windows may have at once.
 ///
-/// Claimed after the list is up, so that what refuses is the claim and not
-/// a row already drawn dim -- claimed before, the first version of this
-/// test passed with the claim taken out, because enter on a dim row never
-/// reached it.
+/// Claimed before the list is up, so that its rows are built knowing:
+/// claimed after, they are what they were until the watcher says otherwise,
+/// and a row that did go dim would never be seen to.
 ///
-/// On the second of two rows, so that the selection staying where it was
-/// is something the test can see: the list rebuilt on refusal put it back
-/// on the first row, and with one row there is nowhere else to go.
-///
-/// Broken deliberately three ways. Opening the review without the claim in
-/// `App::review` walks into the other window's review. Taking out the
-/// marking on refusal leaves the row lit under the reader. And rebuilding
-/// the rows on refusal, as this first did, moves the selection off the row
-/// the reader pressed.
+/// Broken deliberately two ways. Taking the conversation up without the
+/// claim in `App::take_up` walks into the other window's review. And
+/// leaving the row offered only while nobody has the review, as it was
+/// when choosing it was the review, leaves the page unreachable.
 #[test]
-fn a_review_another_obelus_has_is_not_entered() {
+fn a_review_another_obelus_has_is_read_and_not_entered() {
     let scratch = support::Scratch::new("agent-pull-request-claimed");
     let answer = scratch.path().join("gh-answer.json");
     std::fs::write(&answer, two_pull_requests()).expect("the answer");
     let (mut app, events) = with_a_fake_gh(&scratch, &answer);
-
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
-    pump(&mut app, &events, "the list", |app| {
-        app.picker().is_some_and(|picker| picker.row_count() == 2)
-    });
-    support::press(&mut app, KeyCode::Down);
-    let selected = |app: &App| {
-        app.picker()
-            .and_then(|picker| picker.selected_item())
-            .and_then(|row| match row.value {
-                obelus_component::picker::PickerValue::PullRequest(number) => {
-                    Some((number, row.enabled))
-                }
-                _ => None,
-            })
-    };
-    assert_eq!(
-        selected(&app),
-        Some((124, true)),
-        "nobody has the review yet"
-    );
     let _theirs = obelus_agent::chats::claim(
         scratch.path(),
         &obelus_agent::chats::ChatId::PullRequest(124),
     )
     .expect("nobody had it");
 
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| {
+        app.picker().is_some_and(|picker| picker.row_count() == 2)
+    });
+    support::press(&mut app, KeyCode::Down);
+    let _ = screen(&mut app);
+    let offered = app
+        .picker()
+        .and_then(|picker| picker.selected_item())
+        .and_then(|row| match row.value {
+            obelus_component::picker::PickerValue::PullRequest(number) => {
+                Some((number, row.enabled))
+            }
+            _ => None,
+        });
+    assert_eq!(
+        offered,
+        Some((124, true)),
+        "a pull request somebody else is reviewing cannot be read"
+    );
+
     support::press(&mut app, KeyCode::Enter);
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Pull request #124"),
+        "its page did not open:\n{text}"
+    );
+    support::press_alt(&mut app, 'a');
     assert!(
         app.chat().is_none(),
         "the review was entered from two windows"
     );
-    assert_eq!(
-        selected(&app),
-        Some((124, false)),
-        "the refused row is not the one under the reader, dim"
-    );
 }
 
 /// A review another window takes up or lets go while the list is open
-/// says so on its row, with nothing pressed.
+/// says so on its row, with nothing pressed: the lock goes on and off, and
+/// the row stays offered, because the page is anybody's.
 ///
 /// What tells this window is the watcher hearing the claim's file, which
 /// the test delivers by hand -- the watch itself is `obelus_watch`'s.
 ///
 /// Broken deliberately two ways. Taking `freshen_the_pull_request_rows` out
 /// of the frame leaves the row as the list was built. And reading the
-/// claims only as the list opens leaves it lit after the other window took
-/// it, which is the same break from the other side.
+/// claims only as the list opens leaves it unlocked after the other window
+/// took it, which is the same break from the other side.
 #[test]
-fn a_review_taken_elsewhere_greys_its_row_while_the_list_is_open() {
+fn a_review_taken_elsewhere_is_locked_on_its_row_while_the_list_is_open() {
     let scratch = support::Scratch::new("agent-pull-request-lock-moves");
     let answer = scratch.path().join("gh-answer.json");
     std::fs::write(&answer, two_pull_requests()).expect("the answer");
@@ -17503,6 +17526,8 @@ fn a_review_taken_elsewhere_greys_its_row_while_the_list_is_open() {
     let file = obelus_agent::chats::directory(scratch.path())
         .expect("somewhere for claims")
         .join(which.file_name());
+    // Whether it is offered, and whether it wears a mark: the fixture's
+    // pull requests have no review decision, so the only mark is the lock.
     let enabled = |app: &App| {
         app.picker()
             .and_then(|picker| {
@@ -17513,17 +17538,21 @@ fn a_review_taken_elsewhere_greys_its_row_while_the_list_is_open() {
                     )
                 })
             })
-            .map(|row| row.enabled)
+            .map(|row| (row.enabled, row.marker.is_some()))
     };
-    assert_eq!(enabled(&app), Some(true), "nobody has the review yet");
+    assert_eq!(
+        enabled(&app),
+        Some((true, false)),
+        "nobody has the review yet"
+    );
 
     let theirs = obelus_agent::chats::claim(scratch.path(), &which).expect("nobody had it");
     app.handle(Event::Watched(obelus_watch::Changed { path: file.clone() }));
     let _ = screen(&mut app);
     assert_eq!(
         enabled(&app),
-        Some(false),
-        "a review another window took is still offered"
+        Some((true, true)),
+        "a review another window took is not locked, or cannot be read"
     );
 
     drop(theirs);
@@ -17531,8 +17560,78 @@ fn a_review_taken_elsewhere_greys_its_row_while_the_list_is_open() {
     let _ = screen(&mut app);
     assert_eq!(
         enabled(&app),
-        Some(true),
-        "a review another window let go is still refused"
+        Some((true, false)),
+        "a review another window let go is still locked"
+    );
+}
+
+/// A pull request's page is read with a cursor: what `gh` said is on it,
+/// tab goes to a comment's heading and enter shuts what it says, and what
+/// shift holds is what a copy takes.
+///
+/// Broken deliberately three ways, each failing here. Leaving the page out
+/// of `hearers` sends its keys to nothing, so tab never reaches the heading.
+/// Not telling the pages in `on_pull_request_discussion` leaves the page
+/// saying it is still asking. And leaving the page out of
+/// `copy_selection` copies nothing.
+#[test]
+fn a_pull_requests_page_is_walked_folded_and_copied() {
+    let _turn = support::clipboard_turn();
+    obelus_clipboard::use_provider_for_test(obelus_clipboard::Provider::Kept);
+    let scratch = support::Scratch::new("agent-pull-request-page");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, one_pull_request("abc123")).expect("the answer");
+    std::fs::write(
+        answer.with_extension("json.view.123"),
+        r#"{"body":"Folds stay put.","additions":3,"deletions":1,"changedFiles":1,"comments":[{"author":{"login":"erin"},"createdAt":"2026-10-08T01:00:00Z","body":"Works for me."}]}"#,
+    )
+    .expect("what it says");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| answered_with(app, 1));
+    support::press(&mut app, KeyCode::Enter);
+    // A frame after every event until what was said is on the page: the
+    // page asks as a frame is made.
+    let deadline = Instant::now() + patience();
+    let text = loop {
+        support::lay_out(&mut app, WIDTH, HEIGHT);
+        let text = screen(&mut app);
+        if text.contains("Works for me.") {
+            break text;
+        }
+        let left = deadline.saturating_duration_since(Instant::now());
+        match events.recv_timeout(left) {
+            Ok(event) => app.handle(event),
+            Err(_) => panic!("what was said never came to the page:\n{text}"),
+        }
+    };
+    assert!(
+        text.contains("Pull request #123") && text.contains("Folds stay put."),
+        "the page is not the pull request:\n{text}"
+    );
+
+    // The comment's heading is the one thing here that acts.
+    support::press(&mut app, KeyCode::Tab);
+    support::press(&mut app, KeyCode::Enter);
+    let text = screen(&mut app);
+    assert!(
+        text.contains("erin") && !text.contains("Works for me."),
+        "enter on the comment's heading did not shut it:\n{text}"
+    );
+
+    // The title, held from its start to its end: the top of the page, and
+    // three rows down -- who and where, how much, and a blank.
+    support::press_control_key(&mut app, KeyCode::Home);
+    for _ in 0..3 {
+        support::press(&mut app, KeyCode::Down);
+    }
+    support::press_shift(&mut app, KeyCode::End);
+    support::press_control(&mut app, 'c');
+    assert_eq!(app.note().unwrap_or_default(), "Copied selection");
+    assert_eq!(
+        obelus_clipboard::paste().as_deref(),
+        Some("Keep the fold when a hunk is reverted")
     );
 }
 

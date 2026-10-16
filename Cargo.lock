@@ -4548,6 +4548,7 @@ dependencies = [
  "obelus-config",
  "obelus-editing",
  "obelus-git",
+ "obelus-github",
  "obelus-icons",
  "obelus-keymap",
  "obelus-lsp",

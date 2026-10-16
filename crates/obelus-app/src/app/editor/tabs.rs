@@ -56,6 +56,7 @@ impl App {
                         .unwrap_or_else(|| "A conversation".to_string()),
                     Document::Notes(_) => "Todo".to_string(),
                     Document::Terminal(terminal) => terminal.name().to_string(),
+                    Document::Discussion(page) => page.name(),
                 };
                 // Somebody else's text, an agent's name for a conversation
                 // or a program's for its terminal: one line, and capped, so

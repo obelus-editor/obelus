@@ -30,6 +30,8 @@ enum Hearer {
     Notes,
     /// A terminal, being read: its program's, while it runs.
     Terminal,
+    /// A pull request or an issue, being read.
+    Discussion,
     /// What the server said about a place.
     Hover,
     /// What the call the cursor is inside takes.
@@ -58,6 +60,7 @@ impl Hearer {
             | Self::Chat
             | Self::Notes
             | Self::Terminal
+            | Self::Discussion
             | Self::Editor => false,
         }
     }
@@ -79,6 +82,8 @@ impl App {
             hearers.push(Hearer::Notes);
         } else if self.terminal().is_some() {
             hearers.push(Hearer::Terminal);
+        } else if self.discussion().is_some() {
+            hearers.push(Hearer::Discussion);
         } else {
             // Escape belongs to whichever is nearest, and the hover and the
             // call are never up together. The panel takes the arrows and
@@ -138,6 +143,7 @@ impl App {
             Hearer::Chat => self.chat_key(key),
             Hearer::Notes => self.notes_key(key),
             Hearer::Terminal => self.terminal_key(key),
+            Hearer::Discussion => self.discussion_key(key),
             Hearer::Hover => self.hover_key(key),
             Hearer::Signature => self.signature_key(key),
             Hearer::Completion => self.completion_key(key),
