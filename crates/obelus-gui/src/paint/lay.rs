@@ -4,7 +4,7 @@
 use obelus_font::Fonts;
 
 use super::{
-    glass::{casting, from_the_top, reached},
+    glass::{above_its_line, casting, from_the_top, reached},
     *,
 };
 use crate::{
@@ -166,6 +166,11 @@ impl Painter {
                 _ => self.seen_under(over, lower, said.spun, moving.turn, fonts),
             }
             let under = start..self.quads.len();
+            // After `under`, so on the screen and not only in the picture:
+            // the glass starts at the line and leaves this half row bare.
+            if let Some(y) = above_its_line(page, over, said.ruled, at) {
+                self.seen_under_rows(over, lower, said.spun, moving.turn, fonts, y..y + 1);
+            }
             let (glass, rect) = match over.is_a_box() {
                 true => self.box_glass(page, over, lower, fonts),
                 false => self.pane_glass(page, over, lower, said.ruled, cell),

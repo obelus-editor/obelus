@@ -1845,13 +1845,15 @@ mod tests {
     use ratatui::{buffer::Cell, style::Modifier};
 
     use super::{
-        glass::{behind_row, beneath, casting, lettered_behind, reached, sliding, tiles},
+        glass::{
+            above_its_line, behind_row, beneath, casting, lettered_behind, reached, sliding, tiles,
+        },
         ground::{held_runs, runs, without},
         shapes::underline_ink,
         text::{clipped, drawn_as_a_shape, pieces, snapped},
         *,
     };
-    use crate::grid::{Barred, Capped, Page, Said, Spun, Stroked, Update};
+    use crate::grid::{Barred, Capped, Page, Ruled, Said, Spun, Stroked, Update};
 
     /// The dashes under a word are one run across it: two cells drawn one
     /// after the other put their dashes where one run as wide as both
@@ -2233,6 +2235,57 @@ mod tests {
         assert_eq!(casting(Joined::Screen), None);
         assert_eq!(casting(Joined::Above), Some(HANGING));
         assert_eq!(casting(Joined::Below), Some(STANDING));
+    }
+
+    /// What a pane over another pane was put over is on the screen above
+    /// its line, and only there: the half row the glass leaves bare.
+    ///
+    /// A list over the settings cut the setting its rule fell across in
+    /// half -- the lower half seen through the glass and nothing above it,
+    /// because a picture of what a pane is over was on the screen only for
+    /// the first pane.
+    ///
+    /// Deliberate breaks: `level > 0` taken out, and the first pane's row
+    /// is drawn twice, once by `pane_under`; `edge_along` not asked, and a
+    /// pane with no rule along its top has a row of what it is over drawn
+    /// sharp where its glass should be. Taking the call out of `lay` cuts
+    /// the setting in half again, which only a window shows.
+    #[test]
+    fn a_pane_over_a_pane_shows_what_is_above_its_line() {
+        let page = page("\u{2500}\u{2500}\u{2500}");
+        let area = ratatui::layout::Rect {
+            x: 0,
+            y: 0,
+            width: 3,
+            height: 4,
+        };
+        let pane = Behind {
+            area,
+            joined: Joined::Below,
+            ground: Color::Rgb(1, 2, 3),
+            cells: Vec::new(),
+            depth: 1,
+        };
+        let rule = Ruled {
+            area: ratatui::layout::Rect { height: 1, ..area },
+            depth: 1,
+        };
+        assert_eq!(above_its_line(&page, &pane, &[rule], 1), Some(0));
+        assert_eq!(
+            above_its_line(&page, &pane, &[rule], 0),
+            None,
+            "the first pane is on the screen whole already"
+        );
+        assert_eq!(
+            above_its_line(&page, &pane, &[], 1),
+            None,
+            "no line, so the glass covers the row"
+        );
+        let a_box = Behind {
+            joined: Joined::Nowhere,
+            ..pane.clone()
+        };
+        assert_eq!(above_its_line(&page, &a_box, &[rule], 1), None, "a box");
     }
 
     /// A square of colour is a hole in a pane only where it is the pane's
