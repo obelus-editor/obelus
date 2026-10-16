@@ -587,8 +587,8 @@ impl App {
         if let (Some(note), Some(notes)) = (note, self.notes_mut()) {
             notes.stand_on(note);
         }
-        // Down the keys' own paths, rather than a second way to tick a
-        // note off and a second way to open its conversation.
+        // Down the paths the keys and the list take, rather than a second
+        // way to tick a note off and a second way to open its conversation.
         match column {
             // The arrow, which the key reaches through the command rather
             // than through the notes' own keys -- so this goes the same
@@ -601,10 +601,20 @@ impl App {
                 crossterm::event::KeyCode::Char(' '),
                 crossterm::event::KeyModifiers::ALT,
             )),
-            _ => self.notes_key(&crossterm::event::KeyEvent::new(
-                crossterm::event::KeyCode::Char('a'),
-                crossterm::event::KeyModifiers::ALT,
-            )),
+            // The row the list of conversations offers for this note.
+            _ => {
+                let brief = self
+                    .notes()
+                    .and_then(obelus_component::todo::TodoView::selected_note)
+                    .map(|note| crate::brief::Brief::Note {
+                        id: note.id.clone(),
+                        title: note.title().to_string(),
+                    });
+                if let Some(brief) = brief {
+                    self.begin_briefed(brief);
+                }
+                true
+            }
         };
         true
     }

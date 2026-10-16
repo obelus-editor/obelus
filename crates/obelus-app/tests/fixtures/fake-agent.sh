@@ -864,6 +864,11 @@ while IFS= read -r line; do
                 *"This conversation is about one of Obelus's notes"*)
                     first="${first:+$first+}note" ;;
             esac
+            # Where in a file a conversation was started from.
+            case "$line" in
+                *"The reader started this conversation from "*)
+                    first="${first:+$first+}place" ;;
+            esac
             case "$line" in
                 *"The note this conversation is about has been rewritten"*)
                     first="${first:+$first+}rewritten" ;;

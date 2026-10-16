@@ -286,7 +286,10 @@ impl App {
             crate::conversation::Topic::Issue(number) => {
                 Some(self.what_an_answer_is_called(*number))
             }
-            crate::conversation::Topic::Loose => None,
+            // Where it was started from, until the agent names it.
+            crate::conversation::Topic::Loose => {
+                talk.brief.as_ref().map(crate::brief::Brief::title)
+            }
         }
     }
 

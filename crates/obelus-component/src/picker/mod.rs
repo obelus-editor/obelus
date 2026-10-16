@@ -204,6 +204,10 @@ pub enum PickerValue {
     /// id, a claim, where it is already open -- and a list of rows is not
     /// where that belongs.
     Conversation(usize),
+    /// Start a conversation with what the reader was on when the list
+    /// opened -- a place in a file, a note -- by its place among what the
+    /// list offered, for the reason a conversation is named by its place.
+    Briefed(usize),
     /// Have the agent review one of the repository's pull requests, by its
     /// number -- which is also what the review is claimed and remembered by.
     PullRequest(u64),

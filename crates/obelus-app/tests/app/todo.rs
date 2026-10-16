@@ -1602,7 +1602,7 @@ fn each_note_gets_a_conversation_of_its_own() {
     );
     let mut app = open(&scratch, 76, 24);
 
-    support::press_alt(&mut app, 'a');
+    support::talk_about_what_is_here(&mut app);
     let first = app.current_document_for_test().expect("a document");
     assert!(app.chat().is_some(), "no conversation about the first note");
 
@@ -1611,7 +1611,7 @@ fn each_note_gets_a_conversation_of_its_own() {
     support::press_control(&mut app, 't');
     assert!(app.notes().is_some(), "ctrl+t did not bring the notes back");
     support::press(&mut app, KeyCode::Down);
-    support::press_alt(&mut app, 'a');
+    support::talk_about_what_is_here(&mut app);
     let second = app.current_document_for_test().expect("a document");
 
     assert_ne!(
@@ -1623,7 +1623,7 @@ fn each_note_gets_a_conversation_of_its_own() {
     // than starting a third.
     support::press_control(&mut app, 't');
     support::press(&mut app, KeyCode::Up);
-    support::press_alt(&mut app, 'a');
+    support::talk_about_what_is_here(&mut app);
     assert_eq!(
         app.current_document_for_test(),
         Some(first),
@@ -1650,7 +1650,7 @@ fn the_notes_come_back_on_the_note_a_conversation_is_about() {
     let mut app = open(&scratch, 76, 24);
     support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Down);
-    support::press_alt(&mut app, 'a');
+    support::talk_about_what_is_here(&mut app);
     assert!(app.chat().is_some(), "no conversation about the third note");
     let talk = app.current_document_for_test().expect("the conversation");
     // The notes closed, so that coming back opens them again.
@@ -1677,13 +1677,13 @@ fn the_notes_come_back_on_the_note_a_conversation_is_about() {
 ///
 /// The key was added because the round trip had an outward leg and no
 /// return. A return leg nothing says exists is the same gap one level up:
-/// the notes page names `alt+a` in its own hints, so the conversation names
-/// the key that comes back.
+/// the list of conversations names the note it goes to, so the
+/// conversation names the key that comes back.
 #[test]
 fn a_conversation_says_how_to_get_back_to_its_note() {
     let scratch = tree("way-back", "[[todo]]\nsaid = \"wire the counts tree up\"\n");
     let mut app = open(&scratch, 76, 24);
-    support::press_alt(&mut app, 'a');
+    support::talk_about_what_is_here(&mut app);
 
     let screen = support::text_block(&support::render(&mut app, 76, 24)).to_string();
     assert!(
@@ -3231,8 +3231,8 @@ fn escape_writes_the_note_down_and_leaves_the_caret_in_it() {
 fn a_conversation_names_the_key_back_to_its_note() {
     let scratch = tree("key-back", THREE);
     let mut app = open(&scratch, 120, 18);
-    app.handle(alt(KeyCode::Char('a')));
-    assert!(app.chat().is_some(), "alt+a did not open the conversation");
+    support::talk_about_what_is_here(&mut app);
+    assert!(app.chat().is_some(), "f4 did not open the conversation");
     let dump = support::render(&mut app, 120, 18);
     let row = support::text_block(&dump)
         .lines()
@@ -3281,8 +3281,8 @@ fn leaving_the_notes_and_coming_back_leaves_the_caret_in_them() {
     let mut app = open(&scratch, 76, 18);
     let in_a_note = caret(&mut app);
     assert_ne!(in_a_note, "none", "the notes opened with no caret");
-    app.handle(alt(KeyCode::Char('a')));
-    assert!(app.chat().is_some(), "alt+a did not open the conversation");
+    support::talk_about_what_is_here(&mut app);
+    assert!(app.chat().is_some(), "f4 did not open the conversation");
     support::press_control(&mut app, 't');
     assert!(
         app.notes().is_some(),

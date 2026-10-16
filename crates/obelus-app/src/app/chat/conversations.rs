@@ -186,6 +186,34 @@ fn fresh() -> (Marking, String) {
     (Marking::Aside, "+".to_string())
 }
 
+/// The row that starts a conversation with what the reader was on.
+///
+/// The new row's mark, because it is the new row with something more to
+/// say: it starts one too -- unless it is a note somebody else is talking
+/// about, which wears the lock a listed conversation does, for the same
+/// reason and with the same answer when chosen.
+fn briefed_row(at: usize, brief: &crate::brief::Brief, elsewhere: bool) -> PickerItem {
+    PickerItem {
+        prose: false,
+        marker: Some(if elsewhere { locked() } else { fresh() }),
+        icon: None,
+        label: brief.label(),
+        version: None,
+        detail: None,
+        trailing: None,
+        changed: None,
+        enabled: true,
+        colours: None,
+        status: None,
+        depth: 0,
+        opens: None,
+        kind: None,
+        tab: None,
+        section: None,
+        value: PickerValue::Briefed(at),
+    }
+}
+
 /// The mark on the conversation the reader is in.
 ///
 /// The one a history puts on the branch the reader is on, and the
@@ -300,6 +328,19 @@ pub(in crate::app) struct Conversing {
     /// watcher of Obelus's is listening, so the only honest answer is a
     /// fresh one.
     pub kept_by_the_agent: Option<(String, Vec<obelus_agent::acp::Listed>)>,
+    /// What the reader was on when the list opened, each a row that starts
+    /// a conversation with it.
+    ///
+    /// Seen as the list opens and not again: the reader is in the list, so
+    /// nothing under it moves.
+    briefs: Vec<crate::brief::Brief>,
+}
+
+impl Conversing {
+    /// What the row offering a brief at this place offered.
+    pub(in crate::app) fn brief(&self, at: usize) -> Option<crate::brief::Brief> {
+        self.briefs.get(at).cloned()
+    }
 }
 
 /// What one row of the list stands for.
@@ -392,6 +433,7 @@ impl App {
         // they are put back after it -- the same order `open_troubles`
         // takes with its radii, and for the same reason.
         self.conversing.agents = agents;
+        self.conversing.briefs = self.briefs_here();
         let rows = self.conversation_rows(0, table);
         // Where the list starts: on the conversation the reader is in,
         // where they are in one, and on the new one otherwise, which is the
@@ -443,6 +485,48 @@ impl App {
         self.show_list(picker);
         self.conversing = conversing;
         self.ask_what_the_agent_keeps();
+    }
+
+    /// What the reader is on, as things a conversation can be started
+    /// with: the note the caret is in on the notes page, or the place the
+    /// caret is in a file.
+    ///
+    /// Nothing from inside a conversation, which is somewhere to talk
+    /// already.
+    fn briefs_here(&self) -> Vec<crate::brief::Brief> {
+        if let Some(notes) = self.notes() {
+            return notes
+                .selected_note()
+                .map(|note| crate::brief::Brief::Note {
+                    id: note.id.clone(),
+                    title: note.title().to_string(),
+                })
+                .into_iter()
+                .collect();
+        }
+        let Some(buffer) = self.current_buffer() else {
+            return Vec::new();
+        };
+        let path = buffer
+            .path()
+            .strip_prefix(&self.working_directory)
+            .unwrap_or(buffer.path())
+            .to_path_buf();
+        // A buffer with no path behind it -- a commit's message, the
+        // welcome screen -- is nowhere an agent could go and read.
+        if path.as_os_str().is_empty() {
+            return Vec::new();
+        }
+        let cursor = buffer.cursor();
+        let selection = buffer.selection().zip(buffer.selected_text());
+        vec![crate::brief::Brief::Place(crate::brief::Place {
+            path,
+            line: cursor.line,
+            column: cursor.column,
+            selection,
+            commit: buffer.content().short(),
+            unsaved: buffer.is_dirty(),
+        })]
     }
 
     /// Asks the agent in use which conversations it keeps about this
@@ -649,6 +733,29 @@ impl App {
             section: None,
             value: PickerValue::Command(obelus_command::Command::ConversationNew),
         });
+        // Under it, one for each thing the reader was on, and on the same
+        // tab for the same reason. Under rather than over: `f4` and enter
+        // was a new conversation about nothing before these rows were here,
+        // and still is.
+        let fresh: Vec<PickerItem> = fresh
+            .into_iter()
+            .chain(
+                self.conversing
+                    .briefs
+                    .iter()
+                    .enumerate()
+                    .filter(|_| mine)
+                    .map(|(at, brief)| {
+                        let elsewhere = match brief {
+                            crate::brief::Brief::Note { id, .. } => {
+                                self.the_conversation_is_elsewhere(id)
+                            }
+                            crate::brief::Brief::Place(_) => false,
+                        };
+                        briefed_row(at, brief, elsewhere)
+                    }),
+            )
+            .collect();
         // Three answers and not two, because a table Obelus cannot read is
         // not a project nobody has said anything about, and the new row
         // alone would tell the reader it is.

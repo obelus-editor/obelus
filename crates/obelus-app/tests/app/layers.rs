@@ -720,7 +720,6 @@ fn pressed_at_what_is_behind(app: &mut App) {
         (KeyCode::Down, KeyModifiers::ALT),
         (KeyCode::Up, KeyModifiers::ALT),
         (KeyCode::Char(' '), KeyModifiers::ALT),
-        (KeyCode::Char('a'), KeyModifiers::ALT),
         (KeyCode::Char('o'), KeyModifiers::ALT),
         (KeyCode::Delete, KeyModifiers::ALT),
         (KeyCode::Backspace, KeyModifiers::ALT),

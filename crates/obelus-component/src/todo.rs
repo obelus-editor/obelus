@@ -43,8 +43,9 @@
 //! watcher reports, so a key that asked would wake every Obelus on the
 //! project -- and a letter held down on a locked note would wake them at the
 //! rate the keyboard repeats. A stale lock therefore costs what it already
-//! cost the drawing, and the way out is the key the lock is about: `alt+a`
-//! asks for the claim outright, and a lock nobody holds gives way to it.
+//! cost the drawing, and the way out is the row the lock is about: the
+//! list of conversations offers this note, choosing it asks for the claim
+//! outright, and a lock nobody holds gives way to it.
 //!
 //! **Undo is the box's first and the page's after.** Inside a note it takes
 //! back the letters a run at a time, the way the file does; once the box has
@@ -210,8 +211,6 @@ pub enum TodoOutcome {
     Changed,
     /// Go to this place.
     Go(PathBuf, LineNumber),
-    /// Talk to an agent about this note.
-    Talk(obelus_todo::NoteId),
     /// The reader gave up.
     Cancelled,
     /// Put this on the clipboard.
@@ -1842,6 +1841,16 @@ impl TodoView {
         self.rows.get(self.window.focus()).map(|row| row.note)
     }
 
+    /// Writes down what is being typed without leaving the note, for the
+    /// reader going from this page to a conversation about it.
+    ///
+    /// The conversation is somewhere they go *from* this page and come back
+    /// to it, so the box stays where they left it -- what `alt+o` does on
+    /// its way to the place a note is about.
+    pub fn step_away(&mut self) {
+        self.settle();
+    }
+
     /// The note the selection is on, for whoever is saying what the keys do.
     #[must_use]
     pub fn selected_note(&self) -> Option<&Note> {
@@ -2136,21 +2145,6 @@ impl TodoView {
                 None => TodoOutcome::Consumed,
             },
             // The whole note, because backspace on its own is a character.
-            // Talk about this one. `alt+a` because the agent's other keys
-            // are on `a`, and because it reads as a thing done *to* the row
-            // the caret is in -- which is what every other `alt` key on this
-            // page is.
-            KeyCode::Char('a') if alt => match self.selected_note() {
-                Some(note) => {
-                    let id = note.id.clone();
-                    // The same: a conversation about a note is somewhere
-                    // the reader goes *from* this page and comes back to
-                    // it, so the box stays where they left it.
-                    self.settle();
-                    TodoOutcome::Talk(id)
-                }
-                None => TodoOutcome::Consumed,
-            },
             KeyCode::Backspace | KeyCode::Delete if alt => match self.take_note_away() {
                 true => TodoOutcome::Changed,
                 false => TodoOutcome::Consumed,

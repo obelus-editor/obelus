@@ -476,10 +476,10 @@ fn a_conversation_comes_back_unless_another_window_has_it() {
 
     let mut first = window();
     first.open_todo();
-    support::press_alt(&mut first, 'a');
+    support::talk_about_what_is_here(&mut first);
     assert!(
         about(&first).is_some(),
-        "the key did not open the conversation"
+        "the row did not open the conversation"
     );
     frame(&mut first);
     drop(first);
@@ -566,7 +566,7 @@ fn a_conversation_that_comes_back_keeps_its_name() {
 
     let mut first = window();
     first.open_todo();
-    support::press_alt(&mut first, 'a');
+    support::talk_about_what_is_here(&mut first);
     frame(&mut first);
     drop(first);
 
