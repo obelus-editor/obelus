@@ -2095,6 +2095,17 @@ impl Picker {
         self.refilter();
     }
 
+    /// Says the reader has taken over, so a row that arrives later is not
+    /// jumped to.
+    ///
+    /// Every key [`handle_key`](Self::handle_key) takes says it, and so must
+    /// a key a caller acts on the selection with itself: a list that went on
+    /// preferring would move the reader to a file that arrived after they
+    /// had started choosing.
+    pub fn taken_over(&mut self) {
+        self.prefer = None;
+    }
+
     /// How much of the screen it takes.
     #[must_use]
     pub const fn layout(&self) -> PickerLayout {
@@ -2636,9 +2647,19 @@ impl Picker {
         // above: an arm that forgot it would leave the list jumping to a file
         // that arrived after the reader started choosing.
         if !matches!(outcome, PickerOutcome::Ignored) {
-            self.prefer = None;
+            self.taken_over();
         }
         outcome
+    }
+
+    /// Brings a selection the wheel left off the screen back onto it, and
+    /// says whether it had to: see `Window::reach_for_the_focus`.
+    ///
+    /// For a caller that acts on the selected row with a key the list does
+    /// not handle itself, which owes the reader the same first press enter
+    /// does.
+    pub const fn reach_for_the_focus(&mut self) -> bool {
+        self.window.reach_for_the_focus()
     }
 
     /// Puts the selection on a row, for a caller that knows which one it
@@ -2995,6 +3016,27 @@ mod tests {
         picker.refresh_indices(10, 40);
         assert_eq!(picker.window().top(), 15, "the batch undid the drag");
         assert_eq!(picker.selected(), 0, "the batch chose something");
+    }
+
+    /// A list the reader has taken over does not jump to a row that
+    /// arrives after.
+    ///
+    /// Deliberate break: `taken_over` leaving `prefer` as it is. The row
+    /// arriving with the preferred label takes the selection.
+    #[test]
+    fn a_row_arriving_after_the_reader_took_over_is_not_jumped_to() {
+        let mut picker = Picker::new(
+            vec![named("one"), named("two")],
+            PickerLayout::Compact { rows: 10 },
+        );
+        picker.prefer("late".to_string());
+        picker.taken_over();
+        picker.extend([named("late")]);
+        assert_eq!(
+            picker.selected(),
+            0,
+            "the list jumped to the row that arrived"
+        );
     }
 
     /// And so do new rows handed to a list the reader has scrolled, where

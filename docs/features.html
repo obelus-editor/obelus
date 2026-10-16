@@ -208,6 +208,7 @@
       <p>The project's files as a tree, opened down to the file you are reading, with a preview of the selected file underneath. Start typing and the tree becomes a flat list of every path, filtered as you type; clear the query and you are back on the row you left. Rows are coloured by what Git says about them.</p>
       <ul>
         <li><kbd>Enter</kbd> on a directory opens or closes it in place; on a file it opens the file. Double-clicking a row does what <kbd>Enter</kbd> does, here and in most other lists</li>
+        <li>While nothing is typed, <kbd>Right</kbd> opens a directory and steps into one already open; <kbd>Left</kbd> closes it, or goes up to the directory a row is in</li>
         <li><kbd>Alt+i</kbd> shows the files the project ignores, <kbd>Alt+.</kbd> the hidden ones (names starting with a dot, and <code>.git</code>)</li>
         <li><kbd>Alt+n</kbd> renames or moves the selected file or directory</li>
       </ul>
@@ -264,7 +265,7 @@
       <p>Two dozen languages through tree-sitter: Rust, Go, C, C++, Python, JavaScript, TypeScript, TSX, Java, C#, Ruby, PHP, Scala, Swift, Haskell, OCaml, Julia, Agda, Bash, HTML, CSS, JSON, TOML, YAML and Markdown. Code inside code is coloured too — a fenced block in markdown, a script in HTML. With a language server running, its semantic colouring is laid on top.</p>
 
       <h3 id="counts">How much code there is</h3>
-      <p>The project's lines counted by language and by file — files, lines, code, comments, blanks, biggest first — skipping what <code>.gitignore</code> ignores. The Files tab is a tree you can walk down and open a file from; choose a language first to see only its files.</p>
+      <p>The project's lines counted by language and by file — files, lines, code, comments, blanks, biggest first — skipping what <code>.gitignore</code> ignores. The Files tab is a tree you can walk down and open a file from, with <kbd>Right</kbd> and <kbd>Left</kbd> opening and closing it as in the file list; choose a language first to see only its files.</p>
       <p class="how"><span>Command</span><code>count-lines</code></p>
     </section>
 

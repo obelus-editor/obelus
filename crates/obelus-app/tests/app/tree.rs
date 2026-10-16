@@ -508,3 +508,153 @@ fn a_double_click_on_a_row_chooses_it() {
         "the press after a double click took hold of a line"
     );
 }
+
+/// How many rows the tree has, which is what opening and shutting moves.
+fn rows(app: &obelus_app::app::App) -> usize {
+    app.picker().map_or(0, |picker| picker.matches().count())
+}
+
+/// Left and right open and shut the tree, the way every file tree does.
+///
+/// They are the query's caret, and a tree is only drawn while the query is
+/// empty -- where a caret has nowhere to go -- so in a tree they are the
+/// tree's.
+///
+/// Broken deliberately by taking the interception out of `picker_key`: the
+/// arrows go to the empty query and nothing moves. And by swapping the two
+/// arms of `walk_the_tree` that open and step in: right on a shut directory
+/// leaves it shut.
+#[test]
+fn left_and_right_shut_and_open_the_tree() {
+    use crossterm::event::KeyCode;
+
+    let (_scratch, mut app) = a_tree("tree-arrows");
+    assert_eq!(standing_on(&app), "hint.rs");
+
+    // Left from a file goes up to its directory, and shuts nothing yet.
+    let open = rows(&app);
+    support::press(&mut app, KeyCode::Left);
+    assert_eq!(
+        standing_on(&app),
+        "lsp",
+        "left did not go up to the directory"
+    );
+    assert_eq!(rows(&app), open, "going up shut something");
+
+    // Left on an open directory shuts it, and the reader stays on it.
+    support::press(&mut app, KeyCode::Left);
+    assert_eq!(rows(&app), open - 3, "left did not shut the directory");
+    assert_eq!(standing_on(&app), "lsp");
+
+    // Right opens it again, and right on it open steps onto its first row.
+    support::press(&mut app, KeyCode::Right);
+    assert_eq!(rows(&app), open, "right did not open the directory");
+    assert_eq!(standing_on(&app), "lsp");
+    support::press(&mut app, KeyCode::Right);
+    assert_eq!(
+        path_of(&app),
+        std::path::Path::new("src/lsp/colour.rs"),
+        "right on an open directory did not step into it"
+    );
+
+    // Right on a file does nothing at all.
+    support::press(&mut app, KeyCode::Right);
+    assert_eq!(standing_on(&app), "colour.rs");
+    assert_eq!(rows(&app), open);
+
+    // And left on a row at the top of the tree has nowhere to go up to.
+    for _ in 0..3 {
+        support::press(&mut app, KeyCode::Left);
+    }
+    assert_eq!(standing_on(&app), "src");
+    support::press(&mut app, KeyCode::Left);
+    assert_eq!(standing_on(&app), "src", "left at the top went somewhere");
+    assert!(app.picker().is_some(), "left at the top closed the list");
+}
+
+/// Once something is typed the list is flat, and the arrows are the
+/// query's caret again.
+///
+/// Broken deliberately by dropping `before.1.is_empty()` from `tree`: the
+/// caret never moves and the letter lands at the end.
+#[test]
+fn with_a_query_the_arrows_are_the_carets() {
+    use crossterm::event::KeyCode;
+
+    let (_scratch, mut app) = a_tree("tree-arrows-query");
+    support::type_text(&mut app, "ab");
+    support::press(&mut app, KeyCode::Left);
+    support::type_text(&mut app, "x");
+    assert_eq!(
+        app.picker().map(obelus_component::picker::Picker::query),
+        Some("axb".to_string()),
+        "left did not move the query's caret"
+    );
+}
+
+/// An arrow on a directory the wheel left off the screen brings it back
+/// rather than opening or shutting it, as enter does.
+///
+/// A reader who scrolled away and pressed left would otherwise watch the
+/// list jump back to a change they never saw being made.
+///
+/// Broken deliberately by taking the `reach_for_the_focus` question out of
+/// `walk_the_tree`: the first left shut `lsp` while it was off the screen.
+#[test]
+fn an_arrow_on_a_row_scrolled_away_shows_it_first() {
+    use crossterm::event::KeyCode;
+
+    let (_scratch, mut app) = a_tree("tree-arrows-scrolled");
+    // Short enough that the tree does not fit, so there is somewhere for
+    // the wheel to take it.
+    support::lay_out(&mut app, 60, 8);
+    let _ = support::render(&mut app, 60, 8);
+    support::press(&mut app, KeyCode::Left);
+    assert_eq!(standing_on(&app), "lsp");
+    let open = rows(&app);
+
+    let _ = support::render(&mut app, 60, 8);
+    let top = app.picker().expect("the tree").window().top();
+    app.handle(obelus_app::event::Event::Scroll { rows: 20, at: None });
+    let _ = support::render(&mut app, 60, 8);
+    assert_ne!(
+        app.picker().expect("the tree").window().top(),
+        top,
+        "the wheel moved nothing, so this tests nothing"
+    );
+
+    support::press(&mut app, KeyCode::Left);
+    assert_eq!(rows(&app), open, "left shut a row that was off the screen");
+    let _ = support::render(&mut app, 60, 8);
+    support::press(&mut app, KeyCode::Left);
+    assert!(
+        rows(&app) < open,
+        "left on the row brought back did not shut it"
+    );
+}
+
+/// An arrow carrying a modifier is not the tree's: it falls through to the
+/// list, the way every key with a modifier a branch does not name does.
+///
+/// Broken deliberately by dropping the `modifiers_of` condition from
+/// `picker_key`: `shift+left` went up to `lsp`.
+#[test]
+fn an_arrow_with_a_modifier_is_not_the_trees() {
+    use crossterm::event::KeyCode;
+
+    let (_scratch, mut app) = a_tree("tree-arrows-modified");
+    assert_eq!(standing_on(&app), "hint.rs");
+    let open = rows(&app);
+    support::press_shift(&mut app, KeyCode::Left);
+    support::press_control_key(&mut app, KeyCode::Right);
+    assert_eq!(
+        standing_on(&app),
+        "hint.rs",
+        "a modified arrow walked the tree"
+    );
+    assert_eq!(
+        rows(&app),
+        open,
+        "a modified arrow opened or shut something"
+    );
+}

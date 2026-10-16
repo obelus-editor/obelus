@@ -453,6 +453,47 @@ impl Counts {
         }
     }
 
+    /// Opens or shuts the directory the selection is on, from an arrow.
+    ///
+    /// Right opens a shut directory and steps into an open one; left shuts
+    /// an open one, and from anywhere else goes up to the directory the row
+    /// is in -- the same as the file list's tree, so holding left shuts a
+    /// reader's way back out.
+    fn walk_the_tree(&mut self, right: bool, height: u16) {
+        let Some(row) = self.rows.get(self.window.focus()) else {
+            return;
+        };
+        let Some(Go::Fold(path) | Go::File(path)) = &row.go else {
+            return;
+        };
+        let path = path.clone();
+        match (right, row.open) {
+            // A row the wheel left off the screen is brought back rather
+            // than opened or shut, as it is for enter.
+            (true, Some(false)) | (false, Some(true)) => {
+                if !self.window.reach_for_the_focus() {
+                    self.fold(&path);
+                }
+            }
+            // A directory is only here because a file is under it, so an
+            // open one always has a first row below it.
+            (true, Some(true)) => self.move_selection(1, height, Wrap::No),
+            (true, None) => {}
+            (false, _) => {
+                // A row at the top has no directory row above it.
+                let parent = path.parent().map(Path::to_path_buf).map(Go::Fold);
+                if let Some(at) = self
+                    .rows
+                    .iter()
+                    .position(|row| row.go.is_some() && row.go == parent)
+                {
+                    self.window.set_focus(at);
+                }
+            }
+        }
+        self.window.settle(height);
+    }
+
     /// Puts the selection on one of the rows.
     ///
     /// For a pointer: the keys move it a step at a time and have no use for
@@ -547,9 +588,10 @@ impl Counts {
             KeyCode::Esc if bare => CountsOutcome::Cancelled,
             // `tab` walks the two pages, which is what walks the tabs of
             // every other view here -- and what the tab row itself draws.
-            // Nothing is typed into this page, so the arrows were free to
-            // keep; a key that means one thing on four views and something
-            // else on the fifth is not.
+            // The arrows used to, and a key that means one thing on four
+            // views and something else on the fifth is not one to keep;
+            // they open and shut the file page's tree instead, the way they
+            // do the file list's.
             KeyCode::Tab if bare => {
                 self.step_page();
                 CountsOutcome::Consumed
@@ -588,6 +630,10 @@ impl Counts {
                     }
                     None => CountsOutcome::Consumed,
                 }
+            }
+            KeyCode::Left | KeyCode::Right if bare && self.page == Page::Files => {
+                self.walk_the_tree(key.code == KeyCode::Right, height);
+                CountsOutcome::Consumed
             }
             // The keys that move about a list, from the table every list
             // here reads. What is this view's own is only what a step means
@@ -941,5 +987,93 @@ mod tests {
             counts.handle_key(&press(KeyCode::Char('x')), 10),
             CountsOutcome::Ignored
         ));
+    }
+
+    /// Left and right shut and open the file page's tree, as in the file
+    /// list.
+    ///
+    /// Broken deliberately by taking the arm out of `handle_key`: the
+    /// arrows are ignored and `src` never opens. And by making left on a
+    /// file do nothing: the walk up to `src` never arrives.
+    #[test]
+    fn left_and_right_shut_and_open_the_tree() {
+        let mut counts = Counts::new();
+        counts.show(counted());
+        counts.handle_key(&press(KeyCode::Tab), 10);
+        let shut = counts.rows().len();
+        let on = |counts: &Counts| counts.rows()[counts.window().focus()].name.clone();
+
+        // Right opens `src`, and right again steps onto its first file.
+        counts.handle_key(&press(KeyCode::Right), 10);
+        assert_eq!(counts.rows().len(), shut + 2, "right did not open it");
+        assert_eq!(on(&counts), "src");
+        counts.handle_key(&press(KeyCode::Right), 10);
+        assert_eq!(on(&counts), "main.rs", "right did not step into it");
+
+        // Left from a file goes up to its directory, then shuts it.
+        counts.handle_key(&press(KeyCode::Left), 10);
+        assert_eq!(on(&counts), "src", "left did not go up");
+        assert_eq!(counts.rows().len(), shut + 2, "going up shut it");
+        counts.handle_key(&press(KeyCode::Left), 10);
+        assert_eq!(counts.rows().len(), shut, "left did not shut it");
+        assert_eq!(on(&counts), "src");
+
+        // And on the languages page they are nothing of this view's.
+        counts.handle_key(&press(KeyCode::Tab), 10);
+        assert!(matches!(
+            counts.handle_key(&press(KeyCode::Right), 10),
+            CountsOutcome::Ignored
+        ));
+    }
+
+    /// An arrow on a directory the wheel left off the screen brings it back
+    /// rather than opening or shutting it, as enter does.
+    ///
+    /// Broken deliberately by taking the `reach_for_the_focus` question out
+    /// of `walk_the_tree`: the first left shut `src` while it was off the
+    /// screen.
+    #[test]
+    fn an_arrow_on_a_row_scrolled_away_shows_it_first() {
+        let mut counts = Counts::new();
+        counts.show(counted());
+        counts.handle_key(&press(KeyCode::Tab), 1);
+        counts.handle_key(&press(KeyCode::Right), 1);
+        let open = counts.rows().len();
+        assert_eq!(counts.rows()[counts.window().focus()].name, "src");
+
+        counts.scroll(2, 1);
+        counts.handle_key(&press(KeyCode::Left), 1);
+        assert_eq!(
+            counts.rows().len(),
+            open,
+            "left shut a row that was off the screen"
+        );
+        assert_eq!(counts.window().top(), 0, "the row was not brought back");
+        counts.handle_key(&press(KeyCode::Left), 1);
+        assert!(
+            counts.rows().len() < open,
+            "left on the row brought back did not shut it"
+        );
+    }
+
+    /// Left on a row at the top of the tree has no directory to go up to,
+    /// and stays where it is.
+    ///
+    /// Broken deliberately by having the walk up fall back to the first row
+    /// where it finds no parent: left on `Cargo.toml` landed on `src`.
+    #[test]
+    fn left_at_the_top_of_the_tree_stays_put() {
+        let mut counts = Counts::new();
+        counts.show(counted());
+        counts.handle_key(&press(KeyCode::Tab), 10);
+        counts.handle_key(&press(KeyCode::Down), 10);
+        assert_eq!(counts.rows()[counts.window().focus()].name, "Cargo.toml");
+
+        counts.handle_key(&press(KeyCode::Left), 10);
+        assert_eq!(
+            counts.rows()[counts.window().focus()].name,
+            "Cargo.toml",
+            "left at the top went somewhere"
+        );
     }
 }

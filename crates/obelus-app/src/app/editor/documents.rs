@@ -744,6 +744,53 @@ impl App {
         }
     }
 
+    /// Opens or shuts the directory the tree is on, from an arrow.
+    ///
+    /// Right opens a shut directory and steps into an open one; left shuts
+    /// an open one, and from anywhere else goes up to the directory the
+    /// row is in -- so a reader deep in the tree shuts it again by holding
+    /// left, which is what every file tree they have used does.
+    pub(in crate::app) fn walk_the_tree(&mut self, right: bool) {
+        let Some(picker) = self.picker.as_mut() else {
+            return;
+        };
+        // A key the list never sees, so the list cannot know the reader
+        // has taken over unless it is told.
+        picker.taken_over();
+        let Some(item) = picker.selected_item() else {
+            return;
+        };
+        let Some(path) = path_of_row(item).map(Path::to_path_buf) else {
+            return;
+        };
+        match (right, item.opens) {
+            // A row the wheel left off the screen is brought back rather
+            // than opened or shut, as it is for enter.
+            (true, Some(false)) | (false, Some(true)) => {
+                if !picker.reach_for_the_focus() {
+                    self.open_directory(&path);
+                }
+            }
+            // What is under it starts on the next row.
+            (true, Some(true)) => {
+                let row = picker.selected() + 1;
+                picker.select_row(row);
+            }
+            (true, None) => {}
+            (false, _) => {
+                let parent = path.parent();
+                // A row at the top of the tree has no directory row above
+                // it: its parent is the project, which is not a row.
+                let row = picker
+                    .matches()
+                    .position(|item| path_of_row(item).is_some_and(|it| Some(it) == parent));
+                if let Some(row) = row {
+                    picker.select_row(row);
+                }
+            }
+        }
+    }
+
     /// Fills a file list with the rows of whichever listing is showing.
     pub(in crate::app) fn refresh_listing(&mut self) {
         let showing = self
