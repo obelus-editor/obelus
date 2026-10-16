@@ -1631,6 +1631,62 @@ fn each_note_gets_a_conversation_of_its_own() {
     );
 }
 
+/// The list of conversations says whether the note the reader is on has a
+/// conversation already: the row offering it goes back to that one, and a
+/// row saying it starts a new one would be saying something untrue.
+///
+/// Broken deliberately by labelling the row as if nothing were had.
+#[test]
+fn a_note_with_a_conversation_is_not_offered_a_new_one() {
+    let scratch = tree("offered", "[[todo]]\nsaid = \"the first\"\n");
+    let mut app = open(&scratch, 76, 24);
+    support::press_function(&mut app, 4);
+    let before = support::text_block(&support::render(&mut app, 76, 24)).to_string();
+    assert!(
+        before.contains("New conversation about the first"),
+        "a note nobody has talked about is not offered a new one:\n{before}"
+    );
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.chat().is_some(), "no conversation about the note");
+
+    support::press_control(&mut app, 't');
+    support::press_function(&mut app, 4);
+    let after = support::text_block(&support::render(&mut app, 76, 24)).to_string();
+    assert!(
+        after.contains("Conversation about the first") && !after.contains("New conversation about"),
+        "the row offers a new conversation about a note that has one:\n{after}"
+    );
+}
+
+/// A note that says nothing yet is not offered: Obelus throws an empty note
+/// away as the reader leaves it, which choosing a conversation does.
+///
+/// Broken deliberately by offering a note by the file's copy of it, which
+/// for a note being written is behind what is in the box.
+#[test]
+fn a_note_that_says_nothing_is_not_offered_a_conversation() {
+    let scratch = tree("unsaid", THREE);
+    let mut app = open(&scratch, 76, 24);
+    dispatch::dispatch(&mut app, Command::TodoAdd);
+    support::press_function(&mut app, 4);
+    let empty = support::text_block(&support::render(&mut app, 76, 24)).to_string();
+    assert!(
+        !empty.contains("conversation about"),
+        "a note with nothing in it is offered a conversation:\n{empty}"
+    );
+    support::press(&mut app, KeyCode::Esc);
+
+    // And one being written is offered by what is in the box.
+    support::type_text(&mut app, "typed, not yet kept");
+    support::press_function(&mut app, 4);
+    let typed = support::text_block(&support::render(&mut app, 76, 24)).to_string();
+    assert!(
+        typed.contains("New conversation about typed, not yet kept"),
+        "a note being written is not offered by what it says:\n{typed}"
+    );
+}
+
 /// Coming back to the notes from a conversation stands on its note, and
 /// stays there once the page has read its file again.
 ///

@@ -72,10 +72,28 @@ pub struct Place {
 }
 
 impl Brief {
-    /// What its row in the list says, after the words starting one.
+    /// The note a reader is on, by what it says now -- `None` for a note
+    /// that says nothing yet, which is no subject: Obelus throws an empty
+    /// note away as the reader leaves it, and leaving it is what choosing
+    /// a conversation about it does.
     #[must_use]
-    pub fn label(&self) -> String {
-        format!("New conversation about {}", self.title())
+    pub fn of_note(id: &NoteId, says: &str) -> Option<Self> {
+        let title = says.lines().next().unwrap_or_default().trim();
+        (!title.is_empty()).then(|| Self::Note {
+            id: id.clone(),
+            title: title.to_string(),
+        })
+    }
+
+    /// What its row in the list says: what choosing it does, which is
+    /// going back to a conversation where there is one about this already
+    /// and starting one where there is not.
+    #[must_use]
+    pub fn label(&self, had: bool) -> String {
+        match had {
+            true => format!("Conversation about {}", self.title()),
+            false => format!("New conversation about {}", self.title()),
+        }
     }
 
     /// What the conversation is called while nothing has named it: where it
@@ -103,14 +121,20 @@ impl Brief {
 }
 
 impl Place {
-    /// The path and the lines, the way a reader would write them.
+    /// The path and the lines, the way a reader would write them -- and
+    /// which version, where it is not the file on disk: two conversations
+    /// started from one line at two commits are two rows a list has to
+    /// tell apart.
     fn title(&self) -> String {
         let lines = match self.lines() {
             Some((first, last)) if first != last => format!("{first}-{last}"),
             Some((first, _)) => first.to_string(),
             None => (self.line.get() + 1).to_string(),
         };
-        format!("{}:{lines}", self.path.display())
+        match &self.commit {
+            Some(commit) => format!("{}:{lines} at {commit}", self.path.display()),
+            None => format!("{}:{lines}", self.path.display()),
+        }
     }
 
     /// The first and last lines the selection has characters on, counted
@@ -220,18 +244,35 @@ mod tests {
     }
 
     /// A version that is not the file on disk says so: the agent reads the
-    /// file on disk.
+    /// file on disk, and a list holding two of these has to tell them apart.
     ///
-    /// Broken deliberately by leaving `{version}` empty.
+    /// Broken deliberately twice: by leaving `{version}` empty, and by
+    /// naming a commit's place without the commit.
     #[test]
     fn a_version_that_is_not_on_disk_says_so() {
         let mut at_a_commit = place(None);
         at_a_commit.commit = Some("2113f9c".to_string());
-        let words = Brief::Place(at_a_commit).words().unwrap_or_default();
+        let brief = Brief::Place(at_a_commit);
+        assert_eq!(brief.title(), "src/lib.rs:42 at 2113f9c");
+        let words = brief.words().unwrap_or_default();
         assert!(words.contains("commit 2113f9c"), "{words}");
         let mut unsaved = place(None);
         unsaved.unsaved = true;
         let words = Brief::Place(unsaved).words().unwrap_or_default();
         assert!(words.contains("without saving"), "{words}");
+    }
+
+    /// A note is offered by its first line, and a note that says nothing
+    /// is not offered at all.
+    ///
+    /// Broken deliberately by offering whatever the note says.
+    #[test]
+    fn a_note_that_says_nothing_is_no_subject() {
+        let id = NoteId::read("0123456A").expect("a name");
+        assert_eq!(
+            Brief::of_note(&id, "wire it up\nand test it").map(|brief| brief.title()),
+            Some("wire it up".to_string())
+        );
+        assert_eq!(Brief::of_note(&id, "  \n"), None);
     }
 }

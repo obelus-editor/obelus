@@ -145,6 +145,25 @@ fn talk_about_the_note(app: &mut App) {
     }
 }
 
+/// The mark on the row of the list of conversations that offers a note,
+/// and whether it can be chosen.
+fn offered_note(app: &App) -> Option<(Option<String>, bool)> {
+    app.picker()?
+        .matches()
+        .find(|item| {
+            matches!(
+                item.value,
+                obelus_component::picker::PickerValue::Briefed(_)
+            )
+        })
+        .map(|item| {
+            (
+                item.marker.as_ref().map(|(_, mark)| mark.clone()),
+                item.enabled,
+            )
+        })
+}
+
 /// Whether the transcript has these words in it anywhere.
 fn said_in_transcript(app: &App, words: &str) -> bool {
     app.chat().is_some_and(|chat| {
@@ -5064,8 +5083,7 @@ fn three() {}
             "New conversation about {}:3",
             support::as_shown("src/lib.rs")
         )),
-        "the list does not offer where the caret is:
-{text}"
+        "the list does not offer where the caret is:\n{text}"
     );
     support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);
@@ -5083,13 +5101,11 @@ fn three() {}
     let text = screen(&mut app);
     assert!(
         text.contains("blocks=2") && text.contains("first=always+place"),
-        "where it was started from did not go with the message:
-{text}"
+        "where it was started from did not go with the message:\n{text}"
     );
     assert!(
         text.contains("Told the agent where this conversation was started from"),
-        "Obelus spoke in the reader's name without saying so:
-{text}"
+        "Obelus spoke in the reader's name without saying so:\n{text}"
     );
 
     support::type_text(&mut app, "/blocks again");
@@ -5097,6 +5113,64 @@ fn three() {}
     pump(&mut app, &events, "the second answer", |app| {
         said_in_transcript(app, "blocks=1")
     });
+}
+
+/// A blank conversation started from a place, gone back to by the new row,
+/// is a conversation about nothing in particular.
+///
+/// The blank one is reused rather than joined by a second, so what it was
+/// started with has to go when the reader asks for one started with
+/// nothing: otherwise the agent is told about a place the reader took back.
+///
+/// Broken deliberately by setting the blank one's brief only where there
+/// is one, in `new_conversation_briefed` -- `first=always+place`.
+#[test]
+fn the_new_row_takes_back_where_a_blank_conversation_was_started_from() {
+    let scratch = support::Scratch::new("agent-place-taken-back");
+    let file = scratch.write("src/lib.rs", "fn one() {}\n");
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    app.talk_to(
+        "fake",
+        Path::new(support::sh()),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    app.open_for_test(&file);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    support::talk_about_what_is_here(&mut app);
+    let briefed = app.current_document_for_test();
+    assert!(app.chat().is_some(), "no conversation was started");
+
+    app.open_for_test(&file);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    support::press_function(&mut app, 4);
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        app.current_document_for_test(),
+        briefed,
+        "the new row did not go back to the blank conversation"
+    );
+    app.open_a_session_for_test();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/blocks");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "what it got", |app| {
+        said_in_transcript(app, "blocks=")
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("first=always") && !text.contains("place"),
+        "the place went with a conversation started with nothing:\n{text}"
+    );
 }
 
 /// A conversation opened on a note offers the reader something to say.
@@ -11132,32 +11206,28 @@ fn a_conversation_another_obelus_has_open_is_not_opened_again() {
     support::press_function(&mut app, 4);
     let dump = support::render(&mut app, WIDTH, 18);
     let lock = match obelus_icons::enabled() {
-        true => obelus_icons::ui::ELSEWHERE,
-        false => '-',
+        true => obelus_icons::ui::ELSEWHERE.to_string(),
+        false => "-".to_string(),
     };
-    let offered = support::text_block(&dump)
-        .lines()
-        .find_map(|line| line.split_once("New conversation about somebody else has this"))
-        .map(|(before, _)| before.to_string())
-        .unwrap_or_else(|| {
-            panic!(
-                "the list does not offer the note:
-{dump}"
-            )
-        });
     assert!(
-        offered.contains(lock),
-        "the row does not say somebody else has it:
-{dump}"
+        dump.contains("Conversation about somebody else has this")
+            && !dump.contains("New conversation about"),
+        "the row says it starts a conversation somebody else has:\n{dump}"
     );
+    assert_eq!(
+        offered_note(&app),
+        Some((Some(lock), false)),
+        "the row does not say somebody else has it:\n{dump}"
+    );
+    // Dim, so enter stays on the new row rather than walking onto it.
     support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);
     assert!(
-        app.chat().is_none(),
-        "a second window was let into the conversation"
+        app.chat().is_none_or(|chat| !chat.anything_said()) && app.picker().is_none(),
+        "enter did something other than start a new conversation"
     );
-    assert!(app.picker().is_some(), "the list went without a word");
-    support::press(&mut app, KeyCode::Esc);
+    app.close_current();
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
     // What the status row says is where it is being talked about, which
     // here is this same checkout.
     let dump = support::render(&mut app, WIDTH, 18);
@@ -11189,12 +11259,24 @@ fn a_conversation_another_obelus_has_open_is_not_opened_again() {
     // Given up, it is the reader's again: they closed it in the other
     // window and this one does not have to be restarted. Heard rather than
     // noticed -- the file going is what a watcher reports.
+    // With the list up, whose row hears it too. Broken deliberately by
+    // leaving `PickerValue::Briefed` out of `freshen_the_conversation_rows`.
+    support::press_function(&mut app, 4);
     drop(theirs);
     the_claims_changed(
         &mut app,
         scratch.path(),
         &obelus_agent::chats::ChatId::Note(id.clone()),
     );
+    support::lay_out(&mut app, WIDTH, 18);
+    let offered = offered_note(&app);
+    assert!(
+        offered.as_ref().is_some_and(|(mark, enabled)| *enabled
+            && mark.as_deref() != Some(obelus_icons::ui::ELSEWHERE.to_string().as_str())
+            && mark.as_deref() != Some("-")),
+        "the row is still somebody else's after they let it go: {offered:?}"
+    );
+    support::press(&mut app, KeyCode::Esc);
     assert_eq!(
         app.talked_about().first(),
         Some(&obelus_component::todo::Talked::Not),

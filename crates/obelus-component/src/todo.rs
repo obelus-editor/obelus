@@ -1851,6 +1851,19 @@ impl TodoView {
         self.settle();
     }
 
+    /// What the note the selection is on says now, with what is being typed
+    /// into it -- which reaches the file only when the box is left, so the
+    /// file's copy of a note being written is behind, and empty for a new
+    /// one.
+    #[must_use]
+    pub fn selected_says(&self) -> Option<String> {
+        let at = self.selected()?;
+        match &self.writing {
+            Some((note, composer)) if *note == at => Some(obelus_todo::trimmed(&composer.text())),
+            _ => self.todo.notes.get(at).map(|note| note.said.clone()),
+        }
+    }
+
     /// The note the selection is on, for whoever is saying what the keys do.
     #[must_use]
     pub fn selected_note(&self) -> Option<&Note> {

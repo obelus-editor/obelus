@@ -322,16 +322,16 @@ impl App {
                 // decides: asking first and opening after would be two
                 // windows both finding it free in the same moment. Where
                 // another Obelus has it, nothing opens -- the row in the
-                // list already says so, and this is the reader pressing
-                // the key on it anyway.
+                // list already says so, and was built a moment before
+                // somebody else walked in.
                 let which = obelus_agent::chats::ChatId::Note(note.clone());
                 let Some(claim) = obelus_agent::chats::claim(&self.working_directory, &which)
                 else {
-                    // Nothing said, because the row already says it: the
-                    // lock beside it, and the foot with no `Talk` on it
-                    // while the reader is standing there. A note here
-                    // would be a second answer to a question the page has
-                    // answered.
+                    // Nothing said, because the rows already say it: the
+                    // lock beside the note on its page, and the list it was
+                    // chosen from, which stays up and draws its row dim
+                    // under the lock. A note here would be a second answer
+                    // to a question the screen has answered.
                     return false;
                 };
                 // What the note says, for the box: read as this opens,

@@ -30,10 +30,10 @@
 //! by an Obelus that died still names a checkout, and nobody holds it.
 //!
 //! **A refused claim is drawn, never said.** Nothing goes on the status row
-//! when the key is refused. The lock beside the note says it, and the foot
-//! says it again by not offering `Talk` there: the reader is told before
-//! they press, which is the rule the palette follows for a command it will
-//! not run. The list of conversations says the same thing the same way --
+//! when the claim is refused. The lock beside the note says it, and the
+//! list of conversations says it again on the row that offers the note: the
+//! reader is told before they press, which is the rule the palette follows
+//! for a command it will not run. That list says it the same way --
 //! the lock in the marker column, the row dim -- and asks for the claim
 //! *again* when the row is chosen, because the list was built a moment ago
 //! and another Obelus may have walked in since. Where it has, the list stays

@@ -578,8 +578,9 @@ impl App {
         if column == Column::Words {
             return false;
         }
-        // On to the note first: both keys ask about the note the caret is
-        // in, so the note under the pointer is the note they are about.
+        // On to the note first: the key and the list both ask about the
+        // note the caret is in, so the note under the pointer is the note
+        // they are about.
         let note = self
             .notes()
             .and_then(|notes| notes.rows().get(row))
@@ -603,14 +604,7 @@ impl App {
             )),
             // The row the list of conversations offers for this note.
             _ => {
-                let brief = self
-                    .notes()
-                    .and_then(obelus_component::todo::TodoView::selected_note)
-                    .map(|note| crate::brief::Brief::Note {
-                        id: note.id.clone(),
-                        title: note.title().to_string(),
-                    });
-                if let Some(brief) = brief {
+                if let Some(brief) = self.the_note_here() {
                     self.begin_briefed(brief);
                 }
                 true
