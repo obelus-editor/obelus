@@ -49,13 +49,12 @@ fn what_is_typed_narrows_it_and_is_itself_an_answer() {
 
 /// A key naming a view goes from the names to it, the way it goes from a
 /// setting's choices: what was chosen was written as it was chosen, so
-/// nothing goes with them -- unless a name is being typed, which would.
+/// nothing goes with them but what is typed in the query.
 ///
 /// Broken deliberately by the names never giving way, as they did: `f1`
-/// did nothing in the fonts and went to the files from the themes. And by
-/// giving way whatever is typed: the name half written went with them.
+/// did nothing in the fonts and went to the files from the themes.
 #[test]
-fn a_key_naming_a_view_goes_from_the_names_unless_one_is_being_typed() {
+fn a_key_naming_a_view_goes_from_the_names() {
     let mut app = building();
     support::press(&mut app, KeyCode::Enter);
     let chosen = app.config().fonts.clone();
@@ -63,6 +62,7 @@ fn a_key_naming_a_view_goes_from_the_names_unless_one_is_being_typed() {
         !chosen.is_empty(),
         "enter chose nothing, so this proves nothing"
     );
+    support::type_text(&mut app, "Some Face");
     support::press_function(&mut app, 1);
     assert!(
         app.names().is_none(),
@@ -73,11 +73,6 @@ fn a_key_naming_a_view_goes_from_the_names_unless_one_is_being_typed() {
         "f1 did not go to the files"
     );
     assert_eq!(app.config().fonts, chosen, "what was chosen went with them");
-
-    let mut app = building();
-    support::type_text(&mut app, "Some Face");
-    support::press_function(&mut app, 1);
-    assert!(app.names().is_some(), "a name half typed was thrown away");
 }
 
 /// A list longer than the band scrolls, so the reader can reach the end of

@@ -196,26 +196,30 @@ fn a_press_on_the_query_is_in_the_palette() {
     );
 }
 
-/// A key naming a view, from the palette over a list of names with a name
-/// being typed into it, does nothing: the names keep the key while what is
-/// typed would be lost, and the palette is the reader still in them.
+/// A key naming a view, from the palette over the names, goes past the
+/// palette and the names both: the palette is the reader still in the
+/// names, and the names give way.
 ///
 /// Broken deliberately by having the palette answer for itself in
-/// `gives_way_to_a_view`, as it did: `f1` put the names and the settings
-/// away, and the name half typed with them.
+/// `gives_way_to_a_view` rather than be passed over, and say no: `f1` did
+/// nothing from the palette that it does from the names.
 #[test]
-fn the_palette_over_the_names_does_not_give_them_away() {
+fn the_palette_over_the_names_is_asked_as_the_names_are() {
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     support::lay_out(&mut app, WIDTH, HEIGHT);
     app.open_names("fonts");
-    support::type_text(&mut app, "Some Face");
     support::press_control(&mut app, 'p');
     assert!(
         app.palette().is_some(),
         "the palette did not open over the names"
     );
     support::press_function(&mut app, 1);
-    assert!(app.names().is_some(), "the names were thrown away");
+    assert!(app.palette().is_none(), "the palette stayed up");
+    assert!(app.names().is_none(), "the names kept the key");
+    assert!(
+        app.picker().is_some_and(|picker| picker.is_listing()),
+        "f1 did not go to the files"
+    );
 }
 
 /// `ctrl+w` in the palette over the open documents closes nothing: the

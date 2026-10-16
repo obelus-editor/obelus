@@ -27,19 +27,17 @@
 //! another key is an answer nobody gave (`Picker::gives_way`); nor what is
 //! being typed into, a box, which a key that goes elsewhere would throw away.
 //!
-//! A list of names being built is the one that is both. Every name it adds,
-//! takes out or moves is written the moment it happens, so going from it
-//! loses nothing -- which is what a setting's choices over the settings
-//! already did, and `f1` left the themes and not the fonts. But what is
-//! typed into its query is itself an answer, a name no face here is called,
-//! so with something typed it is a box and keeps the key.
+//! Not a list of names being built, which kept the key once as a box: every
+//! name it adds, takes out or moves is written the moment it happens, so
+//! what a key that goes from it throws away is what is typed in its query
+//! and no more -- which is what a setting's choices over the settings throw
+//! away too, and `f1` left the themes and not the fonts.
 //!
 //! **Except the palette, which opens over the view rather than instead of
 //! it.** Its first tab is that view's own keys, so the view has to be there
 //! for one chosen from it to be pressed in -- and escape is back in the view
-//! as it was. From a list of names as well, which keeps every other key that
-//! names a view: the palette throws nothing away. Over the palette, its own
-//! key does nothing, and any other is asked about the view under it.
+//! as it was. Over the palette, its own key does nothing, and any other is
+//! asked about the view under it.
 //!
 //! **A view that has bound the key itself beats the swap.** `App::handle_key`
 //! asked the swap first once, so a key the showing view had taken was
@@ -76,12 +74,8 @@ impl App {
             // Whichever layout it was given: a band over the file is as much
             // somewhere the reader chose to be as a list instead of it.
             Some(Layer::Picker) => self.picker.as_ref().is_some_and(Picker::gives_way),
-            // Whatever it has been given is written already, so only what is
-            // being typed into its query is left to lose.
-            Some(Layer::Names) => self
-                .names
-                .as_ref()
-                .is_some_and(|(_, names)| names.query().is_empty()),
+            // Whatever it has been given is written already.
+            Some(Layer::Names) => true,
             // Something being typed, which a key that went elsewhere would
             // throw away. And nothing at all, which is the file's own table.
             Some(Layer::Prompt) | None => false,
@@ -89,14 +83,6 @@ impl App {
             // key before a swap is looked for, and swaps with nothing.
             Some(Layer::Gone) => false,
         }
-    }
-
-    /// Whether a key is the palette's, over a list of names with something
-    /// typed into it: that keeps every other key that names a view, because
-    /// what is typed would be thrown away, and the palette opens over it.
-    pub(super) fn palette_opens_over_the_names(&self, key: &KeyEvent) -> bool {
-        self.layers().nearest() == Some(Layer::Names)
-            && self.keymap.lookup(key, Context::Normal) == Some(Command::CommandPalette)
     }
 
     /// Goes to the view a command opens, from the one on screen.
