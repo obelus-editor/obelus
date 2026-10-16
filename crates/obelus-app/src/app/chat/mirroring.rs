@@ -32,13 +32,17 @@
 //! **The card is the answer.** A question goes to the thread as a card the
 //! platform draws, and a press on it comes back as the ids chosen and the
 //! words written, held to the same counts as the card here and taken as if
-//! pressed here -- or as cancel, which is escape on the card here; a reply
-//! in words while it is up is pointed back at it, and once it is answered,
-//! here or there, the next reply is talking again.
+//! pressed here -- or as cancel, which is escape on the card here.
 //! Reading words as an answer was Obelus deciding what the reader meant --
-//! `1，3` was no number until it learnt Chinese punctuation -- and taking the
-//! question back so that the agent could read them was a turn stopped under
-//! it, which the agent talked about and whose words it ran into the answer.
+//! `1，3` was no number until it learnt Chinese punctuation.
+//!
+//! **Words in the thread stop the turn.** What the reader says there while
+//! the agent works is said at once, the way `ctrl+enter` says it here: the
+//! turn is stopped and the words go when it has. A reader on a phone has no
+//! escape to press, and words waiting for the turn's end were answered by a
+//! turn that had run on past what they had stopped asking. A question up
+//! is cancelled first, as if pressed -- the words were once pointed back at
+//! its card instead, and nothing kept them.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -1128,12 +1132,13 @@ impl App {
         let Some(id) = self.document_named(&chat) else {
             return;
         };
-        let whose = talking::Whose::One(id);
-        self.mirror.questions.remove(&chat);
-        self.say_to_thread(
-            &chat,
-            Saying::Settle(asked, "\u{2716} Not answered".to_string()),
-        );
+        self.give_up_from_afar(talking::Whose::One(id));
+    }
+
+    /// Gives up on the question up in a conversation from the chat, and
+    /// says so in its thread -- closing its card, where it has one.
+    fn give_up_from_afar(&mut self, whose: talking::Whose) {
+        self.settle_the_question(whose, "\u{2716} Not answered".to_string());
         // Before the giving up, which may put the next question up and the
         // thread back to waiting.
         self.mirror_head(whose, Some(Turning::Working));
@@ -1281,7 +1286,7 @@ impl App {
         }
         let id = self.a_conversation_from_afar();
         self.mirror.starting.insert(id.get(), thread.to_string());
-        self.say_from_afar(talking::Whose::One(id), &[Part::Words(text.to_string())]);
+        self.say_from_afar(id, &[Part::Words(text.to_string())]);
     }
 
     /// Somebody on the list said something in a thread.
@@ -1311,20 +1316,16 @@ impl App {
             );
             return;
         };
-        let whose = talking::Whose::One(id);
-        // A card up is the conversation waiting on exactly this, on the
-        // card: words are not read as an answer. And pointed at a card only
-        // where the thread has one -- a page to open on the machine is never
-        // put to it, and a card the platform would not take never got there.
-        if self.talk_of(whose).is_some_and(|talk| talk.card.is_some()) {
-            let said = match self.mirror.questions.contains_key(&chat) {
-                true => "Answer on the card above.",
-                false => "This question can only be answered on the machine.",
-            };
-            self.say_in_thread(&chat, said.to_string(), false);
-            return;
+        // Words while a question is up are the reader passing it by: cancel
+        // on its card, whether the thread has one to press or not, and then
+        // the words. Given up on here rather than left to the stop, because
+        // an agent may ask outside a turn, and then there is nothing to stop.
+        if self
+            .talk_of(talking::Whose::One(id))
+            .is_some_and(|talk| talk.card.is_some())
+        {
+            self.give_up_from_afar(talking::Whose::One(id));
         }
-        let parts = [Part::Words(text.to_string())];
-        self.say_from_afar(whose, &parts);
+        self.say_from_afar(id, &[Part::Words(text.to_string())]);
     }
 }

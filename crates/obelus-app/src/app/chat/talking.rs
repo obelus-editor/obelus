@@ -3751,10 +3751,19 @@ impl App {
         self.ask_the_next(whose);
     }
 
-    /// Says words that came from a chat in a conversation: now, or when the
-    /// turn it is in the middle of is over -- the way the reader's own wait
-    /// on the page.
-    pub(in crate::app) fn say_from_afar(&mut self, whose: Whose, parts: &[Part]) {
+    /// Says words that came from a chat in a conversation: now, or -- in the
+    /// middle of a turn -- by stopping it and saying them once it has
+    /// stopped, which is `ctrl+enter` here (`send_now`).
+    ///
+    /// Stopped rather than waited for: a reader on their phone has no
+    /// escape to press, so words sent into a running turn are the only way
+    /// they have of turning the agent round, and a turn that ran on to its
+    /// end -- or sat on a question they had chosen to pass by -- answered
+    /// what they had stopped asking. A question up goes with the turn, its
+    /// card closed as no longer asked; the words are never read as its
+    /// answer.
+    pub(in crate::app) fn say_from_afar(&mut self, id: DocumentId, parts: &[Part]) {
+        let whose = Whose::One(id);
         let running = self.talk(whose).is_some_and(|talk| {
             self.agent
                 .talker
@@ -3763,8 +3772,10 @@ impl App {
         });
         if running {
             if let Some(talk) = self.talk_mut(whose) {
+                talk.stopped_to_say = true;
                 talk.chat.will_say_from_afar(parts);
             }
+            self.stop_the_turn(id);
             return;
         }
         self.about_to_say_from_afar(whose);
