@@ -2641,6 +2641,16 @@ impl Picker {
         outcome
     }
 
+    /// Brings a selection the wheel left off the screen back onto it, and
+    /// says whether it had to: see `Window::reach_for_the_focus`.
+    ///
+    /// For a caller that acts on the selected row with a key the list does
+    /// not handle itself, which owes the reader the same first press enter
+    /// does.
+    pub const fn reach_for_the_focus(&mut self) -> bool {
+        self.window.reach_for_the_focus()
+    }
+
     /// Puts the selection on a row, for a caller that knows which one it
     /// wants.
     ///

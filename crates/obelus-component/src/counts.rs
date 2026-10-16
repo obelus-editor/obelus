@@ -468,7 +468,13 @@ impl Counts {
         };
         let path = path.clone();
         match (right, row.open) {
-            (true, Some(false)) | (false, Some(true)) => self.fold(&path),
+            // A row the wheel left off the screen is brought back rather
+            // than opened or shut, as it is for enter.
+            (true, Some(false)) | (false, Some(true)) => {
+                if !self.window.reach_for_the_focus() {
+                    self.fold(&path);
+                }
+            }
             // A directory is only here because a file is under it, so an
             // open one always has a first row below it.
             (true, Some(true)) => self.move_selection(1, height, Wrap::No),
@@ -1018,5 +1024,35 @@ mod tests {
             counts.handle_key(&press(KeyCode::Right), 10),
             CountsOutcome::Ignored
         ));
+    }
+
+    /// An arrow on a directory the wheel left off the screen brings it back
+    /// rather than opening or shutting it, as enter does.
+    ///
+    /// Broken deliberately by taking the `reach_for_the_focus` question out
+    /// of `walk_the_tree`: the first left shut `src` while it was off the
+    /// screen.
+    #[test]
+    fn an_arrow_on_a_row_scrolled_away_shows_it_first() {
+        let mut counts = Counts::new();
+        counts.show(counted());
+        counts.handle_key(&press(KeyCode::Tab), 1);
+        counts.handle_key(&press(KeyCode::Right), 1);
+        let open = counts.rows().len();
+        assert_eq!(counts.rows()[counts.window().focus()].name, "src");
+
+        counts.scroll(2, 1);
+        counts.handle_key(&press(KeyCode::Left), 1);
+        assert_eq!(
+            counts.rows().len(),
+            open,
+            "left shut a row that was off the screen"
+        );
+        assert_eq!(counts.window().top(), 0, "the row was not brought back");
+        counts.handle_key(&press(KeyCode::Left), 1);
+        assert!(
+            counts.rows().len() < open,
+            "left on the row brought back did not shut it"
+        );
     }
 }

@@ -761,7 +761,13 @@ impl App {
             return;
         };
         match (right, item.opens) {
-            (true, Some(false)) | (false, Some(true)) => self.open_directory(&path),
+            // A row the wheel left off the screen is brought back rather
+            // than opened or shut, as it is for enter.
+            (true, Some(false)) | (false, Some(true)) => {
+                if !picker.reach_for_the_focus() {
+                    self.open_directory(&path);
+                }
+            }
             // What is under it starts on the next row.
             (true, Some(true)) => {
                 let row = picker.selected() + 1;
