@@ -21,6 +21,9 @@ const MARGIN: u16 = 1;
 /// The row that sends the card.
 const SUBMIT: &str = "Submit";
 
+/// The row that refuses it.
+const DECLINE: &str = "Decline";
+
 /// The cells a row of the card has to write in.
 ///
 /// One function for it, because a card measured against one width and drawn
@@ -47,8 +50,12 @@ pub struct Layout {
     pub tick: Option<Rect>,
     /// What they have written.
     pub words: Option<Rect>,
-    /// The row that sends it, with the rule over it.
+    /// The rule over the rows that send it and refuse it, and those rows.
+    pub foot: Option<Rect>,
+    /// The row that sends it.
     pub submit: Option<Rect>,
+    /// The row that refuses it.
+    pub decline: Option<Rect>,
     /// The row saying what is missing, where there is no row that sends it.
     pub complaint: Option<Rect>,
 }
@@ -121,6 +128,9 @@ pub fn row_at(card: &Card, area: Rect, x: u16, y: u16) -> Option<On> {
     if layout.submit.is_some_and(inside) {
         return Some(On::Submit);
     }
+    if layout.decline.is_some_and(inside) {
+        return Some(On::Decline);
+    }
     None
 }
 
@@ -139,15 +149,17 @@ pub fn layout(card: &Card, area: Rect) -> Layout {
     // it needs, and the answers have the rest. A card given less than it
     // asked for scrolls its answers, because they are the part there can
     // be many of.
-    let about = u16::try_from(card.about_rows(width))
+    //
+    // The foot before the prose, though: the keys walk to its rows whether
+    // or not they are drawn, and a row the reader can stand on and not see
+    // is one enter acts on without saying what it does.
+    let foot = u16::try_from(card.foot_rows())
         .unwrap_or(0)
         .min(area.height);
-    let mut left = area.height - about;
-    let submit = match card.has_submit() {
-        true => 2.min(left),
-        false => 0,
-    };
-    left -= submit;
+    let about = u16::try_from(card.about_rows(width))
+        .unwrap_or(0)
+        .min(area.height - foot);
+    let mut left = area.height - about - foot;
     let complaint = match card.has_submit() || card.complaint().is_none() {
         true => 0,
         false => 1.min(left),
@@ -163,13 +175,27 @@ pub fn layout(card: &Card, area: Rect) -> Layout {
     };
     left -= tick;
     let top = area.y + about;
+    let foot_at = top + left + tick + written + complaint;
+    // Under the rule, in the order the keys walk them: what sends the card,
+    // and then what refuses it -- each left out where it does not fit.
+    let mut under = foot_at + 1;
+    let mut row_of = |has: bool| {
+        (has && under < foot_at + foot).then(|| {
+            under += 1;
+            band(under - 1, 1)
+        })
+    };
+    let submit = row_of(card.has_submit());
+    let decline = row_of(card.has_decline());
     Layout {
         about: band(area.y, about),
         choices: band(top, left),
         tick: (tick > 0).then(|| band(top + left, tick)),
         words: (written > 0).then(|| band(top + left + tick, written)),
         complaint: (complaint > 0).then(|| band(top + left + tick + written, complaint)),
-        submit: (submit > 0).then(|| band(top + left + tick + written + complaint, submit)),
+        foot: (foot > 0).then(|| band(foot_at, foot)),
+        submit,
+        decline,
     }
 }
 
@@ -373,8 +399,10 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, card: &Card, on: Option<On>, the
     // rather than an answer. What is missing is written on it rather than
     // said after the fact: Obelus draws what cannot be done dim and says
     // why, everywhere else too.
+    if let Some(foot) = parts.foot {
+        rule(cells, Rect { height: 1, ..foot }, theme);
+    }
     if let Some(row) = parts.submit {
-        rule(cells, Rect { height: 1, ..row }, theme);
         let wanting = card.wanting();
         // Two things, said in two ways, the way every list in Obelus says
         // them: the background is where the keys are, and the ink is
@@ -391,28 +419,28 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, card: &Card, on: Option<On>, the
             false => theme.foreground,
         };
         let style = plain.fg(ink).bg(ground);
-        let y = row.y + 1;
-        if y < row.bottom() {
-            fill(
+        fill(cells, row, style);
+        let ended = write(cells, area.x + MARGIN, row.y, SUBMIT, style);
+        if let Some(wanting) = wanting {
+            write(
                 cells,
-                Rect {
-                    y,
-                    height: 1,
-                    ..row
-                },
-                style,
+                ended + 1,
+                row.y,
+                &format!("\u{b7} {wanting}"),
+                style.fg(theme.gutter),
             );
-            let ended = write(cells, area.x + MARGIN, y, SUBMIT, style);
-            if let Some(wanting) = wanting {
-                write(
-                    cells,
-                    ended + 1,
-                    y,
-                    &format!("\u{b7} {wanting}"),
-                    style.fg(theme.gutter),
-                );
-            }
         }
+    }
+
+    // The row that says no to this question and to nothing else: the turn
+    // goes on, where escape would have stopped it.
+    if let Some(row) = parts.decline {
+        let style = match on == Some(On::Decline) {
+            true => plain.bg(theme.selected_row_background),
+            false => plain,
+        };
+        fill(cells, row, style);
+        write(cells, area.x + MARGIN, row.y, DECLINE, style);
     }
 }
 
@@ -467,7 +495,8 @@ mod tests {
             tick,
             words,
             complaint,
-            submit,
+            foot,
+            ..
         } = layout(&card, band);
         assert_eq!(
             usize::from(rows.height),
@@ -479,7 +508,40 @@ mod tests {
             + tick.map_or(0, |row| row.height)
             + words.map_or(0, |row| row.height)
             + complaint.map_or(0, |row| row.height)
-            + submit.map_or(0, |row| row.height);
+            + foot.map_or(0, |row| row.height);
         assert_eq!(laid, band.height, "the parts do not fill the card");
+    }
+
+    /// A card given too little room keeps the rows at its foot and gives up
+    /// its prose first: the keys walk to `Submit` and `Decline` whether or
+    /// not they are drawn.
+    ///
+    /// Deliberate break: lay the prose out before the foot, as it was. Four
+    /// rows go to the question and the rule under it, and neither row at
+    /// the foot is drawn.
+    #[test]
+    fn a_short_card_keeps_its_foot() {
+        let choices = ["one", "two"]
+            .into_iter()
+            .map(|name| Choice {
+                id: name.to_string(),
+                name: name.to_string(),
+                about: None,
+                icon: None,
+                chosen: false,
+            })
+            .collect();
+        let mut card = Card::new(choices, true);
+        card.about("one\ntwo\nthree");
+        card.declinable();
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width: 40,
+            height: 4,
+        };
+        let laid = layout(&card, area);
+        assert!(laid.submit.is_some(), "Submit is not drawn");
+        assert!(laid.decline.is_some(), "Decline is not drawn");
     }
 }

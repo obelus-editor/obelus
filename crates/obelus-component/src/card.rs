@@ -39,6 +39,18 @@
 //! answer. Escape is not that answer -- escape gives up on the whole form,
 //! which is the one thing a reader walking past an aside does not mean.
 //!
+//! **Saying no to a question is a row; escape is stopping the turn.** A form
+//! has a `Decline` row at its foot, and enter on it is the protocol's
+//! `decline`: this question is refused and the turn goes on. Escape was that
+//! once, and a reader who pressed it to turn the agent round and then wrote
+//! the correction found a second question up -- the agent had heard "no to
+//! that one" and asked the next -- with their words waiting behind it. So
+//! escape on a card means what it means in the rest of the conversation,
+//! and which of the two the application does with it is the application's
+//! (`App::card_key`). A permission request has no such row: its answers are
+//! the agent's own, refusing among them, and the protocol has no answer to
+//! one that is neither a choice nor the turn being cancelled.
+//!
 //! **Enter acts on the row the reader is on, and that is the whole key
 //! table.** One answer: enter on it answers the card, with whatever is in
 //! the box. Many: enter ticks, and the card is sent from a row that says
@@ -152,6 +164,8 @@ pub enum On {
     Words,
     /// The row that sends the lot.
     Submit,
+    /// The row that refuses the question and lets the turn go on.
+    Decline,
 }
 
 /// What a key did to the card.
@@ -163,6 +177,8 @@ pub enum CardOutcome {
     Consumed,
     /// The reader gave up on the whole question.
     Cancelled,
+    /// The reader said no to this question, and only to it.
+    Declined,
     /// The answer, as the reader left it.
     Answered {
         /// The agent's ids for the named answers they chose.
@@ -204,6 +220,8 @@ pub struct Card {
     /// card that opens saying "choose one" is telling somebody who has not
     /// tried anything yet that they have got it wrong.
     complaining: bool,
+    /// Whether the card has a row that refuses it.
+    declines: bool,
 }
 
 impl Card {
@@ -220,6 +238,7 @@ impl Card {
             words: None,
             on: On::Choice(0),
             complaining: false,
+            declines: false,
         };
         if card.choices.is_empty() {
             card.on = On::Words;
@@ -249,6 +268,15 @@ impl Card {
     /// What the agent said the question is about.
     pub fn about(&mut self, about: &str) {
         self.about = Some(about.to_string());
+    }
+
+    /// Gives the card a row that refuses it.
+    ///
+    /// Only where the protocol has an answer that is a refusal and not a
+    /// choice: a form's `decline`. A permission request's refusals are among
+    /// its answers already.
+    pub const fn declinable(&mut self) {
+        self.declines = true;
     }
 
     /// Says that one of the named answers has to be chosen.
@@ -366,7 +394,7 @@ impl Card {
             On::Choice(at) => at.min(count - 1),
             // Below them, so what is on screen is the end of the list --
             // which is what the rows under it are attached to.
-            On::Tick | On::Words | On::Submit => count - 1,
+            On::Tick | On::Words | On::Submit | On::Decline => count - 1,
         };
         // Up from the one the reader is on, so walking down the list moves
         // it to the foot of the band rather than to the head of it, and
@@ -503,6 +531,23 @@ impl Card {
         self.several
     }
 
+    /// Whether the card has a row that refuses it.
+    #[must_use]
+    pub const fn has_decline(&self) -> bool {
+        self.declines
+    }
+
+    /// How many rows the card's foot takes: a rule, and under it the row
+    /// that sends the card and the one that refuses it, where it has them.
+    #[must_use]
+    pub const fn foot_rows(&self) -> usize {
+        let rows = self.has_submit() as usize + self.has_decline() as usize;
+        match rows {
+            0 => 0,
+            rows => rows + 1,
+        }
+    }
+
     /// Whether the answer as it stands is one the agent will take, and what
     /// is missing when it is not.
     ///
@@ -599,7 +644,7 @@ impl Card {
                 .sum::<usize>()
             + usize::from(self.has_tick())
             + self.written_rows(width)
-            + if self.has_submit() { 2 } else { 0 }
+            + self.foot_rows()
             // What is missing, on a card with no row of its own to say it
             // on. One row, and only while it is being said.
             + usize::from(!self.has_submit() && self.complaint().is_some())
@@ -670,6 +715,9 @@ impl Card {
         if self.has_submit() {
             rows.push(On::Submit);
         }
+        if self.has_decline() {
+            rows.push(On::Decline);
+        }
         rows
     }
 
@@ -730,7 +778,7 @@ impl Card {
                     self.focus(On::Words);
                 }
             }
-            On::Words | On::Submit => {}
+            On::Words | On::Submit | On::Decline => {}
         }
     }
 
@@ -814,6 +862,8 @@ impl Card {
             KeyCode::Esc if bare && self.let_go() => CardOutcome::Consumed,
             KeyCode::Esc if bare => CardOutcome::Cancelled,
             KeyCode::Enter if bare => match self.on {
+                // Whatever is ticked or written: a refusal answers nothing.
+                On::Decline => CardOutcome::Declined,
                 // A tick, where several answers may be chosen. Nothing is
                 // sent by it: the card is sent from its own row, because
                 // ticking and sending cannot both be enter.
