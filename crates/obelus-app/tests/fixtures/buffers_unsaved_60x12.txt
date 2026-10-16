@@ -8,10 +8,10 @@ screen 60x12  editor 60x10  status 60x1
  5|                                                            
  6|                                                            
  7|                                                            
- 8|────────────────────────────────────────────────────────────
- 9|   Alt+↑ Alt+↓  Move                                        
+ 8|                                                            
+ 9|                                                            
 10|────────────────────────────────────────────────────────────
-11| > Filter open documents                                    
+11| > Filter open documents     Ctrl+p  More                   
 -- style --
  0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|bccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbba
@@ -21,16 +21,16 @@ screen 60x12  editor 60x10  status 60x1
  5|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  6|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  7|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 8|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
- 9|aaeeeeeeeeeeeeeaddddaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 8|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 9|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 10|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
-11|fffdddddddddddddddddddddffffffffffffffffffffffffffffffffffff
+11|eeedddddddddddddddddddddeeeeffffffffeddddeeeeeeeeeeeeeeeeeee
 -- legend --
 a fg=#e4e4e7 bg=#18181b
 b fg=#e4e4e7 bg=#27272a
 c fg=#f87171 bg=#27272a
 d fg=#52525b bg=#18181b
-e fg=#a1a1aa bg=#27272a
-f fg=#d4d4d8 bg=#18181b
+e fg=#d4d4d8 bg=#18181b
+f fg=#a1a1aa bg=#27272a
 -- cursor --
 3,11

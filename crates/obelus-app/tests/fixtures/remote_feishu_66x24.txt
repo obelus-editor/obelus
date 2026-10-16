@@ -15,15 +15,15 @@ screen 66x24  editor 66x22  status 66x1
 12|                                                                 █
 13|   Domain                                  feishu ▸              █
 14|     feishu for Feishu, lark for Lark outside China              █
-15|                                                                  
-16|   People                                  Nobody ▸               
-17|     Who may talk to this machine through it                      
+15|                                                                 █
+16|   People                                  Nobody ▸              █
+17|     Who may talk to this machine through it                     █
 18|                                                                  
 19|   Pair                                    Make a code ▸          
-20|──────────────────────────────────────────────────────────────────
-21|   Enter  Change                                                  
+20|     A code to send in the group you put the bot in               
+21|                                                                  
 22|──────────────────────────────────────────────────────────────────
-23| > Filter remote settings                                         
+23| > Filter remote settings     Ctrl+p  More                        
 -- style --
  0|aaaaaaaaaaaaaaaaabbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -40,15 +40,15 @@ screen 66x24  editor 66x22  status 66x1
 12|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
 13|ccccccccccccccccccccccccccccccccccccccccccccccccccacccccccccccccce
 14|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccccccccccce
-15|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-16|ccccccccccccccccccccccccccccccccccccccccccccccccccaccccccccccccccc
-17|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccccccccccccccccccc
+15|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
+16|ccccccccccccccccccccccccccccccccccccccccccccccccccacccccccccccccce
+17|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccccccccccce
 18|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 19|cccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaacacccccccccc
-20|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-21|ccgggggggcaaaaaacccccccccccccccccccccccccccccccccccccccccccccccccc
+20|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccccc
+21|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 22|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-23|dddaaaaaaaaaaaaaaaaaaaaaaddddddddddddddddddddddddddddddddddddddddd
+23|dddaaaaaaaaaaaaaaaaaaaaaaddddggggggggdaaaadddddddddddddddddddddddd
 -- legend --
 a fg=#52525b bg=#18181b
 b fg=#e4e4e7 bg=#27272a

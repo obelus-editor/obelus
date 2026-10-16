@@ -203,19 +203,14 @@ impl<'a> SettingsView<'a> {
     }
 }
 
-/// How many rows the page gives up to the keys at its foot.
-#[must_use]
-pub fn footed(area: Rect, settings: &Settings, offering: Option<&Offering>) -> Rect {
-    crate::footed(area, &hints(settings, offering))
-}
-
-/// What the keys do here, and which of them do anything at the moment.
+/// What the keys do here, and which of them do anything at the moment: the
+/// first tab of the palette opened over the page.
 ///
 /// Not the arrows: they walk the tabs and say so on the tab row, where the
 /// key *is* the arrow. What is here is what a reader could not guess -- that
 /// a setting the project has set can be unset. Nor typing: that the page is
 /// filtered by it is said on the row it goes into, before anything has
-/// been typed there, and a cap at the foot would be a key nobody presses.
+/// been typed there, and a row for it would be a key nobody presses.
 #[must_use]
 pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
     use crossterm::event::{KeyCode, KeyModifiers};
@@ -248,18 +243,26 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
     let on_row = settings.rows(offering).get(settings.focus()).copied();
     let adding = matches!(on_row, Some(Shown::AddVariable { .. }));
     let removes = matches!(on_row, Some(Shown::Variable { .. }));
-    let enter = match remote {
+    let changes = match settings.on_keys() {
+        true => "Change the key on this row",
+        false => "Change the setting on this row",
+    };
+    let (enter, enter_does) = match remote {
         Some(Shown::Remote { row, .. }) => match row {
-            RemoteRow::Pair => "Pair",
-            RemoteRow::Setup(obelus_remote::platform::Setup::Copy { .. }) => "Copy",
-            RemoteRow::Setup(obelus_remote::platform::Setup::Steps { .. }) => "Open",
-            RemoteRow::Platform | RemoteRow::Field(_) | RemoteRow::People => "Change",
+            RemoteRow::Pair => ("Pair", "Make a code to pair the chat with"),
+            RemoteRow::Setup(obelus_remote::platform::Setup::Copy { .. }) => {
+                ("Copy", "Copy what this row holds")
+            }
+            RemoteRow::Setup(obelus_remote::platform::Setup::Steps { .. }) => {
+                ("Open", "Open the steps this row points to")
+            }
+            RemoteRow::Platform | RemoteRow::Field(_) | RemoteRow::People => ("Change", changes),
         },
-        _ if adding => "Add",
-        _ => "Change",
+        _ if adding => ("Add", "Give the agent another variable"),
+        _ => ("Change", changes),
     };
     // On a command with no key there is nothing for enter to change, so
-    // the foot does not offer it there.
+    // it is not offered there.
     let nothing_to_change = settings.on_keys()
         && matches!(
             settings.keys().get(settings.focus()),
@@ -284,7 +287,7 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
             Some((KeyRow::Key { .. }, _))
         );
     // Pairing does nothing where the chat could not be reached, and a key
-    // that does nothing is not offered at the foot.
+    // that does nothing is not offered.
     let pairing_waits = matches!(
         remote,
         Some(Shown::Remote {
@@ -298,16 +301,17 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
         Some(Shown::Remote { row: RemoteRow::Field(field), .. })
             if settings.reached().kept.contains_key(field.key)
     );
-    // A row waiting for its key takes every key, so the foot says the one
-    // that does something else there: taking this row's key away, where it
-    // has one. Not escape, which gives up on the nearest thing here as
-    // everywhere, and a foot does not spend itself saying so (`ui::foot`).
+    // A row waiting for its key takes every key, so this is the one that
+    // does something else there: taking this row's key away, where it has
+    // one. Not escape, which gives up on the nearest thing here as
+    // everywhere.
     if let Some(binding) = settings.binding_at() {
         return vec![
             Hint::new(
                 obelus_keymap::KeyChord::new(KeyCode::Backspace, KeyModifiers::ALT),
                 "Remove",
             )
+            .about("Take this key away")
             .when(binding.replacing),
         ];
     }
@@ -316,14 +320,19 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
     let rows_delete = !settings.delete_is_the_filters();
     vec![
         Hint::new(bare(KeyCode::Enter), enter)
+            .about(enter_does)
             // Asked of whichever page is showing rather than of the
             // settings: the keys page has rows too, and enter does the same
-            // sort of thing to one of them.
+            // sort of thing to one of them. Not the themes', whose enter is
+            // the card's (`theme_hints`).
+            .only_where(!settings.on_themes())
             .when(settings.row_count(offering) > 0 && !pairing_waits && !nothing_to_change),
         Hint::new(
             obelus_keymap::KeyChord::new(KeyCode::Enter, KeyModifiers::CONTROL),
             "Add a key",
         )
+        .about("Give this command another key")
+        .only_where(settings.on_keys())
         .when(adds),
         // Taking keys away, each offered only where it would do something:
         // the key on this row, this command put back on its layout's keys,
@@ -332,11 +341,15 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
             obelus_keymap::KeyChord::new(KeyCode::Backspace, KeyModifiers::ALT),
             "Remove",
         )
+        .about("Take this key away")
+        .only_where(settings.on_keys())
         .when(on_a_key),
         Hint::new(
             obelus_keymap::KeyChord::new(KeyCode::Char('r'), KeyModifiers::ALT),
             "Reset",
         )
+        .about("Give this command back the keys its layout has")
+        .only_where(settings.on_keys())
         .when(changed_here),
         Hint::new(
             obelus_keymap::KeyChord::new(
@@ -345,38 +358,66 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
             ),
             "Reset all",
         )
-        .when(settings.on_keys() && settings.any_changed()),
-        Hint::new(bare(KeyCode::Delete), "Forget").when(forgets && rows_delete),
+        .about("Give every command back the keys its layout has")
+        .only_where(settings.on_keys())
+        .when(settings.any_changed()),
+        // What delete does to a row, which is one of four things or none:
+        // only the one this row has is a row of the palette, and it is dim
+        // while delete is the filter's.
+        Hint::new(bare(KeyCode::Delete), "Forget")
+            .about("Forget what is kept for this field")
+            .only_where(forgets)
+            .when(rows_delete),
         // On an agent's row, and only while there is something to undo:
         // what `delete` leaves there is not a default of Obelus's but the
         // agent's own answer.
-        Hint::new(bare(KeyCode::Delete), AGENTS_OWN).when(focused.is_some() && rows_delete),
-        Hint::new(bare(KeyCode::Delete), "Remove").when(removes && rows_delete),
-        Hint::new(bare(KeyCode::Delete), "Unset").when(
-            rows_delete && settings.on_project() && !settings.on_keys() && !settings.on_cards(),
-        ),
+        Hint::new(bare(KeyCode::Delete), AGENTS_OWN)
+            .about("Go back to what the agent chose itself")
+            .only_where(focused.is_some())
+            .when(rows_delete),
+        Hint::new(bare(KeyCode::Delete), "Remove")
+            .about("Take this variable away")
+            .only_where(removes)
+            .when(rows_delete),
+        Hint::new(bare(KeyCode::Delete), "Unset")
+            .about("Take this setting out of the project's file")
+            .only_where(settings.on_project() && !settings.on_keys() && !settings.on_cards())
+            .when(rows_delete),
     ]
+}
+
+/// Every key the page has here, with what the keys do to the theme the
+/// reader is on where that is the tab they are on.
+#[must_use]
+pub fn keys(settings: &Settings, offering: Option<&Offering>, themes: &[ThemeCard]) -> Vec<Hint> {
+    let mut keys = hints(settings, offering);
+    if settings.on_themes() {
+        let shown = settings.themes(themes);
+        let card = shown.get(settings.focus());
+        keys.splice(0..0, theme_hints(settings, card));
+    }
+    keys
 }
 
 /// What the keys do to the theme the reader is on: the card's button, and
 /// taking it away -- each only where it does anything.
-///
-/// Apart from [`hints`] because only the drawing has the cards: the foot is
-/// as tall with these as without them, which is all the region asks.
 fn theme_hints(settings: &Settings, card: Option<&ThemeCard>) -> Vec<Hint> {
     use crossterm::event::{KeyCode, KeyModifiers};
     let bare = |code| obelus_keymap::KeyChord::new(code, KeyModifiers::NONE);
-    let enter = match card {
-        Some(card) if card.may_be_worn() => "Use",
-        Some(card) if card.installed => "Update",
-        _ => "Install",
+    let (enter, does) = match card {
+        Some(card) if card.may_be_worn() => ("Use", "Wear this theme"),
+        Some(card) if card.installed => ("Update", "Install the newer version of this theme"),
+        _ => ("Install", "Install this theme"),
     };
     vec![
         Hint::new(bare(KeyCode::Enter), enter)
+            .about(does)
             .when(card.is_some_and(|card| card.may_be_installed() || card.may_be_worn())),
-        Hint::new(bare(KeyCode::Delete), "Remove").when(
-            card.is_some_and(ThemeCard::may_be_taken_away) && !settings.delete_is_the_filters(),
-        ),
+        Hint::new(bare(KeyCode::Delete), "Remove")
+            .about("Take this theme off this machine")
+            .when(
+                card.is_some_and(ThemeCard::may_be_taken_away) && !settings.delete_is_the_filters(),
+            ),
     ]
 }
 
@@ -388,17 +429,16 @@ struct Placed {
     area: Rect,
 }
 
-/// The region the rows are drawn in: under the tabs, above the foot.
+/// The region the rows are drawn in: under the tabs.
 ///
 /// Named so that a pointer can ask where the rows are rather than working
-/// it out again from the two things that take room off the page.
+/// it out again from what takes room off the page.
 #[must_use]
-pub fn rows_region(area: Rect, settings: &Settings, offering: Option<&Offering>) -> Rect {
-    let under = crate::footed(area, &hints(settings, offering));
+pub fn rows_region(area: Rect) -> Rect {
     Rect {
-        y: under.y + 2,
-        height: under.height.saturating_sub(2),
-        ..under
+        y: area.y + 2,
+        height: area.height.saturating_sub(2),
+        ..area
     }
 }
 
@@ -514,7 +554,7 @@ impl SettingsView<'_> {
     /// where a row draws what it is set to.
     #[must_use]
     pub fn row_at(&self, area: Rect, x: u16, y: u16) -> Option<(usize, bool)> {
-        let region = rows_region(area, self.settings, self.offering.as_ref());
+        let region = rows_region(area);
         if x < region.x || x >= region.right() {
             return None;
         }
@@ -595,18 +635,11 @@ impl Widget for SettingsView<'_> {
             self.theme,
         );
 
-        let mut hints = hints(self.settings, self.offering.as_ref());
-        if self.settings.on_themes() {
-            let shown = self.settings.themes(&self.themes);
-            let card = shown.get(self.settings.focus());
-            hints.splice(0..0, theme_hints(self.settings, card));
-        }
-        crate::foot(cells, area, &hints, self.theme);
         // Through the one function that answers it, which the pointer and
         // the window both ask as well: three workings-out of what the tabs
-        // and the foot leave is three chances to draw the page into a
-        // different region from the one it was settled against.
-        let region = rows_region(area, self.settings, self.offering.as_ref());
+        // leave is three chances to draw the page into a different region
+        // from the one it was settled against.
+        let region = rows_region(area);
 
         // The agents are a page of cards rather than a column of controls:
         // a reader choosing between forty programs is reading about them,
@@ -1380,7 +1413,7 @@ impl SettingsView<'_> {
     /// the way a file is indented under its directory in the counts. So
     /// there is no rule to draw and no second colour to hold: a page whose
     /// groups were told apart by a line across it would have six lines on
-    /// it, counting the tabs' and the foot's, and the lines would be the
+    /// it, counting the tabs', and the lines would be the
     /// loudest thing on a page of words.
     ///
     /// Bold, which is the third thing it could have been and the one that
@@ -1534,13 +1567,21 @@ impl SettingsView<'_> {
                 self.theme.change_removed,
             )),
             // One line, because most commands have one key and so one row
-            // to say it on.
+            // to say it on. And the one key that does something else here,
+            // because a row waiting for its key takes every other one -- the
+            // palette's included, so this row is the only place to say it.
             None => Some((
                 match binding.replacing && has_a_key {
-                    true => "Press the new key",
-                    false => "Press a key to add it",
-                }
-                .to_string(),
+                    true => format!(
+                        "Press the new key, or {} to remove it",
+                        obelus_keymap::KeyChord::new(
+                            crossterm::event::KeyCode::Backspace,
+                            crossterm::event::KeyModifiers::ALT,
+                        )
+                        .label()
+                    ),
+                    false => "Press a key to add it".to_string(),
+                },
                 self.theme.change_modified,
             )),
         }
@@ -1599,8 +1640,8 @@ impl SettingsView<'_> {
             // What is left of the page under it, rather than the page's own
             // height moved down to this row: a card told it had the whole
             // of one draws off the bottom of the region, and what is under
-            // the region is the rule over the foot -- which the last card
-            // on screen wrote its third line across.
+            // the region is somebody else's row -- which the last card on
+            // screen wrote its third line across.
             self.card(
                 cells,
                 Rect {
@@ -2184,9 +2225,9 @@ fn draw_control(
         theme.gutter
     };
     match (kind, value) {
-        // A tick, drawn by the one thing that draws ticks: the foot of a
-        // list has them, a card has them, and a note has one in front of
-        // it -- a reader who has learnt this shape in one of those should
+        // A tick, drawn by the one thing that draws ticks: the palette's
+        // switches have them, a card has them, and a note has one in front
+        // of it -- a reader who has learnt this shape in one of those should
         // not have to learn a second one here.
         (Kind::Switch, Value::Switch(on)) => {
             crate::ticked(cells, x, y, *on, style.fg(ink));

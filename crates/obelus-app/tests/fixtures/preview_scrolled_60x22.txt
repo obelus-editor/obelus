@@ -11,15 +11,15 @@ screen 60x22  editor 60x20  status 60x1
  8|                                                            
  9|                                                            
 10|────────────────────────────────────────────────────────────
-11|   7 pub const LINE_06: u32 = 6;                            
-12|   8 pub const LINE_07: u32 = 7;                            
-13|   9 pub const LINE_08: u32 = 8;                           █
-14|  10 pub const LINE_09: u32 = 9;                            
-15|  11 pub const LINE_10: u32 = 10;                           
-16|  12 pub const LINE_11: u32 = 11;                           
-17|  13 pub const LINE_12: u32 = 12;                           
-18|────────────────────────────────────────────────────────────
-19|   Alt+i  Ignored files □     Alt+.  Hidden files □    …    
+11|   9 pub const LINE_08: u32 = 8;                            
+12|  10 pub const LINE_09: u32 = 9;                            
+13|  11 pub const LINE_10: u32 = 10;                          █
+14|  12 pub const LINE_11: u32 = 11;                          █
+15|  13 pub const LINE_12: u32 = 12;                           
+16|  14 pub const LINE_13: u32 = 13;                           
+17|  15 pub const LINE_14: u32 = 14;                           
+18|  16 pub const LINE_15: u32 = 15;                           
+19|  17 pub const LINE_16: u32 = 16;                           
 20|────────────────────────────────────────────────────────────
 21| > many                                                     
 -- style --
@@ -35,16 +35,16 @@ screen 60x22  editor 60x20  status 60x1
  9|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 10|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 11|cccdceeeceeeeecfffffffgcfffccchgcccccccccccccccccccccccccccc
-12|cccdceeeceeeeecfffffffgcfffccchgcccccccccccccccccccccccccccc
-13|cccdceeeceeeeecfffffffgcfffccchgcccccccccccccccccccccccccccg
-14|ccddceeeceeeeecfffffffgcfffccchgcccccccccccccccccccccccccccc
+12|ccddceeeceeeeecfffffffgcfffccchgcccccccccccccccccccccccccccc
+13|ccddceeeceeeeecfffffffgcfffccchhgccccccccccccccccccccccccccg
+14|ccddceeeceeeeecfffffffgcfffccchhgccccccccccccccccccccccccccg
 15|ccddceeeceeeeecfffffffgcfffccchhgccccccccccccccccccccccccccc
 16|ccddceeeceeeeecfffffffgcfffccchhgccccccccccccccccccccccccccc
 17|ccddceeeceeeeecfffffffgcfffccchhgccccccccccccccccccccccccccc
-18|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
-19|cciiiiiiicdddddddddddddcdcccciiiiiiicddddddddddddcdccccdcccc
+18|ccddceeeceeeeecfffffffgcfffccchhgccccccccccccccccccccccccccc
+19|ccddceeeceeeeecfffffffgcfffccchhgccccccccccccccccccccccccccc
 20|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
-21|jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj
+21|iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii
 -- legend --
 a fg=#e4e4e7 bg=#27272a
 b fg=#e4e4e7 bg=#38577f
@@ -54,7 +54,6 @@ e fg=#c084fc bg=#18181b
 f fg=#fbbf24 bg=#18181b
 g fg=#a1a1aa bg=#18181b
 h fg=#f472b6 bg=#18181b
-i fg=#a1a1aa bg=#27272a
-j fg=#d4d4d8 bg=#18181b
+i fg=#d4d4d8 bg=#18181b
 -- cursor --
 7,21

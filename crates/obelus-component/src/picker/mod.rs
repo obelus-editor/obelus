@@ -98,6 +98,12 @@ pub enum WorktreeEnter {
 pub enum PickerValue {
     /// Run a command.
     Command(Command),
+    /// Press a key of the view the palette was opened over.
+    ///
+    /// The key rather than an act of its own: what the key does is the
+    /// view's, worked out where the view already works it out, and a second
+    /// way in to each of those would be a second answer to keep in step.
+    Key(obelus_keymap::KeyChord),
     /// Do one of the things a language server offered to do here.
     ///
     /// By its place in the list rather than by the action itself: an
@@ -205,8 +211,8 @@ pub enum PickerValue {
     /// By its place in the list, as a conversation is: which window has it
     /// open, and how to reach that window, is the application's to know.
     /// What the two enters do on the row is said here rather than worked
-    /// out from it, because the foot says it too, and the key and the foot
-    /// have to be one answer.
+    /// out from it, because the palette says it too, and the key and the
+    /// palette have to be one answer.
     Worktree {
         /// Where in the list.
         at: usize,
@@ -716,6 +722,9 @@ pub struct Picker {
     /// Whether the tabs are scopes: rows that come from three different
     /// places rather than three groups of one list.
     scopes: bool,
+    /// Whether the first tab is the rows of the view the list was opened
+    /// over, ahead of "all" -- which is then every row but those.
+    own_tab: bool,
     /// Whether this list is a search, whose rows are refilled as the query
     /// and the tab move.
     searching: bool,
@@ -871,13 +880,14 @@ pub struct Picker {
     /// list's own order the arrivals are older commits, which belong at the
     /// bottom, so nothing above the selection ever moves.
     ordered: bool,
-    /// Whether this list says at its foot what its own keys do.
+    /// Whether this list has keys of its own, which the palette opened over
+    /// it says in its first tab.
     ///
     /// Only a list with keys of its own. Every list answers to the arrows,
-    /// to enter and to escape, and a row of the reader's screen spent
-    /// saying so is a row spent on what they just did -- so the foot goes
-    /// where there is something they could not have guessed.
-    footed: bool,
+    /// to enter and to escape, and a tab saying so is a tab of what the
+    /// reader just did -- so it is there where there is something they
+    /// could not have guessed.
+    own_keys: bool,
     /// Whether a key that opens a view may take this list's place.
     ///
     /// Every list the reader opened will: it is somewhere they are
@@ -894,8 +904,7 @@ pub struct Picker {
     /// `None` where it does not: a list that is not a search, and the
     /// symbols tab, whose rows come from a language server that did its own
     /// matching and would not know what to do with a pattern of ours. The
-    /// foot greys the keys there rather than dropping them, so it does not
-    /// change height as the reader steps between tabs.
+    /// palette draws the keys dim there rather than dropping them.
     looking: Option<obelus_search::Looking>,
     /// Whether this search is offering names from outside the project,
     /// where that is a question about it.
@@ -909,20 +918,18 @@ pub struct Picker {
     ///
     /// `None` where the key means nothing: the changed files come from git
     /// rather than from a walk, and what a project ignores is not part of that
-    /// answer either way. Greyed at the foot rather than dropped from it, so
-    /// the list does not change height as the reader steps between tabs.
+    /// answer either way. Dim in the palette rather than dropped from it.
     ///
     /// Set by whoever filled the list, because the walk and the setting
-    /// behind it are both theirs -- what is the list's is only that the foot
-    /// is drawn from it, and a foot that had to guess would guess wrong on
-    /// the first frame after the key.
+    /// behind it are both theirs -- what is the list's is only that the
+    /// palette and the query's row are drawn from it, and either one having
+    /// to guess would guess wrong on the first frame after the key.
     ignored: Option<bool>,
     /// And whether it is offering the ones a system keeps out of sight.
     ///
     /// Its own, beside [`Picker::offers_ignored`] and for the reason that
-    /// one is its own: they keep two different things out, so a foot that
-    /// drew one switch for both would say one of them was set when the
-    /// other was.
+    /// one is its own: they keep two different things out, so one switch
+    /// drawn for both would say one of them was set when the other was.
     hidden: Option<bool>,
     /// Whether the rows of this list open and close.
     ///
@@ -1044,6 +1051,7 @@ impl Picker {
             about: None,
             tab: 0,
             scopes: false,
+            own_tab: false,
             searching: false,
             listing: false,
             opener: None,
@@ -1067,7 +1075,7 @@ impl Picker {
             tally: None,
             unfinished: false,
             ordered: false,
-            footed: false,
+            own_keys: false,
             gives_way: true,
             looking: None,
             outside: None,
@@ -1157,6 +1165,23 @@ impl Picker {
         self.refilter();
     }
 
+    /// The same, with a tab of its own in front of "all".
+    ///
+    /// For the palette over a view: the first tab is what that view's keys
+    /// do, and a row is put in it with `tab: Some(0)`. "All" is every
+    /// command and not those, because a key of the view is not a command --
+    /// it means nothing once the view is gone -- and the groups are one
+    /// further along than they would be without it.
+    pub fn with_tabs_and_its_own(&mut self, own: &str, names: &[&str]) {
+        self.tabs = [own, "All"]
+            .into_iter()
+            .chain(names.iter().copied())
+            .map(str::to_string)
+            .collect();
+        self.own_tab = true;
+        self.refilter();
+    }
+
     /// Gives the picker a row of tabs that are *scopes* rather than groups.
     ///
     /// No "all" tab, and the rows are not filtered by which tab is showing:
@@ -1200,7 +1225,7 @@ impl Picker {
     /// Says the rows of this list open and close.
     pub const fn opens_rows(&mut self) {
         self.opens = true;
-        self.footed = true;
+        self.own_keys = true;
     }
 
     /// Whether they do.
@@ -1502,18 +1527,18 @@ impl Picker {
     }
 
     /// Says whether `ctrl+enter` puts this window where a row is, which
-    /// makes the two enters two different things, and so whether its foot
-    /// says what each of them does.
+    /// makes the two enters two different things, and so whether the
+    /// palette says what each of them does.
     pub const fn switches_in_place(&mut self, in_place: bool) {
         self.in_place = in_place;
-        self.footed = in_place || self.moves;
+        self.own_keys = in_place || self.moves;
     }
 
-    /// Says whether the reader may move the rows, and so whether its foot
-    /// says how.
+    /// Says whether the reader may move the rows, and so whether the
+    /// palette says how.
     pub const fn moves_rows(&mut self, moves: bool) {
         self.moves = moves;
-        self.footed = moves || self.in_place;
+        self.own_keys = moves || self.in_place;
     }
 
     /// Whether they may.
@@ -1532,7 +1557,7 @@ impl Picker {
     /// that can be chosen.
     ///
     /// Nothing on a dim one, which the selection rests on where a query
-    /// has left nothing else: enter refuses it, so the foot must too.
+    /// has left nothing else: enter refuses it, so the palette must too.
     #[must_use]
     pub fn worktree_enter(&self) -> Option<WorktreeEnter> {
         match self
@@ -1565,10 +1590,10 @@ impl Picker {
     }
 
     /// Says this is a list of the agent's background work, and whether a
-    /// row of it can be stopped -- which its foot says.
+    /// row of it can be stopped -- which the palette says.
     pub const fn lists_tasks(&mut self, stoppable: bool) {
         self.tasks = Some(stoppable);
-        self.footed = true;
+        self.own_keys = true;
     }
 
     /// Whether it is one, and whether its rows can be stopped.
@@ -1620,15 +1645,15 @@ impl Picker {
         self.listing
     }
 
-    /// Says this list has keys of its own worth a foot.
+    /// Says this list has keys of its own worth saying.
     pub const fn says_its_keys(&mut self) {
-        self.footed = true;
+        self.own_keys = true;
     }
 
     /// Whether it does.
     #[must_use]
     pub const fn says_keys(&self) -> bool {
-        self.footed
+        self.own_keys
     }
 
     /// Says how this search is looking, or that the question does not arise.
@@ -2810,8 +2835,11 @@ impl Picker {
         // that fetched it.
         let tab = self.tab;
         let scopes = self.scopes;
+        let own = self.own_tab;
+        let all = usize::from(own);
         let showing = move |item: &PickerItem| match (scopes, tab, item.tab) {
-            (true, _, _) | (_, 0, _) | (_, _, None) => true,
+            (true, _, _) | (_, _, None) => true,
+            (_, tab, Some(of)) if tab == all => !(own && of == 0),
             (_, tab, Some(of)) => tab == of,
         };
         // A narrowing pass is the same tab with the same rows in it.

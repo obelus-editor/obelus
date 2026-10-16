@@ -166,7 +166,7 @@ fn the_file_scope_finds_the_query_and_not_something_like_it() {
 }
 
 /// The search's three switches: a pattern, a whole word, the capitals as
-/// typed. Each says at the foot which way it is set.
+/// typed. Each says in the palette which way it is set.
 #[test]
 fn the_three_switches_change_what_the_search_finds() {
     let scratch = temporary("switches");
@@ -198,30 +198,20 @@ fn the_three_switches_change_what_the_search_finds() {
     support::type_text(&mut app, "ab.d");
     assert_eq!(found(&app), 1, "the query was not read as a pattern");
 
-    // And the foot says which way each is set, rather than making the
+    // And the palette says which way each is set, rather than making the
     // reader press one to find out.
-    let dump = support::render(&mut app, 74, 16);
-    let foot = support::text_block(&dump)
-        .lines()
-        .find(|row| row.contains("Regex"))
-        .expect("the foot")
-        .to_string();
-    // The box after each word, which is either marked or is not. This
-    // compared two distances once, because the switches were sliders and a
-    // slider says which way it is by where its knob sits.
-    //
-    // Which glyph means which is not asked of `ui::tick`: what is checked
-    // is that the one the reader turned on differs from the two they did
-    // not, and that those two agree.
-    assert_ne!(
-        support::glyph_after(&foot, "Regex"),
-        support::glyph_after(&foot, "Word"),
-        "the pattern switch reads the same as one nobody touched: {foot:?}"
-    );
+    let set: Vec<(String, Option<bool>)> = support::keys_here(&mut app)
+        .into_iter()
+        .map(|key| (key.does, key.set))
+        .collect();
     assert_eq!(
-        support::glyph_after(&foot, "Word"),
-        support::glyph_after(&foot, "Case"),
-        "two switches nobody touched are set differently: {foot:?}"
+        &set[..3],
+        [
+            ("Regex".to_string(), Some(true)),
+            ("Word".to_string(), Some(false)),
+            ("Case".to_string(), Some(false)),
+        ],
+        "the palette does not say which way the switches are set"
     );
 
     // Half a pattern is not an error in front of the reader: it is a
@@ -255,16 +245,10 @@ fn a_tab_offers_only_the_switches_it_can_answer() {
         "the file tab offers to reach past a tree it is inside"
     );
 
-    let dump = support::render(&mut app, 84, 16);
-    let foot = support::text_block(&dump)
-        .lines()
-        .find(|row| row.contains("Regex"))
-        .expect("the foot")
-        .to_string();
-    assert!(foot.contains("Word") && foot.contains("Case"), "{foot:?}");
-    assert!(
-        !foot.contains("Outside"),
-        "the foot offers a key that would do nothing: {foot:?}"
+    assert_eq!(
+        support::usable_here(&mut app),
+        ["Regex", "Word", "Case"],
+        "the palette offers a key that would do nothing, or not one that would"
     );
 }
 

@@ -161,6 +161,68 @@ pub(crate) fn press_function(app: &mut App, number: u8) {
     )));
 }
 
+/// One of the keys the palette's first tab says the view in front has.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Here {
+    /// What the row says the key does.
+    pub(crate) does: String,
+    /// The key, as the row writes it.
+    pub(crate) key: String,
+    /// Whether it does anything now, which is whether the row is dim.
+    pub(crate) usable: bool,
+    /// Which way it is set, for a switch.
+    pub(crate) set: Option<bool>,
+}
+
+/// What the view in front says its own keys do: the first tab of the palette
+/// opened over it, read and given up again with escape.
+///
+/// Empty where the palette has no tab of the view's own -- a view with no
+/// keys of its own, or the palette not opening at all.
+pub(crate) fn keys_here(app: &mut App) -> Vec<Here> {
+    press_control(app, 'p');
+    // Opened, or what follows reads nothing and the escape after it closes
+    // the view instead -- and every "the palette does not offer X" passes.
+    assert!(
+        app.palette().is_some()
+            || app.picker().is_some_and(
+                |picker| picker.opener() == Some(obelus_command::Command::CommandPalette)
+            ),
+        "the palette did not open, so there is nothing to read"
+    );
+    let palette = app.palette().or_else(|| app.picker());
+    let here = palette
+        .filter(|palette| palette.tabs().first().map(String::as_str) == Some("Here"))
+        .map(|palette| {
+            palette
+                .matches()
+                .filter(|row| matches!(row.value, obelus_component::picker::PickerValue::Key(_)))
+                .map(|row| Here {
+                    does: row.label.clone(),
+                    key: row.trailing.clone().unwrap_or_default(),
+                    usable: row.enabled,
+                    set: match row.icon {
+                        Some(tick) if tick == obelus_ui::tick(true) => Some(true),
+                        Some(tick) if tick == obelus_ui::tick(false) => Some(false),
+                        _ => None,
+                    },
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    press(app, KeyCode::Esc);
+    here
+}
+
+/// The words of the keys in front that do something now, in order.
+pub(crate) fn usable_here(app: &mut App) -> Vec<String> {
+    keys_here(app)
+        .into_iter()
+        .filter(|key| key.usable)
+        .map(|key| key.does)
+        .collect()
+}
+
 /// Sends a key with alt held.
 pub(crate) fn press_alt_key(app: &mut App, code: KeyCode) {
     app.handle(Event::Key(KeyEvent::new(code, KeyModifiers::ALT)));

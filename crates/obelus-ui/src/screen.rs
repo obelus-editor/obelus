@@ -412,6 +412,8 @@ pub trait Screen {
     fn newer_release(&self) -> Option<&str>;
     /// The open picker, for the renderer.
     fn picker(&self) -> Option<&Picker>;
+    /// The palette, where it is open over a view rather than instead of it.
+    fn palette(&self) -> Option<&Picker>;
     /// The settings the project has set, which are the ones the reader cannot
     /// change from here.
     fn pinned(&self) -> &[&'static str];

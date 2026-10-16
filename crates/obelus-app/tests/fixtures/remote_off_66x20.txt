@@ -16,10 +16,10 @@ screen 66x20  editor 66x18  status 66x1
 13|                                                                  
 14|                                                                  
 15|                                                                  
-16|──────────────────────────────────────────────────────────────────
-17|   Enter  Change                                                  
+16|                                                                  
+17|                                                                  
 18|──────────────────────────────────────────────────────────────────
-19| > Filter remote settings                                         
+19| > Filter remote settings     Ctrl+p  More                        
 -- style --
  0|aaaaaaaaaaaaaaaaabbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -37,10 +37,10 @@ screen 66x20  editor 66x18  status 66x1
 13|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 14|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 15|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-16|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-17|ccfffffffcaaaaaacccccccccccccccccccccccccccccccccccccccccccccccccc
+16|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+17|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 18|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-19|dddaaaaaaaaaaaaaaaaaaaaaaddddddddddddddddddddddddddddddddddddddddd
+19|dddaaaaaaaaaaaaaaaaaaaaaaddddffffffffdaaaadddddddddddddddddddddddd
 -- legend --
 a fg=#52525b bg=#18181b
 b fg=#e4e4e7 bg=#27272a

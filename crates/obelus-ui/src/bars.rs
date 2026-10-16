@@ -38,6 +38,8 @@ pub enum Whose {
     Projects,
     /// The list that is open: a picker.
     Picker,
+    /// The palette, open over a view that has keys of its own.
+    Palette,
     /// What could finish the path being named.
     Naming,
     /// The agent's own commands, offered under the box.

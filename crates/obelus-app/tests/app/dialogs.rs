@@ -98,7 +98,7 @@ fn a_page_of_settings_longer_than_the_screen_has_a_bar() {
     page(&mut app, "open-settings");
     let dump = support::render(&mut app, 60, 40);
     // Down the page's last column, from its first row to its last -- the
-    // one above the rule over the key at its foot.
+    // one above the rule over the status row.
     let bar = app
         .bars()
         .iter()
@@ -107,7 +107,7 @@ fn a_page_of_settings_longer_than_the_screen_has_a_bar() {
         .bar;
     assert_eq!(
         (bar.area.x, bar.area.y, bar.area.height),
-        (59, 2, 34),
+        (59, 2, 36),
         "{bar:?}\n{dump}"
     );
 }

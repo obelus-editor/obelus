@@ -43,6 +43,14 @@ pub enum Layer {
     /// A list with a query over it: the palette, the files, a search, a
     /// setting's choices, a commit's history, what a server offers to do.
     Picker,
+    /// The palette, opened over a view that has keys of its own.
+    ///
+    /// A layer of its own rather than the picker, because the view under it
+    /// is very often a picker -- the files, a search -- and those go on
+    /// being filled while the palette is up: a walk, a search's answers.
+    /// One field for both would be a search's rows arriving in the palette.
+    /// Escape gives it up and the view is as it was, query and row and all.
+    Palette,
     /// A question on the status bar.
     Prompt,
     /// That the project has gone, over whatever the reader was in when it
@@ -64,13 +72,15 @@ pub enum Layer {
 /// the notes and the settings -- cannot be open together, so their order among
 /// themselves is never observed; it is declared anyway, because an order nobody
 /// wrote down is an order every reader of the code guesses at.
-pub const STACK: [Layer; 6] = [
+pub const STACK: [Layer; 7] = [
     Layer::Counts,
     Layer::Settings,
     // Over the settings, because that is what opens it, and under a
     // picker, because a picker is what anything opens over anything.
     Layer::Names,
     Layer::Picker,
+    // Over whatever it was opened over, which is every dialog there is.
+    Layer::Palette,
     Layer::Prompt,
     // Over everything: nothing under it is about anything any more.
     Layer::Gone,
@@ -103,8 +113,9 @@ impl Room {
     /// it *is* the region, and a question on the status bar about something
     /// now behind it is a question nobody can answer. A list covers the
     /// question and the list that was there and nothing else -- a setting's
-    /// choices open *over* the settings, which is the one place Obelus
-    /// stacks two things the reader is in.
+    /// choices open *over* the settings. The palette opens over every view
+    /// without asking this at all (`App::open_command_palette`): those are
+    /// the two places Obelus stacks two things the reader is in.
     #[must_use]
     pub const fn covers(self, other: Self) -> bool {
         match self {
@@ -128,6 +139,9 @@ impl Layer {
             // opened it is still behind it, which is where the setting
             // being changed is written.
             Self::Names | Self::Picker => Room::Band,
+            // A band, and opened without making room: what it is about is
+            // the view behind it.
+            Self::Palette => Room::Band,
             Self::Prompt => Room::Row,
             Self::Gone => Room::Screen,
         }
@@ -314,7 +328,7 @@ mod tests {
             assert!(room.covers(Room::Row), "{room:?} does not cover a row");
             assert!(room.covers(room), "{room:?} does not cover its own kind");
         }
-        // The one nesting Obelus has: a setting's choices over the settings.
+        // The nesting a room allows: a setting's choices over the settings.
         assert!(!Room::Band.covers(Room::Region));
         assert!(Room::Region.covers(Room::Band));
         // And a question cannot stay up under anything else.
@@ -330,6 +344,7 @@ mod tests {
             Layer::Settings,
             Layer::Names,
             Layer::Picker,
+            Layer::Palette,
             Layer::Gone,
         ] {
             assert_eq!(layer.context(), Context::Dialog, "{layer:?}");

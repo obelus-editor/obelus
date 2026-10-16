@@ -25,8 +25,19 @@
 //! that instead. What does not give way is what is waiting on the reader --
 //! a question, and what went wrong on the way up -- because leaving one by
 //! another key is an answer nobody gave (`Picker::gives_way`); nor what is
-//! being typed into, a box or a list of names, which a key that goes
-//! elsewhere would throw away.
+//! being typed into, a box, which a key that goes elsewhere would throw away.
+//!
+//! Not a list of names being built, which kept the key once as a box: every
+//! name it adds, takes out or moves is written the moment it happens, so
+//! what a key that goes from it throws away is what is typed in its query
+//! and no more -- which is what a setting's choices over the settings throw
+//! away too, and `f1` left the themes and not the fonts.
+//!
+//! **Except the palette, which opens over the view rather than instead of
+//! it.** Its first tab is that view's own keys, so the view has to be there
+//! for one chosen from it to be pressed in -- and escape is back in the view
+//! as it was. Over the palette, its own key does nothing, and any other is
+//! asked about the view under it.
 //!
 //! **A view that has bound the key itself beats the swap.** `App::handle_key`
 //! asked the swap first once, so a key the showing view had taken was
@@ -46,15 +57,28 @@ impl App {
     /// The nearest layer only. A list open over the settings is a list, and
     /// a key in it is about the list -- which gives way, and takes the
     /// settings with it.
+    ///
+    /// Except the palette, which is passed over: it is the reader still in
+    /// the view under it, so what is asked is whether *that* gives way. It
+    /// answered yes for itself once, and a key naming a view from the
+    /// palette over a list of names being built threw the names away.
     pub(super) fn gives_way_to_a_view(&self) -> bool {
-        match self.layers().nearest() {
+        let under = self
+            .layers()
+            .nearest_first()
+            .find(|layer| *layer != Layer::Palette);
+        match under {
             Some(Layer::Settings | Layer::Counts) => true,
+            // Never: it is what was passed over.
+            Some(Layer::Palette) => false,
             // Whichever layout it was given: a band over the file is as much
             // somewhere the reader chose to be as a list instead of it.
             Some(Layer::Picker) => self.picker.as_ref().is_some_and(Picker::gives_way),
+            // Whatever it has been given is written already.
+            Some(Layer::Names) => true,
             // Something being typed, which a key that went elsewhere would
             // throw away. And nothing at all, which is the file's own table.
-            Some(Layer::Names) | Some(Layer::Prompt) | None => false,
+            Some(Layer::Prompt) | None => false,
             // Never asked: the page saying the project has gone takes every
             // key before a swap is looked for, and swaps with nothing.
             Some(Layer::Gone) => false,
@@ -70,11 +94,25 @@ impl App {
         if !self.offers(command) {
             return;
         }
+        // The palette over a view is the reader still in that view: its own
+        // key keeps it where it is, and any other is asked about the view.
+        if self.palette.is_some() {
+            if command == Command::CommandPalette {
+                return;
+            }
+            self.leave(Layer::Palette);
+        }
         if let (Some(wanted), Some(picker)) = (self.tab_for(command), self.picker.as_ref()) {
             let (now, count) = (picker.tab(), picker.tabs().len());
             self.walk_to_tab(now, wanted, count, |app, onwards| {
                 app.picker_key(&stepping(onwards));
             });
+            return;
+        }
+        // The palette opens over the view rather than taking its place: its
+        // first tab is that view's own keys (`App::open_command_palette`).
+        if command == Command::CommandPalette {
+            self.open_command_palette();
             return;
         }
         // A list that turns out to have nothing in it is a sentence on the

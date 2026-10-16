@@ -10,14 +10,14 @@ screen 60x18  editor 60x16  status 60x1
  7| ▸ tests                                                    
  8|   Cargo.toml                                               
  9|                                                            
-10|                                                            
-11|                                                            
+10|────────────────────────────────────────────────────────────
+11|   1                                                        
 12|                                                            
 13|                                                            
-14|────────────────────────────────────────────────────────────
-15|   Alt+i  Ignored files □     Alt+.  Hidden files □    …    
+14|                                                            
+15|                                                            
 16|────────────────────────────────────────────────────────────
-17| > Filter files                                             
+17| > Filter files     Ctrl+p  More                            
 -- style --
  0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|abbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -29,19 +29,20 @@ screen 60x18  editor 60x16  status 60x1
  7|abbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  8|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  9|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-10|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-11|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+10|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+11|aaadaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 12|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 13|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-14|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-15|aadddddddabbbbbbbbbbbbbabaaaadddddddabbbbbbbbbbbbabaaaabaaaa
+14|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+15|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 16|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-17|eeebbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+17|eeebbbbbbbbbbbbeeeeffffffffebbbbeeeeeeeeeeeeeeeeeeeeeeeeeeee
 -- legend --
 a fg=#e4e4e7 bg=#18181b
 b fg=#52525b bg=#18181b
 c fg=#e4e4e7 bg=#27272a
-d fg=#a1a1aa bg=#27272a
+d fg=#a1a1aa bg=#18181b
 e fg=#d4d4d8 bg=#18181b
+f fg=#a1a1aa bg=#27272a
 -- cursor --
 3,17

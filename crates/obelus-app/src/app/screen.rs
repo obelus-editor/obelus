@@ -136,6 +136,9 @@ impl Screen for App {
     fn picker(&self) -> Option<&Picker> {
         App::picker(self)
     }
+    fn palette(&self) -> Option<&Picker> {
+        App::palette(self)
+    }
     fn pinned(&self) -> &[&'static str] {
         App::pinned(self)
     }

@@ -14,8 +14,7 @@ use obelus_theme::Theme;
 use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets::Widget};
 
 use crate::{
-    FOOT_ROWS, Hint, Marked, Matched, editor::SCROLLBAR_WIDTH, fill, foot, footed, rule, scrollbar,
-    write, write_marked,
+    Hint, Marked, Matched, editor::SCROLLBAR_WIDTH, fill, rule, scrollbar, write, write_marked,
 };
 
 /// How many rows of the list a reader gets to walk.
@@ -40,7 +39,8 @@ const OFFERED: &str = " On this machine ";
 /// that changed their answer for them.
 const ELSEWHERE: &str = "Not on this machine";
 
-/// What the keys do here, and which of them do anything now.
+/// What the keys do here, and which of them do anything now: the first tab
+/// of the palette opened over the list.
 #[must_use]
 pub fn hints(names: &Names) -> Vec<Hint> {
     use crossterm::event::{KeyCode, KeyModifiers};
@@ -48,18 +48,20 @@ pub fn hints(names: &Names) -> Vec<Hint> {
     let bare = |code| chord(code, KeyModifiers::NONE);
     let on = names.rows().get(names.window().focus());
     vec![
-        Hint::new(
-            bare(KeyCode::Enter),
-            match on.is_some_and(Row::chosen) {
-                true => "Take out",
-                false => "Add",
-            },
-        )
-        .when(on.is_some_and(Row::stands)),
+        {
+            let (word, about) = match on.is_some_and(Row::chosen) {
+                true => ("Take out", "Take this name out of the list"),
+                false => ("Add", "Add this name to the list"),
+            };
+            Hint::new(bare(KeyCode::Enter), word)
+                .about(about)
+                .when(on.is_some_and(Row::stands))
+        },
         // One act in two directions, which is why it is one hint: the
         // notes move a row with the same chord.
         Hint::new(chord(KeyCode::Up, KeyModifiers::ALT), "Move")
             .or(chord(KeyCode::Down, KeyModifiers::ALT))
+            .about("Change the order the names are tried in")
             .when(on.is_some_and(Row::chosen)),
     ]
 }
@@ -67,8 +69,7 @@ pub fn hints(names: &Names) -> Vec<Hint> {
 /// How many rows of list the band has room for.
 #[must_use]
 pub fn rows_drawn(names: &Names, editor: Rect) -> u16 {
-    let region = region(names, editor);
-    footed(region, &hints(names)).height
+    region(names, editor).height
 }
 
 /// Where the band sits: along the bottom of the editor region, as tall as
@@ -78,7 +79,6 @@ pub fn region(names: &Names, editor: Rect) -> Rect {
     let rows = u16::try_from(names.rows().len()).unwrap_or(u16::MAX);
     let wanted = rows
         .min(LIST_ROWS.saturating_add(u16::try_from(names.taken()).unwrap_or(0)))
-        .saturating_add(FOOT_ROWS)
         .clamp(1, editor.height);
     Rect {
         y: editor.y + editor.height - wanted,
@@ -87,7 +87,7 @@ pub fn region(names: &Names, editor: Rect) -> Rect {
     }
 }
 
-/// The list, its boundary and its foot.
+/// The list and its boundary.
 pub struct NamesView<'a> {
     names: &'a Names,
     theme: &'a Theme,
@@ -111,8 +111,7 @@ impl Widget for NamesView<'_> {
             .fg(self.theme.foreground);
         fill(cells, area, page);
 
-        let hints = hints(self.names);
-        let list = footed(area, &hints);
+        let list = area;
         let window = self.names.window();
         let rows = self.names.rows();
         let visible = window.visible(list.height);
@@ -153,7 +152,6 @@ impl Widget for NamesView<'_> {
                 bar,
             );
         }
-        foot(cells, area, &hints, self.theme);
     }
 }
 

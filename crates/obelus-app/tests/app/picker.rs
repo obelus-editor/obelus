@@ -751,30 +751,39 @@ fn the_list_moves_only_when_the_cursor_reaches_an_edge() {
     );
 }
 
-/// The file list says at its foot that it has a key of its own.
+/// The palette over the file list says what the list's own keys do, and
+/// draws nothing at the list's foot.
 ///
-/// Only that list: every other one answers to the arrows, enter and escape,
-/// and a row saying so would be a row spent on what the reader just did.
+/// Broken deliberately by giving the palette nothing for a list
+/// (`App::keys_here`): it opened on "All", with no switch of the list's in
+/// it.
 #[test]
 fn the_file_list_says_what_its_own_key_does() {
     let mut app = app();
     press_function(&mut app, 1);
     let dump = support::render(&mut app, 72, 24);
     assert!(
-        support::text_block(&dump).contains("Ignored files"),
-        "the file list has no foot:\n{dump}"
+        !support::text_block(&dump).contains("Ignored files"),
+        "the file list still has a foot:\n{dump}"
     );
+    let here: Vec<String> = support::keys_here(&mut app)
+        .into_iter()
+        .map(|key| key.does)
+        .collect();
+    assert_eq!(here, ["Ignored files", "Hidden files", "Rename"]);
 }
 
-/// And no foot over a list that has no key of its own.
+/// And no tab of its own in a palette over nothing: the file has no keys
+/// of its own to say.
 #[test]
 fn a_list_with_nothing_of_its_own_to_say_says_nothing() {
     let mut app = app();
     press_control(&mut app, 'p');
-    let dump = support::render(&mut app, 72, 24);
-    assert!(
-        !support::text_block(&dump).contains("Ignored files"),
-        "the palette grew a foot:\n{dump}"
+    let palette = app.picker().expect("the palette");
+    assert_eq!(
+        palette.tabs().first().map(String::as_str),
+        Some("All"),
+        "the palette over the file has a tab of the file's own"
     );
 }
 
@@ -805,66 +814,67 @@ fn alt_i_turns_the_ignored_files_on_and_off() {
     assert!(!app.config().ignored_files, "the key only goes one way");
 }
 
-/// The foot says which way the key is set, so nobody has to press it to
-/// find out.
+/// The palette says which way the key is set, so nobody has to press it to
+/// find out -- and the row the query is typed into says so while it is on.
 ///
-/// Broken deliberately by drawing the key and its word and nothing else:
-/// "Ignored files" says what `alt+i` is about and not one thing about
-/// whether they are being offered, and a switch a reader has to flip to
-/// read is not a switch.
+/// Broken deliberately by giving the row in the palette no tick (the
+/// switch's `set` left off in `picker::keys`): "Ignored files" said what
+/// `alt+i` is about and not one thing about whether they are being offered.
 #[test]
-fn the_foot_says_which_way_the_key_is_set() {
+fn the_palette_says_which_way_the_key_is_set() {
     let scratch = support::Scratch::new("picker-switch");
     let mut app = app();
     app.config_file_for_test(scratch.join("config.toml"));
     support::lay_out(&mut app, 72, 24);
     press_function(&mut app, 1);
 
-    // The box itself, not where a knob sits: the two states are two glyphs,
-    // so what the row says is readable without measuring anything against
-    // anything. This was a slider, and the test that covered it compared
-    // two columns.
-    //
-    // Read off the row rather than asked of `ui::tick`, which is the rule
-    // under test: what is checked is that the glyph *changes*, and changes
-    // back, which is the whole of what the reader needs from it.
-    let box_of = |app: &mut App| -> char {
+    let set = |app: &mut App| {
+        support::keys_here(app)
+            .into_iter()
+            .find(|key| key.does == "Ignored files")
+            .expect("the key in the palette")
+            .set
+    };
+    let said = |app: &mut App| {
         let dump = support::render(app, 72, 24);
-        let row = support::text_block(&dump)
+        support::text_block(&dump)
             .lines()
-            .find(|row| row.contains("Ignored files"))
-            .unwrap_or_else(|| panic!("no foot:\n{dump}"))
-            .to_string();
-        support::glyph_after(&row, "Ignored files")
+            .last()
+            .is_some_and(|row| row.contains("Ignored files"))
     };
 
-    let off = box_of(&mut app);
+    assert_eq!(set(&mut app), Some(false));
+    assert!(
+        !said(&mut app),
+        "the query's row says a switch is on that is not"
+    );
     press_alt_key(&mut app, KeyCode::Char('i'));
-    let on = box_of(&mut app);
-    assert_ne!(on, off, "the box says the same thing either way");
+    assert_eq!(set(&mut app), Some(true), "the tick did not go in");
+    assert!(
+        said(&mut app),
+        "the query's row does not say the switch is on"
+    );
     press_alt_key(&mut app, KeyCode::Char('i'));
-    assert_eq!(box_of(&mut app), off, "the mark did not come out again");
+    assert_eq!(
+        set(&mut app),
+        Some(false),
+        "the tick did not come out again"
+    );
 }
 
-/// And on the changed tab it says nothing, because there the key means
-/// nothing: those rows are git's answer, and git does not report a file it
-/// was told to ignore.
+/// And on the changed tab it is dim, because there the key means nothing:
+/// those rows are git's answer, and git does not report a file it was told
+/// to ignore.
 ///
-/// Nor does the foot, which has nothing left to say: every key it has is
-/// the tree's. Deliberate break: answer `every_hint` from `hints` whatever
-/// it holds, and the changed tab's foot is back -- a rule over a row with
-/// nothing on it.
+/// Broken deliberately by offering it on every tab (`when` left off the
+/// switch in `picker::keys`): it was usable on the changed tab too.
 #[test]
 fn the_key_is_not_offered_where_it_would_do_nothing() {
-    // Whether there is a rule over a row of keys: the foot's two rows sit
-    // over the rule and the box typed into, so its rule is the fourth row
-    // from the bottom. Without a foot that row is the preview's.
-    let footed = |dump: &str| {
-        let text = support::text_block(dump);
-        let rows: Vec<&str> = text.lines().collect();
-        rows[rows.len() - 4]
-            .split_once('|')
-            .is_some_and(|(_, row)| !row.is_empty() && row.chars().all(|c| c == '\u{2500}'))
+    let usable = |app: &mut App| {
+        support::keys_here(app)
+            .into_iter()
+            .find(|key| key.does == "Ignored files")
+            .is_some_and(|key| key.usable)
     };
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     app.statuses_for_test(
@@ -877,25 +887,15 @@ fn the_key_is_not_offered_where_it_would_do_nothing() {
     );
     support::lay_out(&mut app, 72, 24);
     press_function(&mut app, 1);
-    let all = support::render(&mut app, 72, 24);
     assert!(
-        support::text_block(&all).contains("Ignored files"),
-        "the key is not offered on the tab it works on:\n{all}"
-    );
-    assert!(
-        footed(&all),
-        "the tab it works on has no foot, so the one below proves nothing:\n{all}"
+        usable(&mut app),
+        "the key is not offered on the tab it works on"
     );
 
     press(&mut app, KeyCode::Tab);
-    let changed = support::render(&mut app, 72, 24);
     assert!(
-        !support::text_block(&changed).contains("Ignored files"),
-        "the foot offers a key that would do nothing:\n{changed}"
-    );
-    assert!(
-        !footed(&changed),
-        "a foot with nothing on it that can be pressed:\n{changed}"
+        !usable(&mut app),
+        "the palette offers a key that would do nothing"
     );
 }
 

@@ -186,35 +186,35 @@ fn the_conversations_give_way_and_f4_keeps_them() {
     );
 }
 
-/// The palette takes a view's place as well: it is the one list every command
-/// is on, and a reader inside a view who wants one should not have to leave it
-/// first. And `ctrl+p` in the palette is the palette, with what was typed.
+/// The palette opens over a view rather than taking its place: it is the one
+/// list every command is on, and the first tab of it is the view's own keys.
+/// And `ctrl+p` in the palette is the palette, with what was typed.
 ///
 /// Broken deliberately twice. Taking the palette out of
-/// `Command::opens_a_list`: `ctrl+p` in the files is refused and the files
-/// stay. And taking `opened_by` out of `open_command_palette`: `ctrl+p` in
-/// the palette closes it and opens it again, empty.
+/// `Command::opens_a_list`: `ctrl+p` in the files is refused. And taking the
+/// palette's own key out of `switch_view`'s first question: `ctrl+p` in the
+/// palette gave it up and opened it again, empty.
 #[test]
-fn the_palette_takes_a_view_s_place() {
+fn the_palette_opens_over_a_view() {
     let mut app = reading();
     press_function(&mut app, 1);
     press_control(&mut app, 'p');
     assert!(
-        app.picker()
-            .is_some_and(|picker| picker.opener() == Some(Command::CommandPalette)),
-        "ctrl+p in the files did not go to the palette"
+        app.palette()
+            .is_some_and(|palette| palette.opener() == Some(Command::CommandPalette)),
+        "ctrl+p in the files did not open the palette"
     );
     type_text(&mut app, "sav");
     press_control(&mut app, 'p');
     assert_eq!(
-        app.picker().map(|picker| picker.query().to_string()),
+        app.palette().map(|palette| palette.query().to_string()),
         Some("sav".to_string()),
         "ctrl+p in the palette did not leave the reader where they were"
     );
     press(&mut app, KeyCode::Esc);
     assert!(
-        app.picker().is_none(),
-        "escape went back to the files, so the palette was opened over them"
+        app.picker().is_some_and(|picker| picker.is_listing()),
+        "escape did not go back to the files"
     );
 }
 

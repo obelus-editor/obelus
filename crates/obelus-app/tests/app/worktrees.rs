@@ -560,13 +560,7 @@ fn the_worktrees_tab_previews_nothing() {
         "the worktrees tab previews the file being read:\n{worktrees}"
     );
     // A preview is under a rule of its own, so a list that previews has one
-    // more row of rule across the screen than one that does not -- and in a
-    // window the worktrees have a foot instead, with a rule of its own,
-    // which is the one rule the tabs have the same number of.
-    assert!(
-        worktrees.contains("Stay"),
-        "the worktrees in a window do not say what enter does:\n{worktrees}"
-    );
+    // more row of rule across the screen than one that does not.
     let ruled = |screen: &str| {
         screen
             .lines()
@@ -577,13 +571,13 @@ fn the_worktrees_tab_previews_nothing() {
             .count()
     };
     assert_eq!(
-        ruled(&worktrees),
+        ruled(&worktrees) + 1,
         ruled(&documents),
         "the worktrees tab is still cut in two for a preview:\n{worktrees}"
     );
 }
 
-/// The foot says what the two enters do on the row the reader is on: on a
+/// The palette says what the two enters do on the row the reader is on: on a
 /// tree a new window, and this one going where it is not this one's; on
 /// another window, going to it; on this one, staying.
 ///
@@ -594,7 +588,7 @@ fn the_worktrees_tab_previews_nothing() {
 /// said on a row that cannot be chosen (a tree that has gone offers a
 /// window).
 #[test]
-fn the_foot_says_what_each_enter_does_on_the_row() {
+fn the_palette_says_what_each_enter_does_on_the_row() {
     let scratch = Scratch::new("worktrees-foot");
     let (main, feature, spare) = repository(&scratch);
     let asked = Arc::new(Asked::default());
@@ -605,13 +599,9 @@ fn the_foot_says_what_each_enter_does_on_the_row() {
     support::lay_out(&mut other, 80, 24);
 
     dispatch::dispatch(&mut app, Command::WorktreeList);
-    let said = |app: &mut App, label: &str| -> Vec<&'static str> {
+    let said = |app: &mut App, label: &str| -> Vec<String> {
         walk_to(app, label);
-        let screen = support::render(app, 80, 24);
-        ["New window", "Switch", "Go to it", "Stay"]
-            .into_iter()
-            .filter(|word| screen.contains(word))
-            .collect()
+        support::usable_here(app)
     };
     assert_eq!(said(&mut app, "feature"), ["New window", "Switch"]);
     assert_eq!(said(&mut app, "main"), ["New window"]);

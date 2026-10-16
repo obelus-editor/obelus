@@ -1019,28 +1019,24 @@ fn delete_takes_a_letter_out_of_the_filter_before_a_setting_out_of_the_file() {
     let written =
         || std::fs::read_to_string(root.join(".obelus").join("config.toml")).expect("the file");
 
-    let foot = |app: &mut App| support::text_block(&support::render(app, 76, 16)).to_string();
-
-    // And the foot says so: what delete does to the row is not offered
+    // And the palette says so: what delete does to the row is not offered
     // while delete is the filter's.
     support::press(&mut app, KeyCode::Home);
-    let text = foot(&mut app);
     assert!(
-        !word_on(&text, "Unset"),
-        "the foot offers to unset while delete is the filter's:\n{text}"
+        !offers(&mut app, "Unset"),
+        "the palette offers to unset while delete is the filter's"
     );
     support::press(&mut app, KeyCode::Delete);
     assert_eq!(app.settings().expect("the settings").query(), "rap");
     assert!(written().contains("wrap = true"), "a letter cost a setting");
 
     // With nothing in front of the caret, it is the row's again -- the
-    // forward delete, and on a Mac not yet the key the foot names.
+    // forward delete, and on a Mac not yet the key the palette names.
     support::press(&mut app, KeyCode::End);
-    let text = foot(&mut app);
     assert_eq!(
-        word_on(&text, "Unset"),
+        offers(&mut app, "Unset"),
         !cfg!(target_os = "macos"),
-        "the foot offers to unset where its key would not:\n{text}"
+        "the palette offers to unset where its key would not"
     );
     let mut held = crossterm::event::KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE);
     held.kind = crossterm::event::KeyEventKind::Repeat;
@@ -1807,17 +1803,17 @@ fn the_cards_scroll_only_at_an_edge() {
     // room the page has, which only a frame knows.
     let step = |app: &mut obelus_app::app::App, key: KeyCode| {
         support::press(app, key);
-        let dump = support::render(app, 76, 19);
+        let dump = support::render(app, 76, 17);
         (app.settings().expect("the settings").top(), dump)
     };
 
     // Every card is four rows, so three whole ones fit the thirteen this
     // screen leaves the page -- the tabs and their rule off the top, the
-    // foot and its rule off the bottom -- counted by their last row,
+    // filter and the rule over it off the bottom -- counted by their last row,
     // because the fourth card's name is drawn in the row left over.
     // Asserted rather than assumed: the whole point is where the fourth
     // step lands.
-    let dump = support::render(&mut app, 76, 19);
+    let dump = support::render(&mut app, 76, 17);
     let whole = support::text_block(&dump)
         .matches("1.0.0 \u{b7} Somebody \u{b7} MIT")
         .count();
@@ -2318,13 +2314,14 @@ fn every_key_of_a_command_is_a_row_of_its_own() {
 /// Enter on a key changes that key: the one pressed takes its place, and
 /// the command's other keys stay.
 ///
-/// And while it waits the foot says the one key that does something
+/// And while it waits the row says the one key that does something
 /// else there, taking the key away, and not escape, which backs out here
-/// as everywhere.
+/// as everywhere: the palette cannot say it, because a row waiting for its
+/// key takes the palette's key too.
 ///
 /// Broken deliberately by adding the key pressed rather than putting it in
 /// the row's place, as the page did: `ctrl+y` stayed. And apart, by naming
-/// escape at the foot again: `Back` was there.
+/// escape on the row: `Back` was there.
 #[test]
 fn enter_on_a_key_changes_it() {
     use obelus_command::Command;
@@ -2338,10 +2335,15 @@ fn enter_on_a_key_changes_it() {
     support::press(&mut app, KeyCode::Tab);
     support::type_text(&mut app, "redo");
     support::press(&mut app, KeyCode::Enter);
-    let dump = support::render(&mut app, 66, 12);
-    let foot = support::text_block(&dump);
-    assert!(foot.contains("Remove"), "{foot}");
-    assert!(!foot.contains("Esc"), "{foot}");
+    let dump = support::render(&mut app, 100, 12);
+    let row = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains("Press the new key"))
+        .unwrap_or_else(|| panic!("the row does not say it is waiting:\n{dump}"))
+        .to_string();
+    let remove = KeyChord::new(KeyCode::Backspace, KeyModifiers::ALT).label();
+    assert!(row.contains(&remove), "{row}");
+    assert!(!row.contains("Esc"), "{row}");
     support::press_alt(&mut app, 'z');
 
     let chord = |key: &str| KeyChord::parse(key).expect("a key");
@@ -2404,11 +2406,10 @@ fn control_and_enter_adds_a_key() {
     let mut app = open(&file);
     support::press(&mut app, KeyCode::Tab);
     support::type_text(&mut app, "new-file");
-    let dump = support::render(&mut app, 80, 16);
-    let foot = support::text_block(&dump);
-    assert!(foot.contains("Ctrl+Enter"), "{foot}");
+    let usable = support::usable_here(&mut app);
+    assert!(usable.contains(&"Add a key".to_string()), "{usable:?}");
     // And not enter, which has nothing to change there.
-    assert!(!foot.contains("Change"), "{foot}");
+    assert!(!usable.contains(&"Change".to_string()), "{usable:?}");
 }
 
 /// `alt+backspace` takes away the key on the row the reader is on, and only
@@ -2803,21 +2804,17 @@ fn alt_r_puts_a_command_back() {
     let mut app = open(&file);
     support::press(&mut app, KeyCode::Tab);
     support::type_text(&mut app, "undo");
-    let foot = |app: &mut App| {
-        let dump = support::render(app, 100, 16);
-        support::text_block(&dump).to_string()
-    };
     // Undo is its layout's; redo, under it in this filter, is not -- so
-    // the foot offers every key back but not this one.
-    let said = foot(&mut app);
-    assert!(!said.contains("Alt+r  Reset"), "{said}");
-    assert!(said.contains("Reset all"), "{said}");
+    // the palette offers every key back but not this one.
+    let said = support::usable_here(&mut app);
+    assert!(!said.contains(&"Reset".to_string()), "{said:?}");
+    assert!(said.contains(&"Reset all".to_string()), "{said:?}");
     for _ in 0.."undo".len() {
         support::press(&mut app, KeyCode::Backspace);
     }
     support::type_text(&mut app, "redo");
-    let said = foot(&mut app);
-    assert!(said.contains("Alt+r  Reset"), "{said}");
+    let said = support::usable_here(&mut app);
+    assert!(said.contains(&"Reset".to_string()), "{said:?}");
     support::press_alt(&mut app, 'r');
     assert_eq!(
         app.keymap().chords_for(Command::Redo),
@@ -3172,20 +3169,24 @@ fn the_settings_say_what_their_keys_do() {
     support::lay_out(&mut app, 76, 16);
     dispatch::dispatch(&mut app, Command::ConfigProject);
 
-    let text = support::text_block(&support::render(&mut app, 76, 16)).to_string();
+    let usable = support::usable_here(&mut app);
     for word in ["Change", "Unset"] {
-        assert!(word_on(&text, word), "{word:?} is not at the foot:\n{text}");
+        assert!(
+            usable.contains(&word.to_string()),
+            "{word:?} is not in the palette: {usable:?}"
+        );
     }
     assert!(
-        !word_on(&text, "Leave"),
-        "the foot is spending itself on escape:\n{text}"
+        !usable.contains(&"Leave".to_string()),
+        "the palette is spending itself on escape: {usable:?}"
     );
     assert!(
-        !word_on(&text, "To filter"),
-        "typing is a cap at the foot:\n{text}"
+        !usable.contains(&"To filter".to_string()),
+        "typing is a row of the palette: {usable:?}"
     );
+    let text = support::text_block(&support::render(&mut app, 76, 16)).to_string();
     assert!(
-        word_on(&text, "Filter settings"),
+        text.contains("Filter settings"),
         "the row typing goes into does not say what it narrows:\n{text}"
     );
 }
@@ -3193,21 +3194,39 @@ fn the_settings_say_what_their_keys_do() {
 /// `unset` is on the project's page and nowhere else, because the reader's own
 /// settings have no "Unset" -- one they have not changed is the default.
 #[test]
-fn the_foot_offers_unset_only_where_it_means_something() {
+fn the_palette_offers_unset_only_where_it_means_something() {
     let _turn = crate::turn();
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     support::lay_out(&mut app, 76, 16);
     dispatch::dispatch(&mut app, Command::ConfigOpen);
-    let text = support::text_block(&support::render(&mut app, 76, 16)).to_string();
     assert!(
-        !word_on(&text, "Unset"),
-        "the reader's own page offered to unset something:\n{text}"
+        !offers(&mut app, "Unset"),
+        "the reader's own page offered to unset something"
     );
 }
 
-/// Whether a word is on the foot, which is the last row that has anything.
-fn word_on(text: &str, word: &str) -> bool {
-    text.lines().any(|row| row.contains(word))
+/// A key chosen from the palette over the settings is pressed on the row
+/// the page was standing on.
+///
+/// Broken deliberately by doing nothing with a chosen key
+/// (`PickerValue::Key` in `palette_key`): the setting stayed as it was.
+#[test]
+fn a_key_chosen_from_the_palette_is_pressed_on_the_page() {
+    let _turn = crate::turn();
+    let scratch = temporary("palette-presses");
+    let mut app = open(&settings_file(&scratch));
+    support::type_text(&mut app, "wrap");
+    let before = app.config().wrap;
+    support::press_control(&mut app, 'p');
+    support::type_text(&mut app, "Change");
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.palette().is_none(), "the palette stayed up");
+    assert_ne!(app.config().wrap, before, "the switch was not flipped");
+}
+
+/// Whether the palette over the page offers a key by that word, now.
+fn offers(app: &mut App, word: &str) -> bool {
+    support::usable_here(app).iter().any(|said| said == word)
 }
 
 /// The rest that asks a question is a time, and the times are the few

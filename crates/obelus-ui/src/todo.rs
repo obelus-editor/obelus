@@ -1,7 +1,8 @@
 //! What a reader means to come back to, drawn.
 //!
-//! A title, a rule, the notes, and a foot saying what the keys do. The notes
-//! are the only thing here with more than one shape: a row is a box, what it
+//! The notes, and nothing else on the page: what the keys do is the first
+//! tab of the palette. The notes are the only thing here with more than one
+//! shape: a row is a box, what it
 //! says, and where it points, and a note with more behind it turns the mark
 //! every other folding thing in Obelus turns.
 //!
@@ -13,7 +14,7 @@ use obelus_component::todo::{Row, Talked, TodoView as Notes};
 use obelus_theme::Theme;
 use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets::Widget};
 
-use crate::{Hint, Marked, Screen, editor::SCROLLBAR_WIDTH, fill, foot, footed, put, write_marked};
+use crate::{Hint, Marked, Screen, editor::SCROLLBAR_WIDTH, fill, put, write_marked};
 
 /// Where the notes go, inside a region this size.
 ///
@@ -21,7 +22,7 @@ use crate::{Hint, Marked, Screen, editor::SCROLLBAR_WIDTH, fill, foot, footed, p
 /// list: a page is worth what is on screen, and two answers to how much that
 /// is would be a page that overshoots by however much they disagreed.
 #[must_use]
-pub fn list_region(area: Rect, hints: &[Hint]) -> Rect {
+pub fn list_region(area: Rect) -> Rect {
     // Nothing above it. A conversation has a header saying who is being
     // talked to, and this had the same claim on one the moment it became a
     // document the reader switches to rather than a page they had just
@@ -29,18 +30,18 @@ pub fn list_region(area: Rect, hints: &[Hint]) -> Rect {
     // so a header here would be a row of the reader's screen spent on a
     // constant. What says where they are is the status row, which carries
     // the mark and how much is left.
-    footed(area, hints)
+    area
 }
 
-/// What the keys do here, and which of them do anything at the moment.
+/// What the keys do here, and which of them do anything at the moment: the
+/// first tab of the palette opened over the notes.
 ///
-/// One list: what the foot draws is the whole of what this view says about
-/// itself. Which of them are on varies with what is selected, so the row is
-/// what can be pressed right now rather than a standing notice.
+/// Which of them are on varies with what is selected, so the tab says what
+/// can be pressed right now rather than being a standing notice.
 #[must_use]
 pub fn hints(notes: &Notes) -> Vec<Hint> {
     // Which keys would change the note the caret is in, and so which the
-    // foot may offer: a note another Obelus has the conversation of can be
+    // palette may offer: a note another Obelus has the conversation of can be
     // read and copied out of and not changed.
     let elsewhere = notes.selected_is_elsewhere();
     use crossterm::event::{KeyCode, KeyModifiers};
@@ -48,9 +49,6 @@ pub fn hints(notes: &Notes) -> Vec<Hint> {
     let bare = |code| chord(code, KeyModifiers::NONE);
     let alt = |code| chord(code, KeyModifiers::ALT);
     let on = notes.selected_note();
-    // A key here is worth a row of the reader's screen or not worth saying
-    // at all: nothing else on the page lists them.
-    //
     // Nothing about typing, the arrows or the line break: this is a page
     // being written, and what a page being written does with a letter is
     // not news. `enter` is here for the opposite reason -- it is what a
@@ -60,30 +58,43 @@ pub fn hints(notes: &Notes) -> Vec<Hint> {
     // Nothing about copy, cut and paste either: here they are what they are
     // everywhere else.
     vec![
-        Hint::new(bare(KeyCode::Enter), "Another"),
-        Hint::new(alt(KeyCode::Char(' ')), "Done").when(on.is_some() && !elsewhere),
-        Hint::new(alt(KeyCode::Char('o')), "Go there").when(notes.can_go()),
+        Hint::new(bare(KeyCode::Enter), "Another").about("Start a new note after this one"),
+        Hint::new(alt(KeyCode::Char(' ')), "Done")
+            .about("Tick this note off, or put it back")
+            .when(on.is_some() && !elsewhere),
+        Hint::new(alt(KeyCode::Char('o')), "Go there")
+            .about("Go to the place this note is about")
+            .when(notes.can_go()),
         // Not where another Obelus has that conversation open: a
         // conversation is not a thing two of them may have at once, so the
-        // key does nothing there and a foot offering it would be the page
-        // promising something it will not do. Which is why every key above
-        // and below that would *change* such a note is held back too: the
-        // caret still sits in it, so the foot is the only thing that can
-        // say what the next key will do.
-        Hint::new(alt(KeyCode::Char('a')), "Talk").when(on.is_some() && !elsewhere),
+        // key does nothing there and a palette offering it would be the
+        // page promising something it will not do. Which is why every key
+        // above and below that would *change* such a note is held back too:
+        // the caret still sits in it, so the palette is the only thing that
+        // can say what the next key will do.
+        Hint::new(alt(KeyCode::Char('a')), "Talk")
+            .about("Talk to the agent about this note")
+            .when(on.is_some() && !elsewhere),
         // Taking a whole note away is the one thing here a reader will go
         // looking for and not find, because backspace on its own is a
         // letter.
-        Hint::new(alt(KeyCode::Backspace), "Drop").when(on.is_some() && notes.can_drop()),
+        Hint::new(alt(KeyCode::Backspace), "Drop")
+            .about("Take this note away, with what hangs under it")
+            .when(on.is_some() && notes.can_drop()),
         Hint::new(alt(KeyCode::Up), "Move")
             .or(alt(KeyCode::Down))
+            .about("Move this note past the one next to it")
             .when(notes.rows().len() > 1 && !elsewhere),
         // One key each, because they are offered separately: a note at the
         // top can only go in, and one as deep as it may go can only come
         // out. A single row for both would be on whenever either was, and
         // would be saying a key works when it does not.
-        Hint::new(bare(KeyCode::Tab), "Under").when(notes.can_shift(false)),
-        Hint::new(chord(KeyCode::BackTab, KeyModifiers::SHIFT), "Out").when(notes.can_shift(true)),
+        Hint::new(bare(KeyCode::Tab), "Under")
+            .about("Put this note under the one above it")
+            .when(notes.can_shift(false)),
+        Hint::new(chord(KeyCode::BackTab, KeyModifiers::SHIFT), "Out")
+            .about("Bring this note out from under the one above")
+            .when(notes.can_shift(true)),
     ]
 }
 
@@ -105,8 +116,7 @@ pub fn text_width_in(area: Rect) -> u16 {
 pub fn caret(area: Rect, notes: &Notes) -> Option<ratatui::layout::Position> {
     let composer = notes.writing()?;
     let at = notes.writing_at()?;
-    let hints = hints(notes);
-    let list = list_region(area, &hints);
+    let list = list_region(area);
     let window = notes.window();
     let (line, cell) = composer.caret(notes.caret_width());
     // From the caret's own row, not the note's first: in a note longer than
@@ -133,14 +143,13 @@ pub fn caret(area: Rect, notes: &Notes) -> Option<ratatui::layout::Position> {
 /// arithmetics for one geometry is two chances to disagree.
 ///
 /// `None` for a point that is not in the note being written -- another
-/// note's row, the foot, outside the page. A click there is not a click in
+/// note's row, outside the page. A click there is not a click in
 /// the box, and the box is the only thing here with a caret in it.
 #[must_use]
 pub fn place_at(area: Rect, notes: &Notes, x: u16, y: u16) -> Option<(u16, u16)> {
     let composer = notes.writing()?;
     let at = notes.writing_at()?;
-    let hints = hints(notes);
-    let list = list_region(area, &hints);
+    let list = list_region(area);
     if y < list.y || y >= list.bottom() || x < list.x + MARGIN || x >= list.right() {
         return None;
     }
@@ -185,7 +194,7 @@ pub enum Column {
 /// `None` for a point outside the list, or past the last row.
 #[must_use]
 pub fn row_at(area: Rect, notes: &Notes, x: u16, y: u16) -> Option<(usize, Column)> {
-    let list = list_region(area, &hints(notes));
+    let list = list_region(area);
     if y < list.y || y >= list.bottom() || x < list.x || x >= list.right() {
         return None;
     }
@@ -391,10 +400,7 @@ impl Widget for TodoUi<'_> {
                 .fg(self.theme.foreground)
                 .bg(self.theme.background),
         );
-        let hints = hints(self.notes);
-        foot(cells, area, &hints, self.theme);
-
-        let list = list_region(area, &hints);
+        let list = list_region(area);
         if list.height == 0 {
             return;
         }

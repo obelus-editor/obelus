@@ -1,5 +1,12 @@
-//! The keys at the foot of a view, a panel, and what a list says when it has
+//! What a view's own keys do, a panel, and what a list says when it has
 //! nothing in it.
+//!
+//! A view's keys are said in the first tab of the palette opened over it,
+//! and not along its foot. A foot was two rows of every list and every page,
+//! and it was where the keys were cut for width; the palette has the room
+//! for every one of them, and they can be pressed from it by name. The two
+//! pages that ask a question keep theirs ([`foot`]): nothing opens over
+//! them, and the key that leaves is the only way off.
 
 use super::*;
 
@@ -17,7 +24,7 @@ pub struct Hint {
     /// `alt+up` and `alt+down` are one act in two directions, and two rows
     /// saying "move it up" and "move it down" is the same sentence twice.
     pub and_also: Option<obelus_keymap::KeyChord>,
-    /// What it does, in the one word the foot has room for.
+    /// What it does, in a word or two: the row's name in the palette.
     pub does: Option<&'static str>,
     /// Which way it is set, for a key whose whole job is a switch.
     ///
@@ -28,23 +35,27 @@ pub struct Hint {
     ///
     /// `None` for a key that does something rather than sets something.
     pub switched: Option<bool>,
+    /// What it does, in a sentence: the row's gloss in the palette, after
+    /// the word, the way a command's title follows its name there.
+    pub about: Option<&'static str>,
+    /// Whether the view has this key at all where the reader is.
+    ///
+    /// Not whether it does anything now, which is [`Hint::usable`] and is
+    /// drawn dim. This is the question not arising: a search of one file
+    /// has no outside to reach, and the changed files are git's answer and
+    /// not a walk that could offer an ignored one. A row for those would be
+    /// a key of some other tab, and it is left out rather than dimmed.
+    pub here: bool,
     /// Whether it does anything *now*.
     ///
-    /// Worked out per frame by whoever knows: a note about the project has
-    /// nowhere to go, so there is no "go there" on the foot while the
-    /// selection is on one. The foot draws what can be pressed, and what it
-    /// was told to keep ([`Hint::kept`]).
+    /// Worked out by whoever knows: a note about the project has nowhere
+    /// to go, so "go there" is dim in the palette while the selection is on
+    /// one, and a key whose row is dim does nothing there.
     pub usable: bool,
-    /// Whether the foot keeps it, greyed, where it does nothing.
-    ///
-    /// For the one key a view has: dropped from a foot with nothing else
-    /// on it, it takes the whole foot with it, and the view grows and
-    /// shrinks by two rows as the reader walks past the rows it works on.
-    pub kept: bool,
 }
 
 impl Hint {
-    /// A key, and the word the foot says it with.
+    /// A key, and the word it is said with.
     #[must_use]
     pub const fn new(chord: obelus_keymap::KeyChord, does: &'static str) -> Self {
         Self {
@@ -52,8 +63,9 @@ impl Hint {
             and_also: None,
             does: Some(does),
             switched: None,
+            about: None,
             usable: true,
-            kept: false,
+            here: true,
         }
     }
 
@@ -71,10 +83,17 @@ impl Hint {
         self
     }
 
-    /// Says the foot keeps it, greyed, while it does nothing.
+    /// Says what it does, in a sentence.
     #[must_use]
-    pub const fn kept(mut self) -> Self {
-        self.kept = true;
+    pub const fn about(mut self, about: &'static str) -> Self {
+        self.about = Some(about);
+        self
+    }
+
+    /// Says whether the view has it at all where the reader is.
+    #[must_use]
+    pub const fn only_where(mut self, here: bool) -> Self {
+        self.here = here;
         self
     }
 
@@ -365,22 +384,14 @@ pub fn footed(area: Rect, hints: &[Hint]) -> Rect {
     }
 }
 
-/// The keys a view answers to, along the bottom of it under a rule.
+/// The keys a page that asks a question answers to, along the bottom of it
+/// under a rule: which project, and the project having gone.
 ///
-/// The ones that can be pressed at the moment, and those a view keeps there
-/// greyed where they cannot ([`Hint::kept`]). At the foot rather than beside
-/// a title, because a key needs a word and words need room.
-///
-/// What belongs here is what *this* view does. A key that means the same
-/// thing wherever the reader is does not: escape backs out of the nearest
-/// thing everywhere in Obelus -- `keymap::why_not` refuses to rebind it for
-/// that reason -- so a foot that spends a third of itself saying `Leave` is
-/// a row of the reader's screen saying what every other view already said.
-///
-/// There is no list of every key behind this row. There was a card of them,
-/// on a key of its own, and nearly every line of it was this row said again
-/// at length: what it added was escape, keys that could not be pressed at
-/// the moment, and keys cut for width -- and the cut is said here.
+/// The ones that can be pressed at the moment. Only those two pages, because
+/// every other view says its keys in the palette opened over it; these are
+/// the two nothing opens over, and escape does not leave either -- there is
+/// nothing behind them -- so the key that leaves Obelus is written here or
+/// nowhere.
 pub fn foot(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme) {
     if hints.is_empty() || area.height < FOOT_ROWS {
         return;
@@ -408,7 +419,7 @@ pub fn foot(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme) {
 
     let edge = area.x + area.width;
     let mut x = area.x + 2;
-    for hint in hints.iter().filter(|hint| hint.usable || hint.kept) {
+    for hint in hints.iter().filter(|hint| hint.here && hint.usable) {
         let keys = hint.keys();
         // Saturating rather than refused: a hint wider than the screen can
         // hold is one that does not fit, which is the same answer the row
@@ -501,4 +512,63 @@ pub fn nothing_yet(cells: &mut CellBuffer, area: Rect, reason: &str, phase: u32,
         ..area
     };
     nothing(cells, after, reason, theme);
+}
+
+#[cfg(test)]
+mod tests {
+    use crossterm::event::{KeyCode, KeyModifiers};
+    use obelus_theme::builtin::DARK;
+
+    use super::*;
+
+    /// The row of keys along one width, as text.
+    fn drawn(hints: &[Hint], width: u16) -> String {
+        let area = Rect::new(0, 0, width, FOOT_ROWS);
+        let mut cells = CellBuffer::empty(area);
+        foot(&mut cells, area, hints, &DARK);
+        (0..width)
+            .map(|x| cells[(x, 1)].symbol().to_string())
+            .collect()
+    }
+
+    /// A foot that ran out of room says so, rather than looking complete.
+    ///
+    /// The page that asks which project answers to three keys, and on a
+    /// narrow terminal the row holds one of them. What it used to do with
+    /// the rest was stop -- leaving a foot indistinguishable from one that
+    /// had said everything it had.
+    ///
+    /// Broken deliberately by returning from `foot` without calling `cut`:
+    /// the narrow row looks exactly like the wide one.
+    #[test]
+    fn a_foot_that_ran_out_of_room_says_so() {
+        let bare = |code| obelus_keymap::KeyChord::new(code, KeyModifiers::NONE);
+        let hints = [
+            Hint::new(bare(KeyCode::Enter), "Open"),
+            Hint::new(bare(KeyCode::Delete), "Forget"),
+            Hint::new(
+                obelus_keymap::KeyChord::new(KeyCode::Char('q'), KeyModifiers::CONTROL),
+                "Leave",
+            ),
+        ];
+        let whole = drawn(&hints, 80);
+        assert!(
+            whole.contains("Leave"),
+            "the wide row is not whole: {whole:?}"
+        );
+        assert!(
+            !whole.contains('\u{2026}'),
+            "a row with room for everything is marked as cut: {whole:?}"
+        );
+
+        let narrow = drawn(&hints, 22);
+        assert!(
+            !narrow.contains("Leave"),
+            "nothing was dropped, so this proves nothing: {narrow:?}"
+        );
+        assert!(
+            narrow.contains('\u{2026}'),
+            "the row was cut and did not say so: {narrow:?}"
+        );
+    }
 }

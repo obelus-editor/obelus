@@ -1327,13 +1327,13 @@ fn the_theme_worn_says_when_it_is_behind() {
 }
 
 /// Enter on a theme installed and current wears it, and keeps it -- the
-/// same as choosing it from the list of themes -- and the foot offers the
-/// key for it.
+/// same as choosing it from the list of themes -- and the palette offers
+/// the key for it.
 ///
 /// Deliberate breaks: the page's `WearTheme` handed to nothing (the theme
 /// is then still the one before), `may_be_worn` false for every card (enter
-/// then does nothing and the foot offers no `Use`), the foot saying
-/// another word beside the key (`Wear`), and `choose_theme`
+/// then does nothing and the palette offers no `Use`), the palette saying
+/// another word for the key (`Wear`), and `choose_theme`
 /// swapped for `set_theme` alone (nothing is written).
 #[test]
 fn enter_wears_a_theme_already_installed() {
@@ -1348,17 +1348,22 @@ fn enter_wears_a_theme_already_installed() {
     on_the_themes_page(&mut app);
     support::type_text(&mut app, "spare");
 
-    let dump = support::render(&mut app, 90, 30);
-    // The word beside the key on the foot, and not anywhere on the screen:
-    // a theme's description could say "Use" as well.
-    let beside_enter = support::text_block(&dump)
-        .lines()
-        .find_map(|row| row.split_once("Enter"))
-        .and_then(|(_, after)| after.split_whitespace().next());
+    let enter = support::keys_here(&mut app)
+        .into_iter()
+        .find(|key| {
+            key.key
+                == obelus_keymap::KeyChord::new(
+                    KeyCode::Enter,
+                    crossterm::event::KeyModifiers::NONE,
+                )
+                .label()
+        })
+        .filter(|key| key.usable)
+        .map(|key| key.does);
     assert_eq!(
-        beside_enter,
+        enter.as_deref(),
         Some("Use"),
-        "the foot does not offer enter:\n{dump}"
+        "the palette does not offer enter"
     );
 
     support::press(&mut app, KeyCode::Enter);

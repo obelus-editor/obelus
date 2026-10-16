@@ -42,6 +42,12 @@ fn open(app: &mut App, layer: Layer) {
         Layer::Counts => dispatch::dispatch(app, Command::CountLines),
         Layer::Settings => dispatch::dispatch(app, Command::ConfigOpen),
         Layer::Picker => dispatch::dispatch(app, Command::DocumentList),
+        // Over a list, by its key: what it is opened over is a view with
+        // keys of its own, and nothing else is.
+        Layer::Palette => {
+            dispatch::dispatch(app, Command::DocumentList);
+            support::press_control(app, 'p');
+        }
         // No command opens this one: it is what enter does on a setting
         // that holds a list of names, and the only such setting is a
         // window's -- so a test running as a terminal has no row to press.
@@ -140,6 +146,17 @@ fn escape_from_anywhere_comes_back_to_the_file() {
                 "escape took the page away with nowhere to go back to"
             );
             continue;
+        }
+        // And the palette over a view, which is the one thing Obelus opens
+        // over another: escape gives up on it and the reader is in the view
+        // again, and the escape after that is the view's.
+        if layer == Layer::Palette {
+            assert_eq!(
+                app.layers().nearest(),
+                Some(Layer::Picker),
+                "escape from the palette did not go back to the list under it"
+            );
+            press(&mut app, KeyCode::Esc);
         }
         assert!(
             !app.layers().any(),
@@ -599,7 +616,7 @@ fn the_input_method_is_on_only_where_typing_goes() {
         open(&mut app, layer);
         let expected = match layer {
             Layer::Counts | Layer::Gone => false,
-            Layer::Settings | Layer::Names | Layer::Picker | Layer::Prompt => true,
+            Layer::Settings | Layer::Names | Layer::Picker | Layer::Palette | Layer::Prompt => true,
         };
         assert_eq!(app.takes_text(), expected, "{layer:?}");
         assert_eq!(

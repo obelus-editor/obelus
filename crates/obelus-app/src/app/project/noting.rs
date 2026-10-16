@@ -737,8 +737,7 @@ impl App {
         let area = self.editor_area;
         // Before the notes are borrowed to take the key: which notes
         // another Obelus has the conversation of decides what this key may
-        // change and which keys the foot offers, and the rows the list gets
-        // are what is left under the foot. Said here as well as from the
+        // change. Said here as well as from the
         // frame, because a key acts before the next frame -- the page is
         // opened by one key and typed into by the next.
         let elsewhere = self.which_notes_are_elsewhere();
@@ -747,8 +746,7 @@ impl App {
         };
         notes.lay_out(laid);
         notes.these_are_elsewhere(elsewhere);
-        let hints = obelus_ui::todo::hints(notes);
-        let list = obelus_ui::todo::list_region(area, &hints);
+        let list = obelus_ui::todo::list_region(area);
         let outcome = notes.handle_key(key, list.height);
         // Typing, which is the one change that is not one act: every other
         // way the notes change is written the moment it happens, and this

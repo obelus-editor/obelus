@@ -442,7 +442,7 @@ impl App {
         }
     }
 
-    fn handle_key(&mut self, key: KeyEvent) {
+    pub(in crate::app) fn handle_key(&mut self, key: KeyEvent) {
         // Discards releases once, here, so nothing further down has to
         // remember to.
         if KeyChord::from_event(&key).is_none() {

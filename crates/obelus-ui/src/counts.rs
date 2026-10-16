@@ -59,20 +59,24 @@ const FURNITURE: u16 = 3;
 /// list: a page is worth what is on screen, and two answers to how much that
 /// is would be a page that overshoots by however much they disagreed.
 #[must_use]
-pub fn list_region(area: Rect, counts: &Counts) -> Rect {
-    let area = crate::footed(area, &hints(counts));
+pub fn list_region(area: Rect) -> Rect {
     Rect {
         y: area.y + FURNITURE,
-        height: area.height.saturating_sub(FURNITURE),
+        height: area.height.saturating_sub(FURNITURE + BELOW),
         ..area
     }
 }
+
+/// The rows under the list: a rule, and the row that points at the
+/// palette -- the one every other page has its box on, and the counts have
+/// no box to put there.
+const BELOW: u16 = 2;
 
 /// Which row of the table a point on screen is on, and whether it is on
 /// that row's fold mark.
 ///
 /// The way back out of the arithmetic the drawing goes in by: the rows sit
-/// below the furniture and above the foot, the window says which of them is
+/// below the furniture, the window says which of them is
 /// first, and a row's own columns begin one in and two more for every
 /// branch drawn in front of it. Read here from the same places the drawing
 /// takes it, because a pointer that landed on a different row than the one
@@ -81,7 +85,7 @@ pub fn list_region(area: Rect, counts: &Counts) -> Rect {
 /// `None` for a point outside the rows, or past the last of them.
 #[must_use]
 pub fn row_at(area: Rect, counts: &Counts, x: u16, y: u16) -> Option<(usize, bool)> {
-    let body = list_region(area, counts);
+    let body = list_region(area);
     if y < body.y || y >= body.bottom() || x < body.x || x >= body.right() {
         return None;
     }
@@ -121,23 +125,22 @@ pub fn hints(counts: &Counts) -> Vec<Hint> {
     let bare = |code| chord(code, KeyModifiers::NONE);
     let on = counts.rows().get(counts.window().focus());
     let folds = on.and_then(|row| row.open);
-    vec![
-        Hint::new(
-            bare(KeyCode::Enter),
-            match folds {
-                Some(true) => "Close",
-                Some(false) => "Open",
-                None => "Read it",
-            },
-        )
-        .when(on.is_some_and(|row| row.go.is_some())),
-    ]
+    vec![{
+        let (word, about) = match folds {
+            Some(true) => ("Close", "Fold away what is under this row"),
+            Some(false) => ("Open", "Show what is under this row"),
+            None => ("Read it", "Open this file"),
+        };
+        Hint::new(bare(KeyCode::Enter), word)
+            .about(about)
+            .when(on.is_some_and(|row| row.go.is_some()))
+    }]
 }
 
 /// How many rows of list a region has room for.
 #[must_use]
-pub fn list_height(area: Rect, counts: &Counts) -> u16 {
-    list_region(area, counts).height
+pub fn list_height(area: Rect) -> u16 {
+    list_region(area).height
 }
 
 /// Which columns fit, for a region this wide.
@@ -242,6 +245,8 @@ impl Layout {
 pub struct CountsView<'a> {
     counts: &'a Counts,
     theme: &'a Theme,
+    /// The palette's key, which the row under the table points at.
+    palette: Option<String>,
     /// Whether nothing is over the counts, which is whether they may mark
     /// the row and the tab the keys are on -- see [`crate::in_front`].
     in_front: bool,
@@ -253,6 +258,7 @@ impl<'a> CountsView<'a> {
     pub fn new(app: &'a impl Screen) -> Option<Self> {
         Some(Self {
             counts: app.counts()?,
+            palette: crate::status::palette_key(app),
             theme: app.theme(),
             in_front: crate::in_front(app, Some(crate::layers::Layer::Counts)),
         })
@@ -311,8 +317,7 @@ impl Widget for CountsView<'_> {
         );
 
         let rows = self.counts.rows();
-        let hints = hints(self.counts);
-        let body = list_region(area, self.counts);
+        let body = list_region(area);
         if rows.is_empty() {
             crate::nothing(
                 cells,
@@ -327,8 +332,34 @@ impl Widget for CountsView<'_> {
         } else {
             self.rows(cells, body, layout);
         }
-
-        crate::foot(cells, area, &hints, self.theme);
+        if let Some(key) = &self.palette
+            && area.height >= FURNITURE + BELOW
+        {
+            let row = area.bottom() - 1;
+            crate::rule(
+                cells,
+                Rect {
+                    y: row - 1,
+                    height: 1,
+                    ..area
+                },
+                self.theme,
+            );
+            crate::status::more(
+                cells,
+                Rect {
+                    y: row,
+                    height: 1,
+                    ..area
+                },
+                // Where the notes' name starts on their row, and a file's
+                // path on its: the first column of a row's words.
+                1,
+                area.right(),
+                key,
+                self.theme,
+            );
+        }
     }
 }
 
@@ -675,20 +706,19 @@ mod tests {
     /// `obelus-app/tests/app/counts.rs`.
     #[test]
     fn the_list_is_what_is_left_under_the_tabs_and_the_headings() {
-        let counts = Counts::new();
         let area = Rect::new(0, 0, 80, 24);
-        let list = list_region(area, &counts);
-        // Under the tabs, the rule and the headings; over the rule and the
-        // row of keys at the foot.
-        assert_eq!(list_height(area, &counts), 24 - 3 - crate::FOOT_ROWS);
-        assert_eq!(list.height, list_height(area, &counts));
+        let list = list_region(area);
+        // Under the tabs, the rule and the headings, and over the rule and
+        // the row that points at the palette.
+        assert_eq!(list_height(area), 24 - 3 - 2);
+        assert_eq!(list.height, list_height(area));
         assert_eq!(list.y, area.y + 3);
         assert_eq!(
             list.bottom(),
-            area.bottom() - crate::FOOT_ROWS,
-            "the list runs under its own foot"
+            area.bottom() - 2,
+            "the list runs into the row pointing at the palette"
         );
         // A region with no room for a list at all does not go round.
-        assert_eq!(list_height(Rect::new(0, 0, 80, 2), &counts), 0);
+        assert_eq!(list_height(Rect::new(0, 0, 80, 2)), 0);
     }
 }

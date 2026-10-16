@@ -43,6 +43,7 @@ mod making_files;
 mod markdown;
 mod names;
 mod opening;
+mod palette;
 mod picker;
 mod pointer;
 mod pointing;

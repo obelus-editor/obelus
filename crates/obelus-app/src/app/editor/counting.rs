@@ -51,10 +51,7 @@ impl App {
         // this is the one view with no status row under it -- so the list
         // and the keys that move about it cannot disagree about how far a
         // page goes.
-        let Some(counts) = self.counts.as_ref() else {
-            return false;
-        };
-        let rows = obelus_ui::counts::list_height(self.screen_area, counts);
+        let rows = obelus_ui::counts::list_height(self.screen_area);
         let Some(counts) = self.counts.as_mut() else {
             return false;
         };

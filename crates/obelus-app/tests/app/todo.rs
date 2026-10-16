@@ -125,13 +125,21 @@ fn every_line_of_every_note_is_on_the_page() {
     // Whichever pair is drawn -- the Nerd Font's where there is one, the
     // plain ones where there is not. What has to be true is that a note to
     // do and a note that is done are not the same box.
-    let boxes: Vec<char> = text
-        .lines()
-        .filter_map(|row| row.split_once('|').map(|(_, rest)| rest))
-        .filter_map(|row| row.chars().nth(1))
-        .filter(|glyph| !glyph.is_whitespace())
+    //
+    // The glyph in front of each note's words. This read the second column
+    // of every row once, which is not where a box is: what it compared was
+    // the rule over the foot, the rule over the status row and a letter of
+    // the status row, and it passed. The foot going is what showed it.
+    let boxes: Vec<char> = ["wire the counts", "this cache does not", "settings live in"]
+        .into_iter()
+        .map(|words| {
+            let row = text
+                .lines()
+                .find(|row| row.contains(words))
+                .unwrap_or_else(|| panic!("no {words:?}:\n{dump}"));
+            support::glyph_before(row, words)
+        })
         .collect();
-    assert!(boxes.len() >= 3, "not a box per note:\n{dump}");
     assert_eq!(boxes[0], boxes[1], "two notes to do are drawn differently");
     assert_ne!(
         boxes[0], boxes[2],
@@ -501,7 +509,7 @@ fn the_blank_between_two_notes_is_nowhere_to_stand() {
     assert_eq!(on(&app), 0, "the caret is not where this test thinks");
     assert!(blank(&app, 1), "the second row is not a blank");
     let area = app.editor_area_for_test();
-    let top = obelus_ui::todo::list_region(area, &[]).y;
+    let top = obelus_ui::todo::list_region(area).y;
     app.handle(Event::Pointer {
         kind: obelus_app::event::Pointer::Pressed,
         x: area.x + 10,
@@ -690,6 +698,31 @@ fn alt_space_ticks_a_note() {
     assert_eq!(notes[1]["done"].as_bool(), Some(false));
 }
 
+/// The palette over the notes leads with their keys, and one chosen from it
+/// is pressed on the note the reader was on.
+///
+/// Broken deliberately by giving the notes no keys of their own in the
+/// palette (`App::keys_here`): it opened on "All", and there was no "Done"
+/// to choose.
+#[test]
+fn a_note_is_ticked_from_the_palette() {
+    let scratch = tree("tick-from-the-palette", THREE);
+    let mut app = open(&scratch, 76, 18);
+    support::press_control(&mut app, 'p');
+    let palette = app.picker().expect("the palette");
+    assert_eq!(palette.tabs().first().map(String::as_str), Some("Here"));
+    support::type_text(&mut app, "Done");
+    press(&mut app, KeyCode::Enter);
+
+    assert!(app.picker().is_none(), "the palette stayed up");
+    let written =
+        std::fs::read_to_string(obelus_todo::path(scratch.path()).expect("a tree that is there"))
+            .expect("the notes");
+    let table = written.parse::<toml::Table>().expect("it parses");
+    let notes = table["todo"].as_array().expect("the notes");
+    assert_eq!(notes[0]["done"].as_bool(), Some(true), "{written}");
+}
+
 /// `alt+backspace` takes the whole note away -- backspace on its own is a
 /// character here.
 #[test]
@@ -872,67 +905,25 @@ fn a_note_with_nothing_in_it_is_dropped() {
     );
 }
 
-/// The foot says only what can be pressed.
+/// The palette says which of the notes' keys can be pressed.
+///
+/// Broken deliberately by offering "Go there" whatever the note
+/// (`notes.can_go()` left off it in `todo::hints`).
 #[test]
-fn the_foot_drops_a_key_that_would_do_nothing() {
+fn the_palette_dims_a_key_that_would_do_nothing() {
     let scratch = tree("usable", THREE);
     let mut app = open(&scratch, 76, 18);
 
     // The first note is about the project, so there is nowhere to go.
-    let text = support::text_block(&support::render(&mut app, 76, 18)).to_string();
-    assert!(!text.contains("Go there"), "{text}");
-    assert!(text.contains("Another"), "{text}");
+    let usable = support::usable_here(&mut app);
+    assert!(!usable.contains(&"Go there".to_string()), "{usable:?}");
+    assert!(usable.contains(&"Another".to_string()), "{usable:?}");
 
     press(&mut app, KeyCode::Down);
-    let text = support::text_block(&support::render(&mut app, 76, 18)).to_string();
+    let usable = support::usable_here(&mut app);
     assert!(
-        text.contains("Go there"),
-        "the key that works is missing:\n{text}"
-    );
-}
-
-/// A foot that ran out of room says so, rather than looking complete.
-///
-/// The notes answer to eight keys. On a narrow terminal the row can hold
-/// three of them, and what it used to do with the rest was stop -- leaving
-/// a foot indistinguishable from one that had said everything it had. A
-/// reader was told this view answers to three keys.
-///
-/// Broken deliberately by returning from `ui::foot` without calling
-/// `cut`: the narrow row looks exactly like the wide one and this goes red.
-#[test]
-fn a_foot_that_ran_out_of_room_says_so() {
-    let scratch = tree("cut", THREE);
-    let mut app = open(&scratch, 76, 18);
-
-    let foot = |app: &mut App, width: u16| -> String {
-        let dump = support::render(app, width, 18);
-        let text = support::text_block(&dump);
-        let rows: Vec<&str> = text.lines().collect();
-        rows[rows.len() - 3].to_string()
-    };
-
-    // A hundred columns, because without the glyphs a key is spelled out
-    // -- `alt+backspace` rather than a cap of two characters -- and every
-    // key the notes answer to takes that much.
-    let whole = foot(&mut app, 100);
-    assert!(
-        whole.contains("Move"),
-        "the wide row is not the whole row:\n{whole}"
-    );
-    assert!(
-        !whole.contains('\u{2026}'),
-        "a row with room for everything is marked as cut:\n{whole}"
-    );
-
-    let narrow = foot(&mut app, 40);
-    assert!(
-        !narrow.contains("Move"),
-        "nothing was dropped, so this proves nothing:\n{narrow}"
-    );
-    assert!(
-        narrow.contains('\u{2026}'),
-        "the row was cut and did not say so:\n{narrow}"
+        usable.contains(&"Go there".to_string()),
+        "the key that works is dim: {usable:?}"
     );
 }
 
@@ -1052,17 +1043,20 @@ fn the_caret_is_on_the_cell_the_letter_goes_in() {
     );
 }
 
-/// Taking a whole note away is at the foot: backspace on its own is a
+/// Taking a whole note away is in the palette: backspace on its own is a
 /// letter here, so it is the one thing a reader will go looking for and not
 /// find. There is nowhere else it could be said -- this view has no card.
+///
+/// Broken deliberately by leaving "Drop" out of `todo::hints`.
 #[test]
-fn dropping_a_note_is_at_the_foot() {
-    let scratch = tree("drop-foot", THREE);
-    // Wide enough for the whole foot with every key spelled out, which is
-    // how it is drawn without the glyphs.
+fn dropping_a_note_is_in_the_palette() {
+    let scratch = tree("drop-palette", THREE);
     let mut app = open(&scratch, 100, 14);
-    let text = support::text_block(&support::render(&mut app, 100, 14)).to_string();
-    assert!(text.contains("Drop"), "the foot does not say how:\n{text}");
+    let usable = support::usable_here(&mut app);
+    assert!(
+        usable.contains(&"Drop".to_string()),
+        "the palette does not say how: {usable:?}"
+    );
 }
 
 /// A note too long for the row wraps, whatever the reader's wrapping says.
@@ -3351,7 +3345,7 @@ fn a_press_on_a_notes_box_ticks_it_and_on_its_mark_opens_the_conversation() {
     let rows = app.notes().expect("the notes").rows().len();
     assert!(rows >= 2, "there is only one row, so this proves nothing");
     let area = app.editor_area_for_test();
-    let top = obelus_ui::todo::list_region(area, &[]).y;
+    let top = obelus_ui::todo::list_region(area).y;
     let press = |app: &mut obelus_app::app::App, row: u16, x: u16| {
         app.handle(obelus_app::event::Event::Pointer {
             kind: obelus_app::event::Pointer::Pressed,
@@ -3425,7 +3419,7 @@ fn a_press_on_a_page_over_the_notes_stays_on_the_page() {
 
         // The second note's box, as the test above finds it.
         let area = app.editor_area_for_test();
-        let top = obelus_ui::todo::list_region(area, &[]).y;
+        let top = obelus_ui::todo::list_region(area).y;
         app.handle(Event::Pointer {
             kind: obelus_app::event::Pointer::Pressed,
             x: area.x + 6,
@@ -3464,11 +3458,7 @@ fn a_list_of_notes_taller_than_the_screen_scrolls_under_the_caret() {
     let mut app = open(&scratch, 76, 18);
     let _ = support::render(&mut app, 76, 18);
     let area = app.editor_area_for_test();
-    let rows = obelus_ui::todo::list_region(
-        area,
-        &obelus_ui::todo::hints(app.notes().expect("the notes")),
-    )
-    .height;
+    let rows = obelus_ui::todo::list_region(area).height;
     assert!(
         usize::from(rows) < app.notes().expect("the notes").rows().len(),
         "the list fits on the screen, so this proves nothing"

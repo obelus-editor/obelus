@@ -257,6 +257,12 @@ pub struct App {
     ///
     /// One field for all four, because they differ only in what they list.
     picker: Option<Picker>,
+    /// The palette, where it was opened over a view that has keys of its
+    /// own rather than instead of it.
+    ///
+    /// Not `picker`, because that view is often a picker that is still being
+    /// filled (`Layer::Palette`).
+    palette: Option<Picker>,
     /// Sender for the background walk, once the loop has started.
     events: Option<std::sync::mpsc::Sender<Event>>,
     /// One language server per language, started when a file of that language
@@ -614,6 +620,7 @@ impl App {
             theme_name: obelus_config::DEFAULT_THEME.to_string(),
             wallpaper: None,
             picker: None,
+            palette: None,
             servers: HashMap::new(),
             stopped: HashSet::new(),
             servers_on: false,
@@ -1138,6 +1145,12 @@ impl App {
     #[must_use]
     pub const fn picker(&self) -> Option<&Picker> {
         self.picker.as_ref()
+    }
+
+    /// The palette, where it is open over a view rather than instead of it.
+    #[must_use]
+    pub const fn palette(&self) -> Option<&Picker> {
+        self.palette.as_ref()
     }
 
     /// What went wrong on the way up, in one list.

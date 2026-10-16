@@ -192,6 +192,8 @@ pub fn cursor_position(area: Rect, app: &impl Screen) -> Option<Position> {
             }
             return on_the_status_row(status::prompt_caret(picker));
         }
+        // Always typed into: it is opened in order to say what is wanted.
+        Some(Layer::Palette) => return on_the_status_row(status::prompt_caret(app.palette()?)),
         // The same shape a picker's query has, because it is the same
         // thing: what has been typed narrows what is above it.
         Some(Layer::Names) => {
@@ -547,6 +549,24 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
                             app,
                             list,
                             Some(Layer::Picker),
+                            room_for_a_picker(regions.editor),
+                            regions.edge,
+                            Some(regions.status),
+                        );
+                    });
+                }
+            }
+            // Over the view it was opened from, in the room a list over the
+            // file would have: the view stays drawn behind it, unmarked,
+            // because the keys are not there.
+            Layer::Palette => {
+                if let Some(list) = app.palette() {
+                    bars::of(Whose::Palette, || {
+                        list_over(
+                            cells,
+                            app,
+                            list,
+                            Some(Layer::Palette),
                             room_for_a_picker(regions.editor),
                             regions.edge,
                             Some(regions.status),
@@ -996,7 +1016,4 @@ fn list_over(
             None => fill(cells, preview, Style::new().bg(app.theme().background)),
         }
     }
-
-    // Under the rows and the preview both: see `picker::foot_of`.
-    picker::foot_of(cells, list, room, app.theme());
 }
