@@ -684,8 +684,10 @@ pub enum Walked {
         /// that, because there is one selection on a screen.
         took_hold: bool,
     },
-    /// The down arrow, with nothing held, off the last row: where a page
-    /// with something under it goes on to that.
+    /// The down arrow without shift, off the last row: where a page with
+    /// something under it goes on to that. What was held is let go of,
+    /// because a caret moved on its own is a reader who has finished with
+    /// it.
     OffTheFoot,
     /// A key that is the cursor's and that took it nowhere.
     Stayed,

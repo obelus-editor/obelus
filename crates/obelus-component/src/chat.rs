@@ -27,15 +27,14 @@
 //! rebuilt from that update would lose its kind, its title and its place at the
 //! moment it succeeded.
 //!
-//! The transcript has a cursor, and it walks the words; tab goes to what
-//! acts. The arrows move it a character and a row at a time, over every row
-//! drawn -- prose, a blank, a heading -- because a reader taking a copy of a
-//! sentence has to be able to stand in it, and a press puts it where the
-//! pointer landed. Tab and shift and tab step to the next row that does
-//! something: a tool call names a file, a heading opens what is under it.
-//! None of them is lit while the cursor is on it: the caret says where the
-//! cursor is, a key at the row's end says what enter does there, and a light
-//! behind the row was drawn over what the reader had hold of in it.
+//! The transcript is a page with a cursor in it: the arrows walk the words
+//! and tab goes to what acts, by the rules [`crate::page`] keeps for every
+//! page read as rows, and a press puts the cursor where the pointer landed.
+//! What acts here is a tool call, which names a file, and a heading, which
+//! opens what is under it. None of them is lit while the cursor is on it: the
+//! caret says where the cursor is, a key at the row's end says what enter does
+//! there, and a light behind the row was drawn over what the reader had hold of
+//! in it.
 //!
 //! Enter opens what the row names -- in a buffer, and the conversation hides
 //! itself, because going somewhere means seeing it. Escape comes back out to
@@ -3159,7 +3158,7 @@ mod tests {
     /// `match`: enter on the code does nothing. By leaving the block out of
     /// `Row::acting`: every row of it is a thing of its own, so the first
     /// of them is the box's corner and tab lands there. By leaving
-    /// `next_stop_in` to stop on every row
+    /// `page::next_stop` to stop on every row
     /// that acts: the second tab is the next row of the block. And by
     /// standing at the start of the stop: tab puts the cursor on the
     /// corner of the box.
@@ -3644,7 +3643,7 @@ mod tests {
     /// -- because a plain wrapping gives one run carrying the whole row. So
     /// this was a fault nothing but an agent's own answer could reach, and
     /// it did not look like an off-by-one: `spot_at` handed back nothing
-    /// for the start of such a row, `spot_near` read that as "no words on
+    /// for the start of such a row, `page::spot_near` read that as "no words on
     /// this row at all" and went looking *down* the transcript the way it
     /// does for a blank or a heading, and the selection ran forwards from
     /// the cursor across the rows below it.

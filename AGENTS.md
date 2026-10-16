@@ -720,12 +720,15 @@ crates/
                       a card, not a picker, enter acts on the row the reader is
                       on, and a question the reader did not start says what it
                       is about (card); a tool call is somewhere to go, the
-                      transcript has a cursor and it walks the words, tab goes
-                      to what acts, a run of tool calls is one row, a change
+                      transcript is a page with a cursor in it, a run of tool
+                      calls is one row, a change
                       that has happened is the working tree's and one that has
                       not is the agent's to show, thinking is not folded away,
                       a call's title is three rows shut, a link is opened by
-                      a click and not by enter (chat); the page is Obelus's,
+                      a click and not by enter (chat); the cursor is a place
+                      on the screen and a selection is a place in the words,
+                      and the arrows walk every row drawn and tab goes to what
+                      acts (page); the page is Obelus's,
                       and so is the record of it (chat/kept); folding is one
                       act and the notes are the fourth place it happens, a note
                       somebody else is talking about is read here and not
