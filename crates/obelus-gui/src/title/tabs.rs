@@ -747,6 +747,13 @@ impl Strip {
         self.shutting = self.document(index);
     }
 
+    /// The pointer gone out of the window with a cross pressed: the button
+    /// may come up where the window never hears it, and a cross left
+    /// pressed would be drawn so whenever the pointer came back to it.
+    pub(crate) fn give_up_the_cross(&mut self) -> bool {
+        self.shutting.take().is_some()
+    }
+
     /// The button come up: the document whose cross it went down on, where
     /// it came up over that cross too. Nothing otherwise -- dragged off the
     /// cross before letting go, the way a button anywhere is given up on.
@@ -1072,6 +1079,32 @@ mod tests {
         strip.point(Some(260.0));
         assert_eq!(strip.at(260.0), Some(Spot::Shut(2)));
         assert_eq!(strip.shut(), None, "let go of on another cross");
+    }
+
+    /// A cross pressed and the pointer gone out of the window is given up:
+    /// coming back over it, it is neither drawn pressed nor closes.
+    ///
+    /// Deliberate break: hand back `false` from `give_up_the_cross` without
+    /// taking what was pressed. The cross is drawn pressed again when the
+    /// pointer comes back, with the button long since up.
+    #[test]
+    fn a_cross_pressed_is_given_up_when_the_pointer_leaves() {
+        let mut strip = Strip::default();
+        strip.told((0..3).map(|at| tab(at, at == 0)).collect());
+        settle(&mut strip);
+        strip.point(Some(170.0));
+        strip.press_the_cross(1);
+        strip.point(None);
+        assert!(strip.give_up_the_cross());
+        strip.point(Some(170.0));
+        let pressing = strip
+            .painted(true)
+            .expect("painted")
+            .tabs
+            .iter()
+            .any(|shown| shown.pressing);
+        assert!(!pressing, "drawn pressed with the button up");
+        assert_eq!(strip.shut(), None);
     }
 
     /// The cross is drawn on the tab being read and the one under the

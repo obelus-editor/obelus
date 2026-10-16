@@ -2413,7 +2413,8 @@ impl ApplicationHandler<Waking> for Showing {
             // Out of the window -- or, on Windows, onto the part of the bar
             // that drags it, which the window does not hear the pointer on.
             WindowEvent::CursorLeft { .. } => {
-                if self.strip.point(None) {
+                let gave_up = self.strip.give_up_the_cross();
+                if self.strip.point(None) || gave_up {
                     self.redraw();
                 }
             }

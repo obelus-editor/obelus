@@ -694,17 +694,18 @@ pub(crate) fn arrow_inks(more: bool, hovered: bool, dark: bool) -> (Option<[f32;
     }
 }
 
-/// What is behind a tab's cross on a page this dark: the arrows' light
-/// while the pointer is over it, a little more while it is pressed, and
-/// nothing otherwise -- see `tabs`.
+/// What is behind a tab's cross on a page this dark: the light the arrows
+/// and the window's buttons wear while the pointer is over them, fainter
+/// while it is pressed, as theirs is (`inks`), and nothing otherwise -- see
+/// `tabs`.
 pub(crate) const fn cross_light(over: bool, pressed: bool, dark: bool) -> Option<[f32; 4]> {
     let [r, g, b] = match dark {
         true => [1.0, 1.0, 1.0],
         false => [0.0, 0.0, 0.0],
     };
     match (over, pressed) {
-        (true, false) => Some([r, g, b, 0.08]),
-        (true, true) => Some([r, g, b, 0.14]),
+        (true, false) => Some([r, g, b, 0.06]),
+        (true, true) => Some([r, g, b, 0.04]),
         (false, _) => None,
     }
 }

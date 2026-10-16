@@ -131,22 +131,12 @@ impl App {
         if in_front && !self.gives_way_to_a_view() {
             return;
         }
-        if self.file(id).is_some_and(Buffer::is_dirty) {
+        let asked = self.asks_before_closing(id, |app| {
             if in_front {
-                self.put_away_the_views();
+                app.put_away_the_views();
             }
-            self.ask_before_closing(id);
-            return;
-        }
-        let running = self
-            .document(id)
-            .and_then(Document::terminal)
-            .is_some_and(|terminal| terminal.ended().is_none());
-        if running {
-            if in_front {
-                self.put_away_the_views();
-            }
-            self.ask_before_stopping(id);
+        });
+        if asked {
             return;
         }
         self.close(id);

@@ -387,8 +387,9 @@ impl Painter {
     }
 
     /// The cross at a tab's end that closes it, in the name's ink, on a
-    /// light of its own while the pointer is over it -- the arrows' light,
-    /// for the same reason: it is something on the bar to press.
+    /// light of its own while the pointer is over it -- see
+    /// `title::cross_light`: it is something on the bar to press, as the
+    /// arrows and the buttons are.
     fn cross(
         &mut self,
         tab: &crate::title::Shown,

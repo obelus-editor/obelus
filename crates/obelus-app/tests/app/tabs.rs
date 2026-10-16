@@ -439,7 +439,7 @@ fn a_tab_s_cross_closes_its_own_document() {
 /// goes, the way the key that closes does.
 ///
 /// Deliberate break: leave the `is_dirty` question out of
-/// `App::close_by_its_tab`. The file closes at once, and what was typed
+/// `App::asks_before_closing`. The file closes at once, and what was typed
 /// into it with it.
 #[test]
 fn a_tab_s_cross_asks_before_losing_unwritten_work() {
@@ -476,4 +476,36 @@ fn a_tab_s_cross_takes_its_row_out_of_the_list() {
     assert_eq!(rows(&app), Some(2));
     app.handle(Event::Shut(tab_for(&told, "two.rs")));
     assert_eq!(rows(&app), Some(1), "the closed document's row stayed");
+}
+
+/// The cross on a tab while a question on the status row is being typed
+/// into closes nothing, and leaves the question and what is typed in it.
+///
+/// Deliberate break: leave the `gives_way_to_a_view` refusal out of
+/// `App::close_by_its_tab`. The tab's file goes from under the question.
+#[test]
+fn a_tab_s_cross_does_not_take_a_question_away() {
+    let scratch = support::Scratch::new("tabs-shut-over-a-question");
+    let one = scratch.write(
+        "one.rs",
+        "fn one() {}
+",
+    );
+    let two = scratch.write(
+        "two.rs",
+        "fn two() {}
+",
+    );
+    let (mut app, told) = open(&[one, two]);
+    support::lay_out(&mut app, 60, 12);
+
+    app.new_file();
+    support::type_text(&mut app, "half");
+    app.handle(Event::Shut(tab_for(&told, "two.rs")));
+    assert_eq!(app.buffers_for_test().len(), 2, "closed under the question");
+    assert!(
+        app.prompt()
+            .is_some_and(|prompt| prompt.text().ends_with("half")),
+        "the question went"
+    );
 }
