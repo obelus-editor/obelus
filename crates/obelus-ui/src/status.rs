@@ -653,7 +653,6 @@ fn switches(cells: &mut CellBuffer, area: Rect, picker: &Picker, words: &str, th
     if on.is_empty() {
         return;
     }
-    let said = on.join(" \u{b7} ");
     let typed_here = match words.is_empty() {
         true => picker.invitation().unwrap_or(words),
         false => words,
@@ -663,22 +662,36 @@ fn switches(cells: &mut CellBuffer, area: Rect, picker: &Picker, words: &str, th
     let taken = 1usize
         .saturating_add(text_width(&typed(picker.question(), typed_here)))
         .saturating_add(5);
-    let wanted = text_width(&said);
+    // Each behind a ticked box, the control every switch in Obelus is drawn
+    // with -- the palette's rows, the settings -- so that a word here reads
+    // as a switch that is on rather than as a word. Words alone, joined by
+    // dots, read as a sentence nobody could parse.
+    let wanted = on
+        .iter()
+        .map(|word| usize::from(crate::TICK_WIDTH) + text_width(word))
+        .sum::<usize>()
+        .saturating_add(BETWEEN_SWITCHES * on.len().saturating_sub(1));
     if taken.saturating_add(wanted).saturating_add(1) > usize::from(area.width) {
         return;
     }
     let Ok(wanted) = u16::try_from(wanted) else {
         return;
     };
-    let x = area.right().saturating_sub(1).saturating_sub(wanted);
-    write(
-        cells,
-        x,
-        area.y,
-        &said,
-        Style::new().fg(theme.foreground).bg(theme.background),
-    );
+    let style = Style::new().fg(theme.foreground).bg(theme.background);
+    let mut x = area.right().saturating_sub(1).saturating_sub(wanted);
+    for (at, word) in on.iter().enumerate() {
+        if at > 0 {
+            x = x.saturating_add(u16::try_from(BETWEEN_SWITCHES).unwrap_or(0));
+        }
+        x = crate::ticked(cells, x, area.y, true, style);
+        x = write(cells, x, area.y, word, style);
+    }
 }
+
+/// The blank between two switches on the query's row: as wide as the one
+/// between the keys at a foot, so a word is read with the box in front of
+/// it and not with the one after.
+const BETWEEN_SWITCHES: usize = 3;
 
 /// What a list says about how much of it there is, at the far end of the
 /// row it is typed into, and the key that does something about it after

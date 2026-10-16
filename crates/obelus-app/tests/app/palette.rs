@@ -104,11 +104,12 @@ fn a_key_chosen_from_the_palette_is_pressed_in_the_view() {
     assert_eq!(search.query(), "fn", "what was typed in the search went");
 }
 
-/// A switch that is on is said on the row the query is typed into, and
-/// nothing is said there while they are all off.
+/// A switch that is on is said on the row the query is typed into, behind
+/// a ticked box, and nothing is said there while they are all off.
 ///
 /// Broken deliberately by not drawing them (`status::switches`): the row
-/// said nothing with the pattern switch on.
+/// said nothing with the pattern switch on. And by writing the word with
+/// no box in front of it: the word read as a word.
 #[test]
 fn a_switch_that_is_on_is_said_where_the_query_is() {
     let mut app = searching();
@@ -125,8 +126,17 @@ fn a_switch_that_is_on_is_said_where_the_query_is() {
     support::press_alt(&mut app, 'r');
     assert!(row(&mut app).contains("Regex"), "{}", row(&mut app));
     support::press_alt(&mut app, 'c');
+    // Each behind a box, and the box ticked: the glyph in front of the
+    // word is the one the palette draws for a switch that is on.
     let said = row(&mut app);
-    assert!(said.contains("Regex \u{b7} Case"), "{said}");
+    assert!(said.contains("Regex") && said.contains("Case"), "{said}");
+    for word in ["Regex", "Case"] {
+        assert_eq!(
+            support::glyph_before(&said, word),
+            obelus_ui::tick(true),
+            "{word} has no ticked box in front of it: {said}"
+        );
+    }
 }
 
 /// A key that names another view, from the palette over a view, is asked
