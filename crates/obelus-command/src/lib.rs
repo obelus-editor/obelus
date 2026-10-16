@@ -47,6 +47,8 @@ pub enum Command {
     PreviewToggle,
     /// Choose a theme.
     ThemeSelect,
+    /// Say which encoding the file being read is in, or write it in another.
+    EncodingSelect,
     /// Choose a command by name.
     CommandPalette,
     /// Ask a language server about the symbol under the cursor.
@@ -487,6 +489,11 @@ pub const ALL: &[CommandSpec] = &[
         title: "Change the colours",
     },
     CommandSpec {
+        command: Command::EncodingSelect,
+        name: "choose-encoding",
+        title: "Read this file in another encoding, or write it in one",
+    },
+    CommandSpec {
         command: Command::CommandPalette,
         name: "run-command",
         title: "Run a command by name",
@@ -839,6 +846,7 @@ impl Command {
             | Self::FileRename
             | Self::PreviewToggle
             | Self::ThemeSelect
+            | Self::EncodingSelect
             | Self::CommandPalette
             | Self::SymbolMenu
             | Self::SymbolComplete
@@ -931,6 +939,7 @@ impl Command {
         match self {
             Self::CommandPalette
             | Self::ThemeSelect
+            | Self::EncodingSelect
             | Self::SymbolMenu
             | Self::CodeActions
             | Self::SymbolTroubles
@@ -1057,6 +1066,7 @@ impl Command {
             | Self::FileNew
             | Self::PreviewToggle
             | Self::ThemeSelect
+            | Self::EncodingSelect
             | Self::CommandPalette
             | Self::SymbolMenu
             | Self::SymbolComplete
@@ -1127,6 +1137,7 @@ impl Command {
             | Self::ProjectList
             | Self::FileRename
             | Self::PreviewToggle
+            | Self::EncodingSelect
             // A question about the project's files, asked before any of them
             // is open: which makes it one of the files rather than one of
             // Obelus's own housekeeping.
@@ -1245,6 +1256,9 @@ impl Command {
             // version of a file is not either: what a move moves is what
             // is at the path, and neither of those is.
             Self::FileRename => Requires::AFileOnDisk,
+            // The same: an encoding is how the bytes at a path are written,
+            // and a commit's version has no path to read again or write to.
+            Self::EncodingSelect => Requires::AFileOnDisk,
             // A server is per file, and the menu is about what is under the
             // cursor. Both said `Nothing` and then said "no file open" into
             // a note nobody was going to read, which is the thing `offers`
@@ -1484,6 +1498,7 @@ mod tests {
             Command::FileRename,
             Command::PreviewToggle,
             Command::ThemeSelect,
+            Command::EncodingSelect,
             Command::CommandPalette,
             Command::SymbolMenu,
             Command::SymbolOutline,

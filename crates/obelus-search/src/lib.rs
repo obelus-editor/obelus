@@ -123,22 +123,27 @@ pub struct Looking {
 /// resemblance that nobody asked. Fuzzy matching is how a reader picks a
 /// name out of a list they already hold, which is what the pickers do and
 /// what this is not.
+///
+/// Always a pattern, a literal included, and one pattern compiled twice: by
+/// `regex` for a line already in hand, and by ripgrep's matcher for a whole
+/// file at a time. The same string and the same engine underneath, so the
+/// walk and the view cannot disagree about a line -- which a literal found
+/// by lowering each line and `str::find` did, about the few characters
+/// whose lower case is not their case folding.
 #[derive(Clone, Debug)]
 pub struct Needle {
     /// What the reader typed.
     said: String,
-    /// The same in lower case, for the query that does not care about it.
-    folded: String,
-    /// Whether case matters: what the reader asked for, or what the query
-    /// says itself where they asked for nothing.
-    sensitive: bool,
-    /// The compiled pattern, where the reader asked for one or for whole
-    /// words.
-    ///
-    /// `None` for a plain literal, which is the case worth keeping out of a
-    /// regex engine: it is what a whole project is walked with, and
-    /// `str::find` is a real string search.
+    /// The pattern, for a line already in hand.
     pattern: Option<Regex>,
+    /// The same pattern, for a whole file at a time.
+    ///
+    /// Compiled knowing that a match never crosses a line, which is what
+    /// lets it look through a file at once rather than a line at a time --
+    /// and is also why a pattern with a newline in it will not compile
+    /// here, and so is not a pattern at all (`broken`), where it once
+    /// compiled and quietly matched nothing.
+    matcher: Option<grep_regex::RegexMatcher>,
     /// Whether what they typed will not compile.
     ///
     /// Kept rather than reported, because a half-typed pattern is the
@@ -152,19 +157,21 @@ impl Needle {
     /// What a reader typed, ready to be looked for the way they asked.
     #[must_use]
     pub fn new(said: &str, how: Looking) -> Self {
-        // Smart case unless the reader has said otherwise: one in lower
-        // case matches either, one with a capital in it means it.
-        let sensitive = how.sensitive || said.chars().any(char::is_uppercase);
         let mut needle = Self {
-            folded: said.to_lowercase(),
             said: said.to_string(),
-            sensitive,
             pattern: None,
+            matcher: None,
             broken: false,
         };
-        if said.is_empty() || !(how.regex || how.word) {
+        if said.is_empty() {
             return needle;
         }
+        // Smart case unless the reader has said otherwise: one in lower
+        // case matches either, one with a capital in it means it. Asked of
+        // what they typed and not of the pattern's literals, which is where
+        // this differs from ripgrep's own smart case: `\W` has a capital in
+        // it, and a reader who typed one has typed a capital.
+        let sensitive = how.sensitive || said.chars().any(char::is_uppercase);
         // Escaped where it is not a pattern, so whole words can be asked for
         // without the query becoming one: a reader searching for `a.b` with
         // words on means those three characters.
@@ -174,7 +181,9 @@ impl Needle {
         };
         // `\b` around it, and the group so that a pattern with an
         // alternation in it has the boundaries around the whole of it
-        // rather than around its first branch.
+        // rather than around its first branch. Written here rather than
+        // asked of ripgrep's `word`, which puts half-boundaries round it and
+        // so answers differently for a query that starts with a `-`.
         let body = match how.word {
             true => format!("\\b(?:{body})\\b"),
             false => body,
@@ -183,10 +192,27 @@ impl Needle {
             true => body,
             false => format!("(?i){body}"),
         };
-        match Regex::new(&body) {
-            Ok(pattern) => needle.pattern = Some(pattern),
-            Err(error) => {
+        let matcher = grep_regex::RegexMatcherBuilder::new()
+            // `^` and `$` at every line, because what it is handed is a whole
+            // file: without this they are the file's ends, and `;$` found
+            // the last line of each file and nothing else.
+            .multi_line(true)
+            .line_terminator(Some(b'\n'))
+            // `$` before a `\r\n` as well, which is where a line read with
+            // `str::lines` ends.
+            .crlf(true)
+            .build(&body);
+        match (Regex::new(&body), matcher) {
+            (Ok(pattern), Ok(matcher)) => {
+                needle.pattern = Some(pattern);
+                needle.matcher = Some(matcher);
+            }
+            (Err(error), _) => {
                 tracing::debug!(%error, said, "not a pattern yet");
+                needle.broken = true;
+            }
+            (_, Err(error)) => {
+                tracing::debug!(%error, said, "not a pattern a line can hold");
                 needle.broken = true;
             }
         }
@@ -210,36 +236,11 @@ impl Needle {
     /// Characters because that is what a row is marked in: the view walks
     /// the label a character at a time, and a byte offset would mark the
     /// wrong half of a glyph the moment a line had one in it.
-    ///
-    /// Found on bytes first, which is what makes walking a project affordable:
-    /// `str::find` is a real string search and stepping character by
-    /// character is not. Where case does not matter the line is lowered a
-    /// line at a time rather than a file at a time, so a file whose first
-    /// line matches does not cost a copy of the whole file.
     #[must_use]
     pub fn found_in(&self, line: &str) -> Option<Range<usize>> {
-        if self.said.is_empty() || self.broken {
-            return None;
-        }
-        if let Some(pattern) = self.pattern.as_ref() {
-            let found = pattern.find(line)?;
-            let from = line[..found.start()].chars().count();
-            return Some(from..from + line[found.range()].chars().count());
-        }
-        if self.sensitive {
-            let at = line.find(&self.said)?;
-            let from = line[..at].chars().count();
-            return Some(from..from + self.said.chars().count());
-        }
-        let lowered = line.to_lowercase();
-        let at = lowered.find(&self.folded)?;
-        // Counted in the lowered copy. Lowering can change how many
-        // characters a line has -- Turkish dotted I lowers to two -- so this
-        // is the right column wherever the two agree, which is everywhere a
-        // reader will meet, and a column or two out in the one place it is
-        // not. What it can never do is claim a line matched that did not.
-        let from = lowered[..at].chars().count();
-        Some(from..from + self.folded.chars().count())
+        let found = self.pattern.as_ref()?.find(line)?;
+        let from = line[..found.start()].chars().count();
+        Some(from..from + line[found.range()].chars().count())
     }
 }
 
@@ -276,28 +277,6 @@ const WIDEST_LINE: usize = 300;
 /// nobody is searching. The limit is generous for anything written by hand.
 const BIGGEST_FILE: u64 = 2 * 1024 * 1024;
 
-/// Scans every file under `root` for `query`, on its own thread.
-///
-/// What counts as a match is [`Needle`]'s to say, which is also what the
-/// search of the open file asks and what the view marks.
-///
-/// `generation` comes back with every batch, because the reader types faster
-/// than a project can be walked and the answers to the previous query must be
-/// recognizable as stale. The last batch carries `done`, which is what turns
-/// "searching" into "no match" -- with a query typed and nothing found,
-/// those two are different facts and only the scan knows which is true.
-///
-/// `wanted` is asked before every file: typing a ten-letter word starts ten
-/// scans, and nine of them would otherwise go on reading the whole project to
-/// answer a question nobody is asking any more. There is nothing else to
-/// stop a thread with -- a walk in `ignore` cannot be interrupted from
-/// outside -- so the thread has to ask. [`obelus_runtime::cancel`] is where
-/// that asking lives now; this file, the history walk and the file walk each
-/// had their own copy of it.
-///
-/// `ignored` searches the files the project has said to ignore as well, which
-/// is the reader's `ignored_files` and not a question of this walk's own: a
-/// file list that offers `target` beside a search that cannot see into it
 /// Something a walk of the project found.
 #[derive(Debug)]
 pub enum Event {
@@ -494,6 +473,39 @@ fn walk(
     true
 }
 
+/// Scans every file under `root` for what `needle` is looking for, on
+/// threads of its own.
+///
+/// What counts as a match is [`Needle`]'s to say, which is also what the
+/// search of the open file asks and what the view marks. What a file *says*
+/// is `obelus_encoding`'s, which is also what opening it asks: a file in GBK
+/// is searched as the text a reader sees when they open it, on the lines
+/// they see it on, and a file that will not open is not searched.
+///
+/// The walk is `ignore`'s parallel one, a thread a core, and each file is
+/// looked through whole by ripgrep's searcher rather than a line at a time
+/// -- most files have nothing in them, and finding that out is one pass of
+/// a fast search rather than a copy of every line. Which file is answered
+/// first is now whichever thread got there: the rows of one file stay in
+/// its order, the files do not, and when there are more than [`MOST`] which
+/// ones are kept is not the same twice.
+///
+/// `generation` comes back with every batch, because the reader types faster
+/// than a project can be walked and the answers to the previous query must be
+/// recognizable as stale. The last batch carries `done`, which is what turns
+/// "searching" into "no match" -- with a query typed and nothing found,
+/// those two are different facts and only the scan knows which is true.
+///
+/// `wanted` is asked before every file: typing a ten-letter word starts ten
+/// scans, and nine of them would otherwise go on reading the whole project to
+/// answer a question nobody is asking any more. There is nothing else to
+/// stop a walk with -- a walk in `ignore` cannot be interrupted from
+/// outside -- so every thread has to ask. [`obelus_runtime::cancel`] is
+/// where that asking lives.
+///
+/// `ignored` searches the files the project has said to ignore as well, which
+/// is the reader's `ignored_files` and not a question of this walk's own: a
+/// file list that offers `target` beside a search that cannot see into it
 /// is two answers about one tree.
 pub fn spawn_scan(
     root: &Path,
@@ -506,8 +518,16 @@ pub fn spawn_scan(
     let root = root.to_path_buf();
     let needle = needle.clone();
     obelus_runtime::handle().spawn_blocking(move || {
-        let mut batch: Vec<Hit> = Vec::with_capacity(BATCH);
-        let mut found = 0usize;
+        // A needle with nothing to look for finds nothing, and says so.
+        let Some(matcher) = needle.matcher.clone() else {
+            let _ = sender.send(Event::Matches {
+                generation: wanted.generation(),
+                hits: Vec::new(),
+                done: true,
+            });
+            return;
+        };
+        let found = Found::new(wanted.clone(), sender);
 
         let mut walk = WalkBuilder::new(&root);
         walk.git_ignore(!ignored)
@@ -520,71 +540,204 @@ pub fn spawn_scan(
             // would be looking at a different project from the one the
             // list is offering.
             .hidden(!hidden);
-        for entry in walk.build() {
-            // Per file rather than per line: a file is the unit of work
-            // here, and reading the flag for every line of a large file
-            // would be a cost of its own.
-            if !wanted.still() {
-                let generation = wanted.generation();
-                tracing::debug!(generation, "a scan the reader has typed past, stopping");
-                return;
-            }
-            let Ok(entry) = entry else { continue };
-            if !entry.file_type().is_some_and(|kind| kind.is_file()) {
-                continue;
-            }
-            if entry.metadata().is_ok_and(|data| data.len() > BIGGEST_FILE) {
-                continue;
-            }
-            // Not UTF-8 is not an error here: it is a binary file, and a
-            // reader searching for a word is not searching those.
-            let Ok(contents) = std::fs::read_to_string(entry.path()) else {
-                continue;
-            };
-            let path = entry
-                .path()
-                .strip_prefix(&root)
-                .unwrap_or_else(|_| entry.path())
-                .to_path_buf();
-
-            for (number, line) in contents.lines().enumerate() {
-                if needle.found_in(line).is_none() {
-                    continue;
+        walk.build_parallel().run(|| {
+            let matcher = matcher.clone();
+            let found = &found;
+            let root = &root;
+            let wanted = wanted.clone();
+            // One per thread: a searcher keeps its buffers between files.
+            // Told nothing about encodings or binary files, because what it
+            // is handed has already been read the way a buffer reads it.
+            //
+            // A line ends where the matcher's does, at `\r\n` or `\n`: the
+            // two have to agree, and the searcher refuses if they do not.
+            let mut searcher = grep_searcher::SearcherBuilder::new()
+                .line_terminator(grep_matcher::LineTerminator::crlf())
+                .line_number(true)
+                .binary_detection(grep_searcher::BinaryDetection::none())
+                .bom_sniffing(false)
+                .build();
+            Box::new(move |entry| {
+                use ignore::WalkState;
+                // Per file rather than per line: a file is the unit of work
+                // here, and reading the flag for every line of a large file
+                // would be a cost of its own.
+                if !wanted.still() || found.finished() {
+                    return WalkState::Quit;
                 }
-                let trimmed = line.trim();
-                let text = match trimmed.char_indices().nth(WIDEST_LINE) {
-                    Some((at, _)) => trimmed[..at].to_string(),
-                    None => trimmed.to_string(),
+                let Ok(entry) = entry else {
+                    return WalkState::Continue;
                 };
-                batch.push(Hit {
+                if !entry.file_type().is_some_and(|kind| kind.is_file()) {
+                    return WalkState::Continue;
+                }
+                if entry.metadata().is_ok_and(|data| data.len() > BIGGEST_FILE) {
+                    return WalkState::Continue;
+                }
+                let Ok(bytes) = std::fs::read(entry.path()) else {
+                    return WalkState::Continue;
+                };
+                // What will not open is not searched: a binary file, or one
+                // in no encoding Obelus can write back.
+                let Some(read) = obelus_encoding::read(&bytes) else {
+                    return WalkState::Continue;
+                };
+                let mut lines = Vec::new();
+                let searched = searcher.search_slice(
+                    &matcher,
+                    read.text.as_bytes(),
+                    Lines { into: &mut lines },
+                );
+                if let Err(error) = searched {
+                    tracing::debug!(%error, path = %entry.path().display(), "not searched");
+                    return WalkState::Continue;
+                }
+                if lines.is_empty() {
+                    return WalkState::Continue;
+                }
+                let path = entry
+                    .path()
+                    .strip_prefix(root)
+                    .unwrap_or_else(|_| entry.path())
+                    .to_path_buf();
+                let hits = lines.into_iter().map(|(line, text)| Hit {
                     path: path.clone(),
-                    line: number,
+                    line,
                     text,
                 });
-                found += 1;
-
-                if batch.len() >= BATCH || found >= MOST {
-                    let hits = std::mem::replace(&mut batch, Vec::with_capacity(BATCH));
-                    let done = found >= MOST;
-                    if sender
-                        .send(Event::Matches {
-                            generation: wanted.generation(),
-                            hits,
-                            done,
-                        })
-                        .is_err()
-                        || done
-                    {
-                        return;
-                    }
+                match found.add(hits) {
+                    true => WalkState::Continue,
+                    false => WalkState::Quit,
                 }
+            })
+        });
+        found.finish();
+    });
+}
+
+/// What every thread of one scan has found, and the one place it is sent
+/// from.
+///
+/// Behind a lock so that the batches keep the size they had when there was
+/// one thread -- a message per file with something in it would redraw the
+/// list once per file -- and so that "done" is said once, last, and never
+/// followed by anything.
+struct Found<S> {
+    wanted: cancel::Wanted,
+    sender: S,
+    state: std::sync::Mutex<Sending>,
+    /// Whether the scan has said all it is going to, for the threads to ask
+    /// without taking the lock.
+    finished: std::sync::atomic::AtomicBool,
+}
+
+#[derive(Default)]
+struct Sending {
+    batch: Vec<Hit>,
+    count: usize,
+    /// Whether `done` has gone, or nobody is listening any more: either way
+    /// there is nothing more to send.
+    over: bool,
+}
+
+impl<S: Sink<Event>> Found<S> {
+    fn new(wanted: cancel::Wanted, sender: S) -> Self {
+        Self {
+            wanted,
+            sender,
+            state: std::sync::Mutex::new(Sending::default()),
+            finished: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+
+    fn finished(&self) -> bool {
+        self.finished.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Takes one file's hits. Returns whether to go on.
+    fn add(&self, hits: impl Iterator<Item = Hit>) -> bool {
+        let Ok(mut state) = self.state.lock() else {
+            return false;
+        };
+        if state.over {
+            return false;
+        }
+        for hit in hits {
+            state.batch.push(hit);
+            state.count += 1;
+            let done = state.count >= MOST;
+            if (state.batch.len() >= BATCH || done) && (!self.send(&mut state, done) || done) {
+                return false;
             }
         }
+        true
+    }
 
-        let _ = sender.send(Event::Matches {
-            generation: wanted.generation(),
-            hits: batch,
-            done: true,
+    /// Sends what is waiting, saying whether it is the last of it. Returns
+    /// whether anybody is still listening.
+    fn send(&self, state: &mut Sending, done: bool) -> bool {
+        // A scan the reader has typed past says nothing at all, not even
+        // that it is finished: nobody is waiting for it.
+        if !self.wanted.still() {
+            state.over = true;
+            self.finished
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            return false;
+        }
+        let hits = std::mem::replace(&mut state.batch, Vec::with_capacity(BATCH));
+        let sent = self.sender.send(Event::Matches {
+            generation: self.wanted.generation(),
+            hits,
+            done,
         });
-    });
+        if done || sent.is_err() {
+            state.over = true;
+            self.finished
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        sent.is_ok()
+    }
+
+    /// The walk is over: what is left, and that it is the last.
+    fn finish(&self) {
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        if !state.over {
+            self.send(&mut state, true);
+        }
+    }
+}
+
+/// Where a searcher puts the lines it finds in one file: each line's number
+/// and the line as a row shows it.
+struct Lines<'a> {
+    into: &'a mut Vec<(usize, String)>,
+}
+
+impl grep_searcher::Sink for Lines<'_> {
+    type Error = std::io::Error;
+
+    fn matched(
+        &mut self,
+        _: &grep_searcher::Searcher,
+        found: &grep_searcher::SinkMatch<'_>,
+    ) -> Result<bool, Self::Error> {
+        // Counted from one by the searcher and from zero by a row.
+        let number = found
+            .line_number()
+            .and_then(|number| usize::try_from(number).ok())
+            .unwrap_or(1)
+            .saturating_sub(1);
+        // Valid, because what was searched was a `str`; and a line, because
+        // the matcher was told no match crosses one.
+        let line = String::from_utf8_lossy(found.bytes());
+        let trimmed = line.trim();
+        let text = match trimmed.char_indices().nth(WIDEST_LINE) {
+            Some((at, _)) => trimmed[..at].to_string(),
+            None => trimmed.to_string(),
+        };
+        self.into.push((number, text));
+        Ok(true)
+    }
 }

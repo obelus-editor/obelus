@@ -46,6 +46,7 @@ obelus-component = { path = "crates/obelus-component" }
 obelus-config = { path = "crates/obelus-config" }
 obelus-download = { path = "crates/obelus-download" }
 obelus-editing = { path = "crates/obelus-editing" }
+obelus-encoding = { path = "crates/obelus-encoding" }
 obelus-font = { path = "crates/obelus-font" }
 obelus-git = { path = "crates/obelus-git" }
 obelus-github = { path = "crates/obelus-github" }
@@ -117,6 +118,21 @@ dunce = "1"
 # is dropped is `logging`, which would put Obelus's own tracing output in the
 # middle of a frame.
 regex = { version = "1", default-features = false, features = ["std", "perf", "unicode"] }
+
+# What a file that is not UTF-8 is written in. `encoding_rs` is already in
+# the tree by way of `gix-filter` and `tokei`; `chardetng` is the guess for a
+# file with no BOM to say, and is the one Firefox makes -- and Helix, which
+# is where the shape of the whole of this came from.
+encoding_rs = "0.8"
+chardetng = "1"
+
+# The project search: ripgrep's own searcher and its regex matcher. The
+# searcher is already in the tree by way of `tokei`; what it is given is
+# text already decoded, so its own BOM sniffing and transcoding are not
+# what decides what a file says (`obelus-encoding` is).
+grep-searcher = "0.1"
+grep-matcher = "0.1"
+grep-regex = "0.1"
 
 # Counting the lines of the tree. `default-features = false` drops tokei's
 # `cli` feature, which is its own binary's: clap, colored, env_logger and

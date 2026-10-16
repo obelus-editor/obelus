@@ -1847,6 +1847,67 @@ fn every_file_is_counted_against_its_own_committed_version() {
     assert_eq!(counts.get(&file).copied(), Some((1, 0)));
 }
 
+/// The count beside a changed file reads it the way its open document does.
+/// One letter on its own is any of several code pages, so the
+/// commit alone and the file with a paragraph of Russian added can be
+/// guessed two ways -- and two readings of one line are a line changed.
+///
+/// Broken by reading both sides with the guess whatever encoding is beside
+/// the path: the untouched first line is counted as changed.
+#[test]
+fn a_count_reads_a_file_the_way_its_document_does() {
+    use obelus_git::counted_against_head_read_as;
+
+    let repository = Repository::new("count-encoding", "");
+    let cyrillic = encoding_rs::WINDOWS_1251;
+    // `й` in windows-1251 is the byte `é` is in windows-1252.
+    let (committed, _, _) = cyrillic.encode("// cafй\n");
+    std::fs::write(repository.path(), &*committed).expect("the file");
+    repository.commit("one line");
+    let (now, _, _) = cyrillic
+        .encode("// cafй\n// Это комментарий, написанный по-русски, о том, что делает этот код\n");
+    std::fs::write(repository.path(), &*now).expect("a line more");
+
+    let chosen = obelus_encoding::Written::offered()
+        .into_iter()
+        .find(|written| written.name() == "windows-1251")
+        .expect("windows-1251");
+    let counts = counted_against_head_read_as(&[(repository.path(), Some(chosen))]);
+    assert_eq!(
+        counts.get(&repository.path()).copied(),
+        Some((1, 0)),
+        "not one line added: {counts:?}"
+    );
+}
+
+/// A note on a file in GBK follows its line when a line is put above it,
+/// as a note on a file in UTF-8 does.
+///
+/// Broken by reading the file now with `read_to_string` again: it is not
+/// UTF-8, and the note stays at the number it was made at.
+#[test]
+fn a_note_on_a_file_in_gbk_follows_its_line() {
+    let repository = Repository::new("note-gbk", "");
+    let gbk = |text: &str| encoding_rs::GBK.encode(text).0.into_owned();
+    std::fs::write(repository.path(), gbk("// 第一行\nfn 目标() {}\n")).expect("the file");
+    repository.commit("in GBK");
+    let at = obelus_todo::At {
+        path: "file.rs".into(),
+        line: LineNumber::new(1),
+        commit: obelus_todo::at_commit(&repository.directory()),
+    };
+    std::fs::write(
+        repository.path(),
+        gbk("// 新加的一行\n// 第一行\nfn 目标() {}\n"),
+    )
+    .expect("a line above");
+    assert_eq!(
+        obelus_todo::where_now(&repository.directory(), &at),
+        Some(LineNumber::new(2)),
+        "the note did not follow its line"
+    );
+}
+
 /// A list of files says which of them have been touched. A project's file
 /// list is mostly files nobody has changed, and the few that have been are
 /// what a reader is usually looking for.
@@ -1932,6 +1993,49 @@ fn a_list_of_files_says_which_have_changed() {
 /// One line rather than all of them: on every line it is a wall of grey
 /// beside the code, and a reader who wants the name for a line can put the
 /// cursor on it -- which is where their attention already is.
+/// A file in UTF-16 has no names beside its lines: git splits a blob at its
+/// `\n` bytes, and in UTF-16 those are not the reader's lines.
+///
+/// Broken by not asking `lines_are_bytes` in `blamed_lines`: the name the
+/// blame gave is drawn.
+#[test]
+fn a_file_in_utf16_has_no_blame() {
+    use obelus_app::{app::App, event::Event};
+    use obelus_buffer::Buffer;
+    use obelus_git::Blamed;
+
+    let repository = Repository::new("blame-utf16", "");
+    let wide: Vec<u8> = [0xFF, 0xFE]
+        .into_iter()
+        .chain("short\nshort\n".encode_utf16().flat_map(u16::to_le_bytes))
+        .collect();
+    std::fs::write(repository.path(), wide).expect("the file");
+    repository.commit("in UTF-16");
+    let buffer = Buffer::open(&repository.path()).expect("opening it");
+    let path = buffer.path().to_path_buf();
+    let mut app = App::new(vec![buffer]);
+    support::lay_out(&mut app, 44, 8);
+
+    app.handle(Event::Git(obelus_git::Event::Blamed {
+        at: None,
+        path,
+        lines: vec![
+            Some(Blamed {
+                id: gix::ObjectId::null(gix::hash::Kind::Sha1),
+                line: 0,
+                who: "Ada".to_string(),
+                when: 1,
+            }),
+            None,
+        ],
+    }));
+    let dump = support::render(&mut app, 44, 8);
+    assert!(
+        !support::text_block(&dump).contains("Ada"),
+        "a blame beside lines it is not about:\n{dump}"
+    );
+}
+
 #[test]
 fn the_blame_sits_at_the_end_of_the_cursor_line() {
     use obelus_app::{app::App, event::Event};
@@ -2217,6 +2321,41 @@ fn a_real_repository_gives_a_real_blame() {
     let stranger = repository.directory.join("unknown.rs");
     std::fs::write(&stranger, "nothing\n").expect("writing");
     assert!(obelus_git::blame::lines_of(&stranger, None).is_none());
+}
+
+/// A file in GBK is compared with its commit read the same way, so a file
+/// nobody has touched has nothing in its margin, and one line typed is one
+/// line marked.
+///
+/// Broken by reading the committed blob as lossy UTF-8 again, the way it was
+/// read before files in other encodings opened: every line with Chinese in
+/// it is marked as changed.
+#[test]
+fn a_file_in_gbk_is_compared_with_its_commit_in_gbk() {
+    let repository = Repository::new("gbk-margin", "");
+    let text = "// 第一行\nfn main() {}\n// 第三行\n";
+    std::fs::write(repository.path(), encoding_rs::GBK.encode(text).0).expect("the file");
+    repository.commit("in GBK");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("the file")]);
+    support::lay_out(&mut app, 40, 10);
+    assert!(
+        app.changes().is_none_or(Changes::is_empty),
+        "a file nobody touched has marks in its margin"
+    );
+
+    support::type_text(&mut app, "x");
+    support::lay_out(&mut app, 40, 10);
+    let changes = app.changes().expect("a margin");
+    assert_eq!(
+        changes.marker_at(LineNumber::new(0)),
+        Some(Marker::Modified)
+    );
+    assert_eq!(
+        changes.marker_at(LineNumber::new(2)),
+        None,
+        "an untouched line is marked"
+    );
 }
 
 /// A commit in another window is a commit in this one.

@@ -875,11 +875,11 @@ fn the_scan_finds_lines_and_finishes() {
     )
     .expect("writing");
     std::fs::write(scratch.path().join("two.rs"), "// beta again\n").expect("writing");
-    // Not UTF-8 is a binary file, and a reader searching for a word is not
-    // searching those.
+    // A NUL is a binary file, and a reader searching for a word is not
+    // searching those -- the same judgement opening one makes.
     std::fs::write(
         scratch.path().join("blob.bin"),
-        [0xff, 0xfe, b'b', b'e', b't', b'a'],
+        [0, 0xfe, b'b', b'e', b't', b'a'],
     )
     .expect("writing");
     std::fs::write(scratch.path().join(".gitignore"), "ignored/\n").expect("writing");
@@ -953,8 +953,109 @@ fn the_scan_trims_what_a_row_cannot_show() {
     );
 }
 
+/// A file in another encoding is searched as the text opening it shows, on
+/// the lines it shows it on: a query in Chinese finds the line of a file in
+/// GBK, and a file in UTF-16 is found at all.
+///
+/// Broken by searching the bytes as they are on disk rather than as
+/// `obelus_encoding` reads them: neither file is found.
+#[test]
+fn the_scan_reads_a_file_the_way_opening_it_does() {
+    let scratch = temporary("encodings");
+    let (gbk, _, _) = encoding_rs::GBK.encode("// 第一行\nfn main() {} // 这是中文注释\n");
+    std::fs::write(scratch.path().join("gbk.rs"), &*gbk).expect("writing");
+    let wide: Vec<u8> = [0xFF, 0xFE]
+        .into_iter()
+        .chain(
+            "first\nsecond 这是中文注释\n"
+                .encode_utf16()
+                .flat_map(u16::to_le_bytes),
+        )
+        .collect();
+    std::fs::write(scratch.path().join("wide.txt"), wide).expect("writing");
+
+    let mut found: Vec<String> = scan(scratch.path(), "中文注释")
+        .iter()
+        .map(|hit| format!("{}:{}:{}", hit.path.display(), hit.line, hit.text))
+        .collect();
+    found.sort();
+    assert_eq!(
+        found,
+        [
+            "gbk.rs:1:fn main() {} // 这是中文注释",
+            "wide.txt:1:second 这是中文注释"
+        ],
+        "not the lines the files say"
+    );
+}
+
+/// `^` and `$` are a line's ends in the walk, as they are in the search of
+/// the file being read -- on every line of a file, and before a `\r\n`.
+///
+/// Broken by taking `multi_line` off the scan's matcher: they are the
+/// file's ends, and the lines in the middle are not found.
+#[test]
+fn a_pattern_s_anchors_are_each_line_s_ends() {
+    let scratch = temporary("anchors");
+    std::fs::write(
+        scratch.path().join("lf.rs"),
+        "let a;\nfn one() {}\nlet b;\nfn two() {}\n",
+    )
+    .expect("writing");
+    std::fs::write(
+        scratch.path().join("crlf.rs"),
+        "let c;\r\nfn three() {}\r\nlet d\r\n",
+    )
+    .expect("writing");
+    let how = obelus_search::Looking {
+        regex: true,
+        ..Default::default()
+    };
+    let lines = |query: &str| {
+        let mut found: Vec<String> = scan_with(scratch.path(), query, how)
+            .iter()
+            .map(|hit| format!("{}:{}", hit.path.display(), hit.line))
+            .collect();
+        found.sort();
+        found
+    };
+    assert_eq!(
+        lines("^fn"),
+        ["crlf.rs:1", "lf.rs:1", "lf.rs:3"],
+        "a line that starts with fn was missed"
+    );
+    assert_eq!(
+        lines(";$"),
+        ["crlf.rs:0", "lf.rs:0", "lf.rs:2"],
+        "a line that ends with ; was missed"
+    );
+}
+
+/// A pattern with a newline in it is not one a line can hold, and says so
+/// rather than compiling and finding nothing.
+///
+/// Broken by building the scan's matcher with no line terminator and
+/// without `crlf`, which sets one of its own: it compiles, and the needle is
+/// not broken. Taking the terminator away alone breaks nothing.
+#[test]
+fn a_pattern_no_line_can_hold_is_not_a_pattern() {
+    let needle = obelus_search::Needle::new(
+        r"a\nb",
+        obelus_search::Looking {
+            regex: true,
+            ..Default::default()
+        },
+    );
+    assert!(needle.is_broken(), "a newline in a pattern was taken");
+}
+
 /// Runs a scan to completion and returns everything it found.
 fn scan(root: &std::path::Path, query: &str) -> Vec<Hit> {
+    scan_with(root, query, obelus_search::Looking::default())
+}
+
+/// The same, looking the way the switches say.
+fn scan_with(root: &std::path::Path, query: &str, how: obelus_search::Looking) -> Vec<Hit> {
     let latest = obelus_runtime::cancel::Latest::default();
     for _ in 0..7 {
         latest.next();
@@ -962,7 +1063,7 @@ fn scan(root: &std::path::Path, query: &str) -> Vec<Hit> {
     let (sender, events) = obelus_app::event::channel();
     obelus_search::spawn_scan(
         root,
-        &obelus_search::Needle::new(query, obelus_search::Looking::default()),
+        &obelus_search::Needle::new(query, how),
         latest.claim(7),
         false,
         false,

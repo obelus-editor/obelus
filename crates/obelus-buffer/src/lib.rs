@@ -225,6 +225,14 @@ struct Seen {
     stat: Option<Stat>,
     /// What was in it then.
     digest: u64,
+    /// And how it was written: a document the reader has said to write in
+    /// another encoding has something to write, though not a character of
+    /// it has moved.
+    written: obelus_encoding::Written,
+    /// Whether that was the reader's word rather than the guess: a file of
+    /// plain ASCII is every encoding at once, and only a choice is worth
+    /// trying again before guessing.
+    chosen: bool,
     /// And how long that was.
     ///
     /// Beside the digest because it is the cheap half of the same question:
@@ -625,6 +633,17 @@ pub struct Buffer {
     /// answer. A document somebody has edited cannot be re-read to find out,
     /// so the question has to be asked of the file rather than of its text.
     seen: Option<Seen>,
+    /// How the file's bytes are written, so a save writes them the same
+    /// way: the encoding, and whether a byte order mark goes in front.
+    ///
+    /// What was found on the way in unless the reader has said otherwise
+    /// (`write_as`). The text never holds the mark -- a U+FEFF at the front
+    /// of the rope was a character the reader could delete, and a column
+    /// every position on the first line was out by.
+    written: obelus_encoding::Written,
+    /// Whether `written` is the reader's word (`read_as`, `write_as`)
+    /// rather than what the bytes looked like.
+    chosen: bool,
     /// Whether this file indents with tabs rather than with spaces.
     ///
     /// Read off the file rather than configured: what a file is indented
@@ -656,8 +675,11 @@ pub struct Buffer {
 impl Buffer {
     /// Reads a file from disk.
     pub fn open(path: &Path) -> Result<Self> {
-        let contents =
-            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+        let obelus_encoding::Read {
+            text: contents,
+            written,
+        } = obelus_encoding::read_file(path)
+            .with_context(|| format!("reading {}", path.display()))?;
         let text = Text::from_string(&contents);
         let syntax = LanguageId::for_path(path)
             .and_then(|language| SyntaxState::new(language, &text))
@@ -678,6 +700,7 @@ impl Buffer {
             bytes = contents.len(),
             lines = text.line_count(),
             language = ?syntax.as_ref().map(|state| state.language().name()),
+            encoding = %written.name(),
             "opened"
         );
 
@@ -688,6 +711,8 @@ impl Buffer {
             stat: Stat::of(&path),
             digest: digest_of_text(&text),
             length: text.byte_length().get(),
+            written,
+            chosen: false,
         });
 
         Ok(Self {
@@ -713,6 +738,8 @@ impl Buffer {
             disk: Disk::Unchanged,
             dirty: false,
             tabs,
+            written,
+            chosen: false,
         })
     }
 
@@ -862,6 +889,8 @@ impl Buffer {
             disk: Disk::Unchanged,
             dirty: false,
             tabs,
+            written: obelus_encoding::Written::UTF8,
+            chosen: false,
         }
     }
 
@@ -1145,7 +1174,8 @@ impl Buffer {
             self.dirty = true;
             return;
         };
-        self.dirty = self.editing.text().byte_length().get() != seen.length
+        self.dirty = self.written != seen.written
+            || self.editing.text().byte_length().get() != seen.length
             || digest_of_text(self.editing.text()) != seen.digest;
     }
 
@@ -1201,8 +1231,16 @@ impl Buffer {
         let Some(seen) = self.seen else {
             return true;
         };
-        match std::fs::read_to_string(&self.path) {
-            Ok(contents) => digest_of(contents.as_bytes()) != seen.digest,
+        // Read the way it was last read or written, whoever chose that: the
+        // question is whether the bytes are still those, and the pending
+        // encoding of a `write_as` is not what is on disk.
+        match self.read_from_disk(true) {
+            // The encoding as well as the text: a file somebody converted
+            // to UTF-8 says what it said, and a save would write it back in
+            // the encoding they converted it out of.
+            Ok((read, _)) => {
+                read.written != seen.written || digest_of(read.text.as_bytes()) != seen.digest
+            }
             // Gone, or no longer something Obelus can read. Either way it is
             // not what was read from.
             Err(_) => true,
@@ -1280,6 +1318,8 @@ impl Buffer {
             stat: Stat::of(&self.path),
             digest: digest_of_text(self.editing.text()),
             length: self.editing.text().byte_length().get(),
+            written: self.written,
+            chosen: self.chosen,
         });
         self.disk = Disk::Unchanged;
         // A save is something the reader did between one edit and the next:
@@ -1577,6 +1617,18 @@ impl Buffer {
     /// and the name is the link.
     pub fn save(&mut self) -> Result<()> {
         let path = obelus_config::resolved(&self.path);
+        // Encoded before anything is written, so a character the file's
+        // encoding has no bytes for refuses the save rather than leaving a
+        // half-written file beside it. UTF-8 is written straight from the
+        // rope, as it always was; anything else is a copy, encoded.
+        let encoded = match self.written.is_plain() {
+            true => None,
+            false => Some(
+                self.written
+                    .encode(&self.editing.text().rope().to_string())?
+                    .into_owned(),
+            ),
+        };
         // This process's own name beside it and not one every Obelus shares:
         // two writing at once into one shared name truncate each other's
         // half-written file, and the first rename takes the other's away.
@@ -1585,8 +1637,13 @@ impl Buffer {
         let written = (|| -> Result<()> {
             let mut file = std::fs::File::create(&beside)
                 .with_context(|| format!("writing beside {}", path.display()))?;
-            for chunk in self.editing.text().rope().chunks() {
-                std::io::Write::write_all(&mut file, chunk.as_bytes())?;
+            match encoded.as_deref() {
+                Some(bytes) => std::io::Write::write_all(&mut file, bytes)?,
+                None => {
+                    for chunk in self.editing.text().rope().chunks() {
+                        std::io::Write::write_all(&mut file, chunk.as_bytes())?;
+                    }
+                }
             }
             file.sync_all()?;
             // Whatever the file was allowed to be, it still is. A file that
@@ -1625,8 +1682,17 @@ impl Buffer {
     /// is now what is on disk -- and undoing past it makes it unwritten
     /// again, because then it is not.
     pub fn take_from_disk(&mut self) -> Result<bool> {
-        let contents = std::fs::read_to_string(&self.path)
+        let (
+            obelus_encoding::Read {
+                text: contents,
+                written,
+            },
+            chosen,
+        ) = self
+            .read_from_disk(false)
             .with_context(|| format!("re-reading {}", self.path.display()))?;
+        self.written = written;
+        self.chosen = chosen;
         // Where the reader was. `edit` leaves the cursor after what it put
         // in, which for the whole file is the end of it -- and somebody who
         // asked to see the other version wants to see the part they were
@@ -1652,8 +1718,90 @@ impl Buffer {
     /// The cursor and the viewport are kept: an agent rewriting the file
     /// should not send the reader back to line one.
     pub fn reload(&mut self) -> Result<bool> {
-        let contents = match std::fs::read_to_string(&self.path) {
-            Ok(contents) => contents,
+        let read = self.read_from_disk(false);
+        self.take_read(read)
+    }
+
+    /// Reads the file again as `written`, whatever it looked like: what a
+    /// reader who has said which encoding the file is in gets.
+    ///
+    /// For a document with nothing unwritten in it -- the reader's work is
+    /// not re-read over. Returns whether the text changed.
+    ///
+    /// # Errors
+    ///
+    /// Where the file is not that encoding, by the rule that what is read
+    /// can be written back byte for byte; the document is left as it was.
+    pub fn read_as(&mut self, written: obelus_encoding::Written) -> Result<bool> {
+        let bytes = std::fs::read(&self.path)
+            .with_context(|| format!("re-reading {}", self.path.display()))?;
+        let read = written
+            .read(&bytes)
+            .map(obelus_encoding::Read::into_owned)
+            .ok_or_else(|| anyhow::anyhow!("{} is not {}", self.path.display(), written.name()))?;
+        self.take_read(Ok((read, true)))
+    }
+
+    /// How the file's bytes are written, and so how a save writes them.
+    #[must_use]
+    pub const fn written(&self) -> obelus_encoding::Written {
+        self.written
+    }
+
+    /// Writes the file as `written` from the next save on, leaving the text
+    /// as it is: what a reader converting a file to another encoding asks
+    /// for. Unwritten until it is saved, because the file on disk is not.
+    pub fn write_as(&mut self, written: obelus_encoding::Written) {
+        self.written = written;
+        self.chosen = true;
+        self.settle_dirty();
+    }
+
+    /// The file as it is on disk, and whether the encoding it was read in
+    /// is the reader's word.
+    ///
+    /// The encoding the disk was last read or written in first, where the
+    /// reader chose it -- a file of plain ASCII is every encoding at once,
+    /// and a re-read must not take a choice back -- or where `always` says
+    /// so, for the question of whether the bytes are still the same ones.
+    /// Otherwise the guess, as on opening: a guess is not a reason to read
+    /// a file somebody converted to UTF-8 as GBK, which takes most runs of
+    /// UTF-8's Chinese without an error and shows them as something else.
+    ///
+    /// The disk's encoding and not the document's, which after `write_as`
+    /// is an encoding nothing has been written in yet.
+    fn read_from_disk(
+        &self,
+        always: bool,
+    ) -> std::io::Result<(obelus_encoding::Read<'static>, bool)> {
+        let bytes = std::fs::read(&self.path)?;
+        if let Some(seen) = self.seen
+            && (seen.chosen || always)
+            && !seen.written.is_plain()
+            && let Some(read) = seen.written.read(&bytes)
+        {
+            return Ok((read.into_owned(), seen.chosen));
+        }
+        let read = obelus_encoding::owned(bytes)?;
+        // The guess, and so nobody's word -- unless it came back with the
+        // very encoding the reader had chosen, which plain UTF-8 does.
+        let chosen = self
+            .seen
+            .is_some_and(|seen| seen.chosen && seen.written == read.written);
+        Ok((read, chosen))
+    }
+
+    /// Takes what a read of the file found as the document.
+    fn take_read(
+        &mut self,
+        read: std::io::Result<(obelus_encoding::Read<'static>, bool)>,
+    ) -> Result<bool> {
+        let contents = match read {
+            Ok((obelus_encoding::Read { text, written }, chosen)) => {
+                self.written = written;
+                self.chosen = chosen;
+                text
+            }
             Err(error) => {
                 // A file that is simply gone is not a re-read that went
                 // wrong: `stale` means Obelus could not find out what is

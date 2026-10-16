@@ -195,9 +195,15 @@ impl App {
     /// had it share a path, and the answer about one laid beside the other
     /// would name whoever last touched whatever is at those numbers in the
     /// other -- a confident answer about the wrong lines.
+    ///
+    /// And nothing for a file whose lines are not lines of its bytes -- one
+    /// in UTF-16 -- because git splits a blob at its `\n` bytes, and there
+    /// the names would be beside lines the reader is not reading.
     #[must_use]
     pub fn blamed_lines(&self) -> Option<&[Option<obelus_git::Blamed>]> {
-        let buffer = self.current_buffer()?;
+        let buffer = self
+            .current_buffer()
+            .filter(|buffer| buffer.written().lines_are_bytes())?;
         self.git
             .blames
             .get(&(buffer.path().to_path_buf(), buffer.content().at()))
@@ -237,6 +243,7 @@ impl App {
     pub(in crate::app) fn ask_blame(&mut self) {
         let Some(asked) = self
             .current_buffer()
+            .filter(|buffer| buffer.written().lines_are_bytes())
             .map(|buffer| (buffer.path().to_path_buf(), buffer.content().at()))
         else {
             return;
@@ -318,6 +325,7 @@ impl App {
         // the buffer: what is being compared is this text, whether or not
         // the other side of the comparison has to be read again.
         let now = buffer.text().rope().to_string();
+        let written = buffer.written();
         let asked_path = asked.0.clone();
         if self
             .git
@@ -333,7 +341,7 @@ impl App {
                     obelus_git::history::text_before(&self.working_directory, id, &asked.0)
                         .unwrap_or_default(),
                 )),
-                None => obelus_git::head(&asked.0),
+                None => obelus_git::head_read_as(&asked.0, Some(written)),
             };
             self.git.committed = Some(crate::app::Committed { of: asked, text });
         }

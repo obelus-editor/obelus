@@ -4707,6 +4707,27 @@ impl App {
             })
             .map(|(index, _)| index);
 
+        // How the file is written: the document's way where one is open, and
+        // otherwise the disk's, so an agent's UTF-8 over a file in GBK goes
+        // back in GBK -- written as it came, it would turn every line that
+        // is not ASCII into a change.
+        let written = match open {
+            Some(index) => self
+                .file(DocumentId::new(index))
+                .map(Buffer::written)
+                .unwrap_or_default(),
+            None => obelus_encoding::read_file(&full)
+                .map(|read| read.written)
+                .unwrap_or_default(),
+        };
+        // An agent that read the file through something that kept the mark
+        // sends it back as the first character; the mark is the encoding's,
+        // and kept as well it would be written twice.
+        let text = match written.is_marked() {
+            true => text.strip_prefix('\u{feff}').unwrap_or(text),
+            false => text,
+        };
+
         let wrote = match open {
             // The whole document replaced as one change, which is one step
             // back. The protocol has no way to say "this part", so what
@@ -4729,13 +4750,19 @@ impl App {
                 // the state.
                 true
             }
-            None => match std::fs::write(&full, text) {
-                Ok(()) => true,
-                Err(error) => {
-                    tracing::warn!(%error, path = %full.display(), "writing for the agent failed");
-                    false
+            None => {
+                let wrote = written
+                    .encode(text)
+                    .map_err(anyhow::Error::from)
+                    .and_then(|bytes| std::fs::write(&full, bytes).map_err(anyhow::Error::from));
+                match wrote {
+                    Ok(()) => true,
+                    Err(error) => {
+                        tracing::warn!(%error, path = %full.display(), "writing for the agent failed");
+                        false
+                    }
                 }
-            },
+            }
         };
         let _ = answer.send(wrote);
     }
@@ -4763,7 +4790,11 @@ impl App {
                 .filter_map(Document::file)
                 .find(|buffer| buffer.path() == full)
                 .map(|buffer| buffer.text().rope().to_string())
-                .or_else(|| std::fs::read_to_string(&full).ok())
+                .or_else(|| {
+                    obelus_encoding::read_file(&full)
+                        .ok()
+                        .map(|read| read.text.into_owned())
+                })
         } else {
             None
         };

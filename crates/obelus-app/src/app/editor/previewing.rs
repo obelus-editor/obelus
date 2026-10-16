@@ -918,6 +918,7 @@ impl App {
             // would change is not worked out until it is chosen.
             | PickerValue::Action(_)
             | PickerValue::Theme(_)
+            | PickerValue::Encoding(_)
             | PickerValue::MoreThemes
             // A question about the keys, answered over the page that lists
             // them: there is nothing to show beside it.
@@ -980,16 +981,25 @@ impl App {
                 // is what choosing the row gives them -- and the disk stops
                 // being the same document the moment anything writes to it
                 // and Obelus has not read it again.
-                let buffer = match self.open_file_at(path, None) {
-                    Some(open) => Buffer::from_text(path, &open.text().rope().to_string()),
+                let (buffer, written) = match self.open_file_at(path, None) {
+                    Some(open) => (
+                        Buffer::from_text(path, &open.text().rope().to_string()),
+                        open.written(),
+                    ),
                     // A file that has gone, or one this reader cannot read.
                     // No preview rather than a message: the list is the
                     // subject here.
-                    None => Buffer::open(path)
-                        .inspect_err(|error| tracing::debug!(%error, "no preview"))
-                        .ok()?,
+                    None => {
+                        let buffer = Buffer::open(path)
+                            .inspect_err(|error| tracing::debug!(%error, "no preview"))
+                            .ok()?;
+                        let written = buffer.written();
+                        (buffer, written)
+                    }
                 };
-                let changes = obelus_git::head(path)
+                // Read in the encoding the file is read in, as the margin's
+                // is, or the two would mark different lines.
+                let changes = obelus_git::head_read_as(path, Some(written))
                     .map(|mut committed| committed.changes(&buffer.text().rope().to_string()));
                 Some((buffer, changes))
             }

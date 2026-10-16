@@ -64,6 +64,95 @@ impl App {
         self.show_list(picker);
     }
 
+    /// Offers the encodings a file can be read or written in, starting on
+    /// the one the file being read is in.
+    pub fn open_encoding_picker(&mut self) {
+        let Some(now) = self.current_buffer().map(Buffer::written) else {
+            return;
+        };
+        let items = obelus_encoding::Written::offered()
+            .into_iter()
+            .map(|written| PickerItem {
+                prose: false,
+                marker: None,
+                icon: None,
+                label: written.name().into_owned(),
+                version: None,
+                detail: None,
+                trailing: None,
+                changed: None,
+                value: PickerValue::Encoding(written.name().into_owned()),
+                enabled: true,
+                colours: None,
+                status: None,
+                depth: 0,
+                opens: None,
+                kind: None,
+                tab: None,
+                section: None,
+            })
+            .collect();
+        let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
+        picker.before_typing("Filter encodings");
+        // Open on the one the file is in, so the list starts by saying it.
+        picker.prefer(now.name().into_owned());
+        picker.opened_by(Command::EncodingSelect);
+        self.show_list(picker);
+    }
+
+    /// Reads the file being read in the encoding named, or writes it in it.
+    ///
+    /// One choice and two things it can mean, decided by the file rather
+    /// than asked: a document with nothing unwritten in it whose bytes *are*
+    /// that encoding is read again as it -- the guess was wrong -- and
+    /// anything else is written in it from the next save on, which is how a
+    /// file gets out of an encoding that cannot hold what was typed into
+    /// it. Reading over unwritten work would lose it, so that is never the
+    /// meaning while there is any.
+    pub(in crate::app) fn choose_encoding(&mut self, name: &str) {
+        let Some(written) = obelus_encoding::Written::offered()
+            .into_iter()
+            .find(|written| written.name() == name)
+        else {
+            return;
+        };
+        let Some(index) = self.current.map(DocumentId::get) else {
+            return;
+        };
+        let Some(buffer) = self.file_mut(DocumentId::new(index)) else {
+            return;
+        };
+        if buffer.written() == written {
+            return;
+        }
+        let read = match buffer.is_dirty() {
+            true => None,
+            false => buffer.read_as(written).ok(),
+        }
+        // Read as it and still not it: the mark. Whether the bytes start
+        // with one is the bytes' to say, so a reader adding or taking one
+        // away is asking for a write, not a reading -- and "Read as UTF-8"
+        // over a file that kept its BOM was a sentence about nothing.
+        .filter(|_| buffer.written() == written);
+        if read.is_none() {
+            buffer.write_as(written);
+        }
+        // Git's version of the file was read in the encoding the file was,
+        // and is read again in this one; and a blame belongs to lines that
+        // may not be these.
+        self.git.committed = None;
+        match read {
+            Some(changed) => {
+                if changed {
+                    self.change_document(index);
+                    self.ask_standing_questions(index);
+                }
+                self.say(format!("Read as {name}"));
+            }
+            None => self.say(format!("Written as {name} when it is saved")),
+        }
+    }
+
     /// Offers every command by name.
     pub fn open_command_palette(&mut self) {
         // Every command, and what it can do *here* said by whether its row
@@ -847,6 +936,7 @@ impl App {
                 }
             }
             PickerValue::Theme(name) => self.choose_theme(&name),
+            PickerValue::Encoding(name) => self.choose_encoding(&name),
             PickerValue::Place {
                 path,
                 line,

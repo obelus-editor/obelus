@@ -2782,8 +2782,8 @@ fn place_rows(places: &[obelus_lsp::action::Place], root: &Path) -> Vec<PickerIt
                 if big {
                     return Vec::new();
                 }
-                std::fs::read_to_string(&place.path)
-                    .map(|text| text.lines().map(str::to_string).collect())
+                obelus_encoding::read_file(&place.path)
+                    .map(|read| read.text.lines().map(str::to_string).collect())
                     .unwrap_or_default()
             });
             let text = lines

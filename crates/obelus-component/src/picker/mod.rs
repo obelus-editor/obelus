@@ -127,6 +127,9 @@ pub enum PickerValue {
     /// a question about the settings directories -- which the list knows
     /// nothing about and the application does.
     Theme(String),
+    /// Read the file being read in this encoding, or write it in it, by the
+    /// name the encoding answers to.
+    Encoding(String),
     /// Put every command back on the keys its layout gives it: the row a
     /// reader confirms that with.
     KeysBack,

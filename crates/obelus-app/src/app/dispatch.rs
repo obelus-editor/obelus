@@ -28,6 +28,7 @@ pub fn dispatch(app: &mut App, command: Command) {
         Command::FileNew => app.new_file(),
         Command::PreviewToggle => app.toggle_preview(),
         Command::ThemeSelect => app.open_theme_picker(),
+        Command::EncodingSelect => app.open_encoding_picker(),
         Command::CommandPalette => app.open_command_palette(),
         Command::SymbolMenu => app.open_symbol_menu(),
         Command::SymbolComplete => app.ask_completion(),

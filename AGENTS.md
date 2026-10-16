@@ -39,7 +39,7 @@ ignores them, and mixing the two makes the formatting oscillate. **Always
 Clippy must be silent. The lints are the workspace's, in the root
 `Cargo.toml` -- `missing_docs`, `unreachable_pub`, `private_interfaces` --
 because a `#![deny(..)]` in one crate root would silently stop applying to
-the other thirty-seven. Every member opts in with a `[lints] workspace = true`
+the other thirty-eight. Every member opts in with a `[lints] workspace = true`
 of its own, which Cargo does not inherit for it, and every public item needs
 a doc comment.
 
@@ -654,6 +654,10 @@ crates/
                     box a note is written in differ in what they are *about*
                     and not in what down does -- and `modifiers_of`, the one
                     judge of which modifiers a key may carry
+  obelus-encoding/  which encoding a file's bytes are in, asked by everything
+                    that reads a project's files -- the buffer, the search,
+                    git's version of the file -- and writing them back in it
+                    · what Obelus reads, it can write back byte for byte (lib)
   obelus-keymap/    which chord runs which command
                     · chords, contexts, the default table; `why_not` is the
                       one judgement of what may be bound, and `shift+Insert` is
@@ -737,9 +741,11 @@ crates/
                       what Obelus writes, Obelus has to be able to read (log)
   obelus-markdown/  markdown, laid out into rows, from the tree Obelus
                     already parses
-  obelus-search/    one question at three scopes, the project as a tree a
-                    level at a time (tree), and how much code is here: tokei's
-                    walk, in the two orderings the view reads it in (counts)
+  obelus-search/    one question at three scopes, the project walked on a
+                    thread a core and searched by ripgrep's own searcher, the
+                    project as a tree a level at a time (tree), and how much
+                    code is here: tokei's walk, in the two orderings the view
+                    reads it in (counts)
                     · a list Obelus offers is the reader's own project (tree)
   obelus-syntax/    the language registry (two dozen grammars), parsing,
                     highlights, tags

@@ -31,6 +31,7 @@ mod complete;
 mod counts;
 mod dialogs;
 mod editing;
+mod encodings;
 mod field;
 mod folds;
 mod git;
