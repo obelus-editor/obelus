@@ -518,14 +518,7 @@ impl Painter {
         // the first is the list's own edge and arrives with it, and the
         // second is the status row's, which the list stands on.
         let line = thickness(cell.height);
-        let edge = |y: u16| {
-            ruled.iter().find(|rule| {
-                rule.area.y == y
-                    && rule.area.x == behind.area.x
-                    && rule.area.width == behind.area.width
-                    && rule.still_said(page)
-            })
-        };
+        let edge = |y: u16| edge_along(page, behind, ruled, y);
         if edge(behind.area.y).is_some() {
             top = middle(top, cell.height, line);
         }
@@ -680,8 +673,28 @@ impl Painter {
         turn: Option<f32>,
         fonts: &mut Fonts,
     ) {
+        self.seen_under_rows(
+            over,
+            lower,
+            spun,
+            turn,
+            fonts,
+            over.area.top()..over.area.bottom(),
+        );
+    }
+
+    /// The same picture, of some of its rows.
+    pub(super) fn seen_under_rows(
+        &mut self,
+        over: &Behind,
+        lower: &[&Behind],
+        spun: &[Spun],
+        turn: Option<f32>,
+        fonts: &mut Fonts,
+        rows: std::ops::Range<u16>,
+    ) {
         let cell = fonts.cell();
-        for y in over.area.top()..over.area.bottom() {
+        for y in rows.clone() {
             for x in over.area.left()..over.area.right() {
                 let Some(under) = over.look(x, y) else {
                     continue;
@@ -701,7 +714,7 @@ impl Painter {
                 }
             }
         }
-        for mark in spun {
+        for mark in spun.iter().filter(|mark| rows.contains(&mark.area.y)) {
             if let Some(look) = mark.behind(over) {
                 self.turn(mark, look, turn, cell);
             }
@@ -790,6 +803,39 @@ impl Painter {
         }
         first
     }
+}
+
+/// The rule along one row of a pane that is its edge, where there is one
+/// and the row still says it.
+fn edge_along<'a>(page: &Page, pane: &Behind, ruled: &'a [Ruled], y: u16) -> Option<&'a Ruled> {
+    ruled.iter().find(|rule| {
+        rule.area.y == y
+            && rule.area.x == pane.area.x
+            && rule.area.width == pane.area.width
+            && rule.still_said(page)
+    })
+}
+
+/// The row of what a pane was put over that goes on the screen as well
+/// as into its picture: the half of it above the pane's line, which the
+/// glass leaves bare -- see `pane_glass`.
+///
+/// Only over another pane. The first one's picture is on the screen whole
+/// already (`pane_under`); every other one's is drawn into its picture and
+/// nowhere else, so above its line was the screen with the rule's cells
+/// in it -- which are a line and a ground. A list opened over the settings
+/// cut the setting its rule fell across in half: the lower half under the
+/// glass, and nothing at all above it. The palette over the settings did
+/// the same, and so did a setting's choices; the palette over the file
+/// never did, because there it is the first pane.
+pub(super) fn above_its_line(
+    page: &Page,
+    pane: &Behind,
+    ruled: &[Ruled],
+    level: usize,
+) -> Option<u16> {
+    (level > 0 && !pane.is_a_box() && edge_along(page, pane, ruled, pane.area.y).is_some())
+        .then_some(pane.area.y)
 }
 
 /// One row of the picture a pane's glass reads: its grounds, then which
