@@ -1959,6 +1959,53 @@ fn words_while_a_card_is_up_cancel_it_and_are_said() {
     );
 }
 
+/// Words in the thread over a question with another waiting behind it give
+/// up on both: the one behind goes with the stopped turn and is never put
+/// to the thread.
+///
+/// Broken deliberately by putting up what was waiting, as a card does when
+/// it is cancelled: a second card came to the thread and was taken back.
+#[test]
+fn words_over_a_question_take_the_ones_behind_it_too() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-words-over-two");
+    let (mut app, events, log) = paired_with_an_agent(&scratch);
+    let platform = the_platform();
+    let _ = platform.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        text: "/pair".to_string(),
+    });
+    said_until(&mut app, &events, "the first question", |said| {
+        !asks_in(said, "F1").is_empty()
+    });
+    // A turn that answers with nothing, so that no question of its own
+    // comes to be counted.
+    let _ = platform.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Thread("F1".to_string()),
+        text: "neither, go slowly".to_string(),
+    });
+    let mut said = said_until(&mut app, &events, "the words at the agent", |_| {
+        std::fs::read_to_string(&log).is_ok_and(|logged| logged.contains("neither, go slowly"))
+    });
+    let until = std::time::Instant::now() + std::time::Duration::from_millis(500);
+    while std::time::Instant::now() < until {
+        if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(50)) {
+            app.handle(event);
+        }
+        support::lay_out(&mut app, 76, 24);
+        said.extend(said_since());
+    }
+    assert_eq!(
+        asks_in(&said, "F1").len(),
+        0,
+        "a question behind the one passed by was put to the thread: {said:#?}"
+    );
+}
+
 /// Words in the thread while the agent works stop the turn and are said
 /// once it has stopped -- `ctrl+enter` here -- rather than waiting for a
 /// turn that may never end on its own.

@@ -1132,17 +1132,20 @@ impl App {
         let Some(id) = self.document_named(&chat) else {
             return;
         };
-        self.give_up_from_afar(talking::Whose::One(id));
+        let whose = talking::Whose::One(id);
+        self.give_up_from_afar(whose);
+        self.ask_the_next(whose);
     }
 
     /// Gives up on the question up in a conversation from the chat, and
-    /// says so in its thread -- closing its card, where it has one.
+    /// says so in its thread -- closing its card, where it has one. What
+    /// was waiting behind it is the caller's to put up.
     fn give_up_from_afar(&mut self, whose: talking::Whose) {
         self.settle_the_question(whose, "\u{2716} Not answered".to_string());
-        // Before the giving up, which may put the next question up and the
-        // thread back to waiting.
+        // Before the giving up and whatever the caller puts up after it,
+        // which may put the thread back to waiting.
         self.mirror_head(whose, Some(Turning::Working));
-        self.give_up_the_question(whose);
+        self.refuse_the_question(whose);
     }
 
     /// Says in the thread what the reader typed here.
@@ -1320,11 +1323,15 @@ impl App {
         // on its card, whether the thread has one to press or not, and then
         // the words. Given up on here rather than left to the stop, because
         // an agent may ask outside a turn, and then there is nothing to stop.
-        if self
-            .talk_of(talking::Whose::One(id))
-            .is_some_and(|talk| talk.card.is_some())
-        {
-            self.give_up_from_afar(talking::Whose::One(id));
+        // In a turn, what was waiting behind it goes with the turn rather
+        // than up: put up, its card came to the thread to be taken back in
+        // the same breath.
+        let whose = talking::Whose::One(id);
+        if self.talk_of(whose).is_some_and(|talk| talk.card.is_some()) {
+            self.give_up_from_afar(whose);
+            if !self.in_a_turn(whose) {
+                self.ask_the_next(whose);
+            }
         }
         self.say_from_afar(id, &[Part::Words(text.to_string())]);
     }
