@@ -169,8 +169,8 @@ impl App {
         }
         // And where a question is held behind the box, the rows its card is
         // about to cover take nothing: a press there is meant for the card
-        // -- the second of a double click whose first answered the one
-        // before -- and what is under it now would move the keys out of the
+        // -- a press after the double click that answered the one before
+        // -- and what is under it now would move the keys out of the
         // box, or go somewhere the transcript names.
         let held = self
             .conversation()
@@ -582,12 +582,14 @@ impl App {
 
     /// What the pointer did to a question on a card.
     ///
-    /// A card is a question that has taken part of the screen and is
-    /// waiting, and every row of it is a thing the reader answers with --
-    /// so unlike a list drawn over a file there is nothing here to browse
-    /// past, and a press does what the key does on the row it landed on.
-    /// The words are the exception: they are a box, and a press in a box
-    /// puts the caret where it landed.
+    /// The way every list goes: one press stands on a row and a second does
+    /// what enter does there. A card was once the exception -- every row of
+    /// it is a thing the reader answers with, so a press answered -- but an
+    /// answer is the one thing on the screen that cannot be taken back, and
+    /// a permission given by a press that meant only to point at the row
+    /// above is the mis-aimed press this rule is for. The words are the
+    /// exception still: they are a box, and a press in a box puts the caret
+    /// where it landed.
     ///
     /// Answers whether the press was the card's, so that one landing above
     /// it falls through to the transcript.
@@ -646,12 +648,18 @@ impl App {
             }
             return true;
         }
+        if clicks != 2 {
+            return true;
+        }
+        // Spent by the second press, so that a third -- on the card the
+        // answer let through -- is a first press there, and not an answer.
+        self.pointing.clicked = None;
         // Down the key's own path: what enter does to the row under the
         // pointer is what that row is for, and a second answer about it
         // would be a second answer to keep alike. The whole of that path,
         // so a press that answers is the reader at work the way the key
-        // is, and the second press of a double click does not answer the
-        // question the first one put up.
+        // is, and the next question waits behind the box rather than
+        // coming up under a hand that is still pressing.
         self.chat_key(&enter());
         true
     }

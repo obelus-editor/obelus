@@ -5670,14 +5670,15 @@ fn a_question_right_after_a_message_is_sent_waits_behind_the_box() {
     );
 }
 
-/// The press that answered one question does not answer the next: a
-/// double click on an answer is one answer, the way two enters are.
+/// The presses that answered one question do not answer the next: a
+/// double click on an answer is one answer, and a second double click on
+/// the same row before the reader has stopped is not another.
 ///
 /// Broken deliberately by giving the press to the card alone
 /// (`self.card_key(&enter())` in `press_in_card`, as it was): the second
-/// press answers the second question too.
+/// double click answers the second question too.
 #[test]
-fn the_press_that_answered_one_question_does_not_answer_the_next() {
+fn the_double_click_that_answered_one_question_does_not_answer_the_next() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
         app.talking() == obelus_agent::Talking::Ready
@@ -5694,7 +5695,7 @@ fn the_press_that_answered_one_question_does_not_answer_the_next() {
         .position(|row| row.contains("Allow once"))
         .unwrap_or_else(|| panic!("no answer on the card:\n{dump}"));
     let y = u16::try_from(y).expect("a row on the screen");
-    for _ in 0..2 {
+    for _ in 0..4 {
         app.handle(Event::Pointer {
             kind: obelus_app::event::Pointer::Pressed,
             x: 6,
@@ -5703,7 +5704,7 @@ fn the_press_that_answered_one_question_does_not_answer_the_next() {
     }
     assert!(
         app.is_asking_permission(),
-        "the second press answered the second question"
+        "the second double click answered the second question"
     );
     pump(&mut app, &events, "the first answer", |app| {
         said_in_transcript(app, "the first was")
@@ -5753,7 +5754,7 @@ fn a_question_that_arrives_while_an_input_method_writes_waits_behind_the_box() {
 }
 
 /// A press where a held card is about to be does nothing: it is meant for
-/// the card -- the second of a double click on an answer, whose first let
+/// the card -- a press after the double click on an answer that let
 /// the next question through -- and what is under it until the card comes
 /// is the transcript, where a press takes the keys out of the box.
 ///
@@ -10194,24 +10195,26 @@ fn the_key_from_a_conversation_to_the_notes_lands_the_caret_in_them() {
     );
 }
 
-/// A press on a card's answer answers it.
+/// One press on a card's answer stands on it, and a second answers.
 ///
 /// A card is a question that has taken part of the screen and is waiting,
-/// and every row of it is a thing the reader answers with. Until now a
-/// press anywhere on one did nothing: the card covers the box, so the box
-/// said the press was not its own, and the transcript said the same because
-/// the card had taken that part of the band. A question with `Yes` and `No`
-/// on it and no way to press either.
+/// and every row of it is a thing the reader answers with. Until a press
+/// anywhere on one did nothing -- the card covers the box, so the box said
+/// the press was not its own, and the transcript said the same -- there
+/// was a question with `Yes` and `No` on it and no way to press either.
 ///
-/// So a press does what the key does on the row it landed on -- down the
-/// card's own path, rather than a second way to answer. Unlike a list drawn
-/// over a file there is nothing here to browse past: the rows *are* the
-/// answers.
+/// Then a single press answered, which was the other mistake: an answer is
+/// the one thing on the screen that cannot be taken back, and a press
+/// aimed at the row beside it gave a permission nobody meant to give. So a
+/// card goes the way every list goes, and the second press goes down the
+/// card's own path, rather than a second way to answer.
 ///
-/// Broken deliberately by handing the press back to the transcript, which
-/// leaves the question waiting.
+/// Broken deliberately two ways: by answering on any press (`clicks != 2`
+/// taken out of `press_in_card`), which answers `No` with the first press;
+/// and by handing the press back to the transcript, which leaves the
+/// question waiting after the second.
 #[test]
-fn a_press_on_a_cards_answer_answers_it() {
+fn one_press_on_a_cards_answer_stands_on_it_and_a_second_answers() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
         app.talking() == obelus_agent::Talking::Ready
@@ -10220,17 +10223,34 @@ fn a_press_on_a_cards_answer_answers_it() {
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the question", permission_in_front);
 
-    // The row `Yes` is drawn on, and a press on it.
-    let dump = support::render(&mut app, WIDTH, HEIGHT);
-    let y = row_of(&dump, "Yes");
-    app.handle(Event::Pointer {
-        kind: obelus_app::event::Pointer::Pressed,
-        x: 4,
-        y,
-    });
+    let press = |app: &mut App, needle: &str| {
+        let dump = support::render(app, WIDTH, HEIGHT);
+        let y = row_of(&dump, needle);
+        app.handle(Event::Pointer {
+            kind: obelus_app::event::Pointer::Pressed,
+            x: 4,
+            y,
+        });
+    };
+    // Away from where the card stands, so that standing is something the
+    // press did.
+    let was = app.card().map(obelus_component::card::Card::on);
+    press(&mut app, "No");
+    assert!(
+        permission_in_front(&app),
+        "one press answered the question:
+{}",
+        support::render(&mut app, WIDTH, HEIGHT)
+    );
+    let now = app.card().map(obelus_component::card::Card::on);
+    assert_ne!(now, was, "the press did not stand on the row it landed on");
+
+    press(&mut app, "Yes");
+    press(&mut app, "Yes");
     assert!(
         !permission_in_front(&app),
-        "the press did not answer the question:\n{}",
+        "a double press did not answer the question:
+{}",
         support::render(&mut app, WIDTH, HEIGHT)
     );
     // And the agent got it: it is waiting on the answer, so the turn ends
