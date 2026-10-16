@@ -15470,6 +15470,40 @@ fn the_list_of_work_dims_its_key_where_it_does_nothing() {
     );
 }
 
+/// The palette over the list of background work goes when the list does:
+/// the agent stopping takes the list away, and the palette's first tab was
+/// its keys.
+///
+/// Broken deliberately by leaving `leave` as it was, the palette alone: it
+/// stayed up over the conversation, offering `Stop`, which pressed there is
+/// the file's `alt+s`.
+#[test]
+fn the_palette_goes_with_the_list_it_was_over() {
+    let (mut app, events) = playing(&["air"]);
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    say(&mut app, "/background");
+    pump(&mut app, &events, "the work counted", |app| {
+        app.background_tasks() == Some((1, 0))
+    });
+    open_the_background_work(&mut app);
+    support::press_control(&mut app, 'p');
+    assert!(
+        app.palette().is_some(),
+        "the palette did not open over the list"
+    );
+
+    app.handle(Event::Agent(obelus_agent::Event::Acp(
+        obelus_agent::acp::Incoming::Gone(None),
+    )));
+    assert!(app.picker().is_none(), "the list did not go with the agent");
+    assert!(
+        app.palette().is_none(),
+        "the palette stayed up over nothing"
+    );
+}
+
 /// Where the row has no room for the count, the keys walking it do not
 /// stop there: round from the first setting is the last setting, not a
 /// place with nothing drawn on it.

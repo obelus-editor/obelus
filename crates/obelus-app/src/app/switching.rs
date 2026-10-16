@@ -53,11 +53,20 @@ impl App {
     /// The nearest layer only. A list open over the settings is a list, and
     /// a key in it is about the list -- which gives way, and takes the
     /// settings with it.
+    ///
+    /// Except the palette, which is passed over: it is the reader still in
+    /// the view under it, so what is asked is whether *that* gives way. It
+    /// answered yes for itself once, and a key naming a view from the
+    /// palette over a list of names being built threw the names away.
     pub(super) fn gives_way_to_a_view(&self) -> bool {
-        match self.layers().nearest() {
-            // And the palette over one of them: a key naming a view is the
-            // reader choosing that instead, as it is in the view itself.
-            Some(Layer::Settings | Layer::Counts | Layer::Palette) => true,
+        let under = self
+            .layers()
+            .nearest_first()
+            .find(|layer| *layer != Layer::Palette);
+        match under {
+            Some(Layer::Settings | Layer::Counts) => true,
+            // Never: it is what was passed over.
+            Some(Layer::Palette) => false,
             // Whichever layout it was given: a band over the file is as much
             // somewhere the reader chose to be as a list instead of it.
             Some(Layer::Picker) => self.picker.as_ref().is_some_and(Picker::gives_way),

@@ -409,8 +409,8 @@ list waiting on the reader, a question, does not give way. Every key that
 opens a list over the file swaps the same way -- the menu about the name
 under the caret, the problems (`app/switching`).
 
-**The palette is the one thing that opens over a view, and a view's keys are
-its first tab.** A list, a page, the names and the notes say nothing at their
+**The palette opens over a view rather than in its place, and a view's keys
+are its first tab.** A list, a page, the names and the notes say nothing at their
 foot about what their own keys do: the palette opened over one leads with a
 tab of them, each a row with its key at the end and a switch with its tick,
 dim where it does nothing, and choosing one presses that key in the view.

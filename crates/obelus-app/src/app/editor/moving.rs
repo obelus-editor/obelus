@@ -712,6 +712,7 @@ impl App {
             || self.notes().is_some()
             || self.settings.is_some()
             || self.picker.is_some()
+            || self.palette.is_some()
             || self.names.is_some()
             || self.conversation_takes_text()
             || self.typing_to_a_program()

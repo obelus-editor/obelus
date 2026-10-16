@@ -113,8 +113,9 @@ impl Room {
     /// it *is* the region, and a question on the status bar about something
     /// now behind it is a question nobody can answer. A list covers the
     /// question and the list that was there and nothing else -- a setting's
-    /// choices open *over* the settings, which is the one place Obelus
-    /// stacks two things the reader is in.
+    /// choices open *over* the settings. The palette opens over every view
+    /// without asking this at all (`App::open_command_palette`): those are
+    /// the two places Obelus stacks two things the reader is in.
     #[must_use]
     pub const fn covers(self, other: Self) -> bool {
         match self {
@@ -327,7 +328,7 @@ mod tests {
             assert!(room.covers(Room::Row), "{room:?} does not cover a row");
             assert!(room.covers(room), "{room:?} does not cover its own kind");
         }
-        // The one nesting Obelus has: a setting's choices over the settings.
+        // The nesting a room allows: a setting's choices over the settings.
         assert!(!Room::Band.covers(Room::Region));
         assert!(Room::Region.covers(Room::Band));
         // And a question cannot stay up under anything else.

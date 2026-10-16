@@ -155,7 +155,12 @@ impl App {
     /// one, from the same functions, so what a key is said to do and what
     /// it does are worked out in one place.
     fn keys_here(&self) -> Vec<obelus_ui::Hint> {
-        match self.layers().nearest() {
+        self.keys_of(self.layers().nearest())
+    }
+
+    /// The keys of one layer, or of the document where it is `None`.
+    fn keys_of(&self, layer: Option<Layer>) -> Vec<obelus_ui::Hint> {
+        match layer {
             Some(Layer::Picker) => self
                 .picker
                 .as_ref()
@@ -182,6 +187,59 @@ impl App {
             // The notes are a document rather than a layer, and the one
             // document with keys of its own to say.
             None => self.notes().map(obelus_ui::todo::hints).unwrap_or_default(),
+        }
+    }
+
+    /// The palette's first tab, said again of the view under it.
+    ///
+    /// Asked every frame the palette is up, as the open documents' marks
+    /// are: the rows were built when it opened, and the view under it goes
+    /// on moving -- a walk finishing, work stopping -- so a key that was
+    /// dim can have started to work. Whether it works and nothing else: the
+    /// words are what a query matched, and a switch is only flipped by its
+    /// key, which closes the palette.
+    pub(in crate::app) fn freshen_the_keys_here(&mut self) {
+        // The palette in its own layer, over a view; or in the list's
+        // field, over the notes, which are a document and not a layer.
+        let under = match self.palette.is_some() {
+            true => Some(
+                self.layers()
+                    .nearest_first()
+                    .find(|layer| *layer != Layer::Palette),
+            ),
+            false => self
+                .picker
+                .as_ref()
+                .filter(|picker| picker.opener() == Some(Command::CommandPalette))
+                .map(|_| {
+                    self.layers()
+                        .nearest_first()
+                        .find(|layer| *layer != Layer::Picker)
+                }),
+        };
+        let Some(under) = under else {
+            return;
+        };
+        let keys = self.keys_of(under);
+        let usable = |chord: KeyChord| {
+            keys.iter()
+                .filter(|hint| hint.here)
+                .find(|hint| hint.chord == chord || hint.and_also == Some(chord))
+                .is_some_and(|hint| hint.usable)
+        };
+        let palette = match self.palette.as_mut() {
+            Some(palette) => Some(palette),
+            None => self.picker.as_mut(),
+        };
+        if let Some(palette) = palette {
+            palette.remark(|value| match value {
+                PickerValue::Key(chord) => Remark::Now(obelus_component::picker::Said {
+                    marker: None,
+                    enabled: usable(*chord),
+                    trailing: Some(chord.label()),
+                }),
+                _ => Remark::Keep,
+            });
         }
     }
 
@@ -868,9 +926,9 @@ fn keys_as_rows(keys: &[obelus_ui::Hint]) -> Vec<PickerItem> {
                 // settings draw one with. Every other row keeps the column
                 // blank, so that the words of the tab line up down it.
                 icon: Some(hint.switched.map_or(' ', obelus_ui::tick)),
-                label: match paired {
-                    true => format!("{does} {}", which_way(chord)),
-                    false => does,
+                label: match which_way(chord).filter(|_| paired) {
+                    Some(way) => format!("{does} {way}"),
+                    None => does,
                 },
                 version: None,
                 // What it does in a sentence, where a command's title is.
@@ -891,13 +949,14 @@ fn keys_as_rows(keys: &[obelus_ui::Hint]) -> Vec<PickerItem> {
         .collect()
 }
 
-/// Which way one key of a pair goes, in the word a row says it with.
-fn which_way(chord: KeyChord) -> &'static str {
+/// Which way one key of a pair goes, in the word a row says it with --
+/// none for a key that is not an arrow, whose row is then the word alone.
+fn which_way(chord: KeyChord) -> Option<&'static str> {
     match chord.pressed().code {
-        KeyCode::Up => "up",
-        KeyCode::Down => "down",
-        KeyCode::Left => "left",
-        KeyCode::Right => "right",
-        _ => "",
+        KeyCode::Up => Some("up"),
+        KeyCode::Down => Some("down"),
+        KeyCode::Left => Some("left"),
+        KeyCode::Right => Some("right"),
+        _ => None,
     }
 }

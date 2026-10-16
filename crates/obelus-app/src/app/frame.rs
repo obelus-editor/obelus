@@ -156,6 +156,9 @@ impl App {
         // rows are a snapshot and this is the part of them that is about
         // now.
         self.freshen_the_document_marks();
+        // And the palette's first tab, for the same reason: the view under
+        // it moves while it is up.
+        self.freshen_the_keys_here();
         // And what a row of the list of conversations says about itself,
         // which is the same rule one level along: another Obelus opening
         // or closing one is not this reader's keystroke, and the row has

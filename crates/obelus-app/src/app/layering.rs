@@ -21,8 +21,10 @@ impl App {
             return Context::Dialog;
         }
         // A list whose rows are open files is the list of open files, and
-        // that one has a command of its own.
-        if self.selected_document().is_some() {
+        // that one has a command of its own. Not under the palette, though:
+        // the palette has the keys, and `ctrl+w` closed the document behind
+        // it while the reader was looking at a list of commands.
+        if self.layers().nearest() != Some(Layer::Palette) && self.selected_document().is_some() {
             return Context::Documents;
         }
         if self.is_showing_dialog() {
@@ -84,6 +86,17 @@ impl App {
     /// and not the other: the notes are written down however the reader
     /// leaves them.
     pub(crate) fn leave(&mut self, layer: Layer) {
+        // A view that goes takes the palette over it with it: its first tab
+        // is that view's keys, and chosen with nothing under it they were
+        // pressed in the file. Every way the reader leaves gives the palette
+        // up first; this is for the view going by itself -- the background
+        // work's list when the agent stops.
+        if matches!(
+            layer,
+            Layer::Picker | Layer::Settings | Layer::Names | Layer::Counts
+        ) {
+            self.palette = None;
+        }
         match layer {
             // Not left: answered. Escape gives up on the nearest thing,
             // and here there is nothing nearer to give up on and nothing

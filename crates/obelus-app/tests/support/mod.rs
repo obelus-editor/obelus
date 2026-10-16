@@ -181,6 +181,15 @@ pub(crate) struct Here {
 /// keys of its own, or the palette not opening at all.
 pub(crate) fn keys_here(app: &mut App) -> Vec<Here> {
     press_control(app, 'p');
+    // Opened, or what follows reads nothing and the escape after it closes
+    // the view instead -- and every "the palette does not offer X" passes.
+    assert!(
+        app.palette().is_some()
+            || app.picker().is_some_and(
+                |picker| picker.opener() == Some(obelus_command::Command::CommandPalette)
+            ),
+        "the palette did not open, so there is nothing to read"
+    );
     let palette = app.palette().or_else(|| app.picker());
     let here = palette
         .filter(|palette| palette.tabs().first().map(String::as_str) == Some("Here"))

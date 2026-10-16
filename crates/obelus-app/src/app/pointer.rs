@@ -33,27 +33,28 @@ impl App {
             self.chat_key(&enter());
             return true;
         }
-        // Which box is showing, and how far in its text starts. The same
-        // order the keys go in by, and the same insets the renderer draws
-        // them at.
-        //
-        // The list of names before the settings, because it is opened from
-        // them and drawn over them; and the page asking which project
-        // last, because every one of the others is drawn over it.
-        let inset = if self.prompt.is_some() {
-            self.prompt.as_ref().map(obelus_ui::status::answer_inset)
-        } else if self.names.is_some() || self.settings.is_some() {
-            Some(obelus_ui::status::typed_inset(None))
-        } else if self.picker.is_some() {
-            self.picker
+        // Which box is showing, and how far in its text starts: the box of
+        // whatever is nearest, which is where the keys are going -- see
+        // `App::box_on_status`.
+        let inset = match self.box_on_status() {
+            Some(StatusBox::Prompt) => self.prompt.as_ref().map(obelus_ui::status::answer_inset),
+            Some(StatusBox::Names | StatusBox::Settings) => {
+                Some(obelus_ui::status::typed_inset(None))
+            }
+            Some(StatusBox::Picker) => self
+                .picker
                 .as_ref()
-                .map(|picker| obelus_ui::status::typed_inset(picker.question()))
-        } else {
-            self.which_project.chooser.as_ref().map(|chooser| {
+                .map(|picker| obelus_ui::status::typed_inset(picker.question())),
+            Some(StatusBox::Palette) => self
+                .palette
+                .as_ref()
+                .map(|palette| obelus_ui::status::typed_inset(palette.question())),
+            Some(StatusBox::Chooser) => self.which_project.chooser.as_ref().map(|chooser| {
                 obelus_ui::status::typed_inset(Some(obelus_ui::status::choosing_question(
                     chooser.is_naming(),
                 )))
-            })
+            }),
+            None => None,
         };
         let Some(inset) = inset else {
             return false;
@@ -305,36 +306,63 @@ impl App {
     /// A press in a list of rows to choose from, and whether it is the
     /// second of a double click.
     fn press_in_picker(&mut self, x: u16, y: u16, twice: bool) {
+        self.press_in_a_list(Pressed::Picker, x, y, twice);
+    }
+
+    /// A press in the palette open over a view: the same as one in a list,
+    /// down the palette's own keys.
+    fn press_in_palette(&mut self, x: u16, y: u16, twice: bool) {
+        self.press_in_a_list(Pressed::Palette, x, y, twice);
+    }
+
+    /// The list a press is in.
+    fn pressed_list(&self, which: Pressed) -> Option<&Picker> {
+        match which {
+            Pressed::Picker => self.picker.as_ref(),
+            Pressed::Palette => self.palette.as_ref(),
+        }
+    }
+
+    /// A press in either: one body, because what a press does to a list is
+    /// the same whichever field holds it, and two copies of it are two
+    /// answers to keep alike.
+    fn press_in_a_list(&mut self, which: Pressed, x: u16, y: u16, twice: bool) {
+        let key = |app: &mut Self, key: &KeyEvent| match which {
+            Pressed::Picker => app.picker_key(key),
+            Pressed::Palette => app.palette_key(key),
+        };
         // Where the list drew itself, not the room it was given: a compact
         // one takes as many rows as it needs against the foot of that room,
         // so the two are ten rows apart for a palette on a tall screen.
         let room = self.picker_area();
         let area = self
-            .picker
-            .as_ref()
+            .pressed_list(which)
             .map_or(room, |picker| obelus_ui::picker::region(picker, room));
         // The tabs, which are above the rows: pressing one is the only
         // thing a tab is for, so there is nothing else a press there could
         // have meant.
-        let tab = self.picker.as_ref().and_then(|picker| {
+        let tab = self.pressed_list(which).and_then(|picker| {
             let row = obelus_ui::picker::tab_row(picker, area)?;
             let at = obelus_ui::tab_at(row, picker.tabs(), picker.tab(), x, y)?;
             Some((picker.tab(), at, picker.tabs().len()))
         });
         if let Some((now, wanted, count)) = tab {
             self.walk_to_tab(now, wanted, count, |app, onwards| {
-                app.picker_key(&stepping(onwards));
+                key(app, &stepping(onwards));
             });
             return;
         }
         let Some((at, arrow)) = self
-            .picker
-            .as_ref()
+            .pressed_list(which)
             .and_then(|picker| obelus_ui::picker::row_at(picker, area, x, y))
         else {
             return;
         };
-        if let Some(picker) = self.picker.as_mut() {
+        let chosen = match which {
+            Pressed::Picker => self.picker.as_mut(),
+            Pressed::Palette => self.palette.as_mut(),
+        };
+        if let Some(picker) = chosen {
             picker.select_row(at);
         }
         if arrow || twice {
@@ -342,36 +370,7 @@ impl App {
             // opener of its own: what enter does to the row under the
             // arrow is what the arrow is a picture of, and two of them
             // would be two answers to keep alike.
-            self.picker_key(&enter());
-        }
-    }
-
-    /// A press in the palette open over a view: the same as one in a list,
-    /// down the palette's own keys.
-    fn press_in_palette(&mut self, x: u16, y: u16, twice: bool) {
-        let room = self.picker_area();
-        let Some(palette) = self.palette.as_ref() else {
-            return;
-        };
-        let area = obelus_ui::picker::region(palette, room);
-        let tab = obelus_ui::picker::tab_row(palette, area).and_then(|row| {
-            let at = obelus_ui::tab_at(row, palette.tabs(), palette.tab(), x, y)?;
-            Some((palette.tab(), at, palette.tabs().len()))
-        });
-        if let Some((now, wanted, count)) = tab {
-            self.walk_to_tab(now, wanted, count, |app, onwards| {
-                app.palette_key(&stepping(onwards));
-            });
-            return;
-        }
-        let Some((at, arrow)) = obelus_ui::picker::row_at(palette, area, x, y) else {
-            return;
-        };
-        if let Some(palette) = self.palette.as_mut() {
-            palette.select_row(at);
-        }
-        if arrow || twice {
-            self.palette_key(&enter());
+            key(self, &enter());
         }
     }
 
@@ -874,33 +873,102 @@ impl App {
         self.pointing.dragging = Some(drag);
     }
 
+    /// Which box is on the status row: the nearest layer's, or the page
+    /// that asks which project where nothing is over it.
+    ///
+    /// Asked of the layers rather than walked as a chain of fields, which
+    /// is what this was: a chain is an order of its own, and it put the
+    /// list under the palette ahead of the palette -- a press on the
+    /// palette's query moved a caret in the box behind it. The match is
+    /// exhaustive, so the next layer has to say which box it has.
+    fn box_on_status(&self) -> Option<StatusBox> {
+        match self.layers().nearest() {
+            Some(Layer::Prompt) => Some(StatusBox::Prompt),
+            Some(Layer::Palette) => Some(StatusBox::Palette),
+            Some(Layer::Picker) => Some(StatusBox::Picker),
+            Some(Layer::Names) => Some(StatusBox::Names),
+            Some(Layer::Settings) => Some(StatusBox::Settings),
+            // A table with no box, and a page answered by its two keys.
+            Some(Layer::Counts | Layer::Gone) => None,
+            None => self
+                .which_project
+                .chooser
+                .is_some()
+                .then_some(StatusBox::Chooser),
+        }
+    }
+
     /// Puts the caret of whichever box is on the status row.
     fn place_on_status(&mut self, cell: u16, extend: bool) {
-        if let Some(prompt) = self.prompt.as_mut() {
-            prompt.place_at_cell(cell, extend);
-        } else if let Some((_, names)) = self.names.as_mut() {
-            names.place_in_query(cell, extend);
-        } else if let Some(settings) = self.settings.as_mut() {
-            settings.place_in_query(cell, extend);
-        } else if let Some(picker) = self.picker.as_mut() {
-            picker.place_in_query(cell, extend);
-        } else if let Some(chooser) = self.which_project.chooser.as_mut() {
-            chooser.place_in_typing(cell, extend);
+        match self.box_on_status() {
+            Some(StatusBox::Prompt) => {
+                if let Some(prompt) = self.prompt.as_mut() {
+                    prompt.place_at_cell(cell, extend);
+                }
+            }
+            Some(StatusBox::Names) => {
+                if let Some((_, names)) = self.names.as_mut() {
+                    names.place_in_query(cell, extend);
+                }
+            }
+            Some(StatusBox::Settings) => {
+                if let Some(settings) = self.settings.as_mut() {
+                    settings.place_in_query(cell, extend);
+                }
+            }
+            Some(StatusBox::Picker) => {
+                if let Some(picker) = self.picker.as_mut() {
+                    picker.place_in_query(cell, extend);
+                }
+            }
+            Some(StatusBox::Palette) => {
+                if let Some(palette) = self.palette.as_mut() {
+                    palette.place_in_query(cell, extend);
+                }
+            }
+            Some(StatusBox::Chooser) => {
+                if let Some(chooser) = self.which_project.chooser.as_mut() {
+                    chooser.place_in_typing(cell, extend);
+                }
+            }
+            None => {}
         }
     }
 
     /// Takes hold of a word of it, or of all of it.
     fn hold_on_status(&mut self, all: bool) {
-        if let Some(prompt) = self.prompt.as_mut() {
-            prompt.hold(all);
-        } else if let Some((_, names)) = self.names.as_mut() {
-            names.hold_in_query(all);
-        } else if let Some(settings) = self.settings.as_mut() {
-            settings.hold_in_query(all);
-        } else if let Some(picker) = self.picker.as_mut() {
-            picker.hold_in_query(all);
-        } else if let Some(chooser) = self.which_project.chooser.as_mut() {
-            chooser.hold_in_typing(all);
+        match self.box_on_status() {
+            Some(StatusBox::Prompt) => {
+                if let Some(prompt) = self.prompt.as_mut() {
+                    prompt.hold(all);
+                }
+            }
+            Some(StatusBox::Names) => {
+                if let Some((_, names)) = self.names.as_mut() {
+                    names.hold_in_query(all);
+                }
+            }
+            Some(StatusBox::Settings) => {
+                if let Some(settings) = self.settings.as_mut() {
+                    settings.hold_in_query(all);
+                }
+            }
+            Some(StatusBox::Picker) => {
+                if let Some(picker) = self.picker.as_mut() {
+                    picker.hold_in_query(all);
+                }
+            }
+            Some(StatusBox::Palette) => {
+                if let Some(palette) = self.palette.as_mut() {
+                    palette.hold_in_query(all);
+                }
+            }
+            Some(StatusBox::Chooser) => {
+                if let Some(chooser) = self.which_project.chooser.as_mut() {
+                    chooser.hold_in_typing(all);
+                }
+            }
+            None => {}
         }
     }
 
@@ -1296,4 +1364,31 @@ pub(in crate::app) struct Pointing {
     pub(in crate::app) holding: Option<(obelus_ui::bars::Whose, u16)>,
     /// Whether shift is held, where a window has said so.
     pub(in crate::app) shifted: bool,
+}
+
+/// The box on the status row a press there goes to -- see
+/// `App::box_on_status`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StatusBox {
+    /// A question.
+    Prompt,
+    /// The query of a list a setting's names are built in.
+    Names,
+    /// The settings' filter.
+    Settings,
+    /// A list's query.
+    Picker,
+    /// The palette's query, over a view.
+    Palette,
+    /// The page that asks which project.
+    Chooser,
+}
+
+/// Which list a press is in -- see `App::press_in_a_list`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Pressed {
+    /// The list that is open.
+    Picker,
+    /// The palette over a view.
+    Palette,
 }

@@ -163,6 +163,82 @@ fn a_key_naming_a_view_goes_past_the_palette() {
     assert_eq!(app.picker().map(|search| search.tab()), Some(1));
 }
 
+/// A press on the status row puts the caret in the palette's query, which
+/// is the box on it, and not in the search's under the palette.
+///
+/// Broken deliberately by answering `StatusBox::Picker` for the palette in
+/// `App::box_on_status`, which is what the chain of fields it replaced did:
+/// the search's query took the caret, and what was typed next went in at
+/// the palette's end.
+#[test]
+fn a_press_on_the_query_is_in_the_palette() {
+    let mut app = searching();
+    support::press_control(&mut app, 'p');
+    support::type_text(&mut app, "abc");
+    let _ = support::render(&mut app, WIDTH, HEIGHT);
+    let inset =
+        obelus_ui::status::typed_inset(app.palette().and_then(|palette| palette.question()));
+    app.handle(obelus_app::event::Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: inset + 1,
+        y: HEIGHT - 1,
+    });
+    support::type_text(&mut app, "X");
+    assert_eq!(
+        app.palette().map(|palette| palette.query().to_string()),
+        Some("aXbc".to_string()),
+        "the press did not put the caret in the palette's query"
+    );
+    assert_eq!(
+        app.picker().map(|search| search.query().to_string()),
+        Some("fn".to_string()),
+        "the search under the palette was changed"
+    );
+}
+
+/// A key naming a view, from the palette over a list of names being built,
+/// does nothing: the names do not give way, and the palette is the reader
+/// still in them.
+///
+/// Broken deliberately by having the palette answer for itself in
+/// `gives_way_to_a_view`, as it did: `f1` put the names and the settings
+/// away and opened the files.
+#[test]
+fn the_palette_over_the_names_does_not_give_them_away() {
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    app.open_names("fonts");
+    support::press_control(&mut app, 'p');
+    assert!(
+        app.palette().is_some(),
+        "the palette did not open over the names"
+    );
+    support::press_function(&mut app, 1);
+    assert!(app.names().is_some(), "the names were thrown away");
+}
+
+/// `ctrl+w` in the palette over the open documents closes nothing: the
+/// palette has the keys, not the list of documents behind it.
+///
+/// Broken deliberately by asking `selected_document` first in `context`
+/// again, whatever is nearest: the document the list was standing on went.
+#[test]
+fn the_palette_over_the_documents_does_not_close_one() {
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    support::press_function(&mut app, 2);
+    support::press_control(&mut app, 'p');
+    assert!(
+        app.palette().is_some(),
+        "the palette did not open over the documents"
+    );
+    support::press_control(&mut app, 'w');
+    assert!(
+        app.current_buffer().is_some(),
+        "the document behind the palette was closed"
+    );
+}
+
 /// The last row of a screen, as text.
 fn last_row(app: &mut App) -> String {
     let dump = support::render(app, WIDTH, HEIGHT);

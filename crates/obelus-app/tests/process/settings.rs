@@ -3205,6 +3205,25 @@ fn the_palette_offers_unset_only_where_it_means_something() {
     );
 }
 
+/// A key chosen from the palette over the settings is pressed on the row
+/// the page was standing on.
+///
+/// Broken deliberately by doing nothing with a chosen key
+/// (`PickerValue::Key` in `palette_key`): the setting stayed as it was.
+#[test]
+fn a_key_chosen_from_the_palette_is_pressed_on_the_page() {
+    let _turn = crate::turn();
+    let scratch = temporary("palette-presses");
+    let mut app = open(&settings_file(&scratch));
+    support::type_text(&mut app, "wrap");
+    let before = app.config().wrap;
+    support::press_control(&mut app, 'p');
+    support::type_text(&mut app, "Change");
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.palette().is_none(), "the palette stayed up");
+    assert_ne!(app.config().wrap, before, "the switch was not flipped");
+}
+
 /// Whether the palette over the page offers a key by that word, now.
 fn offers(app: &mut App, word: &str) -> bool {
     support::usable_here(app).iter().any(|said| said == word)

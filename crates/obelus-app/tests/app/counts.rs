@@ -470,6 +470,64 @@ fn the_counts_say_what_their_keys_do() {
     );
 }
 
+/// A key chosen from the palette over the counts is pressed in them.
+///
+/// Broken deliberately by giving the counts no keys in the palette
+/// (`App::keys_of`): there was no "Open" to choose, and nothing opened.
+#[test]
+fn a_key_chosen_from_the_palette_is_pressed_in_the_counts() {
+    let mut app = open(76, 18);
+    press(&mut app, KeyCode::Tab);
+    let before = app.counts().expect("the counts").rows().len();
+    support::press_control(&mut app, 'p');
+    support::type_text(&mut app, "Open");
+    press(&mut app, KeyCode::Enter);
+    assert!(app.palette().is_none(), "the palette stayed up");
+    assert!(
+        app.counts().expect("the counts").rows().len() > before,
+        "the directory did not open"
+    );
+}
+
+/// The palette's first tab says what works now, and not only what worked
+/// when it opened: the counts arriving under it make enter do something.
+///
+/// Broken deliberately by not asking it each frame
+/// (`freshen_the_keys_here` out of the frame): enter stayed dim after the
+/// table had rows to open.
+#[test]
+fn the_palettes_first_tab_follows_the_counts_under_it() {
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    support::lay_out(&mut app, 76, 24);
+    dispatch::dispatch(&mut app, Command::CountLines);
+    support::press_control(&mut app, 'p');
+    let enter = |app: &App| {
+        app.palette()
+            .expect("the palette")
+            .matches()
+            .find(|row| {
+                matches!(
+                    row.value,
+                    obelus_component::picker::PickerValue::Key(chord)
+                        if chord == obelus_keymap::KeyChord::new(
+                            KeyCode::Enter,
+                            crossterm::event::KeyModifiers::NONE,
+                        )
+                )
+            })
+            .map(|row| row.enabled)
+    };
+    assert_eq!(
+        enter(&app),
+        Some(false),
+        "enter works on a table still counting"
+    );
+    app.handle(Event::Counted(Box::new(counted())));
+    let _ = support::render(&mut app, 76, 24);
+    assert_eq!(enter(&app), Some(true), "the row did not follow the counts");
+}
+
 /// A press moves the selection, and a press on a row's fold mark opens it.
 ///
 /// The counted table is drawn over the whole screen, and until now a press
