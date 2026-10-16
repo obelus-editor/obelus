@@ -715,7 +715,9 @@ const SHEENED: u32 = 2048;
 const TURNING: u32 = 16_777_216;
 
 /// A run the reader has hold of, whose four corners each turn one of
-/// three ways -- see `held` in the shader, and `Turn`.
+/// three ways -- see `held` in the shader, and `Turn` -- and a tab on the
+/// bar, which is drawn as one. Beside `SHADOW`, the shadow of a tab, cast
+/// from that shape rather than from a rectangle (`standing` in the shader).
 const HELD_PLATE: u32 = 4096;
 
 /// The soft edge outside a pane or a box. Past the turns for the same
