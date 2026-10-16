@@ -17565,6 +17565,41 @@ fn a_review_taken_elsewhere_is_locked_on_its_row_while_the_list_is_open() {
     );
 }
 
+/// While the list of pull requests has no rows yet, its preview shows
+/// nothing rather than the file the list was opened over: no row of the list
+/// is a file, so the file is not a preview of anything in it.
+///
+/// Broken deliberately by taking the list of pull requests out of
+/// `preview_target`'s answer for nothing chosen: the file is drawn under the
+/// rule where the preview goes.
+#[test]
+fn the_list_of_pull_requests_previews_no_file_before_it_has_rows() {
+    let scratch = support::Scratch::new("agent-pull-request-no-file-preview");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, one_pull_request("abc123")).expect("the answer");
+    let (mut app, _events) = with_a_fake_gh(&scratch, &answer);
+    let file = scratch.path().join("behind.rs");
+    std::fs::write(&file, "fn the_file_behind_the_list() {}\n").expect("a file");
+    app.open_for_test(&file);
+    let text = screen(&mut app);
+    assert!(
+        text.contains("the_file_behind_the_list"),
+        "the file is not open:\n{text}"
+    );
+
+    // Nothing handed back from `gh` yet: the answer waits in the channel.
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Pull requests"),
+        "the list is not up:\n{text}"
+    );
+    assert!(
+        !text.contains("the_file_behind_the_list"),
+        "the list previews the file it was opened over:\n{text}"
+    );
+}
+
 /// A pull request's page is read with a cursor: what `gh` said is on it,
 /// tab goes to a comment's heading and enter shuts what it says, and what
 /// shift holds is what a copy takes.

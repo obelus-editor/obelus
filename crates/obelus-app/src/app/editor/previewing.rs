@@ -836,7 +836,15 @@ impl App {
         // read -- the list has pushed the editor down the screen rather
         // than replaced it with a blank, and what was under the reader's
         // eyes a moment ago is still there to look at.
+        //
+        // Except over the pull requests and issues, none of which is a file:
+        // there the file was not pushed down but covered, and showing it
+        // under the rule while `gh` is still being asked is a preview of
+        // something no row of the list is about.
         let Some(item) = picker.selected_item() else {
+            if self.listing_pull_requests() {
+                return None;
+            }
             return self.reading_now();
         };
         // A row that *is* the line it names is there because the query
