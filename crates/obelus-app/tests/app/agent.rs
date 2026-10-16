@@ -5676,7 +5676,9 @@ fn a_question_right_after_a_message_is_sent_waits_behind_the_box() {
 ///
 /// Broken deliberately by giving the press to the card alone
 /// (`self.card_key(&enter())` in `press_in_card`, as it was): the second
-/// double click answers the second question too.
+/// double click answers the second question too. Which needs the count
+/// spent by the first: left alone, the four presses count one, two, three,
+/// one, and there is no second double click to answer with.
 #[test]
 fn the_double_click_that_answered_one_question_does_not_answer_the_next() {
     let (mut app, events) = talking();
@@ -10198,10 +10200,10 @@ fn the_key_from_a_conversation_to_the_notes_lands_the_caret_in_them() {
 /// One press on a card's answer stands on it, and a second answers.
 ///
 /// A card is a question that has taken part of the screen and is waiting,
-/// and every row of it is a thing the reader answers with. Until a press
-/// anywhere on one did nothing -- the card covers the box, so the box said
-/// the press was not its own, and the transcript said the same -- there
-/// was a question with `Yes` and `No` on it and no way to press either.
+/// and every row of it is a thing the reader answers with. At first a
+/// press anywhere on one did nothing: the card covers the box, so the box
+/// said the press was not its own, and the transcript said the same -- a
+/// question with `Yes` and `No` on it and no way to press either.
 ///
 /// Then a single press answered, which was the other mistake: an answer is
 /// the one thing on the screen that cannot be taken back, and a press
@@ -10238,8 +10240,7 @@ fn one_press_on_a_cards_answer_stands_on_it_and_a_second_answers() {
     press(&mut app, "No");
     assert!(
         permission_in_front(&app),
-        "one press answered the question:
-{}",
+        "one press answered the question:\n{}",
         support::render(&mut app, WIDTH, HEIGHT)
     );
     let now = app.card().map(obelus_component::card::Card::on);
@@ -10249,8 +10250,7 @@ fn one_press_on_a_cards_answer_stands_on_it_and_a_second_answers() {
     press(&mut app, "Yes");
     assert!(
         !permission_in_front(&app),
-        "a double press did not answer the question:
-{}",
+        "a double press did not answer the question:\n{}",
         support::render(&mut app, WIDTH, HEIGHT)
     );
     // And the agent got it: it is waiting on the answer, so the turn ends

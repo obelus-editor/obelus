@@ -591,6 +591,11 @@ impl App {
     /// exception still: they are a box, and a press in a box puts the caret
     /// where it landed.
     ///
+    /// A tick, where several answers may be chosen, is the second press too,
+    /// though it can be taken back: one press on a card is one meaning,
+    /// standing, whatever the row, and a reader does not have to know which
+    /// kind of question it is to know what their hand will do.
+    ///
     /// Answers whether the press was the card's, so that one landing above
     /// it falls through to the transcript.
     fn press_in_card(&mut self, kind: crate::event::Pointer, x: u16, y: u16) -> bool {
@@ -651,8 +656,9 @@ impl App {
         if clicks != 2 {
             return true;
         }
-        // Spent by the second press, so that a third -- on the card the
-        // answer let through -- is a first press there, and not an answer.
+        // Spent by the second press, the way every list spends it: a third
+        // is a first press wherever it lands, and not the line taken hold
+        // of in the words of the card the answer let through.
         self.pointing.clicked = None;
         // Down the key's own path: what enter does to the row under the
         // pointer is what that row is for, and a second answer about it

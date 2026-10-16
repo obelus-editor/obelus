@@ -82,9 +82,9 @@ pub fn place_at(card: &Card, area: Rect, x: u16, y: u16) -> Option<(usize, u16)>
 /// Which of the card's rows a point on screen is on.
 ///
 /// The card is a question that has taken part of the screen and is waiting,
-/// and every row of it is a thing the reader answers with -- so unlike the
-/// lists drawn over a file, there is nothing here to browse past. A press
-/// names a row and the caller does to it what the key does.
+/// and every row of it is a thing the reader answers with. A press names a
+/// row: the caller stands on it, and does to it what the key does only on
+/// the second press of a double click, the way every list goes.
 ///
 /// The answers are walked rather than divided: an answer is as tall as its
 /// name and what it says about itself, and which of them are on screen is
