@@ -27,15 +27,14 @@
 //! rebuilt from that update would lose its kind, its title and its place at the
 //! moment it succeeded.
 //!
-//! The transcript has a cursor, and it walks the words; tab goes to what
-//! acts. The arrows move it a character and a row at a time, over every row
-//! drawn -- prose, a blank, a heading -- because a reader taking a copy of a
-//! sentence has to be able to stand in it, and a press puts it where the
-//! pointer landed. Tab and shift and tab step to the next row that does
-//! something: a tool call names a file, a heading opens what is under it.
-//! None of them is lit while the cursor is on it: the caret says where the
-//! cursor is, a key at the row's end says what enter does there, and a light
-//! behind the row was drawn over what the reader had hold of in it.
+//! The transcript is a page with a cursor in it: the arrows walk the words
+//! and tab goes to what acts, by the rules [`crate::page`] keeps for every
+//! page read as rows, and a press puts the cursor where the pointer landed.
+//! What acts here is a tool call, which names a file, and a heading, which
+//! opens what is under it. None of them is lit while the cursor is on it: the
+//! caret says where the cursor is, a key at the row's end says what enter does
+//! there, and a light behind the row was drawn over what the reader had hold of
+//! in it.
 //!
 //! Enter opens what the row names -- in a buffer, and the conversation hides
 //! itself, because going somewhere means seeing it. Escape comes back out to
@@ -517,131 +516,68 @@ impl Row {
     /// How many characters the row draws.
     #[must_use]
     pub fn characters(&self) -> usize {
-        self.spans
-            .iter()
-            .map(|span| span.text.chars().count())
-            .sum()
+        crate::page::characters(self)
     }
 
     /// The last place on the row a caret may stand, in a transcript whose
-    /// rows are `reading` cells wide.
-    ///
-    /// After its last character, unless the row fills the width: then there
-    /// is no cell after it to draw a caret in -- the next one is the
-    /// scrollbar's -- and the place is before the last character, the way a
-    /// file's wrapped row stops before the character that begins the next
-    /// and leaves the rest to the right arrow. The caret drawn one cell back
-    /// instead was drawn through the middle of a Chinese character ending
-    /// the row, which is two cells and the second of them was that one.
+    /// rows are `reading` cells wide: see [`crate::page::last_stop`].
     #[must_use]
     pub fn last_stop(&self, reading: u16) -> usize {
-        let text = self.text();
-        let cells: usize = obelus_text::drawn_widths(&text)
-            .map(|(_, wide)| usize::from(wide))
-            .sum();
-        if cells + usize::from(u16::from(self.depth) * DEEPER) < usize::from(reading) {
-            return self.characters();
-        }
-        // The start of the last cluster: the boundary before the end.
-        obelus_text::boundaries(&text)
-            .into_iter()
-            .rev()
-            .nth(1)
-            .unwrap_or(0)
+        crate::page::last_stop(self, reading)
     }
 
-    /// The place in what was said that this row's nth character came from.
-    ///
-    /// Characters of the row going in and a place in the words coming out,
-    /// which is the seam between the two halves of this. A row is what a
-    /// width made of what was said and is made again every frame; a place
-    /// in the words outlives the width, the folding and the row itself. So
-    /// everything that points at the transcript -- the pointer, the cursor,
-    /// both ends of a selection -- is kept as the second and worked in the
-    /// first.
-    ///
-    /// Past the end of the row is the place just after its last character,
-    /// so that a cursor at the end of a row is somewhere rather than
-    /// nowhere.
-    ///
-    /// A run the reading drew rather than anybody wrote -- a bullet, a
-    /// marker's bar -- has no place in the words at all. Standing on one is
-    /// standing between the words around it, which is the same answer the
-    /// pointer gives for landing on one.
-    ///
-    /// At the *start* of a row there is no word before, so it is the word
-    /// after, on this row. Handing back nothing there was the markdown
-    /// selection bug: only markdown lays out runs nobody wrote -- a plain
-    /// wrapping gives one run carrying the whole row -- so a bullet or a
-    /// quote's bar was the only place this arose. [`Chat::spot_near`] read
-    /// the nothing as "this row has no words at all", went looking down
-    /// the transcript the way it does for a blank or a heading, and landed
-    /// past the row the cursor was on: `shift+home` on a bullet held the
-    /// rows *after* the cursor.
+    /// The place in what was said that this row's nth character came from:
+    /// see [`crate::page::spot_at`].
     #[must_use]
     pub fn spot_at(&self, characters: usize) -> Option<Spot> {
-        let (said, source) = self.from?;
-        let mut seen = 0usize;
-        let mut after: Option<Spot> = None;
-        // Whether a drawn run at the start of the row is still waiting for
-        // the word that follows it.
-        let mut waiting = false;
-        for span in &self.spans {
-            let bytes = span.from.clone();
-            for (offset, character) in span.text.char_indices() {
-                if let Some(bytes) = bytes.as_ref() {
-                    let at = bytes.start + offset;
-                    if seen == characters || waiting {
-                        return Some(Spot { said, source, at });
-                    }
-                    after = Some(Spot {
-                        said,
-                        source,
-                        at: at + character.len_utf8(),
-                    });
-                } else if seen == characters {
-                    match after {
-                        Some(spot) => return Some(spot),
-                        None => waiting = true,
-                    }
-                }
-                seen += 1;
-            }
-        }
-        after
+        crate::page::spot_at(self, characters)
     }
 
     /// Where in this row a place in the words is, counted in characters.
-    ///
-    /// The way back, for drawing a cursor kept as a place in the words at
-    /// the width it is being drawn at. Nothing where the place is not in
-    /// this row at all.
     #[must_use]
     pub fn characters_at(&self, spot: Spot) -> Option<usize> {
-        if self.from? != (spot.said, spot.source) {
-            return None;
-        }
-        let mut seen = 0usize;
-        let mut end: Option<usize> = None;
-        for span in &self.spans {
-            let bytes = span.from.clone();
-            for (offset, character) in span.text.char_indices() {
-                if let Some(bytes) = bytes.as_ref() {
-                    let at = bytes.start + offset;
-                    if at == spot.at {
-                        return Some(seen);
-                    }
-                    // The end of the row is a place too: a cursor after the
-                    // last word of a wrapped line is on that line, not on
-                    // the next one.
-                    if at + character.len_utf8() == spot.at {
-                        end = Some(seen + 1);
-                    }
-                }
-                seen += 1;
-            }
-        }
-        end
+        crate::page::characters_at(self, spot)
+    }
+}
+
+/// What the cursor asks of a row of the transcript.
+///
+/// A thing said is not one text -- a call has a title, the words it
+/// carries and the lines of its change -- so which text a row is from is
+/// the thing said and which of its texts.
+impl crate::page::Line for Row {
+    type Text = (usize, Source);
+
+    fn spans(&self) -> &[Span] {
+        &self.spans
+    }
+
+    fn laid_from(&self) -> Option<(usize, Source)> {
+        self.from
+    }
+
+    fn indent(&self) -> u16 {
+        u16::from(self.depth) * DEEPER
+    }
+
+    fn code(&self) -> Option<&obelus_row::Code> {
+        self.code.as_ref()
+    }
+
+    fn acts(&self) -> bool {
+        Self::acts(self)
+    }
+
+    fn acting(rows: &[Self], row: usize) -> Option<std::ops::Range<usize>> {
+        Self::acting(rows, row)
+    }
+
+    fn held(&self) -> Option<&std::ops::Range<usize>> {
+        self.held.as_ref()
+    }
+
+    fn hold(&mut self, held: std::ops::Range<usize>) {
+        self.held = Some(held);
     }
 }
 
@@ -751,52 +687,24 @@ pub enum Source {
     Change(usize),
 }
 
-/// A place in the transcript, as the transcript itself holds it.
+/// A place in the transcript, as the transcript itself holds it: which
+/// thing said, which of its texts, and how many bytes into that text.
 ///
-/// Not a row and a column. Rows are what a width makes of what was said,
-/// and they are made again every frame: a place kept as one moves when the
-/// window is resized, and vanishes when something above it is folded away.
-/// Bytes of what was actually said do neither.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Spot {
-    /// Which of the things said.
-    pub said: usize,
-    /// Which of its texts.
-    pub source: Source,
-    /// How many bytes into that text.
-    pub at: usize,
-}
+/// Not a row and a column -- see [`crate::page::Spot`], which is the shape
+/// every page with a cursor keeps a selection in.
+pub type Spot = crate::page::Spot<(usize, Source)>;
 
 /// Where the cursor is in the transcript.
 ///
 /// A row and a character of it, which is where it is on the screen rather
-/// than where it is in the words. That is the opposite of how a selection
-/// is kept, and on purpose.
+/// than where it is in the words: see [`crate::page::Place`].
 ///
-/// A selection has to outlive the width it was made at, because the reader
-/// makes one and then does something else -- reads on, folds a run, resizes
-/// the terminal -- before they copy it. So both its ends are [`Spot`]s,
-/// places in what was said.
-///
-/// A cursor is where the reader is looking while they are pressing keys,
-/// and it has to be able to stand on rows that are in nobody's words at
-/// all: the blank between two things said, a plan's steps, and -- the one
-/// that settles it -- the heading over a folded run, which is the row
-/// `enter` opens. Those rows have no place in the words to be, so a cursor
-/// kept as a `Spot` could not point at the very thing this was for.
-///
-/// What crosses between the two is [`Row::spot_at`]: a shift-motion asks
-/// the row under the cursor where in the words it is, and holds that.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Place {
-    /// Which row, among the rows as they are drawn now.
-    pub row: usize,
-    /// How many characters into it.
-    ///
-    /// Its length means the place after its last character, where a caret
-    /// at the end of a line sits.
-    pub character: usize,
-}
+/// It has to be able to stand on rows that are in nobody's words at all:
+/// the blank between two things said, a plan's steps, and -- the one that
+/// settles it -- the heading over a folded run, which is the row `enter`
+/// opens. Those rows have no place in the words to be, so a cursor kept as
+/// a `Spot` could not point at the very thing this was for.
+pub use crate::page::Place;
 
 /// What a conversation's rows were laid out against: a width, and a
 /// version of `obelus_text`'s table of pictures.
@@ -887,7 +795,7 @@ pub struct Chat {
     /// rather than in the order they come: keeping the anchor is what lets
     /// a drag turn back on itself and shrink, and pass through where it
     /// started, without the two ends swapping meaning underneath it.
-    held: Option<(Spot, Spot)>,
+    held: crate::page::Hold<(usize, Source)>,
     /// How much had been said when the reader last left the end of it.
     ///
     /// `None` while they are at the end, which is where a transcript sits
@@ -955,7 +863,7 @@ impl Row {
     /// one that is drawn is the runs.
     #[must_use]
     pub fn text(&self) -> String {
-        self.spans.iter().map(|span| span.text.as_ref()).collect()
+        crate::page::text(self)
     }
 }
 
@@ -974,7 +882,7 @@ impl Chat {
             suggested: None,
             window: Window::following(),
             focus: Focus::Writing,
-            held: None,
+            held: crate::page::Hold::default(),
             left_at: None,
             stood: None,
             waiting_at: None,
@@ -1805,7 +1713,7 @@ impl Chat {
     /// Takes hold of a place in the transcript, letting go of anything
     /// else.
     pub fn hold_from(&mut self, spot: Spot) {
-        self.held = Some((spot, spot));
+        self.held.from(spot);
     }
 
     /// Drags the far end of it to another place.
@@ -1814,9 +1722,7 @@ impl Chat {
     /// back on itself: the two ends are compared when they are used, not
     /// stored in order.
     pub fn hold_to(&mut self, spot: Spot) {
-        if let Some((_, other)) = self.held.as_mut() {
-            *other = spot;
-        }
+        self.held.to(spot);
     }
 
     /// Forgets the rows, because what they are made of has changed.
@@ -1871,8 +1777,8 @@ impl Chat {
     }
 
     /// Lets go of whatever was held.
-    pub const fn let_go(&mut self) {
-        self.held = None;
+    pub fn let_go(&mut self) {
+        self.held.let_go();
     }
 
     /// Whether what is held is a press at `at` that never became a drag,
@@ -1883,7 +1789,7 @@ impl Chat {
     /// either.
     #[must_use]
     pub fn clicked(&self, at: Spot) -> bool {
-        self.held.is_some_and(|(from, to)| from == to && from == at)
+        self.held.clicked(at)
     }
 
     /// Lets go of a hold with nothing in it, which is what a press that
@@ -1894,35 +1800,22 @@ impl Chat {
     /// shift and an arrow held from where the pointer had been rather than
     /// from the cursor.
     pub fn let_go_of_nothing(&mut self) {
-        if self.held.is_some_and(|(from, to)| from == to) {
-            self.held = None;
-        }
+        self.held.let_go_of_nothing();
     }
 
     /// Whether anything in the transcript is held.
     #[must_use]
     pub const fn holding(&self) -> bool {
-        self.held.is_some()
+        self.held.holding()
     }
 
-    /// What is held, as it is drawn.
-    ///
-    /// Which is the whole of the promise: a reader takes a copy of what is
-    /// on the screen in front of them. So it is read off the rows -- a
-    /// fold that has put something away has put it out of this too, and
-    /// the marks a reading draws between held words come with them.
+    /// What is held, as it is drawn: see [`crate::page::held_text`].
     #[must_use]
     pub fn held_text(&self, width: u16) -> Option<String> {
-        self.held?;
-        let said: Vec<String> = self
-            .rows(width)
-            .into_iter()
-            .filter_map(|row| {
-                let held = row.held.clone()?;
-                Some(row.text().chars().take(held.end).skip(held.start).collect())
-            })
-            .collect();
-        (!said.is_empty()).then(|| said.join("\n"))
+        if !self.held.holding() {
+            return None;
+        }
+        crate::page::held_text(&self.rows(width))
     }
 
     /// Whether the transcript is showing its own end.
@@ -2057,10 +1950,10 @@ impl Chat {
     fn arrive(&mut self, said: Said) {
         self.forget_the_layout();
         let at = self.before_the_waiting();
-        if let Some((from, to)) = &mut self.held {
+        if let Some((from, to)) = self.held.ends_mut() {
             for spot in [from, to] {
-                if spot.said >= at {
-                    spot.said += 1;
+                if spot.of.0 >= at {
+                    spot.of.0 += 1;
                 }
             }
         }
@@ -2300,13 +2193,11 @@ mod tests {
         // reader left and not after it, where it would be counted anyway.
         chat.will_say(&[Part::Words("and me".to_string())]);
         chat.hold_from(Spot {
-            said: 1,
-            source: Source::Text,
+            of: (1, Source::Text),
             at: 0,
         });
         chat.hold_to(Spot {
-            said: 1,
-            source: Source::Text,
+            of: (1, Source::Text),
             at: 4,
         });
         // The reader left the end while the waiting words were there.
@@ -2914,13 +2805,11 @@ mod tests {
         );
         chat.chunk(Speaker::Reader, "and what I said back to it afterwards");
         chat.hold_from(Spot {
-            said: 0,
-            source: Source::Text,
+            of: (0, Source::Text),
             at: 4,
         });
         chat.hold_to(Spot {
-            said: 1,
-            source: Source::Text,
+            of: (1, Source::Text),
             at: 8,
         });
 
@@ -3269,7 +3158,7 @@ mod tests {
     /// `match`: enter on the code does nothing. By leaving the block out of
     /// `Row::acting`: every row of it is a thing of its own, so the first
     /// of them is the box's corner and tab lands there. By leaving
-    /// `next_stop_in` to stop on every row
+    /// `page::next_stop` to stop on every row
     /// that acts: the second tab is the next row of the block. And by
     /// standing at the start of the stop: tab puts the cursor on the
     /// corner of the box.
@@ -3615,13 +3504,11 @@ mod tests {
         // which leaves the caret in the box: walking up into the transcript
         // and back lets go on the way down, and would ask nothing of these.
         chat.hold_from(Spot {
-            said: 0,
-            source: Source::Text,
+            of: (0, Source::Text),
             at: 0,
         });
         chat.hold_to(Spot {
-            said: 0,
-            source: Source::Text,
+            of: (0, Source::Text),
             at: 5,
         });
         assert!(chat.holding(), "the transcript did not take hold");
@@ -3756,7 +3643,7 @@ mod tests {
     /// -- because a plain wrapping gives one run carrying the whole row. So
     /// this was a fault nothing but an agent's own answer could reach, and
     /// it did not look like an off-by-one: `spot_at` handed back nothing
-    /// for the start of such a row, `spot_near` read that as "no words on
+    /// for the start of such a row, `page::spot_near` read that as "no words on
     /// this row at all" and went looking *down* the transcript the way it
     /// does for a blank or a heading, and the selection ran forwards from
     /// the cursor across the rows below it.
@@ -4163,7 +4050,7 @@ mod tests {
             place.row
         );
         assert!(
-            chat.in_view_of(chat.rows(ROOM.reading).len(), ROOM)
+            crate::page::in_view(&chat.window, chat.rows(ROOM.reading).len(), ROOM.transcript)
                 .contains(&place.row),
             "the page moved the view and left the cursor off it"
         );
@@ -4410,13 +4297,11 @@ mod tests {
         // stays in the box.
         chat.note("something said");
         chat.hold_from(Spot {
-            said: 0,
-            source: Source::Text,
+            of: (0, Source::Text),
             at: 0,
         });
         chat.hold_to(Spot {
-            said: 0,
-            source: Source::Text,
+            of: (0, Source::Text),
             at: 5,
         });
         assert_eq!(
@@ -4504,13 +4389,11 @@ mod tests {
         chat.put("half typed");
         // Held across both, which do not survive it.
         chat.hold_from(Spot {
-            said: 0,
-            source: Source::Text,
+            of: (0, Source::Text),
             at: 0,
         });
         chat.hold_to(Spot {
-            said: 1,
-            source: Source::Text,
+            of: (1, Source::Text),
             at: 3,
         });
         assert!(chat.holding(), "the transcript did not take hold");

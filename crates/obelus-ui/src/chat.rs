@@ -770,42 +770,13 @@ impl<'a> ChatView<'a> {
     }
 
     /// Where in what was said a place in the transcript is, for a selection
-    /// to take hold of.
-    ///
-    /// A place in what was said rather than the row and column it was
-    /// pointed at with, because that is what a selection keeps.
-    ///
-    /// A point in a row the reading drew rather than read -- a blank, the
-    /// heading over a folded run, the row that says what is happening now
-    /// -- is the place just after the last word above it, or where there is
-    /// none, the place before the first word below. A drag has to go
-    /// somewhere while it crosses one, and the words either side of it are
-    /// what the reader is dragging between.
-    ///
-    /// And the band below the last row is the place after the last word of
-    /// all, for the same reason: it is where a reader starts a drag up
-    /// through the end of an answer.
+    /// to take hold of: see [`obelus_component::page::spot_under`].
     #[must_use]
     pub fn spot_in_transcript(
         rows: &[Row],
         place: obelus_component::chat::Place,
     ) -> Option<obelus_component::chat::Spot> {
-        if let Some(spot) = rows
-            .get(place.row)
-            .and_then(|row| row.spot_at(place.character))
-        {
-            return Some(spot);
-        }
-        let at = place.row.min(rows.len());
-        // Upwards first, where the cursor's nearest looks down, and nothing
-        // turns on it: what lies between the end of the words above and the
-        // start of those below is nobody's words, so a drag from either
-        // copies the same. Under the last row there is only above.
-        rows[..at]
-            .iter()
-            .rev()
-            .find_map(|row| row.spot_at(row.characters()))
-            .or_else(|| rows[at..].iter().find_map(|row| row.spot_at(0)))
+        obelus_component::page::spot_under(rows, place)
     }
 
     /// Where the terminal should put its caret: in the box, or in the
@@ -954,41 +925,15 @@ const fn words_end(area: Rect) -> u16 {
     area.right().saturating_sub(2)
 }
 
-/// Which character of a row a cell of the screen is on.
-///
-/// The drawing's own half of the seam: a wide glyph is two cells and the
-/// mark and indent in front of the words are several, so what column a
-/// character of a row is drawn at is known here and nowhere else. Past the
-/// end of the row is the row's length, which is the place after its last
-/// character.
+/// Which character of a row a cell of the screen is on: see
+/// [`crate::page::character_under`].
 fn characters_at(row: &Row, x: u16, area: Rect) -> usize {
-    let mut column = words_begin(row, area);
-    let mut seen = 0usize;
-    for (_, wide) in obelus_text::drawn_widths(&row.text()) {
-        if x < column + wide {
-            return seen;
-        }
-        column += wide;
-        seen += 1;
-    }
-    seen
+    crate::page::character_under(&row.text(), words_begin(row, area), x)
 }
 
-/// The cell a character of a row is drawn at.
-///
-/// The way back across the seam [`characters_at`] crosses the other way,
-/// for putting the terminal's caret where the cursor is. Past the end of
-/// the row is the cell after its last character, which is where a caret at
-/// the end of a line belongs.
+/// The cell a character of a row is drawn at: see [`crate::page::cell_of`].
 fn cell_at(row: &Row, characters: usize, area: Rect) -> u16 {
-    let mut column = words_begin(row, area);
-    for (seen, (_, wide)) in obelus_text::drawn_widths(&row.text()).enumerate() {
-        if seen == characters {
-            return column;
-        }
-        column += wide;
-    }
-    column
+    crate::page::cell_of(&row.text(), words_begin(row, area), characters)
 }
 
 /// The cell a row's own words start at.

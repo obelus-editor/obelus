@@ -81,6 +81,10 @@ writing a view, look for the piece that already does it:
                        and where a press takes hold of it (ui::bars)
     component::window  which rows are on screen, and when that changes
     component::window::Move  the six keys that move about a list
+    component::page    a cursor on rows laid out rather than a file: what
+                       the arrows walk, what tab stops on, what shift holds
+                       and what a copy takes -- the transcript's, and any
+                       other page read that way (ui::page draws its cells)
     ui::editor         a document with a gutter: the file being read, and a
                        preview of somewhere else, which *is* this view
 
@@ -705,8 +709,9 @@ crates/
                     requires and where it is `Drawn` -- running one is
                     obelus-app's, in src/app/dispatch.rs
   obelus-component/ picker (one component, several instantiations), settings,
-                    the conversation, the box a message is written in, and
-                    the window every list shares
+                    the conversation, the box a message is written in, the
+                    window every list shares, and the cursor every page of
+                    laid-out rows shares (page)
                     · a query is about the rows the list is of, whether it
                       ranks is settled per tab, a list still arriving sits
                       still, say "still reading" where it moves nothing, which
@@ -715,12 +720,15 @@ crates/
                       a card, not a picker, enter acts on the row the reader is
                       on, and a question the reader did not start says what it
                       is about (card); a tool call is somewhere to go, the
-                      transcript has a cursor and it walks the words, tab goes
-                      to what acts, a run of tool calls is one row, a change
+                      transcript is a page with a cursor in it, a run of tool
+                      calls is one row, a change
                       that has happened is the working tree's and one that has
                       not is the agent's to show, thinking is not folded away,
                       a call's title is three rows shut, a link is opened by
-                      a click and not by enter (chat); the page is Obelus's,
+                      a click and not by enter (chat); the cursor is a place
+                      on the screen and a selection is a place in the words,
+                      and the arrows walk every row drawn and tab goes to what
+                      acts (page); the page is Obelus's,
                       and so is the record of it (chat/kept); folding is one
                       act and the notes are the fourth place it happens, a note
                       somebody else is talking about is read here and not
