@@ -127,7 +127,7 @@ impl App {
         // on it.
         let laid = self.notes_laid_out();
         // And which of them another Obelus has the conversation of, which
-        // decides what the keys will change and so which of them the foot
+        // decides what the keys will change and so which of them the palette
         // offers. Beside the room for the same reason: both are the page's
         // answer to something outside it that moves while it is open.
         let elsewhere = self.which_notes_are_elsewhere();
@@ -140,12 +140,10 @@ impl App {
         // are and this says how many of them the reader can see. Asked
         // after the laying out, because the rows have to exist before the
         // window can be put over them, and from the region the list is
-        // really drawn in -- the foot under it is part of what decides how
-        // many rows there are, and it grows and shrinks with what the note
-        // under the caret can do.
-        let seen = self.notes().map(|notes| {
-            obelus_ui::todo::list_region(self.editor_area, &obelus_ui::todo::hints(notes)).height
-        });
+        // really drawn in.
+        let seen = self
+            .notes()
+            .map(|_| obelus_ui::todo::list_region(self.editor_area).height);
         if let (Some(seen), Some(notes)) = (seen, self.notes_mut()) {
             notes.settle_window(seen);
         }

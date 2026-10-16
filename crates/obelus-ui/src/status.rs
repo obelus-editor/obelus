@@ -618,8 +618,8 @@ pub fn prompt_row(
             theme,
         );
     }
-    if let Some(tally) = picker.how_much() {
-        how_much(
+    match picker.how_much() {
+        Some(tally) => how_much(
             cells,
             area,
             picker.question(),
@@ -627,8 +627,57 @@ pub fn prompt_row(
             picker.invitation(),
             tally,
             theme,
-        );
+        ),
+        None => switches(cells, area, picker, &said, theme),
     }
+}
+
+/// The switches a list has on, at the far end of the row its query is typed
+/// into.
+///
+/// Only those that are on, because what they change is what this query
+/// finds: a search with the pattern switch left on from last week finds
+/// nothing for `foo(`, and nothing else on screen says why. Off is how a
+/// list starts, and a row saying so on every list would be a row of words
+/// nobody reads. Where to change one is the palette's first tab, and the
+/// words here are the words there (`picker::keys`).
+///
+/// Dropped whole where it would reach what was typed or the mark after it,
+/// the way a list's count is.
+fn switches(cells: &mut CellBuffer, area: Rect, picker: &Picker, words: &str, theme: &Theme) {
+    let on: Vec<&str> = crate::picker::keys(picker)
+        .into_iter()
+        .filter(|key| key.usable && key.switched == Some(true))
+        .filter_map(|key| key.does)
+        .collect();
+    if on.is_empty() {
+        return;
+    }
+    let said = on.join(" \u{b7} ");
+    let typed_here = match words.is_empty() {
+        true => picker.invitation().unwrap_or(words),
+        false => words,
+    };
+    // The typing, then the blank, the mark and the blank after it, then two
+    // more so the two never read as one -- what `how_much` keeps clear.
+    let taken = 1usize
+        .saturating_add(text_width(&typed(picker.question(), typed_here)))
+        .saturating_add(5);
+    let wanted = text_width(&said);
+    if taken.saturating_add(wanted).saturating_add(1) > usize::from(area.width) {
+        return;
+    }
+    let Ok(wanted) = u16::try_from(wanted) else {
+        return;
+    };
+    let x = area.right().saturating_sub(1).saturating_sub(wanted);
+    write(
+        cells,
+        x,
+        area.y,
+        &said,
+        Style::new().fg(theme.foreground).bg(theme.background),
+    );
 }
 
 /// What a list says about how much of it there is, at the far end of the

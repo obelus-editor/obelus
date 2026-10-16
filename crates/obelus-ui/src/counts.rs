@@ -59,8 +59,7 @@ const FURNITURE: u16 = 3;
 /// list: a page is worth what is on screen, and two answers to how much that
 /// is would be a page that overshoots by however much they disagreed.
 #[must_use]
-pub fn list_region(area: Rect, counts: &Counts) -> Rect {
-    let area = crate::footed(area, &hints(counts));
+pub fn list_region(area: Rect) -> Rect {
     Rect {
         y: area.y + FURNITURE,
         height: area.height.saturating_sub(FURNITURE),
@@ -72,7 +71,7 @@ pub fn list_region(area: Rect, counts: &Counts) -> Rect {
 /// that row's fold mark.
 ///
 /// The way back out of the arithmetic the drawing goes in by: the rows sit
-/// below the furniture and above the foot, the window says which of them is
+/// below the furniture, the window says which of them is
 /// first, and a row's own columns begin one in and two more for every
 /// branch drawn in front of it. Read here from the same places the drawing
 /// takes it, because a pointer that landed on a different row than the one
@@ -81,7 +80,7 @@ pub fn list_region(area: Rect, counts: &Counts) -> Rect {
 /// `None` for a point outside the rows, or past the last of them.
 #[must_use]
 pub fn row_at(area: Rect, counts: &Counts, x: u16, y: u16) -> Option<(usize, bool)> {
-    let body = list_region(area, counts);
+    let body = list_region(area);
     if y < body.y || y >= body.bottom() || x < body.x || x >= body.right() {
         return None;
     }
@@ -136,8 +135,8 @@ pub fn hints(counts: &Counts) -> Vec<Hint> {
 
 /// How many rows of list a region has room for.
 #[must_use]
-pub fn list_height(area: Rect, counts: &Counts) -> u16 {
-    list_region(area, counts).height
+pub fn list_height(area: Rect) -> u16 {
+    list_region(area).height
 }
 
 /// Which columns fit, for a region this wide.
@@ -311,8 +310,7 @@ impl Widget for CountsView<'_> {
         );
 
         let rows = self.counts.rows();
-        let hints = hints(self.counts);
-        let body = list_region(area, self.counts);
+        let body = list_region(area);
         if rows.is_empty() {
             crate::nothing(
                 cells,
@@ -327,8 +325,6 @@ impl Widget for CountsView<'_> {
         } else {
             self.rows(cells, body, layout);
         }
-
-        crate::foot(cells, area, &hints, self.theme);
     }
 }
 
@@ -675,20 +671,15 @@ mod tests {
     /// `obelus-app/tests/app/counts.rs`.
     #[test]
     fn the_list_is_what_is_left_under_the_tabs_and_the_headings() {
-        let counts = Counts::new();
         let area = Rect::new(0, 0, 80, 24);
-        let list = list_region(area, &counts);
-        // Under the tabs, the rule and the headings; over the rule and the
-        // row of keys at the foot.
-        assert_eq!(list_height(area, &counts), 24 - 3 - crate::FOOT_ROWS);
-        assert_eq!(list.height, list_height(area, &counts));
+        let list = list_region(area);
+        // Under the tabs, the rule and the headings, and down to the bottom:
+        // what the keys do is the palette's to say.
+        assert_eq!(list_height(area), 24 - 3);
+        assert_eq!(list.height, list_height(area));
         assert_eq!(list.y, area.y + 3);
-        assert_eq!(
-            list.bottom(),
-            area.bottom() - crate::FOOT_ROWS,
-            "the list runs under its own foot"
-        );
+        assert_eq!(list.bottom(), area.bottom(), "the list runs to the bottom");
         // A region with no room for a list at all does not go round.
-        assert_eq!(list_height(Rect::new(0, 0, 80, 2), &counts), 0);
+        assert_eq!(list_height(Rect::new(0, 0, 80, 2)), 0);
     }
 }

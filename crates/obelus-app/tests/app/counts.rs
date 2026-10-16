@@ -225,14 +225,6 @@ fn the_counts_take_the_whole_screen() {
         !text.contains("sample.rs"),
         "the file behind the view is still on screen:\n{dump}"
     );
-    // The last rows are the view's own -- the keys it answers to -- and not
-    // the status row of a file it is covering. What is under a rule down
-    // there belongs to this view or there is nothing there at all.
-    let foot = text.lines().last().unwrap_or_default();
-    assert!(
-        foot.contains("Read it"),
-        "the foot is not this view's:\n{dump}"
-    );
 }
 
 /// A walk that has not answered yet says so, rather than showing an empty
@@ -430,47 +422,51 @@ fn nothing_of_obeluss_own_opens_over_the_counts() {
     assert_eq!(before, after, "something opened over the counts");
 }
 
-/// The palette goes in the counts' place, like any view's key: one thing on
-/// screen, and escape goes back to the file.
+/// The palette opens over the counts, and escape is back in them.
 ///
 /// Broken deliberately by taking the palette out of `Command::opens_a_list`:
 /// `ctrl+p` is refused on the counts.
 #[test]
-fn the_palette_takes_the_counts_place() {
+fn the_palette_opens_over_the_counts() {
     let mut app = open(76, 24);
     support::press_control(&mut app, 'p');
-    assert!(app.counts().is_none(), "the counts are still showing");
+    assert!(app.counts().is_some(), "the counts went for the palette");
     assert!(
-        app.picker()
-            .is_some_and(|picker| picker.opener() == Some(Command::CommandPalette)),
-        "ctrl+p on the counts did not go to the palette"
+        app.palette()
+            .is_some_and(|palette| palette.opener() == Some(Command::CommandPalette)),
+        "ctrl+p on the counts did not open the palette"
+    );
+    press(&mut app, KeyCode::Esc);
+    assert!(
+        app.palette().is_none(),
+        "escape did not give the palette up"
+    );
+    assert!(
+        app.counts().is_some(),
+        "escape did not come back to the counts"
     );
 }
 
-/// The counts say what their keys do: `alt+f` cannot be guessed, and enter
-/// does two different things depending on what the row names.
+/// The counts say what their keys do: enter does two different things
+/// depending on what the row names, and the palette says which one is in
+/// front of the reader.
+///
+/// Broken deliberately by giving enter one word whatever the row
+/// (`counts::hints`): a file said it would open.
 #[test]
 fn the_counts_say_what_their_keys_do() {
     let mut app = open(76, 18);
     press(&mut app, KeyCode::Tab);
-    let text = support::text_block(&support::render(&mut app, 76, 18)).to_string();
-    assert!(text.contains("Open"), "enter is not at the foot:\n{text}");
-    // And not escape, which means the same thing in every view Obelus has:
-    // a foot is for what *this* one does.
-    assert!(
-        !text.contains("Leave"),
-        "the foot is spending itself on escape:\n{text}"
-    );
+    assert_eq!(support::usable_here(&mut app), ["Open"]);
 
-    // On a file it reads it instead: one key, two acts, and the foot says
-    // which one is in front of the reader.
+    // On a file it reads it instead: one key, two acts.
     press(&mut app, KeyCode::Enter);
     press(&mut app, KeyCode::Down);
     press(&mut app, KeyCode::Down);
-    let text = support::text_block(&support::render(&mut app, 76, 18)).to_string();
-    assert!(
-        text.contains("Read it"),
-        "enter does not say what it does:\n{text}"
+    assert_eq!(
+        support::usable_here(&mut app),
+        ["Read it"],
+        "enter does not say what it does"
     );
 }
 
@@ -517,7 +513,7 @@ fn a_press_moves_the_selection_and_the_fold_mark_opens_a_row() {
         .expect("a row that opens nothing");
 
     let area = app.editor_area_for_test();
-    let top = obelus_ui::counts::list_region(area, app.counts().expect("the table")).y;
+    let top = obelus_ui::counts::list_region(area).y;
     let press_at = |app: &mut App, row: usize, x: u16| {
         app.handle(Event::Pointer {
             kind: obelus_app::event::Pointer::Pressed,
@@ -574,7 +570,7 @@ fn a_double_click_on_a_row_opens_it() {
         .position(|row| row.open == Some(false))
         .expect("a row that is shut");
     let area = app.editor_area_for_test();
-    let top = obelus_ui::counts::list_region(area, app.counts().expect("the table")).y;
+    let top = obelus_ui::counts::list_region(area).y;
     let press_on_the_words = |app: &mut App| {
         app.handle(Event::Pointer {
             kind: obelus_app::event::Pointer::Pressed,

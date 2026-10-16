@@ -51,6 +51,7 @@ impl App {
             layers::Layer::Settings => self.settings.is_some(),
             layers::Layer::Names => self.names.is_some(),
             layers::Layer::Picker => self.picker.is_some(),
+            layers::Layer::Palette => self.palette.is_some(),
             layers::Layer::Prompt => self.prompt.is_some(),
             layers::Layer::Gone => self.gone,
         })
@@ -117,6 +118,8 @@ impl App {
                     self.set_theme(&name, before);
                 }
             }
+            // Nothing to put back: the view it was over is as it was.
+            Layer::Palette => self.palette = None,
             Layer::Names => self.names = None,
             Layer::Settings => self.settings = None,
             Layer::Counts => self.counts = None,

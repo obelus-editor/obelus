@@ -10,14 +10,14 @@ screen 60x20  editor 60x18  status 60x1
  7|                                                            
  8|                                                            
  9|                                                            
-10|────────────────────────────────────────────────────────────
-11| Nothing chosen, so Liberation Mono                         
-12|─── On this machine ────────────────────────────────────────
-13| Noto Color Emoji                                           
-14| Noto Sans CJK SC                                           
-15| noto                                   Not on this machine 
-16|────────────────────────────────────────────────────────────
-17|   Enter  Add                                               
+10|                                                            
+11|                                                            
+12|────────────────────────────────────────────────────────────
+13| Nothing chosen, so Liberation Mono                         
+14|─── On this machine ────────────────────────────────────────
+15| Noto Color Emoji                                           
+16| Noto Sans CJK SC                                           
+17| noto                                   Not on this machine 
 18|────────────────────────────────────────────────────────────
 19| > noto                                                     
 -- style --
@@ -31,16 +31,16 @@ screen 60x20  editor 60x18  status 60x1
  7|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  8|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  9|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-10|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-11|accccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaa
+10|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+11|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 12|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-13|ghhhhggggggggggggggggggggggggggggggggggggggggggggggggggggggg
-14|ahhhhaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-15|ahhhhaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccccccccca
-16|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-17|aaiiiiiiiacccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+13|accccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaa
+14|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+15|ghhhhggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+16|ahhhhaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+17|ahhhhaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccccccccca
 18|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-19|jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj
+19|iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii
 -- legend --
 a fg=#e4e4e7 bg=#18181b
 b fg=#a1a1aa bg=#18181b
@@ -50,7 +50,6 @@ e fg=#60a5fa bg=#18181b
 f fg=#a3e635 bg=#18181b
 g fg=#e4e4e7 bg=#312e81
 h fg=#e4e4e7 bg=#38577f
-i fg=#a1a1aa bg=#27272a
-j fg=#d4d4d8 bg=#18181b
+i fg=#d4d4d8 bg=#18181b
 -- cursor --
 7,19

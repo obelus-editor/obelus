@@ -18,8 +18,8 @@ screen 60x22  editor 60x20  status 60x1
 15|   5                                                        
 16|                                                            
 17|                                                            
-18|────────────────────────────────────────────────────────────
-19|   Alt+i  Ignored files □     Alt+.  Hidden files □    …    
+18|                                                            
+19|                                                            
 20|────────────────────────────────────────────────────────────
 21| > fixtures                                                 
 -- style --
@@ -41,10 +41,10 @@ screen 60x22  editor 60x20  status 60x1
 15|cccdcccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 16|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 17|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-18|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
-19|cciiiiiiicdddddddddddddcdcccciiiiiiicddddddddddddcdccccdcccc
+18|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+19|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 20|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
-21|jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj
+21|iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii
 -- legend --
 a fg=#e4e4e7 bg=#27272a
 b fg=#e4e4e7 bg=#38577f
@@ -54,7 +54,6 @@ e fg=#a1a1aa bg=#18181b
 f fg=#c084fc bg=#18181b
 g fg=#60a5fa bg=#18181b
 h fg=#a3e635 bg=#18181b
-i fg=#a1a1aa bg=#27272a
-j fg=#d4d4d8 bg=#18181b
+i fg=#d4d4d8 bg=#18181b
 -- cursor --
 11,21

@@ -258,6 +258,7 @@ impl App {
             // The status row, which was asked before this.
             obelus_component::layers::Layer::Prompt => {}
             obelus_component::layers::Layer::Picker => self.press_in_picker(x, y, twice),
+            obelus_component::layers::Layer::Palette => self.press_in_palette(x, y, twice),
             // Nothing yet: what a press would have to land on is a row of
             // two sections and a boundary between them, and a press that
             // guessed wrong would add a font the reader did not point at.
@@ -342,6 +343,35 @@ impl App {
             // arrow is what the arrow is a picture of, and two of them
             // would be two answers to keep alike.
             self.picker_key(&enter());
+        }
+    }
+
+    /// A press in the palette open over a view: the same as one in a list,
+    /// down the palette's own keys.
+    fn press_in_palette(&mut self, x: u16, y: u16, twice: bool) {
+        let room = self.picker_area();
+        let Some(palette) = self.palette.as_ref() else {
+            return;
+        };
+        let area = obelus_ui::picker::region(palette, room);
+        let tab = obelus_ui::picker::tab_row(palette, area).and_then(|row| {
+            let at = obelus_ui::tab_at(row, palette.tabs(), palette.tab(), x, y)?;
+            Some((palette.tab(), at, palette.tabs().len()))
+        });
+        if let Some((now, wanted, count)) = tab {
+            self.walk_to_tab(now, wanted, count, |app, onwards| {
+                app.palette_key(&stepping(onwards));
+            });
+            return;
+        }
+        let Some((at, arrow)) = obelus_ui::picker::row_at(palette, area, x, y) else {
+            return;
+        };
+        if let Some(palette) = self.palette.as_mut() {
+            palette.select_row(at);
+        }
+        if arrow || twice {
+            self.palette_key(&enter());
         }
     }
 
@@ -905,6 +935,7 @@ impl App {
             | Whose::Naming
             | Whose::Commands => !self.layers().covering(),
             Whose::Picker
+            | Whose::Palette
             | Whose::Preview
             | Whose::Settings
             | Whose::Counts

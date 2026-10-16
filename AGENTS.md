@@ -405,9 +405,23 @@ key it should keep gets a binding in it -- not a fall-through
 one, or from a list the reader opened over the file, it swaps the two rather
 than stacking them, so there is still one thing on screen and one escape back
 to the file -- and a view that has bound the key itself beats the swap, and a
-list waiting on the reader, a question, does not give way. The palette's key
-swaps the same way, and so does every key that opens a list over the file --
-the menu about the name under the caret, the problems (`app/switching`).
+list waiting on the reader, a question, does not give way. Every key that
+opens a list over the file swaps the same way -- the menu about the name
+under the caret, the problems (`app/switching`).
+
+**The palette is the one thing that opens over a view, and a view's keys are
+its first tab.** A list, a page, the names and the notes say nothing at their
+foot about what their own keys do: the palette opened over one leads with a
+tab of them, each a row with its key at the end and a switch with its tick,
+dim where it does nothing, and choosing one presses that key in the view.
+Escape gives up on the palette and the reader is in the view again, with
+what they had typed and the row they were on -- the second escape is the
+view's. It is a layer of its own (`Layer::Palette`), not the picker, because
+the view under it is very often a picker still being filled. The two pages
+that ask a question keep a foot, because nothing opens over them and the key
+that leaves is the only way off; and a switch that is on is said on the row
+its list's query is typed into as well, because it changes what that query
+finds.
 
 **One mark for "the keys are here", and it says nothing else.** Every list,
 page and card in Obelus puts `selected_row_background` behind the row the

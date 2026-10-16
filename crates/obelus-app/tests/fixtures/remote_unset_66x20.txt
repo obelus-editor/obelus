@@ -11,13 +11,13 @@ screen 66x20  editor 66x18  status 66x1
  8|     Socket Mode's token, from Basic Information                 █
  9|                                                                 █
 10|   Bot token                               Not set ▸             █
-11|     From OAuth & Permissions, once the app is installed          
-12|                                                                  
-13|   People                                  Nobody ▸               
+11|     From OAuth & Permissions, once the app is installed         █
+12|                                                                 █
+13|   People                                  Nobody ▸              █
 14|     Who may talk to this machine through it                      
 15|                                                                  
-16|──────────────────────────────────────────────────────────────────
-17|   Enter  Change                                                  
+16|   Pair                                    Make a code ▸          
+17|     A code to send in the group you put the bot in               
 18|──────────────────────────────────────────────────────────────────
 19| > Filter remote settings                                         
 -- style --
@@ -32,13 +32,13 @@ screen 66x20  editor 66x18  status 66x1
  8|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccccccce
  9|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
 10|cccccccccccccccccccccccccccccccccccccccccccccccccccaccccccccccccce
-11|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccccccc
-12|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-13|ccccccccccccccccccccccccccccccccccccccccccccccccccaccccccccccccccc
+11|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccccce
+12|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
+13|ccccccccccccccccccccccccccccccccccccccccccccccccccacccccccccccccce
 14|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccccccccccccccccccc
 15|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-16|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-17|ccgggggggcaaaaaacccccccccccccccccccccccccccccccccccccccccccccccccc
+16|cccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaacacccccccccc
+17|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccccc
 18|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 19|dddaaaaaaaaaaaaaaaaaaaaaaddddddddddddddddddddddddddddddddddddddddd
 -- legend --
@@ -48,6 +48,5 @@ c fg=#e4e4e7 bg=#18181b
 d fg=#d4d4d8 bg=#18181b
 e fg=#a1a1aa bg=#18181b
 f fg=#52525b bg=#27272a
-g fg=#a1a1aa bg=#27272a
 -- cursor --
 none

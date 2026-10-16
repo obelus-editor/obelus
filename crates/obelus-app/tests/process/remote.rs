@@ -306,10 +306,10 @@ fn pairing_takes_the_chat_and_then_makes_the_code() {
             .is_some_and(|settings| settings.reached().state.may_connect())
     });
     to_the_row(&mut app, "Pair");
-    let dump = support::render(&mut app, 66, 20);
+    let usable = support::usable_here(&mut app);
     assert!(
-        dump.contains("Enter  Pair"),
-        "pairing is not offered on a chat that could be reached:\n{dump}"
+        usable.contains(&"Pair".to_string()),
+        "pairing is not offered on a chat that could be reached: {usable:?}"
     );
     support::press(&mut app, KeyCode::Enter);
     until(&mut app, &events, "a code on the row", |app| {

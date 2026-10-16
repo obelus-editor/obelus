@@ -10986,7 +10986,7 @@ fn an_agent_starts_with_what_the_reader_added() {
 /// Two deliberate breaks, which are the two halves of it. Opening the
 /// conversation whether or not `chats::claim` answered lets the second
 /// window in -- `app.chat()` comes back `Some`. And offering `Talk` in the
-/// foot regardless leaves the page promising a key that does nothing.
+/// palette regardless leaves the page promising a key that does nothing.
 ///
 /// What it does *not* cover is a claim nobody holds reading as one, because
 /// here the file exists and is locked and the two answers agree. That is
@@ -11030,20 +11030,21 @@ fn a_conversation_another_obelus_has_open_is_not_opened_again() {
         app.chat().is_none(),
         "a second window was let into the conversation"
     );
-    // And the foot does not offer the key it will not honour: the lock
-    // beside the note says it, and the foot says it again by having nothing
-    // to say. What the status row says is where it is being talked about,
+    // And the palette does not offer the key it will not honour: the lock
+    // beside the note says it, and the palette says it again by drawing it
+    // dim. What the status row says is where it is being talked about,
     // which here is this same checkout.
+    let usable = support::usable_here(&mut app);
+    assert!(
+        usable.contains(&"Another".to_string()),
+        "the palette has no keys of the notes', so this proves nothing: {usable:?}"
+    );
+    assert!(
+        !usable.contains(&"Talk".to_string()),
+        "the palette offers a key that does nothing here: {usable:?}"
+    );
     let dump = support::render(&mut app, WIDTH, 18);
     let text = support::text_block(&dump).to_string();
-    let foot = text
-        .lines()
-        .find(|line| line.contains("Another"))
-        .unwrap_or_default();
-    assert!(
-        !foot.contains("Talk"),
-        "the foot offers a key that does nothing here:\n{dump}"
-    );
     assert!(
         text.lines()
             .last()
@@ -11082,10 +11083,10 @@ fn a_conversation_another_obelus_has_open_is_not_opened_again() {
         Some(&obelus_component::todo::Talked::Not),
         "the note is still somebody else's after they let it go"
     );
-    let dump = support::render(&mut app, WIDTH, 18);
+    let usable = support::usable_here(&mut app);
     assert!(
-        dump.contains("Talk"),
-        "the key is still held back after the other Obelus let go:\n{dump}"
+        usable.contains(&"Talk".to_string()),
+        "the key is still held back after the other Obelus let go: {usable:?}"
     );
     support::press_alt(&mut app, 'a');
     assert!(
@@ -11106,8 +11107,8 @@ fn a_conversation_another_obelus_has_open_is_not_opened_again() {
 /// standing -- this page has no selected-row colour, a box is marked by the
 /// caret sitting in it -- so taking it away would leave them unable to tell
 /// which note they were on. What says the next key will do nothing is the
-/// foot, where the keys that would change it stop being offered: the reader
-/// is told before they press, which is the rule the palette follows.
+/// palette, where the keys that would change it are dim: the reader is told
+/// before they press.
 ///
 /// Broken deliberately one key at a time -- the guard in `take_note_away`,
 /// in `can_shift`, in `move_over`, in `alt+space`'s arm, in the line break's
@@ -11248,18 +11249,18 @@ fn a_note_another_obelus_is_talking_about_is_not_changed_here() {
         "a paste went into a note another Obelus is talking about:\n{pasted}"
     );
 
-    // And the foot does not offer the keys it will not honour, while still
-    // offering the ones that work on a note anybody may read.
-    let dump = support::render(&mut app, WIDTH, 18);
-    for word in ["Done", "Drop", "Move", "Under"] {
+    // And the palette does not offer the keys it will not honour, while
+    // still offering the ones that work on a note anybody may read.
+    let usable = support::usable_here(&mut app);
+    for word in ["Done", "Drop", "Move up", "Move down", "Under"] {
         assert!(
-            !dump.contains(word),
-            "the foot offers {word}, which does nothing on this note:\n{dump}"
+            !usable.contains(&word.to_string()),
+            "the palette offers {word}, which does nothing on this note: {usable:?}"
         );
     }
     assert!(
-        dump.contains("Another"),
-        "the foot stopped offering a key that still works:\n{dump}"
+        usable.contains(&"Another".to_string()),
+        "the palette stopped offering a key that still works: {usable:?}"
     );
 
     // The note above is the reader's own, and the same key works on it --
@@ -11342,16 +11343,16 @@ fn a_locked_note_holds_back_the_keys_of_what_it_hangs_under() {
         vec![parent.clone(), child.clone()],
         "a note another Obelus is talking about went with its parent"
     );
-    let dump = support::render(&mut app, WIDTH, 18);
+    let usable = support::usable_here(&mut app);
     assert!(
-        !dump.contains("Drop"),
-        "the foot offers a key that would take somebody else's note away:\n{dump}"
+        !usable.contains(&"Drop".to_string()),
+        "the palette offers a key that would take somebody else's note away: {usable:?}"
     );
     // Moving the run is not changing it: every note in it keeps its words,
     // its depth and its name, so that key is still the reader's.
     assert!(
-        dump.contains("Move"),
-        "the foot held back a key that changes nothing about the locked note:\n{dump}"
+        usable.contains(&"Move down".to_string()),
+        "the palette held back a key that changes nothing about the locked note: {usable:?}"
     );
     drop(held);
 }
@@ -15433,16 +15434,14 @@ fn the_count_opens_the_work_and_its_key_stops_it() {
     );
 }
 
-/// The list of background work keeps its foot where its key does nothing:
-/// the key is greyed on work that has stopped, and the list stays where it
-/// was rather than growing by the two rows the foot gave up.
+/// The list of background work offers its key in the palette, and dim on
+/// work that has stopped.
 ///
-/// Broken deliberately: take `.kept()` off the list's key, and the foot
-/// goes with it the moment the work stops -- and, with the foot not looked
-/// for, the work's row moves down two; draw a kept key in the ink of one
-/// that works, and it is not greyed.
+/// Broken deliberately by offering it whatever the row (the `when` taken
+/// off the list's key in `picker::keys`): it was still offered once the
+/// work had stopped.
 #[test]
-fn the_list_of_work_keeps_its_foot_where_its_key_does_nothing() {
+fn the_list_of_work_dims_its_key_where_it_does_nothing() {
     let (mut app, events) = playing(&["air"]);
     pump(&mut app, &events, "the handshake", |app| {
         app.talking() == obelus_agent::Talking::Ready
@@ -15452,44 +15451,23 @@ fn the_list_of_work_keeps_its_foot_where_its_key_does_nothing() {
         app.background_tasks() == Some((1, 0))
     });
     open_the_background_work(&mut app);
-    // Where the foot's key is, and the ink its cap is drawn in.
-    let key = |app: &mut App| {
-        let cells = support::cells_of(app, WIDTH, HEIGHT);
-        let rows = screen(app);
-        let row = rows
-            .lines()
-            .find(|row| row.contains(" Stop "))
-            .unwrap_or_else(|| panic!("no Stop at the foot:\n{rows}"));
-        let y: u16 = row
-            .split_once('|')
-            .and_then(|(number, _)| number.trim().parse().ok())
-            .expect("a row's number");
-        let x = support::column_of(row, " Stop ") - 2;
-        (y, cells[(u16::try_from(x).expect("a column"), y)].fg)
+    let stops = |app: &mut App| {
+        support::keys_here(app)
+            .into_iter()
+            .find(|key| key.does == "Stop")
+            .expect("no Stop in the palette")
+            .usable
     };
-    // The list's row, which is the last to name the work: the call's row
-    // in the transcript above it names it too.
-    let list = |app: &mut App| {
-        screen(app)
-            .lines()
-            .enumerate()
-            .filter(|(_, row)| row.contains("npm run dev"))
-            .last()
-            .map(|(y, _)| y)
-            .expect("the work's row")
-    };
-    let (foot, lit) = key(&mut app);
-    let before = list(&mut app);
-    assert_eq!(lit, app.theme().gutter_current);
+    assert!(stops(&mut app), "the key is dim on work that is running");
 
     support::press_alt(&mut app, 's');
     pump(&mut app, &events, "the list saying so", |app| {
         standing_on(app).starts_with("Stopped  ")
     });
-    let (still, greyed) = key(&mut app);
-    assert_eq!(still, foot, "the foot moved");
-    assert_eq!(greyed, app.theme().gutter, "the key is not greyed");
-    assert_eq!(list(&mut app), before, "the list moved");
+    assert!(
+        !stops(&mut app),
+        "the key is not dim on work that has stopped"
+    );
 }
 
 /// Where the row has no room for the count, the keys walking it do not

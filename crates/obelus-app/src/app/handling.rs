@@ -441,7 +441,7 @@ impl App {
         }
     }
 
-    fn handle_key(&mut self, key: KeyEvent) {
+    pub(in crate::app) fn handle_key(&mut self, key: KeyEvent) {
         // Discards releases once, here, so nothing further down has to
         // remember to.
         if KeyChord::from_event(&key).is_none() {
@@ -495,7 +495,10 @@ impl App {
         // meant "which one" inside one, and it swapped the conversation for
         // itself; it is the list everywhere now, and this stays for the
         // next view that takes a key of its own.
-        if self.gives_way_to_a_view()
+        //
+        // And the palette, from a list of names being built as well: it does
+        // not throw away what is being typed, because it opens over it.
+        if (self.gives_way_to_a_view() || self.palette_opens_over_the_names(&key))
             && key.code != KeyCode::Enter
             && self.keymap.bound_here(&key, self.context()).is_none()
             && let Some(command) = self.keymap.lookup(&key, Context::Normal)

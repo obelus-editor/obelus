@@ -20,8 +20,8 @@ screen 76x24  editor 76x22  status 76x1
 17|                                                                            
 18|                                                                            
 19|                                                                            
-20|────────────────────────────────────────────────────────────────────────────
-21|   Enter  Another    Alt+Space  Done    Alt+a  Talk   …                     
+20|                                                                            
+21|                                                                            
 22|────────────────────────────────────────────────────────────────────────────
 23| Todo                                                     2 to come back to 
 -- style --
@@ -45,16 +45,15 @@ screen 76x24  editor 76x22  status 76x1
 17|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 18|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 19|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-20|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
-21|cceeeeeeecdddddddccceeeeeeeeeeecddddccceeeeeeecddddcccdccccccccccccccccccccc
+20|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+21|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 22|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
-23|ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+23|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 -- legend --
 a fg=#312e81 bg=#18181b
 b fg=#f87171 bg=#18181b
 c fg=#e4e4e7 bg=#18181b
 d fg=#52525b bg=#18181b
-e fg=#a1a1aa bg=#27272a
-f fg=#d4d4d8 bg=#18181b
+e fg=#d4d4d8 bg=#18181b
 -- cursor --
 8,0

@@ -424,7 +424,7 @@ impl App {
         let offering = self.agent_offering();
         // The region the page is drawn into, not the editor it sits in --
         // see `App::settings_room`.
-        let room = self.settings_room(editor_area, offering.as_ref());
+        let room = self.settings_room(editor_area);
         if let Some(settings) = self.settings.as_mut() {
             match cards {
                 true => settings.settle_cards(

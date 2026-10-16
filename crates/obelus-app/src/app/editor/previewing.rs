@@ -510,6 +510,13 @@ impl App {
                 picker.scroll(rows);
                 true
             }
+            Layer::Palette => {
+                let Some(palette) = self.palette.as_mut() else {
+                    return false;
+                };
+                palette.scroll(rows);
+                true
+            }
             Layer::Names => {
                 let Some((_, names)) = self.names.as_mut() else {
                     return false;
@@ -518,10 +525,7 @@ impl App {
                 true
             }
             Layer::Counts => {
-                let Some(counts) = self.counts.as_ref() else {
-                    return false;
-                };
-                let height = obelus_ui::counts::list_height(self.screen_area, counts);
+                let height = obelus_ui::counts::list_height(self.screen_area);
                 if let Some(counts) = self.counts.as_mut() {
                     counts.scroll(rows, height);
                 }
@@ -690,6 +694,11 @@ impl App {
                     picker.drag_to(top);
                 }
             }
+            Whose::Palette => {
+                if let Some(palette) = self.palette.as_mut() {
+                    palette.drag_to(top);
+                }
+            }
             Whose::Naming => {
                 if let Some(list) = self.which_project.naming_list.as_mut() {
                     list.drag_to(top);
@@ -706,11 +715,8 @@ impl App {
                 }
             }
             Whose::Counts => {
-                let Some(counts) = self.counts.as_ref() else {
-                    return;
-                };
                 // Settled here rather than once a frame, as its keys are.
-                let height = obelus_ui::counts::list_height(self.screen_area, counts);
+                let height = obelus_ui::counts::list_height(self.screen_area);
                 if let Some(counts) = self.counts.as_mut() {
                     counts.drag_to(top, height);
                 }
@@ -904,6 +910,7 @@ impl App {
             // And so is a project, and this list is compact.
             | PickerValue::Project { .. }
             | PickerValue::Command(_)
+            | PickerValue::Key(_)
             // A conversation has no path and no cursor, and this list is
             // compact anyway: there is no room under it to show one in.
             | PickerValue::Conversation(_)

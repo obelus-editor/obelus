@@ -116,10 +116,10 @@ fn the_git_directory_comes_with_them() {
 /// switches about the same question.
 ///
 /// Deliberate break: take the `.` arm out of `listing_key`. The setting is
-/// still there and the foot still offers the key, and pressing it does
+/// still there and the palette still offers the key, and pressing it does
 /// nothing -- which is the shape the palette exists to avoid.
 #[test]
-fn the_key_turns_it_on_and_the_foot_says_so() {
+fn the_key_turns_it_on_and_the_palette_says_so() {
     let scratch = scratch("hiding-key");
     let mut app = App::new(Vec::new());
     app.working_directory_for_test(scratch.path().to_path_buf());
@@ -127,10 +127,9 @@ fn the_key_turns_it_on_and_the_foot_says_so() {
     support::lay_out(&mut app, 76, 16);
     obelus_app::app::dispatch::dispatch(&mut app, Command::FileOpen);
 
-    let dump = support::render(&mut app, 76, 16);
     assert!(
-        support::text_block(&dump).contains("Hidden files"),
-        "the foot does not offer it:\n{dump}"
+        support::usable_here(&mut app).contains(&"Hidden files".to_string()),
+        "the palette does not offer it"
     );
     assert!(!app.config().hidden_files, "it starts off");
 

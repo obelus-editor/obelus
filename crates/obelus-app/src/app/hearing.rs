@@ -128,6 +128,9 @@ impl App {
                     || self.searching_key(key)
                     || self.picker_key(key)
             }
+            // A key of the view under it chosen here is pressed in that
+            // view, after the palette has gone (`App::palette_key`).
+            Hearer::Layer(Layer::Palette) => self.palette_key(key),
             Hearer::Layer(Layer::Settings) => self.settings_key(key),
             Hearer::Layer(Layer::Counts) => self.counts_key(key),
             Hearer::Layer(Layer::Gone) => self.the_page_saying_it_has_gone(key),

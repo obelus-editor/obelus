@@ -255,6 +255,12 @@ impl App {
                 }
                 return;
             }
+            Some(Layer::Palette) => {
+                if let Some(palette) = self.palette.as_mut() {
+                    palette.hold_in_query(true);
+                }
+                return;
+            }
             Some(Layer::Names) => {
                 if let Some((_, names)) = self.names.as_mut() {
                     names.hold_in_query(true);
@@ -353,6 +359,13 @@ impl App {
             Some(Layer::Picker) => {
                 if let Some(picker) = self.picker.as_ref() {
                     let (text, what) = picker.copy_query();
+                    self.copied(&text, what);
+                }
+                return;
+            }
+            Some(Layer::Palette) => {
+                if let Some(palette) = self.palette.as_ref() {
+                    let (text, what) = palette.copy_query();
                     self.copied(&text, what);
                 }
                 return;
@@ -492,6 +505,13 @@ impl App {
                     if searching {
                         self.refresh_search();
                     }
+                }
+                return;
+            }
+            Some(Layer::Palette) => {
+                if let Some(palette) = self.palette.as_mut() {
+                    let (text, what) = palette.cut_query();
+                    self.cut_away(&text, what);
                 }
                 return;
             }
@@ -735,7 +755,7 @@ impl App {
     #[must_use]
     pub fn takes_text(&self) -> bool {
         match self.layers().nearest() {
-            Some(Layer::Prompt | Layer::Names) => true,
+            Some(Layer::Prompt | Layer::Names | Layer::Palette) => true,
             Some(Layer::Settings) => self
                 .settings
                 .as_ref()
@@ -786,6 +806,7 @@ impl App {
             Some(Layer::Settings) => WritingInto::Settings,
             Some(Layer::Names) => WritingInto::Names,
             Some(Layer::Picker) => WritingInto::Picker,
+            Some(Layer::Palette) => WritingInto::Palette,
             // Nothing is typed into the counts, nor into the page saying the
             // project has gone -- and neither falls through to the file
             // behind it for want of anywhere else.
@@ -1061,6 +1082,7 @@ impl App {
             WritingInto::Settings => self.settings.as_mut().map(|settings| settings.spells()),
             WritingInto::Names => self.names.as_mut().map(|(_, names)| names.spells()),
             WritingInto::Picker => self.picker.as_mut().map(|picker| picker.spells()),
+            WritingInto::Palette => self.palette.as_mut().map(|palette| palette.spells()),
             WritingInto::Chooser => self
                 .which_project
                 .chooser
@@ -1117,6 +1139,12 @@ impl App {
                 }
                 if searching {
                     self.refresh_search();
+                }
+                return;
+            }
+            WritingInto::Palette => {
+                if let Some(palette) = self.palette.as_mut() {
+                    palette.put_in_query(what);
                 }
                 return;
             }
@@ -1317,6 +1345,8 @@ pub(in crate::app) enum WritingInto {
     Names,
     /// A list's query.
     Picker,
+    /// The palette's query, where it is open over a view.
+    Palette,
     /// Nowhere at all.
     Nowhere,
     /// The page that asks which project.

@@ -278,18 +278,14 @@ impl App {
     /// see [`obelus_ui::settings::rows_region`], which the drawing and the
     /// pointer already go through. What went in here was the editor's own
     /// height, two rows more than the page is ever drawn into: the tabs and
-    /// their rule come off the top and the foot takes two more off the
-    /// bottom, so the window let the focus walk two rows past the last one
-    /// on screen before it moved, and a page step overshot by the same two.
-    pub(in crate::app) fn settings_room(
-        &self,
-        area: Rect,
-        offering: Option<&obelus_component::settings::Offering>,
-    ) -> (u16, u16) {
-        let Some(settings) = self.settings.as_ref() else {
+    /// their rule come off the top, so the window let the focus walk two
+    /// rows past the last one on screen before it moved, and a page step
+    /// overshot by the same two.
+    pub(in crate::app) fn settings_room(&self, area: Rect) -> (u16, u16) {
+        if self.settings.is_none() {
             return (area.width, area.height);
-        };
-        let region = obelus_ui::settings::rows_region(area, settings, offering);
+        }
+        let region = obelus_ui::settings::rows_region(area);
         (region.width, region.height)
     }
 
@@ -305,7 +301,7 @@ impl App {
         let listed = self.listed_agents();
         let themes = self.themes_on_the_page();
         let offering = self.agent_offering();
-        let room = self.settings_room(self.editor_area, offering.as_ref());
+        let room = self.settings_room(self.editor_area);
         let Some(settings) = self.settings.as_mut() else {
             return false;
         };
@@ -338,7 +334,7 @@ impl App {
         // page lists its settings and knows nothing about where they came
         // from.
         let offering = self.agent_offering();
-        let room = self.settings_room(self.editor_area, offering.as_ref());
+        let room = self.settings_room(self.editor_area);
         let Some(settings) = self.settings.as_mut() else {
             return false;
         };

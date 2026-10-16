@@ -76,7 +76,14 @@ impl App {
         // Except what this front end can never do, which is not a row at
         // all: dim says "not here, not now", and a command that needs a
         // window is not one a terminal will ever have.
-        let items = obelus_command::ALL
+        //
+        // And first, the keys of the view it is opened over: there is no row
+        // at the foot of a list or a page saying what its own keys do, and
+        // this tab is where that is said instead -- and where they can be
+        // pressed from, by name.
+        let here = self.keys_here();
+        let own = usize::from(!here.is_empty());
+        let commands = obelus_command::ALL
             .iter()
             .filter(|spec| spec.command.shown())
             .map(|spec| PickerItem {
@@ -91,11 +98,12 @@ impl App {
                 kind: None,
                 label: spec.name.to_string(),
                 // The tab it lives under. One past its position in the list
-                // of groups, because the picker's own first tab is "all".
+                // of groups, because the picker's own first tab is "all" --
+                // and one more where the view's own keys come before that.
                 tab: obelus_command::Group::ALL
                     .iter()
                     .position(|group| *group == spec.command.group())
-                    .map(|at| at + 1),
+                    .map(|at| at + 1 + own),
                 section: None,
                 version: None,
                 detail: Some(spec.title.to_string()),
@@ -105,8 +113,8 @@ impl App {
                 trailing: self.keymap.chord_for(spec.command).map(KeyChord::label),
                 changed: None,
                 value: PickerValue::Command(spec.command),
-            })
-            .collect();
+            });
+        let items = keys_as_rows(&here).into_iter().chain(commands).collect();
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
         // It holds every command, so it is only ever empty for a query that
         // matches none of them -- which the picker says itself.
@@ -119,14 +127,96 @@ impl App {
             .iter()
             .map(|group| group.name())
             .collect();
-        picker.with_tabs(&names);
+        match own {
+            1 => picker.with_tabs_and_its_own(HERE, &names),
+            _ => picker.with_tabs(&names),
+        }
         // Read down as much as it is typed at: most of what the palette
         // offers is what the reader came to find out, so the block stays the
         // height it opened at rather than closing up under the query.
         picker.keeps_height();
         picker.aligns_details();
         picker.opened_by(Command::CommandPalette);
-        self.show_list(picker);
+        // Over the view rather than instead of it, so that escape is back in
+        // it with what was typed there and the row the reader was on -- and
+        // a key of it chosen here is pressed in it.
+        match self.layers().nearest() {
+            Some(Layer::Picker | Layer::Settings | Layer::Names | Layer::Counts) => {
+                self.palette = Some(picker);
+            }
+            Some(Layer::Palette | Layer::Prompt | Layer::Gone) | None => self.show_list(picker),
+        }
+    }
+
+    /// What the keys of the view the palette would open over do: its first
+    /// tab.
+    ///
+    /// The same answer each of those views drew at its foot when it had
+    /// one, from the same functions, so what a key is said to do and what
+    /// it does are worked out in one place.
+    fn keys_here(&self) -> Vec<obelus_ui::Hint> {
+        match self.layers().nearest() {
+            Some(Layer::Picker) => self
+                .picker
+                .as_ref()
+                .map(obelus_ui::picker::keys)
+                .unwrap_or_default(),
+            Some(Layer::Settings) => self.settings.as_ref().map_or_else(Vec::new, |settings| {
+                obelus_ui::settings::keys(
+                    settings,
+                    self.agent_offering().as_ref(),
+                    &self.themes_on_the_page(),
+                )
+            }),
+            Some(Layer::Names) => self
+                .names
+                .as_ref()
+                .map(|(_, names)| obelus_ui::names::hints(names))
+                .unwrap_or_default(),
+            Some(Layer::Counts) => self
+                .counts
+                .as_ref()
+                .map(obelus_ui::counts::hints)
+                .unwrap_or_default(),
+            Some(Layer::Palette | Layer::Prompt | Layer::Gone) => Vec::new(),
+            // The notes are a document rather than a layer, and the one
+            // document with keys of its own to say.
+            None => self.notes().map(obelus_ui::todo::hints).unwrap_or_default(),
+        }
+    }
+
+    /// Gives the palette open over a view a key, and says whether it took
+    /// it.
+    pub(in crate::app) fn palette_key(&mut self, key: &KeyEvent) -> bool {
+        let page = self.palette.as_ref().map_or(1, |palette| {
+            obelus_ui::picker::rows_drawn(palette, self.picker_area())
+        });
+        let Some(palette) = self.palette.as_mut() else {
+            return false;
+        };
+        match palette.handle_key(key, page) {
+            PickerOutcome::Consumed | PickerOutcome::Open | PickerOutcome::InPlace(_) => true,
+            PickerOutcome::Cancelled => {
+                self.leave(Layer::Palette);
+                true
+            }
+            PickerOutcome::Accepted(value) => {
+                self.leave(Layer::Palette);
+                match value {
+                    PickerValue::Key(chord) => self.handle_key(chord.pressed()),
+                    // What the palette did before it opened over anything:
+                    // the view goes, and the command runs from the file.
+                    PickerValue::Command(command) => {
+                        self.put_away_the_views();
+                        dispatch::dispatch(self, command);
+                    }
+                    // Nothing else is a row of it.
+                    _ => {}
+                }
+                true
+            }
+            PickerOutcome::Ignored => false,
+        }
     }
 
     /// Opens the log, as a file like any other.
@@ -662,6 +752,9 @@ impl App {
         self.theme_before = None;
         match value {
             PickerValue::Command(command) => dispatch::dispatch(self, command),
+            // A key of the notes, pressed: the one view the palette opens
+            // instead of rather than over, because they are a document.
+            PickerValue::Key(chord) => self.handle_key(chord.pressed()),
             PickerValue::Action(at) => self.do_action(at),
             PickerValue::Answer(answer) => self.answered(answer),
             PickerValue::File(path) => self.open(&self.working_directory.join(path)),
@@ -743,5 +836,63 @@ impl App {
             PickerValue::KeysBack => self.put_every_key_back(),
             PickerValue::Nothing => {}
         }
+    }
+}
+
+/// What the palette's own first tab is called.
+const HERE: &str = "Here";
+
+/// The keys of a view as rows of the palette, in its first tab.
+///
+/// A pair of keys for one act in two directions is a row each here, where
+/// the foot drew them as one: a row is pressed, and a row for two keys is a
+/// row that cannot say which of them it would be.
+fn keys_as_rows(keys: &[obelus_ui::Hint]) -> Vec<PickerItem> {
+    keys.iter()
+        .flat_map(|hint| {
+            let paired = hint.and_also.is_some();
+            std::iter::once(hint.chord)
+                .chain(hint.and_also)
+                .map(move |chord| (hint, chord, paired))
+        })
+        .map(|(hint, chord, paired)| {
+            let does = hint.does.map_or_else(|| chord.label(), str::to_string);
+            PickerItem {
+                prose: false,
+                marker: None,
+                // A switch says which way it is set, with the control the
+                // settings draw one with. Every other row keeps the column
+                // blank, so that the words of the tab line up down it.
+                icon: Some(hint.switched.map_or(' ', obelus_ui::tick)),
+                label: match paired {
+                    true => format!("{does} {}", which_way(chord)),
+                    false => does,
+                },
+                version: None,
+                detail: None,
+                trailing: Some(chord.label()),
+                changed: None,
+                value: PickerValue::Key(chord),
+                enabled: hint.usable,
+                colours: None,
+                status: None,
+                depth: 0,
+                opens: None,
+                kind: None,
+                tab: Some(0),
+                section: None,
+            }
+        })
+        .collect()
+}
+
+/// Which way one key of a pair goes, in the word a row says it with.
+fn which_way(chord: KeyChord) -> &'static str {
+    match chord.pressed().code {
+        KeyCode::Up => "up",
+        KeyCode::Down => "down",
+        KeyCode::Left => "left",
+        KeyCode::Right => "right",
+        _ => "",
     }
 }

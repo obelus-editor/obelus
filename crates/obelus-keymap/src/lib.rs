@@ -340,6 +340,15 @@ impl KeyChord {
             KeyEventKind::Release => None,
         }
     }
+
+    /// The press this chord is, for a key chosen from a list rather than
+    /// pressed: the palette's rows for the view it was opened over.
+    ///
+    /// What [`Self::from_event`] reads back is this chord again.
+    #[must_use]
+    pub fn pressed(self) -> KeyEvent {
+        KeyEvent::new(self.code, self.modifiers)
+    }
 }
 
 /// Which set of bindings applies.

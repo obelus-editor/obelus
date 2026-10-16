@@ -28,6 +28,13 @@
 //! being typed into, a box or a list of names, which a key that goes
 //! elsewhere would throw away.
 //!
+//! **Except the palette, which opens over the view rather than instead of
+//! it.** Its first tab is that view's own keys, so the view has to be there
+//! for one chosen from it to be pressed in -- and escape is back in the view
+//! as it was. From a list of names as well, which keeps every other key that
+//! names a view: the palette throws nothing away. Over the palette, its own
+//! key does nothing, and any other is asked about the view under it.
+//!
 //! **A view that has bound the key itself beats the swap.** `App::handle_key`
 //! asked the swap first once, so a key the showing view had taken was
 //! answered one level out and its own binding was dead: `f4`, while it
@@ -48,7 +55,9 @@ impl App {
     /// settings with it.
     pub(super) fn gives_way_to_a_view(&self) -> bool {
         match self.layers().nearest() {
-            Some(Layer::Settings | Layer::Counts) => true,
+            // And the palette over one of them: a key naming a view is the
+            // reader choosing that instead, as it is in the view itself.
+            Some(Layer::Settings | Layer::Counts | Layer::Palette) => true,
             // Whichever layout it was given: a band over the file is as much
             // somewhere the reader chose to be as a list instead of it.
             Some(Layer::Picker) => self.picker.as_ref().is_some_and(Picker::gives_way),
@@ -61,6 +70,14 @@ impl App {
         }
     }
 
+    /// Whether a key is the palette's, over the one view that keeps every
+    /// other key that names a view: a list of names being built, which a
+    /// key that went elsewhere would throw away and the palette does not.
+    pub(super) fn palette_opens_over_the_names(&self, key: &KeyEvent) -> bool {
+        self.layers().nearest() == Some(Layer::Names)
+            && self.keymap.lookup(key, Context::Normal) == Some(Command::CommandPalette)
+    }
+
     /// Goes to the view a command opens, from the one on screen.
     ///
     /// Asked whether it can before anything is closed: a key whose command is
@@ -70,11 +87,25 @@ impl App {
         if !self.offers(command) {
             return;
         }
+        // The palette over a view is the reader still in that view: its own
+        // key keeps it where it is, and any other is asked about the view.
+        if self.palette.is_some() {
+            if command == Command::CommandPalette {
+                return;
+            }
+            self.leave(Layer::Palette);
+        }
         if let (Some(wanted), Some(picker)) = (self.tab_for(command), self.picker.as_ref()) {
             let (now, count) = (picker.tab(), picker.tabs().len());
             self.walk_to_tab(now, wanted, count, |app, onwards| {
                 app.picker_key(&stepping(onwards));
             });
+            return;
+        }
+        // The palette opens over the view rather than taking its place: its
+        // first tab is that view's own keys (`App::open_command_palette`).
+        if command == Command::CommandPalette {
+            self.open_command_palette();
             return;
         }
         // A list that turns out to have nothing in it is a sentence on the

@@ -47,63 +47,43 @@ fn list_region_rows(picker: &Picker, width: u16) -> u16 {
         .saturating_add(picker.about_rows(width))
 }
 
-/// What the keys do in a file list, and which of them do anything now.
+/// What this list's own keys do, and which of them do anything now: the
+/// first tab of the palette opened over it.
 ///
-/// The foot draws the ones that can be pressed, and those it was told to
-/// keep greyed where they cannot.
+/// Nothing about enter or escape where those mean what they mean in every
+/// list, and nothing about the keys that walk the tabs -- the tab row draws
+/// those itself, right where the tabs are.
 ///
-/// Nothing about enter or escape: a list is a list, and what a reader does
-/// to one is not news. Nothing about the keys that walk the tabs either --
-/// the tab row draws those itself, right where the tabs are, which says it
-/// better than a word at the foot could.
+/// A switch says which way it is set, so the palette can say it: there is
+/// no row at the foot of a list saying it any more, and a switch a reader
+/// has to press to find out what it was is the one thing a switch must
+/// never ask of them. Those that are on are said on the row the query is
+/// typed into as well (`status::switches`), because what they change is
+/// what that query finds.
 ///
-/// Every one of these is a switch, and every one draws which way it is set.
-/// A switch a reader has to press to find out what it was is the one thing a
-/// switch must never ask of them -- and it is drawn with the settings page's
-/// own control, so the two places say it the same way.
-///
-/// And none at all where none of them can be pressed, unless one of them is
-/// kept there greyed (the list of background work). The file list's
-/// changed tab was the case: every key it has is about the tree, the rows
-/// there are git's answer, so its foot was a rule over a row with nothing
-/// on it -- two rows of the screen saying that nothing here answers to
-/// anything. Which lets that foot come and go as the reader walks between
-/// the two tabs, where the search's keeps its height on purpose; but each
-/// of the search's tabs has a key that works, so this never takes one of
-/// those away.
+/// Every key the list has, whether or not it does anything on the row the
+/// reader is on: one that does not is a dim row, which says the list has it.
 #[must_use]
-pub fn hints(picker: &Picker) -> Vec<Hint> {
-    let hints = every_hint(picker);
-    match hints.iter().any(|hint| hint.usable || hint.kept) {
-        true => hints,
-        false => Vec::new(),
-    }
-}
-
-/// Every key the list has, whether or not it does anything here.
-fn every_hint(picker: &Picker) -> Vec<Hint> {
+pub fn keys(picker: &Picker) -> Vec<Hint> {
     use crossterm::event::{KeyCode, KeyModifiers};
     if !picker.says_keys() {
         return Vec::new();
     }
     // The agent's background work: enter opens what a row has written, and
-    // this stops it. Kept at the foot, greyed, on a row it would do nothing
-    // to -- work that has ended, work the agent says cannot be stopped, an
-    // agent that turned out to stop nothing: it is the list's only key, and
-    // dropping it took the foot with it, so the list jumped two rows each
-    // time the reader walked from running work to finished.
+    // this stops it -- dim on a row it would do nothing to: work that has
+    // ended, work the agent says cannot be stopped, an agent that turned
+    // out to stop nothing.
     if picker.listing_tasks().is_some() {
         return vec![
             Hint::new(
                 obelus_keymap::KeyChord::new(KeyCode::Char('s'), KeyModifiers::ALT),
                 "Stop",
             )
-            .when(picker.stops_this_one())
-            .kept(),
+            .when(picker.stops_this_one()),
         ];
     }
     // The two enters, where a row both holds something and is somewhere to
-    // go. Said at the foot although a list's enter is normally not news,
+    // go. Said although a list's enter is normally not news,
     // because here it is: this is the one list where enter does not take
     // the row. Neither is a switch -- what they do depends on the row the
     // reader is on -- so neither draws a setting.
@@ -123,8 +103,7 @@ fn every_hint(picker: &Picker) -> Vec<Hint> {
         return vec![
             Hint::new(alt(KeyCode::Up), "Move")
                 .or(alt(KeyCode::Down))
-                .when(picker.query().is_empty())
-                .kept(),
+                .when(picker.query().is_empty()),
         ];
     }
     // The worktrees in a window, for the reason the two enters above are
@@ -150,8 +129,8 @@ fn every_hint(picker: &Picker) -> Vec<Hint> {
     if picker.is_searching() {
         let how = picker.looks_how();
         let asked = how.unwrap_or_default();
-        // Greyed rather than dropped where the question does not arise, so
-        // the foot does not change height as the reader walks the tabs.
+        // Dim rather than dropped where the question does not arise: the
+        // list has the key, and this tab is where it does nothing.
         let here = how.is_some();
         return vec![
             Hint::new(alt('r'), "Regex").set(asked.regex).when(here),
@@ -183,29 +162,6 @@ fn every_hint(picker: &Picker) -> Vec<Hint> {
     ]
 }
 
-/// The foot saying what this list's own keys do.
-///
-/// Over the whole room rather than over the list, because a foot is the
-/// bottom of the *view*: a full-area file list has a preview under it, and a
-/// foot tucked below the rows would sit across the middle of the screen.
-pub fn foot_of(cells: &mut CellBuffer, picker: &Picker, room: Rect, theme: &Theme) {
-    let hints = hints(picker);
-    if hints.is_empty() {
-        return;
-    }
-    crate::foot(cells, room, &hints, theme);
-}
-
-/// The room a list and its preview have, once a foot has taken its rows.
-///
-/// One answer, asked by the list, by the preview and by the drawing. Two
-/// would be a foot drawn over rows the preview believed it had, which is a
-/// foot written across the file.
-#[must_use]
-pub fn room_for(picker: &Picker, editor: Rect) -> Rect {
-    crate::footed(editor, &hints(picker))
-}
-
 /// The fewest rows worth giving a preview.
 ///
 /// A preview showing three lines has stopped being a preview and become a
@@ -231,7 +187,6 @@ pub fn preview_region(picker: Option<&Picker>, editor: Rect) -> Option<Rect> {
     if !picker.shows_previews() {
         return None;
     }
-    let editor = room_for(picker, editor);
     // And only where there is anywhere to put it. The arithmetic below is a
     // full-area list's: a compact one sits on the status bar with nothing
     // under it, so there is no room to divide.
@@ -340,17 +295,8 @@ impl<'a> PickerView<'a> {
 /// the same thing.
 #[must_use]
 pub fn region(picker: &Picker, editor: Rect) -> Rect {
-    let room = room_for(picker, editor);
+    let room = editor;
     match picker.layout() {
-        // The *editor*, not `room`, because [`preview_region`] takes the
-        // foot off itself and taking it off twice is not taking it off. Two
-        // rows fewer is enough to put the room under the threshold there and
-        // over it at the drawing, which asks with the room it was given --
-        // so the list was told it had the whole region while the preview was
-        // drawn across the bottom of it, and the rows underneath were rows
-        // the reader could not see but the window still had to be walked
-        // through. Six presses of the down key that did nothing, in the band
-        // of heights where the two answers differed.
         PickerLayout::FullArea => match preview_region(Some(picker), editor) {
             Some(_) => Rect {
                 height: list_region_rows(picker, room.width),
