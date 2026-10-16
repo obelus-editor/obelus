@@ -1042,19 +1042,8 @@ impl App {
         // Asked about rather than done, for the reason leaving is asked
         // about: a closed buffer takes its undo with it.
         let which = self.selected_document().or(self.current);
-        let unsaved = which
-            .and_then(|id| self.file(id))
-            .is_some_and(Buffer::is_dirty);
         if let Some(id) = which
-            && unsaved
-        {
-            self.ask_before_closing(id);
-            return;
-        }
-        // And a program still running, which is the same loss by another
-        // name: what it had goes with it.
-        if let Some(id) = which
-            && self.ask_before_stopping(id)
+            && self.asks_before_closing(id, |_| {})
         {
             return;
         }
@@ -1090,6 +1079,37 @@ impl App {
             return;
         };
         self.close(id);
+    }
+
+    /// Asks before closing one document, where closing it would take
+    /// something with it that nothing else keeps: unwritten work, whose
+    /// undo goes with the buffer, or a program still running, which is the
+    /// same loss by another name. Whether it asked.
+    ///
+    /// Every way one document is closed asks this -- the key and a tab's
+    /// cross -- so that a reason to ask added here is a reason for both.
+    /// `first` is done before the question goes up, and only where it does.
+    pub(in crate::app) fn asks_before_closing(
+        &mut self,
+        id: DocumentId,
+        first: impl FnOnce(&mut Self),
+    ) -> bool {
+        let unwritten = self.file(id).is_some_and(Buffer::is_dirty);
+        let running = self
+            .document(id)
+            .and_then(Document::terminal)
+            .is_some_and(|terminal| terminal.ended().is_none());
+        if !unwritten && !running {
+            return false;
+        }
+        first(self);
+        match unwritten {
+            true => self.ask_before_closing(id),
+            false => {
+                self.ask_before_stopping(id);
+            }
+        }
+        true
     }
 
     /// The list of what is open, built again over one that just lost rows.

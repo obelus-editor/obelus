@@ -665,6 +665,23 @@ fn closing_a_running_terminal_asks_first() {
     assert!(app.terminal().is_none(), "still open after the answer");
 }
 
+/// The cross on a terminal's tab asks first about a program still running
+/// in it, the question the key that closes asks.
+///
+/// Deliberate break: leave the running program out of
+/// `App::asks_before_closing`. The terminal goes at the press, and the
+/// program with it.
+#[test]
+fn a_tab_s_cross_asks_about_a_running_terminal_first() {
+    let (mut app, _events) = a_shell();
+    // The one document open, in the first slot there is.
+    app.handle(Event::Shut(obelus_buffer::DocumentId::new(0)));
+    assert!(app.terminal().is_some(), "closed without asking");
+    assert_eq!(support::ways(&app), ["Stop it and close", "cancel"]);
+    support::answer(&mut app, "Stop it and close");
+    assert!(app.terminal().is_none(), "still open after the answer");
+}
+
 /// A program that has ended leaves its terminal to be read, and the keys go
 /// back to Obelus: `ctrl+w` closes it like any document.
 ///

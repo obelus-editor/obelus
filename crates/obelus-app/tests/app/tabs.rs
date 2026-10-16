@@ -415,3 +415,97 @@ fn closing_goes_to_the_neighbour_the_reader_sees() {
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentClose);
     assert_eq!(app.current_buffer().map(Buffer::path), Some(one.as_path()));
 }
+
+/// The cross on a tab closes that document, not the one being read.
+///
+/// Deliberate break: close `self.current` rather than `id` in
+/// `App::close_by_its_tab`. The file being read goes and the one whose
+/// cross was pressed stays.
+#[test]
+fn a_tab_s_cross_closes_its_own_document() {
+    let scratch = support::Scratch::new("tabs-shut");
+    let one = scratch.write("one.rs", "fn one() {}\n");
+    let two = scratch.write("two.rs", "fn two() {}\n");
+    let (mut app, told) = open(&[one.clone(), two]);
+    support::lay_out(&mut app, 60, 12);
+
+    app.handle(Event::Shut(tab_for(&told, "two.rs")));
+    support::lay_out(&mut app, 60, 12);
+    assert_eq!(told.last().0, ["one.rs"], "the wrong tab went");
+    assert_eq!(app.current_buffer().map(Buffer::path), Some(one.as_path()));
+}
+
+/// The cross on a tab with unwritten work in it asks before anything
+/// goes, the way the key that closes does.
+///
+/// Deliberate break: leave the `is_dirty` question out of
+/// `App::asks_before_closing`. The file closes at once, and what was typed
+/// into it with it.
+#[test]
+fn a_tab_s_cross_asks_before_losing_unwritten_work() {
+    let scratch = support::Scratch::new("tabs-shut-unwritten");
+    let one = scratch.write("one.rs", "fn one() {}\n");
+    let two = scratch.write("two.rs", "fn two() {}\n");
+    let (mut app, told) = open(&[one, two]);
+    support::lay_out(&mut app, 60, 12);
+
+    support::type_text(&mut app, "x");
+    support::lay_out(&mut app, 60, 12);
+    app.handle(Event::Shut(tab_for(&told, "one.rs")));
+    support::lay_out(&mut app, 60, 12);
+    assert_eq!(app.buffers_for_test().len(), 2, "closed without asking");
+    assert!(app.picker().is_some(), "nothing was asked");
+}
+
+/// The cross on a tab, with the list of what is open up, takes the row
+/// out of the list too.
+///
+/// Deliberate break: leave `relist_switching` out of
+/// `App::close_by_its_tab`. The list goes on showing a row for a document
+/// that is no longer open.
+#[test]
+fn a_tab_s_cross_takes_its_row_out_of_the_list() {
+    let scratch = support::Scratch::new("tabs-shut-listed");
+    let one = scratch.write("one.rs", "fn one() {}\n");
+    let two = scratch.write("two.rs", "fn two() {}\n");
+    let (mut app, told) = open(&[one, two]);
+    support::lay_out(&mut app, 60, 12);
+
+    app.open_document_picker();
+    let rows = |app: &App| app.picker().map(|picker| picker.matches().count());
+    assert_eq!(rows(&app), Some(2));
+    app.handle(Event::Shut(tab_for(&told, "two.rs")));
+    assert_eq!(rows(&app), Some(1), "the closed document's row stayed");
+}
+
+/// The cross on a tab while a question on the status row is being typed
+/// into closes nothing, and leaves the question and what is typed in it.
+///
+/// Deliberate break: leave the `gives_way_to_a_view` refusal out of
+/// `App::close_by_its_tab`. The tab's file goes from under the question.
+#[test]
+fn a_tab_s_cross_does_not_take_a_question_away() {
+    let scratch = support::Scratch::new("tabs-shut-over-a-question");
+    let one = scratch.write(
+        "one.rs",
+        "fn one() {}
+",
+    );
+    let two = scratch.write(
+        "two.rs",
+        "fn two() {}
+",
+    );
+    let (mut app, told) = open(&[one, two]);
+    support::lay_out(&mut app, 60, 12);
+
+    app.new_file();
+    support::type_text(&mut app, "half");
+    app.handle(Event::Shut(tab_for(&told, "two.rs")));
+    assert_eq!(app.buffers_for_test().len(), 2, "closed under the question");
+    assert!(
+        app.prompt()
+            .is_some_and(|prompt| prompt.text().ends_with("half")),
+        "the question went"
+    );
+}

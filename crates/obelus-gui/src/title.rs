@@ -694,6 +694,22 @@ pub(crate) fn arrow_inks(more: bool, hovered: bool, dark: bool) -> (Option<[f32;
     }
 }
 
+/// What is behind a tab's cross on a page this dark: the light the arrows
+/// and the window's buttons wear while the pointer is over them, fainter
+/// while it is pressed, as theirs is (`inks`), and nothing otherwise -- see
+/// `tabs`.
+pub(crate) const fn cross_light(over: bool, pressed: bool, dark: bool) -> Option<[f32; 4]> {
+    let [r, g, b] = match dark {
+        true => [1.0, 1.0, 1.0],
+        false => [0.0, 0.0, 0.0],
+    };
+    match (over, pressed) {
+        (true, false) => Some([r, g, b, 0.06]),
+        (true, true) => Some([r, g, b, 0.04]),
+        (false, _) => None,
+    }
+}
+
 /// What the title is written in on a bar without the tabs, on a page this
 /// dark: the page's ink, at full strength on a window with the reader's
 /// keys and faint on one without, as the marks on the buttons are.
