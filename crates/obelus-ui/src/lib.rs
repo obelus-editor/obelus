@@ -125,6 +125,7 @@ pub mod hover;
 pub mod image;
 pub mod links;
 pub mod names;
+pub mod page;
 pub mod picker;
 pub mod projects;
 pub mod reading;

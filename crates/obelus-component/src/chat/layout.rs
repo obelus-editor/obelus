@@ -22,37 +22,7 @@ const fn reads_as_markdown(speaker: Speaker) -> bool {
     matches!(speaker, Speaker::Agent | Speaker::Thought)
 }
 
-/// Which characters of a row fall between two places in what it was laid
-/// out from.
-///
-/// The runs of a row carry the bytes they were laid out from, so this is
-/// where those bytes fall inside the window and what that is in characters
-/// of the row. The runs that carry nothing -- what the reading drew rather
-/// than read -- are counted past rather than held: whether they are inside
-/// is a question about the rows around them, and [`Chat::mark_held`] is
-/// where that is answered.
-fn row_held(spans: &[Span], from: usize, to: usize) -> Option<std::ops::Range<usize>> {
-    let mut held: Option<std::ops::Range<usize>> = None;
-    let mut column = 0usize;
-    for span in spans {
-        let bytes = span.from.clone();
-        for (offset, character) in span.text.char_indices() {
-            if let Some(bytes) = bytes.as_ref() {
-                let byte = bytes.start + offset;
-                if byte >= from && byte < to {
-                    let next = column..column + 1;
-                    held = Some(match held {
-                        Some(had) => had.start..next.end,
-                        None => next,
-                    });
-                }
-            }
-            let _ = character;
-            column += 1;
-        }
-    }
-    held
-}
+use crate::page::row_held;
 
 /// One run of a row, in the colour the words themselves have nothing to
 /// say about.
@@ -749,60 +719,8 @@ impl Chat {
             .unwrap_or(false)
     }
 
-    /// Marks the rows the reader has hold of.
-    ///
-    /// In two passes, because what a middle row holds cannot be worked out
-    /// from the row alone. The ends of the selection are places in what was
-    /// said; everything between them is held whole -- including the rows
-    /// that came from nothing anybody wrote, the blank between two things
-    /// said and the bullet in front of a list item. Those are on the screen
-    /// between the words that are held, so they are part of what the reader
-    /// is pointing at, and leaving them out would copy something other than
-    /// what is in front of them.
+    /// Marks the rows the reader has hold of: see [`crate::page::Hold::mark`].
     fn mark_held(&self, rows: &mut [Row]) {
-        let Some((anchor, other)) = self.held else {
-            return;
-        };
-        let (first, last) = match anchor <= other {
-            true => (anchor, other),
-            false => (other, anchor),
-        };
-        let mut ends: Vec<(usize, std::ops::Range<usize>)> = Vec::new();
-        for (index, row) in rows.iter().enumerate() {
-            let Some((said, source)) = row.from else {
-                continue;
-            };
-            let here = (said, source);
-            if here < (first.said, first.source) || here > (last.said, last.source) {
-                continue;
-            }
-            let from = match here == (first.said, first.source) {
-                true => first.at,
-                false => 0,
-            };
-            let to = match here == (last.said, last.source) {
-                true => last.at,
-                false => usize::MAX,
-            };
-            if let Some(held) = row_held(&row.spans, from, to) {
-                ends.push((index, held));
-            }
-        }
-        let (Some((top, first_held)), Some((foot, last_held))) = (ends.first(), ends.last()) else {
-            return;
-        };
-        let (top, foot) = (*top, *foot);
-        for (index, row) in rows.iter_mut().enumerate() {
-            if index < top || index > foot {
-                continue;
-            }
-            let whole = row.text().chars().count();
-            row.held = Some(match (index == top, index == foot) {
-                (true, true) => first_held.start..last_held.end,
-                (true, false) => first_held.start..whole,
-                (false, true) => 0..last_held.end,
-                (false, false) => 0..whole,
-            });
-        }
+        self.held.mark(rows);
     }
 }

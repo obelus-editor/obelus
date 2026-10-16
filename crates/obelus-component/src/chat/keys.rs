@@ -361,12 +361,6 @@ impl Chat {
         self.window.scroll(rows);
     }
 
-    /// The same, for a caller holding the rows already.
-    pub(super) fn in_view_of(&self, count: usize, room: Room) -> std::ops::Range<usize> {
-        let top = self.window.top();
-        top.min(count)..(top + usize::from(room.transcript)).min(count)
-    }
-
     /// Puts a row of the transcript on screen, moving the window as little
     /// as it takes.
     fn show_row(&mut self, at: usize, room: Room) {
@@ -376,12 +370,7 @@ impl Chat {
 
     /// The same, for a caller holding the rows already.
     fn show_to(&mut self, at: usize, count: usize, room: Room) {
-        let view = self.in_view_of(count, room);
-        if at < view.start {
-            self.scroll_by(-isize::try_from(view.start - at).unwrap_or(1));
-        } else if at >= view.end {
-            self.scroll_by(isize::try_from(at + 1 - view.end).unwrap_or(1));
-        }
+        crate::page::show(&mut self.window, at, count, room.transcript);
     }
 
     /// Goes back to the box, remembering which column of the transcript
@@ -411,194 +400,6 @@ impl Chat {
         })
     }
 
-    /// The next row worth standing on above or below `at`, among rows the
-    /// caller is holding already.
-    ///
-    /// Above what `at` is part of, not above `at`: on the third row of a
-    /// command the stop above is the command's own first row, which is
-    /// the call the key was pressed in -- a key that looked as though it
-    /// had done nothing.
-    ///
-    /// And one stop for each thing, at the first of its rows: every row of
-    /// a block of code acts, and a key that stepped through them one at a
-    /// time would be the down arrow.
-    fn next_stop_in(at: usize, up: bool, laid: &[Row]) -> Option<usize> {
-        let at = match up {
-            true => Row::acting(laid, at).map_or(at, |on| on.start),
-            false => at,
-        };
-        let mut stops = laid
-            .iter()
-            .enumerate()
-            .filter(|(at, row)| {
-                row.acts() && Row::acting(laid, *at).is_some_and(|on| on.start == *at)
-            })
-            .map(|(at, _)| at);
-        match up {
-            true => stops.take_while(|stop| *stop < at).last(),
-            false => stops.find(|stop| *stop > at),
-        }
-    }
-
-    /// Where the cursor stands on arriving at a stop.
-    ///
-    /// The start of the row, except in a block of code, where it is the
-    /// first character of the code: the first row of a block is its box,
-    /// and a caret on the corner is standing in nothing anybody wrote.
-    fn standing_at(stop: usize, laid: &[Row]) -> Place {
-        let at_the_start = Place {
-            row: stop,
-            character: 0,
-        };
-        let Some(on) = laid
-            .get(stop)
-            .filter(|row| row.code.is_some())
-            .and(Row::acting(laid, stop))
-        else {
-            return at_the_start;
-        };
-        on.into_iter()
-            .find_map(|row| {
-                let spot = laid[row].spot_at(0)?;
-                Some(Place {
-                    row,
-                    character: laid[row].characters_at(spot)?,
-                })
-            })
-            .unwrap_or(at_the_start)
-    }
-
-    /// The place in the words the cursor is at, or the nearest there is.
-    ///
-    /// Nearest, because a cursor can stand where there are no words: on a
-    /// blank, on a plan's step, on the heading over a folded run. A
-    /// selection started from one of those has to begin somewhere, and the
-    /// somewhere a reader means is the words they are next to.
-    fn spot_near(place: Place, laid: &[Row]) -> Option<Spot> {
-        let rows = laid;
-        if let Some(spot) = rows.get(place.row)?.spot_at(place.character) {
-            return Some(spot);
-        }
-        // Downwards first: the rows Obelus draws itself sit above what they
-        // are about -- a heading over its run, a blank before what follows
-        // it -- so the words they belong to are the ones under them.
-        rows.iter()
-            .skip(place.row)
-            .find_map(|row| row.spot_at(0))
-            .or_else(|| {
-                rows.iter()
-                    .take(place.row)
-                    .rev()
-                    .find_map(|row| row.spot_at(row.characters()))
-            })
-    }
-
-    /// Where a motion takes the cursor, or nothing where it runs out of
-    /// transcript.
-    ///
-    /// All of it in rows and characters, because that is what the keys
-    /// mean: a reader pressing the right arrow means the next character on
-    /// the screen, wherever in the words it happens to come from.
-    fn walked(place: Place, key: KeyCode, laid: &[Row], room: Room) -> Option<Place> {
-        let rows = laid.len();
-        // As far along a row as a caret may go, which on a row that fills
-        // the width is before its last character -- see `Row::last_stop` --
-        // except on the last row, as on the last row of a line in a file:
-        // there is no next row for the right arrow to go on to, and a
-        // selection could never take that character.
-        let characters = |row: usize| match laid.get(row) {
-            Some(laid) if row + 1 < rows => laid.last_stop(room.reading),
-            Some(laid) => laid.characters(),
-            None => 0,
-        };
-        // Where a caret may stand on a row: between clusters, so that a
-        // picture and its selector, or a letter and its accent, are one
-        // step -- the same as in a file. See `Text::cluster_before`.
-        let stops = |row: usize| {
-            laid.get(row)
-                .map_or_else(|| vec![0], |row| obelus_text::boundaries(&row.text()))
-        };
-        let settled = |place: Place| Place {
-            character: stops(place.row)
-                .into_iter()
-                .take_while(|stop| *stop <= place.character)
-                .last()
-                .unwrap_or(0),
-            ..place
-        };
-        let here = characters(place.row);
-        // A click can stand beyond that, so that a drag from there takes
-        // the last character; a key moves from where the caret is drawn,
-        // or the first press of the left arrow moves it nowhere.
-        let place = Place {
-            character: place.character.min(here),
-            ..place
-        };
-        Some(settled(match key {
-            KeyCode::Right if place.character < here => Place {
-                character: stops(place.row)
-                    .into_iter()
-                    .find(|stop| *stop > place.character)
-                    .unwrap_or(here),
-                ..place
-            },
-            // Off the end of a row and on to the start of the next, which
-            // is where the words carry on.
-            KeyCode::Right if place.row + 1 < rows => Place {
-                row: place.row + 1,
-                character: 0,
-            },
-            KeyCode::Left if place.character > 0 => Place {
-                character: stops(place.row)
-                    .into_iter()
-                    .take_while(|stop| *stop < place.character)
-                    .last()
-                    .unwrap_or(0),
-                ..place
-            },
-            KeyCode::Left if place.row > 0 => Place {
-                row: place.row - 1,
-                character: characters(place.row - 1),
-            },
-            // Up and down keep the column where they can, the way they do
-            // in any text: a row too short for it takes the caret to its
-            // end rather than refusing the key.
-            KeyCode::Up if place.row > 0 => Place {
-                row: place.row - 1,
-                character: place.character.min(characters(place.row - 1)),
-            },
-            KeyCode::Down if place.row + 1 < rows => Place {
-                row: place.row + 1,
-                character: place.character.min(characters(place.row + 1)),
-            },
-            KeyCode::Home => Place {
-                character: 0,
-                ..place
-            },
-            KeyCode::End => Place {
-                character: here,
-                ..place
-            },
-            KeyCode::PageUp => {
-                let page = usize::from(room.transcript.max(1));
-                let row = place.row.saturating_sub(page);
-                Place {
-                    row,
-                    character: place.character.min(characters(row)),
-                }
-            }
-            KeyCode::PageDown => {
-                let page = usize::from(room.transcript.max(1));
-                let row = (place.row + page).min(rows.saturating_sub(1));
-                Place {
-                    row,
-                    character: place.character.min(characters(row)),
-                }
-            }
-            _ => return None,
-        }))
-    }
-
     /// Walks the transcript with the cursor, and holds what it walks over
     /// while shift is down.
     ///
@@ -622,99 +423,38 @@ impl Chat {
         // pays it on every arrow. Asked five times over for one keypress,
         // as this was, the caret crawls.
         let laid = self.rows(room.reading);
-        // What shift means on a motion is "and hold what I pass over", and
-        // it is the only modifier that does: control reaches here too --
-        // the guard lets the two ends through -- and asking only whether
-        // the key was bare made `ctrl+end` hold the row it was on instead
-        // of going to the end, while the rule over the box went on naming
-        // it as the way back.
-        let holding = modifiers == KeyModifiers::SHIFT;
+        let page = crate::page::Room {
+            height: room.transcript,
+            reading: room.reading,
+        };
+        match crate::page::walk(
+            at,
+            key.code,
+            modifiers,
+            &laid,
+            page,
+            &mut self.held,
+            &mut self.window,
+        ) {
+            Some(crate::page::Walked::To { place, took_hold }) => {
+                // One selection between the two halves, so taking hold here
+                // lets the box go.
+                if took_hold {
+                    self.input.let_go();
+                }
+                self.focus = Focus::Transcript(place);
+                return Some(ChatOutcome::Consumed);
+            }
+            // Down off the end of the transcript is the box, which is where
+            // a reader who has walked to the bottom is going next.
+            Some(crate::page::Walked::OffTheFoot) => {
+                self.leave_the_transcript(at);
+                return Some(ChatOutcome::Consumed);
+            }
+            Some(crate::page::Walked::Stayed) => return Some(ChatOutcome::Consumed),
+            None => {}
+        }
         match key.code {
-            // Which is that way back, with the cursor in here: the two ends
-            // of the transcript. They move the cursor and the view follows,
-            // because in here the keys move the cursor -- a view sent to
-            // the end with the cursor left behind is dragged back by the
-            // next arrow.
-            KeyCode::Home | KeyCode::End if modifiers == KeyModifiers::CONTROL => {
-                let last = laid.len().saturating_sub(1);
-                let (row, character) = match key.code {
-                    KeyCode::Home => (0, 0),
-                    _ => (last, laid.get(last).map_or(0, Row::characters)),
-                };
-                self.let_go();
-                self.focus = Focus::Transcript(Place { row, character });
-                match key.code {
-                    KeyCode::Home => self.window.home(),
-                    _ => self.window.end(),
-                }
-                Some(ChatOutcome::Consumed)
-            }
-            KeyCode::Left
-            | KeyCode::Right
-            | KeyCode::Up
-            | KeyCode::Down
-            | KeyCode::Home
-            | KeyCode::End
-            | KeyCode::PageUp
-            | KeyCode::PageDown => {
-                let moved = Self::walked(at, key.code, &laid, room);
-                // Down off the end of the transcript is the box, which is
-                // where a reader who has walked to the bottom is going
-                // next. Every other motion that runs out simply stops.
-                let Some(moved) = moved else {
-                    if key.code == KeyCode::Down && !holding {
-                        self.let_go();
-                        self.leave_the_transcript(at);
-                        return Some(ChatOutcome::Consumed);
-                    }
-                    return Some(ChatOutcome::Consumed);
-                };
-                match holding {
-                    // A shift-motion with nothing held yet starts the
-                    // selection where the cursor was, not where it is
-                    // going: what the reader means to hold is what the key
-                    // passed over.
-                    true => {
-                        if self.held.is_none()
-                            && let Some(from) = Self::spot_near(at, &laid)
-                        {
-                            self.hold_from(from);
-                            // One selection between the two halves, so
-                            // taking hold here lets the box go.
-                            self.input.let_go();
-                        }
-                        if let Some(to) = Self::spot_near(moved, &laid) {
-                            self.hold_to(to);
-                        }
-                    }
-                    // And a bare one lets go, the way it does in the box
-                    // and in the file: a caret moved on its own is a
-                    // reader who has finished with what they had.
-                    false => self.let_go(),
-                }
-                self.focus = Focus::Transcript(moved);
-                self.show_to(moved.row, laid.len(), room);
-                Some(ChatOutcome::Consumed)
-            }
-            // The next thing enter would open, which is what the arrows
-            // used to land on and no longer do: they walk the words now, so
-            // getting to a heading in a long run of them is its own key.
-            KeyCode::Tab | KeyCode::BackTab => {
-                let up = key.code == KeyCode::BackTab;
-                // Consumed either way. Nothing that way is a key that does
-                // nothing, not a key that falls through: shift and tab
-                // steps the agent's way of working, and a reader who
-                // pressed it once too often while reading would have
-                // changed how the agent works without meaning to.
-                let Some(stop) = Self::next_stop_in(at.row, up, &laid) else {
-                    return Some(ChatOutcome::Consumed);
-                };
-                self.let_go();
-                let standing = Self::standing_at(stop, &laid);
-                self.focus = Focus::Transcript(standing);
-                self.show_to(standing.row, laid.len(), room);
-                Some(ChatOutcome::Consumed)
-            }
             // Whatever the row is: a heading opens and closes what is
             // under it, and a row that names a file goes there. Both are
             // "do what this row is for", which is what enter means

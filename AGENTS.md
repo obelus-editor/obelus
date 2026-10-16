@@ -81,6 +81,10 @@ writing a view, look for the piece that already does it:
                        and where a press takes hold of it (ui::bars)
     component::window  which rows are on screen, and when that changes
     component::window::Move  the six keys that move about a list
+    component::page    a cursor on rows laid out rather than a file: what
+                       the arrows walk, what tab stops on, what shift holds
+                       and what a copy takes -- the transcript's, and any
+                       other page read that way (ui::page draws its cells)
     ui::editor         a document with a gutter: the file being read, and a
                        preview of somewhere else, which *is* this view
 
@@ -705,8 +709,9 @@ crates/
                     requires and where it is `Drawn` -- running one is
                     obelus-app's, in src/app/dispatch.rs
   obelus-component/ picker (one component, several instantiations), settings,
-                    the conversation, the box a message is written in, and
-                    the window every list shares
+                    the conversation, the box a message is written in, the
+                    window every list shares, and the cursor every page of
+                    laid-out rows shares (page)
                     · a query is about the rows the list is of, whether it
                       ranks is settled per tab, a list still arriving sits
                       still, say "still reading" where it moves nothing, which
