@@ -754,6 +754,9 @@ impl App {
         let Some(picker) = self.picker.as_mut() else {
             return;
         };
+        // A key the list never sees, so the list cannot know the reader
+        // has taken over unless it is told.
+        picker.taken_over();
         let Some(item) = picker.selected_item() else {
             return;
         };
