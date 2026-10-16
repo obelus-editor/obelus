@@ -588,9 +588,10 @@ crates/
                     what is kept about it (app/project) -- beside the state
                     and the loop (app/mod) and what every feature goes
                     through: the frame, the events, the pointer, the layers
-                    -- plus what one conversation is (conversation), what the
-                    loop reacts to (event), and everything done before there
-                    is a screen (startup)
+                    -- plus what one conversation is (conversation), what a
+                    new one is started with (brief), what the loop reacts
+                    to (event), and everything done before there is a
+                    screen (startup)
                     · a commit's message hangs above its file, and the branch
                       is read where Obelus is told where it is (app/git/history); a
                       view is split by the errand, not by the shape of the
@@ -651,9 +652,11 @@ crates/
                       again (app/lifecycle); a
                       conversation takes one prompt turn at a time, what is
                       waiting waits where the reader's words live, and it goes
-                      as one prompt (conversation); nothing but the animation
-                      waits on its clock, and a guard on a deadline earns its
-                      place only when something else can reach the work (event)
+                      as one prompt (conversation); one door, many places,
+                      and told once, with the first message (brief); nothing
+                      but the animation waits on its clock, and a guard on a
+                      deadline earns its place only when something else can
+                      reach the work (event)
   obelus-text/      the Rope wrapper: the only place coordinates convert
   obelus-editing/   a text with a caret in it -- the file being read and the
                     box a note is written in differ in what they are *about*
