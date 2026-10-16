@@ -65,16 +65,6 @@ pub fn hints(notes: &Notes) -> Vec<Hint> {
         Hint::new(alt(KeyCode::Char('o')), "Go there")
             .about("Go to the place this note is about")
             .when(notes.can_go()),
-        // Not where another Obelus has that conversation open: a
-        // conversation is not a thing two of them may have at once, so the
-        // key does nothing there and a palette offering it would be the
-        // page promising something it will not do. Which is why every key
-        // above and below that would *change* such a note is held back too:
-        // the caret still sits in it, so the palette is the only thing that
-        // can say what the next key will do.
-        Hint::new(alt(KeyCode::Char('a')), "Talk")
-            .about("Talk to the agent about this note")
-            .when(on.is_some() && !elsewhere),
         // Taking a whole note away is the one thing here a reader will go
         // looking for and not find, because backspace on its own is a
         // letter.

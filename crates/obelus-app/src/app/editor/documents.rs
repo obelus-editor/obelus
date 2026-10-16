@@ -178,7 +178,8 @@ impl App {
     /// Which costs something and it is worth saying where: `detail` is not
     /// matched by the query and says so on purpose, so a conversation can no
     /// longer be found by typing words from its note. The notes list
-    /// searches note titles, and a note reaches its conversation in one key.
+    /// searches note titles, and a note reaches its conversation from the
+    /// list of conversations opened on it.
     fn conversation_row(
         &self,
         index: usize,
@@ -286,7 +287,11 @@ impl App {
             crate::conversation::Topic::Issue(number) => {
                 Some(self.what_an_answer_is_called(*number))
             }
-            crate::conversation::Topic::Loose => None,
+            // Where it was started from, until the first message carries
+            // that to the agent -- the reader's first words name it then.
+            crate::conversation::Topic::Loose => {
+                talk.brief.as_ref().map(crate::brief::Brief::title)
+            }
         }
     }
 

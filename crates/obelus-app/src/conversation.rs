@@ -278,6 +278,13 @@ pub struct Conversation {
     /// Only for that one: a conversation about a note is found again by
     /// the note, and nothing else names a loose one.
     pub to_take_up: Option<String>,
+    /// What the reader was on when they started it, until the first thing
+    /// they say carries it to the agent.
+    ///
+    /// Let go then rather than kept, because it was true when the list
+    /// opened and is not a thing anybody can tell again -- see
+    /// [`crate::brief`]. Never a note's: that one is the topic.
+    pub brief: Option<crate::brief::Brief>,
     /// What was said, and what is being typed.
     pub chat: Chat,
     /// The agent's own commands, while one is being typed in the box.

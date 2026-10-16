@@ -136,13 +136,32 @@ fn playing(how: &[&str]) -> (App, Receiver<Event>) {
 /// tests are about what happens in a conversation that is running, so they
 /// ask now, the same way `playing` does for the loose conversation.
 fn talk_about_the_note(app: &mut App) {
-    support::press_alt(app, 'a');
-    // Only where the key was honoured: a note another Obelus has open opens
+    support::talk_about_what_is_here(app);
+    // Only where the row was honoured: a note another Obelus has open opens
     // nothing, and asking for a session there would ask for one in whatever
     // conversation the reader was in before.
     if app.chat().is_some() {
         app.open_a_session_for_test();
     }
+}
+
+/// The mark on the row of the list of conversations that offers a note,
+/// and whether it can be chosen.
+fn offered_note(app: &App) -> Option<(Option<String>, bool)> {
+    app.picker()?
+        .matches()
+        .find(|item| {
+            matches!(
+                item.value,
+                obelus_component::picker::PickerValue::Briefed(_)
+            )
+        })
+        .map(|item| {
+            (
+                item.marker.as_ref().map(|(_, mark)| mark.clone()),
+                item.enabled,
+            )
+        })
 }
 
 /// Whether the transcript has these words in it anywhere.
@@ -5124,6 +5143,142 @@ fn a_conversation_about_a_note_says_so_in_its_first_message() {
     });
 }
 
+/// A conversation started from a place in a file tells the agent where,
+/// once, and the list offering it says where before it is chosen.
+///
+/// The row is the reader's one way to start one, and what it names is what
+/// the agent is told: both are made from what the list saw as it opened.
+///
+/// Broken deliberately three ways. Leaving the brief out of `opening`
+/// sends the reader's words alone -- `first=always`. Not letting it go in
+/// `say_in` sends it again with the second message -- `blocks=2`. And
+/// taking `briefs_here` back to nothing leaves no row to choose.
+#[test]
+fn a_conversation_started_from_a_file_says_where_in_its_first_message() {
+    let scratch = support::Scratch::new("agent-place-opening");
+    let file = scratch.write(
+        "src/lib.rs",
+        "fn one() {}
+
+fn three() {}
+",
+    );
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    app.talk_to(
+        "fake",
+        Path::new(support::sh()),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    app.open_for_test(&file);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Down);
+
+    support::press_function(&mut app, 4);
+    let text = screen(&mut app);
+    assert!(
+        text.contains(&format!(
+            "New conversation about {}:3",
+            support::as_shown("src/lib.rs")
+        )),
+        "the list does not offer where the caret is:\n{text}"
+    );
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.chat().is_some(), "no conversation was started");
+    app.open_a_session_for_test();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+
+    support::type_text(&mut app, "/blocks");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "what it got", |app| {
+        said_in_transcript(app, "blocks=")
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("blocks=2") && text.contains("first=always+place"),
+        "where it was started from did not go with the message:\n{text}"
+    );
+    assert!(
+        text.contains("Told the agent where this conversation was started from"),
+        "Obelus spoke in the reader's name without saying so:\n{text}"
+    );
+
+    support::type_text(&mut app, "/blocks again");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the second answer", |app| {
+        said_in_transcript(app, "blocks=1")
+    });
+}
+
+/// A blank conversation started from a place, gone back to by the new row,
+/// is a conversation about nothing in particular.
+///
+/// The blank one is reused rather than joined by a second, so what it was
+/// started with has to go when the reader asks for one started with
+/// nothing: otherwise the agent is told about a place the reader took back.
+///
+/// Broken deliberately by setting the blank one's brief only where there
+/// is one, in `new_conversation_briefed` -- `first=always+place`.
+#[test]
+fn the_new_row_takes_back_where_a_blank_conversation_was_started_from() {
+    let scratch = support::Scratch::new("agent-place-taken-back");
+    let file = scratch.write("src/lib.rs", "fn one() {}\n");
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    app.talk_to(
+        "fake",
+        Path::new(support::sh()),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    app.open_for_test(&file);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    support::talk_about_what_is_here(&mut app);
+    let briefed = app.current_document_for_test();
+    assert!(app.chat().is_some(), "no conversation was started");
+
+    app.open_for_test(&file);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    support::press_function(&mut app, 4);
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        app.current_document_for_test(),
+        briefed,
+        "the new row did not go back to the blank conversation"
+    );
+    app.open_a_session_for_test();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/blocks");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "what it got", |app| {
+        said_in_transcript(app, "blocks=")
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("first=always") && !text.contains("place"),
+        "the place went with a conversation started with nothing:\n{text}"
+    );
+}
+
 /// A conversation opened on a note offers the reader something to say.
 ///
 /// The note is the question, and the agent is about to be told it, so what
@@ -5274,7 +5429,7 @@ fn a_question_that_arrives_while_the_reader_is_away_waits_in_its_own_conversatio
 
     // And the whole turn is there when they go: the call it is asking
     // about, and the question under it.
-    support::press_alt(&mut app, 'a');
+    support::talk_about_what_is_here(&mut app);
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     assert!(app.card().is_some(), "the question is not there:\n{dump}");
     assert!(
@@ -5343,7 +5498,7 @@ fn an_agent_that_stops_takes_the_questions_in_every_conversation_with_it() {
 
     // What is left in it is the reason, rather than a question that went
     // without one.
-    support::press_alt(&mut app, 'a');
+    support::talk_about_what_is_here(&mut app);
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     assert!(app.card().is_none(), "the question is still there:\n{dump}");
     assert!(
@@ -11094,8 +11249,8 @@ fn an_agent_starts_with_what_the_reader_added() {
     asked(&mut app, &events, &log, "started with obelus-heard");
 }
 
-/// A note whose conversation another Obelus has open says so, and the key
-/// does not open a second one.
+/// A note whose conversation another Obelus has open says so, and the row
+/// offering it does not open a second one.
 ///
 /// Obelus does not split its window, so two of them on one project is the
 /// ordinary case -- and a conversation is not a thing two may have open at
@@ -11111,8 +11266,9 @@ fn an_agent_starts_with_what_the_reader_added() {
 ///
 /// Two deliberate breaks, which are the two halves of it. Opening the
 /// conversation whether or not `chats::claim` answered lets the second
-/// window in -- `app.chat()` comes back `Some`. And offering `Talk` in the
-/// palette regardless leaves the page promising a key that does nothing.
+/// window in -- `app.chat()` comes back `Some`. And drawing the row with the
+/// new row's mark regardless leaves the list promising a conversation it
+/// will not open.
 ///
 /// What it does *not* cover is a claim nobody holds reading as one, because
 /// here the file exists and is locked and the two answers agree. That is
@@ -11149,26 +11305,37 @@ fn a_conversation_another_obelus_has_open_is_not_opened_again() {
         "the row does not say the conversation is somebody else's"
     );
 
-    // And the key on it opens nothing, because the claim is the answer and
-    // the claim is not this Obelus's to have.
-    support::press_alt(&mut app, 'a');
+    // And the row offering it opens nothing, because the claim is the
+    // answer and the claim is not this Obelus's to have. The row says so
+    // before it is chosen, with the lock a listed conversation wears, and
+    // the list stays up after, the way it does for one of those.
+    support::press_function(&mut app, 4);
+    let dump = support::render(&mut app, WIDTH, 18);
+    let lock = match obelus_icons::enabled() {
+        true => obelus_icons::ui::ELSEWHERE.to_string(),
+        false => "-".to_string(),
+    };
     assert!(
-        app.chat().is_none(),
-        "a second window was let into the conversation"
+        dump.contains("Conversation about somebody else has this")
+            && !dump.contains("New conversation about"),
+        "the row says it starts a conversation somebody else has:\n{dump}"
     );
-    // And the palette does not offer the key it will not honour: the lock
-    // beside the note says it, and the palette says it again by drawing it
-    // dim. What the status row says is where it is being talked about,
-    // which here is this same checkout.
-    let usable = support::usable_here(&mut app);
+    assert_eq!(
+        offered_note(&app),
+        Some((Some(lock), false)),
+        "the row does not say somebody else has it:\n{dump}"
+    );
+    // Dim, so enter stays on the new row rather than walking onto it.
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
     assert!(
-        usable.contains(&"Another".to_string()),
-        "the palette has no keys of the notes', so this proves nothing: {usable:?}"
+        app.chat().is_none_or(|chat| !chat.anything_said()) && app.picker().is_none(),
+        "enter did something other than start a new conversation"
     );
-    assert!(
-        !usable.contains(&"Talk".to_string()),
-        "the palette offers a key that does nothing here: {usable:?}"
-    );
+    app.close_current();
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    // What the status row says is where it is being talked about, which
+    // here is this same checkout.
     let dump = support::render(&mut app, WIDTH, 18);
     let text = support::text_block(&dump).to_string();
     assert!(
@@ -11198,23 +11365,30 @@ fn a_conversation_another_obelus_has_open_is_not_opened_again() {
     // Given up, it is the reader's again: they closed it in the other
     // window and this one does not have to be restarted. Heard rather than
     // noticed -- the file going is what a watcher reports.
+    // With the list up, whose row hears it too. Broken deliberately by
+    // leaving `PickerValue::Briefed` out of `freshen_the_conversation_rows`.
+    support::press_function(&mut app, 4);
     drop(theirs);
     the_claims_changed(
         &mut app,
         scratch.path(),
         &obelus_agent::chats::ChatId::Note(id.clone()),
     );
+    support::lay_out(&mut app, WIDTH, 18);
+    let offered = offered_note(&app);
+    assert!(
+        offered.as_ref().is_some_and(|(mark, enabled)| *enabled
+            && mark.as_deref() != Some(obelus_icons::ui::ELSEWHERE.to_string().as_str())
+            && mark.as_deref() != Some("-")),
+        "the row is still somebody else's after they let it go: {offered:?}"
+    );
+    support::press(&mut app, KeyCode::Esc);
     assert_eq!(
         app.talked_about().first(),
         Some(&obelus_component::todo::Talked::Not),
         "the note is still somebody else's after they let it go"
     );
-    let usable = support::usable_here(&mut app);
-    assert!(
-        usable.contains(&"Talk".to_string()),
-        "the key is still held back after the other Obelus let go: {usable:?}"
-    );
-    support::press_alt(&mut app, 'a');
+    support::talk_about_what_is_here(&mut app);
     assert!(
         app.chat().is_some(),
         "the conversation could not be opened after it was given up"
@@ -11653,7 +11827,7 @@ fn a_note_s_conversation_left_without_a_word_keeps_nothing() {
         ],
     );
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
-    support::press_alt(&mut app, 'a');
+    support::talk_about_what_is_here(&mut app);
     assert!(app.chat().is_some(), "no conversation about the note");
     support::lay_out(&mut app, WIDTH, HEIGHT);
     pump(&mut app, &events, "the session", |app| {
@@ -11682,7 +11856,7 @@ fn a_note_s_conversation_left_without_a_word_keeps_nothing() {
     );
 
     // Coming back asks for another.
-    support::press_alt(&mut app, 'a');
+    support::talk_about_what_is_here(&mut app);
     support::lay_out(&mut app, WIDTH, HEIGHT);
     pump(&mut app, &events, "a session of its own again", |app| {
         app.chat_session_for_test().as_deref() == Some("s-2")
@@ -11724,7 +11898,7 @@ fn a_conversation_taken_up_again_is_not_let_go_for_being_quiet() {
         ],
     );
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
-    support::press_alt(&mut app, 'a');
+    support::talk_about_what_is_here(&mut app);
     support::lay_out(&mut app, WIDTH, HEIGHT);
     pump(&mut app, &events, "the conversation taken up", |app| {
         app.chat_session_for_test().as_deref() == Some("s-old")
@@ -13016,10 +13190,12 @@ fn a_conversation_already_open_here_is_gone_to() {
     );
 
     // And from a file, where it is not the conversation the reader is in
-    // and the list starts on the new row instead: one row down is it.
+    // and the list starts on the new row instead: past it and the row
+    // starting one about the place in the file, two rows down is it.
     app.open_for_test(Path::new("src/lib.rs"));
     assert!(app.chat().is_none(), "the file is not what is showing");
     support::press(&mut app, KeyCode::F(4));
+    support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);
     assert!(
@@ -13297,7 +13473,7 @@ fn a_note_rewritten_elsewhere_is_offered_again() {
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
-    support::press_alt(&mut app, 'a');
+    support::talk_about_what_is_here(&mut app);
     assert!(app.chat().is_some(), "no conversation about the note");
     let _ = support::render(&mut app, WIDTH, HEIGHT);
     assert!(
@@ -13867,7 +14043,7 @@ fn a_conversation_the_agent_died_under_asks_for_another() {
     // The reader goes to a note's conversation, which starts the agent
     // again to ask for its session.
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
-    support::press_alt(&mut app, 'a');
+    support::talk_about_what_is_here(&mut app);
     support::lay_out(&mut app, WIDTH, HEIGHT);
     pump(&mut app, &events, "the note's session", |app| {
         app.talking() == obelus_agent::Talking::Ready
@@ -13931,7 +14107,7 @@ fn an_answer_nobody_is_waiting_for_goes_to_nobody() {
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentClose);
     // And a note's, which asks for its own.
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
-    support::press_alt(&mut app, 'a');
+    support::talk_about_what_is_here(&mut app);
     support::lay_out(&mut app, WIDTH, HEIGHT);
     pump(&mut app, &events, "the note's session", |app| {
         app.talking() == obelus_agent::Talking::Ready

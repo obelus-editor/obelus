@@ -1602,7 +1602,7 @@ fn each_note_gets_a_conversation_of_its_own() {
     );
     let mut app = open(&scratch, 76, 24);
 
-    support::press_alt(&mut app, 'a');
+    support::talk_about_what_is_here(&mut app);
     let first = app.current_document_for_test().expect("a document");
     assert!(app.chat().is_some(), "no conversation about the first note");
 
@@ -1611,7 +1611,7 @@ fn each_note_gets_a_conversation_of_its_own() {
     support::press_control(&mut app, 't');
     assert!(app.notes().is_some(), "ctrl+t did not bring the notes back");
     support::press(&mut app, KeyCode::Down);
-    support::press_alt(&mut app, 'a');
+    support::talk_about_what_is_here(&mut app);
     let second = app.current_document_for_test().expect("a document");
 
     assert_ne!(
@@ -1623,11 +1623,67 @@ fn each_note_gets_a_conversation_of_its_own() {
     // than starting a third.
     support::press_control(&mut app, 't');
     support::press(&mut app, KeyCode::Up);
-    support::press_alt(&mut app, 'a');
+    support::talk_about_what_is_here(&mut app);
     assert_eq!(
         app.current_document_for_test(),
         Some(first),
         "asking about a note twice made two conversations"
+    );
+}
+
+/// The list of conversations says whether the note the reader is on has a
+/// conversation already: the row offering it goes back to that one, and a
+/// row saying it starts a new one would be saying something untrue.
+///
+/// Broken deliberately by labelling the row as if nothing were had.
+#[test]
+fn a_note_with_a_conversation_is_not_offered_a_new_one() {
+    let scratch = tree("offered", "[[todo]]\nsaid = \"the first\"\n");
+    let mut app = open(&scratch, 76, 24);
+    support::press_function(&mut app, 4);
+    let before = support::text_block(&support::render(&mut app, 76, 24)).to_string();
+    assert!(
+        before.contains("New conversation about the first"),
+        "a note nobody has talked about is not offered a new one:\n{before}"
+    );
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.chat().is_some(), "no conversation about the note");
+
+    support::press_control(&mut app, 't');
+    support::press_function(&mut app, 4);
+    let after = support::text_block(&support::render(&mut app, 76, 24)).to_string();
+    assert!(
+        after.contains("Conversation about the first") && !after.contains("New conversation about"),
+        "the row offers a new conversation about a note that has one:\n{after}"
+    );
+}
+
+/// A note that says nothing yet is not offered: Obelus throws an empty note
+/// away as the reader leaves it, which choosing a conversation does.
+///
+/// Broken deliberately by offering a note by the file's copy of it, which
+/// for a note being written is behind what is in the box.
+#[test]
+fn a_note_that_says_nothing_is_not_offered_a_conversation() {
+    let scratch = tree("unsaid", THREE);
+    let mut app = open(&scratch, 76, 24);
+    dispatch::dispatch(&mut app, Command::TodoAdd);
+    support::press_function(&mut app, 4);
+    let empty = support::text_block(&support::render(&mut app, 76, 24)).to_string();
+    assert!(
+        !empty.contains("conversation about"),
+        "a note with nothing in it is offered a conversation:\n{empty}"
+    );
+    support::press(&mut app, KeyCode::Esc);
+
+    // And one being written is offered by what is in the box.
+    support::type_text(&mut app, "typed, not yet kept");
+    support::press_function(&mut app, 4);
+    let typed = support::text_block(&support::render(&mut app, 76, 24)).to_string();
+    assert!(
+        typed.contains("New conversation about typed, not yet kept"),
+        "a note being written is not offered by what it says:\n{typed}"
     );
 }
 
@@ -1650,7 +1706,7 @@ fn the_notes_come_back_on_the_note_a_conversation_is_about() {
     let mut app = open(&scratch, 76, 24);
     support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Down);
-    support::press_alt(&mut app, 'a');
+    support::talk_about_what_is_here(&mut app);
     assert!(app.chat().is_some(), "no conversation about the third note");
     let talk = app.current_document_for_test().expect("the conversation");
     // The notes closed, so that coming back opens them again.
@@ -1677,13 +1733,13 @@ fn the_notes_come_back_on_the_note_a_conversation_is_about() {
 ///
 /// The key was added because the round trip had an outward leg and no
 /// return. A return leg nothing says exists is the same gap one level up:
-/// the notes page names `alt+a` in its own hints, so the conversation names
-/// the key that comes back.
+/// the list of conversations names the note it goes to, so the
+/// conversation names the key that comes back.
 #[test]
 fn a_conversation_says_how_to_get_back_to_its_note() {
     let scratch = tree("way-back", "[[todo]]\nsaid = \"wire the counts tree up\"\n");
     let mut app = open(&scratch, 76, 24);
-    support::press_alt(&mut app, 'a');
+    support::talk_about_what_is_here(&mut app);
 
     let screen = support::text_block(&support::render(&mut app, 76, 24)).to_string();
     assert!(
@@ -3231,8 +3287,8 @@ fn escape_writes_the_note_down_and_leaves_the_caret_in_it() {
 fn a_conversation_names_the_key_back_to_its_note() {
     let scratch = tree("key-back", THREE);
     let mut app = open(&scratch, 120, 18);
-    app.handle(alt(KeyCode::Char('a')));
-    assert!(app.chat().is_some(), "alt+a did not open the conversation");
+    support::talk_about_what_is_here(&mut app);
+    assert!(app.chat().is_some(), "f4 did not open the conversation");
     let dump = support::render(&mut app, 120, 18);
     let row = support::text_block(&dump)
         .lines()
@@ -3281,8 +3337,8 @@ fn leaving_the_notes_and_coming_back_leaves_the_caret_in_them() {
     let mut app = open(&scratch, 76, 18);
     let in_a_note = caret(&mut app);
     assert_ne!(in_a_note, "none", "the notes opened with no caret");
-    app.handle(alt(KeyCode::Char('a')));
-    assert!(app.chat().is_some(), "alt+a did not open the conversation");
+    support::talk_about_what_is_here(&mut app);
+    assert!(app.chat().is_some(), "f4 did not open the conversation");
     support::press_control(&mut app, 't');
     assert!(
         app.notes().is_some(),

@@ -186,6 +186,30 @@ fn fresh() -> (Marking, String) {
     (Marking::Aside, "+".to_string())
 }
 
+/// The row that starts a conversation with what the reader was on, saying
+/// what `App::brief_said` says about it now.
+fn briefed_row(at: usize, offered: &Offered, said: Said) -> PickerItem {
+    PickerItem {
+        prose: false,
+        marker: said.marker,
+        icon: None,
+        label: offered.brief.label(offered.had),
+        version: None,
+        detail: None,
+        trailing: None,
+        changed: None,
+        enabled: said.enabled,
+        colours: None,
+        status: None,
+        depth: 0,
+        opens: None,
+        kind: None,
+        tab: None,
+        section: None,
+        value: PickerValue::Briefed(at),
+    }
+}
+
 /// The mark on the conversation the reader is in.
 ///
 /// The one a history puts on the branch the reader is on, and the
@@ -300,6 +324,30 @@ pub(in crate::app) struct Conversing {
     /// watcher of Obelus's is listening, so the only honest answer is a
     /// fresh one.
     pub kept_by_the_agent: Option<(String, Vec<obelus_agent::acp::Listed>)>,
+    /// What the reader was on when the list opened, each a row that starts
+    /// a conversation with it.
+    ///
+    /// Seen as the list opens and not again: the reader is in the list, so
+    /// nothing under it moves.
+    briefs: Vec<Offered>,
+}
+
+/// One thing the list offers to start a conversation with.
+#[derive(Clone, Debug)]
+struct Offered {
+    /// What it is.
+    brief: crate::brief::Brief,
+    /// Whether there is a conversation about it already, which choosing it
+    /// goes back to -- only ever a note's. Worked out with the rows, from
+    /// the same reading of the table.
+    had: bool,
+}
+
+impl Conversing {
+    /// What the row offering a brief at this place offered.
+    pub(in crate::app) fn brief(&self, at: usize) -> Option<crate::brief::Brief> {
+        self.briefs.get(at).map(|offered| offered.brief.clone())
+    }
 }
 
 /// What one row of the list stands for.
@@ -392,6 +440,11 @@ impl App {
         // they are put back after it -- the same order `open_troubles`
         // takes with its radii, and for the same reason.
         self.conversing.agents = agents;
+        self.conversing.briefs = self
+            .briefs_here()
+            .into_iter()
+            .map(|brief| Offered { brief, had: false })
+            .collect();
         let rows = self.conversation_rows(0, table);
         // Where the list starts: on the conversation the reader is in,
         // where they are in one, and on the new one otherwise, which is the
@@ -443,6 +496,80 @@ impl App {
         self.show_list(picker);
         self.conversing = conversing;
         self.ask_what_the_agent_keeps();
+    }
+
+    /// What the reader is on, as things a conversation can be started
+    /// with: the note the caret is in on the notes page, or the place the
+    /// caret is in a file.
+    ///
+    /// Nothing from inside a conversation, which is somewhere to talk
+    /// already.
+    fn briefs_here(&self) -> Vec<crate::brief::Brief> {
+        if self.notes().is_some() {
+            return self.the_note_here().into_iter().collect();
+        }
+        let Some(buffer) = self.current_buffer() else {
+            return Vec::new();
+        };
+        let path = buffer
+            .path()
+            .strip_prefix(&self.working_directory)
+            .unwrap_or(buffer.path())
+            .to_path_buf();
+        // A buffer with no path behind it -- a commit's message, the
+        // welcome screen -- is nowhere an agent could go and read.
+        if path.as_os_str().is_empty() {
+            return Vec::new();
+        }
+        let cursor = buffer.cursor();
+        let selection = buffer.selection().zip(buffer.selected_text());
+        vec![crate::brief::Brief::Place(crate::brief::Place {
+            path,
+            line: cursor.line,
+            column: cursor.column,
+            selection,
+            commit: buffer.content().short(),
+            unsaved: buffer.is_dirty(),
+        })]
+    }
+
+    /// The note the caret is in on the notes page, as something to start a
+    /// conversation with -- the one reading of it the list and a press on
+    /// the note's mark both go through.
+    pub(in crate::app) fn the_note_here(&self) -> Option<crate::brief::Brief> {
+        let notes = self.notes()?;
+        let note = notes.selected_note()?;
+        crate::brief::Brief::of_note(&note.id, &notes.selected_says()?)
+    }
+
+    /// What a brief's row says about itself now: its mark, and whether it
+    /// can be chosen.
+    ///
+    /// A note somebody else is talking about wears the lock and is dim, the
+    /// way its listed row is; one there is a conversation about already
+    /// wears what its listed row wears, because choosing it goes there; and
+    /// anything else is the new row with more to say, and wears its mark.
+    fn brief_said(
+        &self,
+        offered: &Offered,
+        held: &std::collections::BTreeMap<obelus_agent::chats::ChatId, Option<std::path::PathBuf>>,
+    ) -> Said {
+        let (open, elsewhere) = match &offered.brief {
+            crate::brief::Brief::Note { id, .. } => {
+                let which = obelus_agent::chats::ChatId::Note(id.clone());
+                let open = self.conversation_open(&which);
+                (open, open.is_none() && held.contains_key(&which))
+            }
+            crate::brief::Brief::Place(_) => (None, false),
+        };
+        Said {
+            marker: match offered.had || elsewhere {
+                true => self.listed_mark(open, elsewhere),
+                false => Some(fresh()),
+            },
+            enabled: !elsewhere,
+            trailing: None,
+        }
     }
 
     /// Asks the agent in use which conversations it keeps about this
@@ -649,6 +776,41 @@ impl App {
             section: None,
             value: PickerValue::Command(obelus_command::Command::ConversationNew),
         });
+        // Under it, one for each thing the reader was on, and on the same
+        // tab for the same reason. Under rather than over: `f4` and enter
+        // was a new conversation about nothing before these rows were here,
+        // and still is.
+        // Somebody else holding it is a conversation too, whether or not
+        // anybody has written it down yet.
+        let held = self.kept.held_kept.clone();
+        let mut briefs = std::mem::take(&mut self.conversing.briefs);
+        for offered in &mut briefs {
+            offered.had = match &offered.brief {
+                crate::brief::Brief::Note { id, .. } => {
+                    let which = obelus_agent::chats::ChatId::Note(id.clone());
+                    self.conversation_open(&which).is_some()
+                        || held.contains_key(&which)
+                        || remembered.as_ref().is_some_and(|remembered| {
+                            remembered
+                                .get(&which, &whose, &self.working_directory)
+                                .is_some()
+                        })
+                }
+                crate::brief::Brief::Place(_) => false,
+            };
+        }
+        self.conversing.briefs = briefs;
+        let fresh: Vec<PickerItem> = fresh
+            .into_iter()
+            .chain(
+                self.conversing
+                    .briefs
+                    .iter()
+                    .enumerate()
+                    .filter(|_| mine)
+                    .map(|(at, offered)| briefed_row(at, offered, self.brief_said(offered, &held))),
+            )
+            .collect();
         // Three answers and not two, because a table Obelus cannot read is
         // not a project nobody has said anything about, and the new row
         // alone would tell the reader it is.
@@ -944,11 +1106,23 @@ impl App {
         // reader was looking at the row, the row they are standing on is
         // one of these: it says so before they press, which is the whole
         // of what this is for.
+        // And the rows offering what the reader was on, where one is a
+        // note: its conversation is as much somebody else's as a listed
+        // row's.
+        let briefed: Vec<Said> = self
+            .conversing
+            .briefs
+            .iter()
+            .map(|offered| self.brief_said(offered, held))
+            .collect();
         let Some(picker) = self.picker.as_mut() else {
             return;
         };
         picker.remark(|value| match value {
             PickerValue::Conversation(at) => said
+                .get(*at)
+                .map_or(Remark::Keep, |now| Remark::Now(now.clone())),
+            PickerValue::Briefed(at) if mine => briefed
                 .get(*at)
                 .map_or(Remark::Keep, |now| Remark::Now(now.clone())),
             _ => Remark::Keep,

@@ -167,11 +167,15 @@ impl App {
     /// `None` when it has been told all of it, which is the ordinary case:
     /// this is asked before every message and has something to say before
     /// the first one and after the reader rewrites their note.
+    ///
+    /// A brief goes after the topic and is said whole: it is only ever
+    /// here for the first message, so there is nothing it was told before.
     pub(in crate::app) fn opening(
         &self,
         topic: &Topic,
         introduced: bool,
         told: Option<&str>,
+        brief: Option<&crate::brief::Brief>,
     ) -> Option<Opening> {
         let mut pieces = Vec::new();
         if !introduced {
@@ -184,6 +188,10 @@ impl App {
         if let Some((words, _, _)) = &about {
             pieces.push(words.clone());
         }
+        let briefed = brief.and_then(crate::brief::Brief::words);
+        if let Some(words) = &briefed {
+            pieces.push(words.clone());
+        }
         if pieces.is_empty() {
             return None;
         }
@@ -193,7 +201,10 @@ impl App {
             // between here and the wire would have to become a list to
             // carry it.
             words: pieces.join("\n\n"),
-            said: about.as_ref().map(|(_, line, _)| *line),
+            said: about
+                .as_ref()
+                .map(|(_, line, _)| *line)
+                .or(briefed.map(|_| crate::brief::SAID)),
             now: about.map(|(_, _, now)| now),
             introduced: true,
         })

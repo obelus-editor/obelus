@@ -117,11 +117,11 @@ impl Watcher {
                     // What that costs is one sentence going stale rather
                     // than a lock going missing. The lock is the kernel's
                     // and is released on those platforms exactly as it is
-                    // here; the claim is asked for again at the moment the
-                    // reader presses the key, so the conversation opens.
-                    // What is wrong until the view is opened again is what
-                    // the row *says*: a lock drawn on a claim nobody
-                    // holds, and a foot that does not offer `Talk`. Every
+                    // here, and the claims are looked at again each time the
+                    // list of conversations opens. What is wrong until a
+                    // view is opened again is what the row *says*: a lock
+                    // drawn on a claim nobody holds, and a row offering the
+                    // note drawn dim. Every
                     // other way a claim begins or ends is a file appearing
                     // or going, which all three platforms report.
                     //

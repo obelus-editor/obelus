@@ -12,6 +12,7 @@
 //! a frame is drawn from, and this is the only thing that has all of it.
 
 pub mod app;
+pub mod brief;
 pub mod conversation;
 pub mod event;
 pub mod jump;

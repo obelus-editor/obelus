@@ -578,8 +578,9 @@ impl App {
         if column == Column::Words {
             return false;
         }
-        // On to the note first: both keys ask about the note the caret is
-        // in, so the note under the pointer is the note they are about.
+        // On to the note first: the key and the list both ask about the
+        // note the caret is in, so the note under the pointer is the note
+        // they are about.
         let note = self
             .notes()
             .and_then(|notes| notes.rows().get(row))
@@ -587,8 +588,8 @@ impl App {
         if let (Some(note), Some(notes)) = (note, self.notes_mut()) {
             notes.stand_on(note);
         }
-        // Down the keys' own paths, rather than a second way to tick a
-        // note off and a second way to open its conversation.
+        // Down the paths the keys and the list take, rather than a second
+        // way to tick a note off and a second way to open its conversation.
         match column {
             // The arrow, which the key reaches through the command rather
             // than through the notes' own keys -- so this goes the same
@@ -601,10 +602,13 @@ impl App {
                 crossterm::event::KeyCode::Char(' '),
                 crossterm::event::KeyModifiers::ALT,
             )),
-            _ => self.notes_key(&crossterm::event::KeyEvent::new(
-                crossterm::event::KeyCode::Char('a'),
-                crossterm::event::KeyModifiers::ALT,
-            )),
+            // The row the list of conversations offers for this note.
+            _ => {
+                if let Some(brief) = self.the_note_here() {
+                    self.begin_briefed(brief);
+                }
+                true
+            }
         };
         true
     }

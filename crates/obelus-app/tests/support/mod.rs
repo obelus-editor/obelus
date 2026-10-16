@@ -973,6 +973,17 @@ pub(crate) fn colour_under(dump: &str, glyph: char) -> String {
         .to_string()
 }
 
+/// Starts a conversation with what the reader is on: `f4`, the row under
+/// the new one, and enter.
+///
+/// The way a reader does it, so the list's own reading of what they are on
+/// is the one under test.
+pub(crate) fn talk_about_what_is_here(app: &mut App) {
+    press_function(app, 4);
+    press(app, KeyCode::Down);
+    press(app, KeyCode::Enter);
+}
+
 /// Sends a letter with alt held, which is the family Obelus's own commands
 /// live in.
 pub(crate) fn press_alt(app: &mut App, character: char) {
