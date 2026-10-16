@@ -24,6 +24,7 @@ agent-client-protocol.workspace = true
 dirs.workspace = true
 futures.workspace = true
 image.workspace = true
+jiff.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true

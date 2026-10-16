@@ -12050,6 +12050,182 @@ fn a_conversation_another_obelus_has_open_cannot_be_taken_up_from_the_list() {
     );
 }
 
+/// The list of conversations, open on an agent that keeps a log and can be
+/// asked what it keeps -- or, without `lists`, cannot.
+///
+/// One Obelus wrote down too (`s-old`), from today, so that the agent's
+/// own row for it has something to be left out in favour of.
+fn listing(
+    name: &str,
+    how: &[&str],
+    days: usize,
+) -> (support::Scratch, App, Receiver<Event>, std::path::PathBuf) {
+    let root = agents_root_for(name);
+    std::fs::create_dir_all(&root).expect("the root");
+    let log = root.join("asked.log");
+    let _ = std::fs::remove_file(&log);
+    let scratch = support::Scratch::new(name);
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            conversation_days: days,
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    remember_a_conversation(
+        &scratch,
+        "fake",
+        "s-old",
+        "Written down by Obelus",
+        Some(lately(1_000)),
+    );
+    let mut arguments = vec![
+        "tests/fixtures/fake-agent.sh".to_string(),
+        format!("log={}", log.display()),
+    ];
+    arguments.extend(how.iter().map(|word| (*word).to_string()));
+    app.talk_to("fake", Path::new(support::sh()), &arguments);
+    (scratch, app, events, log)
+}
+
+/// The titles of the list's conversations, in the order shown.
+fn listed_titles(app: &App) -> Vec<String> {
+    listed_conversations(app)
+        .into_iter()
+        .map(|item| item.label.clone())
+        .collect()
+}
+
+/// What the agent keeps about this checkout is in the list of
+/// conversations, beside what Obelus wrote down, and taken up like it.
+///
+/// Which is how a conversation had in the agent's own program -- Claude
+/// Code in a terminal, before Obelus was open -- is found from Obelus at
+/// all: Obelus wrote nothing down about it, and the list was only ever
+/// what it wrote down. Every page of what the agent keeps, and not twice
+/// what Obelus already has a row for.
+///
+/// Broken deliberately three ways: by not asking (`ask_what_the_agent_keeps`
+/// left out of `open_conversation_picker`), and the rows never arrived; by
+/// walking only the first page in `link::listed`, and the second page's row
+/// was missing; and by not leaving out what the table has, and `s-old` was
+/// in the list twice.
+#[test]
+fn what_the_agent_keeps_is_in_the_list_and_taken_up() {
+    let (_scratch, mut app, events, log) = listing("agent-keeps", &["lists"], 30);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationSelect);
+    asked(&mut app, &events, &log, "session/list");
+    pump(&mut app, &events, "what the agent keeps", |app| {
+        listed_titles(app)
+            .iter()
+            .any(|title| title == "Asked on the second page")
+    });
+
+    let titles = listed_titles(&app);
+    assert!(
+        titles.iter().any(|title| title == "Asked in a terminal"),
+        "the first page is not in the list: {titles:?}"
+    );
+    assert_eq!(
+        titles
+            .iter()
+            .filter(|title| title.contains("Obelus"))
+            .count(),
+        1,
+        "a conversation Obelus wrote down is in the list twice: {titles:?}"
+    );
+    assert!(
+        titles.iter().any(|title| title == "Written down by Obelus"),
+        "what Obelus wrote down gave way to the agent's row: {titles:?}"
+    );
+
+    // Taken up the way any other is: by the session the agent named.
+    while app
+        .picker()
+        .and_then(obelus_component::picker::Picker::selected_item)
+        .is_none_or(|item| item.label != "Asked in a terminal")
+    {
+        support::press(&mut app, KeyCode::Down);
+    }
+    support::press(&mut app, KeyCode::Enter);
+    asked(&mut app, &events, &log, "session/load cli-1");
+    pump(&mut app, &events, "the conversation taken up", |app| {
+        app.agent_holds_for_test("cli-1")
+    });
+}
+
+/// A conversation nothing has been said in for longer than the setting
+/// keeps one is not listed from the agent either, and with a setting that
+/// never forgets it is.
+///
+/// The setting forgets Obelus's own row and cannot make the agent forget
+/// anything: without this, the agent's answer put back every row the
+/// setting had taken away.
+///
+/// Broken deliberately by taking the `since` filter out of
+/// `rows_only_the_agent_kept`: `Asked long ago` was listed at thirty days.
+#[test]
+fn what_the_agent_keeps_is_forgotten_after_the_same_days() {
+    let (_scratch, mut app, events, log) = listing("agent-keeps-days", &["lists"], 30);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationSelect);
+    asked(&mut app, &events, &log, "session/list");
+    pump(&mut app, &events, "what the agent keeps", |app| {
+        listed_titles(app)
+            .iter()
+            .any(|title| title == "Asked on the second page")
+    });
+    let titles = listed_titles(&app);
+    assert!(
+        !titles.iter().any(|title| title == "Asked long ago"),
+        "a conversation older than the setting keeps is listed: {titles:?}"
+    );
+
+    let (_scratch, mut app, events, log) = listing("agent-keeps-never", &["lists"], 0);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationSelect);
+    asked(&mut app, &events, &log, "session/list");
+    pump(
+        &mut app,
+        &events,
+        "what the agent keeps, all of it",
+        |app| {
+            listed_titles(app)
+                .iter()
+                .any(|title| title == "Asked long ago")
+        },
+    );
+}
+
+/// An agent that never said it can list what it keeps is not asked.
+///
+/// Its answer is the capability: asked anyway, it is a refusal in the log
+/// about nothing the reader did. This one answers regardless, so a client
+/// that asked would have its rows.
+///
+/// Broken deliberately by taking the capability guard off `Ask::List` in
+/// `link.rs`: the agent was asked, and its rows were in the list.
+#[test]
+fn an_agent_that_cannot_list_is_not_asked() {
+    let (_scratch, mut app, events, log) = listing("agent-keeps-nothing", &[], 30);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationSelect);
+    // The list is asked for straight after the handshake, so a moment past
+    // that is the list's chance to have gone out.
+    asked(&mut app, &events, &log, "initialize");
+    settle(&mut app, &events, Duration::from_millis(500));
+    let said = std::fs::read_to_string(&log).unwrap_or_default();
+    assert!(
+        !said.contains("session/list"),
+        "an agent that cannot list was asked to:\n{said}"
+    );
+    assert_eq!(
+        listed_titles(&app),
+        ["Written down by Obelus"],
+        "the list is not what Obelus wrote down"
+    );
+}
+
 /// A conversation had with another agent gets a tab of its own, and its
 /// rows cannot be taken up.
 ///

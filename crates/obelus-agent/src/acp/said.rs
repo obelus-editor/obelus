@@ -138,6 +138,11 @@ pub enum Ask {
     /// would mean their conversation existing because a settings page
     /// wanted a list, and going wherever that list went.
     Offers,
+    /// Say which conversations you keep about this project.
+    ///
+    /// Asked of an agent that said at the handshake that it can be, and of
+    /// no other: one that cannot is not asked to find that out again.
+    List,
     /// Stop what you are doing in that one.
     Interrupt {
         /// Which turn Obelus is giving up on, for the end it writes itself.
@@ -407,6 +412,12 @@ pub enum Incoming {
         /// What it offers.
         offers: Vec<Setting>,
     },
+    /// The conversations the agent keeps about this checkout, every page of
+    /// them -- whoever had them, Obelus or the agent's own program.
+    ///
+    /// Only from an agent that can be asked: one that cannot sends nothing,
+    /// and nothing is not "it keeps none".
+    Listed(Vec<Listed>),
     /// Something did not work: what Obelus was doing, and what it said.
     Failed(&'static str, String),
     /// A conversation Obelus asked to pick up again is not there any more.
@@ -697,6 +708,22 @@ pub struct Cost {
     /// turned into a sign: Obelus does not know every currency's, and one
     /// it guessed wrong would be a number about the wrong money.
     pub currency: String,
+}
+
+/// One conversation the agent keeps, as `session/list` names it.
+///
+/// What the list of conversations needs and nothing else: the protocol's
+/// own record says which directory it was had in, and that was the question
+/// the list was asked.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Listed {
+    /// The agent's name for it, which is what takes it up.
+    pub session: String,
+    /// What the agent calls it, where it says.
+    pub title: Option<String>,
+    /// When something was last said in it, in seconds since the epoch --
+    /// where the agent says, and says it in a form that reads.
+    pub last: Option<i64>,
 }
 
 /// One thing about the session the agent lets the reader change.

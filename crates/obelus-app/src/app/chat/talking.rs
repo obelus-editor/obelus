@@ -232,7 +232,7 @@ impl App {
     }
 
     /// Whether the agent the settings name has an install to start.
-    fn the_chosen_agent_is_installed(&self) -> bool {
+    pub(in crate::app) fn the_chosen_agent_is_installed(&self) -> bool {
         self.settled
             .config
             .agent
@@ -537,6 +537,20 @@ impl App {
                     *by == agent && *tree == self.working_directory && kept.session == *session
                 })
                 .and_then(|(_, _, _, kept)| kept.title.clone())
+                // Or, for one had outside Obelus, what the agent called it
+                // in the list it was chosen from: a replay is not obliged
+                // to say it again, and the row it was chosen by had a name.
+                .or_else(|| {
+                    self.conversing
+                        .kept_by_the_agent
+                        .as_ref()
+                        .filter(|(whose, _)| whose == agent)?
+                        .1
+                        .iter()
+                        .find(|listed| listed.session == *session)?
+                        .title
+                        .clone()
+                })
         });
         if self.agent.talker.is_none() {
             return;
@@ -3649,6 +3663,8 @@ impl App {
             // conversation it was asked on was opened for the asking and
             // let go before this arrived.
             | acp::Incoming::Offers { .. }
+            // And which conversations it keeps is about the checkout.
+            | acp::Incoming::Listed(_)
             | acp::Incoming::Failed(..)
             // What this agent tells of background work is about the agent,
             // and asking for one to stop is answered in the handle.
@@ -4116,6 +4132,10 @@ impl App {
             self.agents.asking = None;
             return;
         }
+        if let acp::Incoming::Listed(sessions) = incoming {
+            self.hear_what_the_agent_keeps(sessions);
+            return;
+        }
         // And again whenever the agent says what it offers, which is the
         // message that actually carries it: a session opens before an
         // agent has said a word about what it can be set to.
@@ -4391,7 +4411,8 @@ impl App {
             // conversation to name, the other because there is none.
             acp::Incoming::Ready { .. }
             | acp::Incoming::Started { .. }
-            | acp::Incoming::Offers { .. } => {}
+            | acp::Incoming::Offers { .. }
+            | acp::Incoming::Listed(_) => {}
             // Asking for one to stop came to nothing: a list of the work
             // stops saying it is stopping.
             acp::Incoming::NotStopped { .. } => self.refresh_background_tasks(),

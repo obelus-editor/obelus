@@ -72,7 +72,8 @@ use futures::channel::mpsc;
 use obelus_sink::Sink;
 pub use said::{
     Answer, Ask, BACKGROUNDED, Call, Category, Change, Choice, Chosen, Cost, Field, How, Incoming,
-    Kind, Login, Order, Place, Question, Reply, Setting, Step, Takes, Turn, Update, Usage, Value,
+    Kind, Listed, Login, Order, Place, Question, Reply, Setting, Step, Takes, Turn, Update, Usage,
+    Value,
 };
 
 /// Which connection to an agent something came from, by a count kept for
@@ -520,6 +521,15 @@ impl Talk {
     /// would be a conversation that goes wherever that list goes.
     pub fn offers(&mut self) {
         let _ = self.asks.unbounded_send(Ask::Offers);
+    }
+
+    /// Asks which conversations it keeps about this checkout, including
+    /// the ones had outside Obelus.
+    ///
+    /// What comes back is [`Incoming::Listed`], from an agent that can be
+    /// asked, and nothing from one that cannot.
+    pub fn list(&self) {
+        let _ = self.asks.unbounded_send(Ask::List);
     }
 
     /// Lets one go: the note it was about has gone, or it was opened for a

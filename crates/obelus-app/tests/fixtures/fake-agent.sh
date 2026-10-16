@@ -58,6 +58,9 @@
 #   session/prompt        -> with "slowly" in it: nothing at all, so the turn
 #                            stays in flight until it is cancelled
 #   session/cancel       -> the turn ends, cancelled
+#   session/list         -> two pages of conversations kept about the
+#                            directory; said to be listable only when run
+#                            with `lists`
 #
 # And background work, in JetBrains' extension, as claude-agent-acp speaks
 # it. Offered in the handshake only when run with `air` (version 1, the one
@@ -204,6 +207,11 @@ pictures=''
 # Whether what it replays of a conversation taken up again has a plan in it.
 replans=''
 resume_fails=''
+# Whether it says it can list the conversations it keeps, which a client
+# reads before asking -- and whether it answers `session/list` at all, below,
+# which it does either way, so that a client asking one that never said it
+# could is a request in the log.
+lists=''
 # Which version of JetBrains' extension it offers, if any, and whether it
 # can stop what it started.
 air=''
@@ -236,6 +244,7 @@ for word in "$@"; do
         prompts) prompts='yes' ;;
         pictures) pictures='yes' ;;
         replans) replans='yes' ;;
+        lists) lists='yes' ;;
         air) air='1' ;;
         air2) air='2' ;;
         cannot-stop) cannot_stop='yes' ;;
@@ -347,6 +356,14 @@ while IFS= read -r line; do
                 resume) able='"sessionCapabilities":{"resume":{}},' ;;
                 *) able='' ;;
             esac
+            if [ -n "$lists" ]; then
+                case "$able" in
+                    *'"sessionCapabilities":{'*)
+                        able=$(printf '%s' "$able" | sed 's/"sessionCapabilities":{/"sessionCapabilities":{"list":{},/')
+                        ;;
+                    *) able="$able"'"sessionCapabilities":{"list":{}},' ;;
+                esac
+            fi
             if [ -n "$pictures" ]; then
                 able="$able"'"promptCapabilities":{"image":true},'
             fi
@@ -1276,6 +1293,20 @@ while IFS= read -r line; do
             # which is the whole difference from `session/load`. It says so
             # in the answer only; the page stays empty.
             printf '{"jsonrpc":"2.0","id":%s,"result":{"modes":{"currentModeId":"ask","availableModes":[{"id":"ask","name":"ask first"},{"id":"code","name":"write code"}]},"configOptions":%s}}\n' "$(id_of "$line")" "$(options)"
+            ;;
+        # What it keeps about the directory it was asked about, two pages of
+        # it, the way claude-agent-acp hands back what Claude Code wrote down
+        # -- conversations had outside any client, in the agent's own
+        # program. One from today, one so old any setting that forgets has
+        # forgotten it, one Obelus wrote down itself (`s-old`, the name
+        # the tests keep), and on the second page one more today.
+        *'"method":"session/list"'*'"cursor":"page-2"'*)
+            now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"sessions":[{"sessionId":"cli-2","cwd":"%s","title":"Asked on the second page","updatedAt":"%s"}]}}\n' "$(id_of "$line")" "$here" "$now"
+            ;;
+        *'"method":"session/list"'*)
+            now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"sessions":[{"sessionId":"cli-1","cwd":"%s","title":"Asked in a terminal","updatedAt":"%s"},{"sessionId":"cli-old","cwd":"%s","title":"Asked long ago","updatedAt":"2001-01-01T00:00:00Z"},{"sessionId":"s-old","cwd":"%s","title":"Kept by Obelus too","updatedAt":"%s"}],"nextCursor":"page-2"}}\n' "$(id_of "$line")" "$here" "$now" "$here" "$here" "$now"
             ;;
         *'"method":"session/delete"'*)
             set_turn "$session" ''
