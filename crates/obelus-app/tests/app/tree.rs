@@ -632,3 +632,29 @@ fn an_arrow_on_a_row_scrolled_away_shows_it_first() {
         "left on the row brought back did not shut it"
     );
 }
+
+/// An arrow carrying a modifier is not the tree's: it falls through to the
+/// list, the way every key with a modifier a branch does not name does.
+///
+/// Broken deliberately by dropping the `modifiers_of` condition from
+/// `picker_key`: `shift+left` went up to `lsp`.
+#[test]
+fn an_arrow_with_a_modifier_is_not_the_trees() {
+    use crossterm::event::KeyCode;
+
+    let (_scratch, mut app) = a_tree("tree-arrows-modified");
+    assert_eq!(standing_on(&app), "hint.rs");
+    let open = rows(&app);
+    support::press_shift(&mut app, KeyCode::Left);
+    support::press_control_key(&mut app, KeyCode::Right);
+    assert_eq!(
+        standing_on(&app),
+        "hint.rs",
+        "a modified arrow walked the tree"
+    );
+    assert_eq!(
+        rows(&app),
+        open,
+        "a modified arrow opened or shut something"
+    );
+}

@@ -1055,4 +1055,25 @@ mod tests {
             "left on the row brought back did not shut it"
         );
     }
+
+    /// Left on a row at the top of the tree has no directory to go up to,
+    /// and stays where it is.
+    ///
+    /// Broken deliberately by having the walk up fall back to the first row
+    /// where it finds no parent: left on `Cargo.toml` landed on `src`.
+    #[test]
+    fn left_at_the_top_of_the_tree_stays_put() {
+        let mut counts = Counts::new();
+        counts.show(counted());
+        counts.handle_key(&press(KeyCode::Tab), 10);
+        counts.handle_key(&press(KeyCode::Down), 10);
+        assert_eq!(counts.rows()[counts.window().focus()].name, "Cargo.toml");
+
+        counts.handle_key(&press(KeyCode::Left), 10);
+        assert_eq!(
+            counts.rows()[counts.window().focus()].name,
+            "Cargo.toml",
+            "left at the top went somewhere"
+        );
+    }
 }
