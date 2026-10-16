@@ -54,7 +54,10 @@ fn the_palette_opens_over_a_list_and_escape_is_back_in_it() {
 ///
 /// Broken deliberately by letting the "All" tab show every row, as it
 /// does in a list with no tab of its own: the search's switches were among
-/// the commands.
+/// the commands. By drawing the symbols tab's switch on this one, dim
+/// (`only_where` left off "Outside"): it was a row of a tab it means
+/// nothing on. And by leaving the sentence off a row (`detail: None` in
+/// `keys_as_rows`).
 #[test]
 fn the_first_tab_is_the_views_keys_and_all_is_the_commands() {
     let mut app = searching();
@@ -63,7 +66,14 @@ fn the_first_tab_is_the_views_keys_and_all_is_the_commands() {
     assert_eq!(&palette.tabs()[..2], ["Here", "All"]);
     assert_eq!(palette.tab(), 0, "it did not open on the view's own keys");
     let here: Vec<String> = palette.matches().map(|row| row.label.clone()).collect();
-    assert_eq!(here, ["Regex", "Word", "Case", "Outside"], "{here:?}");
+    // Not "Outside": a search of one file has no outside to reach, and that
+    // switch is the symbols tab's.
+    assert_eq!(here, ["Regex", "Word", "Case"], "{here:?}");
+    // Each with a sentence after its word, where a command has its title.
+    assert!(
+        palette.matches().all(|row| row.detail.is_some()),
+        "a key of the view does not say what it does"
+    );
     assert!(
         palette
             .matches()

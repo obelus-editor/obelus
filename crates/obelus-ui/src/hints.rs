@@ -35,6 +35,17 @@ pub struct Hint {
     ///
     /// `None` for a key that does something rather than sets something.
     pub switched: Option<bool>,
+    /// What it does, in a sentence: the row's gloss in the palette, after
+    /// the word, the way a command's title follows its name there.
+    pub about: Option<&'static str>,
+    /// Whether the view has this key at all where the reader is.
+    ///
+    /// Not whether it does anything now, which is [`Hint::usable`] and is
+    /// drawn dim. This is the question not arising: a search of one file
+    /// has no outside to reach, and the changed files are git's answer and
+    /// not a walk that could offer an ignored one. A row for those would be
+    /// a key of some other tab, and it is left out rather than dimmed.
+    pub here: bool,
     /// Whether it does anything *now*.
     ///
     /// Worked out by whoever knows: a note about the project has nowhere
@@ -52,7 +63,9 @@ impl Hint {
             and_also: None,
             does: Some(does),
             switched: None,
+            about: None,
             usable: true,
+            here: true,
         }
     }
 
@@ -67,6 +80,20 @@ impl Hint {
     #[must_use]
     pub const fn when(mut self, usable: bool) -> Self {
         self.usable = usable;
+        self
+    }
+
+    /// Says what it does, in a sentence.
+    #[must_use]
+    pub const fn about(mut self, about: &'static str) -> Self {
+        self.about = Some(about);
+        self
+    }
+
+    /// Says whether the view has it at all where the reader is.
+    #[must_use]
+    pub const fn only_where(mut self, here: bool) -> Self {
+        self.here = here;
         self
     }
 
@@ -392,7 +419,7 @@ pub fn foot(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme) {
 
     let edge = area.x + area.width;
     let mut x = area.x + 2;
-    for hint in hints.iter().filter(|hint| hint.usable) {
+    for hint in hints.iter().filter(|hint| hint.here && hint.usable) {
         let keys = hint.keys();
         // Saturating rather than refused: a hint wider than the screen can
         // hold is one that does not fit, which is the same answer the row

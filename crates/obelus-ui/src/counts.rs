@@ -120,17 +120,16 @@ pub fn hints(counts: &Counts) -> Vec<Hint> {
     let bare = |code| chord(code, KeyModifiers::NONE);
     let on = counts.rows().get(counts.window().focus());
     let folds = on.and_then(|row| row.open);
-    vec![
-        Hint::new(
-            bare(KeyCode::Enter),
-            match folds {
-                Some(true) => "Close",
-                Some(false) => "Open",
-                None => "Read it",
-            },
-        )
-        .when(on.is_some_and(|row| row.go.is_some())),
-    ]
+    vec![{
+        let (word, about) = match folds {
+            Some(true) => ("Close", "Fold away what is under this row"),
+            Some(false) => ("Open", "Show what is under this row"),
+            None => ("Read it", "Open this file"),
+        };
+        Hint::new(bare(KeyCode::Enter), word)
+            .about(about)
+            .when(on.is_some_and(|row| row.go.is_some()))
+    }]
 }
 
 /// How many rows of list a region has room for.

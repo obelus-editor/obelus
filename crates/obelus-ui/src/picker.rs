@@ -79,6 +79,7 @@ pub fn keys(picker: &Picker) -> Vec<Hint> {
                 obelus_keymap::KeyChord::new(KeyCode::Char('s'), KeyModifiers::ALT),
                 "Stop",
             )
+            .about("Stop the work on this row")
             .when(picker.stops_this_one()),
         ];
     }
@@ -90,8 +91,9 @@ pub fn keys(picker: &Picker) -> Vec<Hint> {
     if picker.rows_open() {
         let enter = |modifiers| obelus_keymap::KeyChord::new(KeyCode::Enter, modifiers);
         return vec![
-            Hint::new(enter(KeyModifiers::NONE), "Open"),
-            Hint::new(enter(KeyModifiers::ALT), "Go there"),
+            Hint::new(enter(KeyModifiers::NONE), "Open")
+                .about("Show what this row holds, under it"),
+            Hint::new(enter(KeyModifiers::ALT), "Go there").about("Go to the place this row names"),
         ];
     }
     // The open documents, whose order is the tabs' and the reader's. The
@@ -103,6 +105,7 @@ pub fn keys(picker: &Picker) -> Vec<Hint> {
         return vec![
             Hint::new(alt(KeyCode::Up), "Move")
                 .or(alt(KeyCode::Down))
+                .about("Change the order of the open documents")
                 .when(picker.query().is_empty()),
         ];
     }
@@ -114,51 +117,70 @@ pub fn keys(picker: &Picker) -> Vec<Hint> {
         use obelus_component::picker::WorktreeEnter;
         let enter = |modifiers| obelus_keymap::KeyChord::new(KeyCode::Enter, modifiers);
         let does = picker.worktree_enter();
-        let word = match does {
-            Some(WorktreeEnter::Bring) => "Go to it",
-            Some(WorktreeEnter::Stay) => "Stay",
-            Some(WorktreeEnter::Switch) => "Switch",
-            Some(WorktreeEnter::Open) | None => "New window",
+        let (word, about) = match does {
+            Some(WorktreeEnter::Bring) => ("Go to it", "Bring the window on that tree forward"),
+            Some(WorktreeEnter::Stay) => ("Stay", "Close the list and stay in this window"),
+            Some(WorktreeEnter::Switch) => ("Switch", "Take this window to that tree"),
+            Some(WorktreeEnter::Open) | None => ("New window", "Open that tree in a new window"),
         };
         return vec![
-            Hint::new(enter(KeyModifiers::NONE), word).when(does.is_some()),
-            Hint::new(enter(KeyModifiers::CONTROL), "Switch").when(picker.switches_here()),
+            Hint::new(enter(KeyModifiers::NONE), word)
+                .about(about)
+                .when(does.is_some()),
+            Hint::new(enter(KeyModifiers::CONTROL), "Switch")
+                .about("Take this window to that tree")
+                .when(picker.switches_here()),
         ];
     }
     let alt = |letter| obelus_keymap::KeyChord::new(KeyCode::Char(letter), KeyModifiers::ALT);
     if picker.is_searching() {
         let how = picker.looks_how();
         let asked = how.unwrap_or_default();
-        // Dim rather than dropped where the question does not arise: the
-        // list has the key, and this tab is where it does nothing.
+        // Left out where the question does not arise: a tab whose rows a
+        // server matched has no pattern to read, and that key is another
+        // tab's.
         let here = how.is_some();
         return vec![
-            Hint::new(alt('r'), "Regex").set(asked.regex).when(here),
-            Hint::new(alt('w'), "Word").set(asked.word).when(here),
-            Hint::new(alt('c'), "Case").set(asked.sensitive).when(here),
+            Hint::new(alt('r'), "Regex")
+                .about("Read the query as a regular expression")
+                .set(asked.regex)
+                .only_where(here),
+            Hint::new(alt('w'), "Word")
+                .about("Find it only where it is a whole word")
+                .set(asked.word)
+                .only_where(here),
+            Hint::new(alt('c'), "Case")
+                .about("Find the capitals as they are typed")
+                .set(asked.sensitive)
+                .only_where(here),
             // The other way round from the three above: this one is the
             // symbols tab's, and they are the two that read a text.
             Hint::new(alt('o'), "Outside")
+                .about("Find names outside the project as well")
                 .set(picker.reaches_outside().unwrap_or(false))
-                .when(picker.reaches_outside().is_some()),
+                .only_where(picker.reaches_outside().is_some()),
         ];
     }
     let offering = picker.offers_ignored();
     let showing = picker.offers_hidden();
     vec![
         Hint::new(alt('i'), "Ignored files")
+            .about("Offer the files the project ignores")
             .set(offering.unwrap_or(false))
-            .when(offering.is_some()),
+            .only_where(offering.is_some()),
         // Beside it and not folded into it: what a project said to ignore
         // and what a convention says not to show are two different things
         // kept out, and one switch for both would say one was set when the
         // other was.
         Hint::new(alt('.'), "Hidden files")
+            .about("Offer the files a system keeps out of sight")
             .set(showing.unwrap_or(false))
-            .when(showing.is_some()),
+            .only_where(showing.is_some()),
         // Not a switch: what it does depends on the row the reader is on,
         // which is why it draws no setting.
-        Hint::new(alt('n'), "Rename").when(offering.is_some()),
+        Hint::new(alt('n'), "Rename")
+            .about("Rename the file or directory on this row")
+            .only_where(offering.is_some()),
     ]
 }
 

@@ -847,8 +847,12 @@ const HERE: &str = "Here";
 /// A pair of keys for one act in two directions is a row each here, where
 /// the foot drew them as one: a row is pressed, and a row for two keys is a
 /// row that cannot say which of them it would be.
+///
+/// Only the keys the view has where the reader is: a key of another tab is
+/// not a row here at all, where one that does nothing on this row is dim.
 fn keys_as_rows(keys: &[obelus_ui::Hint]) -> Vec<PickerItem> {
     keys.iter()
+        .filter(|hint| hint.here)
         .flat_map(|hint| {
             let paired = hint.and_also.is_some();
             std::iter::once(hint.chord)
@@ -869,7 +873,8 @@ fn keys_as_rows(keys: &[obelus_ui::Hint]) -> Vec<PickerItem> {
                     false => does,
                 },
                 version: None,
-                detail: None,
+                // What it does in a sentence, where a command's title is.
+                detail: hint.about.map(str::to_string),
                 trailing: Some(chord.label()),
                 changed: None,
                 value: PickerValue::Key(chord),

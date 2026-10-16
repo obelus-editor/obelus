@@ -58,9 +58,13 @@ pub fn hints(notes: &Notes) -> Vec<Hint> {
     // Nothing about copy, cut and paste either: here they are what they are
     // everywhere else.
     vec![
-        Hint::new(bare(KeyCode::Enter), "Another"),
-        Hint::new(alt(KeyCode::Char(' ')), "Done").when(on.is_some() && !elsewhere),
-        Hint::new(alt(KeyCode::Char('o')), "Go there").when(notes.can_go()),
+        Hint::new(bare(KeyCode::Enter), "Another").about("Start a new note after this one"),
+        Hint::new(alt(KeyCode::Char(' ')), "Done")
+            .about("Tick this note off, or put it back")
+            .when(on.is_some() && !elsewhere),
+        Hint::new(alt(KeyCode::Char('o')), "Go there")
+            .about("Go to the place this note is about")
+            .when(notes.can_go()),
         // Not where another Obelus has that conversation open: a
         // conversation is not a thing two of them may have at once, so the
         // key does nothing there and a palette offering it would be the
@@ -68,20 +72,29 @@ pub fn hints(notes: &Notes) -> Vec<Hint> {
         // above and below that would *change* such a note is held back too:
         // the caret still sits in it, so the palette is the only thing that
         // can say what the next key will do.
-        Hint::new(alt(KeyCode::Char('a')), "Talk").when(on.is_some() && !elsewhere),
+        Hint::new(alt(KeyCode::Char('a')), "Talk")
+            .about("Talk to the agent about this note")
+            .when(on.is_some() && !elsewhere),
         // Taking a whole note away is the one thing here a reader will go
         // looking for and not find, because backspace on its own is a
         // letter.
-        Hint::new(alt(KeyCode::Backspace), "Drop").when(on.is_some() && notes.can_drop()),
+        Hint::new(alt(KeyCode::Backspace), "Drop")
+            .about("Take this note away, with what hangs under it")
+            .when(on.is_some() && notes.can_drop()),
         Hint::new(alt(KeyCode::Up), "Move")
             .or(alt(KeyCode::Down))
+            .about("Move this note past the one next to it")
             .when(notes.rows().len() > 1 && !elsewhere),
         // One key each, because they are offered separately: a note at the
         // top can only go in, and one as deep as it may go can only come
         // out. A single row for both would be on whenever either was, and
         // would be saying a key works when it does not.
-        Hint::new(bare(KeyCode::Tab), "Under").when(notes.can_shift(false)),
-        Hint::new(chord(KeyCode::BackTab, KeyModifiers::SHIFT), "Out").when(notes.can_shift(true)),
+        Hint::new(bare(KeyCode::Tab), "Under")
+            .about("Put this note under the one above it")
+            .when(notes.can_shift(false)),
+        Hint::new(chord(KeyCode::BackTab, KeyModifiers::SHIFT), "Out")
+            .about("Bring this note out from under the one above")
+            .when(notes.can_shift(true)),
     ]
 }
 

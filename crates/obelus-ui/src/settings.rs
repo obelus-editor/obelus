@@ -243,15 +243,23 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
     let on_row = settings.rows(offering).get(settings.focus()).copied();
     let adding = matches!(on_row, Some(Shown::AddVariable { .. }));
     let removes = matches!(on_row, Some(Shown::Variable { .. }));
-    let enter = match remote {
+    let changes = match settings.on_keys() {
+        true => "Change the key on this row",
+        false => "Change the setting on this row",
+    };
+    let (enter, enter_does) = match remote {
         Some(Shown::Remote { row, .. }) => match row {
-            RemoteRow::Pair => "Pair",
-            RemoteRow::Setup(obelus_remote::platform::Setup::Copy { .. }) => "Copy",
-            RemoteRow::Setup(obelus_remote::platform::Setup::Steps { .. }) => "Open",
-            RemoteRow::Platform | RemoteRow::Field(_) | RemoteRow::People => "Change",
+            RemoteRow::Pair => ("Pair", "Make a code to pair the chat with"),
+            RemoteRow::Setup(obelus_remote::platform::Setup::Copy { .. }) => {
+                ("Copy", "Copy what this row holds")
+            }
+            RemoteRow::Setup(obelus_remote::platform::Setup::Steps { .. }) => {
+                ("Open", "Open the steps this row points to")
+            }
+            RemoteRow::Platform | RemoteRow::Field(_) | RemoteRow::People => ("Change", changes),
         },
-        _ if adding => "Add",
-        _ => "Change",
+        _ if adding => ("Add", "Give the agent another variable"),
+        _ => ("Change", changes),
     };
     // On a command with no key there is nothing for enter to change, so
     // it is not offered there.
@@ -303,6 +311,7 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
                 obelus_keymap::KeyChord::new(KeyCode::Backspace, KeyModifiers::ALT),
                 "Remove",
             )
+            .about("Take this key away")
             .when(binding.replacing),
         ];
     }
@@ -311,14 +320,19 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
     let rows_delete = !settings.delete_is_the_filters();
     vec![
         Hint::new(bare(KeyCode::Enter), enter)
+            .about(enter_does)
             // Asked of whichever page is showing rather than of the
             // settings: the keys page has rows too, and enter does the same
-            // sort of thing to one of them.
+            // sort of thing to one of them. Not the themes', whose enter is
+            // the card's (`theme_hints`).
+            .only_where(!settings.on_themes())
             .when(settings.row_count(offering) > 0 && !pairing_waits && !nothing_to_change),
         Hint::new(
             obelus_keymap::KeyChord::new(KeyCode::Enter, KeyModifiers::CONTROL),
             "Add a key",
         )
+        .about("Give this command another key")
+        .only_where(settings.on_keys())
         .when(adds),
         // Taking keys away, each offered only where it would do something:
         // the key on this row, this command put back on its layout's keys,
@@ -327,11 +341,15 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
             obelus_keymap::KeyChord::new(KeyCode::Backspace, KeyModifiers::ALT),
             "Remove",
         )
+        .about("Take this key away")
+        .only_where(settings.on_keys())
         .when(on_a_key),
         Hint::new(
             obelus_keymap::KeyChord::new(KeyCode::Char('r'), KeyModifiers::ALT),
             "Reset",
         )
+        .about("Give this command back the keys its layout has")
+        .only_where(settings.on_keys())
         .when(changed_here),
         Hint::new(
             obelus_keymap::KeyChord::new(
@@ -340,16 +358,31 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
             ),
             "Reset all",
         )
-        .when(settings.on_keys() && settings.any_changed()),
-        Hint::new(bare(KeyCode::Delete), "Forget").when(forgets && rows_delete),
+        .about("Give every command back the keys its layout has")
+        .only_where(settings.on_keys())
+        .when(settings.any_changed()),
+        // What delete does to a row, which is one of four things or none:
+        // only the one this row has is a row of the palette, and it is dim
+        // while delete is the filter's.
+        Hint::new(bare(KeyCode::Delete), "Forget")
+            .about("Forget what is kept for this field")
+            .only_where(forgets)
+            .when(rows_delete),
         // On an agent's row, and only while there is something to undo:
         // what `delete` leaves there is not a default of Obelus's but the
         // agent's own answer.
-        Hint::new(bare(KeyCode::Delete), AGENTS_OWN).when(focused.is_some() && rows_delete),
-        Hint::new(bare(KeyCode::Delete), "Remove").when(removes && rows_delete),
-        Hint::new(bare(KeyCode::Delete), "Unset").when(
-            rows_delete && settings.on_project() && !settings.on_keys() && !settings.on_cards(),
-        ),
+        Hint::new(bare(KeyCode::Delete), AGENTS_OWN)
+            .about("Go back to what the agent chose itself")
+            .only_where(focused.is_some())
+            .when(rows_delete),
+        Hint::new(bare(KeyCode::Delete), "Remove")
+            .about("Take this variable away")
+            .only_where(removes)
+            .when(rows_delete),
+        Hint::new(bare(KeyCode::Delete), "Unset")
+            .about("Take this setting out of the project's file")
+            .only_where(settings.on_project() && !settings.on_keys() && !settings.on_cards())
+            .when(rows_delete),
     ]
 }
 
@@ -371,17 +404,20 @@ pub fn keys(settings: &Settings, offering: Option<&Offering>, themes: &[ThemeCar
 fn theme_hints(settings: &Settings, card: Option<&ThemeCard>) -> Vec<Hint> {
     use crossterm::event::{KeyCode, KeyModifiers};
     let bare = |code| obelus_keymap::KeyChord::new(code, KeyModifiers::NONE);
-    let enter = match card {
-        Some(card) if card.may_be_worn() => "Use",
-        Some(card) if card.installed => "Update",
-        _ => "Install",
+    let (enter, does) = match card {
+        Some(card) if card.may_be_worn() => ("Use", "Wear this theme"),
+        Some(card) if card.installed => ("Update", "Install the newer version of this theme"),
+        _ => ("Install", "Install this theme"),
     };
     vec![
         Hint::new(bare(KeyCode::Enter), enter)
+            .about(does)
             .when(card.is_some_and(|card| card.may_be_installed() || card.may_be_worn())),
-        Hint::new(bare(KeyCode::Delete), "Remove").when(
-            card.is_some_and(ThemeCard::may_be_taken_away) && !settings.delete_is_the_filters(),
-        ),
+        Hint::new(bare(KeyCode::Delete), "Remove")
+            .about("Take this theme off this machine")
+            .when(
+                card.is_some_and(ThemeCard::may_be_taken_away) && !settings.delete_is_the_filters(),
+            ),
     ]
 }
 

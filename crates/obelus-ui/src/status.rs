@@ -647,7 +647,7 @@ pub fn prompt_row(
 fn switches(cells: &mut CellBuffer, area: Rect, picker: &Picker, words: &str, theme: &Theme) {
     let on: Vec<&str> = crate::picker::keys(picker)
         .into_iter()
-        .filter(|key| key.usable && key.switched == Some(true))
+        .filter(|key| key.here && key.usable && key.switched == Some(true))
         .filter_map(|key| key.does)
         .collect();
     if on.is_empty() {

@@ -48,18 +48,20 @@ pub fn hints(names: &Names) -> Vec<Hint> {
     let bare = |code| chord(code, KeyModifiers::NONE);
     let on = names.rows().get(names.window().focus());
     vec![
-        Hint::new(
-            bare(KeyCode::Enter),
-            match on.is_some_and(Row::chosen) {
-                true => "Take out",
-                false => "Add",
-            },
-        )
-        .when(on.is_some_and(Row::stands)),
+        {
+            let (word, about) = match on.is_some_and(Row::chosen) {
+                true => ("Take out", "Take this name out of the list"),
+                false => ("Add", "Add this name to the list"),
+            };
+            Hint::new(bare(KeyCode::Enter), word)
+                .about(about)
+                .when(on.is_some_and(Row::stands))
+        },
         // One act in two directions, which is why it is one hint: the
         // notes move a row with the same chord.
         Hint::new(chord(KeyCode::Up, KeyModifiers::ALT), "Move")
             .or(chord(KeyCode::Down, KeyModifiers::ALT))
+            .about("Change the order the names are tried in")
             .when(on.is_some_and(Row::chosen)),
     ]
 }
