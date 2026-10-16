@@ -63,9 +63,12 @@ struct Quad {
     // screen in two pieces while a pane slides into it. 256: the mark in
     // a switch that is set. 512: glass over another pane's glass. 1024:
     // what is behind a pane, blurred one way. 2048: a letter of the
-    // welcome screen's mark, which the light runs across. 2097152: a
+    // welcome screen's mark, which the light runs across. 4096: a run the
+    // reader has hold of, or a tab, with corners that turn three ways --
+    // and beside 8388608, a tab's shadow. 2097152: a
     // triangle filling the quad, which is the arrow on the seam a
     // deletion left. 4194304: the mark on one of the bar's buttons.
+    // 8388608: the soft edge outside a pane or a box.
     // 16777216: the mark that turns while something is
     // happening. 536870912: the light round a run the reader has hold of.
     // 1073741824: the picture under the page. 2147483648, beside any of
@@ -174,6 +177,11 @@ fn outside(point: vec2<f32>, half_size: vec2<f32>, radius: f32, joined: f32) -> 
 // Nearest of the three things a point can be nearest: the tab itself, a
 // tip, and the curve, where the point is in the square a curve is cut
 // from. Nothing under the foot is asked, because nothing is drawn there.
+//
+// The top half rounds its corners and the bottom half does not, which
+// meet at the middle only while a corner is no rounder than half the tab
+// is tall -- the same as the plate itself (`held`), and a tab's corner is
+// well under that at any size the bar is drawn.
 fn standing(point: vec2<f32>, half_size: vec2<f32>, radius: f32) -> f32 {
     let round = select(0.0, radius, point.y < 0.0);
     let corner = abs(point) - half_size + vec2<f32>(round);
@@ -593,7 +601,9 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
     // a rule is a boundary between two subjects -- a different claim.
     //
     // `box` is what casts it and the quad reaches a spread past it on
-    // every side, so the spread is what is left over. A pane joined to
+    // every side, so the spread is what is left over -- except a tab's,
+    // which reaches a corner further aside for the curves at its foot and
+    // not at all below it, and says its spread in `lower`. A pane joined to
     // the page casts from its one free edge, which is the same half
     // plane `outside` gives its glass; a box joined to nothing casts
     // from all four, round its corners.

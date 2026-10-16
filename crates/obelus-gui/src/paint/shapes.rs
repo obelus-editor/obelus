@@ -23,7 +23,7 @@ const STANDS_ON_THE_BAR: u32 = 0b1010_0000;
 /// How dark a tab's shadow is where it leaves the tab: half a pane's
 /// (`SHADOW_INK`). A tab is small and is looked at all day, and at a pane's
 /// strength its edge was heavier than the tab it was the edge of.
-const TAB_SHADOW_INK: f32 = 0.06;
+const TAB_SHADOW_INK: f32 = SHADOW_INK * 0.5;
 
 /// The shadow a tab standing up out of the bar casts -- the one being read,
 /// and the one carried -- from its rectangle, in the painter's pixels, and
