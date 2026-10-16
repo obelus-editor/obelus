@@ -2700,10 +2700,42 @@ impl App {
         match card.handle_key(key, width) {
             CardOutcome::Ignored => false,
             CardOutcome::Consumed => true,
-            // Escape gives up on the nearest thing, and while a question is
-            // on screen the nearest thing is the question.
+            // Escape stops the turn, card or no card. It once gave up on the
+            // question alone, and a reader who pressed it to turn the agent
+            // round found the agent's next question up and their correction
+            // waiting behind it: the agent had heard "not that one", not
+            // "stop". Saying no to the question alone is the card's own row.
+            //
+            // A question asked between turns has no turn to stop, so there
+            // escape is still the question given up on.
             CardOutcome::Cancelled => {
-                self.mirror_answered_here(Whose::Whoever, "Not answered");
+                match self.current.filter(|_| self.in_a_turn(Whose::Whoever)) {
+                    Some(id) => {
+                        self.mirror_answered_here(Whose::Whoever, "Stopped");
+                        // Settled in the thread just now, so the card goes
+                        // without the thread also hearing the agent gave up.
+                        if let Some(talk) = self.talk_mut(Whose::Whoever) {
+                            talk.card = None;
+                        }
+                        // The stop first, and then every question the turn
+                        // has up or waiting, as the protocol's "cancelled":
+                        // the order the protocol gives, and the other way
+                        // round the agent can hear the call refused and end
+                        // its turn before it hears the stop. Both before
+                        // the stop lands rather than when it does, so the
+                        // next card does not come up in the meantime.
+                        self.interrupt_agent(id);
+                        self.give_up_the_questions(Whose::Whoever);
+                    }
+                    None => {
+                        self.mirror_answered_here(Whose::Whoever, "Not answered");
+                        self.give_up_the_question(Whose::Whoever);
+                    }
+                }
+                true
+            }
+            CardOutcome::Declined => {
+                self.mirror_answered_here(Whose::Whoever, "Declined");
                 self.give_up_the_question(Whose::Whoever);
                 true
             }
@@ -3318,6 +3350,7 @@ impl App {
             // row, and what it is for has been said above.
             card.writing(&field.title, field.required, suggested.as_deref());
         }
+        card.declinable();
         if let Some(talk) = self.talk_mut(whose) {
             talk.card = Some(card);
         }

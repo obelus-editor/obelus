@@ -1032,10 +1032,18 @@ while IFS= read -r line; do
                     # read the same as far as the words go.
                     said="you said [$how] [$sure] [$times]"
                     ;;
-                *) said='you would not say' ;;
+                # Which no, in brackets: the reader refusing the question
+                # and the turn being stopped under it are two answers.
+                *'"action":"decline"'*) said='you would not say [decline]' ;;
+                *) said='you would not say [cancel]' ;;
             esac
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$said"
-            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            # A turn a cancellation already ended has nothing left to end.
+            pending="$(turn_of "$session")"
+            if [ -n "$pending" ]; then
+                printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$pending"
+                set_turn "$session" ''
+            fi
             ;;
         *'"method":"session/prompt"'*'"text":"/broken'*)
             printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"nobody has signed in"}}\n' "$(id_of "$line")"
@@ -1234,7 +1242,12 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call_update","toolCallId":"t1","status":"completed"}}}\n'
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call_update","toolCallId":"t2","status":"completed"}}}\n'
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":" and I was %s"}}}}\n' "$allowed"
-            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            # A turn a cancellation already ended has nothing left to end.
+            pending="$(turn_of "$session")"
+            if [ -n "$pending" ]; then
+                printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$pending"
+                set_turn "$session" ''
+            fi
             ;;
         *'"method":"session/load"'*'"sessionId":"s-gone"'*)
             # A conversation the agent no longer has. Real agents sweep

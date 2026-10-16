@@ -706,13 +706,18 @@ fn a_whole_turn_of_conversation() {
     );
 }
 
-/// Walking away from the question answers it.
+/// Escape on a permission request stops the turn it was asked in.
 ///
-/// An agent whose permission request is never answered waits for ever, so
-/// escape on that list is not "no answer" -- it is the protocol's own
-/// cancelled outcome.
+/// Refusing the call alone is the agent's own `Reject` row; escape is what
+/// it is with no card up. The request is answered on the way -- the
+/// protocol's cancelled -- because an agent whose request is never answered
+/// waits for ever.
+///
+/// Deliberate break: answer `CardOutcome::Cancelled` with
+/// `give_up_the_question` alone. The agent hears the call refused and ends
+/// its turn of its own accord, and nothing says it stopped.
 #[test]
-fn escape_on_the_question_tells_the_agent_it_was_not_answered() {
+fn escape_on_the_question_stops_the_turn() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the handshake", |app| {
         app.talking() == obelus_agent::Talking::Ready
@@ -732,10 +737,7 @@ fn escape_on_the_question_tells_the_agent_it_was_not_answered() {
         app.talking() == obelus_agent::Talking::Ready
     });
     let text = screen(&mut app);
-    assert!(
-        text.contains("and I was refused"),
-        "the agent was not told:\n{text}"
-    );
+    assert!(text.contains("Stopped"), "the turn did not stop:\n{text}");
 }
 
 /// Escape stops what is happening, and never closes the conversation.
@@ -3857,9 +3859,61 @@ fn a_question_asked_while_the_reader_is_away_waits_in_its_conversation() {
     );
 }
 
-/// Escape says no to the form, and the agent hears that rather than nothing.
+/// The row at the foot of a form says no to it, and the agent hears a
+/// refusal -- not the turn being stopped -- and goes on.
+///
+/// Deliberate breaks: answer `CardOutcome::Declined` by stopping the turn,
+/// as escape does -- the agent hears `cancel`; and leave out
+/// `card.declinable()` in `put_the_question` -- there is no row to stand on.
 #[test]
-fn escape_on_a_form_tells_the_agent_it_was_not_answered() {
+fn declining_a_form_tells_the_agent_no_and_the_turn_goes_on() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/ask ");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", |app| {
+        app.card().is_some()
+    });
+
+    for _ in 0..8 {
+        if app.card().map(obelus_component::card::Card::on)
+            == Some(obelus_component::card::On::Decline)
+        {
+            break;
+        }
+        support::press(&mut app, KeyCode::Down);
+    }
+    assert_eq!(
+        app.card().map(obelus_component::card::Card::on),
+        Some(obelus_component::card::On::Decline),
+        "there is no row to decline the form from:\n{}",
+        screen(&mut app)
+    );
+    support::press(&mut app, KeyCode::Enter);
+    assert!(!app.is_asking(), "the form is still waiting");
+    pump(&mut app, &events, "the agent to hear it", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("you would not say [decline]"),
+        "the agent did not hear a refusal:\n{text}"
+    );
+    assert!(
+        !text.contains("Stopped"),
+        "declining stopped the turn:\n{text}"
+    );
+}
+
+/// Escape on a form stops the turn, the way it does with no card up.
+///
+/// Deliberate break: answer `CardOutcome::Cancelled` with
+/// `give_up_the_question` alone, as it once was -- the agent hears a
+/// refusal and the turn ends on its own, with nothing saying it stopped.
+#[test]
+fn escape_on_a_form_stops_the_turn() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the handshake", |app| {
         app.talking() == obelus_agent::Talking::Ready
@@ -3872,16 +3926,16 @@ fn escape_on_a_form_tells_the_agent_it_was_not_answered() {
 
     support::press(&mut app, KeyCode::Esc);
     assert!(!app.is_asking(), "the form is still waiting");
-    // And escape went to the question, not to the conversation: the
-    // nearest thing first.
+    // And escape went to the turn, not to the conversation.
     assert!(app.chat().is_some(), "escape closed the conversation");
-    pump(&mut app, &events, "the agent to hear it", |app| {
+    pump(&mut app, &events, "the turn to stop", |app| {
         app.talking() == obelus_agent::Talking::Ready
     });
     let text = screen(&mut app);
+    assert!(text.contains("Stopped"), "the turn did not stop:\n{text}");
     assert!(
-        text.contains("you would not say"),
-        "the agent was not told:\n{text}"
+        !text.contains("[decline]"),
+        "the agent heard a refusal rather than a stop:\n{text}"
     );
 }
 
@@ -14607,16 +14661,18 @@ fn a_list_closed_over_a_question_leaves_it_asked() {
     );
 }
 
-/// Refusing the question up puts up the one waiting behind it.
+/// Escape on a question stops the turn, and the question waiting behind it
+/// goes with it rather than coming up.
 ///
-/// Escape answers the card -- the protocol's cancelled -- and the agent is
-/// still waiting on the second question, so refusing is as much an end to
-/// the first as answering it.
+/// The reader who presses escape there means to turn the agent round: when
+/// it gave up on the first question alone, the second came up in its place
+/// and the correction they wrote next waited behind it.
 ///
-/// Deliberate break: leave out `ask_the_next` after `CardOutcome::Cancelled`.
-/// The first is refused and nothing goes up after it.
+/// Deliberate break: answer `CardOutcome::Cancelled` with
+/// `give_up_the_question` alone, as it once was. The second question goes
+/// up after the first.
 #[test]
-fn refusing_a_question_puts_up_the_next() {
+fn escape_on_a_question_takes_down_the_one_behind_it() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
         app.talking() == obelus_agent::Talking::Ready
@@ -14629,17 +14685,23 @@ fn refusing_a_question_puts_up_the_next() {
     });
 
     support::press(&mut app, KeyCode::Esc);
-    pump(&mut app, &events, "the first answer", |app| {
-        said_in_transcript(app, "the first was")
+    assert!(
+        !app.is_asking_permission() && app.card().is_none(),
+        "a question is still up after escape:\n{}",
+        screen(&mut app)
+    );
+    pump(&mut app, &events, "the turn to stop", |app| {
+        app.talking() == obelus_agent::Talking::Ready
     });
     assert!(
-        said_in_transcript(&app, "the first was [cancelled]"),
-        "escape did not refuse the first:\n{}",
+        said_in_transcript(&app, "Stopped"),
+        "the turn did not stop:\n{}",
         screen(&mut app)
     );
     assert!(
-        app.is_asking_permission(),
-        "the second question never went up after the first was refused"
+        !app.is_asking_permission(),
+        "the second question went up after the first:\n{}",
+        screen(&mut app)
     );
 }
 
