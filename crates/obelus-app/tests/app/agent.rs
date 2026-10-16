@@ -12108,11 +12108,14 @@ fn listed_titles(app: &App) -> Vec<String> {
 /// what it wrote down. Every page of what the agent keeps, and not twice
 /// what Obelus already has a row for.
 ///
-/// Broken deliberately three ways: by not asking (`ask_what_the_agent_keeps`
+/// Broken deliberately five ways: by not asking (`ask_what_the_agent_keeps`
 /// left out of `open_conversation_picker`), and the rows never arrived; by
 /// walking only the first page in `link::listed`, and the second page's row
-/// was missing; and by not leaving out what the table has, and `s-old` was
-/// in the list twice.
+/// was missing; by not leaving out what the table has, and `s-old` was in
+/// the list twice; by keeping every row whatever its directory in
+/// `link::listed`, and `Asked in another project` was listed; and by
+/// handing `None` for the name in `take_up_conversation`, and the
+/// conversation taken up was listed by the first thing said in it.
 #[test]
 fn what_the_agent_keeps_is_in_the_list_and_taken_up() {
     let (_scratch, mut app, events, log) = listing("agent-keeps", &["lists"], 30);
@@ -12141,6 +12144,12 @@ fn what_the_agent_keeps_is_in_the_list_and_taken_up() {
         titles.iter().any(|title| title == "Written down by Obelus"),
         "what Obelus wrote down gave way to the agent's row: {titles:?}"
     );
+    assert!(
+        !titles
+            .iter()
+            .any(|title| title == "Asked in another project"),
+        "a conversation had in another directory is in this one's list: {titles:?}"
+    );
 
     // Taken up the way any other is: by the session the agent named.
     while app
@@ -12154,6 +12163,79 @@ fn what_the_agent_keeps_is_in_the_list_and_taken_up() {
     asked(&mut app, &events, &log, "session/load cli-1");
     pump(&mut app, &events, "the conversation taken up", |app| {
         app.agent_holds_for_test("cli-1")
+    });
+
+    // And listed once from inside it, as the one the reader is in, by the
+    // name it was chosen by: the replay says no name, and the row that was
+    // chosen had one.
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationSelect);
+    pump(&mut app, &events, "what the agent keeps, again", |app| {
+        listed_titles(app)
+            .iter()
+            .any(|title| title == "Asked on the second page")
+    });
+    let rows: Vec<(String, bool)> = listed_conversations(&app)
+        .into_iter()
+        .filter(|item| item.label == "Asked in a terminal")
+        .map(|item| (item.label.clone(), item.marker.is_some()))
+        .collect();
+    assert_eq!(
+        rows,
+        [("Asked in a terminal".to_string(), true)],
+        "the conversation the reader is in is not listed once, as theirs"
+    );
+}
+
+/// What the agent keeps arrives after the list is up, and the reader stays
+/// on the row they were on.
+///
+/// The rows are built again when the answer arrives, newer ones above the
+/// row they were standing on -- and building them again sends a list to
+/// its first row, which here is the one that starts a new conversation.
+///
+/// Broken deliberately by building them again with
+/// `refresh_conversations` in `hear_what_the_agent_keeps`, which does not
+/// put the reader back: they were on `New conversation` once it arrived.
+#[test]
+fn the_reader_stays_on_their_row_when_what_the_agent_keeps_arrives() {
+    let (_scratch, mut app, events, log) = listing("agent-keeps-stays", &["lists"], 30);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationSelect);
+    // Before anything has been heard: the answer is still in the channel.
+    support::press(&mut app, KeyCode::Down);
+    let on = |app: &App| {
+        app.picker()
+            .and_then(obelus_component::picker::Picker::selected_item)
+            .map(|item| item.label.clone())
+    };
+    assert_eq!(on(&app).as_deref(), Some("Written down by Obelus"));
+    asked(&mut app, &events, &log, "session/list");
+    pump(&mut app, &events, "what the agent keeps", |app| {
+        listed_titles(app)
+            .iter()
+            .any(|title| title == "Asked on the second page")
+    });
+    assert_eq!(
+        on(&app).as_deref(),
+        Some("Written down by Obelus"),
+        "the list moved the reader when what the agent keeps arrived"
+    );
+}
+
+/// An agent that never stops saying there is another page is listed all
+/// the same, as far as Obelus asks.
+///
+/// Broken deliberately by walking pages for as long as the agent offers
+/// one (`loop` for `for _ in 0..PAGES` in `link::listed`): the list never
+/// arrived.
+#[test]
+fn an_agent_with_endless_pages_is_listed_all_the_same() {
+    let (_scratch, mut app, events, log) = listing("agent-keeps-going", &["lists", "endless"], 0);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationSelect);
+    asked(&mut app, &events, &log, "session/list");
+    pump(&mut app, &events, "what the agent keeps", |app| {
+        listed_titles(app)
+            .iter()
+            .any(|title| title == "Asked on every page")
     });
 }
 
@@ -12210,19 +12292,27 @@ fn what_the_agent_keeps_is_forgotten_after_the_same_days() {
 fn an_agent_that_cannot_list_is_not_asked() {
     let (_scratch, mut app, events, log) = listing("agent-keeps-nothing", &[], 30);
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationSelect);
-    // The list is asked for straight after the handshake, so a moment past
-    // that is the list's chance to have gone out.
-    asked(&mut app, &events, &log, "initialize");
-    settle(&mut app, &events, Duration::from_millis(500));
+    // A conversation asked for after the list, and a whole turn of it
+    // answered. A list is walked beside the asks rather than among them, so
+    // the conversation's own request can overtake one -- and did, when this
+    // waited only for that: the turn after it is several round trips
+    // later, which is the list's chance to have been written down, and is
+    // waited on rather than a clock, which a slow machine outruns.
+    support::press(&mut app, KeyCode::Esc);
+    app.new_conversation();
+    app.open_a_session_for_test();
+    pump(&mut app, &events, "a conversation after the list", |app| {
+        app.chat_session_for_test().is_some()
+    });
+    say_something(&mut app, &events);
     let said = std::fs::read_to_string(&log).unwrap_or_default();
+    assert!(
+        said.contains("session/new"),
+        "the conversation after the list was never asked for:\n{said}"
+    );
     assert!(
         !said.contains("session/list"),
         "an agent that cannot list was asked to:\n{said}"
-    );
-    assert_eq!(
-        listed_titles(&app),
-        ["Written down by Obelus"],
-        "the list is not what Obelus wrote down"
     );
 }
 

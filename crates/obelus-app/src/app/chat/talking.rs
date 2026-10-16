@@ -511,6 +511,21 @@ impl App {
     /// a moment to answer: without the second half of that, the second
     /// press opened a conversation the first press was already opening.
     pub(in crate::app) fn ask_for_a_session(&mut self, whose: Whose, had: Option<String>) {
+        self.ask_for_a_session_called(whose, had, None);
+    }
+
+    /// The same, for one Obelus wrote nothing down about and the agent
+    /// named in the list it was chosen from: a replay is not obliged to say
+    /// the name again, and the row it was chosen by had one.
+    ///
+    /// Handed over rather than looked up, because by the time this is
+    /// asked the list -- and what the agent said in it -- has gone.
+    pub(in crate::app) fn ask_for_a_session_called(
+        &mut self,
+        whose: Whose,
+        had: Option<String>,
+        called: Option<String>,
+    ) {
         let settled = self
             .talk(whose)
             .is_some_and(|talk| talk.session.is_some() || talk.asked_for.is_some() || talk.opening);
@@ -529,29 +544,18 @@ impl App {
         let tools = self.tools_for(whose);
         // By the session rather than by the note, because a conversation
         // about no note is taken up too, and it is named by nothing else.
-        let title = had.as_ref().and_then(|session| {
-            let agent = self.agent.talker.as_ref()?.id();
-            self.sessions()?
-                .all()
-                .find(|(_, by, tree, kept)| {
-                    *by == agent && *tree == self.working_directory && kept.session == *session
-                })
-                .and_then(|(_, _, _, kept)| kept.title.clone())
-                // Or, for one had outside Obelus, what the agent called it
-                // in the list it was chosen from: a replay is not obliged
-                // to say it again, and the row it was chosen by had a name.
-                .or_else(|| {
-                    self.conversing
-                        .kept_by_the_agent
-                        .as_ref()
-                        .filter(|(whose, _)| whose == agent)?
-                        .1
-                        .iter()
-                        .find(|listed| listed.session == *session)?
-                        .title
-                        .clone()
-                })
-        });
+        let title = had
+            .as_ref()
+            .and_then(|session| {
+                let agent = self.agent.talker.as_ref()?.id();
+                self.sessions()?
+                    .all()
+                    .find(|(_, by, tree, kept)| {
+                        *by == agent && *tree == self.working_directory && kept.session == *session
+                    })
+                    .and_then(|(_, _, _, kept)| kept.title.clone())
+            })
+            .or(called);
         if self.agent.talker.is_none() {
             return;
         }

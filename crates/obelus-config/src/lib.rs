@@ -1053,7 +1053,7 @@ pub const ALL: &[Setting] = &[
     Setting {
         key: "conversation_days",
         name: "Forget conversations",
-        about: "How long after anything was last said in it a conversation about no note is left out of the list. Obelus forgets the page it kept, and making this longer does not bring that back. The agent still has the conversation, and one that can say what it keeps has it listed again. One about a note goes when the note does",
+        about: "How long after anything was last said in it a conversation about no note is left out of the list, whether Obelus or the agent kept it. Obelus forgets the page it kept, and making this longer does not bring that back; where the agent can say what it keeps, making this longer lists the conversation again. One about a note goes when the note does",
         group: Group::Agent,
         // The reader's alone: it decides what Obelus forgets of theirs, and
         // a project that could shorten it would be a downloaded file
