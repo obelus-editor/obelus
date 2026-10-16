@@ -208,6 +208,7 @@
       <p>项目里的文件排成一棵树，展开到你正在读的那个文件，下面预览选中的文件。一打字，树就变成所有路径的平铺列表，边打边筛；把输入清空，又回到你离开时的那一行。每一行按 Git 的状态上色。</p>
       <ul>
         <li>在目录上按 <kbd>Enter</kbd> 就地展开或收起，在文件上按就打开它。双击一行等于按 <kbd>Enter</kbd>，这里和大多数列表都一样</li>
+        <li>什么都没输入时，<kbd>Right</kbd> 展开目录，已展开的就进到它里面；<kbd>Left</kbd> 收起目录，或者回到这一行所在的目录</li>
         <li><kbd>Alt+i</kbd> 显示项目忽略的文件，<kbd>Alt+.</kbd> 显示隐藏文件（点开头的，以及 <code>.git</code>）</li>
         <li><kbd>Alt+n</kbd> 给选中的文件或目录改名、挪位置</li>
       </ul>
@@ -264,7 +265,7 @@
       <p>二十多种语言，用 tree-sitter：Rust、Go、C、C++、Python、JavaScript、TypeScript、TSX、Java、C#、Ruby、PHP、Scala、Haskell、OCaml、Julia、Agda、Bash、HTML、CSS、JSON、TOML、YAML 和 Markdown。代码里嵌的代码也上色——markdown 里的代码块、HTML 里的脚本。语言服务器在跑的时候，它的语义着色叠在上面。</p>
 
       <h3 id="counts">代码有多少行</h3>
-      <p>按语言、按文件数项目的行数——文件数、总行数、代码、注释、空行，大的在前——跳过 <code>.gitignore</code> 忽略的。文件标签页是一棵树，可以一路点进去，打开某个文件；先选一种语言，就只看它的文件。</p>
+      <p>按语言、按文件数项目的行数——文件数、总行数、代码、注释、空行，大的在前——跳过 <code>.gitignore</code> 忽略的。文件标签页是一棵树，可以一路点进去，打开某个文件，<kbd>Right</kbd> 和 <kbd>Left</kbd> 像在文件列表里一样展开、收起；先选一种语言，就只看它的文件。</p>
       <p class="how"><span>命令</span><code>count-lines</code></p>
     </section>
 
