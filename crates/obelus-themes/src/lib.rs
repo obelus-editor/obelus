@@ -3,10 +3,19 @@
 //! One document, `themes/index.json`, published with the packages it names
 //! by the `obelus-editor/registry` repository -- which keeps a directory for
 //! each kind of thing it lists, and themes are the first: the themes written
-//! for Obelus, and
-//! omarchy's own, turned into Obelus's by the repository's CI through the
-//! same template omarchy renders Obelus's theme with. Obelus reads that one
-//! document and knows nothing of how either group was made.
+//! for Obelus, omarchy's own, and the ones omarchy's site lists from its
+//! community -- the last two turned into Obelus's by the repository's CI
+//! through the same template omarchy renders Obelus's theme with. Obelus
+//! reads that one document and knows nothing of how any group was made.
+//!
+//! **A picture nobody may hand on is fetched from its author.** Most of the
+//! community's themes say nothing about who may copy them, so the registry
+//! packs their colours -- which it made -- and not their picture: the index
+//! says where the author keeps it, at one commit, and what its bytes hash
+//! to, and the install fetches it from there, the way omarchy's own install
+//! fetches the whole theme from the author. A picture that is no longer
+//! there, or no longer those bytes, fails the install whole; the registry
+//! looks again on every run and stops listing a theme whose picture has gone.
 //!
 //! **Fetched when the reader opens the page, and kept.** The way the agents'
 //! registry is: what was kept from last time arrives first, so a page opened
@@ -69,24 +78,31 @@ pub enum Event {
     },
 }
 
-/// Which of the registry's two shelves a theme is on.
+/// Which of the registry's shelves a theme is on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Group {
     /// Written for Obelus.
     Obelus,
     /// omarchy's own, turned into Obelus's.
     Omarchy,
+    /// The themes omarchy's site lists from its community, turned into
+    /// Obelus's the same way -- a shelf of its own, because an Obelus that
+    /// has not heard of it cannot fetch the picture most of them leave
+    /// out of the package, and leaves the shelf out rather than listing
+    /// themes it would fail to install.
+    Community,
 }
 
 impl Group {
-    /// Both, in the order they are shown: Obelus's own first.
-    pub const ALL: [Self; 2] = [Self::Obelus, Self::Omarchy];
+    /// Every one, in the order they are shown: Obelus's own first.
+    pub const ALL: [Self; 3] = [Self::Obelus, Self::Omarchy, Self::Community];
 
     /// The word the index writes it as.
     fn named(word: &str) -> Option<Self> {
         match word {
             "obelus" => Some(Self::Obelus),
             "omarchy" => Some(Self::Omarchy),
+            "omarchy-community" => Some(Self::Community),
             _ => None,
         }
     }
@@ -96,6 +112,7 @@ impl Group {
         match self {
             Self::Obelus => "obelus",
             Self::Omarchy => "omarchy",
+            Self::Community => "omarchy-community",
         }
     }
 
@@ -106,6 +123,7 @@ impl Group {
         match self {
             Self::Obelus => "Obelus",
             Self::Omarchy => "omarchy",
+            Self::Community => "omarchy community",
         }
     }
 }
@@ -200,6 +218,9 @@ pub struct Listed {
     /// The picture it carries, where it carries one: on what terms, and
     /// where it came from.
     pub wallpaper: Option<Credit>,
+    /// The picture the install fetches from its author, where the package
+    /// leaves it out.
+    pub picture: Option<Picture>,
     /// Where its package is, whole.
     pub package: String,
     /// What the package's bytes hash to, which is what says it is the
@@ -215,10 +236,23 @@ pub struct Listed {
 /// Where a picture came from, and on what terms it is handed on.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Credit {
-    /// Its licence, as an SPDX identifier.
-    pub license: String,
+    /// Its licence, as an SPDX identifier -- none for one its author said
+    /// nothing about, which is a picture the registry does not hand on.
+    pub license: Option<String>,
     /// Where it came from.
     pub source: String,
+}
+
+/// A picture fetched from where its author keeps it, rather than packed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Picture {
+    /// What it is called in the theme's directory, which is what the
+    /// theme's file names.
+    pub file: String,
+    /// Where it is, at the commit the registry looked at.
+    pub url: String,
+    /// What its bytes hash to.
+    pub sha256: String,
 }
 
 /// The themes in an index document published at `published`.
@@ -255,12 +289,33 @@ fn theme(entry: &Value, published: &str) -> Option<Listed> {
         );
         return None;
     }
-    let wallpaper = entry.get("wallpaper").and_then(|credit| {
-        Some(Credit {
-            license: credit.get("license")?.as_str()?.to_string(),
-            source: credit.get("source")?.as_str()?.to_string(),
-        })
+    let wallpaper = entry.get("wallpaper");
+    let said = |key: &str| {
+        wallpaper
+            .and_then(|wallpaper| wallpaper.get(key))
+            .and_then(Value::as_str)
+    };
+    let credit = said("source").map(|source| Credit {
+        license: said("license").map(str::to_string),
+        source: source.to_string(),
     });
+    // All three or none: a picture with no hash is one nothing could check,
+    // and one named outside the theme's directory is not the theme's.
+    let picture = match (said("file"), said("url"), said("sha256")) {
+        (Some(file), Some(url), Some(sha256)) if named_safely(file) => Some(Picture {
+            file: file.to_string(),
+            url: url.to_string(),
+            sha256: sha256.to_ascii_lowercase(),
+        }),
+        (None, None, None) => None,
+        _ => {
+            tracing::warn!(
+                name,
+                "a theme in the index with a picture Obelus cannot fetch"
+            );
+            return None;
+        }
+    };
     Some(Listed {
         name: name.to_string(),
         group: Group::named(text("group")?)?,
@@ -271,7 +326,8 @@ fn theme(entry: &Value, published: &str) -> Option<Listed> {
         },
         author: text("author").unwrap_or_default().to_string(),
         description: text("description").unwrap_or_default().to_string(),
-        wallpaper,
+        wallpaper: credit,
+        picture,
         package: beside(published, text("package")?),
         sha256: text("sha256")?.to_ascii_lowercase(),
         commit: text("commit")?.to_string(),
@@ -440,7 +496,7 @@ mod tests {
         assert_eq!(
             rain.wallpaper
                 .as_ref()
-                .map(|credit| credit.license.as_str()),
+                .and_then(|credit| credit.license.as_deref()),
             Some("CC0-1.0")
         );
         let nord = &themes[1];
@@ -448,6 +504,53 @@ mod tests {
         assert!(!nord.dark);
         assert_eq!(nord.package, "https://elsewhere.invalid/nord.tar.gz");
         assert!(nord.wallpaper.is_none());
+    }
+
+    /// A community theme's picture is read whole -- where it is, what it is
+    /// called and what it hashes to -- with its credit saying no licence;
+    /// and one missing any of the three, or named out of the theme's
+    /// directory, leaves the theme out rather than listing one whose
+    /// install could not finish.
+    ///
+    /// Deliberate breaks: the community's word not known (nothing is
+    /// listed), the picture read with whatever of it is there (`unhashed`
+    /// is listed), and its file not held to a name (`climbing` is listed).
+    #[test]
+    fn a_picture_fetched_from_its_author_is_read_whole_or_not_at_all() {
+        let text = r##"{"themes": [
+            {"name": "omarchy-dracula", "group": "omarchy-community", "mode": "dark",
+             "author": "catlee", "package": "packages/omarchy-dracula-1a2b.tar.gz",
+             "sha256": "abc", "commit": "1a2b", "updated": "2026-10-08",
+             "wallpaper": {"source": "https://github.com/catlee/omarchy-dracula-theme",
+                           "file": "1.png", "sha256": "DEF",
+                           "url": "https://raw.example.invalid/1a2b/backgrounds/1.png"}},
+            {"name": "unhashed", "group": "omarchy-community", "mode": "dark",
+             "package": "p.tar.gz", "sha256": "x", "commit": "y",
+             "wallpaper": {"source": "s", "file": "1.png", "url": "u"}},
+            {"name": "climbing", "group": "omarchy-community", "mode": "dark",
+             "package": "p.tar.gz", "sha256": "x", "commit": "y",
+             "wallpaper": {"source": "s", "file": "../1.png", "url": "u", "sha256": "z"}}
+        ]}"##;
+        let themes = themes_in(text, PUBLISHED);
+        let names: Vec<&str> = themes.iter().map(|theme| theme.name.as_str()).collect();
+        assert_eq!(names, ["omarchy-dracula"]);
+        let dracula = &themes[0];
+        assert_eq!(dracula.group, Group::Community);
+        assert_eq!(
+            dracula
+                .wallpaper
+                .as_ref()
+                .map(|credit| credit.license.clone()),
+            Some(None),
+            "a picture nobody may hand on has a credit and no licence"
+        );
+        let picture = dracula.picture.as_ref().expect("the picture");
+        assert_eq!(picture.file, "1.png");
+        assert_eq!(
+            picture.url,
+            "https://raw.example.invalid/1a2b/backgrounds/1.png"
+        );
+        assert_eq!(picture.sha256, "def", "a hash is compared as one");
     }
 
     /// A document that is not one lists nothing, rather than failing.

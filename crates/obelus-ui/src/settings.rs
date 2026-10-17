@@ -2140,7 +2140,12 @@ impl SettingsView<'_> {
             facts.push(theme.updated.clone());
         }
         match &theme.wallpaper {
-            Some(credit) => facts.push(format!("Wallpaper {}", credit.license)),
+            Some(credit) => facts.push(match &credit.license {
+                Some(license) => format!("Wallpaper {license}"),
+                // Nobody may hand it on, so it comes from its author: which
+                // is the one thing to say where a licence would go.
+                None => "Wallpaper from its author".to_string(),
+            }),
             None if card.status != obelus_themes::Status::Delisted => {
                 facts.push("No wallpaper".to_string());
             }
