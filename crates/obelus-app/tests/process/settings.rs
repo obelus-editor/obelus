@@ -2412,6 +2412,39 @@ fn control_and_enter_adds_a_key() {
     assert!(!usable.contains(&"Change".to_string()), "{usable:?}");
 }
 
+/// The keys page has two enters, so the row the reader is on says them at
+/// its end -- both on a command with a key, and only adding on one without,
+/// where enter has nothing to change.
+///
+/// Broken deliberately by not drawing them in the settings' rows: neither
+/// word is anywhere on the page.
+#[test]
+fn a_command_s_row_says_its_two_enters() {
+    let _taken = crate::turn();
+    let scratch = temporary("two-enters-on-a-key");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+    support::press(&mut app, KeyCode::Tab);
+    support::type_text(&mut app, "redo");
+    let screen = support::render(&mut app, 120, 24);
+    let row = screen
+        .lines()
+        .find(|line| line.contains("Add a key"))
+        .unwrap_or_else(|| panic!("no row says what ctrl+enter does:\n{screen}"));
+    assert!(row.contains("Change"), "{row:?}");
+
+    support::press(&mut app, KeyCode::Esc);
+    let mut app = open(&file);
+    support::press(&mut app, KeyCode::Tab);
+    support::type_text(&mut app, "new-file");
+    let screen = support::render(&mut app, 120, 24);
+    let row = screen
+        .lines()
+        .find(|line| line.contains("Add a key"))
+        .unwrap_or_else(|| panic!("no row says what ctrl+enter does:\n{screen}"));
+    assert!(!row.contains("Change"), "{row:?}");
+}
+
 /// `alt+backspace` takes away the key on the row the reader is on, and only
 /// that one; on a command with no key, enter does nothing -- there is
 /// nothing to change -- and a row waiting to add a key has nothing to take

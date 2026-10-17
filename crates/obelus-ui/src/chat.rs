@@ -54,7 +54,9 @@ use ratatui::{
     widgets::Widget,
 };
 
-use crate::{Screen, fill, put, rule, write, write_within};
+use crate::{
+    GAP_BETWEEN_HINTS, Screen, cap_the_keys, fill, joined, put, rule, write, write_within,
+};
 
 /// How far a speaker's mark is from the edge.
 ///
@@ -379,67 +381,6 @@ pub fn regions(area: Rect, needed: usize) -> Regions {
 /// A piece of what a row says about itself, after its words: the gap
 /// before it, what it says, and its colour.
 type Tail = (u16, String, Style);
-
-/// The blanks between a key and the word for what it does.
-const GAP_IN_A_HINT: usize = 2;
-/// And between one of those and the next.
-///
-/// Wider than the gap inside one, for the reason the foot's `BETWEEN` is:
-/// the gap between items has to beat the gaps inside one, or the row is a
-/// line of tokens with nothing saying which belongs to which.
-const GAP_BETWEEN_HINTS: usize = 3;
-
-/// Where each of those keys starts in that run, in cells from its
-/// beginning.
-///
-/// A function of its own rather than a sum kept while drawing, because it
-/// is the one place the two shapes of this row have to agree: the run is
-/// what a terminal writes, and a cap is said about cells *of* it. A walk
-/// that counted the gaps differently from `joined` would draw a cap over
-/// the word beside the key.
-fn where_the_keys_are(hints: &[(String, &'static str)]) -> Vec<usize> {
-    let mut along = 0;
-    hints
-        .iter()
-        .map(|(keys, does)| {
-            let at = along;
-            along += text_width(keys) + GAP_IN_A_HINT + text_width(does) + GAP_BETWEEN_HINTS;
-            at
-        })
-        .collect()
-}
-
-/// A row of keys as one run of text, which is what is written and
-/// measured.
-fn joined(hints: &[(String, &'static str)]) -> Option<String> {
-    match hints.is_empty() {
-        true => None,
-        false => Some(
-            hints
-                .iter()
-                .map(|(keys, does)| format!("{keys}{}{does}", " ".repeat(GAP_IN_A_HINT)))
-                .collect::<Vec<_>>()
-                .join(&" ".repeat(GAP_BETWEEN_HINTS)),
-        ),
-    }
-}
-
-/// Says which cells of a row of keys written at `at` are the keys.
-///
-/// Nothing is written: the run `joined` made is the whole of what a
-/// terminal draws, and this says what shape a window may draw round part
-/// of it -- the same cap the foot's keys wear.
-///
-/// On `ground`, the colour of the row it is on, as the settings' caps are:
-/// a key a row hands back is offered only on the row the reader is on, and
-/// a cap in the page's colour cut a hole in the mark that says so.
-fn cap_the_keys(at: u16, y: u16, hints: &[(String, &'static str)], ground: Color, theme: &Theme) {
-    for (along, (keys, _)) in where_the_keys_are(hints).into_iter().zip(hints) {
-        if let Ok(x) = u16::try_from(usize::from(at) + along) {
-            crate::cap_around(x, y, keys, text_width(keys), ground, ground, theme.gutter);
-        }
-    }
-}
 
 /// A key as it is written.
 fn chord(code: KeyCode, modifiers: KeyModifiers) -> String {
@@ -2276,26 +2217,6 @@ impl ChatView<'_> {
 
 #[cfg(test)]
 mod tests {
-    /// Break: count the gap between two hints as the gap inside one, and
-    /// every cap after the first is drawn a cell or two to the left of the
-    /// key it is about.
-    #[test]
-    fn a_cap_on_the_status_row_is_over_the_key_it_is_about() {
-        let hints = [
-            ("alt+t".to_string(), "The note"),
-            ("ctrl+g".to_string(), "Conversations"),
-            ("shift+tab".to_string(), "Mode"),
-        ];
-        let said = super::joined(&hints).expect("three hints say something");
-        for (along, (keys, _)) in super::where_the_keys_are(&hints).into_iter().zip(&hints) {
-            assert_eq!(
-                said.get(along..along + keys.len()),
-                Some(keys.as_str()),
-                "{keys} is not at {along} of {said:?}"
-            );
-        }
-    }
-
     /// The glyph in front of the count is as far from it as the front end
     /// draws a glyph wide needs: one blank in a window, where the mark is
     /// one cell, and two in a terminal, where it bleeds into the first.

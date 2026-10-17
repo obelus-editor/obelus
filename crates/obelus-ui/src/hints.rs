@@ -248,6 +248,131 @@ pub(crate) fn cap_around(
     );
 }
 
+/// The blanks between a key and the word for what it does, on a row that
+/// says a key among other words rather than in a cap of its own.
+pub(crate) const GAP_IN_A_HINT: usize = 2;
+/// And between one of those and the next.
+///
+/// Wider than the gap inside one, for the reason the foot's `BETWEEN` is:
+/// the gap between items has to beat the gaps inside one, or the row is a
+/// line of tokens with nothing saying which belongs to which.
+pub(crate) const GAP_BETWEEN_HINTS: usize = 3;
+
+/// Where each of those keys starts in that run, in cells from its
+/// beginning.
+///
+/// A function of its own rather than a sum kept while drawing, because it
+/// is the one place the two shapes of this row have to agree: the run is
+/// what a terminal writes, and a cap is said about cells *of* it. A walk
+/// that counted the gaps differently from `joined` would draw a cap over
+/// the word beside the key.
+fn where_the_keys_are(hints: &[(String, &'static str)]) -> Vec<usize> {
+    let mut along = 0;
+    hints
+        .iter()
+        .map(|(keys, does)| {
+            let at = along;
+            along += text_width(keys) + GAP_IN_A_HINT + text_width(does) + GAP_BETWEEN_HINTS;
+            at
+        })
+        .collect()
+}
+
+/// A row of keys as one run of text, which is what is written and
+/// measured.
+pub(crate) fn joined(hints: &[(String, &'static str)]) -> Option<String> {
+    match hints.is_empty() {
+        true => None,
+        false => Some(
+            hints
+                .iter()
+                .map(|(keys, does)| format!("{keys}{}{does}", " ".repeat(GAP_IN_A_HINT)))
+                .collect::<Vec<_>>()
+                .join(&" ".repeat(GAP_BETWEEN_HINTS)),
+        ),
+    }
+}
+
+/// Says which cells of a row of keys written at `at` are the keys.
+///
+/// Nothing is written: the run `joined` made is the whole of what a
+/// terminal draws, and this says what shape a window may draw round part
+/// of it -- the same cap the foot's keys wear.
+///
+/// On `ground`, the colour of the row it is on, as the settings' caps are:
+/// a key a row hands back is offered only on the row the reader is on, and
+/// a cap in the page's colour cut a hole in the mark that says so.
+pub(crate) fn cap_the_keys(
+    at: u16,
+    y: u16,
+    hints: &[(String, &'static str)],
+    ground: Color,
+    theme: &Theme,
+) {
+    for (along, (keys, _)) in where_the_keys_are(hints).into_iter().zip(hints) {
+        if let Ok(x) = u16::try_from(usize::from(at) + along) {
+            cap_around(x, y, keys, text_width(keys), ground, ground, theme.gutter);
+        }
+    }
+}
+
+/// The enters a row of a list says at its end, where the list has more
+/// than one: the plain one, and one held with a modifier.
+///
+/// A list's enter takes the row, everywhere, and is not news -- so it is
+/// said nowhere, and the rest of a view's keys are in the palette over it.
+/// A second enter is the exception: it means the first is not what enter
+/// means anywhere else, and the reader needs to know which before pressing
+/// either -- on every row, which is not something to open the palette for
+/// every time. So the pair goes where the reader is already looking, on the
+/// row they are on, the way the transcript says what enter does on its
+/// own. The words are the palette's, which says them too.
+///
+/// Only those that do something on this row: a key said at a row's end is
+/// a key that row answers to.
+pub(crate) fn enters(hints: &[Hint]) -> Vec<(String, &'static str)> {
+    use crossterm::event::{KeyCode, KeyModifiers};
+    let enter = |hint: &&Hint| hint.here && hint.chord.pressed().code == KeyCode::Enter;
+    if !hints
+        .iter()
+        .filter(enter)
+        .any(|hint| hint.chord.pressed().modifiers != KeyModifiers::NONE)
+    {
+        return Vec::new();
+    }
+    hints
+        .iter()
+        .filter(enter)
+        .filter(|hint| hint.usable)
+        .filter_map(|hint| Some((hint.keys(), hint.does?)))
+        .collect()
+}
+
+/// Writes a row's enters against `right`, if they fit after `from`, and
+/// says where they start -- so whatever else the row says stops short of
+/// them.
+///
+/// Dropped whole where they do not fit, like every aside: half a key is no
+/// key.
+pub(crate) fn enters_at_the_end(
+    cells: &mut CellBuffer,
+    (from, right): (u16, u16),
+    y: u16,
+    keys: &[(String, &'static str)],
+    ink: Style,
+    theme: &Theme,
+) -> Option<u16> {
+    let said = joined(keys)?;
+    let wide = u16::try_from(text_width(&said)).ok()?;
+    let at = right.checked_sub(wide)?;
+    if at < from {
+        return None;
+    }
+    write(cells, at, y, &said, ink);
+    cap_the_keys(at, y, keys, ink.bg.unwrap_or(theme.background), theme);
+    Some(at)
+}
+
 /// How far apart two items on that row sit.
 ///
 /// Three, against the one blank inside the cap and the one before a word:
@@ -520,6 +645,53 @@ mod tests {
     use obelus_theme::builtin::DARK;
 
     use super::*;
+
+    /// Break: count the gap between two hints as the gap inside one, and
+    /// every cap after the first is drawn a cell or two to the left of the
+    /// key it is about.
+    #[test]
+    fn a_cap_on_the_status_row_is_over_the_key_it_is_about() {
+        let hints = [
+            ("alt+t".to_string(), "The note"),
+            ("ctrl+g".to_string(), "Conversations"),
+            ("shift+tab".to_string(), "Mode"),
+        ];
+        let said = joined(&hints).expect("three hints say something");
+        for (along, (keys, _)) in where_the_keys_are(&hints).into_iter().zip(&hints) {
+            assert_eq!(
+                said.get(along..along + keys.len()),
+                Some(keys.as_str()),
+                "{keys} is not at {along} of {said:?}"
+            );
+        }
+    }
+
+    /// A list whose only enter is the plain one says nothing at a row's
+    /// end, and one with a second says both -- but not one that does
+    /// nothing on this row.
+    ///
+    /// Broken deliberately by dropping the check for a modifier: the list
+    /// with one enter says it on every row.
+    #[test]
+    fn a_row_says_its_enters_only_where_there_are_two() {
+        let enter = |modifiers| obelus_keymap::KeyChord::new(KeyCode::Enter, modifiers);
+        let alone = [Hint::new(enter(KeyModifiers::NONE), "Open")];
+        assert!(enters(&alone).is_empty(), "{:?}", enters(&alone));
+
+        let two = [
+            Hint::new(enter(KeyModifiers::NONE), "New window"),
+            Hint::new(enter(KeyModifiers::CONTROL), "Switch"),
+        ];
+        let said: Vec<_> = enters(&two).into_iter().map(|(_, does)| does).collect();
+        assert_eq!(said, ["New window", "Switch"]);
+
+        let dim = [
+            Hint::new(enter(KeyModifiers::NONE), "New window"),
+            Hint::new(enter(KeyModifiers::CONTROL), "Switch").when(false),
+        ];
+        let said: Vec<_> = enters(&dim).into_iter().map(|(_, does)| does).collect();
+        assert_eq!(said, ["New window"]);
+    }
 
     /// The row of keys along one width, as text.
     fn drawn(hints: &[Hint], width: u16) -> String {

@@ -76,6 +76,9 @@ writing a view, look for the piece that already does it:
     ui::tabs           a tab row and the arrows that walk it
     ui::status::typed  the glyph and the words on a row that is typed into
     ui::nothing        what a list says when it has nothing in it
+    ui::enters         what the row the reader is on says at its end where
+                       a list has a second enter -- the one key of a view
+                       not left to the palette
     ui::rule           a boundary between two things
     ui::scrollbar      how much of something longer than the screen is above,
                        and where a press takes hold of it (ui::bars)
@@ -425,7 +428,10 @@ the view under it is very often a picker still being filled. The two pages
 that ask a question keep a foot, because nothing opens over them and the key
 that leaves is the only way off; and a switch that is on is said on the row
 its list's query is typed into as well, because it changes what that query
-finds.
+finds. And a list with a second enter says both on the row the reader is
+on, at its end: that one enter is not what enter means anywhere else is
+news on every row, and not something to open the palette for each time
+(`ui::enters`).
 
 **One mark for "the keys are here", and it says nothing else.** Every list,
 page and card in Obelus puts `selected_row_background` behind the row the

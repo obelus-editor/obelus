@@ -1100,6 +1100,10 @@ impl SettingsView<'_> {
             .max()
             .unwrap_or(0);
         let detail_at = name_at + u16::try_from(names).unwrap_or(0) + 2;
+        // What the row the reader is on says at its end, where a page has
+        // two enters: the keys page, whose enter changes a key and whose
+        // `ctrl+enter` adds one -- see `crate::enters`.
+        let enters = crate::enters(&hints(self.settings, self.offering.as_ref()));
         // Walked by height rather than by row, because an entry is as tall
         // as what it has to say: a name, the rows its description takes, and
         // a blank so that the next name is not read as part of it. Every
@@ -1171,9 +1175,25 @@ impl SettingsView<'_> {
                     let room = aside_at.saturating_sub(name_at + 3 + lock);
                     truncate_from_right(source, usize::from(room))
                 });
-            let reserved = source.as_deref().map_or(0, |source| {
+            let mut reserved = source.as_deref().map_or(0, |source| {
                 u16::try_from(obelus_text::text_width(source)).unwrap_or(0) + lock + 1
             });
+            // Before the source, which keeps its place against the
+            // column, and measured before the name is for the same reason:
+            // the name and what it does are cut to what is left. Never
+            // past the middle of what the name has.
+            if focused {
+                let room = (
+                    name_at + aside_at.saturating_sub(name_at) / 2,
+                    aside_at.saturating_sub(reserved + 1),
+                );
+                let ink = plain.fg(self.theme.gutter).bg(background);
+                if let Some(at) = crate::enters_at_the_end(cells, room, y, &enters, ink, self.theme)
+                {
+                    let gap = u16::try_from(crate::GAP_BETWEEN_HINTS).unwrap_or(u16::MAX);
+                    reserved = aside_at.saturating_sub(at) + gap;
+                }
+            }
 
             // Cut to what is left before the right-hand column: a line
             // running under it reads as part of it.

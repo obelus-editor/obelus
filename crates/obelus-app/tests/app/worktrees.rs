@@ -630,6 +630,36 @@ fn the_palette_says_what_each_enter_does_on_the_row() {
     );
 }
 
+/// And the row the reader is on says them at its end, without the palette:
+/// both on a tree another window could go to, and only enter's on this
+/// window's own, where `ctrl+enter` has nowhere to go.
+///
+/// Broken deliberately twice: by not drawing them on the row (no row says
+/// `Switch`), and by saying a dim one as well (this tree's row says it).
+#[test]
+fn the_row_says_what_each_enter_does() {
+    let scratch = Scratch::new("worktrees-row-end");
+    let (main, ..) = repository(&scratch);
+    let (mut app, _events) = window_on(&main, &Arc::new(Asked::default()));
+    dispatch::dispatch(&mut app, Command::WorktreeList);
+    let row_of = |app: &mut App, label: &str| -> String {
+        walk_to(app, label);
+        let screen = support::render(app, 80, 24);
+        screen
+            .lines()
+            .find(|line| line.contains("New window"))
+            .unwrap_or_else(|| panic!("no row says what enter does:\n{screen}"))
+            .to_string()
+    };
+    let feature = row_of(&mut app, "feature");
+    assert!(
+        feature.contains("feature") && feature.contains("Switch"),
+        "{feature:?}"
+    );
+    let here = row_of(&mut app, "main");
+    assert!(!here.contains("Switch"), "{here:?}");
+}
+
 /// A tree inside the main checkout is named the way the ones beside it
 /// are: from the directory the main checkout sits in.
 ///

@@ -873,6 +873,24 @@ impl PickerView<'_> {
             },
             style,
         );
+        // Where the list has two enters, the row the reader is on says
+        // both at its end -- see `crate::enters` -- and everything else on
+        // it is laid out in what is left, the way a row keeps the room for
+        // what it says about itself before its words get theirs. Never past
+        // the middle of the row, which is the name's.
+        let mut area = area;
+        if chosen {
+            let enters = crate::enters(&keys(self.picker));
+            let room = (
+                area.x.saturating_add(area.width / 2),
+                area.right().saturating_sub(1),
+            );
+            let ink = style.fg(self.theme.gutter);
+            if let Some(at) = crate::enters_at_the_end(cells, room, y, &enters, ink, self.theme) {
+                let gap = u16::try_from(crate::GAP_BETWEEN_HINTS).unwrap_or(u16::MAX);
+                area.width = at.saturating_sub(area.x).saturating_sub(gap);
+            }
+        }
 
         // Two columns a level, which is enough to see and cheap enough to
         // spend: an outline of deeply nested code otherwise pushes the names
