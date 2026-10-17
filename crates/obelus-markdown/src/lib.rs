@@ -17,6 +17,8 @@
 //! [`obelus_text::wrapped_from`] and the column widths are [`table`], both
 //! Obelus's own.
 
+/// What GitHub draws and the source only spells: HTML and shortcodes.
+mod html;
 /// How wide a table's columns are drawn.
 mod table;
 
@@ -232,6 +234,7 @@ impl Laying<'_> {
             "block_quote" => self.quote(node, width, prefix),
             "list" => self.list(node, width, prefix),
             "fenced_code_block" | "indented_code_block" => self.code(node, width, prefix),
+            "html_block" => self.html(node, width, prefix),
             "pipe_table" => self.table(node, width, prefix),
             "thematic_break" => self.rows.push(Row {
                 spans: Vec::new(),
@@ -292,12 +295,74 @@ impl Laying<'_> {
             .find(|(range, _)| range.start >= said.start && range.end <= said.end)
             .map(|(_, root)| *root);
         let (shown, looks) = stripped(&gathered, ink, inside);
+        let links = inside.map_or_else(Vec::new, |inside| links(inside, self.source));
+        self.lay(&shown, &looks, &links, width, prefix);
+    }
+
+    /// A block of HTML: what is left of it once its tags have gone, laid out
+    /// as the words it is -- see [`html`].
+    ///
+    /// Its own tags rather than the inline grammar's, which is not asked to
+    /// look inside a block it has said is HTML. A soft join, so a line break
+    /// in the source is a space the way it is in a paragraph and in a page
+    /// GitHub draws; the breaks are the tags'.
+    fn html(&mut self, node: Node<'_>, width: u16, prefix: &Prefix) {
+        let gathered = self.gather(node, Join::Soft);
+        let tags = html::tags(&gathered.text);
+        let looks = vec![
+            Look {
+                ink: Some(Ink::Plain),
+                ..Look::default()
+            };
+            gathered.text.len()
+        ];
+        let mut gone: Vec<Range<usize>> = Vec::new();
+        let mut put: Vec<(usize, String)> = Vec::new();
+        for tag in &tags {
+            if let Some(leaves) = tag.leaves() {
+                put.push((tag.range.start, leaves));
+            }
+            gone.push(tag.range.clone());
+        }
+        for (range, character) in html::references(&gathered.text) {
+            if !gone
+                .iter()
+                .any(|tag| tag.start < range.end && range.start < tag.end)
+            {
+                put.push((range.start, character));
+                gone.push(range);
+            }
+        }
+        spelled(&gathered, &looks, &mut gone, &mut put);
+        // Where a link's words are in the source, which is what a row says
+        // its links are by.
+        let links: Vec<(Range<usize>, String)> = html::links(&tags)
+            .into_iter()
+            .filter_map(|(words, to)| {
+                let start = gathered.source_of(words.start)?;
+                let end = gathered.source_of(words.end.checked_sub(1)?)? + 1;
+                Some((start..end, to))
+            })
+            .collect();
+        let (shown, looks) = keep(&gathered, &looks, gone, put);
+        self.lay(&shown, &looks, &links, width, prefix);
+    }
+
+    /// Words with what they look like, wrapped and put on rows, each row
+    /// carrying the links whose words are on it.
+    fn lay(
+        &mut self,
+        shown: &Gathered,
+        looks: &[Look],
+        links: &[(Range<usize>, String)],
+        width: u16,
+        prefix: &Prefix,
+    ) {
         if shown.text.trim().is_empty() {
             return;
         }
-        let links = inside.map_or_else(Vec::new, |inside| links(inside, self.source));
         for (said, at) in obelus_text::wrapped_from(&shown.text, prefix.room(width)) {
-            let spans = split(&said, at.start, &looks, &shown);
+            let spans = split(&said, at.start, looks, shown);
             // A link's words may wrap, and every row of them goes where
             // the link does.
             let here: Vec<(Range<usize>, String)> = links
@@ -758,12 +823,55 @@ fn stripped(gathered: &Gathered, ink: Ink, inside: Option<Node<'_>>) -> (Gathere
         ..Look::default()
     };
     let mut looks = vec![plain; gathered.text.len()];
-    let Some(inside) = inside else {
-        return (gathered.clone(), looks);
-    };
     let mut gone: Vec<Range<usize>> = Vec::new();
-    marks(inside, gathered, &mut looks, &mut gone);
+    let mut put: Vec<(usize, String)> = Vec::new();
+    if let Some(inside) = inside {
+        marks(inside, gathered, &mut looks, &mut gone, &mut put);
+    }
+    spelled(gathered, &looks, &mut gone, &mut put);
+    keep(gathered, &looks, gone, put)
+}
+
+/// Every shortcode in the words that names an emoji, taken out and the
+/// emoji put in its place -- but not in a span of code, where `:x:` is what
+/// was written, nor over anything already taken out.
+fn spelled(
+    gathered: &Gathered,
+    looks: &[Look],
+    gone: &mut Vec<Range<usize>>,
+    put: &mut Vec<(usize, String)>,
+) {
+    for (range, emoji) in html::shortcodes(&gathered.text) {
+        let code = looks
+            .get(range.start)
+            .is_some_and(|look| look.ink == Some(Ink::Code));
+        let taken = gone
+            .iter()
+            .any(|other| other.start < range.end && range.start < other.end);
+        if !code && !taken {
+            put.push((range.start, emoji.to_string()));
+            gone.push(range);
+        }
+    }
+}
+
+/// What is left of gathered words once `gone` is taken out of them, with
+/// what `put` puts where something was taken out -- and what each byte
+/// that is left looks like.
+///
+/// What is put is in nobody's source, so it carries none: a row says where
+/// its words came from, and an emoji came from a shortcode three times its
+/// length. A break put in starts a line, so the spaces after it are not the
+/// start of that line, and two breaks in a row are one: a `</td></tr>` is
+/// one end of a line, not a blank line.
+fn keep(
+    gathered: &Gathered,
+    looks: &[Look],
+    mut gone: Vec<Range<usize>>,
+    mut put: Vec<(usize, String)>,
+) -> (Gathered, Vec<Look>) {
     gone.sort_by_key(|range| range.start);
+    put.sort_by_key(|(at, _)| *at);
 
     // What is left, in the order it was written, with where each run of it
     // came from carried through both hands it has passed by now.
@@ -771,13 +879,23 @@ fn stripped(gathered: &Gathered, ink: Ink, inside: Option<Node<'_>>) -> (Gathere
     let mut runs: Vec<(usize, usize, usize)> = Vec::new();
     let mut left: Vec<Look> = Vec::new();
     let mut at = 0usize;
+    // The start is the start of a line too: what a block of HTML opened
+    // with is gone, and the space after it was its indent.
+    let mut broke = true;
     for range in gone
         .iter()
         .chain(std::iter::once(&(gathered.text.len()..0)))
     {
         let end = range.start.max(at).min(gathered.text.len());
-        if at < end
-            && let Some(part) = gathered.text.get(at..end)
+        let mut from = at;
+        if broke {
+            from += gathered
+                .text
+                .get(from..end)
+                .map_or(0, |part| part.len() - part.trim_start().len());
+        }
+        if from < end
+            && let Some(part) = gathered.text.get(from..end)
         {
             // One run for each run it was gathered from, rather than one for
             // the whole of what is kept: two characters beside each other
@@ -785,14 +903,40 @@ fn stripped(gathered: &Gathered, ink: Ink, inside: Option<Node<'_>>) -> (Gathere
             // both would be claiming the break between them as well.
             runs.extend(
                 gathered
-                    .runs_in(at..end)
+                    .runs_in(from..end)
                     .into_iter()
-                    .map(|(out, from, length)| (text.len() + out, from, length)),
+                    .map(|(out, source, length)| (text.len() + out, source, length)),
             );
             text.push_str(part);
-            left.extend(looks.get(at..end).unwrap_or_default().iter().copied());
+            left.extend(looks.get(from..end).unwrap_or_default().iter().copied());
+            broke = false;
+        }
+        for (_, said) in put.iter().filter(|(put_at, _)| *put_at == range.start) {
+            // A space put between two cells of a table is not the start of a
+            // line.
+            if said == " " && (text.is_empty() || text.ends_with(['\n', ' '])) {
+                continue;
+            }
+            if said == "\n" {
+                let trimmed = text.trim_end_matches(' ').len();
+                left.truncate(trimmed);
+                text.truncate(trimmed);
+                if text.is_empty() || text.ends_with('\n') {
+                    continue;
+                }
+                broke = true;
+            }
+            let look = looks.get(range.start).copied().unwrap_or_default();
+            left.extend(std::iter::repeat_n(look, said.len()));
+            text.push_str(said);
         }
         at = at.max(range.end);
+    }
+    // A break the end of a block asked for, with nothing after it, is not a
+    // line.
+    while text.ends_with('\n') {
+        text.pop();
+        left.pop();
     }
     (Gathered { text, runs }, left)
 }
@@ -804,7 +948,13 @@ fn stripped(gathered: &Gathered, ink: Ink, inside: Option<Node<'_>>) -> (Gathere
 /// is inside taken out of it already, so every range has to come back
 /// through [`Gathered::text_of`]. A range that lands in one of those markers
 /// is a range about something that is not on the page.
-fn marks(node: Node<'_>, gathered: &Gathered, looks: &mut [Look], gone: &mut Vec<Range<usize>>) {
+fn marks(
+    node: Node<'_>,
+    gathered: &Gathered,
+    looks: &mut [Look],
+    gone: &mut Vec<Range<usize>>,
+    put: &mut Vec<(usize, String)>,
+) {
     let here = |range: Range<usize>| -> Option<Range<usize>> {
         let start = gathered.text_of(range.start)?;
         Some(start..start + (range.end - range.start))
@@ -812,7 +962,7 @@ fn marks(node: Node<'_>, gathered: &Gathered, looks: &mut [Look], gone: &mut Vec
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         let Some(range) = here(child.byte_range()) else {
-            marks(child, gathered, looks, gone);
+            marks(child, gathered, looks, gone, put);
             continue;
         };
         match child.kind() {
@@ -822,6 +972,21 @@ fn marks(node: Node<'_>, gathered: &Gathered, looks: &mut [Look], gone: &mut Vec
             "code_span" => paint(looks, &range, |look| look.ink = Some(Ink::Code)),
             // The marks themselves, whatever they asked for.
             "emphasis_delimiter" | "code_span_delimiter" => {
+                gone.push(range);
+                continue;
+            }
+            // A tag of HTML in the middle of the words, which is the asking
+            // too -- see [`html`] -- and leaves a break or a picture's words
+            // where it asked for one.
+            "html_tag" => {
+                let leaves = gathered
+                    .text
+                    .get(range.clone())
+                    .and_then(html::tag)
+                    .and_then(|tag| tag.leaves());
+                if let Some(leaves) = leaves {
+                    put.push((range.start, leaves));
+                }
                 gone.push(range);
                 continue;
             }
@@ -843,7 +1008,7 @@ fn marks(node: Node<'_>, gathered: &Gathered, looks: &mut [Look], gone: &mut Vec
             }
             _ => {}
         }
-        marks(child, gathered, looks, gone);
+        marks(child, gathered, looks, gone, put);
     }
 }
 
@@ -853,7 +1018,11 @@ fn marks(node: Node<'_>, gathered: &Gathered, looks: &mut [Look], gone: &mut Vec
 /// Only an address with a scheme: a link to `src/lib.rs` is a file in a
 /// repository the browser has never heard of.
 fn links(node: Node<'_>, source: &str) -> Vec<(Range<usize>, String)> {
-    let mut found = Vec::new();
+    // The tags of HTML among the words, in order: an `<a href>` and the
+    // `</a>` after it are two of them, with the link's words between.
+    let mut tags = Vec::new();
+    gather_tags(node, source, &mut tags);
+    let mut found = html::links(&tags);
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() != "inline_link" {
@@ -874,6 +1043,21 @@ fn links(node: Node<'_>, source: &str) -> Vec<(Range<usize>, String)> {
         }
     }
     found
+}
+
+/// Every tag of HTML under an inline node, where it is in the source.
+fn gather_tags(node: Node<'_>, source: &str, tags: &mut Vec<html::Tag>) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "html_tag" {
+            if let Some(mut tag) = source.get(child.byte_range()).and_then(html::tag) {
+                tag.range = child.byte_range();
+                tags.push(tag);
+            }
+            continue;
+        }
+        gather_tags(child, source, tags);
+    }
 }
 
 /// Says something about every byte of a run.

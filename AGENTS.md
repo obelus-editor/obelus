@@ -760,6 +760,9 @@ crates/
                       what Obelus writes, Obelus has to be able to read (log)
   obelus-markdown/  markdown, laid out into rows, from the tree Obelus
                     already parses
+                    · a tag is the asking, not the words, a comment is not
+                      there at all, and a shortcode is the emoji it names
+                      (html)
   obelus-search/    one question at three scopes, the project walked on a
                     thread a core and searched by ripgrep's own searcher, the
                     project as a tree a level at a time (tree), and how much
