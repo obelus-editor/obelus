@@ -218,9 +218,9 @@ impl Laying<'_> {
 
     /// One block.
     fn block(&mut self, node: Node<'_>, width: u16, prefix: &Prefix) {
-        // The mark a list item is introduced by, which the item has already
-        // drawn: see [`Laying::list`].
-        if node.kind().starts_with("list_marker") {
+        // The mark a list item is introduced by, and the box a task is,
+        // which the item has already drawn: see [`Laying::list`].
+        if node.kind().starts_with("list_marker") || node.kind().starts_with("task_list_marker") {
             return;
         }
         match node.kind() {
@@ -350,9 +350,29 @@ impl Laying<'_> {
                     .and_then(|said| said.trim().trim_end_matches(['.', ')']).parse().ok())
                     .unwrap_or(1),
             });
-            let said = match marker.map(|marker| marker.kind()) {
-                Some("list_marker_dot" | "list_marker_parenthesis") => format!("{number}. "),
-                _ => "\u{2022} ".to_string(),
+            // A task is its box, where the bullet would be: GitHub's
+            // `- [x]`, which every pull request's template is full of. Laid
+            // out as a block of its own, the marker stood on a row by itself
+            // and the words went on to the one under it.
+            //
+            // The box's plain characters and not the Nerd Font's, which a
+            // switch elsewhere wears: a glyph of the font is two cells in a
+            // terminal and wants a blank after it there and not in a window,
+            // and rows are laid out here before anybody knows which.
+            let task = item
+                .children(&mut item.walk())
+                .find_map(|child| match child.kind() {
+                    "task_list_marker_checked" => Some(true),
+                    "task_list_marker_unchecked" => Some(false),
+                    _ => None,
+                });
+            let said = match (task, marker.map(|marker| marker.kind())) {
+                (Some(true), _) => "\u{2611} ".to_string(),
+                (Some(false), _) => "\u{25a1} ".to_string(),
+                (None, Some("list_marker_dot" | "list_marker_parenthesis")) => {
+                    format!("{number}. ")
+                }
+                (None, _) => "\u{2022} ".to_string(),
             };
             let wide = u16::try_from(text_width(&said)).unwrap_or(2);
             let inside = prefix.and(vec![room(text_width(&said))], wide);

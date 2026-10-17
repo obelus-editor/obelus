@@ -80,6 +80,22 @@ fn a_list_gets_its_bullets_drawn() {
     assert_eq!(bullet.ink, Ink::Mark);
 }
 
+/// An item that is a task -- GitHub's `- [x]`, which every pull request's
+/// template is full of -- is its box and then its words, on one row: the
+/// box stands where the bullet would, ticked or not, and the words do not
+/// go on to the row under it.
+///
+/// Broken deliberately by laying the marker out as a block of its own, as
+/// it was: `[X]` sat on a row by itself and the words were under it.
+#[test]
+fn a_task_is_its_box_and_its_words_on_one_row() {
+    let drawn: Vec<String> = render("- [x] Done it\n- [ ] Not yet\n", 40)
+        .iter()
+        .map(text)
+        .collect();
+    assert_eq!(drawn, ["\u{2611} Done it", "\u{25a1} Not yet"]);
+}
+
 /// A numbered list counts from the number its first item was written with:
 /// an agent that numbers one list on from another, and then asks about "7",
 /// is pointing at a row that has to say 7. The numbers after the first are
