@@ -17565,6 +17565,25 @@ fn a_review_taken_elsewhere_is_locked_on_its_row_while_the_list_is_open() {
     );
 }
 
+/// The palette opened over a conversation leads with the conversation's
+/// own keys, as it does over the notes and a pull request's page.
+///
+/// Broken deliberately by leaving the conversation out of `keys_of`: the
+/// palette opens on every command with no tab of the conversation's.
+#[test]
+fn the_palette_over_a_conversation_says_its_keys() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    let here = support::keys_here(&mut app);
+    let said: Vec<&str> = here.iter().map(|key| key.does.as_str()).collect();
+    assert!(
+        said.contains(&"Send") && said.contains(&"New line"),
+        "the palette does not say the box's keys: {said:?}"
+    );
+}
+
 /// While the list of pull requests has no rows yet, its preview shows
 /// nothing rather than the file the list was opened over: no row of the list
 /// is a file, so the file is not a preview of anything in it.
@@ -17597,6 +17616,53 @@ fn the_list_of_pull_requests_previews_no_file_before_it_has_rows() {
     assert!(
         !text.contains("the_file_behind_the_list"),
         "the list previews the file it was opened over:\n{text}"
+    );
+}
+
+/// The cursor in a block of code on a pull request's page says that enter
+/// copies it, on the block's own box, the way it does in a conversation.
+///
+/// Broken deliberately by leaving `offer_copy` out of the page's drawing:
+/// the cursor stands in the block and nothing says what enter does there.
+#[test]
+fn a_block_of_code_on_a_pull_requests_page_says_enter_copies_it() {
+    let scratch = support::Scratch::new("agent-pull-request-page-code");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, one_pull_request("abc123")).expect("the answer");
+    std::fs::write(
+        answer.with_extension("json.view.123"),
+        r#"{"body":"Run it so:\n\n```\ncargo test\n```\n","additions":3,"deletions":1,"changedFiles":1}"#,
+    )
+    .expect("what it says");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| answered_with(app, 1));
+    support::press(&mut app, KeyCode::Enter);
+    let deadline = Instant::now() + patience();
+    let text = loop {
+        support::lay_out(&mut app, WIDTH, HEIGHT);
+        let text = screen(&mut app);
+        if text.contains("cargo test") {
+            break text;
+        }
+        let left = deadline.saturating_duration_since(Instant::now());
+        match events.recv_timeout(left) {
+            Ok(event) => app.handle(event),
+            Err(_) => panic!("the description never came to the page:\n{text}"),
+        }
+    };
+    assert!(
+        !text.contains("Copies the code"),
+        "the key is said before the cursor is in the block:\n{text}"
+    );
+
+    // The block is the first thing on the page that acts.
+    support::press(&mut app, KeyCode::Tab);
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Enter  Copies the code"),
+        "the block the cursor is in does not say enter copies it:\n{text}"
     );
 }
 

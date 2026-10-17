@@ -420,7 +420,9 @@ tab of them, each a row with its key at the end and a switch with its tick,
 dim where it does nothing, and choosing one presses that key in the view.
 Escape gives up on the palette and the reader is in the view again, with
 what they had typed and the row they were on -- the second escape is the
-view's. It is a layer of its own (`Layer::Palette`), not the picker, because
+view's. A name typed there that none of the view's keys match is looked for
+among the commands, because a reader typing `open-settings` has not looked
+at which tab they are on (`Picker::go_where_the_query_is_found`). It is a layer of its own (`Layer::Palette`), not the picker, because
 the view under it is very often a picker still being filled. The two pages
 that ask a question keep a foot, because nothing opens over them and the key
 that leaves is the only way off; and a switch that is on is said on the row

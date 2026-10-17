@@ -68,6 +68,11 @@ pub fn draw(
     }
     let stop = area.x + width;
     let acting = cursor.and_then(|cursor| Row::acting(rows, cursor.row));
+    // The first and the last row of the block of code the cursor is in,
+    // where each is on screen, and where its words end: the key that copies
+    // it is said on the box's own side.
+    let mut head = None;
+    let mut foot = None;
 
     for (offset, row) in rows.iter().skip(top).enumerate() {
         let Ok(offset) = u16::try_from(offset) else {
@@ -132,11 +137,19 @@ pub fn draw(
                 dim,
             );
         }
-        // What enter does to the thing the cursor is on, after its last
-        // row, where its words leave room.
+        if let Some(on) = acting.as_ref().filter(|_| row.row.code.is_some()) {
+            if at == on.start {
+                head = Some((y, ended));
+            }
+            if at + 1 == on.end {
+                foot = Some((y, ended));
+            }
+            continue;
+        }
+        // What enter does to the heading the cursor is on, after its words,
+        // where they leave room.
         if let Some(on) = acting.as_ref().filter(|on| at + 1 == on.end) {
             let does = match rows.get(on.start) {
-                Some(first) if first.row.code.is_some() => "Copies the code",
                 Some(first) if first.open => "Closes it",
                 Some(_) => "Opens it",
                 None => continue,
@@ -157,6 +170,18 @@ pub fn draw(
                 crate::chat::cap_the_keys(x, y, &keys, theme.background, theme);
             }
         }
+    }
+    // Along the box's bottom, or its top where the bottom is off the
+    // screen -- the transcript's rule, by the transcript's code.
+    if let Some(on) =
+        acting.filter(|on| rows.get(on.start).is_some_and(|row| row.row.code.is_some()))
+        && let Some((y, ended)) = foot.or(head)
+    {
+        let side = match foot {
+            Some(_) => on.end - 1,
+            None => on.start,
+        };
+        crate::page::offer_copy(cells, &rows[side].row.spans, y, ended, dim, theme);
     }
 }
 

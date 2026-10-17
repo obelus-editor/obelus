@@ -47,6 +47,61 @@ pub fn cell_of(text: &str, begin: u16, characters: usize) -> u16 {
     column
 }
 
+/// Says that enter copies the block of code the cursor is in, on the
+/// block's own box: along the side of it written on `y`, which ends at
+/// cell `ended` and is drawn by `side` -- its bottom, short of the corner,
+/// or its top where the bottom is off the screen.
+///
+/// Not after the last row, which is where enter is said for everything
+/// else: the box is the whole width, so beside it is nowhere, and the row
+/// under it is the next paragraph as often as it is a blank. And a side of
+/// the box is a row with nothing written on it, so the key takes no room
+/// from the code.
+///
+/// One piece of code for every page a block of code is on -- the
+/// transcript and a pull request's -- because it is one key saying one
+/// thing about one kind of row.
+pub(crate) fn offer_copy(
+    cells: &mut ratatui::buffer::Buffer,
+    side: &[obelus_row::Span],
+    y: u16,
+    ended: u16,
+    dim: ratatui::style::Style,
+    theme: &obelus_theme::Theme,
+) {
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    // The box is the last run of its row: a quote's bar or a list's indent
+    // is in front of it.
+    let Some(edge) = side.last().map(|span| crate::text_width(&span.text)) else {
+        return;
+    };
+    let keys = [(
+        crate::chat::chord(KeyCode::Enter, KeyModifiers::NONE),
+        "Copies the code",
+    )];
+    let Some(said) = crate::chat::joined(&keys) else {
+        return;
+    };
+    let said = format!(" {said} ");
+    // Two of the line between it and the corner, and three at the other
+    // end: a key that met the corner would read as the box being open
+    // there.
+    let wide = crate::text_width(&said);
+    let Some(at) = usize::from(ended).checked_sub(wide + 3) else {
+        return;
+    };
+    if at < usize::from(ended).saturating_sub(edge) + 4 {
+        return;
+    }
+    let Ok(at) = u16::try_from(at) else {
+        return;
+    };
+    crate::write(cells, at, y, &said, dim);
+    let ground = dim.bg.unwrap_or(theme.background);
+    crate::chat::cap_the_keys(at + 1, y, &keys, ground, theme);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

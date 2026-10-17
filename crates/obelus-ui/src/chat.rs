@@ -629,6 +629,80 @@ fn said_width((word, tick): &(String, Option<bool>)) -> usize {
     text_width(word) + tick.map_or(0, |_| usize::from(crate::TICK_WIDTH))
 }
 
+/// What the keys do in a conversation, for the first tab of the palette
+/// opened over it.
+///
+/// By where the keys are, because they mean different things in each of
+/// the three: in the box enter sends and shift and tab steps the agent's
+/// way of working, in the transcript tab walks what acts and escape is the
+/// way back to the box, and on the row of settings the arrows walk along
+/// it. What the screen already says where it is -- what enter does on the
+/// row the cursor is on, that escape stops a turn -- is said here too,
+/// because this is the one place every key is.
+///
+/// `thinking` is whether a turn is running, which is what `ctrl+enter` and
+/// escape are about; `modes` whether the agent has more than one way of
+/// working to step through.
+#[must_use]
+pub fn hints(chat: &Chat, thinking: bool, modes: bool) -> Vec<crate::Hint> {
+    use crate::Hint;
+
+    let chord = obelus_keymap::KeyChord::new;
+    let bare = |code| chord(code, KeyModifiers::NONE);
+    let control = |code| chord(code, KeyModifiers::CONTROL);
+    // The two ends are one act in two directions, but "the top" is not
+    // what the other end goes to, so each says its own.
+    let ends = [
+        Hint::new(control(KeyCode::Home), "Top").about("Go to the start of the conversation"),
+        Hint::new(control(KeyCode::End), "Bottom").about("Go to the end of the conversation"),
+    ];
+    let mut hints = match chat.focus() {
+        Focus::Writing => {
+            let written = !chat.writing().is_blank();
+            vec![
+                Hint::new(bare(KeyCode::Enter), "Send")
+                    .about("Send this, or have it wait for the turn that is running")
+                    .when(written),
+                Hint::new(control(KeyCode::Enter), "Send now")
+                    .about("Stop the turn that is running and send this")
+                    .only_where(thinking)
+                    .when(written),
+                // One act on two keys: `shift+enter` needs the keyboard
+                // protocol, and `alt+enter` arrives everywhere.
+                Hint::new(chord(KeyCode::Enter, KeyModifiers::ALT), "New line")
+                    .or(chord(KeyCode::Enter, KeyModifiers::SHIFT))
+                    .about("Break the line here"),
+                Hint::new(bare(KeyCode::Esc), "Stop")
+                    .about("Stop the agent")
+                    .only_where(thinking),
+                Hint::new(chord(KeyCode::BackTab, KeyModifiers::SHIFT), "Mode")
+                    .about("Switch the agent to its next way of working")
+                    .when(modes),
+                Hint::new(bare(KeyCode::Up), "Read back")
+                    .about("Go up into what has been said, with a cursor")
+                    .when(!chat.is_empty()),
+            ]
+        }
+        Focus::Transcript(_) => vec![
+            Hint::new(bare(KeyCode::Tab), "Next")
+                .about("Go to the next thing enter does something on"),
+            Hint::new(chord(KeyCode::BackTab, KeyModifiers::SHIFT), "Previous")
+                .about("Go back to the last thing enter does something on"),
+            Hint::new(bare(KeyCode::Esc), "Write")
+                .about("Go back to the box, and let go of what is held"),
+        ],
+        Focus::Settings(_) => vec![
+            Hint::new(bare(KeyCode::Right), "Along")
+                .or(bare(KeyCode::Left))
+                .about("Go to the next setting, or the one before"),
+            Hint::new(bare(KeyCode::Enter), "Change").about("Change the setting you are on"),
+            Hint::new(bare(KeyCode::Esc), "Write").about("Go back to the box"),
+        ],
+    };
+    hints.extend(ends);
+    hints
+}
+
 /// The conversation, over the whole editor region.
 pub struct ChatView<'a> {
     chat: &'a Chat,
@@ -1349,50 +1423,12 @@ impl ChatView<'_> {
                 let bottom = foot.map(|(y, ended, ..)| (y, ended));
                 if let Some((y, ended)) = bottom.or(head) {
                     let side = bottom.map_or(on.start, |_| on.end - 1);
-                    self.offer_copy(cells, &rows[side], y, ended, dim);
+                    crate::page::offer_copy(cells, &rows[side].spans, y, ended, dim, self.theme);
                 }
             }
             (Some(on), Some(foot)) => self.offer_enter(cells, area, &rows, on, foot, dim),
             _ => {}
         }
-    }
-
-    /// Says that enter copies the block of code the cursor is in, on the
-    /// block's own box: along its bottom, short of the corner, or along
-    /// its top where the bottom is off the screen.
-    ///
-    /// Not after the last row, which is where enter is said for
-    /// everything else: the box is the whole width, so beside it is
-    /// nowhere, and the row under it is the next paragraph as often as it
-    /// is a blank. And a side of the box is a row with nothing written on
-    /// it, so the key takes no room from the code.
-    fn offer_copy(&self, cells: &mut CellBuffer, side: &Row, y: u16, ended: u16, dim: Style) {
-        // The box is the last run of its row: a quote's bar or a list's
-        // indent is in front of it.
-        let Some(edge) = side.spans.last().map(|span| text_width(&span.text)) else {
-            return;
-        };
-        let keys = [(chord(KeyCode::Enter, KeyModifiers::NONE), "Copies the code")];
-        let Some(said) = joined(&keys) else {
-            return;
-        };
-        let said = format!(" {said} ");
-        // Two of the line between it and the corner, and three at the
-        // other end: a key that met the corner would read as the box
-        // being open there.
-        let wide = text_width(&said);
-        let Some(at) = usize::from(ended).checked_sub(wide + 3) else {
-            return;
-        };
-        if at < usize::from(ended).saturating_sub(edge) + 4 {
-            return;
-        }
-        let Ok(at) = u16::try_from(at) else {
-            return;
-        };
-        write(cells, at, y, &said, dim);
-        let ground = dim.bg.unwrap_or(self.theme.background);
-        cap_the_keys(at + 1, y, &keys, ground, self.theme);
     }
 
     /// Says what enter does to the thing the cursor is on, the way the box
@@ -2282,6 +2318,41 @@ impl ChatView<'_> {
 
 #[cfg(test)]
 mod tests {
+    /// The palette's first tab over a conversation says the keys of the
+    /// half the cursor is in: the box's, then the transcript's once the
+    /// cursor has gone up into it.
+    ///
+    /// Broken deliberately by answering the box's keys wherever the cursor
+    /// is: the transcript's tab and shift and tab are not said, and the box's
+    /// line break is said where it does nothing.
+    #[test]
+    fn a_conversations_keys_are_the_half_the_cursor_is_in() {
+        let mut chat = obelus_component::chat::Chat::new();
+        chat.note("Something was said.");
+        let does = |chat: &obelus_component::chat::Chat| -> Vec<&'static str> {
+            super::hints(chat, false, false)
+                .into_iter()
+                .filter(|hint| hint.here)
+                .filter_map(|hint| hint.does)
+                .collect()
+        };
+        let writing = does(&chat);
+        assert!(writing.contains(&"New line"), "{writing:?}");
+        assert!(!writing.contains(&"Next"), "{writing:?}");
+        assert!(
+            !writing.contains(&"Stop"),
+            "escape is offered as a stop with nothing running: {writing:?}"
+        );
+
+        chat.stand_in_transcript(obelus_component::chat::Place::default());
+        let reading = does(&chat);
+        assert!(
+            reading.contains(&"Next") && reading.contains(&"Previous"),
+            "{reading:?}"
+        );
+        assert!(!reading.contains(&"New line"), "{reading:?}");
+    }
+
     /// Break: count the gap between two hints as the gap inside one, and
     /// every cap after the first is drawn a cell or two to the left of the
     /// key it is about.

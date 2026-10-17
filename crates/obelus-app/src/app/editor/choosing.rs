@@ -273,14 +273,19 @@ impl App {
                 .map(obelus_ui::counts::hints)
                 .unwrap_or_default(),
             Some(Layer::Palette | Layer::Prompt | Layer::Gone) => Vec::new(),
-            // The notes are a document rather than a layer, and the one
-            // document with keys of its own to say.
-            None => match (self.notes(), self.discussion()) {
-                (Some(notes), _) => obelus_ui::todo::hints(notes),
-                (None, Some(page)) => {
+            // The documents with keys of their own to say: the notes, a
+            // pull request's page and a conversation.
+            None => match (self.notes(), self.discussion(), self.chat()) {
+                (Some(notes), ..) => obelus_ui::todo::hints(notes),
+                (None, Some(page), _) => {
                     obelus_ui::discussion::hints(page, self.page_talked_about_elsewhere())
                 }
-                (None, None) => Vec::new(),
+                (None, None, Some(chat)) => obelus_ui::chat::hints(
+                    chat,
+                    self.talking() == obelus_agent::Talking::Thinking,
+                    self.agent_has_modes(),
+                ),
+                (None, None, None) => Vec::new(),
             },
         }
     }
