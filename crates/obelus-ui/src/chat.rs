@@ -634,11 +634,11 @@ fn said_width((word, tick): &(String, Option<bool>)) -> usize {
 ///
 /// By where the keys are, because they mean different things in each of
 /// the three: in the box enter sends and shift and tab steps the agent's
-/// way of working, in the transcript tab walks what acts and escape is the
-/// way back to the box, and on the row of settings the arrows walk along
-/// it. What the screen already says where it is -- what enter does on the
-/// row the cursor is on, that escape stops a turn -- is said here too,
-/// because this is the one place every key is.
+/// way of working, in the transcript escape is the way back to the box, and
+/// on the row of settings the arrows walk along it. What the screen already
+/// says where it is -- what enter does on the row the cursor is on, that escape
+/// stops a turn -- is said here too, because this is the one place every key
+/// is.
 ///
 /// `thinking` is whether a turn is running, which is what `ctrl+enter` and
 /// escape are about; `modes` whether the agent has more than one way of
@@ -684,10 +684,6 @@ pub fn hints(chat: &Chat, thinking: bool, modes: bool) -> Vec<crate::Hint> {
             ]
         }
         Focus::Transcript(_) => vec![
-            Hint::new(bare(KeyCode::Tab), "Next")
-                .about("Go to the next thing enter does something on"),
-            Hint::new(chord(KeyCode::BackTab, KeyModifiers::SHIFT), "Previous")
-                .about("Go back to the last thing enter does something on"),
             Hint::new(bare(KeyCode::Esc), "Write")
                 .about("Go back to the box, and let go of what is held"),
         ],
@@ -2323,7 +2319,7 @@ mod tests {
     /// cursor has gone up into it.
     ///
     /// Broken deliberately by answering the box's keys wherever the cursor
-    /// is: the transcript's tab and shift and tab are not said, and the box's
+    /// is: the transcript's way back to the box is not said, and the box's
     /// line break is said where it does nothing.
     #[test]
     fn a_conversations_keys_are_the_half_the_cursor_is_in() {
@@ -2338,7 +2334,7 @@ mod tests {
         };
         let writing = does(&chat);
         assert!(writing.contains(&"New line"), "{writing:?}");
-        assert!(!writing.contains(&"Next"), "{writing:?}");
+        assert!(!writing.contains(&"Write"), "{writing:?}");
         assert!(
             !writing.contains(&"Stop"),
             "escape is offered as a stop with nothing running: {writing:?}"
@@ -2346,10 +2342,7 @@ mod tests {
 
         chat.stand_in_transcript(obelus_component::chat::Place::default());
         let reading = does(&chat);
-        assert!(
-            reading.contains(&"Next") && reading.contains(&"Previous"),
-            "{reading:?}"
-        );
+        assert!(reading.contains(&"Write"), "{reading:?}");
         assert!(!reading.contains(&"New line"), "{reading:?}");
     }
 

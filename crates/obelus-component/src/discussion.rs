@@ -10,7 +10,7 @@
 //! **A page with a cursor, like the transcript.** What a reader does with a
 //! pull request on screen is read it, take a copy of a line of it and open
 //! what is folded in it, so the cursor is [`crate::page`]'s: the arrows walk
-//! the words, shift holds them, tab goes to what acts and enter does it. And
+//! the words, shift holds them and enter does what the row is for. And
 //! nothing is written here: it is GitHub's page, read through `gh`, and a
 //! key that is typing goes nowhere.
 //!
@@ -186,14 +186,6 @@ impl crate::page::Line for Row {
 
     fn indent(&self) -> u16 {
         0
-    }
-
-    fn code(&self) -> Option<&obelus_row::Code> {
-        self.row.code.as_ref()
-    }
-
-    fn acts(&self) -> bool {
-        self.folds.is_some() || self.row.code.is_some()
     }
 
     /// A block of code is one thing whichever row of it the cursor is on;
@@ -830,35 +822,32 @@ mod tests {
         page.rows(ROOM.reading).iter().map(Row::text).collect()
     }
 
-    /// Tab walks the things that act -- the block of code, the checks, the
-    /// comment -- and enter does what each is for: copies the code, names
-    /// the check that passed, shuts the comment.
+    /// Enter does what the row the cursor is on is for: copies the block of
+    /// code, names the check that passed, shuts the comment.
     ///
     /// Broken deliberately by leaving `folds` off the checks' heading, so
-    /// tab steps past it; and by leaving `fold` out of enter's arm, so the
-    /// passed check is never named and the comment never shuts.
+    /// enter on it does nothing; and by leaving `fold` out of enter's arm,
+    /// so the passed check is never named and the comment never shuts.
     #[test]
-    fn tab_goes_to_what_acts_and_enter_does_it() {
+    fn enter_does_what_the_row_is_for() {
         let mut page = DiscussionView::new(About::PullRequest(pull()));
         page.told(said());
+        let stand_on = |page: &mut DiscussionView, starting: &str| {
+            let row = texts(page)
+                .iter()
+                .position(|row| row.contains(starting))
+                .unwrap_or_else(|| panic!("no row says {starting:?}: {:?}", texts(page)));
+            page.stand(Place { row, character: 0 });
+        };
 
-        assert_eq!(
-            press(&mut page, KeyCode::Tab, KeyModifiers::NONE),
-            Outcome::Consumed
-        );
+        stand_on(&mut page, "cargo test");
         assert_eq!(
             press(&mut page, KeyCode::Enter, KeyModifiers::NONE),
             Outcome::Copy("cargo test".to_string()),
             "enter on the block did not copy it"
         );
 
-        let _ = press(&mut page, KeyCode::Tab, KeyModifiers::NONE);
-        assert!(
-            page.rows(ROOM.reading)[page.cursor().row]
-                .text()
-                .starts_with("Checks"),
-            "the second stop was not the checks"
-        );
+        stand_on(&mut page, "Checks");
         let _ = press(&mut page, KeyCode::Enter, KeyModifiers::NONE);
         assert!(
             texts(&page).iter().any(|row| row.trim() == "\u{2713} test"),
@@ -866,7 +855,7 @@ mod tests {
             texts(&page)
         );
 
-        let _ = press(&mut page, KeyCode::Tab, KeyModifiers::NONE);
+        stand_on(&mut page, "reviewer");
         assert!(texts(&page).iter().any(|row| row.contains("Looks right")));
         let _ = press(&mut page, KeyCode::Enter, KeyModifiers::NONE);
         assert!(

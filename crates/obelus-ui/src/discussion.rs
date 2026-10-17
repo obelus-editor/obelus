@@ -238,13 +238,6 @@ pub fn hints(page: &DiscussionView, elsewhere: bool) -> Vec<crate::Hint> {
         crate::Hint::new(chord(KeyCode::Char('a'), KeyModifiers::ALT), "Talk")
             .about(what)
             .when(!elsewhere),
-        // Two rows rather than one key `or` the other: a pair shares a row
-        // where it is one act in two directions and the words fit both, and
-        // "the next thing" is not what shift and tab goes to.
-        crate::Hint::new(chord(KeyCode::Tab, KeyModifiers::NONE), "Next")
-            .about("Go to the next thing enter does something on"),
-        crate::Hint::new(chord(KeyCode::BackTab, KeyModifiers::SHIFT), "Previous")
-            .about("Go back to the last thing enter does something on"),
     ]
 }
 
@@ -291,45 +284,5 @@ impl Widget for DiscussionUi<'_> {
             self.theme,
             self.phase,
         );
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crossterm::event::{KeyCode, KeyModifiers};
-    use obelus_component::discussion::{About, DiscussionView, Issue};
-
-    use super::*;
-
-    /// Tab and shift and tab go opposite ways, and each says so: the row
-    /// the palette shows for shift and tab is not tab's sentence again.
-    ///
-    /// Broken deliberately by putting shift and tab on tab's row with `or`,
-    /// as it first was: the two keys say the same words.
-    #[test]
-    fn the_two_ways_through_what_acts_say_which_way() {
-        let page = DiscussionView::new(About::Issue(Issue {
-            number: 1,
-            title: "A title".to_string(),
-            author: "someone".to_string(),
-            labels: Vec::new(),
-            updated: None,
-            stamp: String::new(),
-        }));
-        let hints = hints(&page, false);
-        let said = |code, modifiers| {
-            let chord = obelus_keymap::KeyChord::new(code, modifiers);
-            hints
-                .iter()
-                .find(|hint| hint.chord == chord || hint.and_also == Some(chord))
-                .and_then(|hint| hint.about)
-        };
-        let forward = said(KeyCode::Tab, KeyModifiers::NONE);
-        let back = said(KeyCode::BackTab, KeyModifiers::SHIFT);
-        assert!(
-            forward.is_some() && back.is_some(),
-            "a key is not said at all"
-        );
-        assert_ne!(forward, back, "shift and tab says what tab does");
     }
 }

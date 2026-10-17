@@ -27,11 +27,11 @@
 //! rebuilt from that update would lose its kind, its title and its place at the
 //! moment it succeeded.
 //!
-//! The transcript is a page with a cursor in it: the arrows walk the words
-//! and tab goes to what acts, by the rules [`crate::page`] keeps for every
-//! page read as rows, and a press puts the cursor where the pointer landed.
-//! What acts here is a tool call, which names a file, and a heading, which
-//! opens what is under it. None of them is lit while the cursor is on it: the
+//! The transcript is a page with a cursor in it: the arrows walk the words,
+//! by the rules [`crate::page`] keeps for every page read as rows, and a
+//! press puts the cursor where the pointer landed. What enter acts on here
+//! is a tool call, which names a file, and a heading, which opens what is
+//! under it. None of them is lit while the cursor is on it: the
 //! caret says where the cursor is, a key at the row's end says what enter does
 //! there, and a light behind the row was drawn over what the reader had hold of
 //! in it.
@@ -460,7 +460,7 @@ impl Row {
     /// A tool call names a file and enter opens it, a heading opens what is
     /// under it, a row the reader was sent away by sends them again, and a
     /// block of code is copied. The cursor stands on any row; these are the
-    /// ones tab goes to.
+    /// ones enter does something on.
     ///
     /// The list is the one the key's own `match` answers, and the two have
     /// to say the same thing: a row this lets the cursor stand on and that
@@ -558,14 +558,6 @@ impl crate::page::Line for Row {
 
     fn indent(&self) -> u16 {
         u16::from(self.depth) * DEEPER
-    }
-
-    fn code(&self) -> Option<&obelus_row::Code> {
-        self.code.as_ref()
-    }
-
-    fn acts(&self) -> bool {
-        Self::acts(self)
     }
 
     fn acting(rows: &[Self], row: usize) -> Option<std::ops::Range<usize>> {
@@ -2640,42 +2632,6 @@ mod tests {
         assert_eq!(Row::acting(&rows, printed), None, "what it printed acts");
     }
 
-    /// Shift and tab from a lower row of a call's title goes to the call
-    /// before it, not to the first row of the one it was pressed in.
-    ///
-    /// Broken deliberately by stepping back from `at` again rather than
-    /// from where what it is part of starts: the cursor lands on `b1`.
-    #[test]
-    fn shift_and_tab_leaves_the_call_it_is_on() {
-        let mut chat = Chat::new();
-        chat.tool(&saying("c1", "a1\na2\na3", &["x"]), "completed");
-        chat.tool(&saying("c2", "b1\nb2\nb3", &["y"]), "completed");
-        let laid = |chat: &Chat| chat.rows(ROOM.reading);
-        chat.settle(laid(&chat).len(), ROOM.transcript);
-
-        // Into the transcript, which lands on its last row: the second
-        // call's last row of title.
-        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[], false);
-        let Focus::Transcript(at) = chat.focus() else {
-            panic!("the cursor is not in the transcript");
-        };
-        assert_eq!(
-            laid(&chat)[at.row].text(),
-            "b3",
-            "not on the title's last row"
-        );
-
-        chat.handle_key(&key(KeyCode::BackTab), false, ROOM, &[], false);
-        let Focus::Transcript(at) = chat.focus() else {
-            panic!("the cursor left the transcript");
-        };
-        assert_eq!(
-            laid(&chat)[at.row].text(),
-            "a1",
-            "shift and tab stayed on the call"
-        );
-    }
-
     /// Closing a call from a row of its title that closing takes away puts
     /// the cursor on the call's first row.
     ///
@@ -2965,22 +2921,6 @@ mod tests {
         chat
     }
 
-    /// The cursor walks the words, and tab goes to what enter opens.
-    ///
-    /// Two keys for two things, which is the change: the arrows used to hop
-    /// between the rows that *do* something and step over everything else,
-    /// so a reader could reach a tool call quickly and could not reach a
-    /// word at all. Now the arrows walk the transcript as text -- which is
-    /// what lets a keyboard hold a piece of it -- and tab is what jumps to
-    /// the next heading, file or address.
-    ///
-    /// Broken deliberately two ways. Taking the left and right arrows out
-    /// of the motion arm leaves the caret unable to stand anywhere but the
-    /// start of a row, which is not a place in the words. And taking out
-    /// the tab arm leaves a reader pressing an arrow eighty times to reach
-    /// the tool call at the end of a paragraph -- and, because the key then
-    /// falls through to the box behind, stepping the agent's way of working
-    /// on the way.
     #[test]
     fn a_paste_off_the_box_takes_the_keys_back_to_it() {
         // A paste is put somewhere on purpose -- a terminal's own, or a file
@@ -3146,24 +3086,17 @@ mod tests {
         );
     }
 
-    /// Enter copies a block of code from any row of it, and tab stops on it
-    /// once, at the first character of the code.
+    /// Enter copies a block of code from any row of it.
     ///
     /// The line is longer than the box, so a copy read off the rows would
     /// be two lines between bars; what enter hands over is the line as the
     /// agent wrote it. And the prose around the block is not the block:
     /// enter there does what it did before, which is nothing.
     ///
-    /// Broken deliberately four ways. By leaving the arm out of the key's
-    /// `match`: enter on the code does nothing. By leaving the block out of
-    /// `Row::acting`: every row of it is a thing of its own, so the first
-    /// of them is the box's corner and tab lands there. By leaving
-    /// `page::next_stop` to stop on every row
-    /// that acts: the second tab is the next row of the block. And by
-    /// standing at the start of the stop: tab puts the cursor on the
-    /// corner of the box.
+    /// Broken deliberately by leaving the arm out of the key's `match`:
+    /// enter on the code does nothing.
     #[test]
-    fn enter_copies_a_block_of_code_and_tab_stops_on_it_once() {
+    fn enter_copies_a_block_of_code_from_any_row_of_it() {
         let line = "echo 'kernel.perf_event_paranoid = 1' | sudo tee /etc/sysctl.d/99-perf.conf";
         let mut chat = Chat::new();
         chat.chunk(
@@ -3182,10 +3115,6 @@ mod tests {
         let (Some(&top), Some(&bottom)) = (block.first(), block.last()) else {
             panic!("no block of code: {rows:?}");
         };
-        let second = rows
-            .iter()
-            .rposition(|row| row.text().contains("ls"))
-            .expect("the second block");
         assert!(
             bottom - top > 2,
             "the line did not wrap, so this shows nothing"
@@ -3207,39 +3136,26 @@ mod tests {
             );
         }
         assert_eq!(copied(&mut chat, prose), ChatOutcome::Consumed);
-
-        // From above the block, tab lands in the code rather than on its
-        // box, the next tab goes on past the rest of it to the next block,
-        // and shift and tab comes back to where the first one landed.
-        chat.focus = Focus::Transcript(Place {
-            row: 0,
-            character: 0,
-        });
-        chat.handle_key(&key(KeyCode::Tab), false, ROOM, &[], false);
-        assert_eq!(
-            chat.focus(),
-            Focus::Transcript(Place {
-                row: top + 1,
-                character: 1,
-            }),
-            "tab did not land on the first character of the code"
-        );
-        chat.handle_key(&key(KeyCode::Tab), false, ROOM, &[], false);
-        assert!(
-            matches!(chat.focus(), Focus::Transcript(place) if place.row == second),
-            "tab did not go on to the next block: {:?}",
-            chat.focus()
-        );
-        chat.handle_key(&shifted(KeyCode::BackTab), false, ROOM, &[], false);
-        assert!(
-            matches!(chat.focus(), Focus::Transcript(place) if place.row == top + 1),
-            "shift and tab did not come back to the first block: {:?}",
-            chat.focus()
-        );
     }
 
+    /// The cursor walks the words a character and a row at a time, enter
+    /// opens what the row it is on names, and tab and shift and tab do
+    /// nothing in here: there is nothing to step between, and shift and tab
+    /// is the box's key for the agent's way of working, which a reader
+    /// reading should not change by a slip.
+    ///
+    /// The arrows walk the transcript as text, which is what lets a keyboard
+    /// hold a piece of it: they used to hop between the rows that *do*
+    /// something and step over everything else, so a reader could reach a
+    /// tool call quickly and could not reach a word at all.
+    ///
+    /// Broken deliberately two ways. Taking the left and right arrows out of
+    /// the motion arm leaves the caret unable to stand anywhere but the
+    /// start of a row, which is not a place in the words. And taking the arm
+    /// that swallows tab and shift and tab out of `on_transcript`: shift and
+    /// tab fell through to the box and stepped the agent's mode.
     #[test]
-    fn the_cursor_walks_the_words_and_tab_goes_to_what_acts() {
+    fn the_cursor_walks_the_words_and_enter_opens_what_the_row_names() {
         let mut chat = walked();
         let rows = chat.rows(ROOM.reading);
         let stops: Vec<usize> = rows
@@ -3287,18 +3203,14 @@ mod tests {
             })
         );
 
-        // The last row here is the second tool call, so the cursor came in
-        // already standing on one of the two: shift and tab goes to the
-        // other.
-        assert_eq!(last, stops[2], "the last row is the second tool call");
-        chat.handle_key(&key(KeyCode::BackTab), false, ROOM, &[], false);
-        assert_eq!(
-            chat.focus(),
-            Focus::Transcript(Place {
-                row: stops[1],
-                character: 0
-            }),
-            "shift and tab did not reach the thing enter opens"
+        // Up to the first of the two tool calls.
+        for _ in stops[1]..last {
+            chat.handle_key(&key(KeyCode::Up), false, ROOM, &[], false);
+        }
+        assert!(
+            matches!(chat.focus(), Focus::Transcript(place) if place.row == stops[1]),
+            "the arrows did not reach the call: {:?}",
+            chat.focus()
         );
 
         // Enter opens what the row names.
@@ -3314,16 +3226,18 @@ mod tests {
             ChatOutcome::Consumed,
             "enter on a row of words did something"
         );
-        // And tab forwards is the way back to the other one.
-        chat.handle_key(&key(KeyCode::Tab), false, ROOM, &[], false);
-        assert_eq!(
-            chat.focus(),
-            Focus::Transcript(Place {
-                row: stops[2],
-                character: 0
-            }),
-            "tab did not reach the next thing enter opens"
-        );
+        // Tab and shift and tab go nowhere, and are taken: neither moves the
+        // cursor, and shift and tab is not the box's step to the agent's
+        // next way of working.
+        let here = chat.focus();
+        for pressed in [key(KeyCode::Tab), shifted(KeyCode::BackTab)] {
+            assert_eq!(
+                chat.handle_key(&pressed, false, ROOM, &[], false),
+                ChatOutcome::Consumed,
+                "{pressed:?} was not taken in the transcript"
+            );
+            assert_eq!(chat.focus(), here, "{pressed:?} moved the cursor");
+        }
 
         // Escape is the way back: it gives up on the nearest thing, which
         // is being in the transcript rather than the conversation.

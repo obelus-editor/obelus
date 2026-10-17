@@ -1,5 +1,5 @@
-//! A page of laid-out rows with a cursor in it: what walks the words, what
-//! holds them, and what tab steps to.
+//! A page of laid-out rows with a cursor in it: what walks the words and
+//! what holds them.
 //!
 //! The conversation's transcript was the first page with a cursor, and all
 //! of this was written for it. It is here rather than there because the
@@ -24,11 +24,12 @@
 //! What crosses between the two is [`spot_at`]: a shift-motion asks the row
 //! under the cursor where in the words it is, and holds that.
 //!
-//! **The arrows walk every row drawn, and tab goes to what acts.** A row
-//! that acts is one enter does something on, and which those are is the
-//! page's to say ([`Line::acts`]) -- along with which rows are one thing
-//! ([`Line::acting`]), so that a stop is the first row of a thing rather
-//! than each row of it.
+//! **The arrows walk every row drawn, and nothing steps between what
+//! acts.** Enter does something on some rows -- which, and which rows are
+//! one thing with the one the cursor is on, is the page's to say
+//! ([`Line::acting`]) -- and a reader meets those by reading, not by going
+//! to look for them. There was a key that went from one to the next, and it
+//! was a key for a search nobody makes.
 
 use std::ops::Range;
 
@@ -61,14 +62,6 @@ pub trait Line: Sized {
     /// How many cells in from the start of the words the row is drawn:
     /// what the page wraps it short by.
     fn indent(&self) -> u16;
-
-    /// The block of code the row is part of, where it is one: a stop on a
-    /// block is its first character of code, not the corner of its box.
-    fn code(&self) -> Option<&obelus_row::Code>;
-
-    /// Whether enter does something on this row, which is what makes it a
-    /// stop for tab.
-    fn acts(&self) -> bool;
 
     /// The rows a key pressed on `row` acts on, or none where it does
     /// nothing: the rows that are one thing with it.
@@ -484,61 +477,6 @@ pub fn spot_near<L: Line>(place: Place, rows: &[L]) -> Option<Spot<L::Text>> {
         })
 }
 
-/// The next row worth standing on above or below `at`.
-///
-/// Above what `at` is part of, not above `at`: on the third row of a thing
-/// the stop above is that thing's own first row, which is the one the key
-/// was pressed in -- a key that looked as though it had done nothing.
-///
-/// And one stop for each thing, at the first of its rows: every row of a
-/// block of code acts, and a key that stepped through them one at a time
-/// would be the down arrow.
-#[must_use]
-pub fn next_stop<L: Line>(at: usize, up: bool, rows: &[L]) -> Option<usize> {
-    let at = match up {
-        true => L::acting(rows, at).map_or(at, |on| on.start),
-        false => at,
-    };
-    let mut stops = rows
-        .iter()
-        .enumerate()
-        .filter(|(at, row)| row.acts() && L::acting(rows, *at).is_some_and(|on| on.start == *at))
-        .map(|(at, _)| at);
-    match up {
-        true => stops.take_while(|stop| *stop < at).last(),
-        false => stops.find(|stop| *stop > at),
-    }
-}
-
-/// Where the cursor stands on arriving at a stop.
-///
-/// The start of the row, except in a block of code, where it is the first
-/// character of the code: the first row of a block is its box, and a caret
-/// on the corner is standing in nothing anybody wrote.
-#[must_use]
-pub fn standing_at<L: Line>(stop: usize, rows: &[L]) -> Place {
-    let at_the_start = Place {
-        row: stop,
-        character: 0,
-    };
-    let Some(on) = rows
-        .get(stop)
-        .filter(|row| row.code().is_some())
-        .and(L::acting(rows, stop))
-    else {
-        return at_the_start;
-    };
-    on.into_iter()
-        .find_map(|row| {
-            let spot = spot_at(&rows[row], 0)?;
-            Some(Place {
-                row,
-                character: characters_at(&rows[row], spot)?,
-            })
-        })
-        .unwrap_or(at_the_start)
-}
-
 /// How much room a page has, which is what the keys are measured in.
 #[derive(Clone, Copy, Debug)]
 pub struct Room {
@@ -697,10 +635,9 @@ pub enum Walked {
 /// shift is down.
 ///
 /// Every key that moves the cursor and nothing else: the arrows, the ends
-/// and the paging keys, with shift holding what they pass over; control and
-/// the ends going to the ends of the whole page; and tab and shift and tab,
-/// to the next and the last row that acts. `None` for every other key --
-/// enter, escape, typing -- which mean what the page says they mean.
+/// and the paging keys, with shift holding what they pass over, and control
+/// and the ends going to the ends of the whole page. `None` for every other
+/// key -- enter, escape, typing -- which mean what the page says they mean.
 ///
 /// `rows` are laid out once by the caller, and everything here asks them
 /// rather than the page: laying a page out is real work, and a cursor that
@@ -781,25 +718,6 @@ pub fn walk<L: Line>(
                 took_hold,
             })
         }
-        // The next thing enter would open, which is what the arrows do not
-        // land on: they walk the words, so getting to a heading in a long
-        // run of them is its own key.
-        KeyCode::Tab | KeyCode::BackTab => {
-            let up = code == KeyCode::BackTab;
-            // Taken either way. Nothing that way is a key that does
-            // nothing, not a key that falls through to whatever else the
-            // page has bound it to.
-            let Some(stop) = next_stop(at.row, up, rows) else {
-                return Some(Walked::Stayed);
-            };
-            hold.let_go();
-            let standing = standing_at(stop, rows);
-            show(window, standing.row, rows.len(), room.height);
-            Some(Walked::To {
-                place: standing,
-                took_hold: false,
-            })
-        }
         _ => None,
     }
 }
@@ -831,12 +749,6 @@ mod tests {
         }
         fn indent(&self) -> u16 {
             0
-        }
-        fn code(&self) -> Option<&obelus_row::Code> {
-            None
-        }
-        fn acts(&self) -> bool {
-            self.opens
         }
         fn acting(rows: &[Self], row: usize) -> Option<Range<usize>> {
             rows.get(row)?.opens.then(|| row..row + 1)
@@ -885,13 +797,11 @@ mod tests {
     }
 
     /// A page made of rows that are not a conversation's walks the way the
-    /// transcript does: tab steps over the words to the heading, shift
-    /// holds what an arrow passes over, and what is held is the words on
-    /// the screen, across the heading between them.
+    /// transcript does: shift holds what an arrow passes over, and what is
+    /// held is the words on the screen, across the heading between them.
     ///
-    /// Broken deliberately by making `next_stop` look for the next row
-    /// rather than the next row that acts, and by starting a hold where the
-    /// cursor goes rather than where it was: each fails here.
+    /// Broken deliberately by starting a hold where the cursor goes rather
+    /// than where it was: it fails here.
     #[test]
     fn a_page_of_its_own_rows_is_walked_and_held() {
         let mut rows = vec![
@@ -901,25 +811,6 @@ mod tests {
             words("second", 1, 0),
         ];
         let mut hold = Hold::default();
-
-        let tabbed = press(
-            Place::default(),
-            KeyCode::Tab,
-            KeyModifiers::NONE,
-            &rows,
-            &mut hold,
-        );
-        assert_eq!(
-            tabbed,
-            Some(Walked::To {
-                place: Place {
-                    row: 2,
-                    character: 0
-                },
-                took_hold: false,
-            }),
-            "tab did not go to the heading"
-        );
 
         let from = Place {
             row: 1,

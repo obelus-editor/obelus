@@ -82,9 +82,9 @@ writing a view, look for the piece that already does it:
     component::window  which rows are on screen, and when that changes
     component::window::Move  the six keys that move about a list
     component::page    a cursor on rows laid out rather than a file: what
-                       the arrows walk, what tab stops on, what shift holds
-                       and what a copy takes -- the transcript's, and any
-                       other page read that way (ui::page draws its cells)
+                       the arrows walk, what shift holds and what a copy
+                       takes -- the transcript's, and any other page read
+                       that way (ui::page draws its cells)
     ui::editor         a document with a gutter: the file being read, and a
                        preview of somewhere else, which *is* this view
 
@@ -733,8 +733,8 @@ crates/
                       a call's title is three rows shut, a link is opened by
                       a click and not by enter (chat); the cursor is a place
                       on the screen and a selection is a place in the words,
-                      and the arrows walk every row drawn and tab goes to what
-                      acts (page); reading one and asking an agent about it
+                      and the arrows walk every row drawn and nothing steps
+                      between what acts (page); reading one and asking an agent about it
                       are two different acts, a page with a cursor like the
                       transcript, what enter does is open or shut or copy,
                       and laid out once and kept (discussion); the page is

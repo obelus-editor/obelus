@@ -110,6 +110,28 @@ fn wired() -> (App, Receiver<Event>) {
     (app, events)
 }
 
+/// Walks the cursor up the transcript, from the box, until the row it is on
+/// says `words`.
+///
+/// The arrows rather than a key that steps between the rows that act: the
+/// cursor walks the words, and there is no such key.
+fn up_to(app: &mut App, words: &str) {
+    for _ in 0..80 {
+        let on = app.chat().and_then(|chat| match chat.focus() {
+            obelus_component::chat::Focus::Transcript(place) => chat
+                .rows(WIDTH - 5)
+                .get(place.row)
+                .map(obelus_component::chat::Row::text),
+            _ => None,
+        });
+        if on.is_some_and(|text| text.contains(words)) {
+            return;
+        }
+        support::press(app, KeyCode::Up);
+    }
+    panic!("the cursor never reached a row saying {words:?}");
+}
+
 /// Starts the fake agent and opens the conversation on it.
 fn talking() -> (App, Receiver<Event>) {
     playing(&[])
@@ -4081,13 +4103,8 @@ fn a_tool_call_in_the_transcript_opens_the_file_it_was_in() {
     });
 
     // Up from the box, which is empty: the caret cannot move in it, so it
-    // carries on into the transcript. Then shift and tab twice, which is
-    // what goes to the rows that do something -- the command it asked
-    // about, and then the file it read. The arrows walk the words now, so
-    // reaching a tool call at the top of a turn is its own key.
-    support::press(&mut app, KeyCode::Up);
-    support::press(&mut app, KeyCode::BackTab);
-    support::press(&mut app, KeyCode::BackTab);
+    // carries on into the transcript, and up the words to the file it read.
+    up_to(&mut app, "Read the file");
     assert!(
         matches!(
             app.chat().map(obelus_component::chat::Chat::focus),
@@ -4186,11 +4203,9 @@ fn a_run_of_tool_calls_folds_into_one_row() {
         "the call that is not a read was folded in with them:\n{text}"
     );
 
-    // Into the transcript, then shift and tab back to the run's heading --
-    // past the failed call, which names nothing and so is not a row enter
-    // opens -- and enter opens it where it is.
-    support::press(&mut app, KeyCode::Up);
-    support::press(&mut app, KeyCode::BackTab);
+    // Into the transcript and up to the run's heading, and enter opens it
+    // where it is.
+    up_to(&mut app, "4 Files");
     support::press(&mut app, KeyCode::Enter);
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     support::check(&format!("folded_{WIDTH}x{HEIGHT}"), &dump);
@@ -10477,9 +10492,8 @@ fn enter_on_a_block_of_code_copies_the_code() {
             })
     });
 
-    // Up to the words after the block, and back to the block.
-    support::press(&mut app, KeyCode::Up);
-    support::press(&mut app, KeyCode::BackTab);
+    // Up the words to the block.
+    up_to(&mut app, "echo kernel");
     let text = screen(&mut app);
     assert!(
         text.contains("Enter  Copies the code"),
@@ -17657,8 +17671,12 @@ fn a_block_of_code_on_a_pull_requests_page_says_enter_copies_it() {
         "the key is said before the cursor is in the block:\n{text}"
     );
 
-    // The block is the first thing on the page that acts.
-    support::press(&mut app, KeyCode::Tab);
+    // Down to the block's first row of code: who and where, how much, a
+    // blank, the title, a blank, the words before it, a blank, and the top
+    // of its box.
+    for _ in 0..8 {
+        support::press(&mut app, KeyCode::Down);
+    }
     let text = screen(&mut app);
     assert!(
         text.contains("Enter  Copies the code"),
@@ -17667,11 +17685,12 @@ fn a_block_of_code_on_a_pull_requests_page_says_enter_copies_it() {
 }
 
 /// A pull request's page is read with a cursor: what `gh` said is on it,
-/// tab goes to a comment's heading and enter shuts what it says, and what
-/// shift holds is what a copy takes.
+/// enter on a comment's heading shuts what it says, and what shift holds is
+/// what a copy takes.
 ///
 /// Broken deliberately three ways, each failing here. Leaving the page out
-/// of `hearers` sends its keys to nothing, so tab never reaches the heading.
+/// of `hearers` sends its keys to nothing, so the cursor never reaches the
+/// heading.
 /// Not telling the pages in `on_pull_request_discussion` leaves the page
 /// saying it is still asking. And leaving the page out of
 /// `copy_selection` copies nothing.
@@ -17712,8 +17731,10 @@ fn a_pull_requests_page_is_walked_folded_and_copied() {
         "the page is not the pull request:\n{text}"
     );
 
-    // The comment's heading is the one thing here that acts.
-    support::press(&mut app, KeyCode::Tab);
+    // The comment's heading, which is the row above the last: what it says
+    // is all one row.
+    support::press_control_key(&mut app, KeyCode::End);
+    support::press(&mut app, KeyCode::Up);
     support::press(&mut app, KeyCode::Enter);
     let text = screen(&mut app);
     assert!(
