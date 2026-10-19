@@ -361,6 +361,152 @@ fn a_quote_is_drawn_in_the_lesser_ink() {
     assert_eq!(span("mine").ink, Ink::Plain, "the words after it are not");
 }
 
+/// The words of a row, and what each run says it came from.
+fn sourced(rows: &[Row]) -> Vec<(String, Option<std::ops::Range<usize>>)> {
+    rows.iter()
+        .flat_map(|row| &row.spans)
+        .map(|span| (span.text.to_string(), span.from.clone()))
+        .collect()
+}
+
+/// The links of every row, with where they go.
+fn links_of(rows: &[Row]) -> Vec<String> {
+    rows.iter()
+        .flat_map(|row| &row.links)
+        .map(|(_, to)| to.clone())
+        .collect()
+}
+
+/// A shortcode is its emoji only standing apart: the middle of a path is
+/// the path, even where the word in it is in the table.
+///
+/// Broken deliberately by taking a shortcode wherever its colons are
+/// (`apart` left out of `html::shortcodes`): `serde::de::Error` grew a flag.
+#[test]
+fn a_path_is_not_an_emoji() {
+    let drawn: Vec<String> = render("serde::de::Error, a::b::c and :x: alone\n", 60)
+        .iter()
+        .map(text)
+        .collect();
+    assert_eq!(drawn, ["serde::de::Error, a::b::c and \u{274c} alone"]);
+}
+
+/// A name written in capitals is words, even one that is a tag in lower
+/// case: `<P>` is a type far more often than a paragraph.
+///
+/// Broken deliberately by reading the name in any case in `html::tag`: the
+/// row broke at `<P>` and `Vec<S>` lost its `<S>`.
+#[test]
+fn a_name_in_capitals_is_words() {
+    let drawn: Vec<String> = render("fn foo<P>(p: P) and Vec<S> done\n", 60)
+        .iter()
+        .map(text)
+        .collect();
+    assert_eq!(drawn, ["fn foo<P>(p: P) and Vec<S> done"]);
+}
+
+/// An attribute is found past another whose name begins the same way:
+/// `hreflang` before the `href`, `srcset` before the `src`.
+///
+/// Broken deliberately by giving up at the first such one (`?` for
+/// `continue` in `html::attribute`): neither link is found.
+#[test]
+fn an_attribute_is_found_past_one_named_like_it() {
+    let rows = render(
+        "<p><a hreflang=\"en\" href=\"https://x.com\">x</a> \
+         <img srcset=\"y.png 2x\" src=\"https://x.com/y.png\" alt=\"y\"></p>\n",
+        60,
+    );
+    assert_eq!(links_of(&rows), ["https://x.com/y.png", "https://x.com"]);
+}
+
+/// A link written over lines is a link: the words between the tags begin
+/// and end at a line break, which is no byte of the source.
+///
+/// Broken deliberately by taking the link's ends as they are (no narrowing
+/// in `shaped`): it is dropped.
+#[test]
+fn a_link_written_over_lines_is_a_link() {
+    let rows = render("<a href=\"https://x.com\">\n  Click\n</a>\n", 60);
+    assert_eq!(links_of(&rows), ["https://x.com"]);
+}
+
+/// What is put in rather than written -- a camera, an emoji, a break, a
+/// cell's space -- comes from nowhere, wherever it lands.
+///
+/// Broken deliberately by leaving the runs as they were when `keep` takes
+/// spaces off before a break: the camera put after them said it came from
+/// those spaces.
+#[test]
+fn what_is_put_in_comes_from_nowhere() {
+    let rows = render(
+        "<p>foo  </p><img src=\"https://x.com/y.png\" alt=\"cat\"> :x:\n",
+        60,
+    );
+    for (said, from) in sourced(&rows) {
+        if said.contains('\u{1f4f7}') || said.contains('\u{274c}') {
+            assert_eq!(from, None, "{said:?} says it came from {from:?}");
+        }
+    }
+}
+
+/// A cell left open when its table ends is still a cell, and a rule in a
+/// cell is a break between its words rather than a mark nobody can read.
+///
+/// Broken deliberately two ways. Not ending the open cell at `</table>`
+/// in `html::rows`: `b` is lost. And putting the rule in a cell
+/// (`rules: true` for cells): a row holds the private character `lay`
+/// turns into a rule and `grid` does not.
+#[test]
+fn a_table_keeps_its_last_cell_and_a_rule_in_a_cell_is_a_break() {
+    let drawn: Vec<String> = render(
+        "<table><tr><td>a</td><td>b</table>\n\n<table><tr><td>c<hr>d</td></tr></table>\n",
+        40,
+    )
+    .iter()
+    .map(text)
+    .collect();
+    assert!(
+        drawn
+            .iter()
+            .any(|row| row.contains('a') && row.contains('b')),
+        "the last cell is lost: {drawn:#?}"
+    );
+    assert!(
+        drawn.iter().all(|row| !row.contains('\u{e000}')),
+        "a rule in a cell is a mark: {drawn:#?}"
+    );
+    assert!(
+        drawn.iter().any(|row| row.contains('c')) && drawn.iter().any(|row| row.contains('d')),
+        "a cell with a rule in it lost its words: {drawn:#?}"
+    );
+}
+
+/// A link in bold is one link.
+///
+/// Broken deliberately by gathering the tags at every level of `links`, as
+/// it was: the link is on its row twice.
+#[test]
+fn a_link_in_bold_is_one_link() {
+    let rows = render("**<a href=\"https://x.com\">y</a>** z\n", 60);
+    assert_eq!(links_of(&rows), ["https://x.com"]);
+}
+
+/// A reference to a character nobody can read is the replacement
+/// character, as HTML reads it: no NUL and no escape in the page or in
+/// what a copy of it takes.
+///
+/// Broken deliberately by taking the character as numbered (the mapping
+/// left out of `html::references`).
+#[test]
+fn a_reference_to_a_control_is_the_replacement_character() {
+    let drawn: Vec<String> = render("<p>a&#0;b&#x1b;c &amp; d</p>\n", 60)
+        .iter()
+        .map(text)
+        .collect();
+    assert_eq!(drawn, ["a\u{fffd}b\u{fffd}c & d"]);
+}
+
 /// An item that is a task -- GitHub's `- [x]`, which every pull request's
 /// template is full of -- is its box and then its words, on one row: the
 /// box stands where the bullet would, ticked or not, and the words do not

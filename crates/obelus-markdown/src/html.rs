@@ -27,11 +27,13 @@
 //! cannot read at all. That piece was the one the page showed as words, so
 //! the tags are found here, in the block's own words.
 //!
-//! **Only what GitHub lets through is a tag.** Its sanitizer keeps a list
-//! of names and nothing else ([`ALLOWED`]); anything else between `<` and
-//! `>` is words. Which matters most where it is not a page of GitHub's at
-//! all: an agent writing `Vec<String>` without its backticks wrote a type,
-//! and a tag called `String` taken out of it left `Vec`.
+//! **Only what GitHub lets through is a tag, as it is written in lower
+//! case.** Its sanitizer keeps a list of names and nothing else
+//! ([`ALLOWED`]); anything else between `<` and `>` is words -- and so is a
+//! name of that list written in capitals, `<P>` or `<B>`, which is a type
+//! far more often than it is a tag. Which matters most where it is not a page
+//! of GitHub's at all: an agent writing `Vec<String>` without its backticks
+//! wrote a type, and a tag called `String` taken out of it left `Vec`.
 //!
 //! **What a tag asks for, it gets where the page already draws it.** Bold,
 //! italics, code and a line through are what the stars and backticks ask
@@ -234,9 +236,14 @@ pub(crate) fn tag(said: &str) -> Option<Tag> {
     let name: String = inner
         .chars()
         .take_while(|character| character.is_ascii_alphanumeric())
-        .collect::<String>()
-        .to_ascii_lowercase();
-    // A name GitHub would not keep is not a tag: `Vec<String>` is a type.
+        .collect();
+    // Only as it is written in lower case. HTML does not mind, and nobody
+    // writes it otherwise -- a template, a bot, a person -- while an agent
+    // writing `fn foo<P>(p: P)` or `Vec<S>` without its backticks wrote a
+    // type, and `<P>` taken for a paragraph broke the line in two.
+    if name.chars().any(|character| character.is_ascii_uppercase()) {
+        return None;
+    } // A name GitHub would not keep is not a tag: `Vec<String>` is a type.
     if !ALLOWED.contains(&name.as_str()) {
         return None;
     }
@@ -275,7 +282,10 @@ fn attribute(said: &str, name: &str) -> Option<Range<usize>> {
     while let Some(at) = lower.get(from..)?.find(name) {
         let at = from + at;
         from = at + name.len();
-        // A whole attribute's name, not the end of another one's.
+        // A whole attribute's name, not the end of another one's nor the
+        // start of one -- `hreflang` before the `href`, `srcset` before the
+        // `src` -- and one with a value: an attribute that is only its name
+        // is not the one being asked for either.
         if lower[..at]
             .chars()
             .last()
@@ -284,7 +294,9 @@ fn attribute(said: &str, name: &str) -> Option<Range<usize>> {
             continue;
         }
         let after = &said[from..];
-        let rest = after.trim_start().strip_prefix('=')?;
+        let Some(rest) = after.trim_start().strip_prefix('=') else {
+            continue;
+        };
         let rest_at = said.len() - rest.len();
         let value = rest.trim_start();
         let value_at = rest_at + (rest.len() - value.len());
@@ -408,8 +420,9 @@ pub(crate) fn links(tags: &[Tag]) -> Vec<(Range<usize>, String)> {
 /// Every shortcode in a text that names an emoji, and the emoji.
 ///
 /// `:` a name `:`, the name in the letters, digits and marks GitHub's table
-/// writes them in. A pair of colons round anything else -- a time, a path
-/// on Windows, Rust's `::` -- is left as it is.
+/// writes them in, and with neither words nor more colons against it. A
+/// pair of colons round anything else -- a time, a path on Windows, Rust's
+/// `::`, even round a name that is in the table -- is left as it is.
 pub(crate) fn shortcodes(text: &str) -> Vec<(Range<usize>, &'static str)> {
     let mut found = Vec::new();
     let mut from = 0;
@@ -422,9 +435,17 @@ pub(crate) fn shortcodes(text: &str) -> Vec<(Range<usize>, &'static str)> {
             })
             .unwrap_or(rest.len())];
         let closed = rest[name.len()..].starts_with(':');
-        match (closed, emojis::get_by_shortcode(name)) {
+        // Words either side, or more colons, and it is not a shortcode but
+        // the middle of something else: `serde::de::Error` is a path, and
+        // `de` names a flag.
+        let end = start + 1 + name.len() + 1;
+        let alone = |character: Option<char>| {
+            character.is_none_or(|character| !character.is_alphanumeric() && character != ':')
+        };
+        let apart = alone(text[..start].chars().last())
+            && alone(text.get(end..).and_then(|after| after.chars().next()));
+        match (closed && apart, emojis::get_by_shortcode(name)) {
             (true, Some(emoji)) if !name.is_empty() => {
-                let end = start + 1 + name.len() + 1;
                 found.push((start..end, emoji.as_str()));
                 from = end;
             }
@@ -442,7 +463,13 @@ pub(crate) fn references(text: &str) -> Vec<(Range<usize>, String)> {
     while let Some(at) = text.get(from..).and_then(|rest| rest.find('&')) {
         let start = from + at;
         let rest = &text[start + 1..];
-        let Some(end) = rest.find(';').filter(|end| *end <= 10) else {
+        // Looked for only as far as a reference can be long: a page of
+        // ampersands with one semicolon at its end is not a page of
+        // searches to that end.
+        let Some(end) = rest
+            .get(..rest.len().min(11))
+            .and_then(|near| near.find(';'))
+        else {
             from = start + 1;
             continue;
         };
@@ -462,7 +489,18 @@ pub(crate) fn references(text: &str) -> Vec<(Range<usize>, String)> {
                     name.strip_prefix('#')
                         .and_then(|decimal| decimal.parse().ok())
                 })
-                .and_then(char::from_u32),
+                .and_then(char::from_u32)
+                // What HTML reads a control or a noncharacter as: a reference
+                // is no way to put a NUL or an escape in the page, or in what
+                // a copy of it takes.
+                .map(|character| match character {
+                    '\0'..='\u{8}' | '\u{b}' | '\u{e}'..='\u{1f}' | '\u{7f}'..='\u{9f}' => {
+                        '\u{fffd}'
+                    }
+                    '\u{fdd0}'..='\u{fdef}' => '\u{fffd}',
+                    other if u32::from(other) & 0xfffe == 0xfffe => '\u{fffd}',
+                    other => other,
+                }),
         };
         match character {
             Some(character) => {
@@ -531,6 +569,18 @@ pub(crate) fn rows(tags: &[Tag]) -> Vec<Vec<Cell>> {
     let mut depth = 0usize;
     for tag in tags {
         if tag.name == "table" {
+            // The end of this table ends the cell left open in it, the way
+            // the next cell would have.
+            if tag.closing
+                && depth == 1
+                && let Some((start, heading)) = cell.take()
+                && let Some(row) = rows.last_mut()
+            {
+                row.push(Cell {
+                    words: start..tag.range.start,
+                    heading,
+                });
+            }
             depth = match tag.closing {
                 false => depth + 1,
                 true => depth.saturating_sub(1),
