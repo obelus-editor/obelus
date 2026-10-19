@@ -1385,18 +1385,32 @@ fn the_filter_s_row_says_what_the_keys_do_to_a_theme() {
             .unwrap_or_default()
             .to_string()
     };
+    // Walked to rather than typed for: on a Mac the key the page calls
+    // delete is backspace, which the filter keeps while anything is in it,
+    // so with a query typed `Remove` is rightly not said there.
+    let walk_to = |app: &mut App, name: &str| {
+        for _ in 0..8 {
+            let settings = app.settings().expect("the settings");
+            let on = settings
+                .themes(&app.listed_themes())
+                .get(settings.focus())
+                .map(|card| card.theme.name.clone());
+            if on.as_deref() == Some(name) {
+                return;
+            }
+            support::press(app, KeyCode::Down);
+        }
+        panic!("no card for {name}");
+    };
     on_the_themes_page(&mut app);
-    support::type_text(&mut app, "spare");
+    walk_to(&mut app, "spare");
     let spare = status(&mut app);
     assert!(
         spare.contains("Use") && spare.contains("Remove"),
         "{spare:?}"
     );
 
-    for _ in 0.."spare".len() {
-        support::press(&mut app, KeyCode::Backspace);
-    }
-    support::type_text(&mut app, "current");
+    walk_to(&mut app, "current");
     let worn = status(&mut app);
     assert!(!worn.contains("Remove"), "{worn:?}");
 }
