@@ -284,7 +284,7 @@ fn the_pull_requests_tabs_wear_their_pages_marks() {
     );
     obelus_icons::use_glyphs(true);
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     let dump = support::render(&mut app, 60, 12);
     let text = support::text_block(&dump);
     assert!(

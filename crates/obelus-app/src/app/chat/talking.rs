@@ -2614,6 +2614,16 @@ impl App {
         // by the first letter of the next -- either may already be on its
         // way down when a question comes.
         self.at_work();
+        // Back to the page the conversation is about, on the key that came
+        // here from it -- before anything in the conversation has the key,
+        // because nothing in it is typed with alt.
+        if obelus_keymap::modifiers_of(key) == Some(crossterm::event::KeyModifiers::ALT)
+            && key.code == crossterm::event::KeyCode::Char('a')
+            && let Some(asked) = self.page_of_the_conversation()
+        {
+            self.open_the_discussion(asked);
+            return true;
+        }
         self.offer_to_the_conversation(key)
     }
 

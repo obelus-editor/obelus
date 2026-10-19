@@ -1589,9 +1589,9 @@ impl StatusView<'_> {
         cells: &mut CellBuffer,
         style: Style,
     ) {
-        let what = match page.about() {
-            obelus_component::discussion::About::PullRequest(_) => "Pull request",
-            obelus_component::discussion::About::Issue(_) => "Issue",
+        let what = match page.asked() {
+            obelus_component::discussion::Asked::PullRequest(_) => "Pull request",
+            obelus_component::discussion::Asked::Issue(_) => "Issue",
         };
         let name = match obelus_icons::enabled() {
             true => format!(

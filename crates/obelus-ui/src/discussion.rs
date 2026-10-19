@@ -228,11 +228,11 @@ pub fn caret(area: Rect, page: &DiscussionView) -> Option<Position> {
 pub fn hints(page: &DiscussionView, elsewhere: bool) -> Vec<crate::Hint> {
     use crossterm::event::{KeyCode, KeyModifiers};
     let chord = obelus_keymap::KeyChord::new;
-    let what = match page.about() {
-        obelus_component::discussion::About::PullRequest(_) => {
+    let what = match page.asked() {
+        obelus_component::discussion::Asked::PullRequest(_) => {
             "Ask the agent to review this pull request"
         }
-        obelus_component::discussion::About::Issue(_) => "Ask the agent to answer this issue",
+        obelus_component::discussion::Asked::Issue(_) => "Ask the agent to answer this issue",
     };
     vec![
         crate::Hint::new(chord(KeyCode::Char('a'), KeyModifiers::ALT), "Talk")

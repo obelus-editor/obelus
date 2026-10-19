@@ -644,7 +644,14 @@ fn said_width((word, tick): &(String, Option<bool>)) -> usize {
 /// escape are about; `modes` whether the agent has more than one way of
 /// working to step through.
 #[must_use]
-pub fn hints(chat: &Chat, thinking: bool, modes: bool) -> Vec<crate::Hint> {
+/// `about` is the pull request or issue the conversation is about, whose
+/// page `alt+a` goes to -- the key the page came here by.
+pub fn hints(
+    chat: &Chat,
+    thinking: bool,
+    modes: bool,
+    about: Option<obelus_component::discussion::Asked>,
+) -> Vec<crate::Hint> {
     use crate::Hint;
 
     let chord = obelus_keymap::KeyChord::new;
@@ -696,6 +703,13 @@ pub fn hints(chat: &Chat, thinking: bool, modes: bool) -> Vec<crate::Hint> {
         ],
     };
     hints.extend(ends);
+    if let Some(about) = about {
+        let what = match about {
+            obelus_component::discussion::Asked::PullRequest(_) => "Go to the pull request's page",
+            obelus_component::discussion::Asked::Issue(_) => "Go to the issue's page",
+        };
+        hints.push(Hint::new(chord(KeyCode::Char('a'), KeyModifiers::ALT), "Read").about(what));
+    }
     hints
 }
 
@@ -2326,7 +2340,7 @@ mod tests {
         let mut chat = obelus_component::chat::Chat::new();
         chat.note("Something was said.");
         let does = |chat: &obelus_component::chat::Chat| -> Vec<&'static str> {
-            super::hints(chat, false, false)
+            super::hints(chat, false, false, None)
                 .into_iter()
                 .filter(|hint| hint.here)
                 .filter_map(|hint| hint.does)

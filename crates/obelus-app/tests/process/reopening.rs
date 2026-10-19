@@ -692,3 +692,82 @@ fn a_loose_conversation_put_back_is_listed_as_this_windows() {
         "the conversation open here is listed as somebody else's"
     );
 }
+
+/// Hands `app` a `gh` that answers from `answer`, the way the application's
+/// own tests stand one in.
+fn fake_gh(app: &mut App, answer: &Path) {
+    // Whole, because it runs in the tree and not in this crate.
+    let script = std::path::absolute("tests/fixtures/fake-gh.sh").expect("a directory");
+    app.gh_for_test(
+        std::path::PathBuf::from(support::sh()),
+        vec![script.display().to_string(), answer.display().to_string()],
+    );
+}
+
+/// Handles what arrives until `until` says so, drawing as it goes.
+fn wait(
+    app: &mut App,
+    events: &std::sync::mpsc::Receiver<obelus_app::event::Event>,
+    what: &str,
+    until: impl Fn(&mut App) -> bool,
+) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !until(app) {
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        let event = events
+            .recv_timeout(left)
+            .unwrap_or_else(|_| panic!("gave up waiting for {what}"));
+        app.handle(event);
+        frame(app);
+    }
+}
+
+/// A pull request being read comes back by its number, and is told what
+/// it is called by `gh` when it is shown -- with no list asked, which is
+/// what a page opened in the last window was opened from.
+///
+/// Broken deliberately twice: leaving pages out of `what_is_open` brought
+/// nothing back, and leaving the row out of what `told` takes kept the
+/// page on its number alone, with no title, for good.
+#[test]
+fn a_pull_request_being_read_comes_back() {
+    let _turn = crate::turn();
+    let scratch = tree("reopening-pull-request", true);
+    let root = scratch.path();
+    let answer = root.join("gh-answer.json");
+    std::fs::write(
+        &answer,
+        r#"[{"number":123,"title":"As the list says","author":{"login":"alice"},"headRefName":"keep-fold","baseRefName":"master","headRefOid":"abc","isDraft":false,"reviewDecision":"","updatedAt":""}]"#,
+    )
+    .expect("the list");
+    std::fs::write(
+        root.join("gh-answer.json.view.123"),
+        r#"{"number":123,"title":"As gh pr view says","author":{"login":"alice"},"headRefName":"keep-fold","baseRefName":"master","headRefOid":"abc","isDraft":false,"reviewDecision":"","updatedAt":"","body":"What it does."}"#,
+    )
+    .expect("the page");
+
+    let mut first = startup::start(&[root.join("a.rs")], BUILT).expect("starting");
+    let events = support::drive(&mut first);
+    fake_gh(&mut first, &answer);
+    obelus_app::app::dispatch::dispatch(&mut first, obelus_command::Command::ShowPullRequests);
+    wait(&mut first, &events, "the list", |app| {
+        app.picker().is_some_and(|picker| picker.row_count() == 1)
+    });
+    support::press(&mut first, KeyCode::Enter);
+    frame(&mut first);
+    drop(first);
+
+    let mut second = start_again(&[root.to_path_buf()]);
+    fake_gh(&mut second, &answer);
+    let page = |app: &App| {
+        app.current_document_for_test()
+            .and_then(|id| app.document(id))
+            .and_then(Document::discussion)
+            .map(|page| page.number())
+    };
+    assert_eq!(page(&second), Some(123), "the page did not come back");
+    let events = support::drive(&mut second);
+    wait(&mut second, &events, "what gh says of it", |app| {
+        support::render(app, 80, 24).contains("As gh pr view says")
+    });
+}

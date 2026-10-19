@@ -102,9 +102,9 @@ pub enum Command {
     HistoryFile,
     /// Every commit in the project.
     HistoryProject,
-    /// The repository's open pull requests and issues, one of which the
-    /// agent reviews or answers.
-    PullRequestReview,
+    /// The repository's open pull requests and issues, one of which is
+    /// opened to be read.
+    ShowPullRequests,
     /// Fold the run of lines the cursor is in, or unfold the one it is on.
     Fold,
     /// Fold every run in the file.
@@ -630,9 +630,9 @@ pub const ALL: &[CommandSpec] = &[
         title: "Every commit in this project",
     },
     CommandSpec {
-        command: Command::PullRequestReview,
-        name: "review-pull-request",
-        title: "Open pull requests and issues, for the agent to review or answer",
+        command: Command::ShowPullRequests,
+        name: "show-pull-requests",
+        title: "The open pull requests and issues, to read one",
     },
     CommandSpec {
         command: Command::Fold,
@@ -870,7 +870,7 @@ impl Command {
             | Self::GoBracket
             | Self::HistoryFile
             | Self::HistoryProject
-            | Self::PullRequestReview
+            | Self::ShowPullRequests
             | Self::Fold
             | Self::FoldAll
             | Self::UnfoldAll
@@ -959,7 +959,7 @@ impl Command {
             | Self::SymbolOutline
             | Self::HistoryFile
             | Self::HistoryProject
-            | Self::PullRequestReview
+            | Self::ShowPullRequests
             | Self::CountLines
             | Self::ConfigOpen
             | Self::ConfigProject
@@ -1042,7 +1042,7 @@ impl Command {
             | Self::SymbolOutline
             | Self::HistoryFile
             | Self::HistoryProject
-            | Self::PullRequestReview
+            | Self::ShowPullRequests
             | Self::CountLines
             | Self::ConfigOpen
             | Self::ConfigProject
@@ -1191,7 +1191,7 @@ impl Command {
             | Self::GitNext
             | Self::HistoryFile
             | Self::HistoryProject
-            | Self::PullRequestReview => Group::Git,
+            | Self::ShowPullRequests => Group::Git,
             Self::LspRestart
             | Self::LspStop
             | Self::ConversationNew
@@ -1400,7 +1400,7 @@ impl Command {
             // A project, and not whether `gh` is there or signed in: that
             // takes running it, and the list it opens says which of the two
             // is missing -- a row greyed here would say neither.
-            Self::PullRequestReview => Requires::AProject,
+            Self::ShowPullRequests => Requires::AProject,
             // A file of its own that only exists once a server has said
             // something, which on a file in a language Obelus has no
             // server for is never. Obelus's own log is not this: it is

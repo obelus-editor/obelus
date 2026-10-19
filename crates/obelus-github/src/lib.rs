@@ -44,11 +44,16 @@ const CHANGED_PAGES: usize = 3;
 ///
 /// Not in the list. The counts are what GitHub gave up on: asked of every
 /// row of a thousand, a page took a minute and ended in a 502.
-const VIEWED: &str =
-    "body,additions,deletions,changedFiles,updatedAt,comments,reviews,statusCheckRollup";
+///
+/// And the row as well, which the list has already: a page opened again
+/// after a restart, or from its conversation, is opened by its number alone,
+/// with no list asked -- and this is the one answer it waits on anyway.
+const VIEWED: &str = "number,title,author,headRefName,baseRefName,headRefOid,isDraft,\
+                      reviewDecision,body,additions,deletions,changedFiles,updatedAt,\
+                      comments,reviews,statusCheckRollup";
 
 /// And `gh issue view`, which has no counts and no checks to say.
-const ISSUE_VIEWED: &str = "body,updatedAt,comments";
+const ISSUE_VIEWED: &str = "number,title,author,labels,body,updatedAt,comments";
 
 /// One open pull request, as `gh` described it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -134,6 +139,44 @@ impl Asked {
     }
 }
 
+/// One pull request or issue, as a row of the list describes it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum About {
+    /// A pull request.
+    PullRequest(PullRequest),
+    /// An issue.
+    Issue(Issue),
+}
+
+impl About {
+    /// Its number, which GitHub shares between the two.
+    #[must_use]
+    pub const fn number(&self) -> u64 {
+        match self {
+            Self::PullRequest(pull) => pull.number,
+            Self::Issue(issue) => issue.number,
+        }
+    }
+
+    /// What its author called it.
+    #[must_use]
+    pub fn title(&self) -> &str {
+        match self {
+            Self::PullRequest(pull) => &pull.title,
+            Self::Issue(issue) => &issue.title,
+        }
+    }
+
+    /// What `gh` is asked about it.
+    #[must_use]
+    pub const fn asked(&self) -> Asked {
+        match self {
+            Self::PullRequest(pull) => Asked::PullRequest(pull.number),
+            Self::Issue(issue) => Asked::Issue(issue.number),
+        }
+    }
+}
+
 /// Which way a list is asked to grow.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Toward {
@@ -207,6 +250,8 @@ pub enum Listed<T> {
 /// on it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Discussion {
+    /// What its row says, as `gh` said it with the rest -- where it did.
+    pub about: Option<About>,
     /// When it last changed, as GitHub says it -- which the list's word on
     /// it is checked against before asking again.
     pub stamp: String,
@@ -542,44 +587,47 @@ fn unread() -> Unlisted {
 
 /// A page of issues as GitHub described them, newest first.
 fn read_issues(rows: &[serde_json::Value]) -> Vec<Issue> {
+    let mut issues: Vec<Issue> = rows.iter().filter_map(read_issue).collect();
+    issues.sort_by_key(|issue| std::cmp::Reverse(issue.updated));
+    issues
+}
+
+/// One issue, as a row of the list or as `gh issue view` describes it.
+fn read_issue(row: &serde_json::Value) -> Option<Issue> {
     let text = |row: &serde_json::Value, key: &str| {
         row.get(key)
             .and_then(serde_json::Value::as_str)
             .unwrap_or_default()
             .to_string()
     };
-    let mut issues: Vec<Issue> = rows
-        .iter()
-        .filter_map(|row| {
-            let stamp = text(row, "updatedAt");
-            Some(Issue {
-                number: row.get("number")?.as_u64()?,
-                title: text(row, "title"),
-                author: row
-                    .get("author")
-                    .map(|author| text(author, "login"))
-                    .unwrap_or_default(),
-                labels: row
-                    .pointer("/labels/nodes")
-                    .and_then(serde_json::Value::as_array)
-                    .map(|labels| {
-                        labels
-                            .iter()
-                            .map(|label| text(label, "name"))
-                            .filter(|name| !name.is_empty())
-                            .collect()
-                    })
-                    .unwrap_or_default(),
-                updated: stamp
-                    .parse::<jiff::Timestamp>()
-                    .ok()
-                    .map(jiff::Timestamp::as_second),
-                stamp,
+    let stamp = text(row, "updatedAt");
+    Some(Issue {
+        number: row.get("number")?.as_u64()?,
+        title: text(row, "title"),
+        author: row
+            .get("author")
+            .map(|author| text(author, "login"))
+            .unwrap_or_default(),
+        // A connection of them from GraphQL, which is what the list asks;
+        // the bare list from `gh issue view`, which is what a page asks.
+        labels: row
+            .pointer("/labels/nodes")
+            .or_else(|| row.get("labels"))
+            .and_then(serde_json::Value::as_array)
+            .map(|labels| {
+                labels
+                    .iter()
+                    .map(|label| text(label, "name"))
+                    .filter(|name| !name.is_empty())
+                    .collect()
             })
-        })
-        .collect();
-    issues.sort_by_key(|issue| std::cmp::Reverse(issue.updated));
-    issues
+            .unwrap_or_default(),
+        updated: stamp
+            .parse::<jiff::Timestamp>()
+            .ok()
+            .map(jiff::Timestamp::as_second),
+        stamp,
+    })
 }
 
 /// Asks `gh` what has been said about one pull request or issue since it
@@ -598,13 +646,13 @@ pub fn discussion(
             &["issue", "view", &number, "--json", ISSUE_VIEWED],
         )?,
     };
-    read_discussion(&said)
+    read_discussion(&said, asked)
 }
 
 /// What `gh pr view --json` printed with [`VIEWED`] -- or `gh issue view`
 /// with [`ISSUE_VIEWED`], which is the same with what an issue has nothing
 /// for left out.
-fn read_discussion(said: &str) -> Result<Discussion, Unlisted> {
+fn read_discussion(said: &str, asked: Asked) -> Result<Discussion, Unlisted> {
     let read: serde_json::Value = serde_json::from_str(said)
         .map_err(|error| Unlisted::Failed(format!("its answer did not read: {error}")))?;
     let text = |value: &serde_json::Value, key: &str| {
@@ -692,7 +740,15 @@ fn read_discussion(said: &str) -> Result<Discussion, Unlisted> {
             .and_then(serde_json::Value::as_u64)
             .unwrap_or(0)
     };
+    // Only where it says the number asked about: a `gh` that answered
+    // about something else has not said what this one is called.
+    let about = match asked {
+        Asked::PullRequest(_) => read_pull(&read).map(About::PullRequest),
+        Asked::Issue(_) => read_issue(&read).map(About::Issue),
+    }
+    .filter(|about| about.number() == asked.number());
     Ok(Discussion {
+        about,
         stamp: text(&read, "updatedAt"),
         // As `\n`, which is what the markdown is laid out by: a
         // description written in GitHub's own box arrives with `\r\n`, and
@@ -773,49 +829,50 @@ fn refusal(status: std::process::ExitStatus, said: &str) -> Unlisted {
 
 /// A page of pull requests as GitHub described them, newest first.
 fn read(rows: &[serde_json::Value]) -> Vec<PullRequest> {
+    let mut pulls: Vec<PullRequest> = rows.iter().filter_map(read_pull).collect();
+    // Newest first, by when each last changed rather than by number: a pull
+    // request somebody pushed to this morning is the one being looked for.
+    pulls.sort_by_key(|pull| std::cmp::Reverse(pull.updated));
+    pulls
+}
+
+/// One pull request, as a row of the list or as `gh pr view` describes it --
+/// which name every field alike.
+fn read_pull(row: &serde_json::Value) -> Option<PullRequest> {
     let text = |row: &serde_json::Value, key: &str| {
         row.get(key)
             .and_then(serde_json::Value::as_str)
             .unwrap_or_default()
             .to_string()
     };
-    let mut pulls: Vec<PullRequest> = rows
-        .iter()
-        .filter_map(|row| {
-            let stamp = text(row, "updatedAt");
-            Some(PullRequest {
-                number: row.get("number")?.as_u64()?,
-                title: text(row, "title"),
-                author: row
-                    .get("author")
-                    .and_then(|author| author.get("login"))
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or_default()
-                    .to_string(),
-                head: text(row, "headRefName"),
-                base: text(row, "baseRefName"),
-                sha: text(row, "headRefOid"),
-                draft: row
-                    .get("isDraft")
-                    .and_then(serde_json::Value::as_bool)
-                    .unwrap_or(false),
-                decision: match text(row, "reviewDecision").as_str() {
-                    "APPROVED" => Some(Decision::Approved),
-                    "CHANGES_REQUESTED" => Some(Decision::ChangesRequested),
-                    _ => None,
-                },
-                updated: stamp
-                    .parse::<jiff::Timestamp>()
-                    .ok()
-                    .map(jiff::Timestamp::as_second),
-                stamp,
-            })
-        })
-        .collect();
-    // Newest first, by when each last changed rather than by number: a pull
-    // request somebody pushed to this morning is the one being looked for.
-    pulls.sort_by_key(|pull| std::cmp::Reverse(pull.updated));
-    pulls
+    let stamp = text(row, "updatedAt");
+    Some(PullRequest {
+        number: row.get("number")?.as_u64()?,
+        title: text(row, "title"),
+        author: row
+            .get("author")
+            .and_then(|author| author.get("login"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        head: text(row, "headRefName"),
+        base: text(row, "baseRefName"),
+        sha: text(row, "headRefOid"),
+        draft: row
+            .get("isDraft")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
+        decision: match text(row, "reviewDecision").as_str() {
+            "APPROVED" => Some(Decision::Approved),
+            "CHANGES_REQUESTED" => Some(Decision::ChangesRequested),
+            _ => None,
+        },
+        updated: stamp
+            .parse::<jiff::Timestamp>()
+            .ok()
+            .map(jiff::Timestamp::as_second),
+        stamp,
+    })
 }
 
 #[cfg(test)]
@@ -891,8 +948,45 @@ mod tests {
     #[test]
     fn a_description_reads_with_its_lines_ended_as_markdown_ends_them() {
         let said = r#"{"body":"one  \r\ntwo\r\n"}"#;
-        let discussion = super::read_discussion(said).expect("it reads");
+        let discussion = super::read_discussion(said, super::Asked::Issue(1)).expect("it reads");
         assert_eq!(discussion.body, "one  \ntwo\n");
+    }
+
+    /// What `gh pr view` and `gh issue view` say of the row comes back as
+    /// the row, so a page opened by its number alone is told what it is
+    /// called -- an issue's labels as the bare list `gh issue view` prints,
+    /// not the connection the list's GraphQL has. And not where the answer
+    /// is about another number.
+    ///
+    /// Broken deliberately three ways. Reading the labels only from
+    /// `/labels/nodes`, as the list does: the issue had none. Reading every
+    /// answer as a pull request: the issue had no row. And leaving out the
+    /// filter on the number: the answer about #7 named #8.
+    #[test]
+    fn what_gh_says_about_one_says_what_it_is() {
+        use super::{About, Asked, read_discussion};
+
+        let pull = r#"{"number":7,"title":"Fold","author":{"login":"alice","name":"A"},
+            "headRefName":"fold","baseRefName":"master","headRefOid":"abc","isDraft":false,
+            "reviewDecision":"APPROVED","updatedAt":"2026-10-04T00:00:00Z","body":""}"#;
+        let read = read_discussion(pull, Asked::PullRequest(7)).expect("it reads");
+        let Some(About::PullRequest(row)) = read.about else {
+            panic!("no row: {:?}", read.about);
+        };
+        assert_eq!(
+            (row.title.as_str(), row.head.as_str(), row.sha.as_str()),
+            ("Fold", "fold", "abc")
+        );
+        let other = read_discussion(pull, Asked::PullRequest(8)).expect("it reads");
+        assert_eq!(other.about, None, "an answer about #7 named #8");
+
+        let issue = r#"{"number":3,"title":"It breaks","author":{"login":"bob"},
+            "labels":[{"id":"x","name":"bug","color":"red"}],"updatedAt":"","body":""}"#;
+        let read = read_discussion(issue, Asked::Issue(3)).expect("it reads");
+        let Some(About::Issue(row)) = read.about else {
+            panic!("no row: {:?}", read.about);
+        };
+        assert_eq!(row.labels, ["bug"]);
     }
 
     /// What `gh pr view` prints reads as how much it changes, when it last
@@ -929,7 +1023,7 @@ mod tests {
                 {"author":{"login":"bob"},"state":"COMMENTED","submittedAt":"2026-10-02T00:00:00Z","body":""}
             ]
         }"#;
-        let discussion = read_discussion(said).expect("it reads");
+        let discussion = read_discussion(said, super::Asked::PullRequest(7)).expect("it reads");
         assert_eq!(
             (
                 discussion.stamp.as_str(),
