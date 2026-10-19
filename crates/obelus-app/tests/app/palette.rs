@@ -196,26 +196,29 @@ fn a_press_on_the_query_is_in_the_palette() {
     );
 }
 
-/// A key naming a view, from the palette over the names, goes past the
-/// palette and the names both: the palette is the reader still in the
-/// names, and the names give way.
+/// A key naming a view, from the palette over a list that has the screen,
+/// goes past the palette and the list both: the palette is the reader still
+/// in the list, and the list gives way.
+///
+/// Over a search rather than the names it was first written over: a list
+/// on the status bar is let go of before the palette opens, so the palette
+/// is never over one.
 ///
 /// Broken deliberately by having the palette answer for itself in
 /// `gives_way_to_a_view` rather than be passed over, and say no: `f1` did
-/// nothing from the palette that it does from the names.
+/// nothing from the palette that it does from the search.
 #[test]
-fn the_palette_over_the_names_is_asked_as_the_names_are() {
+fn the_palette_over_a_list_is_asked_as_the_list_is() {
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     support::lay_out(&mut app, WIDTH, HEIGHT);
-    app.open_names("fonts");
+    support::press_function(&mut app, 5);
     support::press_control(&mut app, 'p');
     assert!(
         app.palette().is_some(),
-        "the palette did not open over the names"
+        "the palette did not open over the search"
     );
     support::press_function(&mut app, 1);
     assert!(app.palette().is_none(), "the palette stayed up");
-    assert!(app.names().is_none(), "the names kept the key");
     assert!(
         app.picker().is_some_and(|picker| picker.is_listing()),
         "f1 did not go to the files"
