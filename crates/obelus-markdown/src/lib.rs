@@ -82,6 +82,7 @@ pub fn render(source: &str, width: u16) -> Vec<Row> {
         source,
         highlights,
         inline,
+        quoted: 0,
         rows: Vec::new(),
         owed: None,
     };
@@ -152,6 +153,8 @@ struct Laying<'a> {
     highlights: Highlights,
     /// The parsed insides of every paragraph, by where each one sits.
     inline: Vec<(Range<usize>, Node<'a>)>,
+    /// How many quotes deep the block being laid out is.
+    quoted: usize,
     rows: Vec<Row>,
     /// The marks the next row owes, in place of its own left margin.
     ///
@@ -282,7 +285,7 @@ impl Laying<'_> {
         let inline = node
             .children(&mut node.walk())
             .find(|child| child.kind() == "inline");
-        self.said(inline.unwrap_or(node), width, prefix, Ink::Plain);
+        self.said(inline.unwrap_or(node), width, prefix, self.words());
     }
 
     /// A run of words: gathered, wrapped, and inked by what is in it.
@@ -327,13 +330,13 @@ impl Laying<'_> {
             let (Some(first), Some(last)) = (tags.get(open), tags.get(close)) else {
                 continue;
             };
-            let before = shaped(&gathered, at..first.range.start, &tags);
+            let before = shaped(&gathered, at..first.range.start, &tags, self.words());
             self.lay(&before, width, prefix);
             let rows: Vec<Vec<Shaped>> = html::rows(&tags[open..=close])
                 .into_iter()
                 .map(|row| {
                     row.into_iter()
-                        .map(|cell| shaped(&gathered, cell.words, &tags))
+                        .map(|cell| shaped(&gathered, cell.words, &tags, self.words()))
                         .collect()
                 })
                 .collect();
@@ -346,7 +349,7 @@ impl Laying<'_> {
             self.grid(&rows, &[], heading, width, prefix);
             at = last.range.end;
         }
-        let after = shaped(&gathered, at..gathered.text.len(), &tags);
+        let after = shaped(&gathered, at..gathered.text.len(), &tags, self.words());
         self.lay(&after, width, prefix);
     }
 
@@ -398,7 +401,24 @@ impl Laying<'_> {
         // the way down, and a reader skimming the left edge is reading that
         // column rather than counting rows.
         let inside = prefix.and(vec![mark("\u{2503} ")], 2);
+        self.quoted += 1;
         self.blocks(node, width, &inside);
+        self.quoted -= 1;
+    }
+
+    /// The ink words that ask for nothing are drawn in here.
+    ///
+    /// The page's own, and in a quote the one Obelus says the lesser things
+    /// in: a comment that quotes the one before it is mostly the one before
+    /// it, and with both in one colour nothing but the bar down the edge
+    /// said which words were whose -- GitHub greys a quote for the same
+    /// reason. What the words ask for is still worn over it: code is code
+    /// and bold is bold in a quote too.
+    const fn words(&self) -> Ink {
+        match self.quoted {
+            0 => Ink::Plain,
+            _ => Ink::Aside,
+        }
     }
 
     /// A list: every item, with the mark its kind wears.
@@ -592,7 +612,7 @@ impl Laying<'_> {
             .iter()
             .find(|(range, _)| range.start >= said.start && range.end <= said.end)
             .map(|(_, root)| *root);
-        let (shown, looks) = stripped(&gathered, Ink::Plain, inside);
+        let (shown, looks) = stripped(&gathered, self.words(), inside);
         let links = inside.map_or_else(Vec::new, |inside| links(inside, self.source));
         Shaped {
             shown,
@@ -903,7 +923,7 @@ struct Shaped {
 /// A stretch of a block of HTML -- the whole of it, or one cell of a table
 /// in it -- as words: its tags taken out and what they ask for worn or put
 /// in their place, its character references and shortcodes what they name.
-fn shaped(gathered: &Gathered, range: Range<usize>, tags: &[html::Tag]) -> Shaped {
+fn shaped(gathered: &Gathered, range: Range<usize>, tags: &[html::Tag], ink: Ink) -> Shaped {
     let part = Gathered {
         text: gathered
             .text
@@ -923,7 +943,7 @@ fn shaped(gathered: &Gathered, range: Range<usize>, tags: &[html::Tag]) -> Shape
         .collect();
     let mut looks = vec![
         Look {
-            ink: Some(Ink::Plain),
+            ink: Some(ink),
             ..Look::default()
         };
         part.text.len()

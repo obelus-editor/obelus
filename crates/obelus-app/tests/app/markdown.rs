@@ -338,6 +338,29 @@ fn a_picture_is_its_words_and_a_link_to_it() {
     );
 }
 
+/// What a quote says is drawn in the lesser ink, so that a comment quoting
+/// the one before it says which words are whose -- and what its words ask
+/// for is still worn: code in a quote is code. Words after the quote are
+/// the page's own again.
+///
+/// Broken deliberately by answering the page's own ink from `words` in a
+/// quote too: the quoted words are in it.
+#[test]
+fn a_quote_is_drawn_in_the_lesser_ink() {
+    let rows = render("> > theirs\n>\n> quoted `code`\n\nmine\n", 40);
+    let span = |words: &str| {
+        rows.iter()
+            .flat_map(|row| &row.spans)
+            .find(|span| span.text.contains(words))
+            .cloned()
+            .unwrap_or_else(|| panic!("no {words:?}: {rows:?}"))
+    };
+    assert_eq!(span("theirs").ink, Ink::Aside, "a quote in a quote is not");
+    assert_eq!(span("quoted").ink, Ink::Aside, "a quote is not");
+    assert_eq!(span("code").ink, Ink::Code, "code in a quote is not code");
+    assert_eq!(span("mine").ink, Ink::Plain, "the words after it are not");
+}
+
 /// An item that is a task -- GitHub's `- [x]`, which every pull request's
 /// template is full of -- is its box and then its words, on one row: the
 /// box stands where the bullet would, ticked or not, and the words do not
