@@ -31,7 +31,7 @@ use std::ops::Range;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 pub use obelus_github::{
-    Asked, Check, Comment, Did, Discussion, Issue, PullRequest, Stands, Unlisted,
+    About, Asked, Check, Comment, Did, Discussion, Issue, PullRequest, Stands, Unlisted,
 };
 use obelus_row::{Ink, Span};
 
@@ -39,44 +39,6 @@ use crate::{
     page::{Hold, Place},
     window::Window,
 };
-
-/// What is being read: the row the list had for it, which is what names it.
-#[derive(Clone, Debug)]
-pub enum About {
-    /// A pull request.
-    PullRequest(PullRequest),
-    /// An issue.
-    Issue(Issue),
-}
-
-impl About {
-    /// Its number, which GitHub shares between the two.
-    #[must_use]
-    pub const fn number(&self) -> u64 {
-        match self {
-            Self::PullRequest(pull) => pull.number,
-            Self::Issue(issue) => issue.number,
-        }
-    }
-
-    /// What its author called it.
-    #[must_use]
-    pub fn title(&self) -> &str {
-        match self {
-            Self::PullRequest(pull) => &pull.title,
-            Self::Issue(issue) => &issue.title,
-        }
-    }
-
-    /// What `gh` is asked about it.
-    #[must_use]
-    pub const fn asked(&self) -> Asked {
-        match self {
-            Self::PullRequest(pull) => Asked::PullRequest(pull.number),
-            Self::Issue(issue) => Asked::Issue(issue.number),
-        }
-    }
-}
 
 /// Which text of the page a row was laid out from.
 ///
@@ -250,44 +212,59 @@ pub enum Heard<'a> {
 ///
 /// The list's preview and the page are both this, so the two cannot show
 /// different things.
+///
+/// `about` is the row naming it, which a page opened by its number alone
+/// has not got until `gh` says: until then the number is all that names it.
 #[must_use]
-pub fn lay_out(about: &About, heard: Heard<'_>, folding: &Folding, width: u16) -> Vec<Row> {
+pub fn lay_out(
+    asked: Asked,
+    about: Option<&About>,
+    heard: Heard<'_>,
+    folding: &Folding,
+    width: u16,
+) -> Vec<Row> {
     let said = match heard {
         Heard::Said(said) => Some(said),
         Heard::Asking | Heard::Refused(_) => None,
     };
     let now = std::time::SystemTime::now();
     let mut rows = Vec::new();
-    match about {
-        About::PullRequest(pull) => {
-            let mut named = format!(
+    let named = match about {
+        Some(About::PullRequest(pull)) => {
+            let named = format!(
                 "#{}   {}   {} \u{2192} {}",
                 pull.number, pull.author, pull.head, pull.base
             );
-            if let Some(updated) = pull.updated {
-                named.push_str(&format!("   {}", obelus_git::how_long_ago(updated, now)));
-            }
-            rows.push(Row::said(vec![Span::new(named, Ink::Aside)]));
-            if let Some(said) = said {
-                let files = match said.files {
-                    1 => "1 file".to_string(),
-                    files => format!("{files} files"),
-                };
-                rows.push(Row::said(vec![
-                    Span::new(format!("+{}", said.additions), Ink::Added),
-                    Span::new(" ", Ink::Aside),
-                    Span::new(format!("\u{2212}{}", said.deletions), Ink::Removed),
-                    Span::new(format!(" \u{b7} {files}"), Ink::Aside),
-                ]));
-            }
+            (named, pull.updated)
         }
-        About::Issue(issue) => {
-            let mut named = format!("#{}   {}", issue.number, issue.author);
-            if let Some(updated) = issue.updated {
-                named.push_str(&format!("   {}", obelus_git::how_long_ago(updated, now)));
-            }
-            rows.push(Row::said(vec![Span::new(named, Ink::Aside)]));
-            if !issue.labels.is_empty() {
+        Some(About::Issue(issue)) => (
+            format!("#{}   {}", issue.number, issue.author),
+            issue.updated,
+        ),
+        None => (format!("#{}", asked.number()), None),
+    };
+    let (mut named, updated) = named;
+    if let Some(updated) = updated {
+        named.push_str(&format!("   {}", obelus_git::how_long_ago(updated, now)));
+    }
+    rows.push(Row::said(vec![Span::new(named, Ink::Aside)]));
+    match (asked, said) {
+        (Asked::PullRequest(_), Some(said)) => {
+            let files = match said.files {
+                1 => "1 file".to_string(),
+                files => format!("{files} files"),
+            };
+            rows.push(Row::said(vec![
+                Span::new(format!("+{}", said.additions), Ink::Added),
+                Span::new(" ", Ink::Aside),
+                Span::new(format!("\u{2212}{}", said.deletions), Ink::Removed),
+                Span::new(format!(" \u{b7} {files}"), Ink::Aside),
+            ]));
+        }
+        _ => {
+            if let Some(About::Issue(issue)) = about
+                && !issue.labels.is_empty()
+            {
                 rows.push(Row::said(vec![Span::new(
                     issue.labels.join(" \u{b7} "),
                     Ink::Key,
@@ -297,7 +274,7 @@ pub fn lay_out(about: &About, heard: Heard<'_>, folding: &Folding, width: u16) -
     }
     rows.push(Row::default());
     rows.extend(described(
-        about.title(),
+        about.map(About::title),
         said.map(|said| said.body.as_str()),
         width,
     ));
@@ -320,9 +297,9 @@ pub fn lay_out(about: &About, heard: Heard<'_>, folding: &Folding, width: u16) -
         Heard::Asking => {
             // Two blanks in front, where the view puts the mark and the one
             // blank after it.
-            let waiting = match about {
-                About::PullRequest(_) => "  Asking GitHub for its description, checks and comments",
-                About::Issue(_) => "  Asking GitHub for its description and comments",
+            let waiting = match asked {
+                Asked::PullRequest(_) => "  Asking GitHub for its description, checks and comments",
+                Asked::Issue(_) => "  Asking GitHub for its description and comments",
             };
             rows.push(Row {
                 waiting: true,
@@ -331,7 +308,7 @@ pub fn lay_out(about: &About, heard: Heard<'_>, folding: &Folding, width: u16) -
             return rows;
         }
     };
-    if matches!(about, About::PullRequest(_)) {
+    if matches!(asked, Asked::PullRequest(_)) {
         rows.extend(checks(&said.checks, folding));
         rows.push(rule);
     }
@@ -345,8 +322,14 @@ pub fn lay_out(about: &About, heard: Heard<'_>, folding: &Folding, width: u16) -
 ///
 /// With no description until `gh` has said what it is: "No description" is
 /// a thing to say about one that came back empty, not one still asked.
-fn described(title: &str, body: Option<&str>, width: u16) -> Vec<Row> {
-    let source = format!("# {title}\n\n{}", body.unwrap_or_default());
+///
+/// With no title where nobody has said it yet, rather than a heading with
+/// nothing in it.
+fn described(title: Option<&str>, body: Option<&str>, width: u16) -> Vec<Row> {
+    let source = match title {
+        Some(title) => format!("# {title}\n\n{}", body.unwrap_or_default()),
+        None => body.unwrap_or_default().to_string(),
+    };
     let mut rows: Vec<Row> = obelus_markdown::render(&source, width)
         .into_iter()
         .map(|row| Row {
@@ -494,8 +477,10 @@ pub enum Outcome {
 /// A pull request or an issue, while it is open.
 #[derive(Debug)]
 pub struct DiscussionView {
-    /// What is being read.
-    about: About,
+    /// Which one is being read.
+    asked: Asked,
+    /// What its row says, once the list or `gh` has said.
+    about: Option<About>,
     /// What `gh` last said about it.
     said: Option<Discussion>,
     /// Why it said nothing, where it said nothing the last time it was
@@ -520,7 +505,19 @@ impl DiscussionView {
     #[must_use]
     pub fn new(about: About) -> Self {
         Self {
-            about,
+            about: Some(about.clone()),
+            ..Self::asking(about.asked())
+        }
+    }
+
+    /// A page about one known by its number alone -- opened again after a
+    /// restart, or from its conversation in a window whose list has not
+    /// been asked -- until `gh` says what it is.
+    #[must_use]
+    pub fn asking(asked: Asked) -> Self {
+        Self {
+            asked,
+            about: None,
             said: None,
             refused: None,
             folding: Folding::default(),
@@ -531,16 +528,22 @@ impl DiscussionView {
         }
     }
 
-    /// What is being read.
+    /// Which one is being read.
     #[must_use]
-    pub const fn about(&self) -> &About {
-        &self.about
+    pub const fn asked(&self) -> Asked {
+        self.asked
+    }
+
+    /// What its row says, once something has said.
+    #[must_use]
+    pub const fn about(&self) -> Option<&About> {
+        self.about.as_ref()
     }
 
     /// Its number.
     #[must_use]
     pub const fn number(&self) -> u64 {
-        self.about.number()
+        self.asked.number()
     }
 
     /// What `gh` has said about it so far.
@@ -561,7 +564,7 @@ impl DiscussionView {
 
     /// Takes what the list now says it is: a title edited, a push.
     pub fn listed_as(&mut self, about: About) {
-        self.about = about;
+        self.about = Some(about);
         self.forget_the_layout();
     }
 
@@ -578,6 +581,11 @@ impl DiscussionView {
         let whose_now: Vec<_> = said.said.iter().map(whose).collect();
         if whose_before != whose_now {
             self.held.let_go();
+        }
+        // What it is called, said with the rest: as new as the list's word,
+        // and the only word a page opened by its number gets.
+        if let Some(about) = said.about.clone() {
+            self.about = Some(about);
         }
         self.said = Some(said);
         self.refused = None;
@@ -609,7 +617,13 @@ impl DiscussionView {
         {
             return rows;
         }
-        let rows = lay_out(&self.about, self.heard(), &self.folding, width);
+        let rows = lay_out(
+            self.asked,
+            self.about.as_ref(),
+            self.heard(),
+            &self.folding,
+            width,
+        );
         *self.laid.borrow_mut() = Some((width, rows.clone()));
         rows
     }
@@ -793,16 +807,19 @@ impl DiscussionView {
     /// it is.
     #[must_use]
     pub fn icon(&self) -> char {
-        match self.about {
-            About::PullRequest(_) => obelus_icons::ui::PULL_REQUEST,
-            About::Issue(_) => obelus_icons::ui::ISSUE,
+        match self.asked {
+            Asked::PullRequest(_) => obelus_icons::ui::PULL_REQUEST,
+            Asked::Issue(_) => obelus_icons::ui::ISSUE,
         }
     }
 
     /// What its tab and its row in the list of what is open are called.
     #[must_use]
     pub fn name(&self) -> String {
-        format!("#{} {}", self.about.number(), self.about.title())
+        match &self.about {
+            Some(about) => format!("#{} {}", about.number(), about.title()),
+            None => format!("#{}", self.asked.number()),
+        }
     }
 }
 
@@ -834,6 +851,7 @@ mod tests {
 
     fn said() -> Discussion {
         Discussion {
+            about: None,
             stamp: String::new(),
             body: "What it does.\n\n```\ncargo test\n```\n".to_string(),
             additions: 3,

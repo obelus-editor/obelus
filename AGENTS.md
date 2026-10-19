@@ -641,7 +641,8 @@ crates/
                       page that says nothing yet, and what goes to GitHub goes
                       on the reader's word (app/git/pulls); choosing one
                       opens it and talking about it is a key of the page,
-                      and what `gh` says is kept once, by the list
+                      what `gh` says is kept once, by the list, and a page
+                      can be opened by its number alone
                       (app/git/discussions); one window talks to the
                       chat and every
                       window is heard in it, which project a thread begun

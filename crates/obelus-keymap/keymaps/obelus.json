@@ -68,7 +68,7 @@
       // somewhere to look, like everything on a function key, and
       // the history's neighbour -- what is on its way into the
       // history beside what is in it.
-      { "command": "review-pull-request", "context": "normal", "key": "f12" },
+      { "command": "show-pull-requests", "context": "normal", "key": "f12" },
       // `alt+t` for todo, on the letter of the word like the rest
       // of the alt family, and asking the question alt asks: a
       // note is about the line under the cursor.

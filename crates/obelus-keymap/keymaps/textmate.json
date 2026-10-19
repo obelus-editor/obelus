@@ -37,7 +37,7 @@
     { "command": "show-file-history", "keys": ["alt+l"] },
     { "command": "show-project-history", "keys": ["alt+shift+l"] },
     { "command": "go-to-definition", "keys": ["alt+."] },
-    { "command": "review-pull-request", "keys": ["ctrl+u"] },
+    { "command": "show-pull-requests", "keys": ["ctrl+u"] },
     // Off `ctrl+t`, which both editors spend on something else, and beside
     // `alt+t`, which writes a note rather than reading them.
     { "command": "todo", "keys": ["alt+shift+t"] },

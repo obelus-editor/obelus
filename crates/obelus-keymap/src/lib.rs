@@ -1228,7 +1228,7 @@ mod tests {
         // the issues beside them.
         assert_eq!(
             keymap.command_on(KeyChord::new(KeyCode::F(12), KeyModifiers::NONE)),
-            Some(obelus_command::Command::PullRequestReview)
+            Some(obelus_command::Command::ShowPullRequests)
         );
     }
 

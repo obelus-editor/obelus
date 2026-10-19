@@ -351,7 +351,7 @@ pub fn for_command(command: obelus_command::Command) -> char {
         Command::HistoryProject => '\u{f02a1}',
         // `md-source_pull`: the two branches and the arrow between them
         // that a pull request is drawn as everywhere else.
-        Command::PullRequestReview => ui::PULL_REQUEST,
+        Command::ShowPullRequests => ui::PULL_REQUEST,
         Command::Fold => '\u{f0374}',
         Command::FoldAll => '\u{f0376}',
         Command::UnfoldAll => '\u{f0377}',

@@ -575,14 +575,14 @@ impl App {
     /// the pull request they were on -- rows moving under a selection that
     /// stayed put would be a row they did not choose. Only this window's:
     /// the first time a window asks, it waits.
-    pub fn review_a_pull_request(&mut self) {
+    pub fn show_the_pull_requests(&mut self) {
         let mut picker = Picker::new(Vec::new(), PickerLayout::FullArea);
         picker.before_typing("Filter by title or number");
         // Newest first whatever is typed: a query says which are left, and
         // a ranking would put a pull request from last year above this
         // morning's because its title scored better.
         picker.keeps_order(true);
-        picker.opened_by(Command::PullRequestReview);
+        picker.opened_by(Command::ShowPullRequests);
         // Scopes rather than groups: each tab's rows are its own answer
         // from `gh`, put in when the reader walks onto it.
         let tabs = tabs();
@@ -878,7 +878,7 @@ impl App {
     pub(in crate::app) fn listing_pull_requests(&self) -> bool {
         self.picker
             .as_ref()
-            .is_some_and(|picker| picker.opener() == Some(Command::PullRequestReview))
+            .is_some_and(|picker| picker.opener() == Some(Command::ShowPullRequests))
     }
 
     /// Fills the list, for the tab showing, from what `gh` last said.
@@ -922,7 +922,7 @@ impl App {
         };
         if let Some(picker) = self.picker.as_mut() {
             // Standing on the same one, wherever the new answer puts it --
-            // see `review_a_pull_request`.
+            // see `show_the_pull_requests`.
             picker.renew(items, |one, other| {
                 matches!(
                     (one, other),
@@ -1208,7 +1208,7 @@ impl App {
             (None, Some(why)) => Heard::Refused(why),
             (None, None) => Heard::Asking,
         };
-        lay_out(&about, heard, &Folding::default(), width)
+        lay_out(asked, Some(&about), heard, &Folding::default(), width)
     }
 
     /// The row the list has for a pull request or an issue, as what a page

@@ -284,6 +284,7 @@ impl App {
                     chat,
                     self.talking() == obelus_agent::Talking::Thinking,
                     self.agent_has_modes(),
+                    self.page_of_the_conversation(),
                 ),
                 (None, None, None) => Vec::new(),
             },
@@ -685,7 +686,7 @@ impl App {
         // repository's worktrees.
         let switching = !self.worktrees.tabs.is_empty();
         // And the pull requests, whose second tab is the issues.
-        let pulling = picker.opener() == Some(obelus_command::Command::PullRequestReview);
+        let pulling = picker.opener() == Some(obelus_command::Command::ShowPullRequests);
         let before = (picker.tab(), picker.query().to_string());
         // Down on the last row of a list whose next page did not come,
         // which is the key that says to ask again -- read before the key,
@@ -874,7 +875,7 @@ impl App {
             // to the file.
             self.put_the_file_back();
             self.leave(Layer::Picker);
-            let _ = self.open_the_discussion(asked);
+            self.open_the_discussion(asked);
             return;
         }
         // Not a theme to wear, so the one the list was opened over goes

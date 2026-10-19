@@ -6,6 +6,15 @@
 //! review of it, and a row another Obelus was reviewing could not be read
 //! at all. A page is read, not claimed: any window may have one open, and
 //! the claim is taken where the conversation is, by `alt+a` on the page.
+//! And `alt+a` in that conversation is the way back, opening the page again
+//! where the reader closed it: one key between the two, as a reader who
+//! went from one to the other expects of it.
+//!
+//! **A page can be opened by its number alone.** The list is where one is
+//! chosen, but a page left open when Obelus last stopped comes back, and a
+//! conversation outlives its page -- neither with a list asked. So `gh` says
+//! what it is called with the rest of what it says about it, and until it
+//! has, the page is called by its number.
 //!
 //! **What `gh` says is kept once, by the list.** The page holds a copy of
 //! what the list's preview was shown, and is told whenever an answer about
@@ -31,10 +40,21 @@ impl App {
     }
 
     /// Goes to the page about one, opening it where it is not open.
+    pub(in crate::app) fn open_the_discussion(&mut self, asked: Asked) {
+        let at = self.page_about(asked);
+        let from = self.here();
+        self.record(from);
+        self.make_room(Room::Region);
+        self.go_to_document(at);
+    }
+
+    /// The page about one, put in the list of what is open where it is not
+    /// there yet -- without going to it.
     ///
-    /// `false` where the list has no row for it, which is the only thing a
-    /// page can be opened from.
-    pub(in crate::app) fn open_the_discussion(&mut self, asked: Asked) -> bool {
+    /// From the list's row where the list has one, and by its number alone
+    /// where it has not: a page opened again after a restart, or from its
+    /// conversation, is told what it is called by `gh` with the rest.
+    pub(in crate::app) fn page_about(&mut self, asked: Asked) -> DocumentId {
         let number = asked.number();
         let open = self.documents.iter().position(|document| {
             document
@@ -42,41 +62,33 @@ impl App {
                 .and_then(Document::discussion)
                 .is_some_and(|page| page.number() == number)
         });
-        let at = match open {
+        let about = self.about(asked);
+        if let Some(at) = open {
             // What the list says it is now, which choosing its row again is
             // the moment to hear.
-            Some(at) => {
-                if let Some(about) = self.about(asked)
-                    && let Some(page) = self
-                        .documents
-                        .get_mut(at)
-                        .and_then(|document| document.as_mut().and_then(Document::discussion_mut))
-                {
-                    page.listed_as(about);
-                }
-                at
+            if let Some(about) = about
+                && let Some(page) = self
+                    .documents
+                    .get_mut(at)
+                    .and_then(|document| document.as_mut().and_then(Document::discussion_mut))
+            {
+                page.listed_as(about);
             }
-            None => {
-                let Some(about) = self.about(asked) else {
-                    return false;
-                };
-                let mut page = DiscussionView::new(about);
-                // What the preview was shown, at once: the reader chose the
-                // row they had just been reading.
-                if let Some(said) = self.pulls.discussions.get(&number) {
-                    page.told(said.clone());
-                } else if let Some(why) = self.pulls.refused.get(&number) {
-                    page.refused(why.clone());
-                }
-                self.documents.push(Some(page.into()));
-                self.documents.len() - 1
-            }
+            return DocumentId::new(at);
+        }
+        let mut page = match about {
+            Some(about) => DiscussionView::new(about),
+            None => DiscussionView::asking(asked),
         };
-        let from = self.here();
-        self.record(from);
-        self.make_room(Room::Region);
-        self.go_to_document(DocumentId::new(at));
-        true
+        // What the preview was shown, at once: the reader chose the row
+        // they had just been reading.
+        if let Some(said) = self.pulls.discussions.get(&number) {
+            page.told(said.clone());
+        } else if let Some(why) = self.pulls.refused.get(&number) {
+            page.refused(why.clone());
+        }
+        self.documents.push(Some(page.into()));
+        DocumentId::new(self.documents.len() - 1)
     }
 
     /// Tells every page what the list now says it is: a title edited, a
@@ -90,7 +102,7 @@ impl App {
             .enumerate()
             .filter_map(|(at, document)| {
                 let page = document.as_ref()?.discussion()?;
-                Some((at, self.about(page.about().asked())?))
+                Some((at, self.about(page.asked())?))
             })
             .collect();
         for (at, about) in abouts {
@@ -128,7 +140,7 @@ impl App {
     /// answers at once where it has asked already or an answer is on its
     /// way.
     pub(in crate::app) fn ask_about_the_page(&mut self) {
-        if let Some(asked) = self.discussion().map(|page| page.about().asked()) {
+        if let Some(asked) = self.discussion().map(DiscussionView::asked) {
             self.ask_about(asked);
         }
     }
@@ -166,11 +178,9 @@ impl App {
                 true
             }
             Outcome::Talk => {
-                let topic = match page.about() {
-                    About::PullRequest(pull) => {
-                        crate::conversation::Topic::PullRequest(pull.number)
-                    }
-                    About::Issue(issue) => crate::conversation::Topic::Issue(issue.number),
+                let topic = match page.asked() {
+                    Asked::PullRequest(number) => crate::conversation::Topic::PullRequest(number),
+                    Asked::Issue(number) => crate::conversation::Topic::Issue(number),
                 };
                 // Refused where another Obelus has the conversation, which
                 // the palette's row for this key has already said by being
@@ -181,14 +191,25 @@ impl App {
         }
     }
 
+    /// The pull request or issue the conversation being read is about,
+    /// whose page `alt+a` there goes to.
+    #[must_use]
+    pub(crate) fn page_of_the_conversation(&self) -> Option<Asked> {
+        match self.conversation()?.topic {
+            crate::conversation::Topic::PullRequest(number) => Some(Asked::PullRequest(number)),
+            crate::conversation::Topic::Issue(number) => Some(Asked::Issue(number)),
+            crate::conversation::Topic::Loose | crate::conversation::Topic::Note(_) => None,
+        }
+    }
+
     /// Whether another Obelus has the conversation about the page being
     /// read, which is when `alt+a` does nothing here.
     #[must_use]
     pub(crate) fn page_talked_about_elsewhere(&self) -> bool {
         self.discussion().is_some_and(|page| {
-            let which = match page.about() {
-                About::PullRequest(pull) => obelus_agent::chats::ChatId::PullRequest(pull.number),
-                About::Issue(issue) => obelus_agent::chats::ChatId::Issue(issue.number),
+            let which = match page.asked() {
+                Asked::PullRequest(number) => obelus_agent::chats::ChatId::PullRequest(number),
+                Asked::Issue(number) => obelus_agent::chats::ChatId::Issue(number),
             };
             self.taken_up_elsewhere(&which)
         })
@@ -264,9 +285,9 @@ impl App {
 
     /// The row in the list of what is open for a pull request or an issue.
     pub(in crate::app) fn discussion_row(index: usize, page: &DiscussionView) -> PickerItem {
-        let what = match page.about() {
-            About::PullRequest(_) => "Pull request",
-            About::Issue(_) => "Issue",
+        let what = match page.asked() {
+            Asked::PullRequest(_) => "Pull request",
+            Asked::Issue(_) => "Issue",
         };
         PickerItem {
             prose: false,

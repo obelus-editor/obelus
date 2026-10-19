@@ -491,7 +491,7 @@ fn each_editors_layout_has_that_editors_keys() {
         (KeyCode::Char('l'), alt, Command::HistoryFile),
         (KeyCode::Char('l'), alt | shift, Command::HistoryProject),
         (KeyCode::Char('.'), alt, Command::SymbolDefinition),
-        (KeyCode::Char('u'), control, Command::PullRequestReview),
+        (KeyCode::Char('u'), control, Command::ShowPullRequests),
         (KeyCode::Char('t'), alt | shift, Command::TodoOpen),
         (KeyCode::Char('z'), control | shift, Command::Redo),
         (KeyCode::Char('y'), control, Command::Redo),

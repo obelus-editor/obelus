@@ -2,8 +2,8 @@
 //!
 //! A reader who leaves in the middle of something comes back to the middle
 //! of it: the files they had open, the caret where it was in each, the
-//! notes on the note they were on, and the conversations -- and the one
-//! they were standing in.
+//! notes on the note they were on, the conversations, and the pull requests
+//! and issues they were reading -- and the one they were standing in.
 //!
 //! **Kept by the tree, not by the project.** Two worktrees of one
 //! repository are one project to the notes and the conversations, and two
@@ -30,7 +30,11 @@
 //! elsewhere and put in the list when they arrive, in the record's order,
 //! with the notes and the conversations between them. Until then nothing is
 //! written: a record of what has arrived so far would take the place of
-//! the one being read. What is passed over is what cannot come back: a file
+//! the one being read. A pull request or an issue comes back by its number,
+//! and `gh` is asked what it says when it is shown -- not before, because a
+//! start is not a reader asking GitHub anything, and one that asked about
+//! every page left open would be a start waiting on the network. What is
+//! passed over is what cannot come back: a file
 //! that has gone, a conversation another Obelus has open, and one there is
 //! nothing to come back to -- nothing was said in it, or it was had with an
 //! agent that is not the one in use now. The record is never read into
@@ -82,6 +86,8 @@ enum Open {
         /// every position below.
         on: Option<NoteId>,
     },
+    /// A pull request or an issue, by its number.
+    Discussion(obelus_github::Asked),
 }
 
 impl Open {
@@ -190,6 +196,17 @@ fn read(path: &Path) -> Option<Record> {
                     if let Some(name) = row.get("conversation").and_then(toml::Value::as_str) {
                         return ChatId::read(name).map(Open::Conversation);
                     }
+                    let number = |key: &str| {
+                        row.get(key)
+                            .and_then(toml::Value::as_integer)
+                            .and_then(|number| u64::try_from(number).ok())
+                    };
+                    if let Some(number) = number("pull_request") {
+                        return Some(Open::Discussion(obelus_github::Asked::PullRequest(number)));
+                    }
+                    if let Some(number) = number("issue") {
+                        return Some(Open::Discussion(obelus_github::Asked::Issue(number)));
+                    }
                     row.get("notes")
                         .and_then(toml::Value::as_bool)
                         .filter(|notes| *notes)
@@ -242,6 +259,12 @@ fn to_toml(tree: &Path, record: &Record) -> String {
                 if let Some(note) = on {
                     out.push_str(&format!("on = {}\n", quoted(note.as_str())));
                 }
+            }
+            Open::Discussion(obelus_github::Asked::PullRequest(number)) => {
+                out.push_str(&format!("pull_request = {number}\n"));
+            }
+            Open::Discussion(obelus_github::Asked::Issue(number)) => {
+                out.push_str(&format!("issue = {number}\n"));
             }
         }
     }
@@ -333,9 +356,7 @@ impl App {
                 // and starting it again would be running something the
                 // reader did not ask for this time.
                 Some(Document::File(_) | Document::Terminal(_)) | None => None,
-                // Not yet: a window that opens one again has no row of the
-                // list to name it by until `gh` has been asked for that too.
-                Some(Document::Discussion(_)) => None,
+                Some(Document::Discussion(page)) => Some(Open::Discussion(page.asked())),
             };
             if let Some(open) = open {
                 if self.current == Some(at) {
@@ -438,7 +459,7 @@ impl App {
             .iter()
             .filter_map(|open| match open {
                 Open::File { path, .. } => Some(self.reopening.tree.join(path)),
-                Open::Conversation(_) | Open::Notes { .. } => None,
+                Open::Conversation(_) | Open::Notes { .. } | Open::Discussion(_) => None,
             })
             .collect();
         let records = self
@@ -530,6 +551,7 @@ impl App {
                     at
                 }
                 Open::Notes { on } => self.notes_document().or_else(|| self.put_the_notes_up(on)),
+                Open::Discussion(asked) => Some(self.page_about(asked)),
             };
             landed.push(at);
         }
@@ -632,7 +654,9 @@ mod tests {
     /// back whole reopens something else.
     ///
     /// Broken deliberately by writing every `line` as 0: the file came
-    /// back on its first line, and this failed.
+    /// back on its first line, and this failed. And by writing a pull
+    /// request under a key the reading does not look for: it did not come
+    /// back.
     #[test]
     fn a_record_survives_the_file() {
         let record = Record {
@@ -648,6 +672,8 @@ mod tests {
                 },
                 Open::Conversation(ChatId::Loose("a session/with odd bytes".to_string())),
                 Open::Conversation(ChatId::read("FTMER3E6").expect("a note's name")),
+                Open::Discussion(obelus_github::Asked::PullRequest(227)),
+                Open::Discussion(obelus_github::Asked::Issue(12)),
             ],
             current: Some(2),
         };

@@ -16399,7 +16399,7 @@ fn the_descriptions_bar_moves_the_description() {
     viewed(&answer, &body);
     let (mut app, events) = with_a_fake_gh(&scratch, &answer);
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "the list", |app| {
         app.picker().is_some_and(|picker| picker.row_count() == 1)
     });
@@ -16474,7 +16474,7 @@ fn the_selected_pull_request_shows_its_checks_and_what_was_said() {
     std::fs::write(&file, "something to read\n").expect("a file");
     app.open_for_test(&file);
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "the list", |app| answered_with(app, 1));
     let text = screen(&mut app);
     let waiting = text
@@ -16554,7 +16554,7 @@ fn the_waiting_mark_turns_through_the_other_list_landing() {
     std::fs::write(&file, "something to read\n").expect("a file");
     app.open_for_test(&file);
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "the list", |app| answered_with(app, 1));
     // Nothing more is taken from the channel, so `gh`'s word on the pull
     // request is still on its way however quickly it came back.
@@ -16603,7 +16603,7 @@ fn a_row_walked_onto_while_another_is_asked_is_asked_after() {
     .expect("what was said on the second");
     let (mut app, events) = with_a_fake_gh(&scratch, &answer);
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "the list", |app| answered_with(app, 2));
     // The first row's preview is drawn, which asks about it; the reader
     // walks on before that answer is heard.
@@ -16653,7 +16653,7 @@ fn the_selected_pull_request_is_described_under_the_list() {
     );
     let (mut app, events) = with_a_fake_gh(&scratch, &answer);
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "the list", |app| {
         app.picker().is_some_and(|picker| picker.row_count() == 1)
     });
@@ -16685,7 +16685,7 @@ fn the_selected_pull_request_is_described_under_the_list() {
     // kept was current: the list's rows have no `updatedAt`.
     support::press(&mut app, KeyCode::Esc);
     viewed(&answer, "");
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "the list again", |app| {
         answered_with(app, 1)
     });
@@ -16773,7 +16773,7 @@ fn a_pull_request_is_reviewed_on_the_readers_word() {
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "the list", |app| {
         app.picker().is_some_and(|picker| picker.row_count() == 1)
     });
@@ -16833,7 +16833,7 @@ fn a_pull_request_is_reviewed_on_the_readers_word() {
 
     // Pushed to, and the list asked again: the same row is the same review.
     std::fs::write(&answer, one_pull_request("def456")).expect("the second answer");
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "the list again", |app| {
         answered_with(app, 1)
     });
@@ -16859,6 +16859,70 @@ fn a_pull_request_is_reviewed_on_the_readers_word() {
     });
 }
 
+/// `alt+a` in a review goes back to the pull request's page, the key that
+/// came there from it: to the page that is open rather than a second, and
+/// to a page opened again where the reader closed it.
+///
+/// Broken deliberately three ways. Leaving the key out of `chat_key`: the
+/// review kept it, and stayed on screen. Opening a page without looking
+/// for one open (`page_about` always pushing): two pages. And leaving
+/// `page_of_the_conversation` answering nothing for a pull request: the
+/// palette did not offer the key, and the key did nothing.
+#[test]
+fn a_review_goes_back_to_its_page() {
+    let scratch = support::Scratch::new("agent-pull-request-back-to-page");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, one_pull_request("abc123")).expect("the answer");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+    app.talk_to(
+        "fake",
+        Path::new(support::sh()),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
+    pump(&mut app, &events, "the list", |app| answered_with(app, 1));
+    support::press(&mut app, KeyCode::Enter);
+    let page = app.current_document_for_test().expect("the page");
+    support::press_alt(&mut app, 'a');
+    let review = app.current_document_for_test().expect("the review");
+    assert!(app.chat().is_some(), "alt+a on the page opened no review");
+    let documents = app.document_count_for_test();
+
+    // The palette over the review offers the key, under the review's keys.
+    support::press_control(&mut app, 'p');
+    support::type_text(&mut app, "read");
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Go to the pull request's page"),
+        "the palette does not offer the way back:\n{text}"
+    );
+    support::press(&mut app, KeyCode::Esc);
+
+    support::press_alt(&mut app, 'a');
+    assert_eq!(
+        app.current_document_for_test(),
+        Some(page),
+        "alt+a in the review did not go back to the page"
+    );
+    assert_eq!(
+        app.document_count_for_test(),
+        documents,
+        "going back opened a second page"
+    );
+
+    // Closed, and asked for again from the review: opened again.
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentClose);
+    app.go_to_document_for_test(review);
+    support::press_alt(&mut app, 'a');
+    assert!(
+        app.current_document_for_test()
+            .and_then(|id| app.document(id))
+            .and_then(obelus_app::app::document::Document::discussion)
+            .is_some_and(|page| page.number() == 123),
+        "the page closed was not opened again from the review"
+    );
+}
+
 /// The list says why it is empty, in words the reader can act on -- and
 /// while it is still asking, a mark turns in front of those words.
 ///
@@ -16882,7 +16946,7 @@ fn the_list_of_pull_requests_says_why_it_is_empty() {
     std::fs::write(&file, "something to read\n").expect("a file");
     app.open_for_test(&file);
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     let text = screen(&mut app);
     assert!(
         text.contains("Still asking GitHub"),
@@ -16923,7 +16987,7 @@ fn the_list_of_pull_requests_says_why_it_is_empty() {
 
     support::press(&mut app, KeyCode::Esc);
     std::fs::write(&answer, "[]").expect("no pull requests");
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "the empty list", the_list_has_answered);
     let text = screen(&mut app);
     assert!(
@@ -16935,7 +16999,7 @@ fn the_list_of_pull_requests_says_why_it_is_empty() {
     // too, and signing in is not what it is missing.
     support::press(&mut app, KeyCode::Esc);
     std::fs::write(&answer, "not-github").expect("not on GitHub");
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(
         &mut app,
         &events,
@@ -16966,7 +17030,7 @@ fn a_pull_request_is_found_by_its_number() {
     std::fs::write(&answer, two_pull_requests()).expect("the answer");
     let (mut app, events) = with_a_fake_gh(&scratch, &answer);
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "the list", |app| {
         app.picker().is_some_and(|picker| picker.row_count() == 2)
     });
@@ -17015,7 +17079,7 @@ fn the_last_answer_stands_in_while_the_next_is_asked() {
     std::fs::write(&answer, one_pull_request("abc123")).expect("the answer");
     let (mut app, events) = with_a_fake_gh(&scratch, &answer);
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     // To its last page: an opening while one asking is still on its way
     // asks nothing more, and takes what that one brings.
     pump(&mut app, &events, "the list", |app| answered_with(app, 1));
@@ -17028,7 +17092,7 @@ fn the_last_answer_stands_in_while_the_next_is_asked() {
             {"number":123,"title":"Keep the fold when a hunk is reverted","author":{"login":"alice"},"headRefName":"keep-fold","baseRefName":"master","headRefOid":"abc123","isDraft":false,"reviewDecision":"","updatedAt":"2026-10-08T00:00:00Z"}]"#,
     )
     .expect("the second answer");
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     let text = screen(&mut app);
     assert!(
         text.contains("#123 Keep the fold") && !text.contains("Still asking GitHub"),
@@ -17101,7 +17165,7 @@ fn an_issue_is_answered_on_the_readers_word() {
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "the pull requests", |app| {
         answered_with(app, 1)
     });
@@ -17211,7 +17275,7 @@ fn an_issue_is_answered_on_the_readers_word() {
         one_issue("2026-10-09T00:00:00Z").replace(r#""number""#, r#""state":"OPEN","number""#),
     )
     .expect("the second answer");
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     support::press(&mut app, KeyCode::Tab);
     pump(&mut app, &events, "the issues again", |app| {
         answered_with(app, 1)
@@ -17270,7 +17334,7 @@ fn the_titles_start_in_one_column() {
             .unwrap_or_else(|| panic!("{title:?} is not on screen:\n{text}"))
     };
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "the pull requests", |app| {
         answered_with(app, 2)
     });
@@ -17303,7 +17367,7 @@ fn a_query_that_matches_no_pull_request_says_so() {
     std::fs::write(&answer, one_pull_request("abc123")).expect("the answer");
     let (mut app, events) = with_a_fake_gh(&scratch, &answer);
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     // To its last page: before it, a query that matches nothing is still
     // waiting on rows that may match it.
     pump(&mut app, &events, "the list", |app| answered_with(app, 1));
@@ -17392,7 +17456,7 @@ fn the_next_page_is_asked_for_when_the_last_row_is_on_screen() {
     .expect("the second page");
     let (mut app, events) = with_a_fake_gh(&scratch, &answer);
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "the first page", |app| {
         answered_with(app, 60)
     });
@@ -17447,7 +17511,7 @@ fn a_page_that_did_not_come_is_asked_for_again_by_down() {
     std::fs::write(&second, "eof").expect("a page that does not come");
     let (mut app, events) = with_a_fake_gh(&scratch, &answer);
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "the first page", |app| {
         answered_with(app, 60)
     });
@@ -17491,7 +17555,7 @@ fn opened_again_the_list_asks_only_what_has_changed() {
     std::fs::write(&answer, two_pull_requests()).expect("the answer");
     let (mut app, events) = with_a_fake_gh(&scratch, &answer);
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "the list", |app| answered_with(app, 2));
     support::press(&mut app, KeyCode::Esc);
 
@@ -17502,7 +17566,7 @@ fn opened_again_the_list_asks_only_what_has_changed() {
     )
     .expect("what has changed");
     std::fs::write(answer.with_extension("json.changed.total"), "2").expect("how many");
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "what has changed", |app| {
         answered_with(app, 2)
     });
@@ -17532,7 +17596,7 @@ fn a_search_that_did_not_come_is_asked_again_from_an_empty_list() {
     std::fs::write(&found, "eof").expect("a search that does not come");
     let (mut app, events) = with_a_fake_gh(&scratch, &answer);
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "the list", |app| answered_with(app, 2));
     support::type_text(&mut app, "zzzz");
     pump(&mut app, &events, "the refusal", |app| {
@@ -17574,7 +17638,7 @@ fn what_has_changed_stops_at_the_first_older_than_the_last_look() {
     std::fs::write(&answer, two_pull_requests()).expect("the answer");
     let (mut app, events) = with_a_fake_gh(&scratch, &answer);
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "the list", |app| answered_with(app, 2));
     support::press(&mut app, KeyCode::Esc);
 
@@ -17593,7 +17657,7 @@ fn what_has_changed_stops_at_the_first_older_than_the_last_look() {
         format!("[{}]", changed("OPEN", 125, "2026-10-09T00:00:00Z")),
     )
     .expect("a page past it");
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "what has changed", |app| {
         answered_with(app, 1)
     });
@@ -17613,7 +17677,7 @@ fn too_much_changed_is_asked_for_again_from_the_top() {
     std::fs::write(&answer, two_pull_requests()).expect("the answer");
     let (mut app, events) = with_a_fake_gh(&scratch, &answer);
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "the list", |app| answered_with(app, 2));
     support::press(&mut app, KeyCode::Esc);
 
@@ -17627,7 +17691,7 @@ fn too_much_changed_is_asked_for_again_from_the_top() {
         .expect("another page");
     }
     std::fs::write(&answer, many_pull_requests(300..303)).expect("the top, now");
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "the top again", |app| {
         answered_with(app, 3)
     });
@@ -17660,7 +17724,7 @@ fn a_query_is_asked_of_github_once_the_typing_stops() {
     std::fs::write(answer.with_extension("json.found.total"), "5").expect("how many");
     let (mut app, events) = with_a_fake_gh(&scratch, &answer);
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "the list", |app| answered_with(app, 2));
     support::type_text(&mut app, "fold");
     assert_eq!(shown(&app), [123], "the rows here were not matched at once");
@@ -17714,7 +17778,7 @@ fn asked_on_the_second_opening(name: &str, view: &str, changed: Option<&str>) ->
     .expect("what #124 says");
     let (mut app, events) = with_a_fake_gh(&scratch, &answer);
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "the list", |app| answered_with(app, 2));
     until_the_screen_says(&mut app, &events, "First.", HEIGHT);
     support::press(&mut app, KeyCode::Esc);
@@ -17722,7 +17786,7 @@ fn asked_on_the_second_opening(name: &str, view: &str, changed: Option<&str>) ->
         std::fs::write(answer.with_extension("json.changed"), changed).expect("what has changed");
     }
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     let mut asked = Vec::new();
     let mut walked = false;
     let deadline = Instant::now() + patience();
@@ -17806,7 +17870,7 @@ fn a_review_another_obelus_has_is_read_and_not_entered() {
     )
     .expect("nobody had it");
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "the list", |app| {
         app.picker().is_some_and(|picker| picker.row_count() == 2)
     });
@@ -17858,7 +17922,7 @@ fn a_review_taken_elsewhere_is_locked_on_its_row_while_the_list_is_open() {
     std::fs::write(&answer, two_pull_requests()).expect("the answer");
     let (mut app, events) = with_a_fake_gh(&scratch, &answer);
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "the list", |app| {
         app.picker().is_some_and(|picker| picker.row_count() == 2)
     });
@@ -17947,7 +18011,7 @@ fn the_list_of_pull_requests_previews_no_file_before_it_has_rows() {
     );
 
     // Nothing handed back from `gh` yet: the answer waits in the channel.
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     let text = screen(&mut app);
     assert!(
         text.contains("Pull requests"),
@@ -17983,7 +18047,7 @@ fn a_block_of_code_on_a_pull_requests_page_says_enter_copies_it() {
     .expect("what it says");
     let (mut app, events) = with_a_fake_gh(&scratch, &answer);
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "the list", |app| answered_with(app, 1));
     support::press(&mut app, KeyCode::Enter);
     let deadline = Instant::now() + patience();
@@ -18037,14 +18101,14 @@ fn a_page_is_told_what_the_list_now_says() {
     std::fs::write(&answer, one_pull_request_called("The first title")).expect("the answer");
     let (mut app, events) = with_a_fake_gh(&scratch, &answer);
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "the list", |app| answered_with(app, 1));
     support::press(&mut app, KeyCode::Enter);
     let text = screen(&mut app);
     assert!(text.contains("The first title"), "{text}");
 
     std::fs::write(&answer, one_pull_request_called("The second title")).expect("the answer");
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "the list again", |app| {
         app.picker().is_some_and(|picker| {
             picker
@@ -18078,7 +18142,7 @@ fn a_page_says_where_its_review_is_held_as_it_comes_back() {
     app.open_for_test(&file);
     let reading = app.current_document_for_test().expect("the file");
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "the list", |app| answered_with(app, 1));
     support::press(&mut app, KeyCode::Enter);
     let page = app.current_document_for_test().expect("the page");
@@ -18127,7 +18191,7 @@ fn a_pull_requests_page_is_walked_folded_and_copied() {
     .expect("what it says");
     let (mut app, events) = with_a_fake_gh(&scratch, &answer);
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
     pump(&mut app, &events, "the list", |app| answered_with(app, 1));
     support::press(&mut app, KeyCode::Enter);
     // A frame after every event until what was said is on the page: the
