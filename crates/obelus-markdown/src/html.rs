@@ -18,6 +18,15 @@
 //! **A shortcode is the emoji it names**, by GitHub's own table, and only
 //! where it is words: `:x:` in a span of code is code.
 //!
+//! **Where a tag is, this finds by itself, and the HTML grammar does not.**
+//! The document's injections hand every block of HTML to the HTML grammar
+//! already, and asking that tree was tried. It is a grammar of documents,
+//! and a block of HTML in markdown is a fragment: a blank line in a table's
+//! cell -- a bot putting markdown in one -- cuts the table in pieces, and
+//! the last piece, `</td></tr></table>` and nothing else, is one the grammar
+//! cannot read at all. That piece was the one the page showed as words, so
+//! the tags are found here, in the block's own words.
+//!
 //! **Only what GitHub lets through is a tag.** Its sanitizer keeps a list
 //! of names and nothing else ([`ALLOWED`]); anything else between `<` and
 //! `>` is words. Which matters most where it is not a page of GitHub's at
@@ -206,7 +215,7 @@ fn breaks(name: &str) -> bool {
 }
 
 /// The tag that `said` is, where it is one: the whole of `said`, from its
-/// `<` to its `>`, as the inline grammar hands a tag over.
+/// `<` to its `>`, as the inline grammar or [`tags`] hands a tag over.
 pub(crate) fn tag(said: &str) -> Option<Tag> {
     if said.starts_with("<!--") {
         return Some(Tag {
@@ -464,4 +473,94 @@ pub(crate) fn references(text: &str) -> Vec<(Range<usize>, String)> {
         }
     }
     found
+}
+
+/// The tables a block's tags hold whole, as where among the tags each one's
+/// `<table>` and its `</table>` are.
+///
+/// Whole, because a table GitHub draws is often not one block: a cell with a
+/// blank line in it -- a bot's comment putting markdown in one -- ends the
+/// block the grammar sees, and the rest of the table is the next one. Such a
+/// table has no end here, and is left as words, which is what it was before
+/// anything was drawn as a table at all.
+pub(crate) fn tables(tags: &[Tag]) -> Vec<(usize, usize)> {
+    let mut found = Vec::new();
+    let mut open: Option<usize> = None;
+    let mut depth = 0usize;
+    for (at, tag) in tags.iter().enumerate() {
+        if tag.name != "table" {
+            continue;
+        }
+        match tag.closing {
+            false => {
+                if depth == 0 {
+                    open = Some(at);
+                }
+                depth += 1;
+            }
+            true => {
+                depth = depth.saturating_sub(1);
+                if depth == 0
+                    && let Some(start) = open.take()
+                {
+                    found.push((start, at));
+                }
+            }
+        }
+    }
+    found
+}
+
+/// One cell of a table: where its words are, and whether it is a heading's.
+pub(crate) struct Cell {
+    /// Between its `<td>` and its end.
+    pub(crate) words: Range<usize>,
+    /// Whether it is a `<th>`.
+    pub(crate) heading: bool,
+}
+
+/// The rows of one table, from its `<table>` to its `</table>`, and the
+/// cells of each.
+///
+/// A cell ends at its own close, or where the next cell or row begins --
+/// which is where HTML says one ends when nobody wrote the close -- and a
+/// table inside a cell is that cell's words rather than more of this one.
+pub(crate) fn rows(tags: &[Tag]) -> Vec<Vec<Cell>> {
+    let mut rows: Vec<Vec<Cell>> = Vec::new();
+    let mut cell: Option<(usize, bool)> = None;
+    let mut depth = 0usize;
+    for tag in tags {
+        if tag.name == "table" {
+            depth = match tag.closing {
+                false => depth + 1,
+                true => depth.saturating_sub(1),
+            };
+            continue;
+        }
+        if depth != 1 {
+            continue;
+        }
+        let ends_a_cell = matches!(tag.name.as_str(), "td" | "th" | "tr");
+        if ends_a_cell
+            && let Some((start, heading)) = cell.take()
+            && let Some(row) = rows.last_mut()
+        {
+            row.push(Cell {
+                words: start..tag.range.start,
+                heading,
+            });
+        }
+        match (tag.name.as_str(), tag.closing) {
+            ("tr", false) => rows.push(Vec::new()),
+            ("td" | "th", false) => {
+                if rows.is_empty() {
+                    rows.push(Vec::new());
+                }
+                cell = Some((tag.range.end, tag.name == "th"));
+            }
+            _ => {}
+        }
+    }
+    rows.retain(|row| !row.is_empty());
+    rows
 }

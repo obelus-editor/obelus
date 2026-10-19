@@ -761,7 +761,9 @@ crates/
   obelus-markdown/  markdown, laid out into rows, from the tree Obelus
                     already parses
                     · a tag is the asking, not the words, a comment is not
-                      there at all, and a shortcode is the emoji it names
+                      there at all, a shortcode is the emoji it names, where
+                      a tag is this finds by itself and the HTML grammar
+                      does not, and only what GitHub lets through is a tag
                       (html)
   obelus-search/    one question at three scopes, the project walked on a
                     thread a core and searched by ripgrep's own searcher, the
