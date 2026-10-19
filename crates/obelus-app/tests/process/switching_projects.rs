@@ -293,16 +293,14 @@ fn in_a_window_enter_is_another_window_and_control_enter_is_this_one() {
     );
 }
 
-/// In a window the row the reader is on says both enters, after its words
-/// -- the list's rows wrap, so they are not cut to make room -- and in a
-/// terminal, where enter is the only way and the ordinary one, it says
-/// neither. Nor does it point at the palette, whose first tab would only
-/// say the row again.
+/// In a window the list's own row says both enters, and in a terminal,
+/// where enter is the only way and the ordinary one, it says neither. Nor does
+/// it point at the palette, whose first tab would only say the row again.
 ///
-/// Broken deliberately twice: by drawing the enters only on rows that do
-/// not wrap, which is how this list went without them (no row says
-/// `Switch`), and by asking for `More` wherever a list has keys of its own
-/// (the row under the list says `More`).
+/// Broken deliberately twice: by not marking the enters as said
+/// (`.said(false)` on both in `picker::keys`), when no row says `Switch`;
+/// and by asking for `More` wherever a list has keys of its own, when the
+/// row under the list says `More`.
 #[test]
 fn in_a_window_the_row_says_both_enters() {
     let _turn = crate::turn();

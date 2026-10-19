@@ -2412,12 +2412,12 @@ fn control_and_enter_adds_a_key() {
     assert!(!usable.contains(&"Change".to_string()), "{usable:?}");
 }
 
-/// The keys page has two enters, so the row the reader is on says them at
-/// its end -- both on a command with a key, and only adding on one without,
-/// where enter has nothing to change.
+/// The keys page has two enters, so the filter's row says them -- both on
+/// a command with a key, and only adding on one without, where enter has
+/// nothing to change.
 ///
-/// Broken deliberately by not drawing them in the settings' rows: neither
-/// word is anywhere on the page.
+/// Broken deliberately by not handing the page's keys to the filter's row
+/// (`render_filter` given none): neither word is anywhere on the page.
 #[test]
 fn a_command_s_row_says_its_two_enters() {
     let _taken = crate::turn();

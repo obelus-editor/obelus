@@ -27,27 +27,18 @@ fn reading(name: &str) -> (support::Scratch, App) {
 }
 
 /// The row a list is typed into, as it is drawn -- up to where it points at
-/// the palette, which is not what typing does and is `palette`'s to test.
+/// the palette or says the keys of the row the reader is on, which are not
+/// what typing does and are `palette`'s and the views' own to test. Both
+/// stand clear of the words by more blanks than any sentence has.
 fn row(app: &mut App) -> String {
     let dump = support::render(app, 70, 14);
-    let row = support::text_block(&dump)
+    support::text_block(&dump)
         .lines()
         .rfind(|row| row.contains('|'))
         .map(|row| row[row.find('|').expect("a divider") + 1..].trim())
+        .and_then(|row| row.split("   ").next())
         .unwrap_or_default()
-        .to_string();
-    let key =
-        obelus_keymap::KeyChord::new(KeyCode::Char('p'), crossterm::event::KeyModifiers::CONTROL)
-            .label();
-    match row.strip_suffix("More") {
-        Some(before) => before
-            .trim_end()
-            .strip_suffix(key.as_str())
-            .unwrap_or(before)
-            .trim_end()
-            .to_string(),
-        None => row,
-    }
+        .to_string()
 }
 
 /// Each list says what typing into it does, and says it in its own words.

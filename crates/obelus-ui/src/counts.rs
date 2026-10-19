@@ -67,9 +67,9 @@ pub fn list_region(area: Rect) -> Rect {
     }
 }
 
-/// The rows under the list: a rule, and the row that points at the
-/// palette -- the one every other page has its box on, and the counts have
-/// no box to put there.
+/// The rows under the list: a rule, and the row that says what enter does
+/// to the row the reader is on -- the one every other page has its box on,
+/// and the counts have no box to put there.
 const BELOW: u16 = 2;
 
 /// Which row of the table a point on screen is on, and whether it is on
@@ -134,6 +134,7 @@ pub fn hints(counts: &Counts) -> Vec<Hint> {
         Hint::new(bare(KeyCode::Enter), word)
             .about(about)
             .when(on.is_some_and(|row| row.go.is_some()))
+            .said(true)
     }]
 }
 
@@ -332,9 +333,7 @@ impl Widget for CountsView<'_> {
         } else {
             self.rows(cells, body, layout);
         }
-        if let Some(key) = &self.palette
-            && area.height >= FURNITURE + BELOW
-        {
+        if area.height >= FURNITURE + BELOW {
             let row = area.bottom() - 1;
             crate::rule(
                 cells,
@@ -345,20 +344,30 @@ impl Widget for CountsView<'_> {
                 },
                 self.theme,
             );
-            crate::status::more(
+            let foot = Rect {
+                y: row,
+                height: 1,
+                ..area
+            };
+            // What enter does to the row the reader is on, at the row's end
+            // -- see `crate::said_on_its_row` -- and the palette pointed at
+            // only where it has more than that.
+            let keys = hints(self.counts);
+            let until = crate::status::said_keys(
                 cells,
-                Rect {
-                    y: row,
-                    height: 1,
-                    ..area
-                },
-                // Where the notes' name starts on their row, and a file's
-                // path on its: the first column of a row's words.
+                foot,
                 1,
-                area.right(),
-                key,
+                foot.right(),
+                &crate::said_on_its_row(&keys),
                 self.theme,
             );
+            if let Some(key) = &self.palette
+                && crate::says_more(&keys)
+            {
+                // Where the notes' name starts on their row, and a file's
+                // path on its: the first column of a row's words.
+                crate::status::more(cells, foot, 1, until, key, self.theme);
+            }
         }
     }
 }

@@ -16047,13 +16047,13 @@ fn the_count_opens_the_work_and_its_key_stops_it() {
 }
 
 /// The list of background work offers its key in the palette, and dim on
-/// work that has stopped -- and says it at the end of the row it stops,
-/// and not on one it does nothing to.
+/// work that has stopped -- and says it on the list's own row while the
+/// row the reader is on is work it can stop, and not otherwise.
 ///
 /// Broken deliberately twice: by offering it whatever the row (the `when`
 /// taken off the list's key in `picker::keys`), when it was still offered
-/// once the work had stopped; and by leaving the key off the row
-/// (`on_the_row(false)`), when the row did not say it. Nothing here asks
+/// once the work had stopped; and by not marking it as said
+/// (`.said(false)`), when the list's row did not say it. Nothing here asks
 /// about `More`: this list asks a question on the row under it, which is
 /// drawn in place of the words `More` follows, so it never said it.
 #[test]

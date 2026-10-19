@@ -501,6 +501,8 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
                     // has, and the rule went missing the moment there was
                     // one: the page was handed the row the rule is drawn on
                     // and painted over it.
+                    // Asked before the page is drawn, which takes the view.
+                    let keys = view.keys();
                     bars::of(Whose::Settings, || view.render(regions.editor, cells));
                     if let Some(settings) = app.settings() {
                         let style = Style::new()
@@ -512,6 +514,7 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
                         fill(cells, regions.status, style);
                         status::StatusView::new(app).render_filter(
                             settings,
+                            &keys,
                             regions.status,
                             cells,
                             style,

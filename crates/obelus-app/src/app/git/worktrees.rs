@@ -12,10 +12,10 @@
 //! compositor's permission to come to the front. So a tree's row opens a
 //! new window on it, this window's own tree among them, and each Obelus on
 //! a tree is a row under it that brings that one forward. Putting this
-//! window on the tree instead is the second enter, and the row the reader
-//! is on says both at its end (`ui::on_the_row`), because a list whose enter
-//! does not take the row here is news -- and news a reader needs on every
-//! row is not something to open the palette for.
+//! window on the tree instead is the second enter, and the list's own row
+//! says both (`ui::said_on_its_row`), because a list whose enter does not
+//! take the row here is news -- and news a reader needs on every row is
+//! not something to open the palette for.
 //!
 //! **In a terminal, enter is this one going, because it is all a terminal
 //! can do.** The window it is in is the terminal's, and which terminal the

@@ -635,12 +635,31 @@ pub fn prompt_row(
         ),
         None => {
             let until = switches(cells, area, picker, &said, theme);
+            // The keys the list says itself, before the switches and
+            // whatever is typed: they are about the row the reader is on,
+            // which typing does not change the question of.
+            let keys = crate::picker::keys(picker);
+            let typed_here = match said.is_empty() {
+                true => picker.invitation().unwrap_or(&said),
+                false => &said,
+            };
+            let taken = 1usize
+                .saturating_add(text_width(&typed(picker.question(), typed_here)))
+                .saturating_add(5);
+            let until = said_keys(
+                cells,
+                area,
+                taken,
+                until,
+                &crate::said_on_its_row(&keys),
+                theme,
+            );
             // Only while the words that stand in for nothing typed are
             // there, and only for a list with keys of its own that its row
-            // does not already say: the switches keep the row's end, and
-            // this goes where it fits before them.
+            // does not already say: the switches and the said keys keep the
+            // row's end, and this goes where it fits before them.
             if let (Some(invitation), Some(key)) = (picker.invitation(), palette)
-                && crate::says_more(&crate::picker::keys(picker))
+                && crate::says_more(&keys)
             {
                 let from = usize::from(typed_inset(picker.question())) + text_width(invitation);
                 more(cells, area, from + AFTER_WORDS, until, key, theme);
@@ -687,6 +706,61 @@ pub(crate) fn more(
         MORE,
         Style::new().fg(theme.gutter).bg(theme.background),
     );
+}
+
+/// The keys a view says on its own row (`crate::said_on_its_row`), against
+/// `until` and after the first `taken` cells of the row: each in the cap
+/// [`MORE`]'s key wears, with its word after it.
+///
+/// Dropped whole where they would reach what is before them: half a set of
+/// keys is a set that says the wrong thing about the rest.
+///
+/// Answers where they start, or `until` where there are none or they did
+/// not fit, so what goes before them knows where to stop.
+pub(crate) fn said_keys(
+    cells: &mut CellBuffer,
+    area: Rect,
+    taken: usize,
+    until: u16,
+    hints: &[crate::Hint],
+    theme: &Theme,
+) -> u16 {
+    if hints.is_empty() {
+        return until;
+    }
+    let width = |hint: &crate::Hint| {
+        crate::cap_width(&hint.keys()) + hint.does.map_or(0, |does| 1 + text_width(does))
+    };
+    let wanted = hints
+        .iter()
+        .map(width)
+        .sum::<usize>()
+        .saturating_add(BETWEEN_SWITCHES * (hints.len() - 1));
+    let end = until.min(area.right()).saturating_sub(1);
+    let start = usize::from(end).saturating_sub(wanted);
+    if start < usize::from(area.x) + taken || wanted > usize::from(end) {
+        return until;
+    }
+    let Ok(start) = u16::try_from(start) else {
+        return until;
+    };
+    let mut x = start;
+    for (at, hint) in hints.iter().enumerate() {
+        if at > 0 {
+            x = x.saturating_add(u16::try_from(BETWEEN_SWITCHES).unwrap_or(0));
+        }
+        x = crate::capped(cells, x, area.y, &hint.keys(), theme);
+        if let Some(does) = hint.does {
+            x = write(
+                cells,
+                x + 1,
+                area.y,
+                does,
+                Style::new().fg(theme.gutter).bg(theme.background),
+            );
+        }
+    }
+    start
 }
 
 /// How far [`MORE`] stands from the words it follows, so the two are not
@@ -1298,6 +1372,7 @@ impl StatusView<'_> {
     pub(crate) fn render_filter(
         &self,
         settings: &obelus_component::settings::Settings,
+        keys: &[crate::Hint],
         area: Rect,
         cells: &mut CellBuffer,
         style: Style,
@@ -1329,16 +1404,25 @@ impl StatusView<'_> {
             style,
             self.theme,
         );
-        if let (Some(filtered), Some(key)) = (settings.what_is_filtered(), &self.palette) {
+        // The keys the page says itself, at the row's end, and the palette
+        // pointed at only where it has more than those.
+        let typed_here = settings.what_is_filtered().filter(|_| said.is_empty());
+        let taken = 1usize
+            .saturating_add(text_width(&typed(None, typed_here.unwrap_or(&said))))
+            .saturating_add(5);
+        let until = said_keys(
+            cells,
+            area,
+            taken,
+            area.right(),
+            &crate::said_on_its_row(keys),
+            self.theme,
+        );
+        if let (Some(filtered), Some(key)) = (settings.what_is_filtered(), &self.palette)
+            && crate::says_more(keys)
+        {
             let from = usize::from(typed_inset(None)) + text_width(filtered);
-            more(
-                cells,
-                area,
-                from + AFTER_WORDS,
-                area.right(),
-                key,
-                self.theme,
-            );
+            more(cells, area, from + AFTER_WORDS, until, key, self.theme);
         }
     }
 
@@ -1643,16 +1727,26 @@ impl StatusView<'_> {
             ),
         );
         hint(cells, area, None, names.invitation(), style, self.theme);
-        if let (Some(invitation), Some(key)) = (names.invitation(), &self.palette) {
+        // The keys the list says itself, at the row's end, and the palette
+        // pointed at only where it has more than those.
+        let keys = crate::names::hints(names);
+        let typed_here = names.invitation().filter(|_| said.is_empty());
+        let taken = 1usize
+            .saturating_add(text_width(&typed(None, typed_here.unwrap_or(&said))))
+            .saturating_add(5);
+        let until = said_keys(
+            cells,
+            area,
+            taken,
+            area.right(),
+            &crate::said_on_its_row(&keys),
+            self.theme,
+        );
+        if let (Some(invitation), Some(key)) = (names.invitation(), &self.palette)
+            && crate::says_more(&keys)
+        {
             let from = usize::from(typed_inset(None)) + text_width(invitation);
-            more(
-                cells,
-                area,
-                from + AFTER_WORDS,
-                area.right(),
-                key,
-                self.theme,
-            );
+            more(cells, area, from + AFTER_WORDS, until, key, self.theme);
         }
     }
 

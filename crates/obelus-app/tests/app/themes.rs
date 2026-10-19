@@ -1309,6 +1309,56 @@ fn delete_takes_a_theme_away_but_not_the_one_worn() {
     assert!(!root.join("gone").exists(), "two presses did not take it");
 }
 
+/// The filter's row says what enter and delete do to the theme the reader
+/// is on -- wearing it and taking it away, on one installed and not worn --
+/// and only what they do: neither on the theme being worn.
+///
+/// Broken deliberately twice: by not marking the theme's keys as said
+/// (`.said(false)` in `theme_hints`), when the row says neither; and by
+/// saying a key that does nothing (`usable` left out of
+/// `said_on_its_row`), when the worn theme's row offers `Remove`.
+#[test]
+fn the_filter_s_row_says_what_the_keys_do_to_a_theme() {
+    let scratch = reader("themes-row-keys");
+    let root = support::Scratch::new("themes-row-keys-installed");
+    installed_as(root.path(), "current", "aaa", "obelus");
+    installed_as(root.path(), "spare", "bbb", "obelus");
+
+    let mut app = open(&scratch);
+    app.installed_themes_for_test(root.path().to_path_buf());
+    app.themes_index_for_test(vec![
+        listed("current", obelus_themes::Group::Obelus, "aaa"),
+        listed("spare", obelus_themes::Group::Obelus, "bbb"),
+    ]);
+    dispatch::dispatch(&mut app, Command::ThemeSelect);
+    support::type_text(&mut app, "current");
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(app.theme_name(), "current");
+
+    let status = |app: &mut App| -> String {
+        let dump = support::render(app, 90, 30);
+        support::text_block(&dump)
+            .lines()
+            .last()
+            .unwrap_or_default()
+            .to_string()
+    };
+    on_the_themes_page(&mut app);
+    support::type_text(&mut app, "spare");
+    let spare = status(&mut app);
+    assert!(
+        spare.contains("Use") && spare.contains("Remove"),
+        "{spare:?}"
+    );
+
+    for _ in 0.."spare".len() {
+        support::press(&mut app, KeyCode::Backspace);
+    }
+    support::type_text(&mut app, "current");
+    let worn = status(&mut app);
+    assert!(!worn.contains("Remove"), "{worn:?}");
+}
+
 /// The theme being worn, when it is behind, says both: that it is in use,
 /// and that there is an update to take -- and once enter takes it, how far
 /// the update has got.

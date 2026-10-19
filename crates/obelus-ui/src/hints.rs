@@ -52,9 +52,9 @@ pub struct Hint {
     /// to go, so "go there" is dim in the palette while the selection is on
     /// one, and a key whose row is dim does nothing there.
     pub usable: bool,
-    /// Whether the row the reader is on says it at its end -- see
-    /// [`on_the_row`].
-    pub row: bool,
+    /// Whether the view says it on its own row, rather than leaving it to
+    /// the palette -- see [`said_on_its_row`].
+    pub said: bool,
 }
 
 impl Hint {
@@ -69,15 +69,14 @@ impl Hint {
             about: None,
             usable: true,
             here: true,
-            row: false,
+            said: false,
         }
     }
 
-    /// Says the row the reader is on says it at its end, where it says
-    /// `on`.
+    /// Says the view says it on its own row, where `said`.
     #[must_use]
-    pub const fn on_the_row(mut self, on: bool) -> Self {
-        self.row = on;
+    pub const fn said(mut self, said: bool) -> Self {
+        self.said = said;
         self
     }
 
@@ -124,6 +123,39 @@ impl Hint {
             None => self.chord.label(),
         }
     }
+}
+
+/// The keys a view says on its own row -- the row its query is typed
+/// into, or the one at its foot -- where they do something now.
+///
+/// A view's keys are in the palette over it, and its row points there with
+/// `More`. Which works for a list of switches, and is a second list opened
+/// over the first for a view whose keys are one or two things to do to the
+/// row the reader is on: two enters, where the first is not what enter
+/// means anywhere else, or the one key that stops the work a row is. Those
+/// are needed on every row, so they are said where the reader's eyes go
+/// between rows, at the far end of the view's own row. The words are the
+/// palette's, which says them too.
+///
+/// Only those that do something here: a key said is a key that works.
+#[must_use]
+pub fn said_on_its_row(hints: &[Hint]) -> Vec<Hint> {
+    hints
+        .iter()
+        .copied()
+        .filter(|hint| hint.here && hint.said && hint.usable)
+        .collect()
+}
+
+/// Whether the palette over a view has anything to say that the view's own
+/// row does not: a key the view has here that is not said there.
+///
+/// What decides whether the row points at the palette at all. A `More`
+/// that opens a second list to say the row again is a layer over a layer
+/// for nothing.
+#[must_use]
+pub fn says_more(hints: &[Hint]) -> bool {
+    hints.iter().any(|hint| hint.here && !hint.said)
 }
 
 /// How wide a tick is, in cells.
@@ -258,132 +290,6 @@ pub(crate) fn cap_around(
         page,
         edge,
     );
-}
-
-/// The blanks between a key and the word for what it does, on a row that
-/// says a key among other words rather than in a cap of its own.
-pub(crate) const GAP_IN_A_HINT: usize = 2;
-/// And between one of those and the next.
-///
-/// Wider than the gap inside one, for the reason the foot's `BETWEEN` is:
-/// the gap between items has to beat the gaps inside one, or the row is a
-/// line of tokens with nothing saying which belongs to which.
-pub(crate) const GAP_BETWEEN_HINTS: usize = 3;
-
-/// Where each of those keys starts in that run, in cells from its
-/// beginning.
-///
-/// A function of its own rather than a sum kept while drawing, because it
-/// is the one place the two shapes of this row have to agree: the run is
-/// what a terminal writes, and a cap is said about cells *of* it. A walk
-/// that counted the gaps differently from `joined` would draw a cap over
-/// the word beside the key.
-fn where_the_keys_are(hints: &[(String, &'static str)]) -> Vec<usize> {
-    let mut along = 0;
-    hints
-        .iter()
-        .map(|(keys, does)| {
-            let at = along;
-            along += text_width(keys) + GAP_IN_A_HINT + text_width(does) + GAP_BETWEEN_HINTS;
-            at
-        })
-        .collect()
-}
-
-/// A row of keys as one run of text, which is what is written and
-/// measured.
-pub(crate) fn joined(hints: &[(String, &'static str)]) -> Option<String> {
-    match hints.is_empty() {
-        true => None,
-        false => Some(
-            hints
-                .iter()
-                .map(|(keys, does)| format!("{keys}{}{does}", " ".repeat(GAP_IN_A_HINT)))
-                .collect::<Vec<_>>()
-                .join(&" ".repeat(GAP_BETWEEN_HINTS)),
-        ),
-    }
-}
-
-/// Says which cells of a row of keys written at `at` are the keys.
-///
-/// Nothing is written: the run `joined` made is the whole of what a
-/// terminal draws, and this says what shape a window may draw round part
-/// of it -- the same cap the foot's keys wear.
-///
-/// On `ground`, the colour of the row it is on, as the settings' caps are:
-/// a key a row hands back is offered only on the row the reader is on, and
-/// a cap in the page's colour cut a hole in the mark that says so.
-pub(crate) fn cap_the_keys(
-    at: u16,
-    y: u16,
-    hints: &[(String, &'static str)],
-    ground: Color,
-    theme: &Theme,
-) {
-    for (along, (keys, _)) in where_the_keys_are(hints).into_iter().zip(hints) {
-        if let Ok(x) = u16::try_from(usize::from(at) + along) {
-            cap_around(x, y, keys, text_width(keys), ground, ground, theme.gutter);
-        }
-    }
-}
-
-/// The keys the row the reader is on says at its end: those a view marked
-/// [`Hint::on_the_row`], where they do something on this row.
-///
-/// A list's enter takes the row, everywhere, and is not news -- so it is
-/// said nowhere, and the rest of a view's keys are in the palette over it.
-/// A list whose keys are all about the row it is on is the exception: two
-/// enters, where the first is not what enter means anywhere else, or one
-/// key that stops the work a row is. The reader needs those on every row,
-/// which is not something to open a second list for every time -- so they
-/// go where the reader is already looking, the way the transcript says
-/// what enter does. The words are the palette's, which says them too.
-///
-/// Only those that do something on this row: a key said at a row's end is
-/// a key that row answers to.
-pub(crate) fn on_the_row(hints: &[Hint]) -> Vec<(String, &'static str)> {
-    hints
-        .iter()
-        .filter(|hint| hint.here && hint.row && hint.usable)
-        .filter_map(|hint| Some((hint.keys(), hint.does?)))
-        .collect()
-}
-
-/// Whether the palette over a view has anything to say that the view does
-/// not: a key of its own the view has, that is not said on its row.
-///
-/// What decides whether a view points at the palette at all. A `More` that
-/// opens a second list to say what the row already says is a layer over a
-/// layer for nothing.
-#[must_use]
-pub fn says_more(hints: &[Hint]) -> bool {
-    hints.iter().any(|hint| hint.here && !hint.row)
-}
-
-/// Writes a row's keys against `right`, if they fit after `from`, and
-/// says where they start -- so whatever else the row says stops short of
-/// them.
-///
-/// Dropped whole where they do not fit, like every aside: half a key is no
-/// key.
-pub(crate) fn keys_at_the_end(
-    cells: &mut CellBuffer,
-    (from, right): (u16, u16),
-    y: u16,
-    keys: &[(String, &'static str)],
-    ink: Style,
-    theme: &Theme,
-) -> Option<u16> {
-    let said = joined(keys)?;
-    let wide = u16::try_from(text_width(&said)).ok()?;
-    let at = right.checked_sub(wide)?;
-    if at < from {
-        return None;
-    }
-    write(cells, at, y, &said, ink);
-    cap_the_keys(at, y, keys, ink.bg.unwrap_or(theme.background), theme);
-    Some(at)
 }
 
 /// How far apart two items on that row sit.
@@ -659,53 +565,33 @@ mod tests {
 
     use super::*;
 
-    /// Break: count the gap between two hints as the gap inside one, and
-    /// every cap after the first is drawn a cell or two to the left of the
-    /// key it is about.
-    #[test]
-    fn a_cap_on_the_status_row_is_over_the_key_it_is_about() {
-        let hints = [
-            ("alt+t".to_string(), "The note"),
-            ("ctrl+g".to_string(), "Conversations"),
-            ("shift+tab".to_string(), "Mode"),
-        ];
-        let said = joined(&hints).expect("three hints say something");
-        for (along, (keys, _)) in where_the_keys_are(&hints).into_iter().zip(&hints) {
-            assert_eq!(
-                said.get(along..along + keys.len()),
-                Some(keys.as_str()),
-                "{keys} is not at {along} of {said:?}"
-            );
-        }
-    }
-
-    /// A row says the keys marked for it and nothing else -- not one that
-    /// does nothing on this row -- and the palette has more to say only
-    /// where a key is not on the row.
+    /// A view's row says the keys marked for it, and not one that does
+    /// nothing here; and the palette has more to say only where a key is
+    /// not on the row.
     ///
-    /// Broken deliberately twice: by saying the dim one too (the row says
-    /// `Switch` where it does nothing), and by asking `says_more` about
-    /// every key (a view whose keys are all on its row still says `More`).
+    /// Broken deliberately twice: by saying the dim one too (`usable` left
+    /// out of `said_on_its_row`), and by asking `says_more` about every key
+    /// (a view whose keys are all said still points at the palette).
     #[test]
-    fn a_row_says_its_own_keys_and_the_palette_the_rest() {
+    fn a_view_says_its_own_keys_and_the_palette_the_rest() {
         let enter = |modifiers| obelus_keymap::KeyChord::new(KeyCode::Enter, modifiers);
         let said = |hints: &[Hint]| -> Vec<&str> {
-            on_the_row(hints)
+            said_on_its_row(hints)
                 .into_iter()
-                .map(|(_, does)| does)
+                .filter_map(|hint| hint.does)
                 .collect()
         };
         let two = [
-            Hint::new(enter(KeyModifiers::NONE), "New window").on_the_row(true),
-            Hint::new(enter(KeyModifiers::CONTROL), "Switch").on_the_row(true),
+            Hint::new(enter(KeyModifiers::NONE), "New window").said(true),
+            Hint::new(enter(KeyModifiers::CONTROL), "Switch").said(true),
         ];
         assert_eq!(said(&two), ["New window", "Switch"]);
         assert!(!says_more(&two), "the palette repeats the row");
 
         let dim = [
-            Hint::new(enter(KeyModifiers::NONE), "New window").on_the_row(true),
+            Hint::new(enter(KeyModifiers::NONE), "New window").said(true),
             Hint::new(enter(KeyModifiers::CONTROL), "Switch")
-                .on_the_row(true)
+                .said(true)
                 .when(false),
         ];
         assert_eq!(said(&dim), ["New window"]);

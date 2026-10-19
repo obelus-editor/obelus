@@ -56,13 +56,15 @@ pub fn hints(names: &Names) -> Vec<Hint> {
             Hint::new(bare(KeyCode::Enter), word)
                 .about(about)
                 .when(on.is_some_and(Row::stands))
+                .said(true)
         },
         // One act in two directions, which is why it is one hint: the
         // notes move a row with the same chord.
         Hint::new(chord(KeyCode::Up, KeyModifiers::ALT), "Move")
             .or(chord(KeyCode::Down, KeyModifiers::ALT))
             .about("Change the order the names are tried in")
-            .when(on.is_some_and(Row::chosen)),
+            .when(on.is_some_and(Row::chosen))
+            .said(true),
     ]
 }
 

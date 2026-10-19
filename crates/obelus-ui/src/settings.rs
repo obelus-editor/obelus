@@ -203,6 +203,15 @@ impl<'a> SettingsView<'a> {
     }
 }
 
+impl SettingsView<'_> {
+    /// Every key the page has where the reader is -- [`keys`], from what
+    /// the view already holds.
+    #[must_use]
+    pub fn keys(&self) -> Vec<Hint> {
+        keys(self.settings, self.offering.as_ref(), &self.themes)
+    }
+}
+
 /// What the keys do here, and which of them do anything at the moment: the
 /// first tab of the palette opened over the page.
 ///
@@ -327,9 +336,9 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
             // the card's (`theme_hints`).
             .only_where(!settings.on_themes())
             .when(settings.row_count(offering) > 0 && !pairing_waits && !nothing_to_change)
-            // On the keys page, where the second enter makes the first
-            // news; everywhere else enter is a list's own.
-            .on_the_row(settings.on_keys()),
+            // Said on the filter's row on the keys page, where a second
+            // enter makes the first news; elsewhere enter is a list's own.
+            .said(settings.on_keys()),
         Hint::new(
             obelus_keymap::KeyChord::new(KeyCode::Enter, KeyModifiers::CONTROL),
             "Add a key",
@@ -337,7 +346,7 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
         .about("Give this command another key")
         .only_where(settings.on_keys())
         .when(adds)
-        .on_the_row(true),
+        .said(true),
         // Taking keys away, each offered only where it would do something:
         // the key on this row, this command put back on its layout's keys,
         // and every command.
@@ -416,12 +425,14 @@ fn theme_hints(settings: &Settings, card: Option<&ThemeCard>) -> Vec<Hint> {
     vec![
         Hint::new(bare(KeyCode::Enter), enter)
             .about(does)
-            .when(card.is_some_and(|card| card.may_be_installed() || card.may_be_worn())),
+            .when(card.is_some_and(|card| card.may_be_installed() || card.may_be_worn()))
+            .said(true),
         Hint::new(bare(KeyCode::Delete), "Remove")
             .about("Take this theme off this machine")
             .when(
                 card.is_some_and(ThemeCard::may_be_taken_away) && !settings.delete_is_the_filters(),
-            ),
+            )
+            .said(true),
     ]
 }
 
@@ -1104,10 +1115,6 @@ impl SettingsView<'_> {
             .max()
             .unwrap_or(0);
         let detail_at = name_at + u16::try_from(names).unwrap_or(0) + 2;
-        // What the row the reader is on says at its end: on the keys page,
-        // that enter changes a key and `ctrl+enter` adds one -- see
-        // `crate::on_the_row`.
-        let row_keys = crate::on_the_row(&hints(self.settings, self.offering.as_ref()));
         // Walked by height rather than by row, because an entry is as tall
         // as what it has to say: a name, the rows its description takes, and
         // a blank so that the next name is not read as part of it. Every
@@ -1179,25 +1186,9 @@ impl SettingsView<'_> {
                     let room = aside_at.saturating_sub(name_at + 3 + lock);
                     truncate_from_right(source, usize::from(room))
                 });
-            let mut reserved = source.as_deref().map_or(0, |source| {
+            let reserved = source.as_deref().map_or(0, |source| {
                 u16::try_from(obelus_text::text_width(source)).unwrap_or(0) + lock + 1
             });
-            // Before the source, which keeps its place against the
-            // column, and measured before the name is for the same reason:
-            // the name and what it does are cut to what is left. Never
-            // past the middle of what the name has.
-            if focused {
-                let room = (
-                    name_at + aside_at.saturating_sub(name_at) / 2,
-                    aside_at.saturating_sub(reserved + 1),
-                );
-                let ink = plain.fg(self.theme.gutter).bg(background);
-                if let Some(at) = crate::keys_at_the_end(cells, room, y, &row_keys, ink, self.theme)
-                {
-                    let gap = u16::try_from(crate::GAP_BETWEEN_HINTS).unwrap_or(u16::MAX);
-                    reserved = aside_at.saturating_sub(at) + gap;
-                }
-            }
 
             // Cut to what is left before the right-hand column: a line
             // running under it reads as part of it.
