@@ -122,6 +122,48 @@ fn a_file_theme_previews_and_is_kept() {
     );
 }
 
+/// The palette opened from the themes lets go of the list the way escape
+/// does, so the theme walked to but not chosen is taken off again.
+///
+/// Broken deliberately by the palette dropping the list rather than
+/// leaving it (`self.picker = None` in `open_command_palette`): the preview
+/// stayed on under the palette, chosen by nobody.
+#[test]
+fn the_palette_puts_back_a_theme_only_walked_to() {
+    let scratch = reader("palette-puts-back");
+    std::fs::write(
+        scratch.join("themes/omarchy.toml"),
+        "base = \"dark\"\nbackground = \"#121212\"\n",
+    )
+    .expect("the theme");
+    let page = written::hex("#121212").expect("a colour");
+
+    let mut app = open(&scratch);
+    dispatch::dispatch(&mut app, Command::ThemeSelect);
+    support::press(&mut app, KeyCode::Up);
+    let _ = support::render(&mut app, 70, 14);
+    assert_eq!(
+        app.theme().background,
+        page,
+        "walking to it did not wear it, so this proves nothing"
+    );
+
+    support::press_control(&mut app, 'p');
+    let _ = support::render(&mut app, 70, 14);
+    assert!(
+        app.picker().is_some_and(|picker| picker
+            .matches()
+            .any(|row| matches!(row.value, obelus_component::picker::PickerValue::Command(_)))),
+        "the palette did not open"
+    );
+    assert_eq!(
+        app.theme().background,
+        builtin::DARK.background,
+        "the palette kept the preview"
+    );
+    assert_eq!(app.theme_name(), "dark");
+}
+
 /// A tree carries no theme of its own, and its settings may not name one:
 /// the themes are the reader's.
 ///
