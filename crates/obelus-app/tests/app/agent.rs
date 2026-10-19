@@ -16048,13 +16048,14 @@ fn the_count_opens_the_work_and_its_key_stops_it() {
 
 /// The list of background work offers its key in the palette, and dim on
 /// work that has stopped -- and says it at the end of the row it stops,
-/// so it points at no palette.
+/// and not on one it does nothing to.
 ///
-/// Broken deliberately three ways: by offering it whatever the row (the
-/// `when` taken off the list's key in `picker::keys`), when it was still
-/// offered once the work had stopped; by leaving the key off the row
-/// (`on_the_row(false)`), when the row did not say it; and by asking for
-/// `More` wherever a list has keys of its own, when the list still said it.
+/// Broken deliberately twice: by offering it whatever the row (the `when`
+/// taken off the list's key in `picker::keys`), when it was still offered
+/// once the work had stopped; and by leaving the key off the row
+/// (`on_the_row(false)`), when the row did not say it. Nothing here asks
+/// about `More`: this list asks a question on the row under it, which is
+/// drawn in place of the words `More` follows, so it never said it.
 #[test]
 fn the_list_of_work_dims_its_key_where_it_does_nothing() {
     let (mut app, events) = playing(&["air"]);
@@ -16074,8 +16075,8 @@ fn the_list_of_work_dims_its_key_where_it_does_nothing() {
             .usable
     };
     assert!(stops(&mut app), "the key is dim on work that is running");
-    // And the row says it, so the list points at no palette: a key the
-    // row already says is not worth a second list.
+    // And the row says it: the one key a row has is not worth opening a
+    // second list for.
     let stop =
         obelus_keymap::KeyChord::new(KeyCode::Char('s'), crossterm::event::KeyModifiers::ALT)
             .label();
@@ -16083,10 +16084,6 @@ fn the_list_of_work_dims_its_key_where_it_does_nothing() {
     assert!(
         shown.contains(&stop),
         "the row does not say its key:\n{shown}"
-    );
-    assert!(
-        !shown.contains("More"),
-        "the list still points at the palette:\n{shown}"
     );
 
     support::press_alt(&mut app, 's');
