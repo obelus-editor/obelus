@@ -887,8 +887,9 @@ pub struct Picker {
     /// list's own order the arrivals are older commits, which belong at the
     /// bottom, so nothing above the selection ever moves.
     ordered: bool,
-    /// Whether this list has keys of its own, which the palette opened over
-    /// it says in its first tab.
+    /// Whether this list has keys of its own, which its own row says or the
+    /// palette opened over it says in its first tab -- see
+    /// `obelus_ui::said_on_its_row`.
     ///
     /// Only a list with keys of its own. Every list answers to the arrows,
     /// to enter and to escape, and a tab saying so is a tab of what the
@@ -1535,14 +1536,14 @@ impl Picker {
 
     /// Says whether `ctrl+enter` puts this window where a row is, which
     /// makes the two enters two different things, and so whether the
-    /// palette says what each of them does.
+    /// list's row says what each of them does.
     pub const fn switches_in_place(&mut self, in_place: bool) {
         self.in_place = in_place;
         self.own_keys = in_place || self.moves;
     }
 
     /// Says whether the reader may move the rows, and so whether the
-    /// palette says how.
+    /// list's row says how.
     pub const fn moves_rows(&mut self, moves: bool) {
         self.moves = moves;
         self.own_keys = moves || self.in_place;
@@ -1597,7 +1598,7 @@ impl Picker {
     }
 
     /// Says this is a list of the agent's background work, and whether a
-    /// row of it can be stopped -- which the palette says.
+    /// row of it can be stopped -- which the list's row says.
     pub const fn lists_tasks(&mut self, stoppable: bool) {
         self.tasks = Some(stoppable);
         self.own_keys = true;

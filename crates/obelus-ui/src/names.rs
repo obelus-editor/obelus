@@ -39,8 +39,9 @@ const OFFERED: &str = " On this machine ";
 /// that changed their answer for them.
 const ELSEWHERE: &str = "Not on this machine";
 
-/// What the keys do here, and which of them do anything now: the first tab
-/// of the palette opened over the list.
+/// What the keys do here, and which of them do anything now -- both said
+/// on the list's own row (`crate::said_on_its_row`), since the palette lets
+/// go of the names rather than opening over them.
 #[must_use]
 pub fn hints(names: &Names) -> Vec<Hint> {
     use crossterm::event::{KeyCode, KeyModifiers};
