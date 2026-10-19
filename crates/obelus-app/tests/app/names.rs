@@ -89,9 +89,8 @@ fn the_palette_lets_go_of_the_names() {
     support::press_control(&mut app, 'p');
     assert!(app.names().is_none(), "the palette opened over the names");
     assert!(
-        app.picker().is_some_and(|picker| picker
-            .matches()
-            .any(|row| matches!(row.value, obelus_component::picker::PickerValue::Command(_)))),
+        app.picker()
+            .is_some_and(|picker| picker.opener() == Some(obelus_command::Command::CommandPalette)),
         "the palette did not open"
     );
     assert_eq!(app.config().fonts, chosen, "what was chosen went with them");

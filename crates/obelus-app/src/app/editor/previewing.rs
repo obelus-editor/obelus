@@ -55,7 +55,6 @@ impl App {
                 // Kept within the rows by `refresh_preview`, which stores
                 // the scroll back once it knows the room.
                 top: usize::try_from(preview.scrolled).unwrap_or(0),
-                turning: laid.turning,
             }),
         })
     }
@@ -343,21 +342,12 @@ impl App {
                 .as_ref()
                 .and_then(|preview| preview.reading.as_ref())
                 .is_some_and(|laid| laid.width == width);
-            let rows = (!laid).then(|| match asked {
-                crate::app::pulls::Asked::PullRequest(number) => {
-                    self.pull_request_reading(number, width)
-                }
-                crate::app::pulls::Asked::Issue(number) => self.issue_reading(number, width),
-            });
+            let rows = (!laid).then(|| self.discussion_preview(asked, width));
             let Some(preview) = self.preview.as_mut() else {
                 return;
             };
-            if let Some((rows, turning)) = rows {
-                preview.reading = Some(Laid {
-                    width,
-                    rows,
-                    turning,
-                });
+            if let Some(rows) = rows {
+                preview.reading = Some(Laid { width, rows });
             }
             let length = preview.reading.as_ref().map_or(0, |laid| laid.rows.len());
             let last = length.saturating_sub(usize::from(area.height));
@@ -612,6 +602,11 @@ impl App {
             self.wheel_in_terminal(rows);
             return;
         }
+        // A page: the view moves and the cursor stays where it was.
+        if let Some(page) = self.discussion_mut() {
+            page.scroll(rows);
+            return;
+        }
         let height = self.editor_area.height;
         if let Some(rows_in_view) = self.rendered_rows()
             && let Some(buffer) = self.current_buffer_mut()
@@ -682,6 +677,11 @@ impl App {
             Whose::Notes => {
                 if let Some(notes) = self.notes_mut() {
                     notes.drag_to(top);
+                }
+            }
+            Whose::Discussion => {
+                if let Some(page) = self.discussion_mut() {
+                    page.drag_to(top);
                 }
             }
             Whose::Projects => {
@@ -836,7 +836,15 @@ impl App {
         // read -- the list has pushed the editor down the screen rather
         // than replaced it with a blank, and what was under the reader's
         // eyes a moment ago is still there to look at.
+        //
+        // Except over the pull requests and issues, none of which is a file:
+        // there the file was not pushed down but covered, and showing it
+        // under the rule while `gh` is still being asked is a preview of
+        // something no row of the list is about.
         let Some(item) = picker.selected_item() else {
+            if self.listing_pull_requests() {
+                return None;
+            }
             return self.reading_now();
         };
         // A row that *is* the line it names is there because the query
@@ -1247,10 +1255,7 @@ pub(in crate::app) struct Laid {
     /// The width it was laid out at.
     width: u16,
     /// The rows.
-    rows: Vec<obelus_row::Row>,
-    /// The row whose head the view turns a mark at, while it says
-    /// something is on its way.
-    turning: Option<usize>,
+    rows: Vec<obelus_component::discussion::Row>,
 }
 
 impl Preview {

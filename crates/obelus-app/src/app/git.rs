@@ -3,6 +3,7 @@
 
 use super::*;
 
+pub(super) mod discussions;
 pub(super) mod history;
 pub(super) mod history_view;
 pub mod pulls;

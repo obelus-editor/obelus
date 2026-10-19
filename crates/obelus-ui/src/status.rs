@@ -82,6 +82,8 @@ pub struct StatusView<'a> {
     palette: Option<String>,
     /// The notes, while they are what is being read.
     shown: crate::Shown<'a>,
+    /// Whether another Obelus has the review of the page being read.
+    elsewhere: bool,
     /// Which of them is nearest the reader, and so whose row this is.
     ///
     /// The same question the caret asks. Three of these can be on screen
@@ -139,6 +141,7 @@ impl<'a> StatusView<'a> {
             note_is_wrong: app.note_is_wrong(),
             palette: palette_key(app),
             shown: app.shown(),
+            elsewhere: app.page_talked_about_elsewhere(),
             choosing: app.choosing(),
             nearest: app.layers().nearest(),
             replacing: app.replacing(),
@@ -225,6 +228,9 @@ impl Widget for StatusView<'_> {
                 crate::Shown::Notes(notes) => self.render_notes(notes, area, cells, style),
                 crate::Shown::Terminal(terminal) => {
                     self.render_terminal(terminal, area, cells, style);
+                }
+                crate::Shown::Discussion(page) => {
+                    self.render_discussion(page, area, cells, style);
                 }
                 crate::Shown::File(_)
                 | crate::Shown::Reading(_)
@@ -1569,6 +1575,58 @@ impl StatusView<'_> {
                 area.y,
                 hint,
                 style.fg(self.theme.gutter),
+            );
+        }
+    }
+
+    /// A pull request's or an issue's row: which it is, by the number it
+    /// is typed by, and the palette's key, which is where its own keys are
+    /// said.
+    fn render_discussion(
+        &self,
+        page: &obelus_component::discussion::DiscussionView,
+        area: Rect,
+        cells: &mut CellBuffer,
+        style: Style,
+    ) {
+        let what = match page.about() {
+            obelus_component::discussion::About::PullRequest(_) => "Pull request",
+            obelus_component::discussion::About::Issue(_) => "Issue",
+        };
+        let name = match obelus_icons::enabled() {
+            true => format!(
+                "{}{}{what} #{}",
+                page.icon(),
+                crate::after_a_glyph(),
+                page.number()
+            ),
+            false => format!("{what} #{}", page.number()),
+        };
+        write(cells, area.x + 1, area.y, &name, style);
+        let end = self.remote_at_end(area, cells, style);
+        // Where another Obelus has the review, which is why the key that
+        // takes it up does nothing here: a refused claim is drawn, never
+        // said, and this is the row the notes draw theirs on. In the room
+        // the palette's key would have, because a key that does nothing is
+        // not the news.
+        if self.elsewhere {
+            let held = "Talked about in another window";
+            let at = 1 + text_width(&name) + 2;
+            if at + text_width(held) + 2 <= end
+                && let Ok(offset) = u16::try_from(at)
+            {
+                write(cells, area.x + offset, area.y, held, style);
+            }
+            return;
+        }
+        if let (Some(key), Ok(end)) = (&self.palette, u16::try_from(end + 1)) {
+            more(
+                cells,
+                area,
+                1 + text_width(&name) + AFTER_WORDS,
+                area.x.saturating_add(end),
+                key,
+                self.theme,
             );
         }
     }

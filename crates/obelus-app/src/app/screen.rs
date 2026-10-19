@@ -103,6 +103,7 @@ impl Screen for App {
             Some(Document::Chat(talk)) => Shown::Chat(&talk.chat),
             Some(Document::Notes(notes)) => Shown::Notes(notes),
             Some(Document::Terminal(terminal)) => Shown::Terminal(terminal),
+            Some(Document::Discussion(page)) => Shown::Discussion(page),
             Some(Document::File(buffer)) => match App::rendering(self) {
                 Some(rows) => Shown::Reading(rows),
                 None => Shown::File(buffer),
@@ -207,6 +208,9 @@ impl Screen for App {
     }
     fn is_about_a_note(&self) -> bool {
         App::is_about_a_note(self)
+    }
+    fn page_talked_about_elsewhere(&self) -> bool {
+        App::page_talked_about_elsewhere(self)
     }
     fn branch_this_conversation_works_on(&self) -> Option<&obelus_git::Head> {
         App::branch_this_conversation_works_on(self)

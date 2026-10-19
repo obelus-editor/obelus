@@ -151,9 +151,8 @@ fn the_palette_puts_back_a_theme_only_walked_to() {
     support::press_control(&mut app, 'p');
     let _ = support::render(&mut app, 70, 14);
     assert!(
-        app.picker().is_some_and(|picker| picker
-            .matches()
-            .any(|row| matches!(row.value, obelus_component::picker::PickerValue::Command(_)))),
+        app.picker()
+            .is_some_and(|picker| picker.opener() == Some(obelus_command::Command::CommandPalette)),
         "the palette did not open"
     );
     assert_eq!(

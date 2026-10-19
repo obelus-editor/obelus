@@ -81,7 +81,11 @@ pub fn editor_room(area: Rect, app: &impl Screen) -> Rect {
     // to close.
     match app.shown() {
         Shown::Chat(_) | Shown::Terminal(_) => return editor,
-        Shown::File(_) | Shown::Reading(_) | Shown::Notes(_) | Shown::Nothing => {}
+        Shown::File(_)
+        | Shown::Reading(_)
+        | Shown::Notes(_)
+        | Shown::Discussion(_)
+        | Shown::Nothing => {}
     }
     picker::room_above(list, editor)
 }
@@ -260,6 +264,8 @@ pub fn cursor_position(area: Rect, app: &impl Screen) -> Option<Position> {
                         app.spelling_over_a_program(),
                     );
                 }
+                // And a pull request or an issue, where its cursor is.
+                Shown::Discussion(page) => return discussion::caret(regions.editor, page),
                 Shown::File(_) | Shown::Reading(_) | Shown::Nothing => {}
             }
         }
@@ -374,6 +380,11 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
         Shown::Chat(_) => {
             if let Some(view) = chat::ChatView::new(app) {
                 bars::of(Whose::Conversation, || view.render(regions.editor, cells));
+            }
+        }
+        Shown::Discussion(_) => {
+            if let Some(view) = discussion::DiscussionUi::new(app) {
+                bars::of(Whose::Discussion, || view.render(regions.editor, cells));
             }
         }
         Shown::Reading(rows) => bars::of(Whose::Document, || {
@@ -974,34 +985,15 @@ fn list_over(
                 ..
             }) => bars::of(Whose::Preview, || {
                 fill(cells, preview, Style::new().bg(app.theme().background));
-                let area = reading::in_a_preview(preview);
-                reading::draw(
+                discussion::draw(
                     cells,
-                    area,
+                    discussion::band(preview),
                     shown.rows,
                     shown.top,
+                    None,
                     app.theme(),
-                    app.theme().background,
+                    app.phase(),
                 );
-                // The mark at the head of the row that says something is on
-                // its way, where that row is on screen.
-                if let Some(row) = shown.turning
-                    && let Some(below) = row.checked_sub(shown.top)
-                    && let Ok(below) = u16::try_from(below)
-                    && below < area.height
-                {
-                    let y = area.y + below;
-                    write(
-                        cells,
-                        area.x,
-                        y,
-                        &spinning(app.phase()).to_string(),
-                        Style::new()
-                            .fg(app.theme().gutter)
-                            .bg(app.theme().background),
-                    );
-                    shapes::spun(area.x, y);
-                }
             }),
             Some(shown) => bars::of(Whose::Preview, || {
                 editor::EditorView::for_buffer(

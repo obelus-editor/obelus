@@ -10,6 +10,7 @@ pub mod chooser;
 pub mod completion;
 pub mod composer;
 pub mod counts;
+pub mod discussion;
 pub mod field;
 pub mod hover;
 pub mod layers;

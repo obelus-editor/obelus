@@ -157,7 +157,17 @@ fn query(language: LanguageId) -> Option<&'static Query> {
     }
 
     match language {
-        LanguageId::Markdown => compiled!(MARKDOWN, tree_sitter_md::INJECTION_QUERY_BLOCK),
+        // And a cell of a table, which the grammar's own query leaves out: a
+        // cell is a paragraph's words as much as a paragraph is, and without
+        // it a `**word**` in one was drawn with its stars -- in a reading,
+        // and coloured as nothing in the file.
+        LanguageId::Markdown => compiled!(
+            MARKDOWN,
+            &format!(
+                "{}\n((pipe_table_cell) @injection.content\n  (#set! injection.language \"markdown_inline\"))\n",
+                tree_sitter_md::INJECTION_QUERY_BLOCK
+            )
+        ),
         LanguageId::MarkdownInline => {
             compiled!(MARKDOWN_INLINE, tree_sitter_md::INJECTION_QUERY_INLINE)
         }

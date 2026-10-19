@@ -1497,6 +1497,18 @@ impl App {
             .map_or(&[], |talker| talker.orders(self.session_now().as_ref()))
     }
 
+    /// Whether the agent has more than one way of working to step
+    /// through, which is when `shift+tab` in the box does anything --
+    /// asked the way `step_mode` asks it.
+    pub(in crate::app) fn agent_has_modes(&self) -> bool {
+        let session = self.session_now();
+        self.agent
+            .talker
+            .as_ref()
+            .and_then(|talker| talker.mode(session.as_ref()))
+            .is_some_and(|mode| mode.values.len() > 1)
+    }
+
     /// Moves to the agent's next way of working.
     pub(in crate::app) fn step_agent_mode(&mut self) {
         let session = self.session_now();

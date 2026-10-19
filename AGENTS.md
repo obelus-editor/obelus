@@ -86,9 +86,9 @@ writing a view, look for the piece that already does it:
     component::window  which rows are on screen, and when that changes
     component::window::Move  the six keys that move about a list
     component::page    a cursor on rows laid out rather than a file: what
-                       the arrows walk, what tab stops on, what shift holds
-                       and what a copy takes -- the transcript's, and any
-                       other page read that way (ui::page draws its cells)
+                       the arrows walk, what shift holds and what a copy
+                       takes -- the transcript's, and any other page read
+                       that way (ui::page draws its cells)
     ui::editor         a document with a gutter: the file being read, and a
                        preview of somewhere else, which *is* this view
 
@@ -424,7 +424,10 @@ one leads with a tab of them, each a row with its key at the end and a
 switch with its tick, dim where it does nothing, and choosing one presses
 that key in the view. Escape gives up on the palette and the reader is in
 the view again, with what they had typed and the row they were on -- the
-second escape is the view's. The palette is a layer of its own
+second escape is the view's. A name typed there that none of the view's
+keys match is looked for among the commands, because a reader typing
+`open-settings` has not looked at which tab they are on
+(`Picker::go_where_the_query_is_found`). The palette is a layer of its own
 (`Layer::Palette`), not the picker, because the view under it is very often
 a picker still being filled. The two pages that ask a question keep a foot,
 because nothing opens over them and the key that leaves is the only way
@@ -649,9 +652,12 @@ crates/
                       (app/project/themes); pull requests and issues are two tabs of
                       one errand, asked of `gh` and not of GitHub, a page
                       when the reader gets to the end of the last one,
-                      choosing one opens the review or the answer and says
-                      nothing yet, and what goes to GitHub goes on the
-                      reader's word (app/git/pulls); one window talks to the
+                      choosing one opens it and the review is a key of its
+                      page that says nothing yet, and what goes to GitHub goes
+                      on the reader's word (app/git/pulls); choosing one
+                      opens it and talking about it is a key of the page,
+                      and what `gh` says is kept once, by the list
+                      (app/git/discussions); one window talks to the
                       chat and every
                       window is heard in it, which project a thread begun
                       there is for is the reader's to say, a window joined
@@ -730,8 +736,9 @@ crates/
                     obelus-app's, in src/app/dispatch.rs
   obelus-component/ picker (one component, several instantiations), settings,
                     the conversation, the box a message is written in, the
-                    window every list shares, and the cursor every page of
-                    laid-out rows shares (page)
+                    window every list shares, the cursor every page of
+                    laid-out rows shares (page), and a pull request or an
+                    issue read as one (discussion)
                     · a query is about the rows the list is of, whether it
                       ranks is settled per tab, a list still arriving sits
                       still, say "still reading" where it moves nothing, which
@@ -747,9 +754,13 @@ crates/
                       a call's title is three rows shut, a link is opened by
                       a click and not by enter (chat); the cursor is a place
                       on the screen and a selection is a place in the words,
-                      and the arrows walk every row drawn and tab goes to what
-                      acts (page); the page is Obelus's,
-                      and so is the record of it (chat/kept); folding is one
+                      and the arrows walk every row drawn and nothing steps
+                      between what acts (page); reading one and asking an
+                      agent about it are two different acts, a page with a
+                      cursor like the transcript, what enter does is open or
+                      shut or copy, and laid out once and kept (discussion);
+                      the page is Obelus's, and so is the record of it
+                      (chat/kept); folding is one
                       act and the notes are the fourth place it happens, a note
                       somebody else is talking about is read here and not
                       changed, a box is the reader's once they have put
@@ -770,6 +781,11 @@ crates/
                       what Obelus writes, Obelus has to be able to read (log)
   obelus-markdown/  markdown, laid out into rows, from the tree Obelus
                     already parses
+                    · a tag is the asking, not the words, a comment is not
+                      there at all, a shortcode is the emoji it names, where
+                      a tag is this finds by itself and the HTML grammar
+                      does not, and only what GitHub lets through is a tag
+                      (html)
   obelus-search/    one question at three scopes, the project walked on a
                     thread a core and searched by ripgrep's own searcher, the
                     project as a tree a level at a time (tree), and how much

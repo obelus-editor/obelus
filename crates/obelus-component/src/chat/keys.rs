@@ -211,8 +211,7 @@ impl Chat {
                 // On to the last row, which is the words nearest the box
                 // and so the ones the reader was looking at. Not the
                 // nearest row that *does* something, which is where this
-                // used to land: the cursor walks the words now, and tab is
-                // what goes to the next thing enter opens.
+                // used to land: the cursor walks the words now.
                 match self.back_into_the_transcript(room) {
                     Some(place) => {
                         self.focus = Focus::Transcript(place);
@@ -542,6 +541,11 @@ impl Chat {
             KeyCode::Char(_) | KeyCode::Backspace | KeyCode::Delete | KeyCode::Enter => {
                 Some(ChatOutcome::Consumed)
             }
+            // And tab, which walks nothing here, with shift and tab -- which
+            // in the box steps the agent's way of working, and a reader who
+            // pressed it while reading would have changed how the agent works
+            // without meaning to.
+            KeyCode::Tab | KeyCode::BackTab => Some(ChatOutcome::Consumed),
             _ => None,
         }
     }

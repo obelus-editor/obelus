@@ -69,6 +69,16 @@ pub enum Document {
     /// Boxed: a parser and its screen, against the buffer every other slot
     /// is sized to.
     Terminal(Box<obelus_terminal::Terminal>),
+    /// A pull request or an issue, read as a page.
+    ///
+    /// A document for the reason the notes are one -- somewhere the reader
+    /// goes and comes back to -- and not a conversation: reading one and
+    /// asking an agent about it are two different acts, and the second is a
+    /// key of this page rather than what choosing it from the list does.
+    ///
+    /// Boxed: what `gh` said about it, its rows and a cursor, against the
+    /// buffer every other slot is sized to.
+    Discussion(Box<obelus_component::discussion::DiscussionView>),
 }
 
 impl Document {
@@ -85,7 +95,7 @@ impl Document {
     pub const fn file(&self) -> Option<&Buffer> {
         match self {
             Self::File(buffer) => Some(buffer),
-            Self::Chat(_) | Self::Notes(_) | Self::Terminal(_) => None,
+            Self::Chat(_) | Self::Notes(_) | Self::Terminal(_) | Self::Discussion(_) => None,
         }
     }
 
@@ -94,7 +104,7 @@ impl Document {
     pub const fn file_mut(&mut self) -> Option<&mut Buffer> {
         match self {
             Self::File(buffer) => Some(buffer),
-            Self::Chat(_) | Self::Notes(_) | Self::Terminal(_) => None,
+            Self::Chat(_) | Self::Notes(_) | Self::Terminal(_) | Self::Discussion(_) => None,
         }
     }
 
@@ -103,7 +113,7 @@ impl Document {
     pub fn chat(&self) -> Option<&Conversation> {
         match self {
             Self::Chat(talk) => Some(talk),
-            Self::File(_) | Self::Notes(_) | Self::Terminal(_) => None,
+            Self::File(_) | Self::Notes(_) | Self::Terminal(_) | Self::Discussion(_) => None,
         }
     }
 
@@ -111,7 +121,7 @@ impl Document {
     pub fn chat_mut(&mut self) -> Option<&mut Conversation> {
         match self {
             Self::Chat(talk) => Some(talk),
-            Self::File(_) | Self::Notes(_) | Self::Terminal(_) => None,
+            Self::File(_) | Self::Notes(_) | Self::Terminal(_) | Self::Discussion(_) => None,
         }
     }
 
@@ -124,6 +134,7 @@ impl Document {
             Self::Chat(_) => obelus_icons::ui::AGENT,
             Self::Notes(_) => obelus_icons::for_command(obelus_command::Command::TodoOpen),
             Self::Terminal(_) => obelus_icons::ui::TERMINAL,
+            Self::Discussion(page) => page.icon(),
         }
     }
 
@@ -132,7 +143,7 @@ impl Document {
     pub const fn notes(&self) -> Option<&TodoView> {
         match self {
             Self::Notes(notes) => Some(notes),
-            Self::File(_) | Self::Chat(_) | Self::Terminal(_) => None,
+            Self::File(_) | Self::Chat(_) | Self::Terminal(_) | Self::Discussion(_) => None,
         }
     }
 
@@ -141,7 +152,7 @@ impl Document {
     pub const fn notes_mut(&mut self) -> Option<&mut TodoView> {
         match self {
             Self::Notes(notes) => Some(notes),
-            Self::File(_) | Self::Chat(_) | Self::Terminal(_) => None,
+            Self::File(_) | Self::Chat(_) | Self::Terminal(_) | Self::Discussion(_) => None,
         }
     }
 }
@@ -152,7 +163,7 @@ impl Document {
     pub fn terminal(&self) -> Option<&obelus_terminal::Terminal> {
         match self {
             Self::Terminal(terminal) => Some(terminal),
-            Self::File(_) | Self::Chat(_) | Self::Notes(_) => None,
+            Self::File(_) | Self::Chat(_) | Self::Notes(_) | Self::Discussion(_) => None,
         }
     }
 
@@ -160,8 +171,33 @@ impl Document {
     pub fn terminal_mut(&mut self) -> Option<&mut obelus_terminal::Terminal> {
         match self {
             Self::Terminal(terminal) => Some(terminal),
-            Self::File(_) | Self::Chat(_) | Self::Notes(_) => None,
+            Self::File(_) | Self::Chat(_) | Self::Notes(_) | Self::Discussion(_) => None,
         }
+    }
+}
+
+impl Document {
+    /// The pull request or issue, where this is one.
+    #[must_use]
+    pub fn discussion(&self) -> Option<&obelus_component::discussion::DiscussionView> {
+        match self {
+            Self::Discussion(page) => Some(page),
+            Self::File(_) | Self::Chat(_) | Self::Notes(_) | Self::Terminal(_) => None,
+        }
+    }
+
+    /// And to walk it.
+    pub fn discussion_mut(&mut self) -> Option<&mut obelus_component::discussion::DiscussionView> {
+        match self {
+            Self::Discussion(page) => Some(page),
+            Self::File(_) | Self::Chat(_) | Self::Notes(_) | Self::Terminal(_) => None,
+        }
+    }
+}
+
+impl From<obelus_component::discussion::DiscussionView> for Document {
+    fn from(page: obelus_component::discussion::DiscussionView) -> Self {
+        Self::Discussion(Box::new(page))
     }
 }
 
