@@ -653,8 +653,9 @@ crates/
                       one errand, asked of `gh` and not of GitHub, a page
                       when the reader gets to the end of the last one,
                       choosing one opens it and the review is a key of its
-                      page that says nothing yet, and what goes to GitHub goes
-                      on the reader's word (app/git/pulls); choosing one
+                      page that says nothing yet, what goes to GitHub goes
+                      on the reader's word, and opened from the page being
+                      read it stands on that page's row (app/git/pulls); choosing one
                       opens it and talking about it is a key of the page,
                       what `gh` says is kept once, by the list, and a page
                       can be opened by its number alone

@@ -1584,3 +1584,26 @@ fn a_details_says_how_it_starts() {
     );
     assert_eq!(nested, ["Outer"], "{nested:?}");
 }
+
+/// A heading has a blank line above it whether or not the source does, as
+/// GitHub draws one -- and only one, where the source has its own.
+///
+/// Broken deliberately two ways. Taking the blank out of `heading`: the
+/// heading sat on the list's last row. And adding it whatever was above:
+/// two blank lines where the source had one.
+#[test]
+fn a_heading_has_room_above_it() {
+    let texts = |source: &str| -> Vec<String> { render(source, 40).iter().map(text).collect() };
+    let tight = texts("- one\n- two\n## Next\n\nAfter.\n");
+    let at = tight
+        .iter()
+        .position(|row| row == "Next")
+        .expect("the heading");
+    assert_eq!(tight[at - 1], "", "no room above the heading: {tight:?}");
+    assert!(tight[at - 2].ends_with("two"), "{tight:?}");
+
+    let spaced = texts("Words.\n\n## Next\n");
+    assert_eq!(spaced, ["Words.", "", "Next"], "{spaced:?}");
+    let top = texts("# First\n\nWords.\n");
+    assert_eq!(top[0], "First", "room above the first row: {top:?}");
+}

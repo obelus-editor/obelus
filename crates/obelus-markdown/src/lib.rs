@@ -323,6 +323,22 @@ impl Laying<'_> {
         let Some(said) = said else {
             return;
         };
+        // A blank line above it, whether or not the source has one: GitHub
+        // puts room above every heading, and an author who wrote one straight
+        // under a list meant a new section, not another line of the list.
+        // Not where there is a blank already, nor at the top, nor where a
+        // bullet is waiting for its first row -- the blank would take it.
+        let blank = |row: &Row| {
+            !row.rule
+                && row.code.is_none()
+                && row
+                    .spans
+                    .iter()
+                    .all(|span| span.ink == Ink::Mark || span.text.trim().is_empty())
+        };
+        if self.owed.is_none() && self.rows.last().is_some_and(|row| !blank(row)) {
+            self.row(prefix, Vec::new());
+        }
         self.said(said, width, prefix, Ink::Heading(level));
     }
 

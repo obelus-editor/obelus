@@ -17149,6 +17149,74 @@ fn the_last_answer_stands_in_while_the_next_is_asked() {
     );
 }
 
+/// The list opened from a pull request's page or an issue's stands on its
+/// row, on its tab; opened from anything else, where it always does.
+///
+/// Broken deliberately three ways. Not selecting the row once the rows
+/// are in: the list stood on the first. Not going to the issues' tab:
+/// the issue's row was not there to stand on. And asking whether a page is
+/// open rather than whether it is the one being read: opened from the file
+/// it stood on the page's row.
+#[test]
+fn the_list_stands_on_the_page_it_was_opened_from() {
+    let scratch = support::Scratch::new("agent-pull-request-list-stands-on-page");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, two_pull_requests()).expect("the pull requests");
+    std::fs::write(
+        scratch.path().join("gh-answer.json.issues"),
+        one_issue("2026-10-08T00:00:00Z"),
+    )
+    .expect("the issues");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+    let file = scratch.path().join("elsewhere.rs");
+    std::fs::write(&file, "fn elsewhere() {}\n").expect("a file");
+    app.open_for_test(&file);
+    let reading = app.current_document_for_test().expect("the file");
+    let standing = |app: &App| {
+        app.picker()
+            .and_then(|picker| Some((picker.tab(), picker.selected_item()?.label.clone())))
+            .unwrap_or_default()
+    };
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
+    pump(&mut app, &events, "the list", |app| answered_with(app, 2));
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
+    let (tab, label) = standing(&app);
+    assert!(
+        tab == 0 && label.starts_with("#124 "),
+        "opened from #124's page, it stood on {tab} {label:?}"
+    );
+    pump(&mut app, &events, "the list again", |app| {
+        answered_with(app, 2)
+    });
+    let (_, label) = standing(&app);
+    assert!(
+        label.starts_with("#124 "),
+        "the new answer moved it to {label:?}"
+    );
+
+    support::press(&mut app, KeyCode::Tab);
+    pump(&mut app, &events, "the issues", |app| answered_with(app, 1));
+    support::press(&mut app, KeyCode::Enter);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
+    let (tab, label) = standing(&app);
+    assert!(
+        tab == 1 && label.starts_with("#348 "),
+        "opened from the issue's page, it stood on {tab} {label:?}"
+    );
+
+    support::press(&mut app, KeyCode::Esc);
+    app.go_to_document_for_test(reading);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
+    let (tab, label) = standing(&app);
+    assert!(
+        tab == 0 && label.starts_with("#123 "),
+        "opened from a file, it stood on {tab} {label:?}"
+    );
+}
+
 /// What `gh issue list` prints for one open issue last updated at `stamp`.
 fn one_issue(stamp: &str) -> String {
     format!(

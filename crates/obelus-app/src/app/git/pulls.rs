@@ -563,6 +563,9 @@ pub(in crate::app) struct Pulls {
     settling: Option<crate::event::Pause>,
     /// How many searches this window has asked, which numbers each.
     searches: u64,
+    /// The one the list should stand on once its tab has rows: the page
+    /// being read when it was opened.
+    stand_on: Option<Asked>,
 }
 
 impl App {
@@ -587,6 +590,16 @@ impl App {
         // from `gh`, put in when the reader walks onto it.
         let tabs = tabs();
         picker.with_scopes(&tabs.each_ref().map(String::as_str));
+        // Opened from a page, on the row that page is: the list is where
+        // the reader goes next from it, and the row beside the one they
+        // were reading is the likeliest. Only from the page being read --
+        // one open behind a file is not where the reader is.
+        self.pulls.stand_on = self
+            .discussion()
+            .map(obelus_component::discussion::DiscussionView::asked);
+        if let Some(Asked::Issue(_)) = self.pulls.stand_on {
+            picker.go_to_tab(1);
+        }
         // What the selection says about itself, under the list: a title is
         // a line, and which to take up is decided by the rest.
         picker.previews();
@@ -920,6 +933,28 @@ impl App {
                 false => Vec::new(),
             },
         };
+        // The page the list was opened from, the first time its tab has
+        // rows -- and only the first: a page of them arriving later is not
+        // a reason to move the reader off the row they went to since.
+        let issues = self.showing_issues();
+        let answered = match issues {
+            true => self.pulls.issues.answered,
+            false => self.pulls.pulls.answered,
+        };
+        let stand_on = self
+            .pulls
+            .stand_on
+            .filter(|asked| answered && matches!(asked, Asked::Issue(_)) == issues);
+        let stand_at = stand_on.and_then(|asked| {
+            items.iter().position(|item| match (&item.value, asked) {
+                (PickerValue::PullRequest(number), Asked::PullRequest(asked))
+                | (PickerValue::Issue(number), Asked::Issue(asked)) => *number == asked,
+                _ => false,
+            })
+        });
+        if stand_on.is_some() {
+            self.pulls.stand_on = None;
+        }
         if let Some(picker) = self.picker.as_mut() {
             // Standing on the same one, wherever the new answer puts it --
             // see `show_the_pull_requests`.
@@ -931,6 +966,9 @@ impl App {
                         if one == other
                 )
             });
+            if let Some(at) = stand_at {
+                picker.select_item(at);
+            }
         }
         self.say_how_much();
     }
