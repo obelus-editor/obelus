@@ -89,14 +89,24 @@ pub fn keys(picker: &Picker) -> Vec<Hint> {
     // because here it is: this is the one list where enter does not take
     // the row. Neither is a switch -- what they do depends on the row the
     // reader is on -- so neither draws a setting.
+    // Both said on the list's row, so both say what they do on the row the
+    // reader is on and nothing where there is none: enter shuts a row that
+    // is open, the way the counts' does.
     if picker.rows_open() {
         let enter = |modifiers| obelus_keymap::KeyChord::new(KeyCode::Enter, modifiers);
+        let on = picker.selected_item();
+        let (word, about) = match on.and_then(|item| item.opens) {
+            Some(true) => ("Close", "Fold away what is under this row"),
+            _ => ("Open", "Show what this row holds, under it"),
+        };
         return vec![
-            Hint::new(enter(KeyModifiers::NONE), "Open")
-                .about("Show what this row holds, under it")
+            Hint::new(enter(KeyModifiers::NONE), word)
+                .about(about)
+                .when(on.is_some())
                 .said(true),
             Hint::new(enter(KeyModifiers::ALT), "Go there")
                 .about("Go to the place this row names")
+                .when(on.is_some())
                 .said(true),
         ];
     }
