@@ -263,3 +263,33 @@ fn what_went_wrong_wears_the_picture_of_how_bad_it_is() {
         "the warning does not wear a warning's picture: {row}"
     );
 }
+
+/// The tabs of the list of pull requests and issues wear the marks their
+/// pages wear, so a tab says which kind of page choosing from it opens.
+///
+/// Broken deliberately by naming the tabs without their marks: neither
+/// glyph was on the row.
+#[test]
+fn the_pull_requests_tabs_wear_their_pages_marks() {
+    let _turn = crate::turn();
+    let scratch = support::Scratch::new("glyphs-pull-request-tabs");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, "[]").expect("the answer");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    let script = std::path::absolute("tests/fixtures/fake-gh.sh").expect("a directory");
+    app.gh_for_test(
+        std::path::PathBuf::from(support::sh()),
+        vec![script.display().to_string(), answer.display().to_string()],
+    );
+    obelus_icons::use_glyphs(true);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    let dump = support::render(&mut app, 60, 12);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains(&format!("{} Pull requests", obelus_icons::ui::PULL_REQUEST))
+            && text.contains(&format!("{} Issues", obelus_icons::ui::ISSUE)),
+        "the tabs have no marks:\n{text}"
+    );
+}

@@ -794,9 +794,7 @@ impl DiscussionView {
     #[must_use]
     pub fn icon(&self) -> char {
         match self.about {
-            About::PullRequest(_) => {
-                obelus_icons::for_command(obelus_command::Command::PullRequestReview)
-            }
+            About::PullRequest(_) => obelus_icons::ui::PULL_REQUEST,
             About::Issue(_) => obelus_icons::ui::ISSUE,
         }
     }

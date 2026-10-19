@@ -58,8 +58,22 @@ use crate::{app::*, event::Event};
 /// and GitHub matches whole ones.
 const SETTLES_AFTER: std::time::Duration = std::time::Duration::from_millis(300);
 
-/// The list's tabs, in the order they sit in.
-const TABS: [&str; 2] = ["Pull requests", "Issues"];
+/// The list's tabs, in the order they sit in, each with the mark its page
+/// wears -- only where glyphs are on, because without the font a mark is a
+/// box in front of the word.
+fn tabs() -> [String; 2] {
+    [
+        (obelus_icons::ui::PULL_REQUEST, "Pull requests"),
+        (obelus_icons::ui::ISSUE, "Issues"),
+    ]
+    .map(|(mark, name)| {
+        if obelus_icons::enabled() {
+            format!("{mark} {name}")
+        } else {
+            name.to_string()
+        }
+    })
+}
 
 /// A row of a list: its number, and when it last changed.
 trait Listable {
@@ -571,7 +585,8 @@ impl App {
         picker.opened_by(Command::PullRequestReview);
         // Scopes rather than groups: each tab's rows are its own answer
         // from `gh`, put in when the reader walks onto it.
-        picker.with_scopes(&TABS);
+        let tabs = tabs();
+        picker.with_scopes(&tabs.each_ref().map(String::as_str));
         // What the selection says about itself, under the list: a title is
         // a line, and which to take up is decided by the rest.
         picker.previews();

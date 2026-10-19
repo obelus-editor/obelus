@@ -17953,6 +17953,13 @@ fn the_list_of_pull_requests_previews_no_file_before_it_has_rows() {
         text.contains("Pull requests"),
         "the list is not up:\n{text}"
     );
+    // The glyphs are off in this binary, and a mark without the font is a
+    // box in front of the word. Broken deliberately by marking the tabs
+    // whatever the switch says.
+    assert!(
+        !text.contains(obelus_icons::ui::PULL_REQUEST),
+        "a tab wears a glyph with the glyphs off:\n{text}"
+    );
     assert!(
         !text.contains("the_file_behind_the_list"),
         "the list previews the file it was opened over:\n{text}"
