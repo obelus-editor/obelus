@@ -67,9 +67,9 @@ pub fn list_region(area: Rect) -> Rect {
     }
 }
 
-/// The rows under the list: a rule, and the row that points at the
-/// palette -- the one every other page has its box on, and the counts have
-/// no box to put there.
+/// The rows under the list: a rule, and the row that says what enter does
+/// to the row the reader is on -- the one every other page has its box on,
+/// and the counts have no box to put there.
 const BELOW: u16 = 2;
 
 /// Which row of the table a point on screen is on, and whether it is on
@@ -134,6 +134,7 @@ pub fn hints(counts: &Counts) -> Vec<Hint> {
         Hint::new(bare(KeyCode::Enter), word)
             .about(about)
             .when(on.is_some_and(|row| row.go.is_some()))
+            .said(true)
     }]
 }
 
@@ -245,8 +246,6 @@ impl Layout {
 pub struct CountsView<'a> {
     counts: &'a Counts,
     theme: &'a Theme,
-    /// The palette's key, which the row under the table points at.
-    palette: Option<String>,
     /// Whether nothing is over the counts, which is whether they may mark
     /// the row and the tab the keys are on -- see [`crate::in_front`].
     in_front: bool,
@@ -258,7 +257,6 @@ impl<'a> CountsView<'a> {
     pub fn new(app: &'a impl Screen) -> Option<Self> {
         Some(Self {
             counts: app.counts()?,
-            palette: crate::status::palette_key(app),
             theme: app.theme(),
             in_front: crate::in_front(app, Some(crate::layers::Layer::Counts)),
         })
@@ -332,9 +330,7 @@ impl Widget for CountsView<'_> {
         } else {
             self.rows(cells, body, layout);
         }
-        if let Some(key) = &self.palette
-            && area.height >= FURNITURE + BELOW
-        {
+        if area.height >= FURNITURE + BELOW {
             let row = area.bottom() - 1;
             crate::rule(
                 cells,
@@ -345,18 +341,21 @@ impl Widget for CountsView<'_> {
                 },
                 self.theme,
             );
-            crate::status::more(
+            let foot = Rect {
+                y: row,
+                height: 1,
+                ..area
+            };
+            // What enter does to the row the reader is on, at the row's end
+            // -- see `crate::said_on_its_row`. It is the counts' one key, so
+            // the row points at no palette: there would be nothing in it the
+            // row has not said.
+            crate::status::said_keys(
                 cells,
-                Rect {
-                    y: row,
-                    height: 1,
-                    ..area
-                },
-                // Where the notes' name starts on their row, and a file's
-                // path on its: the first column of a row's words.
+                foot,
                 1,
-                area.right(),
-                key,
+                foot.right(),
+                &crate::said_on_its_row(&hints(self.counts)),
                 self.theme,
             );
         }
@@ -709,14 +708,14 @@ mod tests {
         let area = Rect::new(0, 0, 80, 24);
         let list = list_region(area);
         // Under the tabs, the rule and the headings, and over the rule and
-        // the row that points at the palette.
+        // the row that says what enter does.
         assert_eq!(list_height(area), 24 - 3 - 2);
         assert_eq!(list.height, list_height(area));
         assert_eq!(list.y, area.y + 3);
         assert_eq!(
             list.bottom(),
             area.bottom() - 2,
-            "the list runs into the row pointing at the palette"
+            "the list runs into the row saying what enter does"
         );
         // A region with no room for a list at all does not go round.
         assert_eq!(list_height(Rect::new(0, 0, 80, 2)), 0);

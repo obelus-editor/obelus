@@ -52,6 +52,9 @@ pub struct Hint {
     /// to go, so "go there" is dim in the palette while the selection is on
     /// one, and a key whose row is dim does nothing there.
     pub usable: bool,
+    /// Whether the view says it on its own row, rather than leaving it to
+    /// the palette -- see [`said_on_its_row`].
+    pub said: bool,
 }
 
 impl Hint {
@@ -66,7 +69,15 @@ impl Hint {
             about: None,
             usable: true,
             here: true,
+            said: false,
         }
+    }
+
+    /// Says the view says it on its own row, where `said`.
+    #[must_use]
+    pub const fn said(mut self, said: bool) -> Self {
+        self.said = said;
+        self
     }
 
     /// The same act in the other direction, on a key of its own.
@@ -112,6 +123,39 @@ impl Hint {
             None => self.chord.label(),
         }
     }
+}
+
+/// The keys a view says on its own row -- the row its query is typed
+/// into, or the one at its foot -- where they do something now.
+///
+/// A view's keys are in the palette over it, and its row points there with
+/// `More`. Which works for a list of switches, and is a second list opened
+/// over the first for a view whose keys are one or two things to do to the
+/// row the reader is on: two enters, where the first is not what enter
+/// means anywhere else, or the one key that stops the work a row is. Those
+/// are needed on every row, so they are said where the reader's eyes go
+/// between rows, at the far end of the view's own row. The words are the
+/// palette's, which says them too.
+///
+/// Only those that do something here: a key said is a key that works.
+#[must_use]
+pub fn said_on_its_row(hints: &[Hint]) -> Vec<Hint> {
+    hints
+        .iter()
+        .copied()
+        .filter(|hint| hint.here && hint.said && hint.usable)
+        .collect()
+}
+
+/// Whether the palette over a view has anything to say that the view's own
+/// row does not: a key the view has here that is not said there.
+///
+/// What decides whether the row points at the palette at all. A `More`
+/// that opens a second list to say the row again is a layer over a layer
+/// for nothing.
+#[must_use]
+pub fn says_more(hints: &[Hint]) -> bool {
+    hints.iter().any(|hint| hint.here && !hint.said)
 }
 
 /// How wide a tick is, in cells.
@@ -520,6 +564,46 @@ mod tests {
     use obelus_theme::builtin::DARK;
 
     use super::*;
+
+    /// A view's row says the keys marked for it, and not one that does
+    /// nothing here; and the palette has more to say only where a key is
+    /// not on the row.
+    ///
+    /// Broken deliberately twice: by saying the dim one too (`usable` left
+    /// out of `said_on_its_row`), and by asking `says_more` about every key
+    /// (a view whose keys are all said still points at the palette).
+    #[test]
+    fn a_view_says_its_own_keys_and_the_palette_the_rest() {
+        let enter = |modifiers| obelus_keymap::KeyChord::new(KeyCode::Enter, modifiers);
+        let said = |hints: &[Hint]| -> Vec<&str> {
+            said_on_its_row(hints)
+                .into_iter()
+                .filter_map(|hint| hint.does)
+                .collect()
+        };
+        let two = [
+            Hint::new(enter(KeyModifiers::NONE), "New window").said(true),
+            Hint::new(enter(KeyModifiers::CONTROL), "Switch").said(true),
+        ];
+        assert_eq!(said(&two), ["New window", "Switch"]);
+        assert!(!says_more(&two), "the palette repeats the row");
+
+        let dim = [
+            Hint::new(enter(KeyModifiers::NONE), "New window").said(true),
+            Hint::new(enter(KeyModifiers::CONTROL), "Switch")
+                .said(true)
+                .when(false),
+        ];
+        assert_eq!(said(&dim), ["New window"]);
+
+        let switch = [Hint::new(
+            obelus_keymap::KeyChord::new(KeyCode::Char('r'), KeyModifiers::ALT),
+            "Regex",
+        )
+        .set(false)];
+        assert!(said(&switch).is_empty());
+        assert!(says_more(&switch), "a switch is left to nobody");
+    }
 
     /// The row of keys along one width, as text.
     fn drawn(hints: &[Hint], width: u16) -> String {

@@ -16060,12 +16060,16 @@ fn the_count_opens_the_work_and_its_key_stops_it() {
     );
 }
 
-/// The list of background work offers its key in the palette, and dim on
-/// work that has stopped.
+/// The list of background work has its key lit only on work it can stop --
+/// and says it on the list's own row while the row the reader is on is
+/// such work, and not otherwise.
 ///
-/// Broken deliberately by offering it whatever the row (the `when` taken
-/// off the list's key in `picker::keys`): it was still offered once the
-/// work had stopped.
+/// Broken deliberately twice: by offering it whatever the row (the `when`
+/// taken off the list's key in `picker::keys`), when it was still offered
+/// once the work had stopped; and by not marking it as said
+/// (`.said(false)`), when the list's row did not say it. Nothing here asks
+/// about `More`: this list asks a question on the row under it, which is
+/// drawn in place of the words `More` follows, so it never said it.
 #[test]
 fn the_list_of_work_dims_its_key_where_it_does_nothing() {
     let (mut app, events) = playing(&["air"]);
@@ -16077,14 +16081,26 @@ fn the_list_of_work_dims_its_key_where_it_does_nothing() {
         app.background_tasks() == Some((1, 0))
     });
     open_the_background_work(&mut app);
+    // Asked of the list rather than of a palette over it: the palette lets
+    // go of a list on the status bar before it opens.
     let stops = |app: &mut App| {
-        support::keys_here(app)
+        obelus_ui::picker::keys(app.picker().expect("the list"))
             .into_iter()
-            .find(|key| key.does == "Stop")
-            .expect("no Stop in the palette")
+            .find(|key| key.does == Some("Stop"))
+            .expect("no Stop among the list's keys")
             .usable
     };
     assert!(stops(&mut app), "the key is dim on work that is running");
+    // And the row says it: the one key a row has is not worth opening a
+    // second list for.
+    let stop =
+        obelus_keymap::KeyChord::new(KeyCode::Char('s'), crossterm::event::KeyModifiers::ALT)
+            .label();
+    let shown = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        shown.contains(&stop),
+        "the row does not say its key:\n{shown}"
+    );
 
     support::press_alt(&mut app, 's');
     pump(&mut app, &events, "the list saying so", |app| {
@@ -16094,17 +16110,22 @@ fn the_list_of_work_dims_its_key_where_it_does_nothing() {
         !stops(&mut app),
         "the key is not dim on work that has stopped"
     );
+    let shown = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        !shown.contains(&stop),
+        "the row says a key that does nothing on it:\n{shown}"
+    );
 }
 
-/// The palette over the list of background work goes when the list does:
-/// the agent stopping takes the list away, and the palette's first tab was
-/// its keys.
+/// The palette opened from the list of background work lets go of the list
+/// first, rather than stacking a second list on the status bar over it --
+/// and so does not lead with the list's keys, which are said on the list's
+/// own row.
 ///
-/// Broken deliberately by leaving `leave` as it was, the palette alone: it
-/// stayed up over the conversation, offering `Stop`, which pressed there is
-/// the file's `alt+s`.
+/// Broken deliberately by opening the palette over every list again, as it
+/// was (the list is still there under it).
 #[test]
-fn the_palette_goes_with_the_list_it_was_over() {
+fn the_palette_lets_go_of_a_list_on_the_status_bar() {
     let (mut app, events) = playing(&["air"]);
     pump(&mut app, &events, "the handshake", |app| {
         app.talking() == obelus_agent::Talking::Ready
@@ -16114,19 +16135,25 @@ fn the_palette_goes_with_the_list_it_was_over() {
         app.background_tasks() == Some((1, 0))
     });
     open_the_background_work(&mut app);
+    // The list's one key as the palette's first tab would have written it:
+    // the conversation behind it has keys of its own now, so that tab is
+    // there whichever view it is about.
+    let stop =
+        obelus_keymap::KeyChord::new(KeyCode::Char('s'), crossterm::event::KeyModifiers::ALT)
+            .label();
     support::press_control(&mut app, 'p');
     assert!(
-        app.palette().is_some(),
-        "the palette did not open over the list"
+        app.picker()
+            .is_some_and(|picker| picker.opener() == Some(obelus_command::Command::CommandPalette)),
+        "the palette did not open"
     );
-
-    app.handle(Event::Agent(obelus_agent::Event::Acp(
-        obelus_agent::acp::Incoming::Gone(None),
-    )));
-    assert!(app.picker().is_none(), "the list did not go with the agent");
+    assert!(app.palette().is_none(), "the palette opened over the list");
     assert!(
-        app.palette().is_none(),
-        "the palette stayed up over nothing"
+        !app.picker()
+            .expect("the palette")
+            .matches()
+            .any(|row| row.label == "Stop" && row.trailing.as_deref() == Some(stop.as_str())),
+        "the palette still leads with the list's keys"
     );
 }
 

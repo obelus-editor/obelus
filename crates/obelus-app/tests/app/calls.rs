@@ -117,7 +117,11 @@ fn a_tree_of_calls_on_screen() {
 /// Enter opens the row the reader is on, and closes it again -- the key a
 /// directory in the counted tree and a commit in a history already open on.
 /// Which is the whole of the interface: the protocol asks one item at a
-/// time, so opening a row is exactly one question.
+/// time, so opening a row is exactly one question. And the list's row says
+/// which of the two enter does on the row the reader is on.
+///
+/// Broken deliberately by the word being `Open` whatever the row, as it
+/// was: the list's row said `Open` on a row enter shuts.
 #[test]
 fn enter_opens_a_row_and_closes_it() {
     let (scratch, mut app) = reading("calls-folded");
@@ -145,6 +149,17 @@ fn enter_opens_a_row_and_closes_it() {
         "the key did not open the row under the reader"
     );
 
+    let says = |app: &mut App| {
+        let dump = support::render(app, 80, 24);
+        support::text_block(&dump)
+            .lines()
+            .last()
+            .unwrap_or_default()
+            .to_string()
+    };
+    let open = says(&mut app);
+    assert!(open.contains("Close") && !open.contains("Open"), "{open:?}");
+
     // And again, which closes it: the same key, the same row.
     support::press(&mut app, KeyCode::Enter);
     assert_eq!(
@@ -152,6 +167,8 @@ fn enter_opens_a_row_and_closes_it() {
         [(0, "run".to_string()), (1, "main".to_string())],
         "the key that opened it would not close it"
     );
+    let shut = says(&mut app);
+    assert!(shut.contains("Open") && !shut.contains("Close"), "{shut:?}");
 }
 
 /// Choosing a row goes to the call rather than to the caller: a reader who

@@ -39,8 +39,9 @@ const OFFERED: &str = " On this machine ";
 /// that changed their answer for them.
 const ELSEWHERE: &str = "Not on this machine";
 
-/// What the keys do here, and which of them do anything now: the first tab
-/// of the palette opened over the list.
+/// What the keys do here, and which of them do anything now -- both said
+/// on the list's own row (`crate::said_on_its_row`), since the palette lets
+/// go of the names rather than opening over them.
 #[must_use]
 pub fn hints(names: &Names) -> Vec<Hint> {
     use crossterm::event::{KeyCode, KeyModifiers};
@@ -56,13 +57,15 @@ pub fn hints(names: &Names) -> Vec<Hint> {
             Hint::new(bare(KeyCode::Enter), word)
                 .about(about)
                 .when(on.is_some_and(Row::stands))
+                .said(true)
         },
         // One act in two directions, which is why it is one hint: the
         // notes move a row with the same chord.
         Hint::new(chord(KeyCode::Up, KeyModifiers::ALT), "Move")
             .or(chord(KeyCode::Down, KeyModifiers::ALT))
             .about("Change the order the names are tried in")
-            .when(on.is_some_and(Row::chosen)),
+            .when(on.is_some_and(Row::chosen))
+            .said(true),
     ]
 }
 

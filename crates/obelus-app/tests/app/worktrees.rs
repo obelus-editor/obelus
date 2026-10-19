@@ -630,6 +630,43 @@ fn the_palette_says_what_each_enter_does_on_the_row() {
     );
 }
 
+/// And the list's own row says them, without the palette: both on a tree
+/// another window could go to, and only enter's on this window's own,
+/// where `ctrl+enter` has nowhere to go -- and it points at no palette,
+/// whose first tab would say the same again.
+///
+/// Broken deliberately three ways: by not saying them on the list's row
+/// (it says neither), by saying a dim one as well (this tree's row offers
+/// `Switch`), and by pointing at the palette wherever a list has keys of
+/// its own (the row says `More`).
+#[test]
+fn the_list_s_row_says_what_each_enter_does() {
+    let scratch = Scratch::new("worktrees-row-end");
+    let (main, ..) = repository(&scratch);
+    let (mut app, _events) = window_on(&main, &Arc::new(Asked::default()));
+    dispatch::dispatch(&mut app, Command::WorktreeList);
+    let status_on = |app: &mut App, label: &str| -> String {
+        walk_to(app, label);
+        let screen = support::render(app, 80, 24);
+        support::text_block(&screen)
+            .lines()
+            .last()
+            .unwrap_or_default()
+            .to_string()
+    };
+    let feature = status_on(&mut app, "feature");
+    assert!(
+        feature.contains("New window") && feature.contains("Switch"),
+        "{feature:?}"
+    );
+    assert!(!feature.contains("More"), "{feature:?}");
+    let here = status_on(&mut app, "main");
+    assert!(
+        here.contains("New window") && !here.contains("Switch"),
+        "{here:?}"
+    );
+}
+
 /// A tree inside the main checkout is named the way the ones beside it
 /// are: from the directory the main checkout sits in.
 ///

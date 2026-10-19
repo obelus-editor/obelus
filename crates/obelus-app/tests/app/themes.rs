@@ -122,6 +122,47 @@ fn a_file_theme_previews_and_is_kept() {
     );
 }
 
+/// The palette opened from the themes lets go of the list the way escape
+/// does, so the theme walked to but not chosen is taken off again.
+///
+/// Broken deliberately by the palette dropping the list rather than
+/// leaving it (`self.picker = None` in `open_command_palette`): the preview
+/// stayed on under the palette, chosen by nobody.
+#[test]
+fn the_palette_puts_back_a_theme_only_walked_to() {
+    let scratch = reader("palette-puts-back");
+    std::fs::write(
+        scratch.join("themes/omarchy.toml"),
+        "base = \"dark\"\nbackground = \"#121212\"\n",
+    )
+    .expect("the theme");
+    let page = written::hex("#121212").expect("a colour");
+
+    let mut app = open(&scratch);
+    dispatch::dispatch(&mut app, Command::ThemeSelect);
+    support::press(&mut app, KeyCode::Up);
+    let _ = support::render(&mut app, 70, 14);
+    assert_eq!(
+        app.theme().background,
+        page,
+        "walking to it did not wear it, so this proves nothing"
+    );
+
+    support::press_control(&mut app, 'p');
+    let _ = support::render(&mut app, 70, 14);
+    assert!(
+        app.picker()
+            .is_some_and(|picker| picker.opener() == Some(obelus_command::Command::CommandPalette)),
+        "the palette did not open"
+    );
+    assert_eq!(
+        app.theme().background,
+        builtin::DARK.background,
+        "the palette kept the preview"
+    );
+    assert_eq!(app.theme_name(), "dark");
+}
+
 /// A tree carries no theme of its own, and its settings may not name one:
 /// the themes are the reader's.
 ///
@@ -1307,6 +1348,70 @@ fn delete_takes_a_theme_away_but_not_the_one_worn() {
     );
     support::press(&mut app, KeyCode::Delete);
     assert!(!root.join("gone").exists(), "two presses did not take it");
+}
+
+/// The filter's row says what enter and delete do to the theme the reader
+/// is on -- wearing it and taking it away, on one installed and not worn --
+/// and only what they do: neither on the theme being worn.
+///
+/// Broken deliberately twice: by not marking the theme's keys as said
+/// (`.said(false)` in `theme_hints`), when the row says neither; and by
+/// saying a key that does nothing (`usable` left out of
+/// `said_on_its_row`), when the worn theme's row offers `Remove`.
+#[test]
+fn the_filter_s_row_says_what_the_keys_do_to_a_theme() {
+    let scratch = reader("themes-row-keys");
+    let root = support::Scratch::new("themes-row-keys-installed");
+    installed_as(root.path(), "current", "aaa", "obelus");
+    installed_as(root.path(), "spare", "bbb", "obelus");
+
+    let mut app = open(&scratch);
+    app.installed_themes_for_test(root.path().to_path_buf());
+    app.themes_index_for_test(vec![
+        listed("current", obelus_themes::Group::Obelus, "aaa"),
+        listed("spare", obelus_themes::Group::Obelus, "bbb"),
+    ]);
+    dispatch::dispatch(&mut app, Command::ThemeSelect);
+    support::type_text(&mut app, "current");
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(app.theme_name(), "current");
+
+    let status = |app: &mut App| -> String {
+        let dump = support::render(app, 90, 30);
+        support::text_block(&dump)
+            .lines()
+            .last()
+            .unwrap_or_default()
+            .to_string()
+    };
+    // Walked to rather than typed for: on a Mac the key the page calls
+    // delete is backspace, which the filter keeps while anything is in it,
+    // so with a query typed `Remove` is rightly not said there.
+    let walk_to = |app: &mut App, name: &str| {
+        for _ in 0..8 {
+            let settings = app.settings().expect("the settings");
+            let on = settings
+                .themes(&app.listed_themes())
+                .get(settings.focus())
+                .map(|card| card.theme.name.clone());
+            if on.as_deref() == Some(name) {
+                return;
+            }
+            support::press(app, KeyCode::Down);
+        }
+        panic!("no card for {name}");
+    };
+    on_the_themes_page(&mut app);
+    walk_to(&mut app, "spare");
+    let spare = status(&mut app);
+    assert!(
+        spare.contains("Use") && spare.contains("Remove"),
+        "{spare:?}"
+    );
+
+    walk_to(&mut app, "current");
+    let worn = status(&mut app);
+    assert!(!worn.contains("Remove"), "{worn:?}");
 }
 
 /// The theme being worn, when it is behind, says both: that it is in use,

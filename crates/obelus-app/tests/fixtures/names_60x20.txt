@@ -19,7 +19,7 @@ screen 60x20  editor 60x18  status 60x1
 16| Noto Color Emoji                                           
 17| Noto Sans CJK SC                                           
 18|────────────────────────────────────────────────────────────
-19| > Filter the faces on this machine     Ctrl+p  More        
+19| > Filter the faces on this machine              Enter  Add 
 -- style --
  0|aaabacddaeeeebbabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaacaaaaaadddaaaaaaaaaaaaffffffbaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -40,7 +40,7 @@ screen 60x20  editor 60x18  status 60x1
 16|gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
 17|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 18|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-19|hhhcccccccccccccccccccccccccccccccchhhhiiiiiiiihcccchhhhhhhh
+19|hhhcccccccccccccccccccccccccccccccchhhhhhhhhhhhhiiiiiiihccch
 -- legend --
 a fg=#e4e4e7 bg=#18181b
 b fg=#a1a1aa bg=#18181b

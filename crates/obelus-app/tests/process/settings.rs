@@ -2412,6 +2412,39 @@ fn control_and_enter_adds_a_key() {
     assert!(!usable.contains(&"Change".to_string()), "{usable:?}");
 }
 
+/// The keys page has two enters, so the filter's row says them -- both on
+/// a command with a key, and only adding on one without, where enter has
+/// nothing to change.
+///
+/// Broken deliberately by not handing the page's keys to the filter's row
+/// (`render_filter` given none): neither word is anywhere on the page.
+#[test]
+fn a_command_s_row_says_its_two_enters() {
+    let _taken = crate::turn();
+    let scratch = temporary("two-enters-on-a-key");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+    support::press(&mut app, KeyCode::Tab);
+    support::type_text(&mut app, "redo");
+    let screen = support::render(&mut app, 120, 24);
+    let row = screen
+        .lines()
+        .find(|line| line.contains("Add a key"))
+        .unwrap_or_else(|| panic!("no row says what ctrl+enter does:\n{screen}"));
+    assert!(row.contains("Change"), "{row:?}");
+
+    support::press(&mut app, KeyCode::Esc);
+    let mut app = open(&file);
+    support::press(&mut app, KeyCode::Tab);
+    support::type_text(&mut app, "new-file");
+    let screen = support::render(&mut app, 120, 24);
+    let row = screen
+        .lines()
+        .find(|line| line.contains("Add a key"))
+        .unwrap_or_else(|| panic!("no row says what ctrl+enter does:\n{screen}"));
+    assert!(!row.contains("Change"), "{row:?}");
+}
+
 /// `alt+backspace` takes away the key on the row the reader is on, and only
 /// that one; on a command with no key, enter does nothing -- there is
 /// nothing to change -- and a row waiting to add a key has nothing to take
@@ -2882,7 +2915,9 @@ fn alt_backspace_on_a_row_scrolled_away_shows_it_first() {
 /// that names another view does not swap it away.
 ///
 /// Broken deliberately by letting it give way: `f1` put the files up in
-/// its place.
+/// its place. And by letting the palette's key past that question -- bound
+/// in the dialogs' table and opened before `gives_way_to_a_view` is asked
+/// -- when `ctrl+p` let go of it for the palette.
 #[test]
 fn the_question_about_every_key_does_not_give_way() {
     use crossterm::event::{KeyEvent, KeyModifiers};
@@ -2898,12 +2933,17 @@ fn the_question_about_every_key_does_not_give_way() {
         KeyModifiers::ALT | KeyModifiers::SHIFT,
     )));
     support::press_function(&mut app, 1);
-    assert!(
+    let still_asked = |app: &App| {
         app.picker()
             .and_then(|picker| picker.question())
-            .is_some_and(|question| question.starts_with("Put every key back")),
-        "the question gave way"
-    );
+            .is_some_and(|question| question.starts_with("Put every key back"))
+    };
+    assert!(still_asked(&app), "the question gave way");
+    // Nor to the palette, which lets go of any other list on the status
+    // bar before it opens.
+    support::press_control(&mut app, 'p');
+    assert!(still_asked(&app), "the question gave way to the palette");
+    assert!(app.palette().is_none(), "the palette opened over it");
 }
 
 /// A command another's line took a key from is changed, but has no line

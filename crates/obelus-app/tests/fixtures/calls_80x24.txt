@@ -23,7 +23,7 @@ screen 80x24  editor 80x22  status 80x1
 20|                                                                                
 21|                                                                                
 22|────────────────────────────────────────────────────────────────────────────────
-23| > Filter calls     Ctrl+p  More                                                
+23| > Filter calls                             Enter  Close    Alt+Enter  Go there 
 -- style --
  0|abbbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -48,7 +48,7 @@ screen 80x24  editor 80x22  status 80x1
 20|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 21|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 22|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-23|kkkaaaaaaaaaaaakkkkhhhhhhhhkaaaakkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk
+23|kkkaaaaaaaaaaaakkkkkkkkkkkkkkkkkkkkkkkkkkkkhhhhhhhkaaaaakkkhhhhhhhhhhhkaaaaaaaak
 -- legend --
 a fg=#52525b bg=#18181b
 b fg=#e4e4e7 bg=#27272a

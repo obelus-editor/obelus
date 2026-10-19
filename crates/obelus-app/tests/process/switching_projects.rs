@@ -293,6 +293,44 @@ fn in_a_window_enter_is_another_window_and_control_enter_is_this_one() {
     );
 }
 
+/// In a window the list's own row says both enters, and in a terminal,
+/// where enter is the only way and the ordinary one, it says neither. Nor does
+/// it point at the palette, whose first tab would only say the row again.
+///
+/// Broken deliberately twice: by not marking the enters as said
+/// (`.said(false)` on both in `picker::keys`), when no row says `Switch`;
+/// and by asking for `More` wherever a list has keys of its own, when the
+/// row under the list says `More`.
+#[test]
+fn in_a_window_the_row_says_both_enters() {
+    let _turn = crate::turn();
+    let scratch = Scratch::new("switching-says");
+    let (here, there) = (project(&scratch, "here"), project(&scratch, "there"));
+    keep(&[(&here, now()), (&there, now())]);
+    let mut app = on(&here);
+    dispatch::dispatch(&mut app, Command::ProjectList);
+    let dump = support::render(&mut app, 80, 30);
+    assert!(
+        !dump.contains("Switch"),
+        "a terminal's row says it:\n{dump}"
+    );
+
+    support::press(&mut app, KeyCode::Esc);
+    app.windowed_by(Arc::new(Asked::default()) as Arc<dyn Windows>);
+    dispatch::dispatch(&mut app, Command::ProjectList);
+    let dump = support::render(&mut app, 80, 30);
+    let text = support::text_block(&dump);
+    let row = text
+        .lines()
+        .find(|row| row.contains("Switch"))
+        .unwrap_or_else(|| panic!("no row says what ctrl+enter does:\n{dump}"));
+    assert!(row.contains("New window"), "{row:?}");
+    assert!(
+        !text.contains("More"),
+        "it still points at the palette:\n{dump}"
+    );
+}
+
 /// The page asking which project heads its runs of days the way the list
 /// does, and a press lands on the project it is drawn on -- the headings
 /// are rows that are no project's.

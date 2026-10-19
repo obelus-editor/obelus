@@ -203,6 +203,15 @@ impl<'a> SettingsView<'a> {
     }
 }
 
+impl SettingsView<'_> {
+    /// Every key the page has where the reader is -- [`keys`], from what
+    /// the view already holds.
+    #[must_use]
+    pub fn keys(&self) -> Vec<Hint> {
+        keys(self.settings, self.offering.as_ref(), &self.themes)
+    }
+}
+
 /// What the keys do here, and which of them do anything at the moment: the
 /// first tab of the palette opened over the page.
 ///
@@ -326,14 +335,18 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
             // sort of thing to one of them. Not the themes', whose enter is
             // the card's (`theme_hints`).
             .only_where(!settings.on_themes())
-            .when(settings.row_count(offering) > 0 && !pairing_waits && !nothing_to_change),
+            .when(settings.row_count(offering) > 0 && !pairing_waits && !nothing_to_change)
+            // Said on the filter's row on the keys page, where a second
+            // enter makes the first news; elsewhere enter is a list's own.
+            .said(settings.on_keys()),
         Hint::new(
             obelus_keymap::KeyChord::new(KeyCode::Enter, KeyModifiers::CONTROL),
             "Add a key",
         )
         .about("Give this command another key")
         .only_where(settings.on_keys())
-        .when(adds),
+        .when(adds)
+        .said(true),
         // Taking keys away, each offered only where it would do something:
         // the key on this row, this command put back on its layout's keys,
         // and every command.
@@ -412,12 +425,14 @@ fn theme_hints(settings: &Settings, card: Option<&ThemeCard>) -> Vec<Hint> {
     vec![
         Hint::new(bare(KeyCode::Enter), enter)
             .about(does)
-            .when(card.is_some_and(|card| card.may_be_installed() || card.may_be_worn())),
+            .when(card.is_some_and(|card| card.may_be_installed() || card.may_be_worn()))
+            .said(true),
         Hint::new(bare(KeyCode::Delete), "Remove")
             .about("Take this theme off this machine")
             .when(
                 card.is_some_and(ThemeCard::may_be_taken_away) && !settings.delete_is_the_filters(),
-            ),
+            )
+            .said(true),
     ]
 }
 

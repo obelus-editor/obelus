@@ -80,7 +80,8 @@ pub fn keys(picker: &Picker) -> Vec<Hint> {
                 "Stop",
             )
             .about("Stop the work on this row")
-            .when(picker.stops_this_one()),
+            .when(picker.stops_this_one())
+            .said(true),
         ];
     }
     // The two enters, where a row both holds something and is somewhere to
@@ -88,12 +89,25 @@ pub fn keys(picker: &Picker) -> Vec<Hint> {
     // because here it is: this is the one list where enter does not take
     // the row. Neither is a switch -- what they do depends on the row the
     // reader is on -- so neither draws a setting.
+    // Both said on the list's row, so both say what they do on the row the
+    // reader is on and nothing where there is none: enter shuts a row that
+    // is open, the way the counts' does.
     if picker.rows_open() {
         let enter = |modifiers| obelus_keymap::KeyChord::new(KeyCode::Enter, modifiers);
+        let on = picker.selected_item();
+        let (word, about) = match on.and_then(|item| item.opens) {
+            Some(true) => ("Close", "Fold away what is under this row"),
+            _ => ("Open", "Show what this row holds, under it"),
+        };
         return vec![
-            Hint::new(enter(KeyModifiers::NONE), "Open")
-                .about("Show what this row holds, under it"),
-            Hint::new(enter(KeyModifiers::ALT), "Go there").about("Go to the place this row names"),
+            Hint::new(enter(KeyModifiers::NONE), word)
+                .about(about)
+                .when(on.is_some())
+                .said(true),
+            Hint::new(enter(KeyModifiers::ALT), "Go there")
+                .about("Go to the place this row names")
+                .when(on.is_some())
+                .said(true),
         ];
     }
     // The open documents, whose order is the tabs' and the reader's. The
@@ -106,7 +120,8 @@ pub fn keys(picker: &Picker) -> Vec<Hint> {
             Hint::new(alt(KeyCode::Up), "Move")
                 .or(alt(KeyCode::Down))
                 .about("Change the order of the open documents")
-                .when(picker.query().is_empty()),
+                .when(picker.query().is_empty())
+                .said(true),
         ];
     }
     // The worktrees in a window, for the reason the two enters above are
@@ -126,10 +141,12 @@ pub fn keys(picker: &Picker) -> Vec<Hint> {
         return vec![
             Hint::new(enter(KeyModifiers::NONE), word)
                 .about(about)
-                .when(does.is_some()),
+                .when(does.is_some())
+                .said(true),
             Hint::new(enter(KeyModifiers::CONTROL), "Switch")
                 .about("Take this window to that tree")
-                .when(picker.switches_here()),
+                .when(picker.switches_here())
+                .said(true),
         ];
     }
     let alt = |letter| obelus_keymap::KeyChord::new(KeyCode::Char(letter), KeyModifiers::ALT);

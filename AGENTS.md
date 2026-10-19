@@ -76,6 +76,10 @@ writing a view, look for the piece that already does it:
     ui::tabs           a tab row and the arrows that walk it
     ui::status::typed  the glyph and the words on a row that is typed into
     ui::nothing        what a list says when it has nothing in it
+    ui::said_on_its_row  the keys a view says on its own row, where they
+                       are one or two things to do to the row the reader is
+                       on -- and ui::says_more, whether the palette has
+                       anything left to say
     ui::rule           a boundary between two things
     ui::scrollbar      how much of something longer than the screen is above,
                        and where a press takes hold of it (ui::bars)
@@ -414,21 +418,32 @@ opens a list over the file swaps the same way -- the menu about the name
 under the caret, the problems (`app/switching`).
 
 **The palette opens over a view rather than in its place, and a view's keys
-are its first tab.** A list, a page, the names and the notes say nothing at their
-foot about what their own keys do: the palette opened over one leads with a
-tab of them, each a row with its key at the end and a switch with its tick,
-dim where it does nothing, and choosing one presses that key in the view.
-Escape gives up on the palette and the reader is in the view again, with
-what they had typed and the row they were on -- the second escape is the
-view's. A name typed there that none of the view's keys match is looked for
-among the commands, because a reader typing `open-settings` has not looked
-at which tab they are on (`Picker::go_where_the_query_is_found`). It is a
-layer of its own (`Layer::Palette`), not the picker, because the view under
-it is very often a picker still being filled. The two pages
-that ask a question keep a foot, because nothing opens over them and the key
-that leaves is the only way off; and a switch that is on is said on the row
-its list's query is typed into as well, because it changes what that query
-finds.
+are its first tab.** A page, a list that has the screen and the notes say
+nothing at their foot about what their own keys do: the palette opened over
+one leads with a tab of them, each a row with its key at the end and a
+switch with its tick, dim where it does nothing, and choosing one presses
+that key in the view. Escape gives up on the palette and the reader is in
+the view again, with what they had typed and the row they were on -- the
+second escape is the view's. A name typed there that none of the view's
+keys match is looked for among the commands, because a reader typing
+`open-settings` has not looked at which tab they are on
+(`Picker::go_where_the_query_is_found`). The palette is a layer of its own
+(`Layer::Palette`), not the picker, because the view under it is very often
+a picker still being filled. The two pages that ask a question keep a foot,
+because nothing opens over them and the key that leaves is the only way
+off; and a switch that is on is said on the row its list's query is typed
+into as well, because it changes what that query finds.
+
+A list on the status bar is the exception -- a compact list, or the names
+being built: the palette lets go of it rather than opening over it, the way
+escape would, since the palette is a compact list itself and two stacked in
+the room of one say nothing the first could not. And a view whose keys are
+one or two things to do to the row the reader is on -- two enters, where the
+first is not what enter means anywhere else, or the one key that stops the
+work a row is -- says them at the far end of its own row instead, and
+points at the palette only where it has more: news needed on every row is
+not a second list to open each time (`ui::said_on_its_row`,
+`ui::says_more`).
 
 **One mark for "the keys are here", and it says nothing else.** Every list,
 page and card in Obelus puts `selected_row_background` behind the row the

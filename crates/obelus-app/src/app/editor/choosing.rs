@@ -155,6 +155,31 @@ impl App {
 
     /// Offers every command by name.
     pub fn open_command_palette(&mut self) {
+        // A list on the status bar is let go of first rather than opened
+        // over: the palette is one too, and two of them stacked on the
+        // bottom of the screen are two lists in the room of one, the
+        // second saying nothing the first could not -- a compact list's own
+        // keys are said on its row. Let go of the way escape lets go of it,
+        // so what it previewed is put back. A list waiting on the reader
+        // never gets here: the key that opens the palette is a key naming a
+        // view, asked `App::gives_way_to_a_view` first.
+        //
+        // The names being built are such a list too -- a band on the status
+        // bar, the fonts the settings open -- and let go of the same way:
+        // every name added, taken out or moved is written the moment it
+        // happens, so what goes is what is typed in its query.
+        match self.layers().nearest() {
+            Some(Layer::Picker)
+                if self
+                    .picker
+                    .as_ref()
+                    .is_some_and(|list| matches!(list.layout(), PickerLayout::Compact { .. })) =>
+            {
+                self.leave(Layer::Picker);
+            }
+            Some(Layer::Names) => self.leave(Layer::Names),
+            _ => {}
+        }
         // Every command, and what it can do *here* said by whether its row
         // can be chosen. Leaving out what cannot run makes the palette a
         // list nobody can learn from -- a reader who never sees `show-change`
@@ -226,9 +251,10 @@ impl App {
         picker.keeps_height();
         picker.aligns_details();
         picker.opened_by(Command::CommandPalette);
-        // Over the view rather than instead of it, so that escape is back in
-        // it with what was typed there and the row the reader was on -- and
-        // a key of it chosen here is pressed in it.
+        // Over a view that has the screen rather than instead of it, so that
+        // escape is back in it with what was typed there and the row the
+        // reader was on -- and a key of it chosen here is pressed in it. A
+        // list on the status bar was let go of above.
         match self.layers().nearest() {
             Some(Layer::Picker | Layer::Settings | Layer::Names | Layer::Counts) => {
                 self.palette = Some(picker);
