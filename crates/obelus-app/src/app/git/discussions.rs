@@ -43,7 +43,19 @@ impl App {
                 .is_some_and(|page| page.number() == number)
         });
         let at = match open {
-            Some(at) => at,
+            // What the list says it is now, which choosing its row again is
+            // the moment to hear.
+            Some(at) => {
+                if let Some(about) = self.about(asked)
+                    && let Some(page) = self
+                        .documents
+                        .get_mut(at)
+                        .and_then(|document| document.as_mut().and_then(Document::discussion_mut))
+                {
+                    page.listed_as(about);
+                }
+                at
+            }
             None => {
                 let Some(about) = self.about(asked) else {
                     return false;
@@ -65,6 +77,31 @@ impl App {
         self.make_room(Room::Region);
         self.go_to_document(DocumentId::new(at));
         true
+    }
+
+    /// Tells every page what the list now says it is: a title edited, a
+    /// push, a comment that moved when it last changed. The preview is laid
+    /// out from the list's rows, and a page that kept the row it opened
+    /// with said something else about the same pull request.
+    pub(in crate::app) fn list_the_pages_again(&mut self) {
+        let abouts: Vec<(usize, About)> = self
+            .documents
+            .iter()
+            .enumerate()
+            .filter_map(|(at, document)| {
+                let page = document.as_ref()?.discussion()?;
+                Some((at, self.about(page.about().asked())?))
+            })
+            .collect();
+        for (at, about) in abouts {
+            if let Some(page) = self
+                .documents
+                .get_mut(at)
+                .and_then(|document| document.as_mut().and_then(Document::discussion_mut))
+            {
+                page.listed_as(about);
+            }
+        }
     }
 
     /// Tells every page about `number` what `gh` has just said of it.
@@ -147,7 +184,7 @@ impl App {
     /// Whether another Obelus has the conversation about the page being
     /// read, which is when `alt+a` does nothing here.
     #[must_use]
-    pub(in crate::app) fn page_talked_about_elsewhere(&self) -> bool {
+    pub(crate) fn page_talked_about_elsewhere(&self) -> bool {
         self.discussion().is_some_and(|page| {
             let which = match page.about() {
                 About::PullRequest(pull) => obelus_agent::chats::ChatId::PullRequest(pull.number),

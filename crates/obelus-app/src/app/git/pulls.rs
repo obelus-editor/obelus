@@ -705,12 +705,14 @@ impl App {
     pub(in crate::app) fn on_pull_requests(&mut self, answer: Listed<PullRequest>) {
         self.pulls.pulls.answer(answer);
         self.the_list_has_moved();
+        self.list_the_pages_again();
     }
 
     /// The same for the issues.
     pub(in crate::app) fn on_issues(&mut self, answer: Listed<Issue>) {
         self.pulls.issues.answer(answer);
         self.the_list_has_moved();
+        self.list_the_pages_again();
     }
 
     /// Asks for more of the list where its last row is on screen, the list

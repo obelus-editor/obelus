@@ -480,6 +480,10 @@ pub trait Screen {
     /// Whether the conversation being read is about a note that is still
     /// there.
     fn is_about_a_note(&self) -> bool;
+    /// Whether another Obelus has the review of the pull request, or the
+    /// answer to the issue, being read -- which is when the key that takes
+    /// it up does nothing here.
+    fn page_talked_about_elsewhere(&self) -> bool;
     /// The branch the conversation being read is working on, once its
     /// agent has changed a file.
     fn branch_this_conversation_works_on(&self) -> Option<&obelus_git::Head>;

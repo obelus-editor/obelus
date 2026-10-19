@@ -209,6 +209,9 @@ impl Screen for App {
     fn is_about_a_note(&self) -> bool {
         App::is_about_a_note(self)
     }
+    fn page_talked_about_elsewhere(&self) -> bool {
+        App::page_talked_about_elsewhere(self)
+    }
     fn branch_this_conversation_works_on(&self) -> Option<&obelus_git::Head> {
         App::branch_this_conversation_works_on(self)
     }

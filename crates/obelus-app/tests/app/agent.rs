@@ -17684,6 +17684,92 @@ fn a_block_of_code_on_a_pull_requests_page_says_enter_copies_it() {
     );
 }
 
+/// One pull request, #123, called `title`.
+fn one_pull_request_called(title: &str) -> String {
+    format!(
+        r#"[{{"number":123,"title":"{title}","author":{{"login":"alice"}},"headRefName":"keep-fold","baseRefName":"master","headRefOid":"abc123","isDraft":false,"reviewDecision":"","updatedAt":""}}]"#
+    )
+}
+
+/// A page open on a pull request says what the list now says it is: its
+/// title edited, and the list asked again, the page has the new one.
+///
+/// Broken deliberately by leaving `list_the_pages_again` out of
+/// `on_pull_requests`: the page kept the title it was opened with, while
+/// the list's preview had the new one.
+#[test]
+fn a_page_is_told_what_the_list_now_says() {
+    let scratch = support::Scratch::new("agent-pull-request-page-renamed");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, one_pull_request_called("The first title")).expect("the answer");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| answered_with(app, 1));
+    support::press(&mut app, KeyCode::Enter);
+    let text = screen(&mut app);
+    assert!(text.contains("The first title"), "{text}");
+
+    std::fs::write(&answer, one_pull_request_called("The second title")).expect("the answer");
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list again", |app| {
+        app.picker().is_some_and(|picker| {
+            picker
+                .matches()
+                .any(|row| row.label.contains("The second title"))
+        })
+    });
+    support::press(&mut app, KeyCode::Esc);
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Pull request #123") && text.contains("The second title"),
+        "the page kept what it was opened with:\n{text}"
+    );
+}
+
+/// A page coming back on screen says where its review is held, when
+/// another Obelus took it while the page was away: the key that takes it
+/// up does nothing then, and a refused claim is drawn.
+///
+/// Broken deliberately by not reading the claims as the page's watch is
+/// taken (`settle_the_watches`): the page said nothing, and the palette
+/// offered a key that would do nothing.
+#[test]
+fn a_page_says_where_its_review_is_held_as_it_comes_back() {
+    let scratch = support::Scratch::new("agent-pull-request-page-held");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, one_pull_request("abc123")).expect("the answer");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+    let file = scratch.path().join("elsewhere.rs");
+    std::fs::write(&file, "fn elsewhere() {}\n").expect("a file");
+    app.open_for_test(&file);
+    let reading = app.current_document_for_test().expect("the file");
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| answered_with(app, 1));
+    support::press(&mut app, KeyCode::Enter);
+    let page = app.current_document_for_test().expect("the page");
+    let text = screen(&mut app);
+    assert!(
+        !text.contains("Talked about in another window"),
+        "nobody has it yet:\n{text}"
+    );
+
+    app.go_to_document_for_test(reading);
+    let _ = screen(&mut app);
+    let _theirs = obelus_agent::chats::claim(
+        scratch.path(),
+        &obelus_agent::chats::ChatId::PullRequest(123),
+    )
+    .expect("nobody had it");
+    app.go_to_document_for_test(page);
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Talked about in another window"),
+        "the page does not say where its review is:\n{text}"
+    );
+}
+
 /// A pull request's page is read with a cursor: what `gh` said is on it,
 /// enter on a comment's heading shuts what it says, and what shift holds is
 /// what a copy takes.

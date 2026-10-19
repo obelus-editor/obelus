@@ -1036,6 +1036,10 @@ impl App {
             && self
                 .conversation()
                 .is_some_and(|talk| matches!(&talk.topic, Topic::Note(_)));
+        // A pull request's page, whose key takes the review up and is dim
+        // where somebody else has it.
+        let page = project && self.discussion().is_some();
+        let claims_were = self.watching[CLAIMS].wanted;
 
         // A directory rather than a file: a claim is a file appearing and
         // going again, so there is nothing here to watch by name. Wanted by
@@ -1043,10 +1047,17 @@ impl App {
         // of conversations and the list of pull requests, which grey them.
         self.settle_a_watch(
             CLAIMS,
-            notes || listing,
+            notes || listing || page,
             How::Directory,
             obelus_agent::chats::directory,
         );
+        // A watch says what happens next, not what was there: the notes and
+        // the lists read the claims as they open, and a page coming on
+        // screen with nothing else watching reads them here -- once, as the
+        // watch is taken, and from then on hears them.
+        if page && !claims_were {
+            self.reread_who_holds_what();
+        }
         // The table saying which note has a conversation, which the notes
         // page draws, and what each is called, which the list of
         // conversations does.

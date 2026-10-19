@@ -110,27 +110,43 @@ pub enum Fold {
 pub struct Folding {
     /// Whether every check is named, or only those that did not pass.
     every_check: bool,
-    /// The comments shut, by their place.
-    shut: std::collections::HashSet<usize>,
+    /// The comments shut, by who said them and when.
+    ///
+    /// Not by their place: the newest comes first, so a comment arriving
+    /// moves every place down one, and the one the reader shut became the
+    /// one above it -- shut, while theirs stood open.
+    shut: std::collections::HashSet<(String, Option<i64>)>,
+}
+
+/// What a comment is known by while the reader has it shut.
+fn whose(comment: &Comment) -> (String, Option<i64>) {
+    (comment.author.clone(), comment.when)
 }
 
 impl Folding {
-    /// Whether what a heading folds is open.
+    /// Whether what a heading folds is open, among the comments `said`.
     #[must_use]
-    pub fn is_open(&self, fold: Fold) -> bool {
+    pub fn is_open(&self, fold: Fold, said: &[Comment]) -> bool {
         match fold {
             Fold::Checks => self.every_check,
-            Fold::Comment(at) => !self.shut.contains(&at),
+            Fold::Comment(at) => said
+                .get(at)
+                .is_none_or(|comment| !self.shut.contains(&whose(comment))),
         }
     }
 
-    /// Opens what is shut and shuts what is open.
-    pub fn flip(&mut self, fold: Fold) {
+    /// Opens what is shut and shuts what is open, among the comments
+    /// `said`.
+    pub fn flip(&mut self, fold: Fold, said: &[Comment]) {
         match fold {
             Fold::Checks => self.every_check = !self.every_check,
             Fold::Comment(at) => {
-                if !self.shut.remove(&at) {
-                    self.shut.insert(at);
+                let Some(comment) = said.get(at) else {
+                    return;
+                };
+                let key = whose(comment);
+                if !self.shut.remove(&key) {
+                    self.shut.insert(key);
                 }
             }
         }
@@ -380,7 +396,7 @@ fn checks(checks: &[Check], folding: &Folding) -> Vec<Row> {
     // A heading folds only where opening it shows something: with nothing
     // but failures and checks still running, every name is already there.
     let hidden = count(Stands::Passed) + count(Stands::Skipped) > 0;
-    let open = folding.is_open(Fold::Checks);
+    let open = folding.is_open(Fold::Checks, &[]);
     let mut rows = vec![Row {
         folds: hidden.then_some(Fold::Checks),
         open,
@@ -418,7 +434,7 @@ fn comments(said: &[Comment], folding: &Folding, width: u16) -> Vec<Row> {
         if let Some(when) = comment.when {
             did.push_str(&format!(" \u{b7} {}", obelus_git::how_long_ago(when, now)));
         }
-        let open = folding.is_open(Fold::Comment(at));
+        let open = folding.is_open(Fold::Comment(at), said);
         rows.push(Row {
             folds: Some(Fold::Comment(at)),
             open,
@@ -551,6 +567,18 @@ impl DiscussionView {
 
     /// Takes what `gh` said about it.
     pub fn told(&mut self, said: Discussion) {
+        // What is held is a place in a comment, by its place among them:
+        // where they are no longer the comments they were, it would be the
+        // same characters of another one.
+        let whose_before: Vec<_> = self
+            .said
+            .as_ref()
+            .map(|before| before.said.iter().map(whose).collect())
+            .unwrap_or_default();
+        let whose_now: Vec<_> = said.said.iter().map(whose).collect();
+        if whose_before != whose_now {
+            self.held.let_go();
+        }
         self.said = Some(said);
         self.refused = None;
         self.forget_the_layout();
@@ -642,7 +670,11 @@ impl DiscussionView {
 
     /// Opens what is shut and shuts what is open.
     pub fn fold(&mut self, fold: Fold) {
-        self.folding.flip(fold);
+        let said = self
+            .said
+            .as_ref()
+            .map_or(&[][..], |said| said.said.as_slice());
+        self.folding.flip(fold, said);
         self.forget_the_layout();
     }
 
@@ -862,6 +894,55 @@ mod tests {
             !texts(&page).iter().any(|row| row.contains("Looks right")),
             "the comment did not shut"
         );
+    }
+
+    /// A comment the reader shut stays shut when another arrives in front
+    /// of it, and the one that arrived is open; and what was held in the
+    /// comments is let go, because the places it named are other comments'.
+    ///
+    /// Broken deliberately two ways. Knowing every comment by one name
+    /// (`whose` answering the same for all): shutting one shut the one that
+    /// arrived. And not letting go in `told`: the hold stayed.
+    #[test]
+    fn a_comment_shut_stays_shut_when_another_arrives() {
+        let mut page = DiscussionView::new(About::PullRequest(pull()));
+        page.told(said());
+        let heading = texts(&page)
+            .iter()
+            .position(|row| row.starts_with("reviewer"))
+            .expect("the comment's heading");
+        page.stand(Place {
+            row: heading,
+            character: 0,
+        });
+        let _ = press(&mut page, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(!texts(&page).iter().any(|row| row.contains("Looks right")));
+        page.hold_from(crate::page::Spot {
+            of: Part::Description,
+            at: 0,
+        });
+
+        let mut newer = said();
+        newer.said.insert(
+            0,
+            Comment {
+                author: "someone else".to_string(),
+                did: Did::Commented,
+                when: Some(1),
+                body: "A second look.".to_string(),
+            },
+        );
+        page.told(newer);
+        let now = texts(&page);
+        assert!(
+            !now.iter().any(|row| row.contains("Looks right")),
+            "the comment the reader shut opened: {now:?}"
+        );
+        assert!(
+            now.iter().any(|row| row.contains("A second look.")),
+            "the comment that arrived is shut: {now:?}"
+        );
+        assert!(!page.holding(), "the hold stayed on comments that moved");
     }
 
     /// A key that is not the page's goes to the key table, and `alt+a` is

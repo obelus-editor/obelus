@@ -422,8 +422,9 @@ Escape gives up on the palette and the reader is in the view again, with
 what they had typed and the row they were on -- the second escape is the
 view's. A name typed there that none of the view's keys match is looked for
 among the commands, because a reader typing `open-settings` has not looked
-at which tab they are on (`Picker::go_where_the_query_is_found`). It is a layer of its own (`Layer::Palette`), not the picker, because
-the view under it is very often a picker still being filled. The two pages
+at which tab they are on (`Picker::go_where_the_query_is_found`). It is a
+layer of its own (`Layer::Palette`), not the picker, because the view under
+it is very often a picker still being filled. The two pages
 that ask a question keep a foot, because nothing opens over them and the key
 that leaves is the only way off; and a switch that is on is said on the row
 its list's query is typed into as well, because it changes what that query
@@ -637,9 +638,9 @@ crates/
                       when the reader gets to the end of the last one,
                       choosing one opens it and the review is a key of its
                       page that says nothing yet, and what goes to GitHub goes
-                      on the reader's word (app/git/pulls); reading one and
-                      asking an agent about it are two different acts, and
-                      what `gh` says is kept once, by the list
+                      on the reader's word (app/git/pulls); choosing one
+                      opens it and talking about it is a key of the page,
+                      and what `gh` says is kept once, by the list
                       (app/git/discussions); one window talks to the
                       chat and every
                       window is heard in it, which project a thread begun
@@ -734,12 +735,12 @@ crates/
                       a click and not by enter (chat); the cursor is a place
                       on the screen and a selection is a place in the words,
                       and the arrows walk every row drawn and nothing steps
-                      between what acts (page); reading one and asking an agent about it
-                      are two different acts, a page with a cursor like the
-                      transcript, what enter does is open or shut or copy,
-                      and laid out once and kept (discussion); the page is
-                      Obelus's,
-                      and so is the record of it (chat/kept); folding is one
+                      between what acts (page); reading one and asking an
+                      agent about it are two different acts, a page with a
+                      cursor like the transcript, what enter does is open or
+                      shut or copy, and laid out once and kept (discussion);
+                      the page is Obelus's, and so is the record of it
+                      (chat/kept); folding is one
                       act and the notes are the fourth place it happens, a note
                       somebody else is talking about is read here and not
                       changed, a box is the reader's once they have put

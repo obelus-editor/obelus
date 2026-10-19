@@ -82,6 +82,8 @@ pub struct StatusView<'a> {
     palette: Option<String>,
     /// The notes, while they are what is being read.
     shown: crate::Shown<'a>,
+    /// Whether another Obelus has the review of the page being read.
+    elsewhere: bool,
     /// Which of them is nearest the reader, and so whose row this is.
     ///
     /// The same question the caret asks. Three of these can be on screen
@@ -139,6 +141,7 @@ impl<'a> StatusView<'a> {
             note_is_wrong: app.note_is_wrong(),
             palette: palette_key(app),
             shown: app.shown(),
+            elsewhere: app.page_talked_about_elsewhere(),
             choosing: app.choosing(),
             nearest: app.layers().nearest(),
             replacing: app.replacing(),
@@ -1523,6 +1526,21 @@ impl StatusView<'_> {
         };
         write(cells, area.x + 1, area.y, &name, style);
         let end = self.remote_at_end(area, cells, style);
+        // Where another Obelus has the review, which is why the key that
+        // takes it up does nothing here: a refused claim is drawn, never
+        // said, and this is the row the notes draw theirs on. In the room
+        // the palette's key would have, because a key that does nothing is
+        // not the news.
+        if self.elsewhere {
+            let held = "Talked about in another window";
+            let at = 1 + text_width(&name) + 2;
+            if at + text_width(held) + 2 <= end
+                && let Ok(offset) = u16::try_from(at)
+            {
+                write(cells, area.x + offset, area.y, held, style);
+            }
+            return;
+        }
         if let (Some(key), Ok(end)) = (&self.palette, u16::try_from(end + 1)) {
             more(
                 cells,
