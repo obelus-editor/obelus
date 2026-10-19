@@ -34,6 +34,8 @@ pub enum Whose {
     Notes,
     /// A conversation's transcript.
     Conversation,
+    /// A pull request or an issue, read as a page.
+    Discussion,
     /// The page that asks which project.
     Projects,
     /// The list that is open: a picker.

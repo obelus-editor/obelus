@@ -95,6 +95,10 @@ impl App {
         // frame's room: a program told a size a frame late draws its screen
         // once at the old one.
         self.size_the_terminal(editor_area);
+        // And a page's window kept within its rows, and `gh` asked about it
+        // where what was kept is not current.
+        self.settle_the_page();
+        self.ask_about_the_page();
         self.note_where_the_view_has_got_to();
         // What the views showing are drawn from, and what Obelus has to be
         // told about it. First, because everything below this reads one of

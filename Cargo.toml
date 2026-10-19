@@ -222,6 +222,9 @@ tree-sitter-swift = "=0.7.4"
 # ranges its injection query hands over. It was left out while there was no
 # injection machinery to express that, and this note said so.
 tree-sitter-md = "0.5.3"
+# What `:no_entry_sign:` is: GitHub's own table of shortcodes, which every
+# pull request a bot comments on is written in.
+emojis = "0.9"
 unicode-segmentation = "1.13"
 unicode-width = "0.2"
 

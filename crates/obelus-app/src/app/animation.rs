@@ -66,6 +66,11 @@ impl App {
             // moves when you touch it and stands still while the work
             // happens.
             || (self.notes().is_some() && self.anything_working())
+            // Or a page still waiting on `gh`, which turns a mark where its
+            // answer will go.
+            || self
+                .discussion()
+                .is_some_and(obelus_component::discussion::DiscussionView::still_asking)
             // A row of a tree of calls waiting on a server. The same rule
             // as a conversation's: a mark that turns has to be woken, and
             // a mark that does not turn is a mark saying nothing is

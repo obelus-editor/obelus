@@ -17,6 +17,8 @@
 //! [`obelus_text::wrapped_from`] and the column widths are [`table`], both
 //! Obelus's own.
 
+/// What GitHub draws and the source only spells: HTML and shortcodes.
+mod html;
 /// How wide a table's columns are drawn.
 mod table;
 
@@ -65,18 +67,22 @@ pub fn render(source: &str, width: u16) -> Vec<Row> {
     // the whole page at once.
     state.look_at(&text, 0..text.byte_length().get());
     let injected = state.injected();
-    let inline: Vec<(Range<usize>, Node<'_>)> = injected
-        .iter()
-        .filter(|one| one.language() == LanguageId::MarkdownInline)
-        .map(|one| {
-            let root = one.tree().root_node();
-            (root.byte_range(), root)
-        })
-        .collect();
+    let trees = |language: LanguageId| -> Vec<(Range<usize>, Node<'_>)> {
+        injected
+            .iter()
+            .filter(|one| one.language() == language)
+            .map(|one| {
+                let root = one.tree().root_node();
+                (root.byte_range(), root)
+            })
+            .collect()
+    };
+    let inline = trees(LanguageId::MarkdownInline);
     let mut laying = Laying {
         source,
         highlights,
         inline,
+        quoted: 0,
         rows: Vec::new(),
         owed: None,
     };
@@ -147,6 +153,8 @@ struct Laying<'a> {
     highlights: Highlights,
     /// The parsed insides of every paragraph, by where each one sits.
     inline: Vec<(Range<usize>, Node<'a>)>,
+    /// How many quotes deep the block being laid out is.
+    quoted: usize,
     rows: Vec<Row>,
     /// The marks the next row owes, in place of its own left margin.
     ///
@@ -218,9 +226,9 @@ impl Laying<'_> {
 
     /// One block.
     fn block(&mut self, node: Node<'_>, width: u16, prefix: &Prefix) {
-        // The mark a list item is introduced by, which the item has already
-        // drawn: see [`Laying::list`].
-        if node.kind().starts_with("list_marker") {
+        // The mark a list item is introduced by, and the box a task is,
+        // which the item has already drawn: see [`Laying::list`].
+        if node.kind().starts_with("list_marker") || node.kind().starts_with("task_list_marker") {
             return;
         }
         match node.kind() {
@@ -232,6 +240,7 @@ impl Laying<'_> {
             "block_quote" => self.quote(node, width, prefix),
             "list" => self.list(node, width, prefix),
             "fenced_code_block" | "indented_code_block" => self.code(node, width, prefix),
+            "html_block" => self.html(node, width, prefix),
             "pipe_table" => self.table(node, width, prefix),
             "thematic_break" => self.rows.push(Row {
                 spans: Vec::new(),
@@ -276,7 +285,7 @@ impl Laying<'_> {
         let inline = node
             .children(&mut node.walk())
             .find(|child| child.kind() == "inline");
-        self.said(inline.unwrap_or(node), width, prefix, Ink::Plain);
+        self.said(inline.unwrap_or(node), width, prefix, self.words());
     }
 
     /// A run of words: gathered, wrapped, and inked by what is in it.
@@ -292,12 +301,86 @@ impl Laying<'_> {
             .find(|(range, _)| range.start >= said.start && range.end <= said.end)
             .map(|(_, root)| *root);
         let (shown, looks) = stripped(&gathered, ink, inside);
+        let links = inside.map_or_else(Vec::new, |inside| links(inside, self.source));
+        self.lay(
+            &Shaped {
+                shown,
+                looks,
+                links,
+            },
+            width,
+            prefix,
+        );
+    }
+
+    /// A block of HTML: what is left of it once its tags have gone, laid out
+    /// as the words it is -- see [`html`].
+    ///
+    /// Its own tags rather than the inline grammar's, which is not asked to
+    /// look inside a block it has said is HTML. A soft join, so a line break
+    /// in the source is a space the way it is in a paragraph and in a page
+    /// GitHub draws; the breaks are the tags'.
+    fn html(&mut self, node: Node<'_>, width: u16, prefix: &Prefix) {
+        let gathered = self.gather(node, Join::Soft);
+        let tags = html::tags(&gathered.text);
+        // A table the block holds whole is drawn as a table, and the words
+        // either side of it as words.
+        let mut at = 0;
+        for (open, close) in html::tables(&tags) {
+            let (Some(first), Some(last)) = (tags.get(open), tags.get(close)) else {
+                continue;
+            };
+            let before = shaped(&gathered, at..first.range.start, &tags, self.words(), true);
+            self.lay(&before, width, prefix);
+            let rows: Vec<Vec<Shaped>> = html::rows(&tags[open..=close])
+                .into_iter()
+                .map(|row| {
+                    row.into_iter()
+                        .map(|cell| shaped(&gathered, cell.words, &tags, self.words(), false))
+                        .collect()
+                })
+                .collect();
+            // Its first row is a heading's where every cell of it is one,
+            // which is what a `<thead>` holds and what markdown's own first
+            // row always is.
+            let heading = html::rows(&tags[open..=close])
+                .first()
+                .is_some_and(|row| row.iter().all(|cell| cell.heading));
+            self.grid(&rows, &[], heading, width, prefix);
+            at = last.range.end;
+        }
+        let after = shaped(
+            &gathered,
+            at..gathered.text.len(),
+            &tags,
+            self.words(),
+            true,
+        );
+        self.lay(&after, width, prefix);
+    }
+
+    /// Words with what they look like, wrapped and put on rows, each row
+    /// carrying the links whose words are on it.
+    fn lay(&mut self, shaped: &Shaped, width: u16, prefix: &Prefix) {
+        let Shaped {
+            shown,
+            looks,
+            links,
+        } = shaped;
         if shown.text.trim().is_empty() {
             return;
         }
-        let links = inside.map_or_else(Vec::new, |inside| links(inside, self.source));
         for (said, at) in obelus_text::wrapped_from(&shown.text, prefix.room(width)) {
-            let spans = split(&said, at.start, &looks, &shown);
+            if said == RULE {
+                self.rows.push(Row {
+                    spans: Vec::new(),
+                    rule: true,
+                    code: None,
+                    links: Vec::new(),
+                });
+                continue;
+            }
+            let spans = split(&said, at.start, looks, shown);
             // A link's words may wrap, and every row of them goes where
             // the link does.
             let here: Vec<(Range<usize>, String)> = links
@@ -324,7 +407,24 @@ impl Laying<'_> {
         // the way down, and a reader skimming the left edge is reading that
         // column rather than counting rows.
         let inside = prefix.and(vec![mark("\u{2503} ")], 2);
+        self.quoted += 1;
         self.blocks(node, width, &inside);
+        self.quoted -= 1;
+    }
+
+    /// The ink words that ask for nothing are drawn in here.
+    ///
+    /// The page's own, and in a quote the one Obelus says the lesser things
+    /// in: a comment that quotes the one before it is mostly the one before
+    /// it, and with both in one colour nothing but the bar down the edge
+    /// said which words were whose -- GitHub greys a quote for the same
+    /// reason. What the words ask for is still worn over it: code is code
+    /// and bold is bold in a quote too.
+    const fn words(&self) -> Ink {
+        match self.quoted {
+            0 => Ink::Plain,
+            _ => Ink::Aside,
+        }
     }
 
     /// A list: every item, with the mark its kind wears.
@@ -350,9 +450,29 @@ impl Laying<'_> {
                     .and_then(|said| said.trim().trim_end_matches(['.', ')']).parse().ok())
                     .unwrap_or(1),
             });
-            let said = match marker.map(|marker| marker.kind()) {
-                Some("list_marker_dot" | "list_marker_parenthesis") => format!("{number}. "),
-                _ => "\u{2022} ".to_string(),
+            // A task is its box, where the bullet would be: GitHub's
+            // `- [x]`, which every pull request's template is full of. Laid
+            // out as a block of its own, the marker stood on a row by itself
+            // and the words went on to the one under it.
+            //
+            // The box's plain characters and not the Nerd Font's, which a
+            // switch elsewhere wears: a glyph of the font is two cells in a
+            // terminal and wants a blank after it there and not in a window,
+            // and rows are laid out here before anybody knows which.
+            let task = item
+                .children(&mut item.walk())
+                .find_map(|child| match child.kind() {
+                    "task_list_marker_checked" => Some(true),
+                    "task_list_marker_unchecked" => Some(false),
+                    _ => None,
+                });
+            let said = match (task, marker.map(|marker| marker.kind())) {
+                (Some(true), _) => "\u{2611} ".to_string(),
+                (Some(false), _) => "\u{25a1} ".to_string(),
+                (None, Some("list_marker_dot" | "list_marker_parenthesis")) => {
+                    format!("{number}. ")
+                }
+                (None, _) => "\u{2022} ".to_string(),
             };
             let wide = u16::try_from(text_width(&said)).unwrap_or(2);
             let inside = prefix.and(vec![room(text_width(&said))], wide);
@@ -448,7 +568,7 @@ impl Laying<'_> {
 
     /// A table, in columns that fit.
     fn table(&mut self, node: Node<'_>, width: u16, prefix: &Prefix) {
-        let mut rows: Vec<Vec<Gathered>> = Vec::new();
+        let mut rows: Vec<Vec<Shaped>> = Vec::new();
         let mut aligns: Vec<Align> = Vec::new();
         let mut cursor = node.walk();
         for line in node.children(&mut cursor) {
@@ -457,7 +577,7 @@ impl Laying<'_> {
                     rows.push(
                         line.children(&mut line.walk())
                             .filter(|cell| cell.kind() == "pipe_table_cell")
-                            .map(|cell| self.gather(cell, Join::Soft))
+                            .map(|cell| self.cell(cell))
                             .collect(),
                     );
                 }
@@ -484,6 +604,42 @@ impl Laying<'_> {
                 _ => {}
             }
         }
+        self.grid(&rows, &aligns, true, width, prefix);
+    }
+
+    /// One cell of a table written in markdown: its words, read the way a
+    /// paragraph's are -- the stars and backticks in it taken out and what
+    /// they asked for worn, which a cell used to show as written.
+    fn cell(&self, cell: Node<'_>) -> Shaped {
+        let gathered = self.gather(cell, Join::Soft);
+        let said = cell.byte_range();
+        let inside = self
+            .inline
+            .iter()
+            .find(|(range, _)| range.start >= said.start && range.end <= said.end)
+            .map(|(_, root)| *root);
+        let (shown, looks) = stripped(&gathered, self.words(), inside);
+        let links = inside.map_or_else(Vec::new, |inside| links(inside, self.source));
+        Shaped {
+            shown,
+            looks,
+            links,
+        }
+    }
+
+    /// A table: its cells in columns as wide as the room allows, in a box,
+    /// with a rule under its first row where that row is the headings.
+    ///
+    /// One drawing for a table written in markdown and one written in HTML,
+    /// because they are one thing on the page.
+    fn grid(
+        &mut self,
+        rows: &[Vec<Shaped>],
+        aligns: &[Align],
+        heading: bool,
+        width: u16,
+        prefix: &Prefix,
+    ) {
         let columns = rows
             .iter()
             .map(Vec::len)
@@ -494,7 +650,7 @@ impl Laying<'_> {
             .iter()
             .map(|row| {
                 row.iter()
-                    .map(|cell| text_width(cell.text.trim()))
+                    .map(|cell| text_width(cell.shown.text.trim()))
                     .collect()
             })
             .collect();
@@ -509,45 +665,61 @@ impl Laying<'_> {
             // Every cell wrapped to its column, and the row as tall as its
             // tallest: a cell that does not fit goes on underneath, the way
             // a paragraph does, rather than losing its end at the border.
+            // Where each line starts is kept as a place in the cell's own
+            // words, which is what its looks are counted in.
             let wrapped: Vec<Vec<(String, usize)>> = widths
                 .iter()
                 .enumerate()
                 .map(|(at, width)| {
-                    let said = row.get(at).map(|cell| cell.text.trim()).unwrap_or_default();
+                    let Some(cell) = row.get(at) else {
+                        return Vec::new();
+                    };
+                    let said = cell.shown.text.trim();
+                    let from = offset_in(&cell.shown.text, said);
                     obelus_text::wrapped_from(said, u16::try_from(*width).unwrap_or(u16::MAX))
                         .into_iter()
-                        .map(|(line, from)| (line, from.start))
+                        .map(|(line, at)| (line, from + at.start))
                         .collect()
                 })
                 .collect();
             let tall = wrapped.iter().map(Vec::len).max().unwrap_or(0).max(1);
             for line in 0..tall {
                 let mut spans = vec![mark("\u{2502}")];
+                let mut links: Vec<(Range<usize>, String)> = Vec::new();
                 for (at, width) in widths.iter().enumerate() {
                     let cell = row.get(at);
                     let (said, from) = wrapped[at].get(line).cloned().unwrap_or_default();
                     let align = aligns.get(at).copied().unwrap_or(Align::Left);
                     let (before, after) = padding(*width, text_width(&said), align);
                     spans.push(room_for(before));
-                    if let Some(cell) = cell
-                        && !said.is_empty()
-                    {
-                        let at = offset_in(&cell.text, cell.text.trim()) + from;
-                        let length = said.len();
-                        spans.push(Span::from_source(
-                            said,
-                            Ink::Plain,
-                            source_span(cell, at, length),
-                        ));
-                    } else {
-                        spans.push(Span::new(said, Ink::Plain));
+                    match cell {
+                        Some(cell) if !said.is_empty() => {
+                            let words = split(&said, from, &cell.looks, &cell.shown);
+                            links.extend(
+                                cell.links
+                                    .iter()
+                                    .filter(|(on, _)| {
+                                        words.iter().any(|span| {
+                                            span.from.as_ref().is_some_and(|from| {
+                                                from.start < on.end && on.start < from.end
+                                            })
+                                        })
+                                    })
+                                    .cloned(),
+                            );
+                            spans.extend(words);
+                        }
+                        _ => spans.push(Span::new(said, Ink::Plain)),
                     }
                     spans.push(room_for(after));
                     spans.push(mark("\u{2502}"));
                 }
                 self.row(prefix, spans);
+                if let Some(row) = self.rows.last_mut() {
+                    row.links = links;
+                }
             }
-            if index == 0 {
+            if index == 0 && heading {
                 self.rows.push(rule(Rule::Middle));
             }
         }
@@ -674,12 +846,6 @@ impl Gathered {
     }
 }
 
-/// Where a cell's text sits in the source, as far as it can be said.
-fn source_span(cell: &Gathered, at: usize, length: usize) -> Range<usize> {
-    let from = cell.source_of(at).unwrap_or(0);
-    from..from + length
-}
-
 /// Every `block_continuation` under a node, taken out of its ranges.
 fn take_out(node: Node<'_>, ranges: &mut Vec<Range<usize>>) {
     let mut cursor = node.walk();
@@ -738,12 +904,187 @@ fn stripped(gathered: &Gathered, ink: Ink, inside: Option<Node<'_>>) -> (Gathere
         ..Look::default()
     };
     let mut looks = vec![plain; gathered.text.len()];
-    let Some(inside) = inside else {
-        return (gathered.clone(), looks);
-    };
     let mut gone: Vec<Range<usize>> = Vec::new();
-    marks(inside, gathered, &mut looks, &mut gone);
+    let mut put: Vec<(usize, String)> = Vec::new();
+    let mut tags: Vec<html::Tag> = Vec::new();
+    if let Some(inside) = inside {
+        marks(inside, gathered, &mut looks, &mut gone, &mut put, &mut tags);
+    }
+    wear(&mut looks, &html::styles(&tags));
+    spelled(gathered, &looks, &mut gone, &mut put);
+    keep(gathered, &looks, gone, put)
+}
+
+/// Words ready to be laid out: what is left of them once their marks have
+/// gone, what each byte looks like, and the links on them.
+struct Shaped {
+    /// The words.
+    shown: Gathered,
+    /// What each byte of them looks like.
+    looks: Vec<Look>,
+    /// The links among them, by where their words are in the source.
+    links: Vec<(Range<usize>, String)>,
+}
+
+/// A stretch of a block of HTML -- the whole of it, or one cell of a table
+/// in it -- as words: its tags taken out and what they ask for worn or put
+/// in their place, its character references and shortcodes what they name.
+///
+/// `rules` is whether a `<hr>` may be a rule across the page, which in a
+/// cell of a table it may not: a cell is a box of words, and the rule is a
+/// break between them there.
+fn shaped(
+    gathered: &Gathered,
+    range: Range<usize>,
+    tags: &[html::Tag],
+    ink: Ink,
+    rules: bool,
+) -> Shaped {
+    let part = Gathered {
+        text: gathered
+            .text
+            .get(range.clone())
+            .unwrap_or_default()
+            .to_string(),
+        runs: gathered.runs_in(range.clone()),
+    };
+    // Its own tags, counted from where it starts.
+    let tags: Vec<html::Tag> = tags
+        .iter()
+        .filter(|tag| tag.range.start >= range.start && tag.range.end <= range.end)
+        .map(|tag| html::Tag {
+            range: tag.range.start - range.start..tag.range.end - range.start,
+            ..tag.clone()
+        })
+        .collect();
+    let mut looks = vec![
+        Look {
+            ink: Some(ink),
+            ..Look::default()
+        };
+        part.text.len()
+    ];
+    wear(&mut looks, &html::styles(&tags));
+    let mut gone: Vec<Range<usize>> = Vec::new();
+    let mut put: Vec<(usize, String)> = Vec::new();
+    for tag in &tags {
+        // A rule is a row of its own, which words cannot say: it is put as a
+        // line holding nothing but the mark `lay` draws one for.
+        if tag.is_rule() {
+            let said: &[&str] = match rules {
+                true => &["\n", RULE, "\n"],
+                false => &["\n"],
+            };
+            for said in said {
+                put.push((tag.range.start, (*said).to_string()));
+            }
+            gone.push(tag.range.clone());
+            continue;
+        }
+        let (taken, leaves) = tag.taken();
+        if let (Some(leaves), Some(first)) = (leaves, taken.first()) {
+            put.push((first.start, leaves));
+        }
+        gone.extend(taken);
+    }
+    for (range, character) in html::references(&part.text) {
+        if !gone
+            .iter()
+            .any(|tag| tag.start < range.end && range.start < tag.end)
+        {
+            put.push((range.start, character));
+            gone.push(range);
+        }
+    }
+    spelled(&part, &looks, &mut gone, &mut put);
+    // Where a link's words are in the source, which is what a row says its
+    // links are by.
+    //
+    // Narrowed to the bytes of them that have one: the words of a link
+    // written over lines begin and end at a line break, which the join made
+    // a space that is in no source -- and a link said to start there was
+    // dropped, the badge under it and all.
+    let links: Vec<(Range<usize>, String)> = html::links(&tags)
+        .into_iter()
+        .filter_map(|(words, to)| {
+            let said = part.text.get(words.clone())?;
+            let start = said
+                .char_indices()
+                .find_map(|(at, _)| part.source_of(words.start + at))?;
+            let end = said.char_indices().rev().find_map(|(at, character)| {
+                part.source_of(words.start + at)
+                    .map(|from| from + character.len_utf8())
+            })?;
+            Some((start..end, to))
+        })
+        .collect();
+    let (shown, looks) = keep(&part, &looks, gone, put);
+    Shaped {
+        shown,
+        looks,
+        links,
+    }
+}
+
+/// What a line holding a rule and nothing else says while it is being laid
+/// out: a character of the private use area, which no source has any
+/// business holding, and which `lay` turns into the rule.
+const RULE: &str = "\u{e000}";
+
+/// The looks a block's or a paragraph's tags ask for, worn by the words
+/// between each pair of them.
+fn wear(looks: &mut [Look], styles: &[(Range<usize>, html::Style)]) {
+    for (range, style) in styles {
+        paint(looks, range, |look| match style {
+            html::Style::Bold => look.bold = true,
+            html::Style::Italic => look.italic = true,
+            html::Style::Code => look.ink = Some(Ink::Code),
+            html::Style::Struck => look.strikeout = true,
+            html::Style::Heading(level) => look.ink = Some(Ink::Heading(*level)),
+        });
+    }
+}
+
+/// Every shortcode in the words that names an emoji, taken out and the
+/// emoji put in its place -- but not in a span of code, where `:x:` is what
+/// was written, nor over anything already taken out.
+fn spelled(
+    gathered: &Gathered,
+    looks: &[Look],
+    gone: &mut Vec<Range<usize>>,
+    put: &mut Vec<(usize, String)>,
+) {
+    for (range, emoji) in html::shortcodes(&gathered.text) {
+        let code = looks
+            .get(range.start)
+            .is_some_and(|look| look.ink == Some(Ink::Code));
+        let taken = gone
+            .iter()
+            .any(|other| other.start < range.end && range.start < other.end);
+        if !code && !taken {
+            put.push((range.start, emoji.to_string()));
+            gone.push(range);
+        }
+    }
+}
+
+/// What is left of gathered words once `gone` is taken out of them, with
+/// what `put` puts where something was taken out -- and what each byte
+/// that is left looks like.
+///
+/// What is put is in nobody's source, so it carries none: a row says where
+/// its words came from, and an emoji came from a shortcode three times its
+/// length. A break put in starts a line, so the spaces after it are not the
+/// start of that line, and two breaks in a row are one: a `</td></tr>` is
+/// one end of a line, not a blank line.
+fn keep(
+    gathered: &Gathered,
+    looks: &[Look],
+    mut gone: Vec<Range<usize>>,
+    mut put: Vec<(usize, String)>,
+) -> (Gathered, Vec<Look>) {
     gone.sort_by_key(|range| range.start);
+    put.sort_by_key(|(at, _)| *at);
 
     // What is left, in the order it was written, with where each run of it
     // came from carried through both hands it has passed by now.
@@ -751,13 +1092,23 @@ fn stripped(gathered: &Gathered, ink: Ink, inside: Option<Node<'_>>) -> (Gathere
     let mut runs: Vec<(usize, usize, usize)> = Vec::new();
     let mut left: Vec<Look> = Vec::new();
     let mut at = 0usize;
+    // The start is the start of a line too: what a block of HTML opened
+    // with is gone, and the space after it was its indent.
+    let mut broke = true;
     for range in gone
         .iter()
         .chain(std::iter::once(&(gathered.text.len()..0)))
     {
         let end = range.start.max(at).min(gathered.text.len());
-        if at < end
-            && let Some(part) = gathered.text.get(at..end)
+        let mut from = at;
+        if broke {
+            from += gathered
+                .text
+                .get(from..end)
+                .map_or(0, |part| part.len() - part.trim_start().len());
+        }
+        if from < end
+            && let Some(part) = gathered.text.get(from..end)
         {
             // One run for each run it was gathered from, rather than one for
             // the whole of what is kept: two characters beside each other
@@ -765,14 +1116,46 @@ fn stripped(gathered: &Gathered, ink: Ink, inside: Option<Node<'_>>) -> (Gathere
             // both would be claiming the break between them as well.
             runs.extend(
                 gathered
-                    .runs_in(at..end)
+                    .runs_in(from..end)
                     .into_iter()
-                    .map(|(out, from, length)| (text.len() + out, from, length)),
+                    .map(|(out, source, length)| (text.len() + out, source, length)),
             );
             text.push_str(part);
-            left.extend(looks.get(at..end).unwrap_or_default().iter().copied());
+            left.extend(looks.get(from..end).unwrap_or_default().iter().copied());
+            broke = false;
+        }
+        for (_, said) in put.iter().filter(|(put_at, _)| *put_at == range.start) {
+            // A space put between two cells of a table is not the start of a
+            // line.
+            if said == " " && (text.is_empty() || text.ends_with(['\n', ' '])) {
+                continue;
+            }
+            if said == "\n" {
+                let trimmed = text.trim_end_matches(' ').len();
+                left.truncate(trimmed);
+                text.truncate(trimmed);
+                // And where they came from, or what is put after them would
+                // say it came from the spaces taken off.
+                runs.retain(|(out, ..)| *out < trimmed);
+                if let Some((out, _, length)) = runs.last_mut() {
+                    *length = (*length).min(trimmed - *out);
+                }
+                if text.is_empty() || text.ends_with('\n') {
+                    continue;
+                }
+                broke = true;
+            }
+            let look = looks.get(range.start).copied().unwrap_or_default();
+            left.extend(std::iter::repeat_n(look, said.len()));
+            text.push_str(said);
         }
         at = at.max(range.end);
+    }
+    // A break the end of a block asked for, with nothing after it, is not a
+    // line.
+    while text.ends_with('\n') {
+        text.pop();
+        left.pop();
     }
     (Gathered { text, runs }, left)
 }
@@ -784,7 +1167,14 @@ fn stripped(gathered: &Gathered, ink: Ink, inside: Option<Node<'_>>) -> (Gathere
 /// is inside taken out of it already, so every range has to come back
 /// through [`Gathered::text_of`]. A range that lands in one of those markers
 /// is a range about something that is not on the page.
-fn marks(node: Node<'_>, gathered: &Gathered, looks: &mut [Look], gone: &mut Vec<Range<usize>>) {
+fn marks(
+    node: Node<'_>,
+    gathered: &Gathered,
+    looks: &mut [Look],
+    gone: &mut Vec<Range<usize>>,
+    put: &mut Vec<(usize, String)>,
+    tags: &mut Vec<html::Tag>,
+) {
     let here = |range: Range<usize>| -> Option<Range<usize>> {
         let start = gathered.text_of(range.start)?;
         Some(start..start + (range.end - range.start))
@@ -792,7 +1182,7 @@ fn marks(node: Node<'_>, gathered: &Gathered, looks: &mut [Look], gone: &mut Vec
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         let Some(range) = here(child.byte_range()) else {
-            marks(child, gathered, looks, gone);
+            marks(child, gathered, looks, gone, put, tags);
             continue;
         };
         match child.kind() {
@@ -805,14 +1195,38 @@ fn marks(node: Node<'_>, gathered: &Gathered, looks: &mut [Look], gone: &mut Vec
                 gone.push(range);
                 continue;
             }
+            // A tag of HTML in the middle of the words, which is the asking
+            // too -- see [`html`] -- and leaves a break or a picture's words
+            // where it asked for one.
+            //
+            // Only a name GitHub would keep: anything else is words, and
+            // `Vec<String>` keeps its `<String>`.
+            "html_tag" => {
+                let Some(mut tag) = gathered.text.get(range.clone()).and_then(html::tag) else {
+                    continue;
+                };
+                tag.range = range;
+                let (taken, leaves) = tag.taken();
+                if let (Some(leaves), Some(first)) = (leaves, taken.first()) {
+                    put.push((first.start, leaves));
+                }
+                gone.extend(taken);
+                tags.push(tag);
+                continue;
+            }
             // A link is its words. Where it points is not on the page: a
             // reading is read, and a URL in the middle of a sentence is a
             // line the eye has to climb over.
             "inline_link" | "image" => {
                 let words = child
                     .children(&mut child.walk())
-                    .find(|part| part.kind() == "link_text")
+                    .find(|part| part.kind() == "link_text" || part.kind() == "image_description")
                     .and_then(|part| here(part.byte_range()));
+                // A picture is its words behind the mark a picture has, the
+                // same as one written in HTML.
+                if child.kind() == "image" {
+                    put.push((range.start, html::PICTURE.to_string()));
+                }
                 match words {
                     Some(words) => {
                         gone.push(range.start..words.start);
@@ -823,7 +1237,7 @@ fn marks(node: Node<'_>, gathered: &Gathered, looks: &mut [Look], gone: &mut Vec
             }
             _ => {}
         }
-        marks(child, gathered, looks, gone);
+        marks(child, gathered, looks, gone, put, tags);
     }
 }
 
@@ -833,11 +1247,24 @@ fn marks(node: Node<'_>, gathered: &Gathered, looks: &mut [Look], gone: &mut Vec
 /// Only an address with a scheme: a link to `src/lib.rs` is a file in a
 /// repository the browser has never heard of.
 fn links(node: Node<'_>, source: &str) -> Vec<(Range<usize>, String)> {
-    let mut found = Vec::new();
+    // The tags of HTML among the words, in order: an `<a href>` and the
+    // `</a>` after it are two of them, with the link's words between. Once,
+    // for the whole of the words: asked at every level of the walk below,
+    // a link inside `**` was found twice.
+    let mut tags = Vec::new();
+    gather_tags(node, source, &mut tags);
+    let mut found = html::links(&tags);
+    written_links(node, source, &mut found);
+    found
+}
+
+/// The links markdown writes, `[words](to)` and `![words](to)`, under an
+/// inline node.
+fn written_links(node: Node<'_>, source: &str, found: &mut Vec<(Range<usize>, String)>) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if child.kind() != "inline_link" {
-            found.extend(links(child, source));
+        if child.kind() != "inline_link" && child.kind() != "image" {
+            written_links(child, source, found);
             continue;
         }
         let part = |kind: &str| {
@@ -849,11 +1276,27 @@ fn links(node: Node<'_>, source: &str) -> Vec<(Range<usize>, String)> {
             .and_then(|to| source.get(to.byte_range()))
             .map(|to| to.trim_start_matches('<').trim_end_matches('>'))
             .filter(|to| to.starts_with("https://") || to.starts_with("http://"));
-        if let (Some(words), Some(to)) = (part("link_text"), to) {
+        if let (Some(words), Some(to)) =
+            (part("link_text").or_else(|| part("image_description")), to)
+        {
             found.push((words.byte_range(), to.to_string()));
         }
     }
-    found
+}
+
+/// Every tag of HTML under an inline node, where it is in the source.
+fn gather_tags(node: Node<'_>, source: &str, tags: &mut Vec<html::Tag>) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "html_tag" {
+            if let Some(mut tag) = source.get(child.byte_range()).and_then(html::tag) {
+                tag.range = child.byte_range();
+                tags.push(tag);
+            }
+            continue;
+        }
+        gather_tags(child, source, tags);
+    }
 }
 
 /// Says something about every byte of a run.

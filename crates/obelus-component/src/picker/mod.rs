@@ -732,6 +732,10 @@ pub struct Picker {
     /// Whether the first tab is the rows of the view the list was opened
     /// over, ahead of "all" -- which is then every row but those.
     own_tab: bool,
+    /// Whether the list left that first tab for "all" by itself, because
+    /// what was typed matched none of the view's keys -- so that emptying the
+    /// query goes back to where the reader was put.
+    left_its_own: bool,
     /// Whether this list is a search, whose rows are refilled as the query
     /// and the tab move.
     searching: bool,
@@ -1059,6 +1063,7 @@ impl Picker {
             tab: 0,
             scopes: false,
             own_tab: false,
+            left_its_own: false,
             searching: false,
             listing: false,
             opener: None,
@@ -1206,6 +1211,7 @@ impl Picker {
     pub fn go_to_tab(&mut self, tab: usize) {
         if tab < self.tabs.len() {
             self.tab = tab;
+            self.left_its_own = false;
             self.window.set_focus(0);
             self.refilter();
         }
@@ -1781,6 +1787,9 @@ impl Picker {
             (false, 0) => last,
             (false, at) => at - 1,
         };
+        // The reader's own choice of tab, which emptying the query does not
+        // take back.
+        self.left_its_own = false;
         // A different list, so the old selection means nothing.
         self.window.set_focus(0);
         self.refilter();
@@ -2797,6 +2806,37 @@ impl Picker {
             true => self.filter(Candidates::Survivors),
             false => self.filter(Candidates::Everything),
         }
+        self.go_where_the_query_is_found();
+    }
+
+    /// Goes from the view's own keys to every command where what is typed
+    /// matches none of the keys, and back once the query is empty again.
+    ///
+    /// The palette opens on the view's own tab, and a reader who types a
+    /// command's name into it has not looked at which tab they are on: they
+    /// typed `open-settings`, the view's half-dozen keys matched none of it,
+    /// and enter on the empty list did nothing -- in the conversation, which
+    /// is where a palette is most often opened to run something by name.
+    ///
+    /// Only that way and only on an empty answer. A query that matches one
+    /// of the view's keys is a reader looking for that key, and taking them
+    /// back to it as they type on would move the list under them.
+    fn go_where_the_query_is_found(&mut self) {
+        if !self.own_tab {
+            return;
+        }
+        let typed = !self.query.said().is_empty();
+        if self.tab == 0 && typed && self.matched.is_empty() {
+            self.tab = 1;
+            self.left_its_own = true;
+            self.window.set_focus(0);
+            self.refilter();
+        } else if !typed && self.left_its_own {
+            self.tab = 0;
+            self.left_its_own = false;
+            self.window.set_focus(0);
+            self.refilter();
+        }
     }
 
     /// Works out which rows match, over the candidates it is given.
@@ -3029,6 +3069,73 @@ impl Picker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// What is typed over a view's own keys that matches none of them is
+    /// looked for among the commands, and the list goes back to the keys
+    /// once the query is empty -- unless the reader chose a tab themselves.
+    ///
+    /// Broken deliberately by leaving `go_where_the_query_is_found` out of
+    /// `refilter_typed`: the name of a command typed over the keys finds
+    /// nothing, and enter does nothing. And by not forgetting, in
+    /// `step_tab`, that the list left the keys by itself: a tab the reader
+    /// walked to was taken from them when they emptied the query.
+    #[test]
+    fn a_query_the_views_keys_do_not_match_is_looked_for_in_the_commands() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let type_in = |picker: &mut Picker, said: &str| {
+            for character in said.chars() {
+                let _ = picker.handle_key(
+                    &KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE),
+                    10,
+                );
+            }
+        };
+        let empty = |picker: &mut Picker| {
+            while !picker.query().is_empty() {
+                let _ =
+                    picker.handle_key(&KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE), 10);
+            }
+        };
+        let rows = || {
+            vec![
+                PickerItem {
+                    tab: Some(0),
+                    ..named("New line")
+                },
+                PickerItem {
+                    tab: Some(2),
+                    ..named("open-settings")
+                },
+            ]
+        };
+        let mut picker = Picker::new(rows(), PickerLayout::Compact { rows: 10 });
+        picker.with_tabs_and_its_own("Here", &["Edit"]);
+        assert_eq!(picker.tab(), 0);
+
+        type_in(&mut picker, "new");
+        assert_eq!(picker.tab(), 0, "a key that matches was left");
+        empty(&mut picker);
+
+        type_in(&mut picker, "settings");
+        assert_eq!(picker.tab(), 1, "the commands were not asked");
+        assert_eq!(
+            picker.selected_item().map(|row| row.label.as_str()),
+            Some("open-settings")
+        );
+        empty(&mut picker);
+        assert_eq!(picker.tab(), 0, "emptied, it did not go back to the keys");
+
+        type_in(&mut picker, "settings");
+        let _ = picker.handle_key(&KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), 10);
+        let chosen = picker.tab();
+        empty(&mut picker);
+        assert_eq!(
+            picker.tab(),
+            chosen,
+            "the tab the reader chose was taken back"
+        );
+    }
 
     /// A batch landing in a list the reader has dragged leaves it where
     /// they dragged it.

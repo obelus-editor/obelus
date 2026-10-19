@@ -273,9 +273,20 @@ impl App {
                 .map(obelus_ui::counts::hints)
                 .unwrap_or_default(),
             Some(Layer::Palette | Layer::Prompt | Layer::Gone) => Vec::new(),
-            // The notes are a document rather than a layer, and the one
-            // document with keys of its own to say.
-            None => self.notes().map(obelus_ui::todo::hints).unwrap_or_default(),
+            // The documents with keys of their own to say: the notes, a
+            // pull request's page and a conversation.
+            None => match (self.notes(), self.discussion(), self.chat()) {
+                (Some(notes), ..) => obelus_ui::todo::hints(notes),
+                (None, Some(page), _) => {
+                    obelus_ui::discussion::hints(page, self.page_talked_about_elsewhere())
+                }
+                (None, None, Some(chat)) => obelus_ui::chat::hints(
+                    chat,
+                    self.talking() == obelus_agent::Talking::Thinking,
+                    self.agent_has_modes(),
+                ),
+                (None, None, None) => Vec::new(),
+            },
         }
     }
 
@@ -451,6 +462,11 @@ impl App {
             // no line under a caret to take in its place.
             Requires::SomethingToCopy => match self.terminal() {
                 Some(terminal) => terminal.is_holding(),
+                // A page is not a file, and has no line under a caret to
+                // take when nothing is held.
+                None if self.discussion().is_some() => self
+                    .discussion()
+                    .is_some_and(obelus_component::discussion::DiscussionView::holding),
                 None => buffer.is_some() || self.somewhere_to_type() || !self.reading_nothing(),
             },
             // Not `current_buffer`, which is the point of the distinction: a
@@ -845,20 +861,20 @@ impl App {
             self.leave(Layer::Picker);
             return;
         }
-        // A review is claimed the same way, and refused the same way; and so
-        // is an answer to an issue.
-        let topic = match value {
-            PickerValue::PullRequest(number) => {
-                Some(crate::conversation::Topic::PullRequest(number))
-            }
-            PickerValue::Issue(number) => Some(crate::conversation::Topic::Issue(number)),
+        // A pull request or an issue is read: its page opens, and the
+        // conversation about it is a key of that page.
+        let asked = match value {
+            PickerValue::PullRequest(number) => Some(crate::app::pulls::Asked::PullRequest(number)),
+            PickerValue::Issue(number) => Some(crate::app::pulls::Asked::Issue(number)),
             _ => None,
         };
-        if let Some(topic) = topic {
-            if self.take_up(topic) {
-                self.put_the_file_back();
-                self.leave(Layer::Picker);
-            }
+        if let Some(asked) = asked {
+            // Out of the list first, which puts back the file it was over:
+            // the page goes on top of that, and the jump back from it is
+            // to the file.
+            self.put_the_file_back();
+            self.leave(Layer::Picker);
+            let _ = self.open_the_discussion(asked);
             return;
         }
         // Not a theme to wear, so the one the list was opened over goes

@@ -84,6 +84,13 @@ pub mod ui {
     pub const PICTURE: char = '\u{f03e}';
     /// One commit, as a row of a history.
     pub const COMMIT: char = '\u{f0718}';
+    /// A pull request: `md-source_pull`, two branches joining -- also the
+    /// mark of the command that lists them.
+    pub const PULL_REQUEST: char = '\u{f04c2}';
+    /// An issue: `md-adjust`, a ring with a dot in it, which is the mark an
+    /// issue wears on GitHub -- beside the pull request's two branches, so
+    /// the two are told apart on a page's tab and on the list's.
+    pub const ISSUE: char = '\u{f001a}';
     /// A branch, for a name that points at a commit.
     pub const BRANCH: char = '\u{f062c}';
     /// A branch as a remote last had it.
@@ -344,7 +351,7 @@ pub fn for_command(command: obelus_command::Command) -> char {
         Command::HistoryProject => '\u{f02a1}',
         // `md-source_pull`: the two branches and the arrow between them
         // that a pull request is drawn as everywhere else.
-        Command::PullRequestReview => '\u{f04c2}',
+        Command::PullRequestReview => ui::PULL_REQUEST,
         Command::Fold => '\u{f0374}',
         Command::FoldAll => '\u{f0376}',
         Command::UnfoldAll => '\u{f0377}',

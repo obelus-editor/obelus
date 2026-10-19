@@ -119,6 +119,7 @@ pub mod chat;
 pub use chat::card;
 pub mod complete;
 pub mod counts;
+pub mod discussion;
 pub mod editor;
 pub mod gone;
 pub mod hover;

@@ -1040,6 +1040,7 @@ impl App {
                 }
                 Document::Notes(notes) => Self::notes_row(index, notes),
                 Document::Terminal(terminal) => Self::terminal_row(index, terminal),
+                Document::Discussion(page) => Self::discussion_row(index, page),
             };
             // The mark the document's tab wears too, from the one place
             // that says it.
