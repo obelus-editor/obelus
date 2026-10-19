@@ -639,13 +639,7 @@ pub fn prompt_row(
             // whatever is typed: they are about the row the reader is on,
             // which typing does not change the question of.
             let keys = crate::picker::keys(picker);
-            let typed_here = match said.is_empty() {
-                true => picker.invitation().unwrap_or(&said),
-                false => &said,
-            };
-            let taken = 1usize
-                .saturating_add(text_width(&typed(picker.question(), typed_here)))
-                .saturating_add(5);
+            let taken = taken_by_typing(picker.question(), &said, picker.invitation());
             let until = said_keys(
                 cells,
                 area,
@@ -805,15 +799,7 @@ fn switches(
     if on.is_empty() {
         return area.right();
     }
-    let typed_here = match words.is_empty() {
-        true => picker.invitation().unwrap_or(words),
-        false => words,
-    };
-    // The typing, then the blank, the mark and the blank after it, then two
-    // more so the two never read as one -- what `how_much` keeps clear.
-    let taken = 1usize
-        .saturating_add(text_width(&typed(picker.question(), typed_here)))
-        .saturating_add(5);
+    let taken = taken_by_typing(picker.question(), words, picker.invitation());
     // Each behind a ticked box, the control every switch in Obelus is drawn
     // with -- the palette's rows, the settings -- so that a word here reads
     // as a switch that is on rather than as a word. Words alone, joined by
@@ -842,6 +828,24 @@ fn switches(
     start
 }
 
+/// How much of a row typed into is taken before anything may stand at its
+/// far end: the typing -- or, with nothing typed, the words standing in for
+/// it -- then the blank, the mark that turns and the blank after it, then
+/// two more so the two never read as one.
+///
+/// One answer for everything said at that end -- the switches, the keys a
+/// view says, a list's count -- so none of them is measured against a
+/// different idea of where the typing stops.
+fn taken_by_typing(question: Option<&str>, words: &str, standing_in: Option<&str>) -> usize {
+    let said = match words.is_empty() {
+        true => standing_in.unwrap_or(words),
+        false => words,
+    };
+    1usize
+        .saturating_add(text_width(&typed(question, said)))
+        .saturating_add(5)
+}
+
 /// The blank between two switches on the query's row: as wide as the one
 /// between the keys at a foot, so a word is read with the box in front of
 /// it and not with the one after.
@@ -865,15 +869,7 @@ fn how_much(
     tally: &obelus_component::picker::Tally,
     theme: &Theme,
 ) {
-    let said = match words.is_empty() {
-        true => standing_in.unwrap_or(words),
-        false => words,
-    };
-    // What is already on the row: the typing, then the blank, the mark and
-    // the blank after it, then two more so the two never read as one.
-    let taken = 1usize
-        .saturating_add(text_width(&typed(question, said)))
-        .saturating_add(5);
+    let taken = taken_by_typing(question, words, standing_in);
     let key = tally.key.as_ref().map_or(0, |(key, does)| {
         3 + crate::cap_width(key) + 1 + text_width(does)
     });
@@ -1406,10 +1402,7 @@ impl StatusView<'_> {
         );
         // The keys the page says itself, at the row's end, and the palette
         // pointed at only where it has more than those.
-        let typed_here = settings.what_is_filtered().filter(|_| said.is_empty());
-        let taken = 1usize
-            .saturating_add(text_width(&typed(None, typed_here.unwrap_or(&said))))
-            .saturating_add(5);
+        let taken = taken_by_typing(None, &said, settings.what_is_filtered());
         let until = said_keys(
             cells,
             area,
@@ -1730,10 +1723,7 @@ impl StatusView<'_> {
         // The keys the list says itself, at the row's end, and the palette
         // pointed at only where it has more than those.
         let keys = crate::names::hints(names);
-        let typed_here = names.invitation().filter(|_| said.is_empty());
-        let taken = 1usize
-            .saturating_add(text_width(&typed(None, typed_here.unwrap_or(&said))))
-            .saturating_add(5);
+        let taken = taken_by_typing(None, &said, names.invitation());
         let until = said_keys(
             cells,
             area,
