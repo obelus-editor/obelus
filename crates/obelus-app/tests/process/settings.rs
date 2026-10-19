@@ -2915,7 +2915,9 @@ fn alt_backspace_on_a_row_scrolled_away_shows_it_first() {
 /// that names another view does not swap it away.
 ///
 /// Broken deliberately by letting it give way: `f1` put the files up in
-/// its place.
+/// its place. And by letting the palette's key past that question -- bound
+/// in the dialogs' table and opened before `gives_way_to_a_view` is asked
+/// -- when `ctrl+p` let go of it for the palette.
 #[test]
 fn the_question_about_every_key_does_not_give_way() {
     use crossterm::event::{KeyEvent, KeyModifiers};
@@ -2931,12 +2933,17 @@ fn the_question_about_every_key_does_not_give_way() {
         KeyModifiers::ALT | KeyModifiers::SHIFT,
     )));
     support::press_function(&mut app, 1);
-    assert!(
+    let still_asked = |app: &App| {
         app.picker()
             .and_then(|picker| picker.question())
-            .is_some_and(|question| question.starts_with("Put every key back")),
-        "the question gave way"
-    );
+            .is_some_and(|question| question.starts_with("Put every key back"))
+    };
+    assert!(still_asked(&app), "the question gave way");
+    // Nor to the palette, which lets go of any other list on the status
+    // bar before it opens.
+    support::press_control(&mut app, 'p');
+    assert!(still_asked(&app), "the question gave way to the palette");
+    assert!(app.palette().is_none(), "the palette opened over it");
 }
 
 /// A command another's line took a key from is changed, but has no line

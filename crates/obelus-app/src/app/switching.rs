@@ -37,7 +37,9 @@
 //! it.** Its first tab is that view's own keys, so the view has to be there
 //! for one chosen from it to be pressed in -- and escape is back in the view
 //! as it was. Over the palette, its own key does nothing, and any other is
-//! asked about the view under it.
+//! asked about the view under it. **But not over a list on the status bar**,
+//! which it lets go of instead: it is one itself, and two in the room of one
+//! is a list saying nothing the first could not (`App::open_command_palette`).
 //!
 //! **A view that has bound the key itself beats the swap.** `App::handle_key`
 //! asked the swap first once, so a key the showing view had taken was
