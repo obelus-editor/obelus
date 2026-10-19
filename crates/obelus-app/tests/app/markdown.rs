@@ -160,6 +160,128 @@ fn html_in_the_words_goes_and_a_shortcode_is_its_emoji_outside_code() {
     assert_eq!(drawn, ["Press ctrl \u{274c} but :x:", "then go."]);
 }
 
+/// A name between angle brackets that GitHub would not keep is words: a
+/// type an agent wrote without its backticks is the type it wrote.
+///
+/// Broken deliberately by taking every name as a tag (`ALLOWED` not asked
+/// in `html::tag`): `Vec<String>` came out as `Vec`.
+#[test]
+fn a_type_in_angle_brackets_is_words() {
+    let drawn: Vec<String> = render("A Vec<String> of <b>names</b>.\n", 60)
+        .iter()
+        .map(text)
+        .collect();
+    assert_eq!(drawn, ["A Vec<String> of names."]);
+}
+
+/// A tag that asks for a look gets the one its markdown would: bold,
+/// italics, code and a line through, inside a paragraph.
+///
+/// Broken deliberately by leaving `wear` out of `stripped`: the words are
+/// there, plain.
+#[test]
+fn html_in_the_words_looks_as_it_asks() {
+    let rows = render(
+        "<b>bold</b> <i>lean</i> <code>code</code> <del>gone</del>\n",
+        60,
+    );
+    let span = |words: &str| {
+        rows.iter()
+            .flat_map(|row| &row.spans)
+            .find(|span| span.text.contains(words))
+            .cloned()
+            .unwrap_or_else(|| panic!("no {words:?} in {rows:?}"))
+    };
+    assert!(span("bold").bold, "bold is not bold");
+    assert!(span("lean").italic, "italics are not italic");
+    assert_eq!(span("code").ink, Ink::Code, "code is not code");
+    assert!(
+        span("gone").strikeout,
+        "what was deleted is not struck through"
+    );
+}
+
+/// In a block of HTML a heading is a heading, a rule is a rule, and what
+/// asks for bold is bold.
+///
+/// The block opens with the rule because that is what makes it a block:
+/// the grammar reads a line that opens with `<h2>` as a paragraph with tags
+/// in it, which is the other path, and a heading tested there says nothing
+/// about this one.
+///
+/// Broken deliberately two ways. Leaving `wear` out of the block: the
+/// heading and the bold are plain. And leaving the rule out of what the
+/// block puts: it is a line of nothing, and no row is a rule.
+#[test]
+fn a_heading_and_a_rule_in_html_are_drawn_as_markdown_draws_them() {
+    let rows = render(
+        "<hr>
+<h2>Then</h2>
+<p><b>Bold</b> after</p>
+",
+        60,
+    );
+    let ruled = rows.iter().position(|row| row.rule);
+    let heading = rows.iter().position(|row| text(row) == "Then");
+    assert!(
+        matches!((ruled, heading), (Some(rule), Some(heading)) if rule < heading),
+        "no rule before the heading: {rows:?}"
+    );
+    let heading = &rows[heading.unwrap_or_default()];
+    assert!(
+        heading.spans.iter().all(|span| span.ink == Ink::Heading(2)),
+        "the heading is not a heading: {heading:?}"
+    );
+    let bold = rows
+        .iter()
+        .flat_map(|row| &row.spans)
+        .find(|span| span.text.contains("Bold"))
+        .unwrap_or_else(|| panic!("no bold: {rows:?}"));
+    assert!(bold.bold, "what asked for bold is not: {bold:?}");
+}
+
+/// A picture is its words behind a camera, and the words go to the
+/// picture -- written in markdown, or in HTML with words or without them.
+///
+/// Broken deliberately two ways. Leaving pictures out of `html::links`: an
+/// `<img>`'s words go nowhere. And leaving `image` out of `links`: a
+/// picture written in markdown goes nowhere.
+#[test]
+fn a_picture_is_its_words_and_a_link_to_it() {
+    let source = "![a cat](https://example.com/cat.png)\n\n\
+                  <img src=\"https://example.com/d.png\" alt=\"the diagram\">\n\n\
+                  <img src=\"https://example.com/e.png\">\n";
+    let rows = render(source, 60);
+    let said: Vec<(String, Vec<String>)> = rows
+        .iter()
+        .filter(|row| !row.spans.is_empty())
+        .map(|row| {
+            (
+                text(row),
+                row.links.iter().map(|(_, to)| to.clone()).collect(),
+            )
+        })
+        .collect();
+    let camera = "\u{1f4f7} ";
+    assert_eq!(
+        said,
+        [
+            (
+                format!("{camera}a cat"),
+                vec!["https://example.com/cat.png".to_string()]
+            ),
+            (
+                format!("{camera}the diagram"),
+                vec!["https://example.com/d.png".to_string()]
+            ),
+            (
+                format!("{camera}https://example.com/e.png"),
+                vec!["https://example.com/e.png".to_string()]
+            ),
+        ]
+    );
+}
+
 /// An item that is a task -- GitHub's `- [x]`, which every pull request's
 /// template is full of -- is its box and then its words, on one row: the
 /// box stands where the bullet would, ticked or not, and the words do not

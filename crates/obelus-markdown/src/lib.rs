@@ -309,20 +309,31 @@ impl Laying<'_> {
     fn html(&mut self, node: Node<'_>, width: u16, prefix: &Prefix) {
         let gathered = self.gather(node, Join::Soft);
         let tags = html::tags(&gathered.text);
-        let looks = vec![
+        let mut looks = vec![
             Look {
                 ink: Some(Ink::Plain),
                 ..Look::default()
             };
             gathered.text.len()
         ];
+        wear(&mut looks, &html::styles(&tags));
         let mut gone: Vec<Range<usize>> = Vec::new();
         let mut put: Vec<(usize, String)> = Vec::new();
         for tag in &tags {
-            if let Some(leaves) = tag.leaves() {
-                put.push((tag.range.start, leaves));
+            // A rule is a row of its own, which words cannot say: it is put
+            // as a line holding nothing but the mark `lay` draws one for.
+            if tag.is_rule() {
+                for said in ["\n", RULE, "\n"] {
+                    put.push((tag.range.start, said.to_string()));
+                }
+                gone.push(tag.range.clone());
+                continue;
             }
-            gone.push(tag.range.clone());
+            let (taken, leaves) = tag.taken();
+            if let (Some(leaves), Some(first)) = (leaves, taken.first()) {
+                put.push((first.start, leaves));
+            }
+            gone.extend(taken);
         }
         for (range, character) in html::references(&gathered.text) {
             if !gone
@@ -362,6 +373,15 @@ impl Laying<'_> {
             return;
         }
         for (said, at) in obelus_text::wrapped_from(&shown.text, prefix.room(width)) {
+            if said == RULE {
+                self.rows.push(Row {
+                    spans: Vec::new(),
+                    rule: true,
+                    code: None,
+                    links: Vec::new(),
+                });
+                continue;
+            }
             let spans = split(&said, at.start, looks, shown);
             // A link's words may wrap, and every row of them goes where
             // the link does.
@@ -825,11 +845,32 @@ fn stripped(gathered: &Gathered, ink: Ink, inside: Option<Node<'_>>) -> (Gathere
     let mut looks = vec![plain; gathered.text.len()];
     let mut gone: Vec<Range<usize>> = Vec::new();
     let mut put: Vec<(usize, String)> = Vec::new();
+    let mut tags: Vec<html::Tag> = Vec::new();
     if let Some(inside) = inside {
-        marks(inside, gathered, &mut looks, &mut gone, &mut put);
+        marks(inside, gathered, &mut looks, &mut gone, &mut put, &mut tags);
     }
+    wear(&mut looks, &html::styles(&tags));
     spelled(gathered, &looks, &mut gone, &mut put);
     keep(gathered, &looks, gone, put)
+}
+
+/// What a line holding a rule and nothing else says while it is being laid
+/// out: a character of the private use area, which no source has any
+/// business holding, and which `lay` turns into the rule.
+const RULE: &str = "\u{e000}";
+
+/// The looks a block's or a paragraph's tags ask for, worn by the words
+/// between each pair of them.
+fn wear(looks: &mut [Look], styles: &[(Range<usize>, html::Style)]) {
+    for (range, style) in styles {
+        paint(looks, range, |look| match style {
+            html::Style::Bold => look.bold = true,
+            html::Style::Italic => look.italic = true,
+            html::Style::Code => look.ink = Some(Ink::Code),
+            html::Style::Struck => look.strikeout = true,
+            html::Style::Heading(level) => look.ink = Some(Ink::Heading(*level)),
+        });
+    }
 }
 
 /// Every shortcode in the words that names an emoji, taken out and the
@@ -954,6 +995,7 @@ fn marks(
     looks: &mut [Look],
     gone: &mut Vec<Range<usize>>,
     put: &mut Vec<(usize, String)>,
+    tags: &mut Vec<html::Tag>,
 ) {
     let here = |range: Range<usize>| -> Option<Range<usize>> {
         let start = gathered.text_of(range.start)?;
@@ -962,7 +1004,7 @@ fn marks(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         let Some(range) = here(child.byte_range()) else {
-            marks(child, gathered, looks, gone, put);
+            marks(child, gathered, looks, gone, put, tags);
             continue;
         };
         match child.kind() {
@@ -978,16 +1020,20 @@ fn marks(
             // A tag of HTML in the middle of the words, which is the asking
             // too -- see [`html`] -- and leaves a break or a picture's words
             // where it asked for one.
+            //
+            // Only a name GitHub would keep: anything else is words, and
+            // `Vec<String>` keeps its `<String>`.
             "html_tag" => {
-                let leaves = gathered
-                    .text
-                    .get(range.clone())
-                    .and_then(html::tag)
-                    .and_then(|tag| tag.leaves());
-                if let Some(leaves) = leaves {
-                    put.push((range.start, leaves));
+                let Some(mut tag) = gathered.text.get(range.clone()).and_then(html::tag) else {
+                    continue;
+                };
+                tag.range = range;
+                let (taken, leaves) = tag.taken();
+                if let (Some(leaves), Some(first)) = (leaves, taken.first()) {
+                    put.push((first.start, leaves));
                 }
-                gone.push(range);
+                gone.extend(taken);
+                tags.push(tag);
                 continue;
             }
             // A link is its words. Where it points is not on the page: a
@@ -996,8 +1042,13 @@ fn marks(
             "inline_link" | "image" => {
                 let words = child
                     .children(&mut child.walk())
-                    .find(|part| part.kind() == "link_text")
+                    .find(|part| part.kind() == "link_text" || part.kind() == "image_description")
                     .and_then(|part| here(part.byte_range()));
+                // A picture is its words behind the mark a picture has, the
+                // same as one written in HTML.
+                if child.kind() == "image" {
+                    put.push((range.start, html::PICTURE.to_string()));
+                }
                 match words {
                     Some(words) => {
                         gone.push(range.start..words.start);
@@ -1008,7 +1059,7 @@ fn marks(
             }
             _ => {}
         }
-        marks(child, gathered, looks, gone, put);
+        marks(child, gathered, looks, gone, put, tags);
     }
 }
 
@@ -1025,7 +1076,7 @@ fn links(node: Node<'_>, source: &str) -> Vec<(Range<usize>, String)> {
     let mut found = html::links(&tags);
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if child.kind() != "inline_link" {
+        if child.kind() != "inline_link" && child.kind() != "image" {
             found.extend(links(child, source));
             continue;
         }
@@ -1038,7 +1089,9 @@ fn links(node: Node<'_>, source: &str) -> Vec<(Range<usize>, String)> {
             .and_then(|to| source.get(to.byte_range()))
             .map(|to| to.trim_start_matches('<').trim_end_matches('>'))
             .filter(|to| to.starts_with("https://") || to.starts_with("http://"));
-        if let (Some(words), Some(to)) = (part("link_text"), to) {
+        if let (Some(words), Some(to)) =
+            (part("link_text").or_else(|| part("image_description")), to)
+        {
             found.push((words.byte_range(), to.to_string()));
         }
     }
