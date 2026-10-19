@@ -52,6 +52,9 @@ pub struct Hint {
     /// to go, so "go there" is dim in the palette while the selection is on
     /// one, and a key whose row is dim does nothing there.
     pub usable: bool,
+    /// Whether the row the reader is on says it at its end -- see
+    /// [`on_the_row`].
+    pub row: bool,
 }
 
 impl Hint {
@@ -66,7 +69,16 @@ impl Hint {
             about: None,
             usable: true,
             here: true,
+            row: false,
         }
+    }
+
+    /// Says the row the reader is on says it at its end, where it says
+    /// `on`.
+    #[must_use]
+    pub const fn on_the_row(mut self, on: bool) -> Self {
+        self.row = on;
+        self
     }
 
     /// The same act in the other direction, on a key of its own.
@@ -316,45 +328,46 @@ pub(crate) fn cap_the_keys(
     }
 }
 
-/// The enters a row of a list says at its end, where the list has more
-/// than one: the plain one, and one held with a modifier.
+/// The keys the row the reader is on says at its end: those a view marked
+/// [`Hint::on_the_row`], where they do something on this row.
 ///
 /// A list's enter takes the row, everywhere, and is not news -- so it is
 /// said nowhere, and the rest of a view's keys are in the palette over it.
-/// A second enter is the exception: it means the first is not what enter
-/// means anywhere else, and the reader needs to know which before pressing
-/// either -- on every row, which is not something to open the palette for
-/// every time. So the pair goes where the reader is already looking, on the
-/// row they are on, the way the transcript says what enter does on its
-/// own. The words are the palette's, which says them too.
+/// A list whose keys are all about the row it is on is the exception: two
+/// enters, where the first is not what enter means anywhere else, or one
+/// key that stops the work a row is. The reader needs those on every row,
+/// which is not something to open a second list for every time -- so they
+/// go where the reader is already looking, the way the transcript says
+/// what enter does. The words are the palette's, which says them too.
 ///
 /// Only those that do something on this row: a key said at a row's end is
 /// a key that row answers to.
-pub(crate) fn enters(hints: &[Hint]) -> Vec<(String, &'static str)> {
-    use crossterm::event::{KeyCode, KeyModifiers};
-    let enter = |hint: &&Hint| hint.here && hint.chord.pressed().code == KeyCode::Enter;
-    if !hints
-        .iter()
-        .filter(enter)
-        .any(|hint| hint.chord.pressed().modifiers != KeyModifiers::NONE)
-    {
-        return Vec::new();
-    }
+pub(crate) fn on_the_row(hints: &[Hint]) -> Vec<(String, &'static str)> {
     hints
         .iter()
-        .filter(enter)
-        .filter(|hint| hint.usable)
+        .filter(|hint| hint.here && hint.row && hint.usable)
         .filter_map(|hint| Some((hint.keys(), hint.does?)))
         .collect()
 }
 
-/// Writes a row's enters against `right`, if they fit after `from`, and
+/// Whether the palette over a view has anything to say that the view does
+/// not: a key of its own the view has, that is not said on its row.
+///
+/// What decides whether a view points at the palette at all. A `More` that
+/// opens a second list to say what the row already says is a layer over a
+/// layer for nothing.
+#[must_use]
+pub fn says_more(hints: &[Hint]) -> bool {
+    hints.iter().any(|hint| hint.here && !hint.row)
+}
+
+/// Writes a row's keys against `right`, if they fit after `from`, and
 /// says where they start -- so whatever else the row says stops short of
 /// them.
 ///
 /// Dropped whole where they do not fit, like every aside: half a key is no
 /// key.
-pub(crate) fn enters_at_the_end(
+pub(crate) fn keys_at_the_end(
     cells: &mut CellBuffer,
     (from, right): (u16, u16),
     y: u16,
@@ -666,31 +679,44 @@ mod tests {
         }
     }
 
-    /// A list whose only enter is the plain one says nothing at a row's
-    /// end, and one with a second says both -- but not one that does
-    /// nothing on this row.
+    /// A row says the keys marked for it and nothing else -- not one that
+    /// does nothing on this row -- and the palette has more to say only
+    /// where a key is not on the row.
     ///
-    /// Broken deliberately by dropping the check for a modifier: the list
-    /// with one enter says it on every row.
+    /// Broken deliberately twice: by saying the dim one too (the row says
+    /// `Switch` where it does nothing), and by asking `says_more` about
+    /// every key (a view whose keys are all on its row still says `More`).
     #[test]
-    fn a_row_says_its_enters_only_where_there_are_two() {
+    fn a_row_says_its_own_keys_and_the_palette_the_rest() {
         let enter = |modifiers| obelus_keymap::KeyChord::new(KeyCode::Enter, modifiers);
-        let alone = [Hint::new(enter(KeyModifiers::NONE), "Open")];
-        assert!(enters(&alone).is_empty(), "{:?}", enters(&alone));
-
+        let said = |hints: &[Hint]| -> Vec<&str> {
+            on_the_row(hints)
+                .into_iter()
+                .map(|(_, does)| does)
+                .collect()
+        };
         let two = [
-            Hint::new(enter(KeyModifiers::NONE), "New window"),
-            Hint::new(enter(KeyModifiers::CONTROL), "Switch"),
+            Hint::new(enter(KeyModifiers::NONE), "New window").on_the_row(true),
+            Hint::new(enter(KeyModifiers::CONTROL), "Switch").on_the_row(true),
         ];
-        let said: Vec<_> = enters(&two).into_iter().map(|(_, does)| does).collect();
-        assert_eq!(said, ["New window", "Switch"]);
+        assert_eq!(said(&two), ["New window", "Switch"]);
+        assert!(!says_more(&two), "the palette repeats the row");
 
         let dim = [
-            Hint::new(enter(KeyModifiers::NONE), "New window"),
-            Hint::new(enter(KeyModifiers::CONTROL), "Switch").when(false),
+            Hint::new(enter(KeyModifiers::NONE), "New window").on_the_row(true),
+            Hint::new(enter(KeyModifiers::CONTROL), "Switch")
+                .on_the_row(true)
+                .when(false),
         ];
-        let said: Vec<_> = enters(&dim).into_iter().map(|(_, does)| does).collect();
-        assert_eq!(said, ["New window"]);
+        assert_eq!(said(&dim), ["New window"]);
+
+        let switch = [Hint::new(
+            obelus_keymap::KeyChord::new(KeyCode::Char('r'), KeyModifiers::ALT),
+            "Regex",
+        )
+        .set(false)];
+        assert!(said(&switch).is_empty());
+        assert!(says_more(&switch), "a switch is left to nobody");
     }
 
     /// The row of keys along one width, as text.

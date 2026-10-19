@@ -326,14 +326,18 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
             // sort of thing to one of them. Not the themes', whose enter is
             // the card's (`theme_hints`).
             .only_where(!settings.on_themes())
-            .when(settings.row_count(offering) > 0 && !pairing_waits && !nothing_to_change),
+            .when(settings.row_count(offering) > 0 && !pairing_waits && !nothing_to_change)
+            // On the keys page, where the second enter makes the first
+            // news; everywhere else enter is a list's own.
+            .on_the_row(settings.on_keys()),
         Hint::new(
             obelus_keymap::KeyChord::new(KeyCode::Enter, KeyModifiers::CONTROL),
             "Add a key",
         )
         .about("Give this command another key")
         .only_where(settings.on_keys())
-        .when(adds),
+        .when(adds)
+        .on_the_row(true),
         // Taking keys away, each offered only where it would do something:
         // the key on this row, this command put back on its layout's keys,
         // and every command.
@@ -1100,10 +1104,10 @@ impl SettingsView<'_> {
             .max()
             .unwrap_or(0);
         let detail_at = name_at + u16::try_from(names).unwrap_or(0) + 2;
-        // What the row the reader is on says at its end, where a page has
-        // two enters: the keys page, whose enter changes a key and whose
-        // `ctrl+enter` adds one -- see `crate::enters`.
-        let enters = crate::enters(&hints(self.settings, self.offering.as_ref()));
+        // What the row the reader is on says at its end: on the keys page,
+        // that enter changes a key and `ctrl+enter` adds one -- see
+        // `crate::on_the_row`.
+        let row_keys = crate::on_the_row(&hints(self.settings, self.offering.as_ref()));
         // Walked by height rather than by row, because an entry is as tall
         // as what it has to say: a name, the rows its description takes, and
         // a blank so that the next name is not read as part of it. Every
@@ -1188,7 +1192,7 @@ impl SettingsView<'_> {
                     aside_at.saturating_sub(reserved + 1),
                 );
                 let ink = plain.fg(self.theme.gutter).bg(background);
-                if let Some(at) = crate::enters_at_the_end(cells, room, y, &enters, ink, self.theme)
+                if let Some(at) = crate::keys_at_the_end(cells, room, y, &row_keys, ink, self.theme)
                 {
                     let gap = u16::try_from(crate::GAP_BETWEEN_HINTS).unwrap_or(u16::MAX);
                     reserved = aside_at.saturating_sub(at) + gap;

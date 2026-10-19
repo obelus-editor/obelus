@@ -636,10 +636,11 @@ pub fn prompt_row(
         None => {
             let until = switches(cells, area, picker, &said, theme);
             // Only while the words that stand in for nothing typed are
-            // there, and only for a list with keys of its own: the switches
-            // keep the row's end, and this goes where it fits before them.
+            // there, and only for a list with keys of its own that its row
+            // does not already say: the switches keep the row's end, and
+            // this goes where it fits before them.
             if let (Some(invitation), Some(key)) = (picker.invitation(), palette)
-                && crate::picker::keys(picker).iter().any(|key| key.here)
+                && crate::says_more(&crate::picker::keys(picker))
             {
                 let from = usize::from(typed_inset(picker.question())) + text_width(invitation);
                 more(cells, area, from + AFTER_WORDS, until, key, theme);

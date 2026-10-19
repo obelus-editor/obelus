@@ -80,7 +80,8 @@ pub fn keys(picker: &Picker) -> Vec<Hint> {
                 "Stop",
             )
             .about("Stop the work on this row")
-            .when(picker.stops_this_one()),
+            .when(picker.stops_this_one())
+            .on_the_row(true),
         ];
     }
     // The two enters, where a row both holds something and is somewhere to
@@ -92,8 +93,11 @@ pub fn keys(picker: &Picker) -> Vec<Hint> {
         let enter = |modifiers| obelus_keymap::KeyChord::new(KeyCode::Enter, modifiers);
         return vec![
             Hint::new(enter(KeyModifiers::NONE), "Open")
-                .about("Show what this row holds, under it"),
-            Hint::new(enter(KeyModifiers::ALT), "Go there").about("Go to the place this row names"),
+                .about("Show what this row holds, under it")
+                .on_the_row(true),
+            Hint::new(enter(KeyModifiers::ALT), "Go there")
+                .about("Go to the place this row names")
+                .on_the_row(true),
         ];
     }
     // The open documents, whose order is the tabs' and the reader's. The
@@ -126,10 +130,12 @@ pub fn keys(picker: &Picker) -> Vec<Hint> {
         return vec![
             Hint::new(enter(KeyModifiers::NONE), word)
                 .about(about)
-                .when(does.is_some()),
+                .when(does.is_some())
+                .on_the_row(true),
             Hint::new(enter(KeyModifiers::CONTROL), "Switch")
                 .about("Take this window to that tree")
-                .when(picker.switches_here()),
+                .when(picker.switches_here())
+                .on_the_row(true),
         ];
     }
     let alt = |letter| obelus_keymap::KeyChord::new(KeyCode::Char(letter), KeyModifiers::ALT);
@@ -681,11 +687,12 @@ impl PickerView<'_> {
             return;
         }
         let matched = self.picker.indices_at(place);
-        let background =
-            match self.in_front && place == self.picker.selected() && !self.picker.is_only_read() {
-                true => self.theme.selected_row_background,
-                false => self.theme.background,
-            };
+        let chosen =
+            self.in_front && place == self.picker.selected() && !self.picker.is_only_read();
+        let background = match chosen {
+            true => self.theme.selected_row_background,
+            false => self.theme.background,
+        };
         // Dim where it cannot be chosen, and the whole of it: a dim row with
         // a bright name in it reads as available.
         let style = match item.enabled {
@@ -726,6 +733,8 @@ impl PickerView<'_> {
             }
         }
 
+        // Where each row's words end, for the enters to find room after.
+        let mut ends: Vec<(u16, u16)> = Vec::new();
         let mut y = area.y;
         let last = body.label.len().saturating_sub(1);
         for (row, range) in body.label.iter().enumerate() {
@@ -751,9 +760,11 @@ impl PickerView<'_> {
                     spelled: None,
                 },
             );
-            if row == last && body.label_cut {
-                at(cells, words, end, y, "\u{2026}", style, &Marked::plain());
-            }
+            let end = match row == last && body.label_cut {
+                true => at(cells, words, end, y, "\u{2026}", style, &Marked::plain()),
+                false => end,
+            };
+            ends.push((y, end));
             y += 1;
         }
 
@@ -785,21 +796,49 @@ impl PickerView<'_> {
                     dim,
                     &Marked::plain(),
                 );
-                if row == last && body.detail_cut {
-                    at(cells, words, end, y, "\u{2026}", dim, &Marked::plain());
-                }
+                let end = match row == last && body.detail_cut {
+                    true => at(cells, words, end, y, "\u{2026}", dim, &Marked::plain()),
+                    false => end,
+                };
+                ends.push((y, end));
                 y += 1;
             }
         }
 
         // On the first row, against the right-hand edge, where the column
         // of them is read straight down.
+        let mut trailing_at = None;
         if let Some(trailing) = item.trailing.as_deref() {
             let width = u16::try_from(text_width(trailing)).unwrap_or(u16::MAX);
             if let Some(offset) = area.width.checked_sub(width.saturating_add(1))
                 && offset >= words.width
             {
                 at(cells, area, offset, area.y, trailing, dim, &Marked::plain());
+                trailing_at = Some(offset);
+            }
+        }
+
+        // The keys this row answers to, where the list says them on its
+        // row -- see `crate::on_the_row`. A wrapped row's words were laid out for the
+        // whole of its width before anybody stood on it, and cutting them to
+        // make room would re-wrap the row under the reader; so the keys go
+        // after the words of whichever of its rows has the room, the last
+        // first, which is where the transcript says what enter does too.
+        if chosen {
+            let said = crate::on_the_row(&keys(self.picker));
+            let gap = u16::try_from(crate::GAP_BETWEEN_HINTS).unwrap_or(u16::MAX);
+            for &(y, end) in ends.iter().rev() {
+                let right = match (y == area.y, trailing_at) {
+                    (true, Some(trailing)) => trailing.saturating_sub(gap),
+                    _ => area.width.saturating_sub(1),
+                };
+                let room = (
+                    area.x.saturating_add(end).saturating_add(gap),
+                    area.x.saturating_add(right),
+                );
+                if crate::keys_at_the_end(cells, room, y, &said, dim, self.theme).is_some() {
+                    break;
+                }
             }
         }
     }
@@ -873,20 +912,20 @@ impl PickerView<'_> {
             },
             style,
         );
-        // Where the list has two enters, the row the reader is on says
-        // both at its end -- see `crate::enters` -- and everything else on
+        // Where the list says its keys on its row, the row the reader is on
+        // says them at its end -- see `crate::on_the_row` -- and everything else on
         // it is laid out in what is left, the way a row keeps the room for
         // what it says about itself before its words get theirs. Never past
         // the middle of the row, which is the name's.
         let mut area = area;
         if chosen {
-            let enters = crate::enters(&keys(self.picker));
+            let said = crate::on_the_row(&keys(self.picker));
             let room = (
                 area.x.saturating_add(area.width / 2),
                 area.right().saturating_sub(1),
             );
             let ink = style.fg(self.theme.gutter);
-            if let Some(at) = crate::enters_at_the_end(cells, room, y, &enters, ink, self.theme) {
+            if let Some(at) = crate::keys_at_the_end(cells, room, y, &said, ink, self.theme) {
                 let gap = u16::try_from(crate::GAP_BETWEEN_HINTS).unwrap_or(u16::MAX);
                 area.width = at.saturating_sub(area.x).saturating_sub(gap);
             }

@@ -13,7 +13,7 @@
 //! new window on it, this window's own tree among them, and each Obelus on
 //! a tree is a row under it that brings that one forward. Putting this
 //! window on the tree instead is the second enter, and the row the reader
-//! is on says both at its end (`ui::enters`), because a list whose enter
+//! is on says both at its end (`ui::on_the_row`), because a list whose enter
 //! does not take the row here is news -- and news a reader needs on every
 //! row is not something to open the palette for.
 //!
