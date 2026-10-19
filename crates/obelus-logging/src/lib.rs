@@ -352,9 +352,21 @@ fn newest_log(directory: &Path, prefix: &str) -> Option<PathBuf> {
 /// is what the first test that needed it reached for, but setting the
 /// environment while other tests are running is the thing the language made
 /// unsafe -- and this is wanted by tests that run at the same time.
+///
+/// Emptied by the call that sets it, whatever was there before. The
+/// directories the suites name are named after the process, and a machine
+/// gives a process's number out again: a run that was given the number of
+/// one from days before read the notes that run had written, and four tests
+/// about a project with no notes found one in it -- one run in three, on a
+/// machine whose temporary directory held thirteen hundred of them. Once,
+/// because the lock makes every other test wait for this one, so nothing a
+/// test of this run wrote can be taken away.
 #[doc(hidden)]
 pub fn state_directory_for_test(directory: PathBuf) {
-    let _ = ELSEWHERE.set(directory);
+    let _ = ELSEWHERE.get_or_init(move || {
+        let _ = std::fs::remove_dir_all(&directory);
+        directory
+    });
 }
 
 /// Where [`state_directory_for_test`] put it, if anywhere.
