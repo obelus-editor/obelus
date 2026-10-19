@@ -785,8 +785,9 @@ crates/
                     · a tag is the asking, not the words, a comment is not
                       there at all, a shortcode is the emoji it names, where
                       a tag is this finds by itself and the HTML grammar
-                      does not, and only what GitHub lets through is a tag
-                      (html)
+                      does not, only what GitHub lets through is a tag,
+                      and a `<details>` is a heading that opens and starts
+                      shut (html)
   obelus-search/    one question at three scopes, the project walked on a
                     thread a core and searched by ripgrep's own searcher, the
                     project as a tree a level at a time (tree), and how much

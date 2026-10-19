@@ -143,6 +143,22 @@ pub struct Row {
     /// as the source's bytes for the reason [`Span::from`] is: a row is
     /// laid out again at every width, and the words are where they are.
     pub links: Vec<(std::ops::Range<usize>, String)>,
+    /// The `<details>` this row is the heading of, where it is one.
+    pub details: Option<Details>,
+}
+
+/// A `<details>` whose heading a row is: which one, and whether what it
+/// holds is on the rows after it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Details {
+    /// Where its `<details>` begins in the source, in bytes -- which tells
+    /// two apart however alike they are, at whatever width.
+    pub at: usize,
+    /// Whether it is open.
+    pub open: bool,
+    /// Whether it asks to start open (`<details open>`), which is how it
+    /// stands for a reader who has never turned it.
+    pub asked_open: bool,
 }
 
 /// A block of code, as what is inside it rather than as what is drawn.
@@ -172,6 +188,7 @@ impl Row {
             rule: false,
             code: None,
             links: Vec::new(),
+            details: None,
         }
     }
 }

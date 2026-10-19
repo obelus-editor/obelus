@@ -60,6 +60,15 @@ pub enum Fold {
     Checks,
     /// What one comment says, by its place among them.
     Comment(usize),
+    /// A `<details>` in the description or a comment.
+    Details {
+        /// Which text it is in.
+        of: Part,
+        /// Where it begins in that text, in bytes.
+        at: usize,
+        /// Whether it asks to start open.
+        asked_open: bool,
+    },
 }
 
 /// What the reader has opened and shut on a page.
@@ -78,10 +87,27 @@ pub struct Folding {
     /// moves every place down one, and the one the reader shut became the
     /// one above it -- shut, while theirs stood open.
     shut: std::collections::HashSet<(String, Option<i64>)>,
+    /// The `<details>` the reader has turned from how they started: by the
+    /// comment they are in -- known the way a shut comment is, for the same
+    /// reason -- or none for the description, and where in it.
+    turned: std::collections::HashSet<(Option<Whose>, usize)>,
 }
 
+/// What a `<details>` is known by while the reader has it turned: which
+/// text it is in, and where -- or nothing where that text is not there.
+fn which_details(of: Part, at: usize, said: &[Comment]) -> Option<(Option<Whose>, usize)> {
+    match of {
+        Part::Description => Some((None, at)),
+        Part::Comment(index) => said.get(index).map(|comment| (Some(whose(comment)), at)),
+    }
+}
+
+/// What a comment is known by while the reader has it shut: who said it,
+/// and when.
+type Whose = (String, Option<i64>);
+
 /// What a comment is known by while the reader has it shut.
-fn whose(comment: &Comment) -> (String, Option<i64>) {
+fn whose(comment: &Comment) -> Whose {
     (comment.author.clone(), comment.when)
 }
 
@@ -94,6 +120,11 @@ impl Folding {
             Fold::Comment(at) => said
                 .get(at)
                 .is_none_or(|comment| !self.shut.contains(&whose(comment))),
+            Fold::Details { of, at, asked_open } => {
+                let turned =
+                    which_details(of, at, said).is_some_and(|key| self.turned.contains(&key));
+                asked_open != turned
+            }
         }
     }
 
@@ -109,6 +140,14 @@ impl Folding {
                 let key = whose(comment);
                 if !self.shut.remove(&key) {
                     self.shut.insert(key);
+                }
+            }
+            Fold::Details { of, at, .. } => {
+                let Some(key) = which_details(of, at, said) else {
+                    return;
+                };
+                if !self.turned.remove(&key) {
+                    self.turned.insert(key);
                 }
             }
         }
@@ -276,6 +315,7 @@ pub fn lay_out(
     rows.extend(described(
         about.map(About::title),
         said.map(|said| said.body.as_str()),
+        folding,
         width,
     ));
     let rule = Row {
@@ -284,6 +324,7 @@ pub fn lay_out(
             rule: true,
             code: None,
             links: Vec::new(),
+            details: None,
         },
         ..Row::default()
     };
@@ -325,14 +366,35 @@ pub fn lay_out(
 ///
 /// With no title where nobody has said it yet, rather than a heading with
 /// nothing in it.
-fn described(title: Option<&str>, body: Option<&str>, width: u16) -> Vec<Row> {
-    let source = match title {
-        Some(title) => format!("# {title}\n\n{}", body.unwrap_or_default()),
-        None => body.unwrap_or_default().to_string(),
+fn described(title: Option<&str>, body: Option<&str>, folding: &Folding, width: u16) -> Vec<Row> {
+    let heading = match title {
+        Some(title) => format!("# {title}\n\n"),
+        None => String::new(),
     };
-    let mut rows: Vec<Row> = obelus_markdown::render(&source, width)
+    let source = format!("{heading}{}", body.unwrap_or_default());
+    // A `<details>` is known by where it is in the description, not in the
+    // title and the description together: a title edited would have moved
+    // every one of them and turned them all back.
+    let at = |at: usize| at.saturating_sub(heading.len());
+    let rows = obelus_markdown::render_folding(&source, width, &|found, asked_open| {
+        folding.is_open(
+            Fold::Details {
+                of: Part::Description,
+                at: at(found),
+                asked_open,
+            },
+            &[],
+        )
+    });
+    let mut rows: Vec<Row> = rows
         .into_iter()
         .map(|row| Row {
+            folds: row.details.map(|details| Fold::Details {
+                of: Part::Description,
+                at: at(details.at),
+                asked_open: details.asked_open,
+            }),
+            open: row.details.is_some_and(|details| details.open),
             row,
             from: Some(Part::Description),
             ..Row::default()
@@ -427,15 +489,29 @@ fn comments(said: &[Comment], folding: &Folding, width: u16) -> Vec<Row> {
             ])
         });
         if open {
-            rows.extend(
-                obelus_markdown::render(&comment.body, width)
-                    .into_iter()
-                    .map(|row| Row {
-                        row,
-                        from: Some(Part::Comment(at)),
-                        ..Row::default()
-                    }),
-            );
+            let of = Part::Comment(at);
+            let laid =
+                obelus_markdown::render_folding(&comment.body, width, &|found, asked_open| {
+                    folding.is_open(
+                        Fold::Details {
+                            of,
+                            at: found,
+                            asked_open,
+                        },
+                        said,
+                    )
+                });
+            rows.extend(laid.into_iter().map(|row| Row {
+                folds: row.details.map(|details| Fold::Details {
+                    of,
+                    at: details.at,
+                    asked_open: details.asked_open,
+                }),
+                open: row.details.is_some_and(|details| details.open),
+                row,
+                from: Some(of),
+                ..Row::default()
+            }));
         }
     }
     rows
@@ -881,6 +957,81 @@ mod tests {
 
     fn texts(page: &DiscussionView) -> Vec<String> {
         page.rows(ROOM.reading).iter().map(Row::text).collect()
+    }
+
+    /// A `<details>` on the page starts shut and opens on enter, in the
+    /// description and in a comment; and one the reader opened in a comment
+    /// stays open when another comment arrives in front of it.
+    ///
+    /// Broken deliberately three ways. Leaving `folds` off the rows
+    /// `described` makes: enter on the heading did nothing. Knowing a
+    /// comment's `<details>` by the comment's place: the one opened shut
+    /// again when the new comment arrived. And keying the description's by
+    /// where it is in the title and the description together, with a
+    /// title edited between: it shut.
+    #[test]
+    fn a_details_on_the_page_opens_on_enter() {
+        let log = "<details>\n<summary>Full log</summary>\n\nThe log itself.\n\n</details>\n";
+        let mut page = DiscussionView::new(About::PullRequest(pull()));
+        let mut told = said();
+        told.body = log.to_string();
+        told.said[0].body = log.replace("log itself", "comment's log");
+        page.told(told.clone());
+        let before = texts(&page);
+        assert!(
+            !before
+                .iter()
+                .any(|row| row.contains("log itself") || row.contains("comment's log")),
+            "a details started open: {before:?}"
+        );
+
+        let headings: Vec<usize> = before
+            .iter()
+            .enumerate()
+            .filter(|(_, row)| row.starts_with("Full log"))
+            .map(|(at, _)| at)
+            .collect();
+        assert_eq!(headings.len(), 2, "{before:?}");
+        // The comment's first, while the rows are where they were.
+        for heading in headings.into_iter().rev() {
+            page.stand(Place {
+                row: heading,
+                character: 0,
+            });
+            let _ = press(&mut page, KeyCode::Enter, KeyModifiers::NONE);
+        }
+        let opened = texts(&page);
+        assert!(
+            opened.iter().any(|row| row.contains("The log itself.")),
+            "enter did not open the description's: {opened:?}"
+        );
+        assert!(
+            opened.iter().any(|row| row.contains("The comment's log.")),
+            "enter did not open the comment's: {opened:?}"
+        );
+
+        told.said.insert(
+            0,
+            Comment {
+                author: "someone else".to_string(),
+                did: Did::Commented,
+                when: Some(1),
+                body: "A second look.".to_string(),
+            },
+        );
+        page.told(told);
+        let mut renamed = pull();
+        renamed.title = "A title edited since".to_string();
+        page.listed_as(About::PullRequest(renamed));
+        let after = texts(&page);
+        assert!(
+            after.iter().any(|row| row.contains("The comment's log.")),
+            "the comment's shut when another arrived: {after:?}"
+        );
+        assert!(
+            after.iter().any(|row| row.contains("The log itself.")),
+            "the description's shut when the title changed: {after:?}"
+        );
     }
 
     /// Enter does what the row the cursor is on is for: copies the block of
