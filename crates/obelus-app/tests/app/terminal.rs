@@ -989,7 +989,7 @@ fn a_conversation_taken_up_again_asks_for_the_sign_in_too() {
         ],
     );
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
-    press(&mut app, KeyCode::Char('a'), KeyModifiers::ALT);
+    support::talk_about_what_is_here(&mut app);
     assert!(app.chat().is_some(), "the note's conversation did not open");
     app.open_a_session_for_test();
     pump(&mut app, &events, "the sign-in card", |app| {
@@ -1035,7 +1035,7 @@ fn two_waiting(name: &str) -> (App, Receiver<Event>) {
     app.open_a_session_for_test();
     pump(&mut app, &events, "the first conversation's card", asking);
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
-    press(&mut app, KeyCode::Char('a'), KeyModifiers::ALT);
+    support::talk_about_what_is_here(&mut app);
     assert!(app.chat().is_some(), "the note's conversation did not open");
     app.open_a_session_for_test();
     pump(&mut app, &events, "the second conversation's card", asking);

@@ -1726,7 +1726,7 @@ fn a_conversation_taken_up_again_is_not_said_again() {
         ],
     );
     dispatch::dispatch(&mut app, Command::TodoOpen);
-    support::press_alt(&mut app, 'a');
+    support::talk_about_what_is_here(&mut app);
     assert!(app.chat().is_some(), "the note's conversation did not open");
     app.open_a_session_for_test();
     let mut said = said_until(&mut app, &events, "a thread to be asked for", |said| {

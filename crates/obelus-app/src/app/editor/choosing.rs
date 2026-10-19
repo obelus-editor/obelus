@@ -847,6 +847,20 @@ impl App {
             self.leave(Layer::Picker);
             return;
         }
+        // Started from what the reader was on, and refused the way a listed
+        // conversation is where it is a note another Obelus has.
+        if let PickerValue::Briefed(at) = &value {
+            let Some(brief) = self.conversing.brief(*at) else {
+                return;
+            };
+            if !self.begin_briefed(brief) {
+                self.refresh_conversations();
+                return;
+            }
+            self.put_the_file_back();
+            self.leave(Layer::Picker);
+            return;
+        }
         // A pull request or an issue is read: its page opens, and the
         // conversation about it is a key of that page.
         let asked = match value {
@@ -998,6 +1012,7 @@ impl App {
             // Dealt with before the list is closed, for the reason a
             // directory is: choosing one may leave the list where it was.
             PickerValue::Conversation(_)
+            | PickerValue::Briefed(_)
             | PickerValue::PullRequest(_)
             | PickerValue::Issue(_)
             | PickerValue::MoreThemes => {}

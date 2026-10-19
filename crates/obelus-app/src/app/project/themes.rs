@@ -142,6 +142,7 @@ impl App {
                     author: String::new(),
                     description: String::new(),
                     wallpaper: None,
+                    picture: None,
                     package: String::new(),
                     sha256: String::new(),
                     commit: record.commit,

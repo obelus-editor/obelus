@@ -796,14 +796,6 @@ impl App {
             // Leaving keeps what was being written, which is why both of
             // these save: there is no moment where the reader said "done
             // with this note", so every way out of the view is one.
-            // Talk about one. The notes are written down first, because
-            // leaving them *is* finishing them and this leaves them.
-            TodoOutcome::Talk(note) => {
-                let changes = notes.take_changes();
-                self.do_to_the_notes(changes);
-                self.talk_about(&note);
-                true
-            }
             // Escape, which used to close the page. A document is not
             // closed by escape: escape leaves whatever is *over* what is
             // being read, and nothing is over this. What it does here is

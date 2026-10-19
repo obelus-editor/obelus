@@ -1040,6 +1040,7 @@ fn listed(name: &str, group: obelus_themes::Group, commit: &str) -> obelus_theme
         author: "Somebody".to_string(),
         description: format!("The {name} colours"),
         wallpaper: None,
+        picture: None,
         package: format!("{name}-{commit}.tar.gz"),
         sha256: package_of(commit),
         commit: commit.to_string(),
@@ -1161,6 +1162,49 @@ fn the_themes_page_is_two_shelves_and_says_where_each_stands() {
     assert!(obelus < at("fresh") && at("fresh") < omarchy, "{dump}");
     assert!(omarchy < at("gone"), "{dump}");
     assert!(at("omarchy-tokyo") < at("gone"), "{dump}");
+}
+
+/// The community's themes are a third shelf, after omarchy's own, and a card
+/// whose picture nobody may hand on says it comes from its author where a
+/// licence would be -- not that it has no wallpaper.
+///
+/// Deliberate breaks: the community left out of the shelves' order (its
+/// card is then not on the page), and a credit with no licence drawn as
+/// none (the card then says `No wallpaper`).
+#[test]
+fn the_communitys_themes_are_a_shelf_of_their_own() {
+    let scratch = reader("themes-community");
+    let mut app = open(&scratch);
+    let mut dracula = listed("omarchy-dracula", obelus_themes::Group::Community, "ddd");
+    dracula.wallpaper = Some(obelus_themes::Credit {
+        license: None,
+        source: "https://example.invalid/dracula".to_string(),
+    });
+    let mut tokyo = listed("omarchy-tokyo", obelus_themes::Group::Omarchy, "ccc");
+    tokyo.wallpaper = Some(obelus_themes::Credit {
+        license: Some("MIT".to_string()),
+        source: "https://example.invalid/tokyo".to_string(),
+    });
+    app.themes_index_for_test(vec![dracula, tokyo]);
+    on_the_themes_page(&mut app);
+    let dump = support::render(&mut app, 90, 60);
+    let text = support::text_block(&dump);
+
+    let heading = |word: &str| {
+        text.lines().position(|line| {
+            line.split_once('|')
+                .is_some_and(|(_, rest)| rest.trim() == word)
+        })
+    };
+    let omarchy = heading("omarchy").expect("the omarchy heading");
+    let community = heading("omarchy community").expect("the community heading");
+    let dracula = text
+        .lines()
+        .position(|line| line.contains(" omarchy-dracula "))
+        .expect("the community's card");
+    assert!(omarchy < community && community < dracula, "{dump}");
+    assert!(text.contains("Wallpaper from its author"), "{dump}");
+    assert!(!text.contains("No wallpaper"), "{dump}");
 }
 
 /// Enter on a card the registry has to give installs it: the card stops

@@ -1033,6 +1033,22 @@ impl App {
         self.mirror_head(whose, Some(Turning::Working));
     }
 
+    /// Says in the thread that the question was given up on here, and how:
+    /// with the cross a give-up from the thread is drawn with, rather than
+    /// the tick of an answer. `going_on` is whether the turn goes on after
+    /// it -- a stop is said by the turn's own end.
+    pub(in crate::app) fn mirror_given_up_here(
+        &mut self,
+        whose: talking::Whose,
+        said: &str,
+        going_on: bool,
+    ) {
+        self.settle_the_question(whose, format!("\u{2716} {said} on this machine"));
+        if going_on {
+            self.mirror_head(whose, Some(Turning::Working));
+        }
+    }
+
     /// Says in the thread that the agent stopped waiting.
     pub(in crate::app) fn mirror_withdrawn(&mut self, whose: talking::Whose) {
         self.settle_the_question(whose, "The agent stopped asking.".to_string());
@@ -1116,8 +1132,10 @@ impl App {
         self.mirror_head(whose, Some(Turning::Working));
     }
 
-    /// Somebody pressed cancel on a question's card: given up on, as escape
-    /// gives up on it here, where it is the question still up.
+    /// Somebody pressed cancel on a question's card: given up on, where it
+    /// is the question still up -- the question alone, as `Decline` does
+    /// here, and not the turn as escape here does: a reader in the thread
+    /// stops a turn by saying something into it.
     pub(in crate::app) fn cancelled_on_a_card(&mut self, asked: u64) {
         let Some(chat) = self
             .mirror

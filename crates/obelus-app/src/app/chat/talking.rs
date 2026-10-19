@@ -73,6 +73,45 @@ impl App {
     /// [`App::settle_the_sessions`] -- because this is one of half a dozen
     /// ways onto one.
     pub fn new_conversation(&mut self) {
+        self.new_conversation_briefed(None);
+    }
+
+    /// Starts a conversation with what the reader was on when they asked
+    /// for it -- the one door every row offering one goes through.
+    ///
+    /// A note opens the conversation about it, which is found again and
+    /// claimed rather than started; anything else is a new conversation
+    /// that tells the agent once (see [`crate::brief`]).
+    ///
+    /// Whether it opened one: a note another Obelus has opens nothing.
+    pub(in crate::app) fn begin_briefed(&mut self, brief: crate::brief::Brief) -> bool {
+        match brief {
+            crate::brief::Brief::Note { id, .. } => {
+                // The notes are written down first, because leaving them
+                // is finishing what was being typed there, and the
+                // conversation is told what the note says now.
+                if let Some(notes) = self.notes_mut() {
+                    notes.step_away();
+                    let changes = notes.take_changes();
+                    self.do_to_the_notes(changes);
+                }
+                self.talk_about(&id)
+            }
+            brief @ crate::brief::Brief::Place(_) => {
+                self.new_conversation_briefed(Some(brief));
+                true
+            }
+        }
+    }
+
+    /// A new conversation, or the blank one there already is, with this
+    /// brief or with none.
+    ///
+    /// The blank one's brief is replaced either way: it is what the reader
+    /// asked for last, and a conversation started with nothing that went on
+    /// telling the agent about a place would be telling it something the
+    /// reader took back.
+    fn new_conversation_briefed(&mut self, brief: Option<crate::brief::Brief>) {
         // Whatever the reader had over the file is not what they asked for.
         self.make_room(Room::Region);
         let at = self.documents.iter().position(|document| {
@@ -86,6 +125,12 @@ impl App {
                 .push(Some(crate::conversation::Conversation::default().into()));
             self.documents.len() - 1
         });
+        if let Some(talk) = self
+            .document_mut(DocumentId::new(at))
+            .and_then(Document::chat_mut)
+        {
+            talk.brief = brief;
+        }
         self.go_to_document(DocumentId::new(at));
     }
 
@@ -262,8 +307,7 @@ impl App {
     /// not about the agent -- it is this window saying the note's
     /// conversation is its own, and it has to be said before another window
     /// says it.
-    pub(in crate::app) fn talk_about(&mut self, note: &obelus_todo::NoteId) {
-        self.make_room(Room::Region);
+    pub(in crate::app) fn talk_about(&mut self, note: &obelus_todo::NoteId) -> bool {
         let wanted = Topic::Note(note.clone());
         let at = self.documents.iter().position(|document| {
             document
@@ -278,17 +322,17 @@ impl App {
                 // decides: asking first and opening after would be two
                 // windows both finding it free in the same moment. Where
                 // another Obelus has it, nothing opens -- the row in the
-                // list already says so, and this is the reader pressing
-                // the key on it anyway.
+                // list already says so, and was built a moment before
+                // somebody else walked in.
                 let which = obelus_agent::chats::ChatId::Note(note.clone());
                 let Some(claim) = obelus_agent::chats::claim(&self.working_directory, &which)
                 else {
-                    // Nothing said, because the row already says it: the
-                    // lock beside it, and the foot with no `Talk` on it
-                    // while the reader is standing there. A note here
-                    // would be a second answer to a question the page has
-                    // answered.
-                    return;
+                    // Nothing said, because the rows already say it: the
+                    // lock beside the note on its page, and the list it was
+                    // chosen from, which stays up and draws its row dim
+                    // under the lock. A note here would be a second answer
+                    // to a question the screen has answered.
+                    return false;
                 };
                 // What the note says, for the box: read as this opens,
                 // for the reason the notes page reads what it is drawn
@@ -307,7 +351,11 @@ impl App {
                 self.documents.len() - 1
             }
         };
+        // Room made only once there is somewhere to go: a refused claim
+        // leaves the list it was chosen from up, saying why.
+        self.make_room(Room::Region);
         self.go_to_document(DocumentId::new(at));
+        true
     }
 
     /// Asks for a session for the conversation on screen, and lets go of the
@@ -813,9 +861,9 @@ impl App {
     /// event a watcher reports -- so a key that asked would wake every
     /// Obelus on the project, and a letter held down on a locked note would
     /// wake them at the rate the keyboard repeats. What a stale lock costs
-    /// is what it already cost the drawing, and the way out is the key the
-    /// lock is about: `alt+a` asks for the claim outright, and a lock
-    /// nobody holds gives way to it.
+    /// is what it already cost the drawing, and the way out is the row the
+    /// lock is about: choosing the note in the list of conversations asks
+    /// for the claim outright, and a lock nobody holds gives way to it.
     #[must_use]
     /// And who has each: a checkout by its directory's name where the claim
     /// names one that is not this, and another window otherwise -- one in
@@ -1966,13 +2014,17 @@ impl App {
             return;
         };
         let (topic, introduced, told) = (talk.topic.clone(), talk.introduced, talk.told.clone());
-        let opening = self.opening(&topic, introduced, told.as_deref());
+        let brief = talk.brief.clone();
+        let opening = self.opening(&topic, introduced, told.as_deref(), brief.as_ref());
         self.mirror_plan_forgotten(whose);
         if let Some(talk) = self.talk_mut(whose) {
             // A new turn starts with no plan: an agent that made one last
             // turn and makes none this turn would otherwise have the old
             // one shown against the new work.
             talk.chat.plan_forgotten();
+            // Let go as it goes, for the reason `told` is written down
+            // here: the prompt carrying it has gone.
+            talk.brief = None;
             if let Some(opening) = &opening {
                 // Written down as told before the agent has answered,
                 // because it is the prompt that carries it and the prompt
@@ -2712,11 +2764,54 @@ impl App {
         match card.handle_key(key, width) {
             CardOutcome::Ignored => false,
             CardOutcome::Consumed => true,
-            // Escape gives up on the nearest thing, and while a question is
-            // on screen the nearest thing is the question.
+            // Escape stops the turn, card or no card. It once gave up on the
+            // question alone, and a reader who pressed it to turn the agent
+            // round found the agent's next question up and their correction
+            // waiting behind it: the agent had heard "not that one", not
+            // "stop". Saying no to the question alone is the card's own row.
+            //
+            // A question asked between turns has no turn to stop, so there
+            // escape is still the question given up on. So is a sign-in,
+            // which is not a turn's question: words said while a new
+            // conversation waits for its session count as a turn, and
+            // stopping that took the card down with nothing to stop and
+            // left the conversation waiting on a sign-in for ever.
             CardOutcome::Cancelled => {
-                self.mirror_answered_here(Whose::Whoever, "Not answered");
-                self.give_up_the_question(Whose::Whoever);
+                let stops = self.in_a_turn(Whose::Whoever)
+                    && self
+                        .talk(Whose::Whoever)
+                        .is_some_and(|talk| talk.signing_in.is_none());
+                match self.current.filter(|_| stops) {
+                    Some(id) => {
+                        self.mirror_given_up_here(Whose::Whoever, "Stopped", false);
+                        // Settled in the thread just now, so the card goes
+                        // without the thread also hearing the agent gave up.
+                        if let Some(talk) = self.talk_mut(Whose::Whoever) {
+                            talk.card = None;
+                        }
+                        // The stop, and then every question the turn has up
+                        // or waiting, as the protocol's "cancelled" -- the
+                        // order the protocol gives them in. Asked in that
+                        // order and not promised on the wire: the two go out
+                        // from two tasks. Nothing here hangs on which lands
+                        // first, because the stop ends the turn on this side
+                        // at once. Both now rather than when the stop lands,
+                        // so the next card does not come up in the meantime.
+                        self.interrupt_agent(id);
+                        self.give_up_the_questions(Whose::Whoever);
+                    }
+                    None => {
+                        self.mirror_given_up_here(Whose::Whoever, "Not answered", true);
+                        self.give_up_the_question(Whose::Whoever);
+                    }
+                }
+                true
+            }
+            // Only a form has the row, so this is the form refused.
+            CardOutcome::Declined => {
+                self.mirror_given_up_here(Whose::Whoever, "Declined", true);
+                self.refuse_asking(Whose::Whoever, "Declined");
+                self.ask_the_next(Whose::Whoever);
                 true
             }
             CardOutcome::Answered { chosen, words } => {
@@ -3330,6 +3425,7 @@ impl App {
             // row, and what it is for has been said above.
             card.writing(&field.title, field.required, suggested.as_deref());
         }
+        card.declinable();
         if let Some(talk) = self.talk_mut(whose) {
             talk.card = Some(card);
         }
@@ -3547,8 +3643,9 @@ impl App {
         }
     }
 
-    /// Says no to the form, whichever field the reader was on.
-    pub(in crate::app) fn refuse_asking(&mut self, whose: Whose) {
+    /// Says no to the form, whichever field the reader was on, and puts
+    /// `said` on the page for it.
+    pub(in crate::app) fn refuse_asking(&mut self, whose: Whose, said: &str) {
         if let Some(talk) = self.talk_mut(whose) {
             talk.card = None;
         }
@@ -3565,7 +3662,7 @@ impl App {
             return;
         };
         if let Some(talk) = self.talk_mut(whose) {
-            talk.chat.note("Not answered");
+            talk.chat.note(said);
         }
         let _ = asking.answer.send(None);
     }
@@ -3770,8 +3867,10 @@ impl App {
         self.ask_the_next(whose);
     }
 
-    /// Gives up on the question up in a conversation: escape on its card,
-    /// or cancel on its card in the chat.
+    /// Gives up on the question up in a conversation: escape on its card
+    /// between turns, or cancel on its card in the chat -- which is a
+    /// form's `Decline` rather than escape's stop, because a reader on
+    /// their phone stops a turn by saying something into it.
     pub(in crate::app) fn give_up_the_question(&mut self, whose: Whose) {
         self.refuse_the_question(whose);
         self.ask_the_next(whose);
@@ -3791,7 +3890,7 @@ impl App {
         } else if talk.permission.is_some() {
             self.refuse_permission(whose);
         } else {
-            self.refuse_asking(whose);
+            self.refuse_asking(whose, "Not answered");
         }
     }
 
