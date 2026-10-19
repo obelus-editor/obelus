@@ -690,13 +690,15 @@ crates/
   obelus-theme/     colours, and only fields the renderer reads
                     · a picture travels beside a theme's colours and not
                       among them (wallpaper)
-  obelus-themes/    the themes registry: what its index lists, in its two
+  obelus-themes/    the themes registry: what its index lists, in its three
                     groups, and where a theme taken from it is kept
-                    · fetched when the reader opens the page, and kept; read
-                      field by field, and an entry Obelus cannot use is left
-                      out (lib); a theme is installed whole or not at all,
-                      which package it came from is written inside it, and one
-                      Obelus at a time installs a theme (install)
+                    · a picture nobody may hand on is fetched from its
+                      author; fetched when the reader opens the page, and
+                      kept; read field by field, and an entry Obelus cannot
+                      use is left out (lib); a theme is installed whole or not
+                      at all, a picture fetched from its author is part of the
+                      whole, which package it came from is written inside it,
+                      and one Obelus at a time installs a theme (install)
   obelus-download/  what every fetch from somebody else's server shares:
                     reading a body within a limit, fetching one with its
                     progress, checking its hash and unpacking it

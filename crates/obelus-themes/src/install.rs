@@ -19,6 +19,12 @@
 //! wants. A record written before the hash was is not known to be anything,
 //! so it is behind.
 //!
+//! **A picture fetched from its author is part of the whole.** It is
+//! fetched after the package, each half of the progress the reader sees,
+//! and checked against its hash before anything is unpacked -- so a picture
+//! its author has taken away or changed is an install that fails, not a
+//! theme put in place naming a file it does not have.
+//!
 //! **One Obelus at a time installs a theme**, by the lock an agent's install
 //! is held by -- beside the theme's directory, not in it, because the
 //! directory is what the rename replaces.
@@ -92,19 +98,31 @@ pub fn spawn(theme: &Listed, root: &Path, sender: impl Sink<Event>) {
 async fn install(theme: &Listed, root: &Path, sender: &impl Sink<Event>) -> Result<(), String> {
     let started = Instant::now();
     let claim = claim(&theme.name, root)?;
-    let bytes = obelus_download::bytes(&theme.package, started, |progress| {
+    let say = |progress| {
         let _ = sender.send(Event::Installing {
             name: theme.name.clone(),
             progress,
         });
+    };
+    let halves = theme.picture.is_some();
+    let bytes = obelus_download::bytes(&theme.package, started, |progress| {
+        say(if halves { half(progress, 0) } else { progress });
     })
     .await?;
+    let picture = match &theme.picture {
+        Some(picture) => Some(
+            obelus_download::bytes(&picture.url, started, |progress| say(half(progress, 1)))
+                .await
+                .map_err(|why| format!("The wallpaper did not arrive, {why}"))?,
+        ),
+        None => None,
+    };
     // Hashing, unpacking and renaming are work rather than waiting, so they
     // go where work goes -- with the claim, which is held to the end.
     let (theme, root) = (theme.clone(), root.to_path_buf());
     obelus_runtime::handle()
         .spawn_blocking(move || {
-            let settled = settle(&bytes, &theme, &root);
+            let settled = settle(&bytes, picture.as_deref(), &theme, &root);
             drop(claim);
             settled
         })
@@ -112,11 +130,39 @@ async fn install(theme: &Listed, root: &Path, sender: &impl Sink<Event>) -> Resu
         .unwrap_or_else(|error| Err(error.to_string()))
 }
 
-/// Checks a package, unpacks it beside where it goes, and puts it there.
-fn settle(bytes: &[u8], theme: &Listed, root: &Path) -> Result<(), String> {
+/// How far one of two downloads has got, as a share of both: each is half,
+/// whatever its size, because the second's size is not known until it
+/// starts. Counted in parts of a whole rather than in bytes, which is all a
+/// fraction and a rate need -- and nothing is said of a half whose size its
+/// server did not give.
+fn half(progress: Progress, which: u64) -> Progress {
+    const HALF: u64 = 1 << 20;
+    Progress {
+        done: which * HALF
+            + progress
+                .fraction()
+                .map_or(0, |fraction| (fraction * HALF as f64) as u64),
+        total: progress.total.map(|_| 2 * HALF),
+        elapsed: progress.elapsed,
+    }
+}
+
+/// Checks a package, and the picture fetched beside it where there is one,
+/// unpacks it beside where it goes, and puts it there.
+fn settle(bytes: &[u8], picture: Option<&[u8]>, theme: &Listed, root: &Path) -> Result<(), String> {
     if !obelus_download::hashes_to(bytes, &theme.sha256) {
         return Err("It is not the package the registry describes".to_string());
     }
+    let picture = match (&theme.picture, picture) {
+        (Some(listed), Some(bytes)) => {
+            if !obelus_download::hashes_to(bytes, &listed.sha256) {
+                return Err("Its wallpaper is not the picture the registry describes".to_string());
+            }
+            Some((listed.file.as_str(), bytes))
+        }
+        (Some(_), None) => return Err("Its wallpaper did not arrive".to_string()),
+        (None, _) => None,
+    };
     let into = home(&theme.name, root).ok_or_else(|| {
         format!(
             "{} is not a name Obelus can keep a directory of",
@@ -126,7 +172,7 @@ fn settle(bytes: &[u8], theme: &Listed, root: &Path) -> Result<(), String> {
     let staging = root.join(format!(".{}.arriving-{}", theme.name, std::process::id()));
     let _ = std::fs::remove_dir_all(&staging);
     std::fs::create_dir_all(&staging).map_err(|error| format!("{staging:?}: {error}"))?;
-    let settled = unpack_and_read(bytes, theme, &staging)
+    let settled = unpack_and_read(bytes, picture, theme, &staging)
         .and_then(|arrived| put_in_place(&arrived, &into, root, &theme.name));
     let _ = std::fs::remove_dir_all(&staging);
     settled
@@ -134,10 +180,21 @@ fn settle(bytes: &[u8], theme: &Listed, root: &Path) -> Result<(), String> {
 
 /// The package unpacked into `staging`, the theme in it found and read, and
 /// the record written beside it -- the directory that is the theme.
-fn unpack_and_read(bytes: &[u8], theme: &Listed, staging: &Path) -> Result<PathBuf, String> {
+fn unpack_and_read(
+    bytes: &[u8],
+    picture: Option<(&str, &[u8])>,
+    theme: &Listed,
+    staging: &Path,
+) -> Result<PathBuf, String> {
     obelus_download::unpack(bytes, &theme.package, staging)?;
     let arrived = theme_in(staging)
         .ok_or_else(|| format!("There is no {} in the package", obelus_theme::written::FILE))?;
+    // Into the directory the rename puts in place, so the picture arrives
+    // with the theme or not at all. Not decoded here: its hash says it is
+    // the picture the registry decoded.
+    if let Some((file, bytes)) = picture {
+        std::fs::write(arrived.join(file), bytes).map_err(|error| format!("{error}"))?;
+    }
     // Read the way the editor will read it, so that what is put in place is
     // a theme the reader can wear rather than a file Obelus refuses the
     // first time it is chosen.
@@ -284,6 +341,7 @@ mod tests {
             author: String::new(),
             description: String::new(),
             wallpaper: None,
+            picture: None,
             package: format!("https://example.invalid/{name}.tar.gz"),
             sha256: digest.iter().map(|byte| format!("{byte:02x}")).collect(),
             commit: commit.to_string(),
@@ -312,7 +370,7 @@ mod tests {
         // is taken for -- so the group is what was written, not the default.
         let mut omarchys = listed("rain", &first, "aaa");
         omarchys.group = Group::Omarchy;
-        super::settle(&first, &omarchys, &root).expect("installed");
+        super::settle(&first, None, &omarchys, &root).expect("installed");
         assert!(page(&root, "rain").contains("#101820"));
         assert_eq!(
             super::installed("rain", &root).map(|record| (record.commit, record.group)),
@@ -325,7 +383,7 @@ mod tests {
         );
 
         let second = package("rain", "base = \"dark\"\nbackground = \"#202830\"\n");
-        super::settle(&second, &listed("rain", &second, "bbb"), &root).expect("updated");
+        super::settle(&second, None, &listed("rain", &second, "bbb"), &root).expect("updated");
         assert!(page(&root, "rain").contains("#202830"));
         assert_eq!(
             super::installed("rain", &root).map(|record| record.commit),
@@ -334,9 +392,17 @@ mod tests {
 
         let mut wrong = listed("rain", &first, "ccc");
         wrong.sha256 = "0".repeat(64);
-        assert!(super::settle(&first, &wrong, &root).is_err());
+        assert!(super::settle(&first, None, &wrong, &root).is_err());
         let unreadable = package("rain", "this(");
-        assert!(super::settle(&unreadable, &listed("rain", &unreadable, "ddd"), &root).is_err());
+        assert!(
+            super::settle(
+                &unreadable,
+                None,
+                &listed("rain", &unreadable, "ddd"),
+                &root
+            )
+            .is_err()
+        );
         assert!(
             page(&root, "rain").contains("#202830"),
             "a failed update took the theme"
@@ -350,6 +416,81 @@ mod tests {
         assert_eq!(left, ["rain"], "something was left beside it");
     }
 
+    /// A picture fetched from its author goes in with the theme, under the
+    /// name the theme gives it; one that is not the picture described, or
+    /// that never arrived, fails the install whole and leaves what was
+    /// there as it was.
+    ///
+    /// Deliberate breaks: the picture's hash not asked (the wrong picture
+    /// is put in place), and one that never arrived let through (the theme
+    /// is put in place without its picture).
+    #[test]
+    fn a_picture_from_its_author_goes_in_with_the_theme_or_not_at_all() {
+        use sha2::Digest as _;
+        let root = scratch("picture");
+        let bytes = package(
+            "rain",
+            "base = \"dark\"
+background = \"#101820\"
+",
+        );
+        let picture = b"the picture's bytes".to_vec();
+        let mut theme = listed("rain", &bytes, "aaa");
+        theme.picture = Some(crate::Picture {
+            file: "1.png".to_string(),
+            url: "https://example.invalid/1.png".to_string(),
+            sha256: sha2::Sha256::digest(&picture)
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect(),
+        });
+        super::settle(&bytes, Some(&picture), &theme, &root).expect("installed");
+        assert_eq!(
+            std::fs::read(root.join("rain/1.png")).ok(),
+            Some(picture.clone())
+        );
+
+        let newer = package(
+            "rain",
+            "base = \"dark\"
+background = \"#202830\"
+",
+        );
+        let mut update = theme.clone();
+        update.sha256 = listed("rain", &newer, "bbb").sha256;
+        assert!(
+            super::settle(&newer, Some(b"another picture"), &update, &root).is_err(),
+            "a picture that is not the one described went in"
+        );
+        assert!(
+            super::settle(&newer, None, &update, &root).is_err(),
+            "a theme went in without the picture it names"
+        );
+        assert!(
+            page(&root, "rain").contains("#101820"),
+            "a failed update took the theme"
+        );
+        assert_eq!(std::fs::read(root.join("rain/1.png")).ok(), Some(picture));
+    }
+
+    /// Two downloads are a half each, whatever their sizes, and a half
+    /// whose size is not known says nothing of how far along it is.
+    ///
+    /// Deliberate break: the second half counted from nothing (it reads as
+    /// going backwards to a quarter).
+    #[test]
+    fn two_downloads_are_a_half_each() {
+        let at = |done, total| super::Progress {
+            done,
+            total,
+            elapsed: std::time::Duration::from_secs(1),
+        };
+        assert_eq!(super::half(at(5, Some(10)), 0).fraction(), Some(0.25));
+        assert_eq!(super::half(at(10, Some(10)), 0).fraction(), Some(0.5));
+        assert_eq!(super::half(at(500, Some(1000)), 1).fraction(), Some(0.75));
+        assert_eq!(super::half(at(5, None), 1).fraction(), None);
+    }
+
     /// Only a theme the registry put there is taken away.
     ///
     /// Deliberate break: the record not asked, which takes away a directory
@@ -358,7 +499,7 @@ mod tests {
     fn only_what_the_registry_put_there_is_taken_away() {
         let root = scratch("remove");
         let bytes = package("rain", "base = \"dark\"\n");
-        super::settle(&bytes, &listed("rain", &bytes, "aaa"), &root).expect("installed");
+        super::settle(&bytes, None, &listed("rain", &bytes, "aaa"), &root).expect("installed");
         std::fs::create_dir_all(root.join("mine")).expect("the reader's");
         std::fs::write(root.join("mine/theme.toml"), "base = \"dark\"\n").expect("the reader's");
 
