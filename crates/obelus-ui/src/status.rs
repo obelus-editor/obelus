@@ -1518,7 +1518,7 @@ impl StatusView<'_> {
         let name = match obelus_icons::enabled() {
             true => format!(
                 "{}{}{what} #{}",
-                obelus_icons::for_command(obelus_command::Command::PullRequestReview),
+                page.icon(),
                 crate::after_a_glyph(),
                 page.number()
             ),

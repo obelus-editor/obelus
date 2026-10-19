@@ -788,6 +788,19 @@ impl DiscussionView {
         }
     }
 
+    /// The mark it wears wherever it is named -- its tab, its row in the
+    /// list of what is open, the status row -- which says which of the two
+    /// it is.
+    #[must_use]
+    pub fn icon(&self) -> char {
+        match self.about {
+            About::PullRequest(_) => {
+                obelus_icons::for_command(obelus_command::Command::PullRequestReview)
+            }
+            About::Issue(_) => obelus_icons::ui::ISSUE,
+        }
+    }
+
     /// What its tab and its row in the list of what is open are called.
     #[must_use]
     pub fn name(&self) -> String {
@@ -970,6 +983,25 @@ mod tests {
             Outcome::Ignored,
             "typing on the page went somewhere"
         );
+    }
+
+    /// An issue's page wears a mark of its own, not the pull request's.
+    ///
+    /// Broken deliberately by answering the pull request's mark for both:
+    /// the issue's tab and status row were a pull request's.
+    #[test]
+    fn an_issue_wears_its_own_mark() {
+        let pull = DiscussionView::new(About::PullRequest(pull()));
+        let issue = DiscussionView::new(About::Issue(Issue {
+            number: 3,
+            title: "It breaks".to_string(),
+            author: "someone".to_string(),
+            labels: Vec::new(),
+            updated: None,
+            stamp: String::new(),
+        }));
+        assert_eq!(issue.icon(), obelus_icons::ui::ISSUE);
+        assert_ne!(issue.icon(), pull.icon());
     }
 
     /// Shift and the arrows hold the words of the description, and what is

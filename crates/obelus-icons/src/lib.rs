@@ -84,6 +84,11 @@ pub mod ui {
     pub const PICTURE: char = '\u{f03e}';
     /// One commit, as a row of a history.
     pub const COMMIT: char = '\u{f0718}';
+    /// An issue: `md-adjust`, a ring with a dot in it, which is the mark an
+    /// issue wears on GitHub -- beside the pull request's two branches
+    /// (`for_command(PullRequestReview)`), so the two kinds of page are told
+    /// apart in a tab.
+    pub const ISSUE: char = '\u{f001a}';
     /// A branch, for a name that points at a commit.
     pub const BRANCH: char = '\u{f062c}';
     /// A branch as a remote last had it.

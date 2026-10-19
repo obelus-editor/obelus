@@ -134,9 +134,7 @@ impl Document {
             Self::Chat(_) => obelus_icons::ui::AGENT,
             Self::Notes(_) => obelus_icons::for_command(obelus_command::Command::TodoOpen),
             Self::Terminal(_) => obelus_icons::ui::TERMINAL,
-            Self::Discussion(_) => {
-                obelus_icons::for_command(obelus_command::Command::PullRequestReview)
-            }
+            Self::Discussion(page) => page.icon(),
         }
     }
 
