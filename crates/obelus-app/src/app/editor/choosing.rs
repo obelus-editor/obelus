@@ -163,13 +163,22 @@ impl App {
         // so what it previewed is put back. A list waiting on the reader
         // never gets here: the key that opens the palette is a key naming a
         // view, asked `App::gives_way_to_a_view` first.
-        if self.layers().nearest() == Some(Layer::Picker)
-            && self
-                .picker
-                .as_ref()
-                .is_some_and(|list| matches!(list.layout(), PickerLayout::Compact { .. }))
-        {
-            self.leave(Layer::Picker);
+        //
+        // The names being built are such a list too -- a band on the status
+        // bar, the fonts the settings open -- and let go of the same way:
+        // every name added, taken out or moved is written the moment it
+        // happens, so what goes is what is typed in its query.
+        match self.layers().nearest() {
+            Some(Layer::Picker)
+                if self
+                    .picker
+                    .as_ref()
+                    .is_some_and(|list| matches!(list.layout(), PickerLayout::Compact { .. })) =>
+            {
+                self.leave(Layer::Picker);
+            }
+            Some(Layer::Names) => self.leave(Layer::Names),
+            _ => {}
         }
         // Every command, and what it can do *here* said by whether its row
         // can be chosen. Leaving out what cannot run makes the palette a

@@ -75,6 +75,28 @@ fn a_key_naming_a_view_goes_from_the_names() {
     assert_eq!(app.config().fonts, chosen, "what was chosen went with them");
 }
 
+/// The palette goes from the names too rather than over them: they are a
+/// band on the status bar, as the palette is, and two of them stacked are
+/// two lists in the room of one. What was chosen stays chosen.
+///
+/// Broken deliberately by opening the palette over the names as it did
+/// (they are still there under it).
+#[test]
+fn the_palette_lets_go_of_the_names() {
+    let mut app = building();
+    support::press(&mut app, KeyCode::Enter);
+    let chosen = app.config().fonts.clone();
+    support::press_control(&mut app, 'p');
+    assert!(app.names().is_none(), "the palette opened over the names");
+    assert!(
+        app.picker().is_some_and(|picker| picker
+            .matches()
+            .any(|row| matches!(row.value, obelus_component::picker::PickerValue::Command(_)))),
+        "the palette did not open"
+    );
+    assert_eq!(app.config().fonts, chosen, "what was chosen went with them");
+}
+
 /// A list longer than the band scrolls, so the reader can reach the end of
 /// it.
 ///
