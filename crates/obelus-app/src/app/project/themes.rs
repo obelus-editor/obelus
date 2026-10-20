@@ -11,9 +11,30 @@
 //! it but the key that wears it and the key that takes it away. It still
 //! works and is the reader's to keep; and taking it away is the one thing
 //! that cannot be undone from the page, so it takes the same key twice.
+//!
+//! **What is on disk is read when the page opens, not when a key moves
+//! over it.** The cards are asked for by the key, by the frame settling the
+//! window and by the drawing -- three or four times a keypress -- and each
+//! asking read every listed theme's record and walked both theme
+//! directories once per card. With a hundred and thirty themes listed and
+//! fifteen installed, a press and its frame were measured at 225ms on
+//! Windows in a test build, and at 15ms reading nothing -- an arrow a
+//! reader watched arrive. What changes those directories tells Obelus:
+//! its own install and removal, and the watch on both directories for
+//! everybody else's (`App::forget_the_themes_on_disk`) -- taken on the
+//! directory one would be made in while it is not there yet
+//! (`App::watch_theme`). The watch is not recursive, so it hears a theme
+//! arrive, be replaced or go, which is everything an install does; a file
+//! edited inside a theme's directory is read again when the settings next
+//! open.
+
+use std::cell::OnceCell;
 
 use obelus_component::settings::Page;
-use obelus_themes::{Card, Group, Listed, Status, install::Progress};
+use obelus_themes::{
+    Card, Group, Listed, Status,
+    install::{Installed, Progress},
+};
 
 use crate::app::*;
 
@@ -41,9 +62,99 @@ pub(in crate::app) struct Registry {
     /// away cannot be undone: the next press of the same key on the same
     /// card takes it.
     pub taking: Option<String>,
+    /// What the theme directories held when the page last asked, until
+    /// something says they have changed.
+    pub on_disk: OnceCell<OnDisk>,
+}
+
+/// What the cards need to know of the two directories themes are kept in.
+#[derive(Debug, Default)]
+pub(in crate::app) struct OnDisk {
+    /// What each theme the registry put there says about itself.
+    records: HashMap<String, Installed>,
+    /// The names the reader's own directory answers to.
+    readers: HashSet<String>,
+    /// The names the registry's directory answers to.
+    downloaded: Vec<String>,
+}
+
+impl OnDisk {
+    /// Reads both directories, once.
+    ///
+    /// The records by every directory under `installed` rather than by the
+    /// names it answers to as a theme, because `install::installed` asks
+    /// for the record by name alone and the cards were made from that.
+    fn read(readers: Option<&Path>, installed: Option<&Path>) -> Self {
+        let names = |directory: Option<&Path>| {
+            directory.map_or_else(Vec::new, |directory| {
+                obelus_theme::written::found_in(directory)
+                    .into_iter()
+                    .map(|(name, _)| name)
+                    .collect()
+            })
+        };
+        let records = installed
+            .and_then(|root| std::fs::read_dir(root).ok().map(|entries| (root, entries)))
+            .map(|(root, entries)| {
+                entries
+                    .filter_map(std::result::Result::ok)
+                    .filter_map(|entry| entry.file_name().into_string().ok())
+                    .filter_map(|name| {
+                        let record = obelus_themes::install::installed(&name, root)?;
+                        Some((name, record))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        Self {
+            records,
+            readers: names(readers).into_iter().collect(),
+            downloaded: names(installed),
+        }
+    }
+
+    /// What the theme the index calls `name` says about itself, where it is
+    /// installed -- by the name the file system would find it by, which on
+    /// Windows and macOS is not the spelling it was made under.
+    fn record(&self, name: &str) -> Option<&Installed> {
+        self.records.get(name).or_else(|| {
+            self.records
+                .iter()
+                .find(|(found, _)| one_name(found, name))
+                .map(|(_, record)| record)
+        })
+    }
+
+    /// `App::theme_whence`, answered from what was read.
+    fn whence(&self, name: &str) -> Option<&'static str> {
+        if self.readers.contains(name) {
+            Some("Local")
+        } else if self.downloaded.iter().any(|found| found == name) {
+            Some("Downloaded")
+        } else {
+            None
+        }
+    }
 }
 
 impl App {
+    /// What the theme directories hold, read the first time the cards ask
+    /// after something said they changed.
+    fn themes_on_disk(&self) -> &OnDisk {
+        self.themes.on_disk.get_or_init(|| {
+            OnDisk::read(
+                self.readers_themes().as_deref(),
+                self.settled.installed.as_deref(),
+            )
+        })
+    }
+
+    /// Lets go of what the theme directories held, because Obelus has
+    /// changed them or has been told somebody else has.
+    pub(in crate::app) fn forget_the_themes_on_disk(&mut self) {
+        self.themes.on_disk.take();
+    }
+
     /// Fetches the registry's index, showing whatever was kept while it
     /// runs -- once a session, the way the agents' registry is.
     pub(in crate::app) fn refresh_themes(&mut self) {
@@ -91,11 +202,8 @@ impl App {
     /// longer lists, at the foot of the group they came from.
     #[must_use]
     pub fn listed_themes(&self) -> Vec<Card> {
-        let root = self.settled.installed.clone();
-        let installed = |name: &str| {
-            root.as_deref()
-                .and_then(|root| obelus_themes::install::installed(name, root))
-        };
+        let disk = self.themes_on_disk();
+        let installed = |name: &str| disk.record(name).cloned();
         let worn = self.theme_name();
         let mut cards = Vec::new();
         for group in Group::ALL {
@@ -119,24 +227,32 @@ impl App {
                         None => Status::Missing,
                     }
                 };
-                cards.push(self.theme_card(theme.clone(), status, record.is_some(), worn));
+                cards.push(theme_card(
+                    disk,
+                    theme.clone(),
+                    status,
+                    record.is_some(),
+                    worn,
+                ));
             }
             // What is installed and no longer listed: a directory the
             // registry put there, by its record, under no name the index
             // still has.
-            let Some(root) = root.as_deref() else {
-                continue;
-            };
-            for (name, _) in obelus_theme::written::found_in(root) {
-                let Some(record) = installed(&name) else {
+            for name in &disk.downloaded {
+                let Some(record) = installed(name) else {
                     continue;
                 };
-                if record.group != group || self.themes.index.iter().any(|theme| theme.name == name)
+                if record.group != group
+                    || self
+                        .themes
+                        .index
+                        .iter()
+                        .any(|theme| one_name(&theme.name, name))
                 {
                     continue;
                 }
                 let theme = Listed {
-                    name,
+                    name: name.clone(),
                     group,
                     dark: true,
                     author: String::new(),
@@ -148,7 +264,7 @@ impl App {
                     commit: record.commit,
                     updated: String::new(),
                 };
-                cards.push(self.theme_card(theme, Status::Delisted, true, worn));
+                cards.push(theme_card(disk, theme, Status::Delisted, true, worn));
             }
         }
         cards
@@ -211,19 +327,6 @@ impl App {
         }
     }
 
-    /// One card: the theme, where it stands, and whether it is the one worn
-    /// or one of the reader's own answers to its name instead.
-    fn theme_card(&self, theme: Listed, status: Status, installed: bool, worn: &str) -> Card {
-        let whence = self.theme_whence(&theme.name);
-        Card {
-            worn: installed && theme.name == worn && whence == Some("Downloaded"),
-            shadowed: installed && whence == Some("Local"),
-            installed,
-            theme,
-            status,
-        }
-    }
-
     /// Starts installing a theme the index lists, or updating it.
     pub(in crate::app) fn install_theme(&mut self, name: &str) {
         let Some(theme) = self
@@ -279,6 +382,10 @@ impl App {
     pub(in crate::app) fn on_theme_installed(&mut self, name: String, failure: Option<String>) {
         self.themes.installing.remove(&name);
         let fresh = self.themes.fresh.remove(&name);
+        // Before anything below asks the cards: the directory is not what
+        // it was, failure or not -- a failed update may have got as far as
+        // nothing, and a good one has replaced the theme whole.
+        self.forget_the_themes_on_disk();
         match failure {
             Some(why) => {
                 self.themes.failures.insert(name, why);
@@ -338,9 +445,34 @@ impl App {
         let Some(root) = self.settled.installed.clone() else {
             return;
         };
-        match obelus_themes::install::remove(name, &root) {
+        let taken = obelus_themes::install::remove(name, &root);
+        self.forget_the_themes_on_disk();
+        match taken {
             Ok(()) => self.say(format!("Took {name} away")),
             Err(why) => self.wrong(why),
         }
+    }
+}
+
+/// One card: the theme, where it stands, and whether it is the one worn
+/// or one of the reader's own answers to its name instead.
+fn theme_card(disk: &OnDisk, theme: Listed, status: Status, installed: bool, worn: &str) -> Card {
+    let whence = disk.whence(&theme.name);
+    Card {
+        worn: installed && theme.name == worn && whence == Some("Downloaded"),
+        shadowed: installed && whence == Some("Local"),
+        installed,
+        theme,
+        status,
+    }
+}
+
+/// Whether two names are one theme's directory, as the file system the
+/// themes are kept on would answer: `install::installed` asked it by name,
+/// and a theme the registry renamed only in its case was found.
+fn one_name(left: &str, right: &str) -> bool {
+    match cfg!(any(windows, target_os = "macos")) {
+        true => left.to_lowercase() == right.to_lowercase(),
+        false => left == right,
     }
 }

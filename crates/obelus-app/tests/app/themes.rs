@@ -1292,7 +1292,9 @@ fn enter_installs_a_theme_and_a_failure_stays_on_its_card() {
 /// Deliberate breaks: `may_be_taken_away` not asking whether it is worn
 /// (`current` then goes from under the reader), the second press not asked
 /// for (`gone` then goes on the first), and the first press kept across
-/// other keys (`gone` then goes after a walk away and back).
+/// other keys (`gone` then goes after a walk away and back), and what the
+/// page read of the directory kept past the removal (`spare` then still
+/// says `Installed`).
 #[test]
 fn delete_takes_a_theme_away_but_not_the_one_worn() {
     let scratch = reader("themes-remove");
@@ -1332,6 +1334,13 @@ fn delete_takes_a_theme_away_but_not_the_one_worn() {
     support::type_text(&mut app, "spare");
     support::press(&mut app, KeyCode::Delete);
     assert!(!root.join("spare").exists(), "delete took nothing away");
+    // And the card says so: the page read the directory before the key
+    // and has to let go of what it read.
+    let dump = support::render(&mut app, 90, 30);
+    assert!(
+        !card_row(support::text_block(&dump), "spare").contains("Installed"),
+        "{dump}"
+    );
 
     for _ in 0.."spare".len() {
         support::press(&mut app, KeyCode::Backspace);
@@ -1675,8 +1684,10 @@ fn install(app: &mut App, root: &std::path::Path, name: &str, commit: &str) {
 /// A theme installed for the first time is worn as it lands, and kept --
 /// the same as choosing it from the list of themes.
 ///
-/// Deliberate break: `on_theme_installed` not wearing a fresh install (the
-/// theme is then still the one before, and nothing is written).
+/// Deliberate breaks: `on_theme_installed` not wearing a fresh install (the
+/// theme is then still the one before, and nothing is written), and not
+/// letting go of what the page read of the directory before the install
+/// landed (the card then still says `Install`).
 #[test]
 fn a_theme_installed_for_the_first_time_is_worn() {
     let scratch = reader("install-wears");
@@ -1688,6 +1699,11 @@ fn a_theme_installed_for_the_first_time_is_worn() {
 
     install(&mut app, root.path(), "fresh", "bbb");
     assert_eq!(app.theme_name(), "fresh", "the new theme was not worn");
+    let dump = support::render(&mut app, 90, 30);
+    assert!(
+        card_row(support::text_block(&dump), "fresh").contains("In use"),
+        "{dump}"
+    );
     let written = std::fs::read_to_string(scratch.join("config.toml")).expect("the settings");
     assert!(
         written.contains("theme = \"fresh\""),
@@ -1776,4 +1792,75 @@ fn an_install_that_lands_under_a_list_of_themes_outlasts_it() {
         "fresh",
         "escape put back the theme from before the install"
     );
+}
+
+/// A theme another Obelus installs while the page is open arrives on its
+/// card when the watch on the directory says so -- and not before, because
+/// the page reads the directories once and a key moving over the cards
+/// reads nothing.
+///
+/// Deliberate breaks: the watch's change not letting go of what was read
+/// (`forget_the_themes_on_disk` left out of `handling`, when the card still
+/// says `Install` after it), and the directories read on every asking, as
+/// they were (the card then says `Installed` after the key, before anybody
+/// said anything changed).
+#[test]
+fn a_theme_installed_elsewhere_arrives_when_the_watch_says_so() {
+    let scratch = reader("themes-elsewhere");
+    let root = support::Scratch::new("themes-elsewhere-installed");
+    let mut app = open(&scratch);
+    app.installed_themes_for_test(root.path().to_path_buf());
+    app.themes_index_for_test(vec![
+        listed("fresh", obelus_themes::Group::Obelus, "bbb"),
+        listed("spare", obelus_themes::Group::Obelus, "ccc"),
+    ]);
+    on_the_themes_page(&mut app);
+    let dump = support::render(&mut app, 90, 30);
+    assert!(
+        !card_row(support::text_block(&dump), "fresh").contains("Installed"),
+        "{dump}"
+    );
+
+    installed_as(root.path(), "fresh", "bbb", "obelus");
+    support::press(&mut app, KeyCode::Down);
+    let dump = support::render(&mut app, 90, 30);
+    assert!(
+        !card_row(support::text_block(&dump), "fresh").contains("Installed"),
+        "a key read the directory:
+{dump}"
+    );
+
+    app.handle(Event::Watched(obelus_watch::Changed {
+        path: root.join("fresh"),
+    }));
+    let dump = support::render(&mut app, 90, 30);
+    assert!(
+        card_row(support::text_block(&dump), "fresh").contains("Installed"),
+        "the watch's word did not reach the card:
+{dump}"
+    );
+}
+
+/// A theme the registry has renamed only in its case is the one installed,
+/// where the file system says so: on Windows and macOS `Rain/` is where
+/// `rain` lives, and its card says it is there rather than offering it
+/// again beside a `Rain` the index no longer lists.
+///
+/// Deliberate breaks: the record looked up by its exact spelling only (the
+/// card then says `Install`), and the theme no longer listed judged by its
+/// exact spelling (a `Rain` card then stands under it, `No longer listed`).
+#[cfg(any(windows, target_os = "macos"))]
+#[test]
+fn a_theme_renamed_only_in_its_case_is_the_one_installed() {
+    let scratch = reader("themes-case");
+    let root = support::Scratch::new("themes-case-installed");
+    installed_as(root.path(), "Rain", "aaa", "obelus");
+    let mut app = open(&scratch);
+    app.installed_themes_for_test(root.path().to_path_buf());
+    app.themes_index_for_test(vec![listed("rain", obelus_themes::Group::Obelus, "aaa")]);
+    on_the_themes_page(&mut app);
+    let dump = support::render(&mut app, 90, 30);
+    let text = support::text_block(&dump);
+    assert!(card_row(text, "rain").contains("Installed"), "{dump}");
+    assert!(!text.contains("No longer listed"), "{dump}");
 }

@@ -119,7 +119,9 @@ impl App {
                 } else if self.is_a_theme(&path) {
                     // The colours the reader is already wearing, read again:
                     // the name in the settings has not moved, and what it
-                    // stands for has.
+                    // stands for has. And the themes page's cards, which
+                    // read both of these directories once and keep it.
+                    self.forget_the_themes_on_disk();
                     self.reread_theme();
                 } else if ours && self.is_a_window(&path) {
                     // Another window on the repository opened, closed, or
