@@ -374,6 +374,12 @@ impl App {
         let folds = place
             .and_then(|place| rows.get(place.row))
             .and_then(|row| row.folds);
+        // A file's name is drawn as a link and goes to the file, here, not
+        // to the web: the link is the row's own `opens`.
+        let file = place
+            .and_then(|place| rows.get(place.row))
+            .and_then(|row| row.opens.clone())
+            .filter(|opens| link.as_deref() == Some(opens.as_str()));
         let cursor = place.filter(|place| place.row < rows.len());
         // Whether the row is the page's words: a row Obelus wrote has none,
         // and `spot_under` answers for it with the nearest words there are --
@@ -405,8 +411,10 @@ impl App {
                     _ => cursor.is_some_and(|cursor| page.pressed_here(cursor)),
                 };
                 page.let_go_of_nothing();
-                if clicked && let Some(link) = link {
-                    self.open_link(&link);
+                match (clicked, file, link) {
+                    (true, Some(file), _) => self.open_the_pull_requests_file(&file),
+                    (true, None, Some(link)) => self.open_link(&link),
+                    _ => {}
                 }
             }
             Pointer::Pressed if link.is_none() && folds.is_some() => {

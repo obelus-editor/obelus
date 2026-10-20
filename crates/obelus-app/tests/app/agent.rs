@@ -17159,6 +17159,12 @@ fn one_pull_request_at(sha: &str) -> String {
 /// Opens #123's page, opens its files, and presses enter on the first:
 /// the one that the page's `files` names, `src/lib.rs`.
 fn open_the_first_file(app: &mut App, events: &Receiver<Event>) {
+    stand_on_the_first_file(app, events);
+    support::press(app, KeyCode::Enter);
+}
+
+/// Opens #123's page and its files, and puts the cursor on the first.
+fn stand_on_the_first_file(app: &mut App, events: &Receiver<Event>) {
     obelus_app::app::dispatch::dispatch(app, obelus_command::Command::ShowPullRequests);
     pump(app, events, "the list", |app| answered_with(app, 1));
     support::press(app, KeyCode::Enter);
@@ -17187,7 +17193,69 @@ fn open_the_first_file(app: &mut App, events: &Receiver<Event>) {
     }
     support::press(app, KeyCode::Enter);
     support::press(app, KeyCode::Down);
-    support::press(app, KeyCode::Enter);
+    // The row says what enter does on it, or a reader has no way to know a
+    // file's name there opens anything.
+    let text = screen(app);
+    assert!(
+        text.lines()
+            .any(|row| row.contains("src/lib.rs") && row.contains("Opens the file")),
+        "the file's row does not say enter opens it:\n{text}"
+    );
+}
+
+/// A file's name is underlined, and a click on it opens the file -- here,
+/// as the pull request's last commit has it, and not in a browser.
+///
+/// Broken deliberately twice. Leaving the link off the file's row: the
+/// name was not underlined. And sending the click to `open_link`, as a
+/// check's goes: a browser was asked to open a path, and nothing opened
+/// here.
+#[test]
+fn a_pull_requests_file_opens_on_a_click() {
+    use obelus_app::event::Pointer;
+
+    let _turn = support::clipboard_turn();
+    obelus_clipboard::links::use_opener_for_test(obelus_clipboard::links::Opener::Kept);
+    let scratch = support::Scratch::new("agent-pull-request-file-click");
+    let root = scratch.path();
+    let sha = a_repository_with(root, "fn clicked_open() {}\n");
+    let answer = root.join("gh-answer.json");
+    std::fs::write(&answer, one_pull_request_at(&sha)).expect("the list");
+    std::fs::write(root.join("gh-answer.json.view.123"), FILES).expect("the page");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+    stand_on_the_first_file(&mut app, &events);
+
+    let text = screen(&mut app);
+    let row = text
+        .lines()
+        .find(|row| row.contains("src/lib.rs"))
+        .unwrap_or_else(|| panic!("no file on screen:\n{text}"));
+    let y: u16 = row
+        .split('|')
+        .next()
+        .and_then(|number| number.trim().parse().ok())
+        .expect("a row number");
+    let x = u16::try_from(support::column_of(row, "src/lib.rs")).expect("a column");
+    let cells = support::cells_of(&mut app, WIDTH, HEIGHT);
+    assert!(
+        (x..x + 10).all(|x| {
+            cells
+                .cell((x, y))
+                .is_some_and(|cell| cell.modifier.contains(ratatui::style::Modifier::UNDERLINED))
+        }),
+        "the file's name is not underlined:\n{text}"
+    );
+    for kind in [Pointer::Pressed, Pointer::Released] {
+        app.handle(Event::Pointer { kind, x: x + 2, y });
+        support::lay_out(&mut app, WIDTH, HEIGHT);
+    }
+    assert_eq!(
+        obelus_clipboard::links::opened(),
+        None,
+        "a browser was asked to open a file"
+    );
+    let buffer = app.current_buffer().expect("the click opened nothing");
+    assert_eq!(buffer.text().rope().to_string(), "fn clicked_open() {}\n");
 }
 
 /// Makes `root` a repository with `src/lib.rs` committed as `committed`,

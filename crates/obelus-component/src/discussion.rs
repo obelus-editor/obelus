@@ -453,30 +453,52 @@ fn files(said: &Discussion, folding: &Folding, width: u16) -> Vec<Row> {
     if !open {
         return rows;
     }
-    let width = usize::from(width);
+    // Two blanks in front, as a check's name has its mark there; the names
+    // in a column as wide as the widest, and the counts after it, so a
+    // column of them reads down the page -- and short of the far end, which
+    // is where the row the cursor is on says what enter does. Counts at the
+    // far end left that no room, and a row that never said it could be
+    // opened read as one that could not.
+    let counted = |file: &Changed| format!("+{} \u{2212}{}", file.additions, file.deletions);
+    let counts = said
+        .changed
+        .iter()
+        .map(|file| obelus_text::text_width(&counted(file)))
+        .max()
+        .unwrap_or(0);
+    let widest = said
+        .changed
+        .iter()
+        .map(|file| obelus_text::text_width(&file.path))
+        .max()
+        .unwrap_or(0);
+    let column = widest.min(
+        usize::from(width)
+            .saturating_sub(2 + 2 + counts + SAYS_WHAT_ENTER_DOES)
+            .max(MIN_NAME),
+    );
     for file in &said.changed {
         let added = format!("+{}", file.additions);
         let removed = format!("\u{2212}{}", file.deletions);
-        // Two blanks in front, as a check's name has its mark there; one
-        // between the name and the counts at the least; the counts at the
-        // far end, so a column of them reads down the page.
-        let counts = obelus_text::text_width(&added) + 1 + obelus_text::text_width(&removed);
-        let room = width.saturating_sub(2 + 1 + counts);
-        let path = cut_from_the_left(&file.path, room);
-        let gap = width
-            .saturating_sub(2 + obelus_text::text_width(&path) + counts)
-            .max(1);
-        rows.push(Row {
+        let path = cut_from_the_left(&file.path, column);
+        let gap = column.saturating_sub(obelus_text::text_width(&path)) + 2;
+        // The name is a link, as a check's is -- underlined, and opened by a
+        // click -- to the file rather than to the web: what it goes to is
+        // the row's `opens`, and the pointer is told so.
+        let name = 0..path.len();
+        let mut row = Row {
             opens: Some(file.path.clone()),
             ..Row::said(vec![
                 Span::new("  ", Ink::Plain),
-                Span::new(path, Ink::Plain),
+                Span::from_source(path, Ink::Plain, name.clone()),
                 Span::new(" ".repeat(gap), Ink::Plain),
                 Span::new(added, Ink::Added),
                 Span::new(" ", Ink::Aside),
                 Span::new(removed, Ink::Removed),
             ])
-        });
+        };
+        row.row.links.push((name, file.path.clone()));
+        rows.push(row);
     }
     // `gh` names so many and no more, and a list that stopped without
     // saying so would say these were all.
@@ -491,6 +513,14 @@ fn files(said: &Discussion, folding: &Folding, width: u16) -> Vec<Row> {
     }
     rows
 }
+
+/// How much of a file's row is kept clear at its far end, for the row the
+/// cursor is on to say what enter does there.
+const SAYS_WHAT_ENTER_DOES: usize = 20;
+
+/// How few cells a file's name is cut to, however narrow the page: fewer,
+/// and what is left is not a name.
+const MIN_NAME: usize = 12;
 
 /// A path cut to `room` cells by taking from its front, behind a mark that
 /// says so: what tells a file from the others is its name, at the end.
@@ -1120,11 +1150,13 @@ mod tests {
     /// long path cut from the front, and enter on one opens it -- and a list
     /// `gh` cut short says how many it left out.
     ///
-    /// Broken deliberately four ways. Leaving `opens` off a file's row:
+    /// Broken deliberately five ways. Leaving `opens` off a file's row:
     /// enter there did nothing. Cutting a long path from its end: the file's
-    /// name went. Leaving the gap out: the counts sat against the name
-    /// rather than at the far end. And not saying what was left out: three
-    /// files counted and two named, with nothing between.
+    /// name went. Laying the counts against each name: they were not one
+    /// column. Laying them at the far end, as this first did: the row had no
+    /// room left to say what enter does, and read as one it did nothing on.
+    /// And not saying what was left out: three files counted and two named,
+    /// with nothing between.
     #[test]
     fn the_files_open_from_their_heading_and_each_opens() {
         let mut page = DiscussionView::new(About::PullRequest(pull()));
@@ -1164,12 +1196,17 @@ mod tests {
             first.starts_with("  src/lib.rs") && first.ends_with("+12 \u{2212}3"),
             "{first:?}"
         );
-        assert_eq!(
-            first.chars().count(),
-            usize::from(ROOM.reading),
-            "the counts are not at the far end: {first:?}"
-        );
         let long = &open[heading + 2];
+        let column = |row: &str| row.chars().position(|character| character == '+');
+        assert_eq!(
+            column(first),
+            column(long),
+            "the counts are not in one column: {first:?} {long:?}"
+        );
+        assert!(
+            first.chars().count() + SAYS_WHAT_ENTER_DOES <= usize::from(ROOM.reading),
+            "no room at the end for what enter does: {first:?}"
+        );
         assert!(
             long.contains("\u{2026}") && long.contains("the_file.rs"),
             "the long path lost its name: {long:?}"
