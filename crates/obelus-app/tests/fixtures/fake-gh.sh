@@ -13,8 +13,10 @@
 # `<that file>.total` where it is there, and otherwise how many rows its
 # pages hold. `gh pr view N` and `gh issue view N` are answered from the
 # file beside it named `<that file>.view.N`, and with nothing said at all
-# where there is none. Every `gh api` asked is written down, a line each,
-# in `<that file>.log`.
+# where there is none. A file asked for at a commit (`gh api .../contents/`)
+# is answered from `<that file>.contents`, and with GitHub's 404 where there
+# is none. Every `gh api` asked is written down, a line each, in
+# `<that file>.log`.
 #
 # Three answers are `gh`'s refusals rather than lists, each in the words and
 # with the code the real one gives, so that what Obelus makes of them is
@@ -31,6 +33,16 @@ if [ "$3" = "view" ]; then
     exit 0
 fi
 echo "$*" >> "$answer.log"
+case "$*" in
+    */contents/*)
+        if [ -f "$answer.contents" ]; then
+            cat "$answer.contents"
+            exit 0
+        fi
+        echo "gh: Not Found (HTTP 404)" >&2
+        exit 1
+        ;;
+esac
 
 base="$answer"
 case "$*" in

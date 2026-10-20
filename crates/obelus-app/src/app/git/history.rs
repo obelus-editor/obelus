@@ -243,7 +243,7 @@ impl App {
     pub(in crate::app) fn ask_blame(&mut self) {
         let Some(asked) = self
             .current_buffer()
-            .filter(|buffer| buffer.written().lines_are_bytes())
+            .filter(|buffer| buffer.written().lines_are_bytes() && buffer.content().in_history())
             .map(|buffer| (buffer.path().to_path_buf(), buffer.content().at()))
         else {
             return;
@@ -288,7 +288,12 @@ impl App {
     /// Asks git what has changed, if it has not already been asked about
     /// this version of this file.
     pub(in crate::app) fn refresh_changes(&mut self) {
-        let Some(buffer) = self.current_buffer() else {
+        // A pull request's file is a change from a commit the reader's
+        // history may not have: nothing to say, rather than every line new.
+        let Some(buffer) = self
+            .current_buffer()
+            .filter(|buffer| buffer.content().in_history())
+        else {
             self.git.changes = None;
             return;
         };

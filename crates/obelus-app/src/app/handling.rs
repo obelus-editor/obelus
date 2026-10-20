@@ -334,6 +334,12 @@ impl App {
             Event::PullRequestDiscussion { number, answer } => {
                 self.on_pull_request_discussion(number, answer);
             }
+            Event::PullRequestFile {
+                number,
+                id,
+                path,
+                answer,
+            } => self.on_pull_request_file(number, id, &path, answer),
             Event::Agent(obelus_agent::Event::Registry { agents, failure }) => {
                 self.on_registry(agents, failure)
             }

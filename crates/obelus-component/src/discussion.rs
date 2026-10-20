@@ -33,7 +33,7 @@ use std::ops::Range;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 pub use obelus_github::{
-    About, Asked, Check, Comment, Did, Discussion, Issue, PullRequest, Stands, Unlisted,
+    About, Asked, Changed, Check, Comment, Did, Discussion, Issue, PullRequest, Stands, Unlisted,
 };
 use obelus_row::{Ink, Span};
 
@@ -58,6 +58,8 @@ pub enum Part {
 /// What a heading opens and shuts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fold {
+    /// The files a pull request changes, by name.
+    Files,
     /// The checks that passed or were skipped, by name.
     Checks,
     /// What one comment says, by its place among them.
@@ -83,6 +85,8 @@ pub enum Fold {
 pub struct Folding {
     /// Whether every check is named, or only those that did not pass.
     every_check: bool,
+    /// Whether every file changed is named, or only how many.
+    every_file: bool,
     /// The comments shut, by who said them and when.
     ///
     /// Not by their place: the newest comes first, so a comment arriving
@@ -119,6 +123,7 @@ impl Folding {
     pub fn is_open(&self, fold: Fold, said: &[Comment]) -> bool {
         match fold {
             Fold::Checks => self.every_check,
+            Fold::Files => self.every_file,
             Fold::Comment(at) => said
                 .get(at)
                 .is_none_or(|comment| !self.shut.contains(&whose(comment))),
@@ -135,6 +140,7 @@ impl Folding {
     pub fn flip(&mut self, fold: Fold, said: &[Comment]) {
         match fold {
             Fold::Checks => self.every_check = !self.every_check,
+            Fold::Files => self.every_file = !self.every_file,
             Fold::Comment(at) => {
                 let Some(comment) = said.get(at) else {
                     return;
@@ -175,6 +181,9 @@ pub struct Row {
     /// of words may hold several and enter cannot say which; a check's row
     /// is the check, and enter had nothing else to do on it.
     pub goes: Option<String>,
+    /// The file enter on it opens, as the pull request's last commit has
+    /// it: a row of the files it changes.
+    pub opens: Option<String>,
     /// Whether it says something is on its way, which a mark that turns is
     /// drawn at the head of: the rows are kept, and a mark in them would
     /// stand still.
@@ -226,7 +235,7 @@ impl crate::page::Line for Row {
             let end = row + rows[row..].iter().take_while(same).count();
             return Some(start..end);
         }
-        (here.folds.is_some() || here.goes.is_some()).then(|| row..row + 1)
+        (here.folds.is_some() || here.goes.is_some() || here.opens.is_some()).then(|| row..row + 1)
     }
 
     fn held(&self) -> Option<&Range<usize>> {
@@ -359,6 +368,8 @@ pub fn lay_out(
         }
     };
     if matches!(asked, Asked::PullRequest(_)) {
+        rows.extend(files(said, folding, width));
+        rows.push(rule.clone());
         rows.extend(checks(&said.checks, folding));
         rows.push(rule);
     }
@@ -414,6 +425,122 @@ fn described(title: Option<&str>, body: Option<&str>, folding: &Folding, width: 
         rows.push(Row::said(vec![Span::new("No description", Ink::Aside)]));
     }
     rows
+}
+
+/// The files a pull request changes, as rows: how many and by how much on
+/// the heading, and under it, once the reader opens it, each by name with
+/// what it adds and takes away at the far end.
+///
+/// Shut until then: forty names would push what was said off the screen,
+/// and the heading's count is what most readers come for.
+fn files(said: &Discussion, folding: &Folding, width: u16) -> Vec<Row> {
+    let heading = Span::new("Files  ", Ink::Heading(2));
+    if said.changed.is_empty() && said.files == 0 {
+        return vec![Row::said(vec![heading, Span::new("None", Ink::Aside)])];
+    }
+    let open = folding.is_open(Fold::Files, &[]);
+    let mut rows = vec![Row {
+        folds: (!said.changed.is_empty()).then_some(Fold::Files),
+        open,
+        ..Row::said(vec![
+            heading,
+            Span::new(format!("{} \u{b7} ", said.files), Ink::Aside),
+            Span::new(format!("+{}", said.additions), Ink::Added),
+            Span::new(" ", Ink::Aside),
+            Span::new(format!("\u{2212}{}", said.deletions), Ink::Removed),
+        ])
+    }];
+    if !open {
+        return rows;
+    }
+    // Two blanks in front, as a check's name has its mark there; the names
+    // in a column as wide as the widest, and the counts after it, so a
+    // column of them reads down the page -- and short of the far end, which
+    // is where the row the cursor is on says what enter does. Counts at the
+    // far end left that no room, and a row that never said it could be
+    // opened read as one that could not.
+    let counted = |file: &Changed| format!("+{} \u{2212}{}", file.additions, file.deletions);
+    let counts = said
+        .changed
+        .iter()
+        .map(|file| obelus_text::text_width(&counted(file)))
+        .max()
+        .unwrap_or(0);
+    let widest = said
+        .changed
+        .iter()
+        .map(|file| obelus_text::text_width(&file.path))
+        .max()
+        .unwrap_or(0);
+    let column = widest.min(
+        usize::from(width)
+            .saturating_sub(2 + 2 + counts + SAYS_WHAT_ENTER_DOES)
+            .max(MIN_NAME),
+    );
+    for file in &said.changed {
+        let added = format!("+{}", file.additions);
+        let removed = format!("\u{2212}{}", file.deletions);
+        let path = cut_from_the_left(&file.path, column);
+        let gap = column.saturating_sub(obelus_text::text_width(&path)) + 2;
+        // The name is a link, as a check's is -- underlined, and opened by a
+        // click -- to the file rather than to the web: what it goes to is
+        // the row's `opens`, and the pointer is told so.
+        let name = 0..path.len();
+        let mut row = Row {
+            opens: Some(file.path.clone()),
+            ..Row::said(vec![
+                Span::new("  ", Ink::Plain),
+                Span::from_source(path, Ink::Plain, name.clone()),
+                Span::new(" ".repeat(gap), Ink::Plain),
+                Span::new(added, Ink::Added),
+                Span::new(" ", Ink::Aside),
+                Span::new(removed, Ink::Removed),
+            ])
+        };
+        row.row.links.push((name, file.path.clone()));
+        rows.push(row);
+    }
+    // `gh` names so many and no more, and a list that stopped without
+    // saying so would say these were all.
+    let more = usize::try_from(said.files)
+        .unwrap_or(usize::MAX)
+        .saturating_sub(said.changed.len());
+    if more > 0 {
+        rows.push(Row::said(vec![Span::new(
+            format!("  And {more} more, on GitHub"),
+            Ink::Aside,
+        )]));
+    }
+    rows
+}
+
+/// How much of a file's row is kept clear at its far end, for the row the
+/// cursor is on to say what enter does there.
+const SAYS_WHAT_ENTER_DOES: usize = 20;
+
+/// How few cells a file's name is cut to, however narrow the page: fewer,
+/// and what is left is not a name.
+const MIN_NAME: usize = 12;
+
+/// A path cut to `room` cells by taking from its front, behind a mark that
+/// says so: what tells a file from the others is its name, at the end.
+fn cut_from_the_left(path: &str, room: usize) -> String {
+    if obelus_text::text_width(path) <= room {
+        return path.to_string();
+    }
+    let mut kept: Vec<char> = Vec::new();
+    let mut used = 1;
+    for character in path.chars().rev() {
+        let wide = obelus_text::text_width(character.encode_utf8(&mut [0; 4]));
+        if used + wide > room {
+            break;
+        }
+        used += wide;
+        kept.push(character);
+    }
+    std::iter::once('\u{2026}')
+        .chain(kept.into_iter().rev())
+        .collect()
 }
 
 /// How a pull request's checks stand, as rows: a count of each kind on the
@@ -567,6 +694,9 @@ pub enum Outcome {
     Talk,
     /// Open this address, in whatever the machine opens the web in.
     Open(String),
+    /// Open this file as the pull request's last commit has it, by its path
+    /// from the top of the repository.
+    OpenFile(String),
 }
 
 /// A pull request or an issue, while it is open.
@@ -907,6 +1037,9 @@ impl DiscussionView {
                 if let Some(to) = &first.goes {
                     return Outcome::Open(to.clone());
                 }
+                if let Some(path) = &first.opens {
+                    return Outcome::OpenFile(path.clone());
+                }
                 if let Some(fold) = first.folds {
                     // The heading stays under the reader: what moved is
                     // what is below it.
@@ -981,6 +1114,11 @@ mod tests {
             additions: 3,
             deletions: 1,
             files: 1,
+            changed: vec![Changed {
+                path: "src/lib.rs".to_string(),
+                additions: 3,
+                deletions: 1,
+            }],
             checks: vec![
                 check("clippy", Stands::Failed),
                 check("test", Stands::Passed),
@@ -1005,6 +1143,87 @@ mod tests {
 
     fn texts(page: &DiscussionView) -> Vec<String> {
         page.rows(ROOM.reading).iter().map(Row::text).collect()
+    }
+
+    /// The files a pull request changes are a heading that starts shut and
+    /// counts them; opened, each is a row with its counts at the far end, a
+    /// long path cut from the front, and enter on one opens it -- and a list
+    /// `gh` cut short says how many it left out.
+    ///
+    /// Broken deliberately five ways. Leaving `opens` off a file's row:
+    /// enter there did nothing. Cutting a long path from its end: the file's
+    /// name went. Laying the counts against each name: they were not one
+    /// column. Laying them at the far end, as this first did: the row had no
+    /// room left to say what enter does, and read as one it did nothing on.
+    /// And not saying what was left out: three files counted and two named,
+    /// with nothing between.
+    #[test]
+    fn the_files_open_from_their_heading_and_each_opens() {
+        let mut page = DiscussionView::new(About::PullRequest(pull()));
+        let mut told = said();
+        told.files = 3;
+        told.changed = vec![
+            Changed {
+                path: "src/lib.rs".to_string(),
+                additions: 12,
+                deletions: 3,
+            },
+            Changed {
+                path: "crates/a-crate-with-a-long-name/src/somewhere/deep/inside/the_file.rs"
+                    .to_string(),
+                additions: 1,
+                deletions: 0,
+            },
+        ];
+        page.told(told);
+        let shut = texts(&page);
+        let heading = shut
+            .iter()
+            .position(|row| row.starts_with("Files"))
+            .unwrap_or_else(|| panic!("no files: {shut:?}"));
+        assert!(
+            !shut.iter().any(|row| row.contains("src/lib.rs")),
+            "the files started open: {shut:?}"
+        );
+        page.stand(Place {
+            row: heading,
+            character: 0,
+        });
+        let _ = press(&mut page, KeyCode::Enter, KeyModifiers::NONE);
+        let open = texts(&page);
+        let first = &open[heading + 1];
+        assert!(
+            first.starts_with("  src/lib.rs") && first.ends_with("+12 \u{2212}3"),
+            "{first:?}"
+        );
+        let long = &open[heading + 2];
+        let column = |row: &str| row.chars().position(|character| character == '+');
+        assert_eq!(
+            column(first),
+            column(long),
+            "the counts are not in one column: {first:?} {long:?}"
+        );
+        assert!(
+            first.chars().count() + SAYS_WHAT_ENTER_DOES <= usize::from(ROOM.reading),
+            "no room at the end for what enter does: {first:?}"
+        );
+        assert!(
+            long.contains("\u{2026}") && long.contains("the_file.rs"),
+            "the long path lost its name: {long:?}"
+        );
+        assert!(
+            open[heading + 3].contains("And 1 more"),
+            "what was left out is not said: {open:?}"
+        );
+
+        page.stand(Place {
+            row: heading + 1,
+            character: 0,
+        });
+        assert_eq!(
+            press(&mut page, KeyCode::Enter, KeyModifiers::NONE),
+            Outcome::OpenFile("src/lib.rs".to_string())
+        );
     }
 
     /// A `<details>` on the page starts shut and opens on enter, in the

@@ -657,8 +657,9 @@ crates/
                       on the reader's word, and opened from the page being
                       read it stands on that page's row (app/git/pulls); choosing one
                       opens it and talking about it is a key of the page,
-                      what `gh` says is kept once, by the list, and a page
-                      can be opened by its number alone
+                      what `gh` says is kept once, by the list, a page can
+                      be opened by its number alone, and a file it changes
+                      is its last commit's, from here or from GitHub
                       (app/git/discussions); one window talks to the
                       chat and every
                       window is heard in it, which project a thread begun

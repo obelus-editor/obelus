@@ -265,6 +265,18 @@ pub enum Event {
         /// Its checks and what was said on it.
         answer: Result<crate::app::pulls::Discussion, crate::app::pulls::Unlisted>,
     },
+    /// One file of a pull request, as GitHub has it at the pull request's
+    /// last commit, or why it would not say.
+    PullRequestFile {
+        /// Which pull request.
+        number: u64,
+        /// Its last commit.
+        id: gix::ObjectId,
+        /// The file, where it would be in the working tree.
+        path: std::path::PathBuf,
+        /// Its bytes as they are stored.
+        answer: Result<Vec<u8>, crate::app::pulls::Unlisted>,
+    },
     /// Another Obelus's reader asked to be brought to this window, with
     /// what that window was given to let it come forward.
     Summoned(Option<String>),
@@ -339,6 +351,7 @@ impl Event {
             Self::Issues(_) => "Issues",
             Self::PullRequestQuerySettled => "PullRequestQuerySettled",
             Self::PullRequestDiscussion { .. } => "PullRequestDiscussion",
+            Self::PullRequestFile { .. } => "PullRequestFile",
             Self::Summoned(_) => "Summoned",
             Self::Remote(_) => "Remote",
             Self::Reached(..) => "Reached",

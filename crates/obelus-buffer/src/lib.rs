@@ -97,6 +97,19 @@ pub enum Content {
         /// Which commit.
         id: gix::ObjectId,
     },
+    /// A file as a pull request's last commit has it.
+    ///
+    /// A commit, and not one the reader's history can say anything about:
+    /// it is often not in their repository at all, read from GitHub instead.
+    /// So nothing is laid beside it that is a walk of that history -- no
+    /// marks of what changed, no names of who wrote each line -- because
+    /// against a commit git cannot find, every line would read as new.
+    PullRequest {
+        /// Which pull request.
+        number: u64,
+        /// Its last commit.
+        id: gix::ObjectId,
+    },
 }
 
 impl Content {
@@ -111,14 +124,27 @@ impl Content {
     pub const fn at(&self) -> Option<gix::ObjectId> {
         match self {
             Self::File => None,
-            Self::Commit { id } => Some(*id),
+            Self::Commit { id } | Self::PullRequest { id, .. } => Some(*id),
         }
     }
 
-    /// That commit in the short form a reader recognises it by.
+    /// Whether the reader's history can say what this is a change from --
+    /// the file on disk against `HEAD`, a commit's version against the one
+    /// before -- which is what the margin and the names beside it ask.
+    #[must_use]
+    pub const fn in_history(&self) -> bool {
+        matches!(self, Self::File | Self::Commit { .. })
+    }
+
+    /// That commit in the short form a reader recognises it by, and the
+    /// pull request it is the last of where it is one.
     #[must_use]
     pub fn short(&self) -> Option<String> {
-        Some(self.at()?.to_string().chars().take(7).collect())
+        let id: String = self.at()?.to_string().chars().take(7).collect();
+        Some(match self {
+            Self::PullRequest { number, .. } => format!("#{number} {id}"),
+            Self::File | Self::Commit { .. } => id,
+        })
     }
 }
 
@@ -826,6 +852,15 @@ impl Buffer {
     pub fn at_commit(path: &Path, id: gix::ObjectId, contents: &str) -> Self {
         let mut buffer = Self::from_text(path, contents);
         buffer.content = Content::Commit { id };
+        buffer
+    }
+
+    /// Reads a file as a pull request's last commit has it -- see
+    /// [`Content::PullRequest`].
+    #[must_use]
+    pub fn at_pull_request(path: &Path, number: u64, id: gix::ObjectId, contents: &str) -> Self {
+        let mut buffer = Self::from_text(path, contents);
+        buffer.content = Content::PullRequest { number, id };
         buffer
     }
 

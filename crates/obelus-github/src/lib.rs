@@ -49,7 +49,7 @@ const CHANGED_PAGES: usize = 3;
 /// after a restart, or from its conversation, is opened by its number alone,
 /// with no list asked -- and this is the one answer it waits on anyway.
 const VIEWED: &str = "number,title,author,headRefName,baseRefName,headRefOid,isDraft,\
-                      reviewDecision,body,additions,deletions,changedFiles,updatedAt,\
+                      reviewDecision,body,additions,deletions,changedFiles,files,updatedAt,\
                       comments,reviews,statusCheckRollup";
 
 /// And `gh issue view`, which has no counts and no checks to say.
@@ -263,11 +263,26 @@ pub struct Discussion {
     pub deletions: u64,
     /// How many files it changes.
     pub files: u64,
+    /// The files it changes, by name, and how much in each -- as many as
+    /// `gh` says, which on a pull request of thousands is fewer than
+    /// [`Self::files`] counts.
+    pub changed: Vec<Changed>,
     /// Every check, as the last commit has them.
     pub checks: Vec<Check>,
     /// What has been said on it -- comments, and reviews that said
     /// something of their own -- newest first.
     pub said: Vec<Comment>,
+}
+
+/// One file a pull request changes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Changed {
+    /// Where it is, from the top of the repository, with `/` between.
+    pub path: String,
+    /// How many lines it adds.
+    pub additions: u64,
+    /// How many it takes away.
+    pub deletions: u64,
 }
 
 /// One check on a pull request's last commit.
@@ -766,9 +781,64 @@ fn read_discussion(said: &str, asked: Asked) -> Result<Discussion, Unlisted> {
         additions: count("additions"),
         deletions: count("deletions"),
         files: count("changedFiles"),
+        changed: list("files")
+            .iter()
+            .filter_map(|file| {
+                let count = |key: &str| {
+                    file.get(key)
+                        .and_then(serde_json::Value::as_u64)
+                        .unwrap_or(0)
+                };
+                Some(Changed {
+                    path: file.get("path")?.as_str()?.to_string(),
+                    additions: count("additions"),
+                    deletions: count("deletions"),
+                })
+            })
+            .collect(),
         checks,
         said,
     })
+}
+
+/// Asks `gh` for one file as the commit `sha` has it: its bytes as they
+/// are stored, for whoever reads them to say what they are.
+///
+/// Through GitHub because the commit is very often not in the reader's
+/// repository -- somebody else's branch, never fetched -- and Obelus does
+/// not fetch: git stays read-only. `{owner}` and `{repo}` are `gh`'s to
+/// fill, as the list's are.
+pub fn file_at(
+    root: &std::path::Path,
+    instead: Option<(std::path::PathBuf, Vec<String>)>,
+    path: &str,
+    sha: &str,
+) -> Result<Vec<u8>, Unlisted> {
+    let asked = format!(
+        "repos/{{owner}}/{{repo}}/contents/{}?ref={sha}",
+        escaped(path)
+    );
+    gh_bytes(
+        root,
+        instead,
+        &["api", "-H", "Accept: application/vnd.github.raw", &asked],
+    )
+}
+
+/// A path as it goes in an address: every byte but a letter, a digit, a
+/// slash and the four marks nobody escapes, as `%` and its two digits --
+/// a space or a `#` in a file's name is a name, not the end of the address.
+fn escaped(path: &str) -> String {
+    let mut out = String::new();
+    for byte in path.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'/' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(char::from(byte));
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
 }
 
 /// Runs `gh` with `asked`, in the repository `root` is in, and hands back
@@ -778,6 +848,15 @@ fn gh(
     instead: Option<(std::path::PathBuf, Vec<String>)>,
     asked: &[&str],
 ) -> Result<String, Unlisted> {
+    gh_bytes(root, instead, asked).map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// The same, as the bytes it printed: a file's are not always words.
+fn gh_bytes(
+    root: &std::path::Path,
+    instead: Option<(std::path::PathBuf, Vec<String>)>,
+    asked: &[&str],
+) -> Result<Vec<u8>, Unlisted> {
     let output = command(root, instead, asked)?
         .output()
         .map_err(|error| Unlisted::Failed(error.to_string()))?;
@@ -787,7 +866,7 @@ fn gh(
             &String::from_utf8_lossy(&output.stderr),
         ));
     }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    Ok(output.stdout)
 }
 
 /// `gh` with `asked`, ready to run in the repository `root` is in.
@@ -958,6 +1037,32 @@ mod tests {
         let said = r#"{"body":"one  \r\ntwo\r\n"}"#;
         let discussion = super::read_discussion(said, super::Asked::Issue(1)).expect("it reads");
         assert_eq!(discussion.body, "one  \ntwo\n");
+    }
+
+    /// The files a pull request changes read as their paths and counts, and
+    /// a path goes into the address GitHub is asked for a file at with what
+    /// would end the address escaped.
+    ///
+    /// Broken deliberately two ways. Reading `files` as the count it is
+    /// beside: no file was named. And leaving `#` as it is in `escaped`: the
+    /// file whose name has one was asked for as the part before it.
+    #[test]
+    fn the_files_changed_read_and_are_asked_for_by_name() {
+        use super::{Asked, escaped, read_discussion};
+
+        let said = r#"{"changedFiles": 2, "files": [
+            {"path":"src/lib.rs","additions":12,"deletions":3},
+            {"path":"docs/a b#c.md","additions":1,"deletions":0}
+        ]}"#;
+        let read = read_discussion(said, Asked::PullRequest(7)).expect("it reads");
+        let named: Vec<(&str, u64, u64)> = read
+            .changed
+            .iter()
+            .map(|file| (file.path.as_str(), file.additions, file.deletions))
+            .collect();
+        assert_eq!(named, [("src/lib.rs", 12, 3), ("docs/a b#c.md", 1, 0)]);
+        assert_eq!(escaped("docs/a b#c.md"), "docs/a%20b%23c.md");
+        assert_eq!(escaped("src/lib.rs"), "src/lib.rs");
     }
 
     /// A check carries where it is told in full: a check run's page, or the

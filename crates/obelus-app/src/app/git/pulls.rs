@@ -1341,6 +1341,11 @@ impl App {
     pub fn gh_for_test(&mut self, program: std::path::PathBuf, first: Vec<String>) {
         self.pulls.instead = Some((program, first));
     }
+
+    /// What runs in `gh`'s place, where a test has said.
+    pub(in crate::app) fn gh_instead(&self) -> Option<(std::path::PathBuf, Vec<String>)> {
+        self.pulls.instead.clone()
+    }
 }
 
 /// How wide the widest `#number` of a list is, which every row's number is

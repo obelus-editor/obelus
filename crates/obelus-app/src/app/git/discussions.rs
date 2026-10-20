@@ -10,6 +10,13 @@
 //! where the reader closed it: one key between the two, as a reader who
 //! went from one to the other expects of it.
 //!
+//! **A file it changes is its last commit's, from here or from GitHub.**
+//! Not the file on disk, which belongs to whichever branch is checked out:
+//! the commit's version, read from the reader's own repository where the
+//! commit is there, and asked of GitHub where it is not -- because Obelus
+//! does not fetch. Nothing is laid beside it that is a walk of the reader's
+//! history ([`obelus_buffer::Content::PullRequest`]).
+//!
 //! **A page can be opened by its number alone.** The list is where one is
 //! chosen, but a page left open when Obelus last stopped comes back, and a
 //! conversation outlives its page -- neither with a list asked. So `gh` says
@@ -181,6 +188,10 @@ impl App {
                 self.open_link(&to);
                 true
             }
+            Outcome::OpenFile(path) => {
+                self.open_the_pull_requests_file(&path);
+                true
+            }
             Outcome::Talk => {
                 let topic = match page.asked() {
                     Asked::PullRequest(number) => crate::conversation::Topic::PullRequest(number),
@@ -219,6 +230,117 @@ impl App {
         })
     }
 
+    /// Opens one of the files the pull request being read changes, as its
+    /// last commit has it.
+    ///
+    /// From the reader's own repository where the commit is there -- their
+    /// own branch, or one they fetched -- and from GitHub where it is not,
+    /// on a thread, because Obelus does not fetch. Not the file on disk:
+    /// that is a different document that happens to share a name, the
+    /// branch it belongs to is very often not the one checked out.
+    fn open_the_pull_requests_file(&mut self, path: &str) {
+        let Some((number, sha)) = self.discussion().and_then(|page| match page.about()? {
+            About::PullRequest(pull) => Some((pull.number, pull.sha.clone())),
+            About::Issue(_) => None,
+        }) else {
+            return;
+        };
+        let Ok(id) = gix::ObjectId::from_hex(sha.as_bytes()) else {
+            self.wrong("GitHub has not said which commit it is at");
+            return;
+        };
+        let full = self.working_directory.join(path);
+        let open = self.documents.iter().position(|document| {
+            document
+                .as_ref()
+                .and_then(Document::file)
+                .is_some_and(|buffer| {
+                    buffer.path() == full
+                        && *buffer.content() == obelus_buffer::Content::PullRequest { number, id }
+                })
+        });
+        if let Some(at) = open {
+            let from = self.here();
+            self.record(from);
+            self.go_to_file(DocumentId::new(at));
+            return;
+        }
+        if let Some(text) = obelus_git::history::text_at(&self.working_directory, id, &full) {
+            self.put_up_the_pull_requests_file(number, id, &full, &text, true);
+            return;
+        }
+        let Some(sender) = self.events.clone() else {
+            return;
+        };
+        self.say(format!("Asking GitHub for {path}"));
+        let root = self.working_directory.clone();
+        let instead = self.gh_instead();
+        let asked = path.to_string();
+        obelus_runtime::handle().spawn_blocking(move || {
+            let answer = obelus_github::file_at(&root, instead, &asked, &sha);
+            let _ = sender.send(crate::event::Event::PullRequestFile {
+                number,
+                id,
+                path: full,
+                answer,
+            });
+        });
+    }
+
+    /// Takes a file GitHub was asked for: up on the screen where the reader
+    /// is still on the page that asked, and in the list of what is open
+    /// where they have gone somewhere since.
+    pub(in crate::app) fn on_pull_request_file(
+        &mut self,
+        number: u64,
+        id: gix::ObjectId,
+        path: &std::path::Path,
+        answer: Result<Vec<u8>, crate::app::pulls::Unlisted>,
+    ) {
+        let named = path
+            .strip_prefix(&self.working_directory)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let bytes = match answer {
+            Ok(bytes) => bytes,
+            Err(why) => {
+                self.wrong(obelus_component::discussion::unlisted(&why));
+                return;
+            }
+        };
+        let Some(read) = obelus_encoding::read(&bytes) else {
+            self.wrong(format!("Not text: {named}"));
+            return;
+        };
+        let here = self
+            .discussion()
+            .is_some_and(|page| page.number() == number);
+        if here {
+            self.note = None;
+        }
+        self.put_up_the_pull_requests_file(number, id, path, &read.text, here);
+    }
+
+    /// Puts a pull request's file in the list of what is open, and goes to
+    /// it where `go`.
+    fn put_up_the_pull_requests_file(
+        &mut self,
+        number: u64,
+        id: gix::ObjectId,
+        path: &std::path::Path,
+        text: &str,
+        go: bool,
+    ) {
+        let buffer = obelus_buffer::Buffer::at_pull_request(path, number, id, text);
+        self.documents.push(Some(Document::from(buffer)));
+        if go {
+            let from = self.here();
+            self.record(from);
+            self.go_to_file(DocumentId::new(self.documents.len() - 1));
+        }
+    }
+
     /// What is held on the page being read, as it is drawn.
     pub(in crate::app) fn held_on_the_page(&self) -> Option<String> {
         self.discussion()?
@@ -252,6 +374,12 @@ impl App {
         let folds = place
             .and_then(|place| rows.get(place.row))
             .and_then(|row| row.folds);
+        // A file's name is drawn as a link and goes to the file, here, not
+        // to the web: the link is the row's own `opens`.
+        let file = place
+            .and_then(|place| rows.get(place.row))
+            .and_then(|row| row.opens.clone())
+            .filter(|opens| link.as_deref() == Some(opens.as_str()));
         let cursor = place.filter(|place| place.row < rows.len());
         // Whether the row is the page's words: a row Obelus wrote has none,
         // and `spot_under` answers for it with the nearest words there are --
@@ -283,8 +411,10 @@ impl App {
                     _ => cursor.is_some_and(|cursor| page.pressed_here(cursor)),
                 };
                 page.let_go_of_nothing();
-                if clicked && let Some(link) = link {
-                    self.open_link(&link);
+                match (clicked, file, link) {
+                    (true, Some(file), _) => self.open_the_pull_requests_file(&file),
+                    (true, None, Some(link)) => self.open_link(&link),
+                    _ => {}
                 }
             }
             Pointer::Pressed if link.is_none() && folds.is_some() => {
