@@ -277,6 +277,9 @@ pub struct Check {
     pub name: String,
     /// Where it stands.
     pub stands: Stands,
+    /// Where on the web it is told in full -- its run's page, or the page
+    /// a status from outside Actions points at -- where it says.
+    pub link: Option<String>,
 }
 
 /// Where a check stands.
@@ -702,7 +705,12 @@ fn read_discussion(said: &str, asked: Asked) -> Result<Discussion, Unlisted> {
                 name if name.is_empty() => text(check, "context"),
                 name => name,
             };
-            Check { name, stands }
+            // A check run's page, or a status's own: each carries one of
+            // the two, and only an address on the web is somewhere to go.
+            let link = [text(check, "detailsUrl"), text(check, "targetUrl")]
+                .into_iter()
+                .find(|to| to.starts_with("https://") || to.starts_with("http://"));
+            Check { name, stands, link }
         })
         .collect();
 
@@ -950,6 +958,39 @@ mod tests {
         let said = r#"{"body":"one  \r\ntwo\r\n"}"#;
         let discussion = super::read_discussion(said, super::Asked::Issue(1)).expect("it reads");
         assert_eq!(discussion.body, "one  \ntwo\n");
+    }
+
+    /// A check carries where it is told in full: a check run's page, or the
+    /// page a status from outside Actions points at -- and nothing that is
+    /// not on the web.
+    ///
+    /// Broken deliberately two ways. Reading only `detailsUrl`: the status
+    /// from outside Actions had no link. And keeping any address: the one
+    /// that was a path on somebody's disk was a link.
+    #[test]
+    fn a_check_says_where_it_is_told_in_full() {
+        use super::{Asked, read_discussion};
+
+        let said = r#"{"statusCheckRollup": [
+            {"__typename":"CheckRun","name":"test","status":"COMPLETED","conclusion":"FAILURE",
+             "detailsUrl":"https://github.com/o/r/actions/runs/1/job/2"},
+            {"__typename":"StatusContext","context":"ci/legacy","state":"FAILURE",
+             "targetUrl":"https://ci.example.com/build/9"},
+            {"__typename":"StatusContext","context":"local","state":"SUCCESS",
+             "targetUrl":"/home/someone/build.log"}
+        ]}"#;
+        let checks = read_discussion(said, Asked::PullRequest(7))
+            .expect("it reads")
+            .checks;
+        let links: Vec<Option<&str>> = checks.iter().map(|check| check.link.as_deref()).collect();
+        assert_eq!(
+            links,
+            [
+                Some("https://github.com/o/r/actions/runs/1/job/2"),
+                Some("https://ci.example.com/build/9"),
+                None
+            ]
+        );
     }
 
     /// What `gh pr view` and `gh issue view` say of the row comes back as

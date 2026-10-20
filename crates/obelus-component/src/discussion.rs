@@ -14,12 +14,14 @@
 //! nothing is written here: it is GitHub's page, read through `gh`, and a
 //! key that is typing goes nowhere.
 //!
-//! **What enter does is open or shut, or copy.** A comment's heading opens
-//! and shuts what it says, the checks' heading opens the checks that passed
-//! -- which nobody has to do anything about, so they are counted until the
-//! reader asks for their names -- and a block of code is copied whole, as
-//! it is in the transcript, because holding it from corner to corner takes
-//! its box and the width's breaks with it.
+//! **What enter does is open or shut, or copy, or go.** A comment's heading
+//! opens and shuts what it says, the checks' heading opens the checks that
+//! passed -- which nobody has to do anything about, so they are counted
+//! until the reader asks for their names -- and a block of code is copied
+//! whole, as it is in the transcript, because holding it from corner to
+//! corner takes its box and the width's breaks with it. A check's row goes
+//! to the check's page: a link in the words is the pointer's, as the
+//! transcript's are, and a check's row is one link and nothing else.
 //!
 //! **Laid out once and kept.** The rows are made at a width and kept until
 //! the width or what they are made of changes, because the keys, the caret
@@ -166,6 +168,13 @@ pub struct Row {
     pub folds: Option<Fold>,
     /// Whether that is open, for the mark that says so.
     pub open: bool,
+    /// Where enter on it goes, on the web: a check's page.
+    ///
+    /// Only on a row that is one link and nothing else. A link in the
+    /// words is opened by a click, as the transcript's are, because a row
+    /// of words may hold several and enter cannot say which; a check's row
+    /// is the check, and enter had nothing else to do on it.
+    pub goes: Option<String>,
     /// Whether it says something is on its way, which a mark that turns is
     /// drawn at the head of: the rows are kept, and a mark in them would
     /// stand still.
@@ -217,7 +226,7 @@ impl crate::page::Line for Row {
             let end = row + rows[row..].iter().take_while(same).count();
             return Some(start..end);
         }
-        here.folds.is_some().then(|| row..row + 1)
+        (here.folds.is_some() || here.goes.is_some()).then(|| row..row + 1)
     }
 
     fn held(&self) -> Option<&Range<usize>> {
@@ -453,10 +462,18 @@ fn checks(checks: &[Check], folding: &Folding) -> Vec<Row> {
     };
     for (stands, mark, _, ink) in named {
         for check in checks.iter().filter(|check| check.stands == *stands) {
-            rows.push(Row::said(vec![
+            // The name is the link, where the check has a page: where it
+            // failed is told there, and nowhere here.
+            let name = 0..check.name.len();
+            let mut row = Row::said(vec![
                 Span::new(format!("  {mark} "), *ink),
-                Span::new(check.name.clone(), Ink::Plain),
-            ]));
+                Span::from_source(check.name.clone(), Ink::Plain, name.clone()),
+            ]);
+            if let Some(link) = &check.link {
+                row.row.links.push((name, link.clone()));
+                row.goes = Some(link.clone());
+            }
+            rows.push(row);
         }
     }
     rows
@@ -548,6 +565,8 @@ pub enum Outcome {
     Copy(String),
     /// Talk to the agent about this.
     Talk,
+    /// Open this address, in whatever the machine opens the web in.
+    Open(String),
 }
 
 /// A pull request or an issue, while it is open.
@@ -572,6 +591,10 @@ pub struct DiscussionView {
     cursor: Place,
     /// What the reader has hold of.
     held: Hold<Part>,
+    /// Where the pointer went down, while it has not moved since: what
+    /// tells a press on a link from a drag that ends on one, on a row that
+    /// is none of the page's words and so has nothing to hold.
+    pressed: Option<Place>,
     /// Which rows are on screen.
     window: Window,
 }
@@ -600,6 +623,7 @@ impl DiscussionView {
             laid: std::cell::RefCell::new(None),
             cursor: Place::default(),
             held: Hold::default(),
+            pressed: None,
             window: Window::new(),
         }
     }
@@ -794,6 +818,26 @@ impl DiscussionView {
         self.held.clicked(at)
     }
 
+    /// Says the pointer went down here.
+    pub const fn press_at(&mut self, at: Place) {
+        self.pressed = Some(at);
+    }
+
+    /// Says the pointer went over here with the button down: anywhere but
+    /// where it went down, and it was not a click.
+    pub fn drag_over(&mut self, at: Place) {
+        if self.pressed != Some(at) {
+            self.pressed = None;
+        }
+    }
+
+    /// Whether letting go here ends a click: the pointer went down here and
+    /// has not been anywhere else since.
+    #[must_use]
+    pub fn pressed_here(&self, at: Place) -> bool {
+        self.pressed == Some(at)
+    }
+
     /// Whether anything is held.
     #[must_use]
     pub const fn holding(&self) -> bool {
@@ -860,6 +904,9 @@ impl DiscussionView {
                 if let Some(code) = &first.row.code {
                     return Outcome::Copy(code.text.to_string());
                 }
+                if let Some(to) = &first.goes {
+                    return Outcome::Open(to.clone());
+                }
                 if let Some(fold) = first.folds {
                     // The heading stays under the reader: what moved is
                     // what is below it.
@@ -922,6 +969,7 @@ mod tests {
         Check {
             name: name.to_string(),
             stands,
+            link: None,
         }
     }
 
