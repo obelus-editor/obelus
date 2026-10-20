@@ -1897,6 +1897,9 @@ impl App {
         // it first for the same reason.
         self.settled.path = Some(path);
         self.settled.readable = true;
+        // The reader's themes are beside the file, so what was read of
+        // them was read beside another.
+        self.forget_the_themes_on_disk();
         self.read_the_settings();
     }
 }
