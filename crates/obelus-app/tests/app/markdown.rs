@@ -1481,3 +1481,129 @@ fn a_fence_at_the_very_end_closes_the_block() {
         Some("fn a() {}")
     );
 }
+
+/// A `<details>` as GitHub writes one: its heading on a block of HTML, what
+/// it holds in blocks of its own, and its end on another.
+const DETAILS: &str = "Before.\n\n<details>\n<summary>Full log</summary>\n\n```\nline one\nline two\n```\n\n</details>\n\nAfter.\n";
+
+/// A `<details>` is its heading and starts shut, as GitHub draws it: the
+/// heading says which it is and that it is shut, what it holds is not on
+/// the page, and what comes after it is.
+///
+/// Broken deliberately two ways. Taking out the truncating in
+/// `close_details`: the log was on the page. And leaving the heading's
+/// `details` off its row: nothing said there was anything to open.
+#[test]
+fn a_details_starts_shut() {
+    let rows = obelus_markdown::render_folding(DETAILS, 40, &|_, asked_open| asked_open);
+    let texts: Vec<String> = rows.iter().map(text).collect();
+    let heading = rows
+        .iter()
+        .find(|row| text(row) == "Full log")
+        .unwrap_or_else(|| panic!("no heading: {texts:?}"));
+    assert_eq!(
+        heading.details.map(|details| details.open),
+        Some(false),
+        "the heading does not say it is shut: {texts:?}"
+    );
+    assert!(heading.spans.iter().all(|span| span.bold), "{heading:?}");
+    assert!(
+        !texts.iter().any(|row| row.contains("line one")),
+        "what it holds is on the page: {texts:?}"
+    );
+    assert!(texts.iter().any(|row| row == "After."), "{texts:?}");
+    // One blank between the heading and what follows, not two.
+    let at = texts
+        .iter()
+        .position(|row| row == "Full log")
+        .expect("the heading");
+    assert_eq!(texts[at + 1..at + 3], ["", "After."], "{texts:?}");
+}
+
+/// Open, it holds what it holds, with one blank line after it as any block
+/// has; and asked about by where it is, which is the same at every width.
+/// Where nothing has anywhere to open one, `render` has it open.
+///
+/// Broken deliberately two ways. Leaving the blank line pushed for the
+/// closing tag's block: two blanks before `After.`. And keying it by the
+/// gathered text's offset rather than the source's: the place asked about
+/// was not where `<details>` is.
+#[test]
+fn a_details_opened_holds_what_it_holds() {
+    let asked = std::cell::RefCell::new(Vec::new());
+    let rows = obelus_markdown::render_folding(DETAILS, 40, &|at, _| {
+        asked.borrow_mut().push(at);
+        true
+    });
+    assert_eq!(
+        *asked.borrow(),
+        [DETAILS.find("<details>").expect("the tag")],
+        "not asked about where it is"
+    );
+    let texts: Vec<String> = rows.iter().map(text).collect();
+    assert!(
+        texts.iter().any(|row| row.contains("line one")),
+        "{texts:?}"
+    );
+    let end = texts
+        .iter()
+        .rposition(|row| row.contains('\u{2514}'))
+        .expect("the box's foot");
+    assert_eq!(texts[end + 1..], ["", "After."], "{texts:?}");
+    assert_eq!(
+        render(DETAILS, 40).iter().map(text).collect::<Vec<_>>(),
+        texts,
+        "render did not have it open"
+    );
+}
+
+/// `<details open>` starts open, one with no `<summary>` is headed as
+/// GitHub heads it, and one inside a shut one is not on the page at all.
+///
+/// Broken deliberately three ways. Reading `open` only as `open=`: the
+/// first started shut. Not heading one with no summary: there was nothing
+/// to open it by. And leaving where a shut one goes back to as it was
+/// before its heading was laid: the heading went with what it holds, and
+/// the outer one was not on the page at all.
+#[test]
+fn a_details_says_how_it_starts() {
+    let start = |source: &str| -> Vec<String> {
+        obelus_markdown::render_folding(source, 40, &|_, asked_open| asked_open)
+            .iter()
+            .map(text)
+            .collect()
+    };
+    let open = start("<details open>\n<summary>Shown</summary>\n\nThe words.\n\n</details>\n");
+    assert!(open.iter().any(|row| row == "The words."), "{open:?}");
+
+    let headless = start("<details>\n\nThe words.\n\n</details>\n");
+    assert_eq!(headless, ["Details"], "{headless:?}");
+
+    let nested = start(
+        "<details>\n<summary>Outer</summary>\n\n<details open>\n<summary>Inner</summary>\n\nDeep.\n\n</details>\n\n</details>\n",
+    );
+    assert_eq!(nested, ["Outer"], "{nested:?}");
+}
+
+/// A heading has a blank line above it whether or not the source does, as
+/// GitHub draws one -- and only one, where the source has its own.
+///
+/// Broken deliberately two ways. Taking the blank out of `heading`: the
+/// heading sat on the list's last row. And adding it whatever was above:
+/// two blank lines where the source had one.
+#[test]
+fn a_heading_has_room_above_it() {
+    let texts = |source: &str| -> Vec<String> { render(source, 40).iter().map(text).collect() };
+    let tight = texts("- one\n- two\n## Next\n\nAfter.\n");
+    let at = tight
+        .iter()
+        .position(|row| row == "Next")
+        .expect("the heading");
+    assert_eq!(tight[at - 1], "", "no room above the heading: {tight:?}");
+    assert!(tight[at - 2].ends_with("two"), "{tight:?}");
+
+    let spaced = texts("Words.\n\n## Next\n");
+    assert_eq!(spaced, ["Words.", "", "Next"], "{spaced:?}");
+    let top = texts("# First\n\nWords.\n");
+    assert_eq!(top[0], "First", "room above the first row: {top:?}");
+}

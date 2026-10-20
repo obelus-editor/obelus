@@ -653,8 +653,9 @@ crates/
                       one errand, asked of `gh` and not of GitHub, a page
                       when the reader gets to the end of the last one,
                       choosing one opens it and the review is a key of its
-                      page that says nothing yet, and what goes to GitHub goes
-                      on the reader's word (app/git/pulls); choosing one
+                      page that says nothing yet, what goes to GitHub goes
+                      on the reader's word, and opened from the page being
+                      read it stands on that page's row (app/git/pulls); choosing one
                       opens it and talking about it is a key of the page,
                       what `gh` says is kept once, by the list, and a page
                       can be opened by its number alone
@@ -785,8 +786,9 @@ crates/
                     · a tag is the asking, not the words, a comment is not
                       there at all, a shortcode is the emoji it names, where
                       a tag is this finds by itself and the HTML grammar
-                      does not, and only what GitHub lets through is a tag
-                      (html)
+                      does not, only what GitHub lets through is a tag,
+                      and a `<details>` is a heading that opens and starts
+                      shut (html)
   obelus-search/    one question at three scopes, the project walked on a
                     thread a core and searched by ripgrep's own searcher, the
                     project as a tree a level at a time (tree), and how much

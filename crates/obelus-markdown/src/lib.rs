@@ -31,8 +31,21 @@ use obelus_text::{Text, coordinates::ByteOffset, kind::SyntaxKind, text_width};
 /// Lays a markdown source out for a width.
 ///
 /// Every row is at most `width` cells, so the caller never has to wrap.
+/// Every `<details>` is open: this is for whatever has nowhere to open one,
+/// and a heading that can never be opened would be words nobody can read.
 #[must_use]
 pub fn render(source: &str, width: u16) -> Vec<Row> {
+    render_folding(source, width, &|_, _| true)
+}
+
+/// Lays a markdown source out for a width, asking `open` whether each
+/// `<details>` is open: where it begins in the source, and whether it asks
+/// to start open -- which a reader who has never touched it is owed.
+///
+/// A shut one is its heading and nothing else; the heading's row says which
+/// it is ([`Row::details`]), for whoever turns it.
+#[must_use]
+pub fn render_folding(source: &str, width: u16, open: &dyn Fn(usize, bool) -> bool) -> Vec<Row> {
     // A closing fence is only a closing fence to the grammar with a line
     // break after it, and what an agent says ends where its last fence
     // does: the fence was drawn inside the box as a line of the code, and
@@ -85,8 +98,14 @@ pub fn render(source: &str, width: u16) -> Vec<Row> {
         quoted: 0,
         rows: Vec::new(),
         owed: None,
+        open,
+        details: Vec::new(),
     };
     laying.blocks(state.tree().root_node(), width, &Prefix::default());
+    // One never closed holds the rest of the document, as GitHub has it.
+    while !laying.details.is_empty() {
+        laying.close_details();
+    }
     laying.rows
 }
 
@@ -164,6 +183,27 @@ struct Laying<'a> {
     /// first row is not the bullet's business, so the bullet is left here
     /// and taken by whichever row comes first.
     owed: Option<Vec<Span>>,
+    /// Whether each `<details>` is open, as whoever draws the rows says.
+    open: &'a dyn Fn(usize, bool) -> bool,
+    /// The `<details>` the rows being laid out are inside, outermost first.
+    ///
+    /// The document's, not a block's: what one holds is as often blocks of
+    /// their own -- a fence, a list -- between the block of HTML that opens
+    /// it and the one that closes it.
+    details: Vec<Opened>,
+}
+
+/// A `<details>` being laid out.
+struct Opened {
+    /// Where it begins in the source.
+    at: usize,
+    /// Whether it is open.
+    open: bool,
+    /// Whether it asks to start open.
+    asked_open: bool,
+    /// How many rows there were once its heading was down: a shut one is
+    /// laid out like an open one, and goes back to here when it closes.
+    from: usize,
 }
 
 impl Laying<'_> {
@@ -181,12 +221,17 @@ impl Laying<'_> {
                 continue;
             }
             let before = self.rows.len();
-            if let Some(end) = last
-                && self.parted(end, child.start_byte())
-            {
+            let parted = last.is_some_and(|end| self.parted(end, child.start_byte()));
+            if parted {
                 self.row(prefix, Vec::new());
             }
+            let drawn = self.rows.len();
             self.block(child, width, prefix);
+            // Nor the line in front of it: a `</details>` alone in its block
+            // left a blank line, and the next block another.
+            if parted && self.rows.len() == drawn {
+                self.rows.pop();
+            }
             // A block that drew nothing -- a marker, a run of whitespace --
             // leaves the blank line to whatever comes after it.
             if self.rows.len() > before {
@@ -247,6 +292,7 @@ impl Laying<'_> {
                 rule: true,
                 code: None,
                 links: Vec::new(),
+                details: None,
             }),
             // The markers a block is made of rather than anything it says,
             // and the blank lines between blocks.
@@ -277,6 +323,22 @@ impl Laying<'_> {
         let Some(said) = said else {
             return;
         };
+        // A blank line above it, whether or not the source has one: GitHub
+        // puts room above every heading, and an author who wrote one straight
+        // under a list meant a new section, not another line of the list.
+        // Not where there is a blank already, nor at the top, nor where a
+        // bullet is waiting for its first row -- the blank would take it.
+        let blank = |row: &Row| {
+            !row.rule
+                && row.code.is_none()
+                && row
+                    .spans
+                    .iter()
+                    .all(|span| span.ink == Ink::Mark || span.text.trim().is_empty())
+        };
+        if self.owed.is_none() && self.rows.last().is_some_and(|row| !blank(row)) {
+            self.row(prefix, Vec::new());
+        }
         self.said(said, width, prefix, Ink::Heading(level));
     }
 
@@ -323,20 +385,155 @@ impl Laying<'_> {
     fn html(&mut self, node: Node<'_>, width: u16, prefix: &Prefix) {
         let gathered = self.gather(node, Join::Soft);
         let tags = html::tags(&gathered.text);
+        // Cut where a `<details>` opens or closes and where its heading is,
+        // and each piece between laid out as HTML is.
+        let mut at = 0;
+        let mut next = 0;
+        while let Some(found) = tags
+            .iter()
+            .skip(next)
+            .position(|tag| tag.name == "details" || tag.name == "summary")
+        {
+            let here = next + found;
+            let tag = &tags[here];
+            self.html_part(&gathered, &tags, at..tag.range.start, width, prefix);
+            at = tag.range.end;
+            next = here + 1;
+            match (tag.name.as_str(), tag.closing) {
+                ("details", false) => {
+                    let source = gathered.source_of(tag.range.start).unwrap_or(0);
+                    let default = tag.open;
+                    let open = (self.open)(source, default);
+                    // Its heading follows at once where it has one, and is
+                    // the word GitHub puts there where it has none.
+                    let summarised = tags.get(here + 1).is_some_and(|summary| {
+                        summary.name == "summary"
+                            && !summary.closing
+                            && gathered
+                                .text
+                                .get(tag.range.end..summary.range.start)
+                                .is_some_and(|between| between.trim().is_empty())
+                    });
+                    self.details.push(Opened {
+                        at: source,
+                        open,
+                        asked_open: default,
+                        from: self.rows.len(),
+                    });
+                    if !summarised {
+                        let heading = Shaped {
+                            shown: Gathered {
+                                text: "Details".to_string(),
+                                runs: Vec::new(),
+                            },
+                            looks: vec![Look::default(); "Details".len()],
+                            links: Vec::new(),
+                        };
+                        self.summary(&heading, width, prefix);
+                    }
+                }
+                ("details", true) => self.close_details(),
+                ("summary", false) => {
+                    let end = tags
+                        .iter()
+                        .enumerate()
+                        .skip(here + 1)
+                        .find(|(_, end)| end.name == "summary" && end.closing);
+                    let words_end = end.map_or(gathered.text.len(), |(_, end)| end.range.start);
+                    let heading = shaped(&gathered, at..words_end, &tags, self.words(), false);
+                    self.summary(&heading, width, prefix);
+                    if let Some((end_at, end)) = end {
+                        at = end.range.end;
+                        next = end_at + 1;
+                    } else {
+                        at = gathered.text.len();
+                        next = tags.len();
+                    }
+                }
+                // A `</summary>` with no heading open: nothing to end.
+                _ => {}
+            }
+        }
+        self.html_part(&gathered, &tags, at..gathered.text.len(), width, prefix);
+    }
+
+    /// The heading of the `<details>` just opened: its words, emphasised,
+    /// and on its first row which one it is and whether it is open.
+    fn summary(&mut self, heading: &Shaped, width: u16, prefix: &Prefix) {
+        let Some(details) = self.details.last() else {
+            return;
+        };
+        let (at, open, asked_open) = (details.at, details.open, details.asked_open);
+        let first = self.rows.len();
+        let heading = Shaped {
+            shown: heading.shown.clone(),
+            looks: heading
+                .looks
+                .iter()
+                .map(|look| Look {
+                    bold: true,
+                    ..*look
+                })
+                .collect(),
+            links: heading.links.clone(),
+        };
+        self.lay(&heading, width, prefix);
+        if self.rows.len() == first {
+            // A heading with no words is still the one thing to open it by.
+            self.row(prefix, vec![Span::new("Details", self.words())]);
+        }
+        if let Some(row) = self.rows.get_mut(first) {
+            row.details = Some(obelus_row::Details {
+                at,
+                open,
+                asked_open,
+            });
+        }
+        if let Some(details) = self.details.last_mut() {
+            details.from = self.rows.len();
+        }
+    }
+
+    /// Ends the innermost `<details>`: what a shut one holds goes.
+    fn close_details(&mut self) {
+        if let Some(details) = self.details.pop()
+            && !details.open
+        {
+            self.rows.truncate(details.from);
+        }
+    }
+
+    /// A piece of a block of HTML between the places a `<details>` cuts it.
+    fn html_part(
+        &mut self,
+        gathered: &Gathered,
+        tags: &[html::Tag],
+        part: Range<usize>,
+        width: u16,
+        prefix: &Prefix,
+    ) {
+        if part.is_empty() {
+            return;
+        }
+        let tags: Vec<html::Tag> = tags
+            .iter()
+            .filter(|tag| tag.range.start >= part.start && tag.range.end <= part.end)
+            .cloned()
+            .collect();
         // A table the block holds whole is drawn as a table, and the words
         // either side of it as words.
-        let mut at = 0;
+        let mut at = part.start;
         for (open, close) in html::tables(&tags) {
             let (Some(first), Some(last)) = (tags.get(open), tags.get(close)) else {
                 continue;
             };
-            let before = shaped(&gathered, at..first.range.start, &tags, self.words(), true);
+            let before = shaped(gathered, at..first.range.start, &tags, self.words(), true);
             self.lay(&before, width, prefix);
             let rows: Vec<Vec<Shaped>> = html::rows(&tags[open..=close])
                 .into_iter()
                 .map(|row| {
                     row.into_iter()
-                        .map(|cell| shaped(&gathered, cell.words, &tags, self.words(), false))
+                        .map(|cell| shaped(gathered, cell.words, &tags, self.words(), false))
                         .collect()
                 })
                 .collect();
@@ -349,13 +546,7 @@ impl Laying<'_> {
             self.grid(&rows, &[], heading, width, prefix);
             at = last.range.end;
         }
-        let after = shaped(
-            &gathered,
-            at..gathered.text.len(),
-            &tags,
-            self.words(),
-            true,
-        );
+        let after = shaped(gathered, at..part.end, &tags, self.words(), true);
         self.lay(&after, width, prefix);
     }
 
@@ -377,6 +568,7 @@ impl Laying<'_> {
                     rule: true,
                     code: None,
                     links: Vec::new(),
+                    details: None,
                 });
                 continue;
             }

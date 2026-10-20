@@ -35,6 +35,12 @@
 //! of GitHub's at all: an agent writing `Vec<String>` without its backticks
 //! wrote a type, and a tag called `String` taken out of it left `Vec`.
 //!
+//! **A `<details>` is a heading that opens, and it starts shut**, which is
+//! how GitHub draws one and what its author meant by writing it: a log, a
+//! long list, the part of a template nobody has to read. Its `<summary>` is
+//! the heading, and whoever draws the rows says whether it is open -- the
+//! layout only asks ([`crate::render_folding`]).
+//!
 //! **What a tag asks for, it gets where the page already draws it.** Bold,
 //! italics, code and a line through are what the stars and backticks ask
 //! for and are drawn the same; a heading is a heading, a rule a rule; a
@@ -60,6 +66,8 @@ pub(crate) struct Tag {
     /// from its `<`: what it says it shows, or where it is where it says
     /// nothing.
     pub(crate) words: Option<Range<usize>>,
+    /// Whether it asks to start open: `<details open>`.
+    pub(crate) open: bool,
 }
 
 /// What a tag asks the words between it and its end to look like.
@@ -226,6 +234,7 @@ pub(crate) fn tag(said: &str) -> Option<Tag> {
             closing: false,
             href: None,
             words: None,
+            open: false,
         });
     }
     let inner = said.strip_prefix('<')?.strip_suffix('>')?;
@@ -265,12 +274,20 @@ pub(crate) fn tag(said: &str) -> Option<Tag> {
             None,
         ),
     };
+    // An attribute with no value, which `attribute` does not look for.
+    let open = name == "details"
+        && !closing
+        && inner
+            .split(|character: char| character.is_whitespace() || character == '/')
+            .skip(1)
+            .any(|word| word == "open" || word.starts_with("open="));
     Some(Tag {
         range: 0..said.len(),
         name,
         closing,
         href,
         words,
+        open,
     })
 }
 
