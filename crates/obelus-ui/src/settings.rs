@@ -319,8 +319,9 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
             if settings.reached().kept.contains_key(field.key)
     );
     // A number being turned takes every key: the arrows turn it, the digits
-    // type it, and enter keeps what is in the box. Escape gives it up, as it
-    // gives up on everything.
+    // type it, enter keeps what is in the box and escape gives it up. Escape
+    // is said here, where it is elsewhere left unsaid, because the box is a
+    // question and its two answers belong side by side.
     if let Some(dialling) = settings.dialling() {
         let key = |code| obelus_keymap::KeyChord::new(code, KeyModifiers::NONE);
         return vec![
@@ -330,7 +331,16 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
             Hint::new(key(KeyCode::Right), "More")
                 .about("Turn it up a step")
                 .when(dialling.kept() < dialling.dial.most),
-            Hint::new(key(KeyCode::Enter), "Keep").about("Keep what it has got to"),
+            // Said at the row's end, because they are the two ways out of
+            // the box and a reader who pressed enter on a number has no
+            // other way to find out that the second enter is the one that
+            // keeps it.
+            Hint::new(key(KeyCode::Enter), "Keep")
+                .about("Keep what is in the box")
+                .said(true),
+            Hint::new(key(KeyCode::Esc), "Cancel")
+                .about("Leave it as it was")
+                .said(true),
         ];
     }
     // A row waiting for its key takes every key, so this is the one that
@@ -629,7 +639,7 @@ impl SettingsView<'_> {
             .find(|placed| placed.at == self.settings.focus())?;
         let (aside, width) = control_column(region, false);
         let said = u16::try_from(text_width(&self.dial_said(dialling))).unwrap_or(width);
-        let x = aside + DIAL_OPENS + said;
+        let x = aside + said;
         (x < aside + width).then_some(Position { x, y: found.area.y })
     }
 }
@@ -1247,6 +1257,15 @@ impl SettingsView<'_> {
             // The lock is the reader's page saying "not here". The project's
             // page has none: there, everything is here.
             let lock = u16::from(obelus_icons::enabled() && row.pinned.is_some()) * 2;
+            // Where what is left of the value stops: the value's own column,
+            // or two cells short of it on a row being turned, whose arrow
+            // that turns it down goes in front of the number rather than
+            // pushing the number along -- a value that moved two cells when
+            // enter was pressed on it read as the row jumping.
+            let edge = match row.aside {
+                Aside::Dial(..) => aside_at.saturating_sub(DIAL_OPENS),
+                _ => aside_at,
+            };
             // Where the value showing comes from, on whichever page is not
             // the one that has it: the file's name and a lock on the
             // reader's, the word `yours` or `default` on the project's. One
@@ -1256,7 +1275,7 @@ impl SettingsView<'_> {
                 .as_deref()
                 .or(row.scope.map(Scope::word))
                 .map(|source| {
-                    let room = aside_at.saturating_sub(name_at + 3 + lock);
+                    let room = edge.saturating_sub(name_at + 3 + lock);
                     truncate_from_right(source, usize::from(room))
                 });
             let reserved = source.as_deref().map_or(0, |source| {
@@ -1265,7 +1284,7 @@ impl SettingsView<'_> {
 
             // Cut to what is left before the right-hand column: a line
             // running under it reads as part of it.
-            let width = aside_at.saturating_sub(name_at + 1 + reserved);
+            let width = edge.saturating_sub(name_at + 1 + reserved);
             let label = truncate_from_right(&row.label, usize::from(width));
             // Through the shared writer, so the characters the query
             // matched carry the background every other list marks a match
@@ -1312,7 +1331,7 @@ impl SettingsView<'_> {
                 let at = detail_at.max(after + 2);
                 // And a blank before the right-hand column, or a
                 // description that fills its room runs into the key.
-                let left = aside_at.saturating_sub(at + reserved + 1);
+                let left = edge.saturating_sub(at + reserved + 1);
                 write(
                     cells,
                     at,
@@ -1329,7 +1348,7 @@ impl SettingsView<'_> {
                 let width = u16::try_from(obelus_text::text_width(source)).unwrap_or(0);
                 write(
                     cells,
-                    aside_at.saturating_sub(width + lock + 1),
+                    edge.saturating_sub(width + lock + 1),
                     y,
                     source,
                     said.fg(if row.pinned.is_some() {
@@ -1342,7 +1361,7 @@ impl SettingsView<'_> {
                 if obelus_icons::enabled() && row.pinned.is_some() {
                     put(
                         cells,
-                        aside_at.saturating_sub(2),
+                        edge.saturating_sub(2),
                         y,
                         '\u{f033e}',
                         plain.fg(self.theme.gutter).bg(background),
@@ -2303,8 +2322,8 @@ fn run_of(run: Option<std::ops::Range<usize>>) -> Matched<'static> {
     run.map_or(Matched::Nothing, |run| Matched::Run(run.start, run.end))
 }
 
-/// How many cells a number being turned starts after the column does: the
-/// arrow that turns it down, and a space.
+/// How many cells in front of the value's column a number being turned puts
+/// the arrow that turns it down: the arrow, and a space.
 const DIAL_OPENS: u16 = 2;
 
 /// Writes a number being turned: what its box says, between the arrows that
@@ -2329,13 +2348,19 @@ fn draw_dial(
         false => style.fg(theme.gutter),
     };
     let (dial, now) = (dialling.dial, dialling.kept());
-    put(cells, at.x, at.y, '\u{25c2}', ink(now > dial.least));
-    let said = truncate_from_right(said, usize::from(at.width.saturating_sub(DIAL_OPENS * 2)));
+    put(
+        cells,
+        at.x.saturating_sub(DIAL_OPENS),
+        at.y,
+        '\u{25c2}',
+        ink(now > dial.least),
+    );
+    let said = truncate_from_right(said, usize::from(at.width.saturating_sub(DIAL_OPENS)));
     let words = match dialling.held && !said.is_empty() {
         true => style.fg(theme.foreground).bg(theme.selection_background),
         false => style.fg(theme.foreground),
     };
-    let after = write(cells, at.x + DIAL_OPENS, at.y, &said, words);
+    let after = write(cells, at.x, at.y, &said, words);
     put(
         cells,
         arrow_at(at.x, after, at.width),

@@ -5895,7 +5895,10 @@ fn written_tab_width(file: &std::path::Path) -> Option<i64> {
 /// arrows answering `Changed`): the tab width was five after the first
 /// press, and the assertion that nothing has changed yet failed. And by
 /// drawing the row's value in place of the box (`Aside::Control` for every
-/// row): the row said `4 ▸` while the box held five.
+/// row): the row said `4 ▸` while the box held five. And by putting the
+/// number after the arrow at the value's column, which moved it two cells
+/// on enter; and by leaving the two keys unsaid (`said(false)`), which left
+/// the foot saying only the filter.
 #[test]
 fn a_number_is_turned_where_it_stands_and_kept_with_enter() {
     let _turn = crate::turn();
@@ -5904,10 +5907,36 @@ fn a_number_is_turned_where_it_stands_and_kept_with_enter() {
     let mut app = open(&file);
 
     support::type_text(&mut app, "tab width");
+    let row_of = |dump: &str| {
+        support::text_block(dump)
+            .lines()
+            .find(|row| row.contains("Tab width"))
+            .map(str::to_string)
+            .expect("the row")
+    };
+    let before = row_of(&support::render(&mut app, 66, 12));
     support::press(&mut app, KeyCode::Enter);
     assert!(
         app.settings().expect("the settings").dialling().is_some(),
         "enter did not open the box"
+    );
+    // The number stays where it was and the arrow comes in front of it.
+    let dump = support::render(&mut app, 66, 12);
+    let after = row_of(&dump);
+    assert_eq!(
+        before.find('4'),
+        after.find('4'),
+        "the number moved when enter was pressed on it:\n{before}\n{after}"
+    );
+    // And the row at the foot says the two ways out of the box.
+    let foot = support::text_block(&dump)
+        .lines()
+        .last()
+        .map(str::to_string)
+        .unwrap_or_default();
+    assert!(
+        foot.contains("Keep") && foot.contains("Cancel"),
+        "the foot does not say what enter and escape do:\n{dump}"
     );
 
     support::press(&mut app, KeyCode::Right);
