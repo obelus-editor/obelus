@@ -17152,11 +17152,13 @@ fn the_last_answer_stands_in_while_the_next_is_asked() {
 /// A check's name on a pull request's page is a link to where it is told
 /// in full: a click opens it, and a press on one let go on another, or a
 /// drag that comes back, opens nothing -- the same as a link in the words.
+/// And unlike one, enter on its row opens it too: the row is the one link.
 ///
-/// Broken deliberately four ways. Leaving the link off the check's row:
-/// the click opened nothing. Answering "clicked" for a row of no text as
-/// the pointer letting go anywhere: the press on one let go on the other
-/// opened it -- and so did taking every row for the page's words, which
+/// Broken deliberately five ways. Leaving `goes` off the check's row:
+/// the row said nothing of enter, and enter did nothing. Leaving the link off
+/// the check's row: the click opened nothing. Answering "clicked" for a row of
+/// no text as the pointer letting go anywhere: the press on one let go on the
+/// other opened it -- and so did taking every row for the page's words, which
 /// asks the nearest words, the same for both checks. And not forgetting
 /// the press when the pointer moves off it: the drag that came back opened
 /// it.
@@ -17227,6 +17229,22 @@ fn a_checks_name_is_a_link_to_it() {
         opened().as_deref(),
         Some("https://ci.example/unit-tests"),
         "a click on the check's name did not open it"
+    );
+
+    // The click left the cursor on the row, which says what enter does
+    // there and does it: the row is one link and nothing else.
+    let text = screen(&mut app);
+    assert!(
+        text.lines()
+            .any(|row| row.contains("unit-tests") && row.contains("Opens its page")),
+        "the row does not say enter opens it:
+{text}"
+    );
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        opened().as_deref(),
+        Some("https://ci.example/unit-tests"),
+        "enter on the check's row did not open it"
     );
 }
 

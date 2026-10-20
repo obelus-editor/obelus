@@ -177,6 +177,10 @@ impl App {
                 self.copied(&text, "code");
                 true
             }
+            Outcome::Open(to) => {
+                self.open_link(&to);
+                true
+            }
             Outcome::Talk => {
                 let topic = match page.asked() {
                     Asked::PullRequest(number) => crate::conversation::Topic::PullRequest(number),

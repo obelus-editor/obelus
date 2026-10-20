@@ -760,7 +760,8 @@ crates/
                       between what acts (page); reading one and asking an
                       agent about it are two different acts, a page with a
                       cursor like the transcript, what enter does is open or
-                      shut or copy, and laid out once and kept (discussion);
+                      shut or copy or go, and laid out once and kept
+                      (discussion);
                       the page is Obelus's, and so is the record of it
                       (chat/kept); folding is one
                       act and the notes are the fourth place it happens, a note
