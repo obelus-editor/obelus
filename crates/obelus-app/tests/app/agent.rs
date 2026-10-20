@@ -1602,6 +1602,58 @@ fn something_already_said_answers_enter_from_every_row_of_it() {
     );
 }
 
+/// A `<details>` the agent writes is a heading, shut, with the log under
+/// it out of the way; the cursor on it says enter opens it, and enter does.
+///
+/// Broken deliberately by laying what the agent said out with `render`
+/// again: the log was on the screen from the start.
+#[test]
+fn a_details_the_agent_writes_opens_on_enter() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/details");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer", |app| {
+        app.talking() == obelus_agent::Talking::Ready && said_in_transcript(app, "All passed.")
+    });
+    let shut = screen(&mut app);
+    println!("shut:\n{shut}");
+    assert!(shut.contains("Full log"), "no heading:\n{shut}");
+    assert!(
+        !shut.contains("running 3 tests"),
+        "the log started open:\n{shut}"
+    );
+
+    // Up into what was said, and onto the heading.
+    support::press(&mut app, KeyCode::Up);
+    for _ in 0..20 {
+        if screen(&mut app)
+            .lines()
+            .any(|row| row.contains("Full log") && row.contains("Opens it"))
+        {
+            break;
+        }
+        support::press(&mut app, KeyCode::Up);
+    }
+    let standing = screen(&mut app);
+    println!("on the heading:\n{standing}");
+    assert!(
+        standing
+            .lines()
+            .any(|row| row.contains("Full log") && row.contains("Opens it")),
+        "the heading does not say enter opens it:\n{standing}"
+    );
+    support::press(&mut app, KeyCode::Enter);
+    let open = screen(&mut app);
+    println!("open:\n{open}");
+    assert!(
+        open.contains("running 3 tests"),
+        "enter did not open it:\n{open}"
+    );
+}
+
 /// A click on a link opens it -- the link the pointer is on, of two on
 /// one row, and one in the title of a call whose row folds -- and nothing
 /// else opens one: a click beside a link, in the cells in front of a row
