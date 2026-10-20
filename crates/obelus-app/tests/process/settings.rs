@@ -6063,8 +6063,9 @@ fn a_number_can_be_typed_and_is_kept_inside_its_ends() {
 ///
 /// Broken deliberately by swallowing every key in the box (`Consumed` for a
 /// chord): the palette did not open. By opening the palette without letting
-/// go of the box: the box was still up under it. And by leaving the foot to
-/// the filter: it said `Filter settings`.
+/// go of the box: the box was still up under it. By leaving the foot to
+/// the filter: it said `Filter settings`. And by leaving the arrows unsaid
+/// on the row: the foot said `More`, for a palette that lets go of the box.
 #[test]
 fn the_palette_lets_go_of_a_number_being_turned() {
     let _turn = crate::turn();
@@ -6088,6 +6089,16 @@ fn the_palette_lets_go_of_a_number_being_turned() {
     assert!(
         !foot.contains("Filter"),
         "the foot still offers the filter:\n{dump}"
+    );
+    // And every key the box has is said there, so the foot points at no
+    // palette that would let go of the box before it could say more.
+    assert!(
+        foot.contains("Turn"),
+        "the foot does not say the arrows:\n{dump}"
+    );
+    assert!(
+        !foot.contains("More"),
+        "the foot points at the palette:\n{dump}"
     );
 
     support::press_control(&mut app, 'p');
