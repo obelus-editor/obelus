@@ -176,6 +176,16 @@ pub fn keys(picker: &Picker) -> Vec<Hint> {
                 .about("Find names outside the project as well")
                 .set(picker.reaches_outside().unwrap_or(false))
                 .only_where(picker.reaches_outside().is_some()),
+            // The file list's two, because they are the same settings and
+            // the project's tab walks the files they choose.
+            Hint::new(alt('i'), "Ignored files")
+                .about("Search the files the project ignores")
+                .set(picker.offers_ignored().unwrap_or(false))
+                .only_where(picker.offers_ignored().is_some()),
+            Hint::new(alt('.'), "Hidden files")
+                .about("Search the files a system keeps out of sight")
+                .set(picker.offers_hidden().unwrap_or(false))
+                .only_where(picker.offers_hidden().is_some()),
         ];
     }
     let offering = picker.offers_ignored();

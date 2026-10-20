@@ -546,7 +546,8 @@ impl App {
             _ => return false,
         };
         // Only where the key means something: on the changed tab these rows
-        // are git's answer, and the foot greys it there.
+        // are git's answer, and the foot greys it there. The search asks the
+        // same two settings, on the one tab of it that walks the project.
         if !self
             .picker
             .as_ref()
@@ -566,9 +567,14 @@ impl App {
             .value_of(setting)
             .is_some_and(|value| matches!(value, obelus_config::Value::Switch(true)));
         self.change_setting(setting, &obelus_config::Value::Switch(showing));
-        // A different answer to "which files", so a different walk.
-        self.start_walk();
-        self.refresh_listing();
+        // A different answer to "which files", so a different walk -- of
+        // the project's text where it is the search that asked.
+        if self.searching().is_some() {
+            self.refresh_search();
+        } else {
+            self.start_walk();
+            self.refresh_listing();
+        }
         true
     }
 

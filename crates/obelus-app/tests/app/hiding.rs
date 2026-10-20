@@ -179,3 +179,58 @@ fn the_tree_obeys_it_as_well() {
     assert_eq!(named(false), vec!["plain.rs"]);
     assert_eq!(named(true), vec![".env", ".ignore", "plain.rs"]);
 }
+
+/// The search of the project offers both switches, because it walks the
+/// files they choose: it obeyed them before it said so, and a reader who had
+/// turned them on in the file list found `target` in a search and nothing on
+/// screen saying why.
+///
+/// Deliberate breaks: leave `offering_hidden` out of `refresh_search`, and
+/// the palette over the search has no such key; leave `listing_key`
+/// refreshing the file list where the search asked, and pressing it fills
+/// the search with the project's tree; set them on the file's tab too, and
+/// that tab offers a switch about a walk it never takes.
+#[test]
+fn the_search_of_the_project_offers_them_too() {
+    let scratch = scratch("hiding-search");
+    let buffer = obelus_buffer::Buffer::open(&scratch.path().join("plain.rs")).expect("plain.rs");
+    let mut app = App::new(vec![buffer]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.statuses_for_test(std::collections::HashMap::new());
+    support::lay_out(&mut app, 76, 16);
+
+    // Not on the file's tab: one file is read, and nothing is walked.
+    obelus_app::app::dispatch::dispatch(&mut app, Command::SearchFile);
+    let offered = support::usable_here(&mut app);
+    assert!(
+        !offered.contains(&"Hidden files".to_string()),
+        "the file's tab offers it: {offered:?}"
+    );
+    support::press(&mut app, KeyCode::Esc);
+
+    obelus_app::app::dispatch::dispatch(&mut app, Command::SearchProject);
+    let offered = support::usable_here(&mut app);
+    assert!(
+        offered.contains(&"Hidden files".to_string())
+            && offered.contains(&"Ignored files".to_string()),
+        "the project's tab does not offer them: {offered:?}"
+    );
+
+    support::press_alt_key(&mut app, KeyCode::Char('.'));
+    assert!(app.config().hidden_files, "the key did nothing");
+    assert!(!app.config().ignored_files, "it turned the other one on");
+    let set = support::keys_here(&mut app)
+        .into_iter()
+        .find(|key| key.does == "Hidden files")
+        .and_then(|key| key.set);
+    assert_eq!(set, Some(true), "the palette does not say it is on");
+
+    // Still the search, asked again: nothing typed, so nothing found --
+    // not the project's tree, which is the file list's answer.
+    let picker = app.picker().expect("the search closed");
+    assert!(picker.is_searching(), "the search became something else");
+    assert_eq!(picker.matches().count(), 0, "the search filled with files");
+
+    support::press_alt_key(&mut app, KeyCode::Char('.'));
+    assert!(!app.config().hidden_files, "it would not go back");
+}

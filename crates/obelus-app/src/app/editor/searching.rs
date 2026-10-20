@@ -263,9 +263,18 @@ impl App {
         // And the other way round: reaching past the project is a question
         // only an index that reaches past it can answer.
         let outside = (scope == Scope::Symbols).then_some(self.search.outside);
+        // Which files the walk reads, which is the file list's two switches
+        // and asked of the same settings: a search obeying them without
+        // saying so is a search that finds `target` and does not say why.
+        // Only the project's tab walks anything.
+        let walking = scope == Scope::Project;
+        let ignored = walking.then_some(self.config().ignored_files);
+        let hidden = walking.then_some(self.config().hidden_files);
         if let Some(picker) = self.picker.as_mut() {
             picker.looking_how(how);
             picker.reaching_outside(outside);
+            picker.offering_ignored(ignored);
+            picker.offering_hidden(hidden);
             // And what typing does, which is the one thing on this row
             // that changes with the tab: the same keystroke looks in one
             // file, in every file, or at a server's index.
