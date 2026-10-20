@@ -755,7 +755,9 @@ crates/
                       that has happened is the working tree's and one that has
                       not is the agent's to show, thinking is not folded away,
                       a call's title is three rows shut, a link is opened by
-                      a click and not by enter (chat); the cursor is a place
+                      a click and not by enter, and a `<details>` an agent
+                      writes starts shut and is kept by where it begins
+                      (chat); the cursor is a place
                       on the screen and a selection is a place in the words,
                       and the arrows walk every row drawn and nothing steps
                       between what acts (page); reading one and asking an

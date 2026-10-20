@@ -59,6 +59,8 @@ struct Row {
     opened: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     run_opened: Option<bool>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    details_turned: Vec<usize>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -166,6 +168,7 @@ fn row_of(said: &Said) -> Option<Row> {
         words: said.words.clone(),
         opened: said.opened,
         run_opened: said.run_opened,
+        details_turned: said.details_turned.clone(),
     })
 }
 
@@ -219,6 +222,7 @@ fn said_of(row: Row) -> Result<Said, String> {
         words: row.words,
         opened: row.opened,
         run_opened: row.run_opened,
+        details_turned: row.details_turned,
         unsent: false,
         afar: false,
     })
@@ -320,13 +324,16 @@ mod tests {
     /// back as it went.
     ///
     /// Broken deliberately by dropping `opened` from `row_of` (the reader's
-    /// fold came back as Obelus's own choice) and by spoiling a picture's
-    /// encoding on the way out (the file would not read).
+    /// fold came back as Obelus's own choice), by dropping `details_turned`
+    /// the same way (a `<details>` the reader opened came back shut), and
+    /// by spoiling a picture's encoding on the way out (the file would not
+    /// read).
     #[test]
     fn a_page_comes_back_as_it_went() {
         let mut chat = a_full_page();
         chat.said[2].opened = Some(false);
         chat.said[3].run_opened = Some(true);
+        chat.said[2].details_turned = vec![4, 40];
         let mut back = Chat::new();
         back.bring_back(&chat.to_keep()).expect("the page");
 
@@ -342,6 +349,7 @@ mod tests {
             assert_eq!(came.words, went.words);
             assert_eq!(came.opened, went.opened);
             assert_eq!(came.run_opened, went.run_opened);
+            assert_eq!(came.details_turned, went.details_turned);
         }
         assert_eq!(back.said[3].state.as_deref(), Some("completed"));
         assert!(

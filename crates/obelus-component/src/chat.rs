@@ -249,6 +249,10 @@ pub struct Said {
     /// question is which of the two things beginning there the reader
     /// meant.
     pub run_opened: Option<bool>,
+    /// The `<details>` in what this says that the reader has turned from
+    /// how they start, by where each begins in [`Said::text`] -- which does
+    /// not move, whatever the width.
+    pub details_turned: Vec<usize>,
     /// Whether this is something the reader has said that has not gone yet.
     ///
     /// A conversation takes one prompt turn at a time, so what the reader
@@ -288,6 +292,16 @@ pub struct Link {
 pub enum Folds {
     /// One thing said, by its place among them.
     Said(usize),
+    /// A `<details>` in what one thing said: which thing, where in its
+    /// text the `<details>` begins, and whether it asks to start open.
+    Details {
+        /// Which thing said, by its place among them.
+        said: usize,
+        /// Where in what it says.
+        at: usize,
+        /// Whether it asks to start open.
+        asked_open: bool,
+    },
     /// A run of calls of one kind, by the first of them.
     Run(usize),
     /// What the agent means to do about this turn.
@@ -1407,6 +1421,7 @@ impl Chat {
             words: vec![url.to_string()],
             opened: None,
             run_opened: None,
+            details_turned: Vec::new(),
             unsent: false,
             afar: false,
         });
@@ -1534,6 +1549,7 @@ impl Chat {
                 words: call.said.clone(),
                 opened: None,
                 run_opened: None,
+                details_turned: Vec::new(),
                 unsent: false,
                 afar: false,
             });
@@ -1676,6 +1692,16 @@ impl Chat {
             Folds::Run(at) => {
                 if let Some(said) = self.said.get_mut(at) {
                     said.run_opened = Some(!open);
+                }
+            }
+            Folds::Details { said, at, .. } => {
+                if let Some(said) = self.said.get_mut(said) {
+                    match said.details_turned.iter().position(|turned| *turned == at) {
+                        Some(was) => {
+                            said.details_turned.remove(was);
+                        }
+                        None => said.details_turned.push(at),
+                    }
                 }
             }
         }
@@ -2045,6 +2071,7 @@ impl Said {
             words: Vec::new(),
             opened: None,
             run_opened: None,
+            details_turned: Vec::new(),
             unsent: false,
             afar: false,
         }
@@ -3795,6 +3822,65 @@ mod tests {
         assert!(open("pending"), "a call waiting on the reader hid it");
         assert!(open("in_progress"), "a call still working hid it");
         assert!(!open("completed"), "an answered call left it open");
+    }
+
+    /// A `<details>` an agent writes starts shut, as it does on GitHub and
+    /// on a pull request's page: its heading folds what it holds, the key
+    /// that opens anything else in the transcript opens it, and which ones
+    /// the reader turned is kept on what was said, by where each begins.
+    ///
+    /// Broken deliberately three ways. Laying what was said out with
+    /// `render`, as this was: the log was on the page and nothing folded
+    /// it. Leaving the fold off the heading's row: enter there did nothing.
+    /// And naming the fold by anything but where its `<details>` begins in
+    /// what was said: the heading named another one, and turning it turned
+    /// nothing the layout asks about.
+    #[test]
+    fn a_details_an_agent_writes_starts_shut() {
+        let said = "Here is the log.\n\n<details>\n<summary>Full log</summary>\n\nThe log itself.\n\n</details>\n";
+        let mut chat = Chat::new();
+        chat.chunk(Speaker::Agent, said);
+        let rows = chat.rows(ROOM.reading);
+        let heading = rows
+            .iter()
+            .find(|row| row.text().contains("Full log"))
+            .unwrap_or_else(|| {
+                panic!(
+                    "no heading: {:?}",
+                    rows.iter().map(Row::text).collect::<Vec<_>>()
+                )
+            });
+        assert!(
+            !rows
+                .iter()
+                .any(|row| row.text().contains("The log itself.")),
+            "the log started open"
+        );
+        let folds = heading.folds.expect("the heading folds nothing");
+        assert!(!heading.open);
+        assert_eq!(
+            folds,
+            Folds::Details {
+                said: 0,
+                at: said.find("<details>").expect("the tag"),
+                asked_open: false,
+            }
+        );
+
+        chat.fold(folds);
+        assert!(
+            chat.rows(ROOM.reading)
+                .iter()
+                .any(|row| row.text().contains("The log itself.")),
+            "the reader could not open it"
+        );
+        // Narrower, every row moves and the `<details>` does not.
+        assert!(
+            chat.rows(30)
+                .iter()
+                .any(|row| row.text().contains("The log itself.")),
+            "it shut again at another width"
+        );
     }
 
     /// Thinking is not folded away, but it can be put away.

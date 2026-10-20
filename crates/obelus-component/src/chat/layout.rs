@@ -48,7 +48,11 @@ fn plain(text: String) -> Vec<Span> {
 ///
 /// Each row comes with the links on it: the ones markdown wrote as links,
 /// and the addresses written out in the words.
-fn laid_out(text: &str, width: u16, markdown: bool) -> Vec<Laid> {
+///
+/// `turned` is which `<details>` in it the reader has turned from how they
+/// start, for a text the reader can turn them in; where it is `None` every
+/// one is open, because there is nothing to open it by.
+fn laid_out(text: &str, width: u16, markdown: bool, turned: Option<&[usize]>) -> Vec<Laid> {
     let written = addresses(text);
     if !markdown {
         return obelus_text::wrapped_from(text, width)
@@ -56,12 +60,17 @@ fn laid_out(text: &str, width: u16, markdown: bool) -> Vec<Laid> {
             .map(|(said, from)| {
                 let spans = vec![Span::from_source(said, Ink::Plain, from)];
                 let links = links_on(&spans, &written);
-                (spans, None, links)
+                (spans, None, links, None)
             })
             .collect();
     }
-    obelus_markdown::render(text, width)
-        .into_iter()
+    let rows = match turned {
+        Some(turned) => obelus_markdown::render_folding(text, width, &|at, asked_open| {
+            asked_open != turned.contains(&at)
+        }),
+        None => obelus_markdown::render(text, width),
+    };
+    rows.into_iter()
         .map(|row| match row.rule {
             // A rule has no words of its own, and the transcript has no
             // room for a view that draws one: it is a row like the others,
@@ -73,10 +82,11 @@ fn laid_out(text: &str, width: u16, markdown: bool) -> Vec<Laid> {
                 )],
                 None,
                 Vec::new(),
+                None,
             ),
             // A block of code is copied, not followed: an address in it is
             // a line of the code.
-            false if row.code.is_some() => (row.spans, row.code, Vec::new()),
+            false if row.code.is_some() => (row.spans, row.code, Vec::new(), None),
             false => {
                 let found: Vec<_> = row
                     .links
@@ -84,15 +94,23 @@ fn laid_out(text: &str, width: u16, markdown: bool) -> Vec<Laid> {
                     .chain(written.iter().cloned())
                     .collect();
                 let links = links_on(&row.spans, &found);
-                (row.spans, row.code, links)
+                // Only where somebody can turn it: everywhere else it is
+                // open, and a heading saying so is a promise of a key.
+                let details = row.details.filter(|_| turned.is_some());
+                (row.spans, row.code, links, details)
             }
         })
         .collect()
 }
 
 /// A row of a thing said, laid out: its runs, the block of code it is part
-/// of, and the links on it.
-type Laid = (Vec<Span>, Option<obelus_row::Code>, Vec<Link>);
+/// of, the links on it, and the `<details>` it is the heading of.
+type Laid = (
+    Vec<Span>,
+    Option<obelus_row::Code>,
+    Vec<Link>,
+    Option<obelus_row::Details>,
+);
 
 /// The links among `found` whose words are on a row, by the row's own
 /// characters.
@@ -449,10 +467,11 @@ impl Chat {
             // about the output. Over it the arrow on the first row says
             // there is more, which is what that arrow says about
             // everything else behind it.
-            let mut title = laid_out(&said.text, room, reads_as_markdown(said.speaker)).into_iter();
+            let mut title =
+                laid_out(&said.text, room, reads_as_markdown(said.speaker), None).into_iter();
             let (spans, links) = title.next().map_or_else(
                 || (plain(String::new()), Vec::new()),
-                |(spans, _, links)| (spans, links),
+                |(spans, _, links, _)| (spans, links),
             );
             let mut rows = vec![Row {
                 changed: (!said.change.is_empty())
@@ -472,7 +491,7 @@ impl Chat {
                 true => usize::MAX,
                 false => MOST_TITLE_ROWS.saturating_sub(1),
             };
-            rows.extend(title.by_ref().take(shown).map(|(spans, _, links)| Row {
+            rows.extend(title.by_ref().take(shown).map(|(spans, _, links, _)| Row {
                 links,
                 ..Self::under(said, spans, depth, Some((at, Source::Text)))
             }));
@@ -485,19 +504,19 @@ impl Chat {
                 // soft break -- which is a call saying it ran something
                 // that it never ran.
                 rows.extend(carried.iter().flat_map(|(which, words)| {
-                    laid_out(words, inside, said.ran.is_none()).into_iter().map(
-                        |(spans, code, links)| Row {
+                    laid_out(words, inside, said.ran.is_none(), None)
+                        .into_iter()
+                        .map(|(spans, code, links, _)| Row {
                             code,
                             links,
                             ..Self::under(said, spans, depth + 1, Some((at, Source::Words(*which))))
-                        },
-                    )
+                        })
                 }));
                 // A diff's own markers, which words do not get: "it is
                 // changing this" and "it is saying this" are different
                 // news, and the markers are where a reader takes that in.
                 rows.extend(said.change.iter().enumerate().flat_map(|(which, line)| {
-                    laid_out(&line.text, inside, false)
+                    laid_out(&line.text, inside, false, None)
                         .into_iter()
                         .map(move |(spans, ..)| Row {
                             marker: line.marker,
@@ -508,7 +527,21 @@ impl Chat {
             return rows;
         }
 
-        let words = laid_out(&said.text, room, reads_as_markdown(said.speaker));
+        let words = laid_out(
+            &said.text,
+            room,
+            reads_as_markdown(said.speaker),
+            Some(&said.details_turned),
+        );
+        // A `<details>` heading folds what is under it, by where it is in
+        // what was said.
+        let folds = |details: Option<obelus_row::Details>| {
+            details.map(|details| Folds::Details {
+                said: at,
+                at: details.at,
+                asked_open: details.asked_open,
+            })
+        };
         // Thinking long enough to be worth putting away gets a heading of
         // its own, which is what folds it. Obelus does not fold it away by
         // itself -- an agent's reasoning about the code is often the most
@@ -519,12 +552,17 @@ impl Chat {
             return words
                 .into_iter()
                 .enumerate()
-                .map(|(row, (spans, code, links))| Row {
-                    code,
-                    links,
-                    ..match row {
-                        0 => self.opening(said, spans, depth, None, Some((at, Source::Text))),
-                        _ => Self::under(said, spans, depth, Some((at, Source::Text))),
+                .map(|(row, (spans, code, links, details))| {
+                    let folds = folds(details);
+                    Row {
+                        code,
+                        links,
+                        folds,
+                        open: folds.is_some_and(|what| self.is_open_now(what)),
+                        ..match row {
+                            0 => self.opening(said, spans, depth, folds, Some((at, Source::Text))),
+                            _ => Self::under(said, spans, depth, Some((at, Source::Text))),
+                        }
                     }
                 })
                 .collect();
@@ -539,13 +577,20 @@ impl Chat {
             None,
         )];
         if self.is_open(at) {
-            rows.extend(laid_out(&said.text, inside, true).into_iter().map(
-                |(spans, code, links)| Row {
-                    code,
-                    links,
-                    ..Self::under(said, spans, depth + 1, Some((at, Source::Text)))
-                },
-            ));
+            rows.extend(
+                laid_out(&said.text, inside, true, Some(&said.details_turned))
+                    .into_iter()
+                    .map(|(spans, code, links, details)| {
+                        let folds = folds(details);
+                        Row {
+                            code,
+                            links,
+                            folds,
+                            open: folds.is_some_and(|what| self.is_open_now(what)),
+                            ..Self::under(said, spans, depth + 1, Some((at, Source::Text)))
+                        }
+                    }),
+            );
         }
         rows
     }
@@ -659,6 +704,17 @@ impl Chat {
             Folds::Said(at) => self.is_open(at),
             Folds::Run(at) => self.is_run_open(at),
             Folds::Plan => self.plan_open,
+            Folds::Details {
+                said,
+                at,
+                asked_open,
+            } => {
+                asked_open
+                    != self
+                        .said
+                        .get(said)
+                        .is_some_and(|said| said.details_turned.contains(&at))
+            }
         }
     }
 
