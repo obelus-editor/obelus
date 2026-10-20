@@ -41,6 +41,13 @@
 //! prose, where a reader looking for one row had to read every row to find it.
 //! A column of names is *scanned*.
 //!
+//! **A number is turned where it stands.** Enter on one takes hold of it,
+//! the arrows turn it a step, the digits type it, and what it comes to is
+//! in force at once -- the text grows, a tab widens -- and written down only
+//! on enter; escape puts back what it was. It was a list, which closes over
+//! the row before the reader sees what was picked and offers only the
+//! numbers Obelus thought of (`Dialling`).
+//!
 //! The keys page, whose rows are one row each, starts what a command does in
 //! one column two past the longest name rather than two past its own: four
 //! beginnings to find is four, and one is one.
