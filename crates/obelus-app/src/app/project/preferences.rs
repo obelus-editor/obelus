@@ -243,6 +243,10 @@ impl App {
         // index, for the same reason.
         self.refresh_registry();
         self.refresh_themes();
+        // And the theme directories read afresh when the cards first ask: a
+        // watch says what happens next, not what happened while the page
+        // was shut, and a directory that did not exist was never watched.
+        self.forget_the_themes_on_disk();
         // And what the active agent offers, asked of it now: the page draws
         // what was last heard until the answer arrives.
         self.ask_what_the_agent_offers();
@@ -927,7 +931,7 @@ impl App {
     }
 
     /// The reader's own themes, beside their settings.
-    fn readers_themes(&self) -> Option<PathBuf> {
+    pub(in crate::app) fn readers_themes(&self) -> Option<PathBuf> {
         self.settled
             .path
             .as_deref()
@@ -964,6 +968,7 @@ impl App {
     /// not read.
     pub fn installed_themes_for_test(&mut self, root: PathBuf) {
         self.settled.installed = Some(root);
+        self.forget_the_themes_on_disk();
     }
 
     /// What one of a setting's words is called on screen, where it is
