@@ -391,14 +391,13 @@ impl Painter {
     }
 
     /// The page's colour as it is laid over the picture: the page, at the
-    /// theme's opacity -- or more of it while the picture is coming up out
-    /// of it or going down into it, to all of it, where none of the
-    /// picture shows.
+    /// theme's opacity with the reader's share laid on it -- or more of it
+    /// while the picture is coming up out of it or going down into it, to
+    /// all of it, where none of the picture shows.
     pub(super) fn veil(&self) -> [f32; 4] {
-        let opacity = self
-            .wallpaper
-            .as_ref()
-            .map_or(1.0, |hanging| f32::from(hanging.opacity) / 100.0);
+        let opacity = self.wallpaper.as_ref().map_or(1.0, |hanging| {
+            obelus_theme::wallpaper::veil(hanging.opacity, self.strength)
+        });
         let opacity = 1.0 - (1.0 - opacity) * self.shown;
         let [red, green, blue, _] = self.ground_colour();
         [red, green, blue, opacity]

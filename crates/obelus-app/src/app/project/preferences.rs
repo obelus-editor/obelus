@@ -973,10 +973,10 @@ impl App {
     /// it goes back to both read, so the two cannot call one choice by two
     /// names. A word like `feature-branch` is the setting's, written in the
     /// reader's file, and a name rather than copy -- and a number of days is
-    /// a number in the file and a length of time on the page, because `30`
-    /// alone does not say thirty of what. Any number of them, not only the
-    /// ones offered: a reader who wrote `14` into the file by hand is owed
-    /// the same answer.
+    /// a number in the file and a length of time on the page, on its row and
+    /// in the box it is turned in, because `30` alone does not say thirty of
+    /// what. Any number of them: a box turns through every one, and a reader
+    /// who wrote `14` into the file by hand is owed the same answer.
     #[must_use]
     pub fn called(&self, key: &str, word: &str) -> Option<std::borrow::Cow<'static, str>> {
         match key {
@@ -1265,6 +1265,20 @@ impl App {
         }
     }
 
+    /// Whether a number is being turned on the settings page.
+    ///
+    /// Asked by everything that would otherwise write into the page's
+    /// filter -- a paste, an input method, select-all, cut -- because while
+    /// one is, the filter is not on the screen: the row at the foot says
+    /// which number it is instead. Text that went in anyway narrowed the
+    /// rows out of sight, the number's own row with them, and enter still
+    /// kept what its box had.
+    pub(in crate::app) fn turning_a_number(&self) -> bool {
+        self.settings
+            .as_ref()
+            .is_some_and(|settings| settings.dialling().is_some())
+    }
+
     /// Takes a setting out of the project's file, from the project's own page.
     pub(in crate::app) fn unset_setting(&mut self, key: &'static str) {
         self.write_to_project(key, None);
@@ -1421,6 +1435,11 @@ impl App {
     /// One place, called at startup and after every change, so a setting
     /// cannot mean one thing on the way in and another when it is edited.
     fn apply_config(&mut self) {
+        // A number being turned on the settings page measures its change
+        // against what is set, which may just have moved under it.
+        if let Some(settings) = self.settings.as_mut() {
+            settings.hear_config(&self.settled.config);
+        }
         let called = self.settled.config.theme.clone();
         match self.theme_called(&called) {
             Some(theme) => {
@@ -1449,6 +1468,7 @@ impl App {
             drawing.use_fonts(&self.settled.config.fonts);
             drawing.animates(self.settled.config.animation);
             drawing.bar_tabs(self.settled.config.bar_tabs);
+            drawing.picture_strength(self.settled.config.picture_strength);
         }
         // The table the reader's own bindings leave. Built rather than
         // patched: what is in the file is a list of changes over the

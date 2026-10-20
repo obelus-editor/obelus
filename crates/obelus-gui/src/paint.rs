@@ -283,6 +283,9 @@ pub(crate) struct Painter {
     /// How much of that picture shows, from none to as much as the theme
     /// lets through -- see `Motion::picture_shown`.
     shown: f32,
+    /// The reader's share of what the theme lets through -- see
+    /// `obelus_theme::wallpaper::veil`.
+    strength: usize,
 }
 
 /// The picture under the page, as the card holds it.

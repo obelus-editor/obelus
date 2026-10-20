@@ -209,6 +209,11 @@ pub fn cursor_position(area: Rect, app: &impl Screen) -> Option<Position> {
         }
         Some(Layer::Settings) => {
             let settings = app.settings()?;
+            // A number being turned is typed into on its own row, and the
+            // filter is not where the keys are going until it is let go.
+            if settings.dialling().is_some() {
+                return settings::SettingsView::new(app)?.caret(regions.editor);
+            }
             let said = settings.query();
             // A filter nobody has typed into has no caret, the same answer
             // the counts give and for the same reason: what says where the

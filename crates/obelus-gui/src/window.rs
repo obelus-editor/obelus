@@ -393,6 +393,13 @@ struct Showing {
     /// draws nothing before the first frame, which comes after it -- see
     /// `shown` -- so the default is never on the screen.
     ground: Color,
+    /// How much of the picture under the page shows, as the reader's share
+    /// of what the theme lets through.
+    ///
+    /// Kept here and handed over at every redraw, like the ground, rather
+    /// than put straight into the painter: the application says it when it
+    /// hears who is drawing, which is before there is a painter to tell.
+    picture_strength: usize,
     /// Whether the window is on the screen, which it is from the first
     /// frame the application sends and not before.
     ///
@@ -584,6 +591,7 @@ impl Showing {
             capped: Vec::new(),
             capping: Vec::new(),
             ground: Color::Reset,
+            picture_strength: 100,
             shown: false,
             covered: false,
             titled: 0.0,
@@ -1314,6 +1322,17 @@ impl ApplicationHandler<Waking> for Showing {
                         Update::TextSize(points) => sized = Some(points),
                         Update::Animates(on) => self.motion.animates(on),
                         Update::BarTabs(on) => retabbed |= crate::title::tabbed(on),
+                        // Drawn again only where there is a picture to see it
+                        // on: the share is said after every change to the
+                        // settings, and nearly always the same.
+                        Update::PictureStrength(share) => {
+                            rehung |= share != self.picture_strength
+                                && self
+                                    .painter
+                                    .as_ref()
+                                    .is_some_and(|painter| painter.hanging());
+                            self.picture_strength = share;
+                        }
                         Update::Fonts(names) => faces = Some(names),
                         Update::Ground(ground) => {
                             // Said again after every change to the
@@ -1979,6 +1998,7 @@ impl ApplicationHandler<Waking> for Showing {
                     }
                 }
                 painter.unveiled(self.motion.picture_shown(now));
+                painter.strengthened(self.picture_strength);
                 painter.drawn_on(self.ground);
                 painter.titled(self.titled);
                 let drawn = self

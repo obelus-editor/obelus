@@ -3269,10 +3269,13 @@ fn offers(app: &mut App, word: &str) -> bool {
     support::usable_here(app).iter().any(|said| said == word)
 }
 
-/// The rest that asks a question is a time, and the times are the few
-/// anybody picks -- with zero among them, because "never" is one of the
-/// answers people want and a switch beside the list would be a second way
-/// to say the slowest one.
+/// The rest that asks a question is a time, turned fifty milliseconds a
+/// step -- with zero at the bottom, because "never" is one of the answers
+/// people want and a switch beside the dial would be a second way to say
+/// the slowest one.
+///
+/// Broken deliberately by giving the dial a step of one: the first turn
+/// came to 401.
 #[test]
 fn the_time_a_rest_takes_is_the_readers() {
     let _turn = crate::turn();
@@ -3295,21 +3298,12 @@ fn the_time_a_rest_takes_is_the_readers() {
     );
 
     support::press(&mut app, KeyCode::Enter);
-    let picker = app.picker().expect("the choices");
-    assert_eq!(
-        picker
-            .matches()
-            .map(|item| item.label.clone())
-            .collect::<Vec<_>>(),
-        ["0", "200", "400", "800"],
-        "not the times Obelus offers"
-    );
-    assert_eq!(
-        picker.selected_item().map(|item| item.label.clone()),
-        Some("400".to_string()),
-        "the list did not open on the one in force"
-    );
+    support::press(&mut app, KeyCode::Right);
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(app.config().hover_delay, 450, "not a step of fifty");
 
+    // What the box opens with is held, so the digits typed take its place.
+    support::press(&mut app, KeyCode::Enter);
     support::type_text(&mut app, "800");
     support::press(&mut app, KeyCode::Enter);
     assert_eq!(
@@ -5088,16 +5082,16 @@ fn a_workflow_is_called_by_its_title_and_written_by_its_name() {
 }
 
 /// How long a conversation is kept is said as a length of time wherever it
-/// is drawn, and written down as a number of days.
+/// is drawn -- turned as well as standing -- and written down as a number of
+/// days.
 ///
-/// `30` on its own does not say thirty of what, and the list it is chosen
-/// from said nothing else.
+/// `30` on its own does not say thirty of what.
 ///
 /// Broken deliberately three ways: `App::called` without its arm for this
-/// setting, which leaves `30` on the row and the numbers on the list; the
-/// settings row's `value_of` handing back the number, which leaves `30 ▸`
-/// on the page; and the picked word parsed from the title rather than the
-/// number, which writes nothing a week long.
+/// setting, which leaves `30` on the row; the settings row's `value_of`
+/// handing back the number, which leaves `30 ▸` on the page; and the dial
+/// saying what the arrows came to by its number rather than its title
+/// (`dial_said` without the title), which turned `A month` into `◂ 29 ▸`.
 #[test]
 fn how_long_a_conversation_is_kept_is_said_as_a_length_of_time() {
     let _turn = crate::turn();
@@ -5114,19 +5108,21 @@ fn how_long_a_conversation_is_kept_is_said_as_a_length_of_time() {
     );
 
     support::press(&mut app, KeyCode::Enter);
-    let picker = app.picker().expect("the lengths did not open");
-    let labels: Vec<String> = picker.matches().map(|item| item.label.clone()).collect();
-    assert_eq!(
-        labels,
-        ["Never", "A week", "A month", "Three months", "A year"]
+    let dump = support::render(&mut app, 100, 24);
+    assert!(
+        support::text_block(&dump).contains("\u{25c2} A month \u{25b8}"),
+        "the dial does not say a month:\n{dump}"
     );
-    assert_eq!(
-        picker.selected_item().map(|item| item.label.as_str()),
-        Some("A month"),
-        "the list did not open on the one in force"
+    support::press(&mut app, KeyCode::Left);
+    let dump = support::render(&mut app, 100, 24);
+    assert!(
+        support::text_block(&dump).contains("\u{25c2} 29 days \u{25b8}"),
+        "a turn is not said as days:\n{dump}"
     );
 
-    support::press(&mut app, KeyCode::Up);
+    support::press(&mut app, KeyCode::Backspace);
+    support::press(&mut app, KeyCode::Backspace);
+    support::type_text(&mut app, "7");
     support::press(&mut app, KeyCode::Enter);
     assert_eq!(app.config().conversation_days, 7);
     let written = std::fs::read_to_string(&file).expect("the file was written");
@@ -5880,4 +5876,504 @@ fn a_double_click_on_a_settings_name_is_enter() {
     );
 
     obelus_icons::use_glyphs(false);
+}
+
+/// What the reader's file says about the tab width, where it says anything.
+fn written_tab_width(file: &std::path::Path) -> Option<i64> {
+    let text = std::fs::read_to_string(file).ok()?;
+    text.parse::<toml::Table>()
+        .ok()?
+        .get("tab_width")?
+        .as_integer()
+}
+
+/// A number is turned where it stands: enter on its row makes the value a
+/// box, the arrows turn what is in it, and nothing is in force or written
+/// down until enter.
+///
+/// Broken deliberately by putting each turn in force as it was made (the
+/// arrows answering `Changed`): the tab width was five after the first
+/// press, and the assertion that nothing has changed yet failed. And by
+/// drawing the row's value in place of the box (`Aside::Control` for every
+/// row): the row said `4 ▸` while the box held five. And by putting the
+/// number after the arrow at the value's column, which moved it two cells
+/// on enter; and by leaving the two keys unsaid (`said(false)`), which left
+/// the foot saying only the filter.
+#[test]
+fn a_number_is_turned_where_it_stands_and_kept_with_enter() {
+    let _turn = crate::turn();
+    let scratch = temporary("dial");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+
+    support::type_text(&mut app, "tab width");
+    let row_of = |dump: &str| {
+        support::text_block(dump)
+            .lines()
+            .find(|row| row.contains("Tab width"))
+            .map(str::to_string)
+            .expect("the row")
+    };
+    let before = row_of(&support::render(&mut app, 66, 12));
+    support::press(&mut app, KeyCode::Enter);
+    assert!(
+        app.settings().expect("the settings").dialling().is_some(),
+        "enter did not open the box"
+    );
+    // The number stays where it was and the arrow comes in front of it.
+    // Measured in cells after the dump's own `NN|`, whose row number would
+    // otherwise be the first digit found -- and in cells rather than bytes,
+    // because the arrow is three bytes and one cell.
+    let dump = support::render(&mut app, 66, 12);
+    let after = row_of(&dump);
+    let column = |row: &str| {
+        let row = row.split_once('|').map_or(row, |(_, drawn)| drawn);
+        row.find(" 4 ")
+            .map(|at| obelus_text::text_width(&row[..at]))
+    };
+    assert!(column(&before).is_some(), "no number on the row:\n{before}");
+    assert_eq!(
+        column(&before),
+        column(&after),
+        "the number moved when enter was pressed on it:\n{before}\n{after}"
+    );
+    // And the row at the foot says the two ways out of the box.
+    let foot = support::text_block(&dump)
+        .lines()
+        .last()
+        .map(str::to_string)
+        .unwrap_or_default();
+    assert!(
+        foot.contains("Keep") && foot.contains("Cancel"),
+        "the foot does not say what enter and escape do:\n{dump}"
+    );
+
+    support::press(&mut app, KeyCode::Right);
+    assert_eq!(app.config().tab_width, 4, "a turn is in force before enter");
+    assert_eq!(obelus_text::tab_width(), 4, "the tabs moved before enter");
+    assert_eq!(written_tab_width(&file), None, "a turn was written down");
+    let dump = support::render(&mut app, 66, 12);
+    assert!(
+        support::text_block(&dump).contains("\u{25c2} 5 \u{25b8}"),
+        "the row does not say what is in its box:\n{dump}"
+    );
+
+    support::press(&mut app, KeyCode::Right);
+    support::press(&mut app, KeyCode::Enter);
+    assert!(
+        app.settings().expect("the settings").dialling().is_none(),
+        "enter did not close the box"
+    );
+    assert_eq!(app.config().tab_width, 6, "what was kept is not in force");
+    assert_eq!(obelus_text::tab_width(), 6);
+    assert_eq!(
+        written_tab_width(&file),
+        Some(6),
+        "what was kept is not written"
+    );
+
+    obelus_text::lay_tabs_at(obelus_text::TAB_WIDTH);
+}
+
+/// Escape gives the box up and changes nothing: a turn is something the
+/// reader looked at, not something they chose.
+///
+/// Broken deliberately by letting escape keep what was in the box (`Esc`
+/// answered as enter is): the tab width was six.
+#[test]
+fn escape_gives_up_a_number_being_turned() {
+    let _turn = crate::turn();
+    let scratch = temporary("dial-escape");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+
+    support::type_text(&mut app, "tab width");
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Right);
+    support::press(&mut app, KeyCode::Right);
+
+    support::press(&mut app, KeyCode::Esc);
+    assert_eq!(app.config().tab_width, 4, "escape kept the turn");
+    assert_eq!(written_tab_width(&file), None, "escape wrote something");
+    assert!(
+        app.settings().expect("the settings").dialling().is_none(),
+        "escape left the box up"
+    );
+    // Escape gave up on the nearest thing, which was the box and not the
+    // page.
+    assert!(app.settings().is_some(), "escape closed the page as well");
+
+    obelus_text::lay_tabs_at(obelus_text::TAB_WIDTH);
+}
+
+/// The digits type a number into the box, over what it opened with, and
+/// enter brings one past the end back inside.
+///
+/// Broken deliberately twice: keeping what was typed as it was, which wrote
+/// ninety-nine, a tab no dial on the page could reach; and putting the
+/// first digit on the end of what the box opened with, which made `48`
+/// out of an `8`.
+#[test]
+fn a_number_can_be_typed_and_is_kept_inside_its_ends() {
+    let _turn = crate::turn();
+    let scratch = temporary("dial-typed");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+
+    support::type_text(&mut app, "tab width");
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "8");
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        written_tab_width(&file),
+        Some(8),
+        "the digit did not take the box"
+    );
+    assert_eq!(app.config().tab_width, 8);
+
+    // Past the most a tab may be: enter keeps the most there is.
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "99");
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        written_tab_width(&file),
+        Some(16),
+        "not brought inside its ends"
+    );
+
+    // And the arrows turn from what is typed rather than from what the box
+    // opened with.
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "3");
+    support::press(&mut app, KeyCode::Left);
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        app.config().tab_width,
+        2,
+        "the arrow did not turn from what was typed"
+    );
+
+    obelus_text::lay_tabs_at(obelus_text::TAB_WIDTH);
+}
+
+/// A number being turned keeps the keys it uses and hands the rest on, the
+/// way the names being built do: the palette opens, letting go of the box
+/// and keeping nothing it had come to. And the foot says which number it is
+/// and how far it turns, not the filter, which is not where typing goes.
+///
+/// Broken deliberately by swallowing every key in the box (`Consumed` for a
+/// chord): the palette did not open. By opening the palette without letting
+/// go of the box: the box was still up under it. By leaving the foot to
+/// the filter: it said `Filter settings`. And by leaving the arrows unsaid
+/// on the row: the foot said `More`, for a palette that lets go of the box.
+#[test]
+fn the_palette_lets_go_of_a_number_being_turned() {
+    let _turn = crate::turn();
+    let scratch = temporary("dial-palette");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+
+    support::type_text(&mut app, "tab width");
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Right);
+    let dump = support::render(&mut app, 66, 12);
+    let foot = support::text_block(&dump)
+        .lines()
+        .last()
+        .map(str::to_string)
+        .unwrap_or_default();
+    assert!(
+        foot.contains("Tab width") && foot.contains("1\u{2013}16"),
+        "the foot does not say which number and how far:\n{dump}"
+    );
+    assert!(
+        !foot.contains("Filter"),
+        "the foot still offers the filter:\n{dump}"
+    );
+    // And every key the box has is said there, so the foot points at no
+    // palette that would let go of the box before it could say more.
+    assert!(
+        foot.contains("Turn"),
+        "the foot does not say the arrows:\n{dump}"
+    );
+    assert!(
+        !foot.contains("More"),
+        "the foot points at the palette:\n{dump}"
+    );
+
+    support::press_control(&mut app, 'p');
+    assert!(app.palette().is_some(), "the palette did not open");
+    assert!(
+        app.settings().expect("the settings").dialling().is_none(),
+        "the box is still up under the palette"
+    );
+    assert_eq!(app.config().tab_width, 4, "what was in the box was kept");
+    assert_eq!(
+        written_tab_width(&file),
+        None,
+        "what was in the box was written"
+    );
+}
+
+/// Nothing written while a number is being turned goes into the filter,
+/// which is not on the screen then: a paste goes nowhere, an input method is
+/// not offered the page, and the number's row stays where it is.
+///
+/// Broken deliberately by letting the paste into the filter as before
+/// (`writing_into` without its arm for the box): the filter said
+/// `zzz` and the row being turned was filtered off the page. And by leaving
+/// `takes_text` asking only about a key being bound: it said yes.
+#[test]
+fn nothing_pasted_while_a_number_is_turned_goes_into_the_filter() {
+    let _turn = crate::turn();
+    let scratch = temporary("dial-paste");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+
+    support::type_text(&mut app, "tab width");
+    support::press(&mut app, KeyCode::Enter);
+    assert!(
+        !app.takes_text(),
+        "an input method would spell into the filter"
+    );
+    app.handle(Event::Paste("zzz".to_string()));
+    let settings = app.settings().expect("the settings");
+    assert_eq!(
+        settings.query(),
+        "tab width",
+        "the paste went into the filter"
+    );
+    assert_eq!(
+        settings.rows(None).len(),
+        1,
+        "the row being turned was filtered away"
+    );
+    assert!(settings.dialling().is_some(), "the paste let go of the box");
+}
+
+/// A number written by hand past the dial's ends is left as it was by enter
+/// pressed twice on it: nothing was turned, so nothing is written.
+///
+/// Broken deliberately by keeping what the box came to however it got
+/// there (`kept == was` alone): the file's forty became the dial's sixteen.
+#[test]
+fn enter_twice_on_a_number_past_its_ends_writes_nothing() {
+    let _turn = crate::turn();
+    let scratch = temporary("dial-past-the-ends");
+    let file = settings_file(&scratch);
+    std::fs::write(&file, "tab_width = 40\n").expect("the settings");
+    let mut app = open(&file);
+
+    support::type_text(&mut app, "tab width");
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        written_tab_width(&file),
+        Some(40),
+        "a number nobody turned was written"
+    );
+
+    obelus_text::lay_tabs_at(obelus_text::TAB_WIDTH);
+}
+
+/// A number being turned is measured against what is set now, which another
+/// Obelus may have changed while the box was up: a box nobody touched shows
+/// the new number, and typing back the old one is a change to write.
+///
+/// Broken deliberately by not hearing the settings in the box
+/// (`hear_config` returning at once): the box still said four, and enter on
+/// a typed four wrote nothing over the other window's eight.
+#[test]
+fn a_number_being_turned_hears_another_obelus() {
+    let _turn = crate::turn();
+    let scratch = temporary("dial-shared");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+
+    support::type_text(&mut app, "tab width");
+    support::press(&mut app, KeyCode::Enter);
+    std::fs::write(&file, "tab_width = 8\n").expect("the other window");
+    app.handle(Event::Watched(obelus_watch::Changed { path: file.clone() }));
+    let dialling = app
+        .settings()
+        .and_then(|settings| settings.dialling())
+        .expect("the box went");
+    assert_eq!(
+        dialling.typed, "8",
+        "the untouched box does not say what is set now"
+    );
+
+    support::type_text(&mut app, "4");
+    support::press(&mut app, KeyCode::Enter);
+    // Four is the default, so what is written is the eight taken out.
+    assert_eq!(
+        obelus_config::from_toml(&std::fs::read_to_string(&file).expect("the file")).tab_width,
+        4,
+        "the old number was taken for no change"
+    );
+    assert_eq!(app.config().tab_width, 4);
+
+    obelus_text::lay_tabs_at(obelus_text::TAB_WIDTH);
+}
+
+/// The caret of a number being turned sits after what its box says, on its
+/// own row; and while the box is up a press on the page or a notch of the
+/// wheel leaves it alone, the way they leave a row waiting for its key.
+///
+/// Broken deliberately three ways: the caret counted from where the arrow
+/// used to put the number (`aside + DIAL_OPENS`), which put it two cells
+/// past the digit; the pointer let through to the page (the guard in
+/// `press_in_settings` asking only about a binding), which took a press on
+/// the value for enter and kept the turn; and the wheel let through
+/// (`Settings::scroll` asking only about a binding), which moved the page.
+#[test]
+fn a_number_being_turned_has_its_caret_and_keeps_the_pointer_off() {
+    let _turn = crate::turn();
+    let scratch = temporary("dial-caret");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+    let screen = ratatui::layout::Rect::new(0, 0, 66, 12);
+
+    support::type_text(&mut app, "tab width");
+    support::press(&mut app, KeyCode::Enter);
+    let dump = support::render(&mut app, screen.width, screen.height);
+    let text = support::text_block(&dump);
+    // The screen's row is the number the dump writes in front of it.
+    let (y, drawn) = text
+        .lines()
+        .find(|row| row.contains("Tab width"))
+        .and_then(|row| row.split_once('|'))
+        .map(|(y, drawn)| (y.trim().parse::<usize>().expect("a row number"), drawn))
+        .expect("the row");
+    let digit = drawn
+        .find(" 4 ")
+        .map(|at| obelus_text::text_width(&drawn[..at]) + 1)
+        .expect("the number");
+    let caret = obelus_ui::cursor_position(screen, &app).expect("no caret in the box");
+    assert_eq!(
+        usize::from(caret.y),
+        y,
+        "the caret is not on the number's row"
+    );
+    assert_eq!(
+        usize::from(caret.x),
+        digit + 1,
+        "the caret is not after the number:\n{dump}"
+    );
+
+    support::press(&mut app, KeyCode::Right);
+    let top = app.settings().expect("the settings").top();
+    // On the value itself, where a press means enter when nothing is up.
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: u16::try_from(digit).expect("a column"),
+        y: u16::try_from(y).expect("a row"),
+    });
+    app.handle(Event::Scroll { rows: 3, at: None });
+    let settings = app.settings().expect("the settings");
+    assert!(settings.dialling().is_some(), "a press let go of the box");
+    assert_eq!(settings.top(), top, "a notch moved the page under the box");
+    assert_eq!(app.config().tab_width, 4, "a press kept the turn");
+    assert_eq!(written_tab_width(&file), None, "a press wrote the turn");
+}
+
+/// What a window is told about the picture under the page and how much of
+/// it shows.
+#[derive(Debug, Default)]
+struct Pictured {
+    /// Every picture it was told to hang, by its file.
+    hung: std::sync::Mutex<Vec<Option<std::path::PathBuf>>>,
+    /// Every share of what the theme lets through.
+    shares: std::sync::Mutex<Vec<usize>>,
+}
+
+impl obelus_app::app::Drawing for Pictured {
+    fn hang(&self, wallpaper: Option<&obelus_theme::Wallpaper>) {
+        self.hung
+            .lock()
+            .expect("what was said")
+            .push(wallpaper.map(|hung| hung.file.clone()));
+    }
+
+    fn picture_strength(&self, share: usize) {
+        self.shares.lock().expect("what was said").push(share);
+    }
+
+    // The rest are other tests'.
+    fn text_size(&self, _: usize) {}
+
+    fn animates(&self, _: bool) {}
+
+    fn bar_tabs(&self, _: bool) {}
+
+    fn use_fonts(&self, _: &[String]) {}
+
+    fn drawn_on(&self, _: ratatui::style::Color) {}
+
+    fn holding(&self, _: ratatui::style::Color, _: ratatui::style::Color) {}
+
+    fn caret_in(&self, _: ratatui::style::Color) {}
+
+    fn caret_is(
+        &self,
+        _: obelus_app::app::Caret,
+        _: Option<obelus_component::layers::Layer>,
+        _: bool,
+    ) {
+    }
+}
+
+/// How much of a theme's picture shows reaches the window when it says who
+/// it is and again when the setting changes -- and on its own, without the
+/// picture being asked for again, because a window asked for a picture
+/// reads and decodes the file.
+///
+/// Broken deliberately three ways: the call taken out of `drawn_by`, which
+/// left the window with nothing to start at; taken out of `apply_config`,
+/// which left it at a hundred after the file said a hundred and fifty; and
+/// the picture said again with the share (`say_the_wallpaper` beside the
+/// call in `apply_config`), which hung it a second time.
+#[test]
+fn how_much_of_the_picture_shows_reaches_the_window_alone() {
+    let _turn = crate::turn();
+    let scratch = temporary("picture-strength");
+    let file = settings_file(&scratch);
+    std::fs::create_dir_all(scratch.join("themes/rain")).expect("the directory");
+    std::fs::write(
+        scratch.join("themes/rain/theme.toml"),
+        "base = \"dark\"\n\n[wallpaper]\nfile = \"rain.jpg\"\n",
+    )
+    .expect("the theme");
+    // What is in it is the window's to decode, and a test has no window.
+    std::fs::write(scratch.join("themes/rain/rain.jpg"), "not decoded here").expect("the picture");
+    std::fs::write(&file, "theme = \"rain\"\n").expect("the settings");
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.config_file_for_test(file.clone());
+    assert!(
+        app.wallpaper().is_some(),
+        "the theme carries no picture, so this proves nothing"
+    );
+    let told = std::sync::Arc::new(Pictured::default());
+    app.drawn_by(told.clone());
+    assert_eq!(
+        told.shares.lock().expect("what was said").last().copied(),
+        Some(100),
+        "the window was not told what to start at"
+    );
+    let hung = told.hung.lock().expect("what was said").len();
+
+    std::fs::write(&file, "theme = \"rain\"\npicture_strength = 150\n").expect("the settings");
+    app.handle(Event::Watched(obelus_watch::Changed { path: file }));
+    assert_eq!(app.config().picture_strength, 150, "the file was not read");
+    assert_eq!(
+        told.shares.lock().expect("what was said").last().copied(),
+        Some(150),
+        "the change did not reach the window"
+    );
+    assert_eq!(
+        told.hung.lock().expect("what was said").len(),
+        hung,
+        "the picture was asked for again"
+    );
 }

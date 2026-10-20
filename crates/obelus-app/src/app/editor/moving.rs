@@ -243,6 +243,10 @@ impl App {
                 }
                 return;
             }
+            // Not the filter while a number is being turned: it is not on
+            // the screen, and what was held there would go with the next
+            // thing pasted -- see `App::turning_a_number`.
+            Some(Layer::Settings) if self.turning_a_number() => return,
             Some(Layer::Settings) => {
                 if let Some(settings) = self.settings.as_mut() {
                     settings.hold_in_query(true);
@@ -349,6 +353,7 @@ impl App {
                 }
                 return;
             }
+            Some(Layer::Settings) if self.turning_a_number() => return,
             Some(Layer::Settings) => {
                 if let Some(settings) = self.settings.as_ref() {
                     let (text, what) = settings.copy_query();
@@ -496,6 +501,7 @@ impl App {
                 }
                 return;
             }
+            Some(Layer::Settings) if self.turning_a_number() => return,
             Some(Layer::Settings) => {
                 let offering = self.agent_offering();
                 if let Some(settings) = self.settings.as_mut() {
@@ -764,10 +770,9 @@ impl App {
     pub fn takes_text(&self) -> bool {
         match self.layers().nearest() {
             Some(Layer::Prompt | Layer::Names | Layer::Palette) => true,
-            Some(Layer::Settings) => self
-                .settings
-                .as_ref()
-                .is_some_and(|settings| settings.binding().is_none()),
+            Some(Layer::Settings) => self.settings.as_ref().is_some_and(|settings| {
+                settings.binding().is_none() && settings.dialling().is_none()
+            }),
             Some(Layer::Picker) => self
                 .picker
                 .as_ref()
@@ -811,6 +816,7 @@ impl App {
     pub(in crate::app) fn writing_into(&self) -> WritingInto {
         match self.layers().nearest() {
             Some(Layer::Prompt) => WritingInto::Prompt,
+            Some(Layer::Settings) if self.turning_a_number() => WritingInto::Nowhere,
             Some(Layer::Settings) => WritingInto::Settings,
             Some(Layer::Names) => WritingInto::Names,
             Some(Layer::Picker) => WritingInto::Picker,

@@ -7,8 +7,8 @@
 
 use obelus_agent::Listed;
 use obelus_component::settings::{
-    DESCRIPTION_INDENT, GROUP_INDENT, HEADING_ROWS, KeyRow, Offering, Refused, RemoteRow, Settings,
-    Shown,
+    DESCRIPTION_INDENT, Dialling, GROUP_INDENT, HEADING_ROWS, KeyRow, Offering, Refused, RemoteRow,
+    Settings, Shown,
 };
 use obelus_config::{Config, Kind, Value};
 use obelus_text::text_width;
@@ -16,7 +16,7 @@ use obelus_theme::Theme;
 use obelus_themes::Card as ThemeCard;
 use ratatui::{
     buffer::Buffer as CellBuffer,
-    layout::Rect,
+    layout::{Position, Rect},
     style::{Modifier, Style},
     widgets::Widget,
 };
@@ -181,7 +181,7 @@ impl<'a> SettingsView<'a> {
                 .iter()
                 .flat_map(|setting| {
                     let words = match setting.kind {
-                        Kind::Choice(words) | Kind::Count(words) => words,
+                        Kind::Choice(words) => words,
                         _ => &[],
                     };
                     let in_force = match app.config().value_of(setting.key) {
@@ -189,10 +189,18 @@ impl<'a> SettingsView<'a> {
                         Some(Value::Count(count)) => Some(count.to_string()),
                         _ => None,
                     };
+                    // And what a number being turned has got to, which is
+                    // in force nowhere yet and is said by its title too.
+                    let turned = app
+                        .settings()
+                        .and_then(Settings::dialling)
+                        .filter(|dialling| dialling.key == setting.key)
+                        .map(|dialling| dialling.kept().to_string());
                     words
                         .iter()
                         .map(|word| (*word).to_string())
                         .chain(in_force)
+                        .chain(turned)
                         .filter_map(|word| {
                             let title = app.called(setting.key, &word)?.into_owned();
                             Some((setting.key, word, title))
@@ -310,6 +318,27 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
         Some(Shown::Remote { row: RemoteRow::Field(field), .. })
             if settings.reached().kept.contains_key(field.key)
     );
+    // A number being turned: the arrows turn it, enter keeps what is in the
+    // box and escape gives it up -- every key the box has, all said at the
+    // row's end, because the palette lets go of the box rather than opening
+    // over it and so could never say them. Escape is said here, where it is
+    // elsewhere left unsaid, because the box is a question and its two
+    // answers belong side by side.
+    if settings.dialling().is_some() {
+        let key = |code| obelus_keymap::KeyChord::new(code, KeyModifiers::NONE);
+        return vec![
+            Hint::new(key(KeyCode::Left), "Turn")
+                .or(key(KeyCode::Right))
+                .about("Turn it down or up a step")
+                .said(true),
+            Hint::new(key(KeyCode::Enter), "Keep")
+                .about("Keep what is in the box")
+                .said(true),
+            Hint::new(key(KeyCode::Esc), "Cancel")
+                .about("Leave it as it was")
+                .said(true),
+        ];
+    }
     // A row waiting for its key takes every key, so this is the one that
     // does something else there: taking this row's key away, where it has
     // one. Not escape, which gives up on the nearest thing here as
@@ -585,6 +614,30 @@ impl SettingsView<'_> {
         let (aside, _) = control_column(region, self.settings.on_keys());
         Some((found.at, x >= aside && x < region.x + room))
     }
+
+    /// Where the caret is, while a number is being turned: after what its
+    /// box says, on the row it is turned on.
+    ///
+    /// A number is a box once enter is pressed on it -- the digits go in
+    /// and backspace takes them out -- and a box is marked by the caret
+    /// sitting in it. Never on the keys page, whose rows are not the
+    /// settings' and which has no number to turn.
+    #[must_use]
+    pub fn caret(&self, area: Rect) -> Option<Position> {
+        let dialling = self.settings.dialling()?;
+        if self.settings.on_keys() {
+            return None;
+        }
+        let region = rows_region(area);
+        let rows = self.rows(region);
+        let found = placed(region, &rows, self.settings.window())
+            .into_iter()
+            .find(|placed| placed.at == self.settings.focus())?;
+        let (aside, width) = control_column(region, false);
+        let said = u16::try_from(text_width(&self.dial_said(dialling))).unwrap_or(width);
+        let x = aside + said;
+        (x < aside + width).then_some(Position { x, y: found.area.y })
+    }
 }
 
 impl Widget for SettingsView<'_> {
@@ -759,12 +812,7 @@ impl SettingsView<'_> {
     /// second name for the one choice. A number with a title is drawn as
     /// its title, which is a word.
     fn value_of(&self, setting: &obelus_config::Setting) -> Value {
-        let title = |word: &str| {
-            self.called
-                .iter()
-                .find(|(key, said, _)| *key == setting.key && said == word)
-                .map(|(.., title)| title.clone())
-        };
+        let title = |word: &str| self.title(setting.key, word);
         match Settings::value_of(setting, self.config) {
             Value::Choice(word) => Value::Choice(title(&word).unwrap_or(word)),
             Value::Count(count) => {
@@ -772,6 +820,28 @@ impl SettingsView<'_> {
             }
             value => value,
         }
+    }
+
+    /// What a word of a setting is called on the page, where it is called
+    /// anything but itself.
+    fn title(&self, key: &str, word: &str) -> Option<String> {
+        self.called
+            .iter()
+            .find(|(called, said, _)| *called == key && said == word)
+            .map(|(.., title)| title.clone())
+    }
+
+    /// What a number being turned says in its box: what was typed, digit by
+    /// digit, while the reader is typing; otherwise what it has got to, by
+    /// its title where it has one -- `A week` turned to `8 days` and back
+    /// is the row the reader pressed enter on, and `7` would be a second
+    /// name for it.
+    fn dial_said(&self, dialling: &Dialling) -> String {
+        if dialling.typing {
+            return dialling.typed.clone();
+        }
+        self.title(dialling.key, &dialling.typed)
+            .unwrap_or_else(|| dialling.typed.clone())
     }
 
     /// One of them, without what is wrong with it.
@@ -790,7 +860,14 @@ impl SettingsView<'_> {
                 body: self.settings.wrapped(setting.about, width),
                 warning: Vec::new(),
                 entry: true,
-                aside: Aside::Control(setting.kind, self.value_of(setting)),
+                // A box where the value was, while it is being turned: the
+                // number is changed beside its name and not somewhere else.
+                aside: match self.settings.dialling() {
+                    Some(dialling) if dialling.key == setting.key => {
+                        Aside::Dial(dialling.clone(), self.dial_said(dialling))
+                    }
+                    _ => Aside::Control(setting.kind, self.value_of(setting)),
+                },
                 // On the reader's page, the file that has this one
                 // instead of them. On the project's, nothing: a setting
                 // the project has is exactly what that page is for.
@@ -1033,6 +1110,8 @@ enum Aside {
     Nothing,
     /// A setting's control: a switch, or the word it is set to.
     Control(Kind, Value),
+    /// A number being turned, and what its box says.
+    Dial(Dialling, String),
     /// Words -- the key a command is on, and nothing when it is on none.
     Words(String),
     /// What pressing the row does or opens, and whether it can be pressed
@@ -1174,6 +1253,15 @@ impl SettingsView<'_> {
             // The lock is the reader's page saying "not here". The project's
             // page has none: there, everything is here.
             let lock = u16::from(obelus_icons::enabled() && row.pinned.is_some()) * 2;
+            // Where what is left of the value stops: the value's own column,
+            // or two cells short of it on a row being turned, whose arrow
+            // that turns it down goes in front of the number rather than
+            // pushing the number along -- a value that moved two cells when
+            // enter was pressed on it read as the row jumping.
+            let edge = match row.aside {
+                Aside::Dial(..) => aside_at.saturating_sub(DIAL_OPENS),
+                _ => aside_at,
+            };
             // Where the value showing comes from, on whichever page is not
             // the one that has it: the file's name and a lock on the
             // reader's, the word `yours` or `default` on the project's. One
@@ -1183,7 +1271,7 @@ impl SettingsView<'_> {
                 .as_deref()
                 .or(row.scope.map(Scope::word))
                 .map(|source| {
-                    let room = aside_at.saturating_sub(name_at + 3 + lock);
+                    let room = edge.saturating_sub(name_at + 3 + lock);
                     truncate_from_right(source, usize::from(room))
                 });
             let reserved = source.as_deref().map_or(0, |source| {
@@ -1192,7 +1280,7 @@ impl SettingsView<'_> {
 
             // Cut to what is left before the right-hand column: a line
             // running under it reads as part of it.
-            let width = aside_at.saturating_sub(name_at + 1 + reserved);
+            let width = edge.saturating_sub(name_at + 1 + reserved);
             let label = truncate_from_right(&row.label, usize::from(width));
             // Through the shared writer, so the characters the query
             // matched carry the background every other list marks a match
@@ -1239,7 +1327,7 @@ impl SettingsView<'_> {
                 let at = detail_at.max(after + 2);
                 // And a blank before the right-hand column, or a
                 // description that fills its room runs into the key.
-                let left = aside_at.saturating_sub(at + reserved + 1);
+                let left = edge.saturating_sub(at + reserved + 1);
                 write(
                     cells,
                     at,
@@ -1256,7 +1344,7 @@ impl SettingsView<'_> {
                 let width = u16::try_from(obelus_text::text_width(source)).unwrap_or(0);
                 write(
                     cells,
-                    aside_at.saturating_sub(width + lock + 1),
+                    edge.saturating_sub(width + lock + 1),
                     y,
                     source,
                     said.fg(if row.pinned.is_some() {
@@ -1269,7 +1357,7 @@ impl SettingsView<'_> {
                 if obelus_icons::enabled() && row.pinned.is_some() {
                     put(
                         cells,
-                        aside_at.saturating_sub(2),
+                        edge.saturating_sub(2),
                         y,
                         '\u{f033e}',
                         plain.fg(self.theme.gutter).bg(background),
@@ -1286,6 +1374,14 @@ impl SettingsView<'_> {
                     self.theme,
                     background,
                     row.pinned.is_none() && row.scope != Some(Scope::Project),
+                ),
+                Aside::Dial(dialling, said) => draw_dial(
+                    cells,
+                    Rect::new(aside_at, y, control, 1),
+                    dialling,
+                    said,
+                    self.theme,
+                    background,
                 ),
                 Aside::Words(words) => {
                     let keys = truncate_from_right(words, usize::from(control));
@@ -2220,6 +2316,54 @@ fn how_far(updating: bool, progress: Option<obelus_themes::install::Progress>) -
 /// A matched run, as the shared writer takes it.
 fn run_of(run: Option<std::ops::Range<usize>>) -> Matched<'static> {
     run.map_or(Matched::Nothing, |run| Matched::Run(run.start, run.end))
+}
+
+/// How many cells in front of the value's column a number being turned puts
+/// the arrow that turns it down: the arrow, and a space.
+const DIAL_OPENS: u16 = 2;
+
+/// Writes a number being turned: what its box says, between the arrows that
+/// turn it.
+///
+/// An arrow is in the dim ink where the dial goes no further that way,
+/// which is how the row says it has reached an end -- in the ink, and not
+/// by taking the arrow away, which would move the number under the caret.
+/// What the box opened with is held, in the colour everything held is
+/// drawn in, because the first digit takes its place.
+fn draw_dial(
+    cells: &mut CellBuffer,
+    at: Rect,
+    dialling: &Dialling,
+    said: &str,
+    theme: &Theme,
+    background: ratatui::style::Color,
+) {
+    let style = Style::new().bg(background);
+    let ink = |goes: bool| match goes {
+        true => style.fg(theme.foreground),
+        false => style.fg(theme.gutter),
+    };
+    let (dial, now) = (dialling.dial, dialling.kept());
+    put(
+        cells,
+        at.x.saturating_sub(DIAL_OPENS),
+        at.y,
+        '\u{25c2}',
+        ink(now > dial.least),
+    );
+    let said = truncate_from_right(said, usize::from(at.width.saturating_sub(DIAL_OPENS)));
+    let words = match dialling.held && !said.is_empty() {
+        true => style.fg(theme.foreground).bg(theme.selection_background),
+        false => style.fg(theme.foreground),
+    };
+    let after = write(cells, at.x, at.y, &said, words);
+    put(
+        cells,
+        arrow_at(at.x, after, at.width),
+        at.y,
+        '\u{25b8}',
+        ink(now < dial.most),
+    );
 }
 
 /// Writes a control: a switch, or the word a droplist is set to, in the

@@ -167,7 +167,9 @@ impl App {
         // The names being built are such a list too -- a band on the status
         // bar, the fonts the settings open -- and let go of the same way:
         // every name added, taken out or moved is written the moment it
-        // happens, so what goes is what is typed in its query.
+        // happens, so what goes is what is typed in its query. And a number
+        // being turned, which is in force nowhere until enter, so what goes
+        // is only what was in its box.
         match self.layers().nearest() {
             Some(Layer::Picker)
                 if self
@@ -178,6 +180,11 @@ impl App {
                 self.leave(Layer::Picker);
             }
             Some(Layer::Names) => self.leave(Layer::Names),
+            Some(Layer::Settings) => {
+                if let Some(settings) = self.settings.as_mut() {
+                    settings.let_go_of_the_dial();
+                }
+            }
             _ => {}
         }
         // Every command, and what it can do *here* said by whether its row
@@ -1008,15 +1015,7 @@ impl App {
                 None => self.go_to(&path, line, character),
             },
             PickerValue::Setting { key, word } => {
-                // A number is written down as one. The list it was picked
-                // from spells them, because a list is words either way.
-                let value = match obelus_config::Setting::named(key).map(|setting| setting.kind) {
-                    Some(obelus_config::Kind::Count(_)) => {
-                        obelus_config::Value::Count(word.parse().unwrap_or(1))
-                    }
-                    _ => obelus_config::Value::Choice(word),
-                };
-                self.change_setting(key, &value);
+                self.change_setting(key, &obelus_config::Value::Choice(word));
             }
             PickerValue::AgentValue { setting, value } => {
                 self.set_agent_setting(&setting, &value);

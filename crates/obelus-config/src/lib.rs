@@ -123,6 +123,16 @@ pub struct Config {
     /// machine are the normal case, and a reader who set this in a window
     /// has not asked for a second file to keep it in.
     pub font_size: usize,
+    /// How much of a theme's picture shows through the page, out of a
+    /// hundred of what the theme lets through.
+    ///
+    /// Against the theme rather than in place of it: one theme's picture
+    /// is a photograph that wants to be quiet under code and another's a
+    /// texture that can stand more, and each author said how much in the
+    /// theme. What the reader says is how much more or less of that they
+    /// want, the same for every theme they wear -- see
+    /// `obelus_theme::wallpaper::veil`.
+    pub picture_strength: usize,
     /// Whether the reader's own keys may change a file.
     ///
     /// For a reader who has the agent make every change: typing, pasting,
@@ -386,6 +396,7 @@ impl Default for Config {
             tab_width: obelus_text::TAB_WIDTH,
             fonts: Vec::new(),
             font_size: DEFAULT_FONT_SIZE,
+            picture_strength: 100,
             read_only: false,
             language_servers: false,
             // Off: a formatter that ran without being asked would rewrite
@@ -477,15 +488,16 @@ pub enum Kind {
     Switch,
     /// One of a fixed list of words.
     Choice(&'static [&'static str]),
-    /// A number, offered as the few that anybody picks.
+    /// A number, turned up and down on its own row or typed there, and in
+    /// force when the reader keeps it.
     ///
-    /// The same control a choice gets, because picking from a short list is
-    /// what a reader is doing either way -- and a spinner for a number with
-    /// three sensible values is a control nobody needs.
-    Count(&'static [&'static str]),
+    /// Not a list to pick from, which is what it was: a list is all the
+    /// numbers Obelus thought of, and a reader who wanted ninety days or a
+    /// fifteen-point face had none of them to pick.
+    Count(Dial),
     /// A list the reader builds by name, in the order they want it tried.
     ///
-    /// No list of choices here, unlike the two above: what may go in comes
+    /// No list of choices here, unlike a choice: what may go in comes
     /// from the machine Obelus is running on rather than from anything
     /// Obelus ships, and a setting written on one machine is read on
     /// another. So the control offers what is here and takes what is
@@ -497,6 +509,55 @@ pub enum Kind {
     /// something, and a list of the names Obelus thought of would be a
     /// list of names that are not theirs.
     Text,
+}
+
+/// How a number is turned: as far as it goes each way, and how far one
+/// press takes it.
+///
+/// The ends are the control's and not the file's. A file that says more
+/// is read as it says -- somebody wrote it by hand -- and the first press
+/// brings it back inside.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Dial {
+    /// The least it may be turned down to.
+    pub least: usize,
+    /// The most it may be turned up to.
+    pub most: usize,
+    /// How far one press turns it.
+    pub step: usize,
+}
+
+impl Dial {
+    /// What `count` comes to inside the ends.
+    #[must_use]
+    pub const fn held(self, count: usize) -> usize {
+        if count < self.least {
+            self.least
+        } else if count > self.most {
+            self.most
+        } else {
+            count
+        }
+    }
+
+    /// One press from `count`, up or down.
+    ///
+    /// Onto the steps counted from the least rather than a step from
+    /// wherever it was: a typed `42` on a dial of fives goes to `45` and
+    /// `40`, the numbers the dial turns through, and not to `47` and `37`,
+    /// which it never comes back to.
+    #[must_use]
+    pub const fn turned(self, count: usize, up: bool) -> usize {
+        let step = if self.step == 0 { 1 } else { self.step };
+        let count = self.held(count);
+        let over = (count - self.least) % step;
+        let turned = match up {
+            true => count - over + step,
+            false if over > 0 => count - over,
+            false => count.saturating_sub(step),
+        };
+        self.held(turned)
+    }
 }
 
 /// Where a setting means anything.
@@ -701,39 +762,67 @@ impl Setting {
 /// The themes a reader can choose between.
 const THEMES: &[&str] = &["dark", "light"];
 
-/// The tab widths anybody sets.
-const WIDTHS: &[&str] = &["2", "4", "8"];
+/// How wide a tab may be drawn.
+const WIDTHS: Dial = Dial {
+    least: 1,
+    most: 16,
+    step: 1,
+};
 
 /// The text sizes a window offers, in points.
 ///
-/// A list rather than a number to nudge up and down, for the reason every
-/// other count here is a list: a reader picking a size tries three of them
-/// and keeps one, and the sizes between are a difference nobody sees. What
-/// is offered is small enough to fit a lot of code on the screen and large
-/// enough to read on a dense one.
-const SIZES: &[&str] = &["11", "12", "13", "14", "16", "18", "20", "24"];
+/// Small enough to fit a lot of code on the screen and large enough to read
+/// across a room. A point at a time, because a face can want any size in
+/// between, and a list of eight sizes was a list of the eight Obelus thought
+/// would do.
+const SIZES: Dial = Dial {
+    least: 8,
+    most: 32,
+    step: 1,
+};
 
 /// How big the text is where Obelus draws its own, in points.
 pub const DEFAULT_FONT_SIZE: usize = 14;
 
-/// How long a rest is, in milliseconds, as the few anybody picks.
-///
-/// Zero is the list's way of saying "not at all": a fourth control meaning
-/// off, beside a list that already has a slowest, is a second way to say
-/// the same thing.
-const DELAYS: &[&str] = &["0", "200", "400", "800"];
+/// How much of a theme's picture shows, as a share of what the theme lets
+/// through: from none of it, the page with no picture, to three times as
+/// much, ten at a time -- a step anybody can see, and few enough to walk.
+const STRENGTHS: Dial = Dial {
+    least: 0,
+    most: 300,
+    step: 10,
+};
 
-/// How long a conversation is remembered, in days, as the few anybody picks.
+/// How long a rest is, in milliseconds.
+///
+/// Zero is the dial's way of saying "not at all": a control meaning off,
+/// beside a number that already goes down to nothing, is a second way to
+/// say the same thing.
+const DELAYS: Dial = Dial {
+    least: 0,
+    most: 2000,
+    step: 50,
+};
+
+/// How long a conversation is remembered, in days.
 ///
 /// Zero is never forgetting, the way it is off for a rest.
-const DAYS: &[&str] = &["0", "7", "30", "90", "365"];
+const DAYS: Dial = Dial {
+    least: 0,
+    most: 3650,
+    step: 1,
+};
 
-/// How many projects are remembered, as the few anybody picks.
+/// How many projects are remembered.
 ///
 /// No zero: a page that asks which project with nothing to offer but a box
 /// to type a path in is what a first start already is, and a reader who
 /// wants that has nothing to keep it for.
-const RECENT_PROJECTS: &[&str] = &["10", "20", "40", "80"];
+const RECENT_PROJECTS: Dial = Dial {
+    least: 5,
+    most: 200,
+    step: 5,
+};
 
 /// How many projects are remembered when the reader has not said.
 pub const DEFAULT_RECENT_PROJECTS: usize = 40;
@@ -891,6 +980,18 @@ pub const ALL: &[Setting] = &[
         group: Group::Appearance,
         reach: Reach::Anywhere,
         kind: Kind::Count(SIZES),
+        drawn: Drawn::InAWindow,
+    },
+    Setting {
+        key: "picture_strength",
+        name: "Picture strength",
+        about: "How much of a theme's picture shows through the page, as a share of what the theme lets through -- a hundred is as the theme has it",
+        group: Group::Appearance,
+        // The reader's alone: how loud a picture is under their code is a
+        // matter of their eyes, and a project has no picture of its own to
+        // speak for.
+        reach: Reach::ReaderOnly,
+        kind: Kind::Count(STRENGTHS),
         drawn: Drawn::InAWindow,
     },
     Setting {
@@ -1089,6 +1190,7 @@ impl Config {
             "wrap" => Some(Value::Switch(self.wrap)),
             "tab_width" => Some(Value::Count(self.tab_width)),
             "font_size" => Some(Value::Count(self.font_size)),
+            "picture_strength" => Some(Value::Count(self.picture_strength)),
             "fonts" => Some(Value::Names(self.fonts.clone())),
             "hover_delay" => Some(Value::Count(self.hover_delay)),
             "conversation_days" => Some(Value::Count(self.conversation_days)),
@@ -1129,6 +1231,7 @@ impl Config {
             ("conversation_days", Value::Count(days)) => self.conversation_days = *days,
             ("recent_projects", Value::Count(many)) => self.recent_projects = *many,
             ("font_size", Value::Count(points)) => self.font_size = *points,
+            ("picture_strength", Value::Count(share)) => self.picture_strength = *share,
             ("fonts", Value::Names(names)) => self.fonts = names.clone(),
             ("animation", Value::Switch(on)) => self.animation = *on,
             ("bar_tabs", Value::Switch(on)) => self.bar_tabs = *on,
@@ -1687,6 +1790,13 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
     {
         config.font_size = usize::try_from(points).unwrap_or(DEFAULT_FONT_SIZE);
     }
+    if let Some(share) = table
+        .get("picture_strength")
+        .and_then(toml::Value::as_integer)
+        && allowed("picture_strength")
+    {
+        config.picture_strength = usize::try_from(share).unwrap_or(100);
+    }
     if let Some(names) = table.get("fonts").and_then(toml::Value::as_array)
         && allowed("fonts")
     {
@@ -2101,6 +2211,11 @@ fn lay(existing: &str, config: &Config, every: bool) -> String {
         "font_size",
         config.font_size != default.font_size,
         toml_edit::value(i64::try_from(config.font_size).unwrap_or(14)),
+    );
+    put(
+        "picture_strength",
+        config.picture_strength != default.picture_strength,
+        toml_edit::value(i64::try_from(config.picture_strength).unwrap_or(100)),
     );
     put(
         "hover_delay",
@@ -3108,6 +3223,7 @@ mod tests {
             tab_width: 8,
             fonts: vec!["JetBrains Mono".to_string(), "Noto Sans CJK SC".to_string()],
             font_size: 18,
+            picture_strength: 150,
             hover_delay: 800,
             conversation_days: 90,
             recent_projects: 80,
@@ -3233,6 +3349,29 @@ mod tests {
         assert_eq!(config.value_of("icons"), Some(Value::Switch(false)));
     }
 
+    /// A press goes onto the dial's steps and stops at its ends.
+    ///
+    /// Broken by turning `count + step` from wherever it was: `42` up went
+    /// to `47`, and the first assertion failed.
+    #[test]
+    fn a_dial_turns_onto_its_steps_and_stops_at_its_ends() {
+        let dial = super::Dial {
+            least: 5,
+            most: 200,
+            step: 5,
+        };
+        assert_eq!(dial.turned(42, true), 45);
+        assert_eq!(dial.turned(42, false), 40);
+        assert_eq!(dial.turned(40, false), 35);
+        assert_eq!(dial.turned(200, true), 200);
+        assert_eq!(dial.turned(5, false), 5);
+        // A number the file says that the dial would not: brought inside on
+        // the first press, whichever way.
+        assert_eq!(dial.turned(1, false), 5);
+        assert_eq!(dial.turned(900, true), 200);
+        assert_eq!(dial.held(900), 200);
+    }
+
     /// Every setting in the table can be read and written, which is what the
     /// view assumes: a row it cannot read has nothing to draw.
     #[test]
@@ -3249,22 +3388,22 @@ mod tests {
                     "{} defaults to {word:?}, which is not one of its choices",
                     setting.key
                 ),
-                (super::Kind::Count(counts), Value::Count(count)) => {
+                (super::Kind::Count(dial), Value::Count(count)) => {
+                    // Inside its own ends, and on a step the dial turns
+                    // through: a default between two steps is a number the
+                    // reader leaves on the first press and never gets back.
                     assert!(
-                        counts.contains(&count.to_string().as_str()),
-                        "{} defaults to {count}, which is not one of its choices",
+                        dial.least <= *count && *count <= dial.most,
+                        "{} defaults to {count}, outside {}..={}",
+                        setting.key,
+                        dial.least,
+                        dial.most
+                    );
+                    assert!(
+                        (count - dial.least) % dial.step.max(1) == 0,
+                        "{} defaults to {count}, which is between two steps",
                         setting.key
                     );
-                    // The list is spelled, because the control that offers
-                    // it offers words. Every one of them has to be a number
-                    // or the reader picks something that parses to nothing.
-                    for offered in counts {
-                        assert!(
-                            offered.parse::<usize>().is_ok(),
-                            "{} offers {offered:?}, which is not a number",
-                            setting.key
-                        );
-                    }
                 }
                 // Nothing to check against a list of choices: what may go
                 // in a list of names comes from the machine rather than

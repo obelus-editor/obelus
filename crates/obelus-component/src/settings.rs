@@ -41,6 +41,14 @@
 //! prose, where a reader looking for one row had to read every row to find it.
 //! A column of names is *scanned*.
 //!
+//! **A number is turned where it stands.** Enter on one makes its value a
+//! box, the arrows turn what is in it a step and the digits type it, and
+//! enter keeps it -- nothing is in force before that, as nothing is while
+//! a list is walked. It was a list, which offered only the numbers Obelus
+//! thought of; and it was a box at the foot of the page, where a compact
+//! list comes up, which put the number a screen away from its name
+//! (`Dialling`).
+//!
 //! The keys page, whose rows are one row each, starts what a command does in
 //! one column two past the longest name rather than two past its own: four
 //! beginnings to find is four, and one is one.
@@ -87,6 +95,9 @@ pub enum SettingsOutcome {
     Deactivate,
     /// A setting with choices wants its list: which setting, what the
     /// choices are, and which one it is set to now.
+    ///
+    /// Words only. A number is turned in a box of its own instead
+    /// ([`Dialling`]).
     ///
     /// The list itself is the ordinary picker, opened by the application
     /// over this view. This one asks; it does not draw a list of its own.
@@ -568,6 +579,52 @@ pub struct Binding {
     pub replacing: bool,
 }
 
+/// A number being turned, in a box on its own row.
+///
+/// The page's second mode, beside a key being bound: enter on the row said
+/// "the next keys are this number's". The arrows turn it and the digits
+/// type it, so a reader who wants ninety days types `90` rather than
+/// pressing right sixty times. What it has no use for -- a chord, a
+/// function key -- goes on to the key table, the way it does from the
+/// names being built: the palette lets go of it as it lets go of those,
+/// and a key that names another view takes the page with it.
+///
+/// Nothing is in force until enter. The box is a question the reader is
+/// answering, the way a list is, and a list does not change the setting
+/// while the reader walks it either.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Dialling {
+    /// Which setting.
+    pub key: &'static str,
+    /// How it turns.
+    pub dial: obelus_config::Dial,
+    /// What it was when enter was pressed, and is until enter again.
+    pub was: usize,
+    /// What is in the box.
+    pub typed: String,
+    /// Whether what is in the box is still what it opened with, held: the
+    /// first digit takes its place rather than going on the end of it,
+    /// because a reader who types `18` over `14` means eighteen and not
+    /// fourteen hundred and eighteen.
+    pub held: bool,
+    /// Whether what is in the box was typed rather than turned to: what
+    /// was typed is shown as it was typed, digit by digit, and what the
+    /// arrows came to is shown the way the row shows it, by its title
+    /// where it has one.
+    pub typing: bool,
+}
+
+impl Dialling {
+    /// What enter keeps, and where the dial is drawn at: what is in the
+    /// box brought inside the ends, or what it was where the box is empty.
+    #[must_use]
+    pub fn kept(&self) -> usize {
+        self.typed
+            .parse()
+            .map_or(self.was, |typed| self.dial.held(typed))
+    }
+}
+
 /// One row of the keys page.
 #[derive(Clone, Copy, Debug)]
 pub enum KeyRow {
@@ -609,6 +666,8 @@ pub struct Settings {
     /// until the reader says "the next thing I press is this command's",
     /// and from then until they press it every key belongs to that row.
     binding: Option<Binding>,
+    /// Which number is being turned, while one is -- see [`Dialling`].
+    dialling: Option<Dialling>,
     /// The keys each command is on, as the table was when it was last
     /// heard ([`Settings::hear_keymap`]).
     ///
@@ -666,6 +725,7 @@ impl Settings {
         Self {
             query: Field::new(),
             binding: None,
+            dialling: None,
             held: Vec::new(),
             changed: Vec::new(),
             lined: Vec::new(),
@@ -683,6 +743,7 @@ impl Settings {
         Self {
             query: Field::new(),
             binding: None,
+            dialling: None,
             held: Vec::new(),
             changed: Vec::new(),
             lined: Vec::new(),
@@ -1041,9 +1102,10 @@ impl Settings {
     /// Scrolls the page by a wheel's rows of the screen, leaving the focus
     /// where it is.
     ///
-    /// Not while a row waits for its key: every key is that row's then, and
-    /// a notch that carried it off the screen would leave the reader
-    /// binding a row they could no longer see.
+    /// Not while a row waits for its key or a number is being turned: the
+    /// keys are that row's then, and a notch that carried it off the screen
+    /// would leave the reader binding, or turning, a row they could no
+    /// longer see.
     pub fn scroll(
         &mut self,
         rows: isize,
@@ -1051,7 +1113,7 @@ impl Settings {
         offering: Option<&Offering>,
         room: (u16, u16),
     ) {
-        if self.binding.is_some() {
+        if self.binding.is_some() || self.dialling.is_some() {
             return;
         }
         let heights = match self.on_cards() {
@@ -1072,6 +1134,41 @@ impl Settings {
     #[must_use]
     pub const fn binding_at(&self) -> Option<Binding> {
         self.binding
+    }
+
+    /// The number being turned, if one is.
+    #[must_use]
+    pub const fn dialling(&self) -> Option<&Dialling> {
+        self.dialling.as_ref()
+    }
+
+    /// Hears the settings again, for a number being turned: what it opened
+    /// on may have been changed under it by another Obelus.
+    ///
+    /// What it was becomes what the file says now, so enter on the number
+    /// the reader typed is a change where it is one and none where it is
+    /// not; and a box nobody has touched shows the new number, since what
+    /// it showed was only ever what was set.
+    pub fn hear_config(&mut self, config: &Config) {
+        let Some(dialling) = self.dialling.as_mut() else {
+            return;
+        };
+        let Some(Value::Count(now)) = config.value_of(dialling.key) else {
+            return;
+        };
+        if now == dialling.was {
+            return;
+        }
+        dialling.was = now;
+        if dialling.held {
+            dialling.typed = now.to_string();
+        }
+    }
+
+    /// Gives up a number being turned, as escape does: nothing it had come
+    /// to is kept.
+    pub fn let_go_of_the_dial(&mut self) {
+        self.dialling = None;
     }
 
     /// The key that would not do, and why.
@@ -1470,12 +1567,7 @@ impl Settings {
             ),
             Kind::Names => Value::Names(Vec::new()),
             Kind::Text => Value::Text(String::new()),
-            Kind::Count(counts) => Value::Count(
-                counts
-                    .first()
-                    .and_then(|first| first.parse().ok())
-                    .unwrap_or(1),
-            ),
+            Kind::Count(dial) => Value::Count(dial.least),
         })
     }
 
@@ -1496,6 +1588,9 @@ impl Settings {
         room: (u16, u16),
     ) -> SettingsOutcome {
         let agents = cards.agents;
+        if self.dialling.is_some() {
+            return self.turn(key);
+        }
         // A row waiting for a key takes the next one, whatever it is: that
         // is what the reader asked for by pressing enter on it, and a
         // modifier is half of most chords worth binding. Escape is the way
@@ -1791,7 +1886,7 @@ impl Settings {
             // enter does nothing: a key is added with `ctrl+enter`, there as
             // on every row.
             KeyCode::Enter if bare && self.on_keys() => match keys.get(self.window.focus()) {
-                Some((KeyRow::Setting(setting), _)) => Self::change(setting, config),
+                Some((KeyRow::Setting(setting), _)) => self.change(setting, config),
                 Some((KeyRow::Key { command, slot }, Some(_))) => {
                     self.binding = Some(Binding {
                         command: *command,
@@ -1849,7 +1944,7 @@ impl Settings {
             }
             KeyCode::Enter if bare => {
                 match rows.get(self.window.focus()).and_then(Shown::setting) {
-                    Some(setting) => Self::change(setting, config),
+                    Some(setting) => self.change(setting, config),
                     None => SettingsOutcome::Consumed,
                 }
             }
@@ -1930,24 +2025,120 @@ impl Settings {
         }
     }
 
+    /// A key while a number is being turned.
+    ///
+    /// Enter keeps what is in the box, brought inside the dial's ends, and
+    /// escape gives it up -- the way out of everything, nearest thing
+    /// first. Nothing is in force before enter. A chord or a function key
+    /// is not the box's and goes on; any other key it has no use for it
+    /// swallows, because a letter typed at a number is a slip and not a
+    /// filter.
+    fn turn(&mut self, key: &KeyEvent) -> SettingsOutcome {
+        let Some(dialling) = self.dialling.as_mut() else {
+            return SettingsOutcome::Ignored;
+        };
+        // Shift is let through on a digit, which some layouts need for one.
+        let bare = !key
+            .modifiers
+            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER);
+        if !bare || matches!(key.code, KeyCode::F(_)) {
+            return SettingsOutcome::Ignored;
+        }
+        match key.code {
+            KeyCode::Esc => {
+                self.dialling = None;
+                SettingsOutcome::Consumed
+            }
+            KeyCode::Enter => {
+                let Some(dialling) = self.dialling.take() else {
+                    return SettingsOutcome::Consumed;
+                };
+                let kept = dialling.kept();
+                // An empty box, a box nobody touched, or the number it opened
+                // on, is no change and nothing is written: a line in the file
+                // the reader never meant to put there is a setting that stops
+                // following the default. Untouched before clamped, because a
+                // number written by hand past the dial's ends is read as it
+                // was written, and enter pressed twice on it is not a turn.
+                let unchanged = dialling.held
+                    || dialling.typed.is_empty()
+                    || dialling.typed.parse() == Ok(dialling.was)
+                    || kept == dialling.was;
+                match unchanged {
+                    true => SettingsOutcome::Consumed,
+                    false => SettingsOutcome::Changed(dialling.key, Value::Count(kept)),
+                }
+            }
+            KeyCode::Left | KeyCode::Right => {
+                let turned = dialling
+                    .dial
+                    .turned(dialling.kept(), key.code == KeyCode::Right);
+                dialling.typed = turned.to_string();
+                dialling.held = false;
+                dialling.typing = false;
+                SettingsOutcome::Consumed
+            }
+            KeyCode::Char(digit) if digit.is_ascii_digit() => {
+                if dialling.held {
+                    dialling.typed.clear();
+                    dialling.held = false;
+                }
+                // No longer than the most it may be: past that every digit
+                // is a number the dial would only bring back down.
+                if dialling.typed.len() < dialling.dial.most.to_string().len() {
+                    dialling.typed.push(digit);
+                }
+                dialling.typing = true;
+                SettingsOutcome::Consumed
+            }
+            KeyCode::Backspace => {
+                match dialling.held {
+                    true => dialling.typed.clear(),
+                    false => {
+                        dialling.typed.pop();
+                    }
+                }
+                dialling.held = false;
+                dialling.typing = true;
+                SettingsOutcome::Consumed
+            }
+            _ => SettingsOutcome::Consumed,
+        }
+    }
+
     /// What enter on one of Obelus's own settings asks for, whichever page
     /// the row is on.
-    fn change(setting: &'static Setting, config: &Config) -> SettingsOutcome {
+    fn change(&mut self, setting: &'static Setting, config: &Config) -> SettingsOutcome {
         match setting.kind {
             Kind::Switch => {
                 let on = matches!(Self::value_of(setting, config), Value::Switch(true));
                 SettingsOutcome::Changed(setting.key, Value::Switch(!on))
             }
-            // Both open the same short list. A number is picked
-            // from one the way a word is, and the only difference
-            // is what it is written down as.
-            Kind::Choice(choices) | Kind::Count(choices) => {
+            Kind::Choice(choices) => {
                 let word = match Self::value_of(setting, config) {
                     Value::Choice(word) => word,
-                    Value::Count(count) => count.to_string(),
-                    Value::Switch(_) | Value::Names(_) | Value::Text(_) => String::new(),
+                    Value::Count(_) | Value::Switch(_) | Value::Names(_) | Value::Text(_) => {
+                        String::new()
+                    }
                 };
                 SettingsOutcome::Choose(setting.key, choices, word)
+            }
+            // Turned where it stands rather than picked from a list of the
+            // few Obelus thought of.
+            Kind::Count(dial) => {
+                let was = match Self::value_of(setting, config) {
+                    Value::Count(count) => count,
+                    _ => dial.least,
+                };
+                self.dialling = Some(Dialling {
+                    key: setting.key,
+                    dial,
+                    was,
+                    typed: was.to_string(),
+                    held: true,
+                    typing: false,
+                });
+                SettingsOutcome::Consumed
             }
             // A list the reader builds rather than one Obelus
             // offers, so what opens is not the short list of

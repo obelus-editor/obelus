@@ -430,6 +430,7 @@ impl Painter {
             wallpaper: None,
             laid: None,
             shown: 1.0,
+            strength: 100,
         })
     }
 
@@ -440,6 +441,15 @@ impl Painter {
     pub(crate) fn hang(&mut self, hung: Option<&crate::wallpaper::Hung>) {
         self.wallpaper = hung.and_then(|hung| self.hung_on_the_card(hung));
         self.bound_again();
+    }
+
+    /// How much of the picture under the page shows, as the reader's share
+    /// of what the theme lets through. Handed over every frame, like the
+    /// ground: nothing is put on the card again, because the share is laid
+    /// on the page's colour over the picture, which is worked out every
+    /// frame anyway.
+    pub(crate) const fn strengthened(&mut self, share: usize) {
+        self.strength = share;
     }
 
     /// Whether there is a picture under the page, which is whether there
