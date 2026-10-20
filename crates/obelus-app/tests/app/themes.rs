@@ -1840,3 +1840,27 @@ fn a_theme_installed_elsewhere_arrives_when_the_watch_says_so() {
 {dump}"
     );
 }
+
+/// A theme the registry has renamed only in its case is the one installed,
+/// where the file system says so: on Windows and macOS `Rain/` is where
+/// `rain` lives, and its card says it is there rather than offering it
+/// again beside a `Rain` the index no longer lists.
+///
+/// Deliberate breaks: the record looked up by its exact spelling only (the
+/// card then says `Install`), and the theme no longer listed judged by its
+/// exact spelling (a `Rain` card then stands under it, `No longer listed`).
+#[cfg(any(windows, target_os = "macos"))]
+#[test]
+fn a_theme_renamed_only_in_its_case_is_the_one_installed() {
+    let scratch = reader("themes-case");
+    let root = support::Scratch::new("themes-case-installed");
+    installed_as(root.path(), "Rain", "aaa", "obelus");
+    let mut app = open(&scratch);
+    app.installed_themes_for_test(root.path().to_path_buf());
+    app.themes_index_for_test(vec![listed("rain", obelus_themes::Group::Obelus, "aaa")]);
+    on_the_themes_page(&mut app);
+    let dump = support::render(&mut app, 90, 30);
+    let text = support::text_block(&dump);
+    assert!(card_row(text, "rain").contains("Installed"), "{dump}");
+    assert!(!text.contains("No longer listed"), "{dump}");
+}

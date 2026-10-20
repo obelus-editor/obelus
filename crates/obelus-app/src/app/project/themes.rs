@@ -113,6 +113,18 @@ impl OnDisk {
         }
     }
 
+    /// What the theme the index calls `name` says about itself, where it is
+    /// installed -- by the name the file system would find it by, which on
+    /// Windows and macOS is not the spelling it was made under.
+    fn record(&self, name: &str) -> Option<&Installed> {
+        self.records.get(name).or_else(|| {
+            self.records
+                .iter()
+                .find(|(found, _)| one_name(found, name))
+                .map(|(_, record)| record)
+        })
+    }
+
     /// `App::theme_whence`, answered from what was read.
     fn whence(&self, name: &str) -> Option<&'static str> {
         if self.readers.contains(name) {
@@ -191,7 +203,7 @@ impl App {
     #[must_use]
     pub fn listed_themes(&self) -> Vec<Card> {
         let disk = self.themes_on_disk();
-        let installed = |name: &str| disk.records.get(name).cloned();
+        let installed = |name: &str| disk.record(name).cloned();
         let worn = self.theme_name();
         let mut cards = Vec::new();
         for group in Group::ALL {
@@ -231,7 +243,11 @@ impl App {
                     continue;
                 };
                 if record.group != group
-                    || self.themes.index.iter().any(|theme| theme.name == *name)
+                    || self
+                        .themes
+                        .index
+                        .iter()
+                        .any(|theme| one_name(&theme.name, name))
                 {
                     continue;
                 }
@@ -448,5 +464,15 @@ fn theme_card(disk: &OnDisk, theme: Listed, status: Status, installed: bool, wor
         installed,
         theme,
         status,
+    }
+}
+
+/// Whether two names are one theme's directory, as the file system the
+/// themes are kept on would answer: `install::installed` asked it by name,
+/// and a theme the registry renamed only in its case was found.
+fn one_name(left: &str, right: &str) -> bool {
+    match cfg!(any(windows, target_os = "macos")) {
+        true => left.to_lowercase() == right.to_lowercase(),
+        false => left == right,
     }
 }
