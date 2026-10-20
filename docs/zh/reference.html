@@ -302,10 +302,11 @@
           <tr><td><code>icons</code></td><td><code>false</code></td><td><em>只对终端版。</em>显不显示 Nerd Font 图标——没装补丁字体的话会显示成方框。窗口版自带图标，不看这一项</td></tr>
           <tr><td><code>wrap</code></td><td><code>false</code></td><td>太长的行要不要折到下一行显示。默认关，一行就是一行</td></tr>
           <tr><td><code>blame_margin</code></td><td><code>true</code></td><td>边栏上显示每一行最后是谁改的</td></tr>
-          <tr><td><code>tab_width</code></td><td><code>4</code></td><td>一个 tab 画多宽。<code>2</code>、<code>4</code> 或 <code>8</code></td></tr>
+          <tr><td><code>tab_width</code></td><td><code>4</code></td><td>一个 tab 画多宽，从 <code>1</code> 到 <code>16</code></td></tr>
           <tr><td><code>fonts</code></td><td><code>[]</code></td><td><em>只对窗口版。</em>用哪些字体，按你写的顺序，前一个没有某个字时才用后一个。留空就用系统默认的等宽字体</td></tr>
           <tr><td><code>animation</code></td><td><code>true</code></td><td><em>只对窗口版。</em>光标和列表是滑过去还是直接跳过去。关掉就直接跳</td></tr>
           <tr><td><code>font_size</code></td><td><code>14</code></td><td><em>只对窗口版。</em>字号，单位 point。终端版用的是终端自己的字号</td></tr>
+          <tr><td><code>picture_strength</code></td><td><code>100</code></td><td><em>只对窗口版。</em>主题壁纸透过页面露出多少，是主题本身让它露出的那部分的百分比：<code>200</code> 露出两倍，<code>50</code> 一半，<code>0</code> 完全不露。主题写了 <code>opacity = 100</code> 的仍然完全盖住。只认你自己的设置，项目设置不了</td></tr>
           <tr><td><code>hover_delay</code></td><td><code>400</code></td><td>鼠标在一个词上停多少毫秒，才显示它是什么；<code>0</code> 表示只在按键时显示</td></tr>
           <tr><td><code>read_only</code></td><td><code>false</code></td><td>你自己的按键不能改文件：在文件里打字、粘贴、剪切、撤销和改行的命令都不起作用。agent 的修改照样写进去，保存照样能存；给 agent 发消息、搜索框、笔记这些输入框不算文件，照常能打字</td></tr>
           <tr><td><code>language_servers</code></td><td><code>false</code></td><td>打开某种语言的文件时启动它的语言服务器。默认关：服务器能答的大多 agent 也能答，而服务器是每种语言、每个窗口各一个进程。不管这项怎么设，<code>restart-server</code> 都能启动一个。只有你能设：项目不能打开它，因为服务器要构建项目才读得懂它</td></tr>
@@ -345,7 +346,7 @@ opacity = 85          # 页面底色盖在图上的程度，0 到 100
 fit = "cover"         # cover、contain、stretch、center 或 tile
 anchor = "center"     # 哪一处不动：top-left、top、top-right、left、
                       # center、right、bottom-left、bottom 或 bottom-right</code></pre>
-      <p class="quiet small">终端里没有像素可画，所以 <code>ob</code> 只用配色。Obelus 用不了的那一行会标出来并退回默认值，图片不在也会标出来。</p>
+      <p class="quiet small">图片露出多少，你也可以调：设置里的 <code>picture_strength</code> 是 <code>opacity</code> 让图片露出那部分的百分比，所以 <code>opacity = 85</code> 配 <code>picture_strength = 200</code>，露出的就从十五变成三十。终端里没有像素可画，所以 <code>ob</code> 只用配色。Obelus 用不了的那一行会标出来并退回默认值，图片不在也会标出来。</p>
       <p>更多主题在设置的 <strong>Themes</strong> 页：一组是为 Obelus 做的主题，一组是 omarchy 官方的主题转成的 Obelus 主题。<kbd>Enter</kbd> 安装或更新光标所在的主题，第一次装的主题装好就直接换上，<kbd>Delete</kbd> 把它删掉，正在用的那个除外；列表里已经没有的主题会一直留着，直到你删掉它，这要按两次 <kbd>Delete</kbd>。装来的主题和你自己的 <code>~/.config/obelus/themes/</code> 分开存放，同名时你自己的优先。每个主题列表的最后一项都是 <strong>More themes</strong>，选它就到这一页；列表里找不到的名字，按 <kbd>Enter</kbd> 也会带着它来到这一页的筛选框里。</p>
       <p class="quiet small">只要 <a href="https://omarchy.org">omarchy</a> 为 Obelus 写出了主题，列表里就会有 <code>omarchy</code>；仓库里的 <code>contrib/omarchy/</code> 就是让它写出主题的模板，这样桌面换主题时，Obelus 的颜色跟着换。</p>
     </section>

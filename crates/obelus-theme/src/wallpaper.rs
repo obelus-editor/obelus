@@ -218,7 +218,10 @@ mod tests {
             (veil(85, 200) - 0.70).abs() < 1e-6,
             "twice is not twice as much through"
         );
-        assert!((veil(85, 50) - 0.925).abs() < 1e-6);
+        assert!(
+            (veil(85, 50) - 0.925).abs() < 1e-6,
+            "half is not half as much through"
+        );
         assert!(
             (veil(100, 300) - 1.0).abs() < 1e-6,
             "a covered picture was uncovered"
