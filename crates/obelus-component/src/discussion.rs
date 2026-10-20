@@ -14,14 +14,20 @@
 //! nothing is written here: it is GitHub's page, read through `gh`, and a
 //! key that is typing goes nowhere.
 //!
-//! **What enter does is open or shut, or copy, or go.** A comment's heading
-//! opens and shuts what it says, the checks' heading opens the checks that
-//! passed -- which nobody has to do anything about, so they are counted
-//! until the reader asks for their names -- and a block of code is copied
-//! whole, as it is in the transcript, because holding it from corner to
-//! corner takes its box and the width's breaks with it. A check's row goes
-//! to the check's page: a link in the words is the pointer's, as the
-//! transcript's are, and a check's row is one link and nothing else.
+//! **What enter does is decided by what the cursor is on, not by its row.**
+//! On a link -- in the words, a check's name, a file's, the place a review's
+//! thread names -- it follows the link: to the web, or to the file here.
+//! Anywhere else it does what the row is for: a comment's heading opens and
+//! shuts what it says, the checks' heading opens the checks that passed --
+//! which nobody has to do anything about, so they are counted until the
+//! reader asks for their names -- and a block of code is copied whole, as it
+//! is in the transcript, because holding it from corner to corner takes its
+//! box and the width's breaks with it. By the row, a heading with a link in
+//! it said enter would open and shut it while the cursor stood on the link;
+//! by what is under the cursor, both are a key away, and the row's end says
+//! which. The transcript keeps its links the pointer's: there enter already
+//! takes a message back, and a message that was only an address could not
+//! have been.
 //!
 //! **A review's thread is a comment about its lines.** It goes among what
 //! was said by when it was last answered, as GitHub's conversation does,
@@ -842,8 +848,40 @@ pub enum Outcome {
     /// Open this address, in whatever the machine opens the web in.
     Open(String),
     /// Open this file as the pull request's last commit has it, by its path
-    /// from the top of the repository.
-    OpenFile(String),
+    /// from the top of the repository -- on a line, counted from one, where
+    /// what was followed was about one.
+    OpenFile {
+        /// The file.
+        path: String,
+        /// The line.
+        line: Option<u64>,
+    },
+}
+
+/// Where a link enter would follow goes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Follows {
+    /// A file, as the pull request's last commit has it.
+    File(Opens),
+    /// An address on the web.
+    Web(String),
+}
+
+/// The link under `at`, where there is one: what enter there follows, and
+/// what the row's end says it does -- one answer, so the two cannot differ.
+#[must_use]
+pub fn followed_at(rows: &[Row], at: Place) -> Option<Follows> {
+    let row = rows.get(at.row)?;
+    let (_, to) = row.row.links.iter().find(|(bytes, _)| {
+        crate::page::row_held(&row.row.spans, bytes.start, bytes.end)
+            .is_some_and(|characters| characters.contains(&at.character))
+    })?;
+    // A link the row opens as a file is the file's name; any other goes to
+    // the web.
+    Some(match row.opens.as_ref().filter(|opens| opens.path == *to) {
+        Some(opens) => Follows::File(opens.clone()),
+        None => Follows::Web(to.clone()),
+    })
 }
 
 /// A pull request or an issue, while it is open.
@@ -1172,6 +1210,16 @@ impl DiscussionView {
             // under it, and a block of code is copied. On a row that is
             // only words it does nothing, because there is nothing to do.
             KeyCode::Enter if bare => {
+                match followed_at(&rows, self.cursor) {
+                    Some(Follows::File(opens)) => {
+                        return Outcome::OpenFile {
+                            path: opens.path,
+                            line: opens.line,
+                        };
+                    }
+                    Some(Follows::Web(to)) => return Outcome::Open(to),
+                    None => {}
+                }
                 let Some(on) = <Row as crate::page::Line>::acting(&rows, self.cursor.row) else {
                     return Outcome::Consumed;
                 };
@@ -1185,7 +1233,10 @@ impl DiscussionView {
                     return Outcome::Open(to.clone());
                 }
                 if let Some(opens) = first.opens.as_ref().filter(|opens| opens.by_enter) {
-                    return Outcome::OpenFile(opens.path.clone());
+                    return Outcome::OpenFile {
+                        path: opens.path.clone(),
+                        line: opens.line,
+                    };
                 }
                 if let Some(fold) = first.folds {
                     // The heading stays under the reader: what moved is
@@ -1292,6 +1343,73 @@ mod tests {
 
     fn texts(page: &DiscussionView) -> Vec<String> {
         page.rows(ROOM.reading).iter().map(Row::text).collect()
+    }
+
+    /// Enter follows the link the cursor is on, and does what the row is
+    /// for anywhere else on it: on a thread's heading, the file at its line
+    /// or the thread shut; in the description, the address or nothing.
+    ///
+    /// Broken deliberately twice. Asking only the row, as this first did:
+    /// enter on the place in the heading shut the thread. And taking the
+    /// file's line off what is followed: the file opened on no line.
+    #[test]
+    fn enter_follows_the_link_the_cursor_is_on() {
+        let mut told = said();
+        told.body = "See [the docs](https://example.com/docs) first.".to_string();
+        told.said = vec![Comment {
+            author: "bob".to_string(),
+            did: Did::Commented,
+            when: Some(2),
+            body: "Why?".to_string(),
+            on: Some(obelus_github::On {
+                id: "T".to_string(),
+                path: "src/lib.rs".to_string(),
+                line: Some(12),
+                hunk: String::new(),
+                resolved: false,
+                outdated: false,
+            }),
+            replies: Vec::new(),
+        }];
+        let mut page = DiscussionView::new(About::PullRequest(pull()));
+        page.told(told);
+        let text = texts(&page);
+        let on = |page: &mut DiscussionView, words: &str, into: usize| {
+            let rows = texts(page);
+            let row = rows
+                .iter()
+                .position(|row| row.contains(words))
+                .unwrap_or_else(|| panic!("no {words:?}: {rows:?}"));
+            let character = rows[row]
+                .chars()
+                .collect::<Vec<_>>()
+                .windows(words.chars().count())
+                .position(|window| window.iter().collect::<String>() == words)
+                .expect("the words");
+            page.stand(Place {
+                row,
+                character: character + into,
+            });
+            press(page, KeyCode::Enter, KeyModifiers::NONE)
+        };
+        assert_eq!(
+            on(&mut page, "src/lib.rs:12", 2),
+            Outcome::OpenFile {
+                path: "src/lib.rs".to_string(),
+                line: Some(12),
+            },
+            "{text:?}"
+        );
+        assert_eq!(
+            on(&mut page, "the docs", 1),
+            Outcome::Open("https://example.com/docs".to_string())
+        );
+        assert_eq!(on(&mut page, "See", 0), Outcome::Consumed);
+        assert_eq!(on(&mut page, "bob", 0), Outcome::Consumed);
+        assert!(
+            !texts(&page).iter().any(|row| row.contains("Why?")),
+            "enter beside the place did not shut the thread"
+        );
     }
 
     /// A review's thread is a comment whose heading says where it is, how
@@ -1479,7 +1597,10 @@ mod tests {
         });
         assert_eq!(
             press(&mut page, KeyCode::Enter, KeyModifiers::NONE),
-            Outcome::OpenFile("src/lib.rs".to_string())
+            Outcome::OpenFile {
+                path: "src/lib.rs".to_string(),
+                line: None,
+            }
         );
     }
 

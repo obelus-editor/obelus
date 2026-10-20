@@ -188,8 +188,8 @@ impl App {
                 self.open_link(&to);
                 true
             }
-            Outcome::OpenFile(path) => {
-                self.open_the_pull_requests_file(&path, None);
+            Outcome::OpenFile { path, line } => {
+                self.open_the_pull_requests_file(&path, line);
                 true
             }
             Outcome::Talk => {

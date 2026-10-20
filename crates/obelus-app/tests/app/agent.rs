@@ -17258,6 +17258,81 @@ fn a_pull_requests_file_opens_on_a_click() {
     assert_eq!(buffer.text().rope().to_string(), "fn clicked_open() {}\n");
 }
 
+/// Enter with the cursor on the place a review's thread names opens the
+/// file there, on that line -- and the row says so while the cursor is on
+/// it, and says what the heading's enter does when it is not.
+///
+/// Broken deliberately twice. Saying what the row is for wherever the
+/// cursor is, as this first did: the row said `Opens it` with the cursor on
+/// the file's name. And leaving the link out of what enter asks: enter
+/// there shut the thread.
+#[test]
+fn enter_on_a_threads_place_opens_its_file() {
+    let scratch = support::Scratch::new("agent-pull-request-thread-enter");
+    let root = scratch.path();
+    let sha = a_repository_with(root, "line one\nline two\nline three\n");
+    let answer = root.join("gh-answer.json");
+    std::fs::write(&answer, one_pull_request_at(&sha)).expect("the list");
+    std::fs::write(root.join("gh-answer.json.view.123"), FILES).expect("the page");
+    std::fs::write(
+        root.join("gh-answer.json.threads"),
+        r#"{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[
+            {"id":"T1","isResolved":false,"isOutdated":false,"path":"src/lib.rs","line":3,
+             "comments":{"nodes":[{"author":{"login":"bob"},"body":"And this one?",
+               "createdAt":"2026-10-01T00:00:00Z","diffHunk":"+line three"}]}}
+        ]}}}}}"#,
+    )
+    .expect("the threads");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
+    pump(&mut app, &events, "the list", |app| answered_with(app, 1));
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the page", |app| {
+        app.current_document_for_test()
+            .and_then(|id| app.document(id))
+            .and_then(obelus_app::app::document::Document::discussion)
+            .is_some_and(|page| !page.still_asking())
+    });
+    let heading = |app: &mut App| {
+        screen(app)
+            .lines()
+            .find(|row| row.contains("on src/lib.rs:3"))
+            .map(str::to_string)
+            .unwrap_or_default()
+    };
+    // Down to the heading, where the row says what it is for.
+    for _ in 0..60 {
+        if heading(&mut app).contains("Closes it") {
+            break;
+        }
+        support::press(&mut app, KeyCode::Down);
+    }
+    assert!(
+        heading(&mut app).contains("Closes it"),
+        "{}",
+        screen(&mut app)
+    );
+    // Along it onto the place, where the row says what the link does.
+    for _ in 0..40 {
+        if heading(&mut app).contains("Opens the file") {
+            break;
+        }
+        support::press(&mut app, KeyCode::Right);
+    }
+    assert!(
+        heading(&mut app).contains("Opens the file"),
+        "the row does not say enter opens the file:\n{}",
+        screen(&mut app)
+    );
+    support::press(&mut app, KeyCode::Enter);
+    let buffer = app.current_buffer().expect("enter opened nothing");
+    assert_eq!(
+        buffer.text().rope().to_string(),
+        "line one\nline two\nline three\n"
+    );
+    assert_eq!(buffer.cursor().line.get(), 2, "not on the thread's line");
+}
+
 /// A review's thread is on the page among what was said, and a click on
 /// the place it names opens the file there, on that line, as the pull
 /// request's last commit has it.
@@ -17516,7 +17591,7 @@ fn a_checks_name_is_a_link_to_it() {
     let text = screen(&mut app);
     assert!(
         text.lines()
-            .any(|row| row.contains("unit-tests") && row.contains("Opens its page")),
+            .any(|row| row.contains("unit-tests") && row.contains("Opens the link")),
         "the row does not say enter opens it:
 {text}"
     );

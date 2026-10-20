@@ -146,18 +146,29 @@ pub fn draw(
             }
             continue;
         }
-        // What enter does to the heading the cursor is on, after its words,
-        // where they leave room.
-        if let Some(on) = acting.as_ref().filter(|on| at + 1 == on.end) {
-            let does = match rows.get(on.start) {
-                Some(first) if first.goes.is_some() => "Opens its page",
-                Some(first) if first.opens.as_ref().is_some_and(|opens| opens.by_enter) => {
-                    "Opens the file"
-                }
-                Some(first) if first.open => "Closes it",
-                Some(_) => "Opens it",
-                None => continue,
-            };
+        // What enter does where the cursor is, after the row's words, where
+        // they leave room: the link under it where it is on one -- the same
+        // question enter asks -- and otherwise what the row is for.
+        let followed = cursor
+            .filter(|cursor| cursor.row == at)
+            .and_then(|cursor| obelus_component::discussion::followed_at(rows, cursor));
+        let does = match followed {
+            Some(obelus_component::discussion::Follows::File(_)) => Some("Opens the file"),
+            Some(obelus_component::discussion::Follows::Web(_)) => Some("Opens the link"),
+            None => acting
+                .as_ref()
+                .filter(|on| at + 1 == on.end)
+                .and_then(|on| match rows.get(on.start) {
+                    Some(first) if first.goes.is_some() => Some("Opens the link"),
+                    Some(first) if first.opens.as_ref().is_some_and(|opens| opens.by_enter) => {
+                        Some("Opens the file")
+                    }
+                    Some(first) if first.open => Some("Closes it"),
+                    Some(_) => Some("Opens it"),
+                    None => None,
+                }),
+        };
+        if let Some(does) = does {
             let keys = [(
                 crate::chat::chord(
                     crossterm::event::KeyCode::Enter,
