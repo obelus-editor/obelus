@@ -6103,3 +6103,39 @@ fn the_palette_lets_go_of_a_number_being_turned() {
         "what was in the box was written"
     );
 }
+
+/// Nothing written while a number is being turned goes into the filter,
+/// which is not on the screen then: a paste goes nowhere, an input method is
+/// not offered the page, and the number's row stays where it is.
+///
+/// Broken deliberately by letting the paste into the filter as before
+/// (`writing_into` without its arm for the box): the filter said
+/// `zzz` and the row being turned was filtered off the page. And by leaving
+/// `takes_text` asking only about a key being bound: it said yes.
+#[test]
+fn nothing_pasted_while_a_number_is_turned_goes_into_the_filter() {
+    let _turn = crate::turn();
+    let scratch = temporary("dial-paste");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+
+    support::type_text(&mut app, "tab width");
+    support::press(&mut app, KeyCode::Enter);
+    assert!(
+        !app.takes_text(),
+        "an input method would spell into the filter"
+    );
+    app.handle(Event::Paste("zzz".to_string()));
+    let settings = app.settings().expect("the settings");
+    assert_eq!(
+        settings.query(),
+        "tab width",
+        "the paste went into the filter"
+    );
+    assert_eq!(
+        settings.rows(None).len(),
+        1,
+        "the row being turned was filtered away"
+    );
+    assert!(settings.dialling().is_some(), "the paste let go of the box");
+}

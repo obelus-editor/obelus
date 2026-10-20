@@ -905,6 +905,8 @@ impl App {
             Some(Layer::Palette) => Some(StatusBox::Palette),
             Some(Layer::Picker) => Some(StatusBox::Picker),
             Some(Layer::Names) => Some(StatusBox::Names),
+            // The filter is not on the row while a number is being turned.
+            Some(Layer::Settings) if self.turning_a_number() => None,
             Some(Layer::Settings) => Some(StatusBox::Settings),
             // A table with no box, and a page answered by its two keys.
             Some(Layer::Counts | Layer::Gone) => None,

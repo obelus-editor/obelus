@@ -1265,6 +1265,20 @@ impl App {
         }
     }
 
+    /// Whether a number is being turned on the settings page.
+    ///
+    /// Asked by everything that would otherwise write into the page's
+    /// filter -- a paste, an input method, select-all, cut -- because while
+    /// one is, the filter is not on the screen: the row at the foot says
+    /// which number it is instead. Text that went in anyway narrowed the
+    /// rows out of sight, the number's own row with them, and enter still
+    /// kept what its box had.
+    pub(in crate::app) fn turning_a_number(&self) -> bool {
+        self.settings
+            .as_ref()
+            .is_some_and(|settings| settings.dialling().is_some())
+    }
+
     /// Takes a setting out of the project's file, from the project's own page.
     pub(in crate::app) fn unset_setting(&mut self, key: &'static str) {
         self.write_to_project(key, None);
