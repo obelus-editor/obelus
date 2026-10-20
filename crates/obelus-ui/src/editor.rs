@@ -375,6 +375,52 @@ pub fn gutter_width(line_count: usize) -> u16 {
         .max(MINIMUM_GUTTER_WIDTH)
 }
 
+/// Whether a document's text is not there yet: on its way, or refused.
+#[must_use]
+pub fn is_coming(buffer: &Buffer) -> bool {
+    buffer
+        .content()
+        .fetched()
+        .is_some_and(|fetched| *fetched != obelus_buffer::Fetched::Here)
+}
+
+/// Draws a document whose text is not there yet, in place of the editor:
+/// a mark that turns and what is being asked for, or why it was not given
+/// -- as a page says it is asking GitHub, at its head.
+///
+/// Not the editor with a line over it. An empty buffer is drawn as a file
+/// of one empty line, numbered `1`, with the caret on it -- a file nobody
+/// has, put where the reader looks for the one they asked for.
+pub fn say_what_is_coming(
+    cells: &mut CellBuffer,
+    area: Rect,
+    buffer: &Buffer,
+    phase: u32,
+    theme: &Theme,
+) {
+    let (said, waiting) = match buffer.content().fetched() {
+        Some(obelus_buffer::Fetched::Asking) => ("Asking GitHub for this file", true),
+        Some(obelus_buffer::Fetched::Refused(why)) => (why.as_str(), false),
+        Some(obelus_buffer::Fetched::Here) | None => return,
+    };
+    let plain = Style::new().fg(theme.foreground).bg(theme.background);
+    fill(cells, area, plain);
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+    let dim = plain.fg(theme.gutter);
+    // Two cells in front of the words, where the mark goes while it turns:
+    // the words stay where they are when it stops.
+    if waiting {
+        put(cells, area.x, area.y, crate::spinning(phase), dim);
+        crate::shapes::spun(area.x, area.y);
+    }
+    let x = area.x.saturating_add(2);
+    let room = usize::from(area.right().saturating_sub(x));
+    let said: String = said.chars().take(room).collect();
+    crate::write(cells, x, area.y, &said, dim);
+}
+
 /// The editor region.
 pub struct EditorView<'a> {
     buffer: Option<&'a Buffer>,

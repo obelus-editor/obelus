@@ -17258,6 +17258,149 @@ fn a_pull_requests_file_opens_on_a_click() {
     assert_eq!(buffer.text().rope().to_string(), "fn clicked_open() {}\n");
 }
 
+/// Enter with the cursor on the place a review's thread names opens the
+/// file there, on that line -- and the row says so while the cursor is on
+/// it, and says what the heading's enter does when it is not.
+///
+/// Broken deliberately twice. Saying what the row is for wherever the
+/// cursor is, as this first did: the row said `Opens it` with the cursor on
+/// the file's name. And leaving the link out of what enter asks: enter
+/// there shut the thread.
+#[test]
+fn enter_on_a_threads_place_opens_its_file() {
+    let scratch = support::Scratch::new("agent-pull-request-thread-enter");
+    let root = scratch.path();
+    let sha = a_repository_with(root, "line one\nline two\nline three\n");
+    let answer = root.join("gh-answer.json");
+    std::fs::write(&answer, one_pull_request_at(&sha)).expect("the list");
+    std::fs::write(root.join("gh-answer.json.view.123"), FILES).expect("the page");
+    std::fs::write(
+        root.join("gh-answer.json.threads"),
+        r#"{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[
+            {"id":"T1","isResolved":false,"isOutdated":false,"path":"src/lib.rs","line":3,
+             "comments":{"nodes":[{"author":{"login":"bob"},"body":"And this one?",
+               "createdAt":"2026-10-01T00:00:00Z","diffHunk":"+line three"}]}}
+        ]}}}}}"#,
+    )
+    .expect("the threads");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
+    pump(&mut app, &events, "the list", |app| answered_with(app, 1));
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the page", |app| {
+        app.current_document_for_test()
+            .and_then(|id| app.document(id))
+            .and_then(obelus_app::app::document::Document::discussion)
+            .is_some_and(|page| !page.still_asking())
+    });
+    let heading = |app: &mut App| {
+        screen(app)
+            .lines()
+            .find(|row| row.contains("on src/lib.rs:3"))
+            .map(str::to_string)
+            .unwrap_or_default()
+    };
+    // Down to the heading, where the row says what it is for.
+    for _ in 0..60 {
+        if heading(&mut app).contains("Closes it") {
+            break;
+        }
+        support::press(&mut app, KeyCode::Down);
+    }
+    assert!(
+        heading(&mut app).contains("Closes it"),
+        "{}",
+        screen(&mut app)
+    );
+    // Along it onto the place, where the row says what the link does.
+    for _ in 0..40 {
+        if heading(&mut app).contains("Opens the file") {
+            break;
+        }
+        support::press(&mut app, KeyCode::Right);
+    }
+    assert!(
+        heading(&mut app).contains("Opens the file"),
+        "the row does not say enter opens the file:\n{}",
+        screen(&mut app)
+    );
+    support::press(&mut app, KeyCode::Enter);
+    let buffer = app.current_buffer().expect("enter opened nothing");
+    assert_eq!(
+        buffer.text().rope().to_string(),
+        "line one\nline two\nline three\n"
+    );
+    assert_eq!(buffer.cursor().line.get(), 2, "not on the thread's line");
+}
+
+/// A review's thread is on the page among what was said, and a click on
+/// the place it names opens the file there, on that line, as the pull
+/// request's last commit has it.
+///
+/// Broken deliberately twice. Leaving the threads out of what `discussion`
+/// hands back: no thread was on the page. And leaving `stand_on` out of
+/// putting the file up: it opened on its first line.
+#[test]
+fn a_review_threads_place_opens_its_file_on_its_line() {
+    use obelus_app::event::Pointer;
+
+    let _turn = support::clipboard_turn();
+    obelus_clipboard::links::use_opener_for_test(obelus_clipboard::links::Opener::Kept);
+    let scratch = support::Scratch::new("agent-pull-request-thread-place");
+    let root = scratch.path();
+    let sha = a_repository_with(root, "line one\nline two\nline three\n");
+    let answer = root.join("gh-answer.json");
+    std::fs::write(&answer, one_pull_request_at(&sha)).expect("the list");
+    std::fs::write(root.join("gh-answer.json.view.123"), FILES).expect("the page");
+    std::fs::write(
+        root.join("gh-answer.json.threads"),
+        r#"{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[
+            {"id":"T1","isResolved":false,"isOutdated":false,"path":"src/lib.rs","line":2,
+             "comments":{"nodes":[{"author":{"login":"bob"},"body":"Why this line?",
+               "createdAt":"2026-10-01T00:00:00Z","diffHunk":"@@ -1 +1 @@\n+line two"}]}}
+        ]}}}}}"#,
+    )
+    .expect("the threads");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
+    pump(&mut app, &events, "the list", |app| answered_with(app, 1));
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the page", |app| {
+        app.current_document_for_test()
+            .and_then(|id| app.document(id))
+            .and_then(obelus_app::app::document::Document::discussion)
+            .is_some_and(|page| !page.still_asking())
+    });
+
+    let text = screen(&mut app);
+    let row = text
+        .lines()
+        .find(|row| row.contains("on src/lib.rs:2"))
+        .unwrap_or_else(|| panic!("no thread on the page:\n{text}"));
+    assert!(text.contains("Why this line?"), "{text}");
+    let y: u16 = row
+        .split('|')
+        .next()
+        .and_then(|number| number.trim().parse().ok())
+        .expect("a row number");
+    let x = u16::try_from(support::column_of(row, "src/lib.rs:2")).expect("a column");
+    for kind in [Pointer::Pressed, Pointer::Released] {
+        app.handle(Event::Pointer { kind, x: x + 2, y });
+        support::lay_out(&mut app, WIDTH, HEIGHT);
+    }
+    assert_eq!(
+        obelus_clipboard::links::opened(),
+        None,
+        "a browser was asked to open a file"
+    );
+    let buffer = app.current_buffer().expect("the click opened nothing");
+    assert_eq!(
+        buffer.text().rope().to_string(),
+        "line one\nline two\nline three\n"
+    );
+    assert_eq!(buffer.cursor().line.get(), 1, "not on the thread's line");
+}
+
 /// Makes `root` a repository with `src/lib.rs` committed as `committed`,
 /// and hands back that commit.
 fn a_repository_with(root: &Path, committed: &str) -> String {
@@ -17316,14 +17459,19 @@ fn a_pull_requests_file_opens_from_the_repository() {
     );
 }
 
-/// A file whose commit the repository has not got is asked of GitHub and
-/// opens when it answers, with nothing laid beside it: the reader's history
-/// has not got the commit either, and against nothing every line would
-/// read as new.
+/// A file whose commit the repository has not got opens at once, empty and
+/// saying it is being asked of GitHub, and fills when GitHub answers -- with
+/// nothing laid beside it: the reader's history has not got the commit
+/// either, and against nothing every line would read as new.
 ///
-/// Broken deliberately twice. Leaving `in_history` out of
-/// `refresh_changes`: every line was marked as added. And not asking
-/// GitHub where the repository had nothing: nothing opened.
+/// Broken deliberately five ways. Opening the document only when the
+/// answer came, as this first did: nothing was on screen after the key.
+/// Drawing the editor there, as for any file: a `1`, and nothing saying
+/// what was coming. Leaving `is_coming` out of `cursor_position`: a caret
+/// blinked on a line nobody has.
+/// Leaving `in_history` out of `refresh_changes`: every line was marked as
+/// added. And not asking GitHub where the repository had nothing: the
+/// document never filled.
 #[test]
 fn a_pull_requests_file_not_here_is_asked_of_github() {
     let scratch = support::Scratch::new("agent-pull-request-file-github");
@@ -17341,15 +17489,38 @@ fn a_pull_requests_file_not_here_is_asked_of_github() {
     .expect("the file");
     let (mut app, events) = with_a_fake_gh(&scratch, &answer);
     open_the_first_file(&mut app, &events);
+    // At once, before anything has come back.
+    let fetched = |app: &App| {
+        app.current_buffer()
+            .and_then(|buffer| buffer.content().fetched().cloned())
+    };
+    assert_eq!(
+        fetched(&app),
+        Some(obelus_buffer::Fetched::Asking),
+        "the key opened nothing yet"
+    );
+    let text = screen(&mut app);
+    let waiting = text
+        .lines()
+        .find(|row| row.contains("Asking GitHub for this file"))
+        .unwrap_or_else(|| panic!("the document does not say it is on its way:\n{text}"));
+    // Not drawn as a file of one empty line: no number in front of what it
+    // says, and no caret on a line nobody has.
+    let drawn = waiting.split_once('|').map_or(waiting, |(_, drawn)| drawn);
+    assert!(
+        !drawn.trim_start().starts_with('1'),
+        "the waiting document has a line number:\n{text}"
+    );
+    assert_eq!(
+        obelus_ui::cursor_position(ratatui::layout::Rect::new(0, 0, WIDTH, HEIGHT), &app),
+        None,
+        "the waiting document has a caret"
+    );
     pump(&mut app, &events, "the file", |app| {
-        app.current_buffer().is_some_and(|buffer| {
-            matches!(
-                buffer.content(),
-                obelus_buffer::Content::PullRequest { number: 123, .. }
-            )
-        })
+        fetched(app) == Some(obelus_buffer::Fetched::Here)
     });
-    let _ = screen(&mut app);
+    let text = screen(&mut app);
+    assert!(!text.contains("Asking GitHub"), "{text}");
     let buffer = app.current_buffer().expect("the file");
     assert_eq!(
         buffer.text().rope().to_string(),
@@ -17358,6 +17529,38 @@ fn a_pull_requests_file_not_here_is_asked_of_github() {
     assert!(
         app.changes().is_none_or(|changes| changes.is_empty()),
         "lines are marked as changed against a commit nobody has"
+    );
+}
+
+/// A file GitHub will not give says why, in its document, and stops saying
+/// it is on its way.
+///
+/// Broken deliberately by leaving the refusal off the document: it went on
+/// saying it was being asked for, with a mark turning for an answer that
+/// had already come.
+#[test]
+fn a_pull_requests_file_github_refuses_says_why() {
+    let scratch = support::Scratch::new("agent-pull-request-file-refused");
+    a_repository_with(scratch.path(), "fn committed_here() {}\n");
+    let answer = scratch.path().join("gh-answer.json");
+    let sha = "1234567890abcdef1234567890abcdef12345678";
+    std::fs::write(&answer, one_pull_request_at(sha)).expect("the list");
+    std::fs::write(scratch.path().join("gh-answer.json.view.123"), FILES).expect("the page");
+    // No `.contents`: the fake answers with GitHub's 404.
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+    open_the_first_file(&mut app, &events);
+    pump(&mut app, &events, "the refusal", |app| {
+        app.current_buffer().is_some_and(|buffer| {
+            matches!(
+                buffer.content().fetched(),
+                Some(obelus_buffer::Fetched::Refused(_))
+            )
+        })
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("GitHub would not answer") && !text.contains("Asking GitHub"),
+        "the document does not say why:\n{text}"
     );
 }
 
@@ -17448,7 +17651,7 @@ fn a_checks_name_is_a_link_to_it() {
     let text = screen(&mut app);
     assert!(
         text.lines()
-            .any(|row| row.contains("unit-tests") && row.contains("Opens its page")),
+            .any(|row| row.contains("unit-tests") && row.contains("Opens the link")),
         "the row does not say enter opens it:
 {text}"
     );

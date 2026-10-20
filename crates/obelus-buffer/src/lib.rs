@@ -109,7 +109,25 @@ pub enum Content {
         number: u64,
         /// Its last commit.
         id: gix::ObjectId,
+        /// Whether the bytes are here yet.
+        fetched: Fetched,
     },
+}
+
+/// Whether the bytes of a version read from somewhere else are here.
+///
+/// Part of where they come from rather than a side of the application's:
+/// a document whose text is on its way is that document, open, saying so --
+/// and one that turned up a second after the key that asked for it, with
+/// nothing in between, read as a key that had not opened anything.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Fetched {
+    /// They are what the buffer holds.
+    Here,
+    /// They are being asked for, and the buffer is empty until they come.
+    Asking,
+    /// They were asked for and refused, for this reason.
+    Refused(String),
 }
 
 impl Content {
@@ -134,6 +152,22 @@ impl Content {
     #[must_use]
     pub const fn in_history(&self) -> bool {
         matches!(self, Self::File | Self::Commit { .. })
+    }
+
+    /// Whether the bytes are here, for a version read from somewhere else.
+    #[must_use]
+    pub const fn fetched(&self) -> Option<&Fetched> {
+        match self {
+            Self::PullRequest { fetched, .. } => Some(fetched),
+            Self::File | Self::Commit { .. } => None,
+        }
+    }
+
+    /// Whether this is the file of pull request `number` at commit `id`,
+    /// whether or not its bytes are here yet.
+    #[must_use]
+    pub fn is_of_pull_request(&self, number: u64, id: gix::ObjectId) -> bool {
+        matches!(self, Self::PullRequest { number: of, id: at, .. } if *of == number && *at == id)
     }
 
     /// That commit in the short form a reader recognises it by, and the
@@ -860,7 +894,24 @@ impl Buffer {
     #[must_use]
     pub fn at_pull_request(path: &Path, number: u64, id: gix::ObjectId, contents: &str) -> Self {
         let mut buffer = Self::from_text(path, contents);
-        buffer.content = Content::PullRequest { number, id };
+        buffer.content = Content::PullRequest {
+            number,
+            id,
+            fetched: Fetched::Here,
+        };
+        buffer
+    }
+
+    /// The same, open before its bytes are here: empty, and saying they
+    /// are being asked for until [`Buffer::arrived`] or [`Buffer::refused`].
+    #[must_use]
+    pub fn on_its_way(path: &Path, number: u64, id: gix::ObjectId) -> Self {
+        let mut buffer = Self::from_text(path, "");
+        buffer.content = Content::PullRequest {
+            number,
+            id,
+            fetched: Fetched::Asking,
+        };
         buffer
     }
 
@@ -1755,6 +1806,33 @@ impl Buffer {
     pub fn reload(&mut self) -> Result<bool> {
         let read = self.read_from_disk(false);
         self.take_read(read)
+    }
+
+    /// Takes the text of a version that was still on its way when the
+    /// document was opened -- a pull request's file, asked of GitHub -- as
+    /// a re-read takes the disk's: no way back to the nothing before it,
+    /// the parse brought up to it, and the version moved on so nothing
+    /// keyed on the old one goes on answering for it.
+    pub fn arrived(&mut self, read: obelus_encoding::Read<'static>) -> bool {
+        self.set_fetched(Fetched::Here);
+        self.take_read(Ok((read, false))).unwrap_or(false)
+    }
+
+    /// Says the bytes on their way were refused, and why.
+    pub fn refused(&mut self, why: String) {
+        self.set_fetched(Fetched::Refused(why));
+    }
+
+    /// Says they are being asked for again.
+    pub fn asked_again(&mut self) {
+        self.set_fetched(Fetched::Asking);
+    }
+
+    /// Where a version read from somewhere else has got to.
+    fn set_fetched(&mut self, now: Fetched) {
+        if let Content::PullRequest { fetched, .. } = &mut self.content {
+            *fetched = now;
+        }
     }
 
     /// Reads the file again as `written`, whatever it looked like: what a

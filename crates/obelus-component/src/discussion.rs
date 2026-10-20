@@ -14,14 +14,28 @@
 //! nothing is written here: it is GitHub's page, read through `gh`, and a
 //! key that is typing goes nowhere.
 //!
-//! **What enter does is open or shut, or copy, or go.** A comment's heading
-//! opens and shuts what it says, the checks' heading opens the checks that
-//! passed -- which nobody has to do anything about, so they are counted
-//! until the reader asks for their names -- and a block of code is copied
-//! whole, as it is in the transcript, because holding it from corner to
-//! corner takes its box and the width's breaks with it. A check's row goes
-//! to the check's page: a link in the words is the pointer's, as the
-//! transcript's are, and a check's row is one link and nothing else.
+//! **What enter does is decided by what the cursor is on, not by its row.**
+//! On a link -- in the words, a check's name, a file's, the place a review's
+//! thread names -- it follows the link: to the web, or to the file here.
+//! Anywhere else it does what the row is for: a comment's heading opens and
+//! shuts what it says, the checks' heading opens the checks that passed --
+//! which nobody has to do anything about, so they are counted until the
+//! reader asks for their names -- and a block of code is copied whole, as it
+//! is in the transcript, because holding it from corner to corner takes its
+//! box and the width's breaks with it. By the row, a heading with a link in
+//! it said enter would open and shut it while the cursor stood on the link;
+//! by what is under the cursor, both are a key away, and the row's end says
+//! which. The transcript keeps its links the pointer's: there enter already
+//! takes a message back, and a message that was only an address could not
+//! have been.
+//!
+//! **A review's thread is a comment about its lines.** It goes among what
+//! was said by when it was last answered, as GitHub's conversation does,
+//! with its heading saying where it is and how it stands, the lines it was
+//! said beside under that, and its answers after. One somebody resolved, or
+//! whose lines have moved on, starts shut -- GitHub folds those away too.
+//! The place is a link to the file at that line, by a click: enter on a
+//! heading opens and shuts what is under it, here as on every comment.
 //!
 //! **Laid out once and kept.** The rows are made at a width and kept until
 //! the width or what they are made of changes, because the keys, the caret
@@ -51,8 +65,9 @@ use crate::{
 pub enum Part {
     /// The title and the description, laid out as one piece of markdown.
     Description,
-    /// What one comment says, by its place among them.
-    Comment(usize),
+    /// What one comment says, by its place among them -- and which of its
+    /// thread: `0` for the comment, and its replies after it, in order.
+    Comment(usize, usize),
 }
 
 /// What a heading opens and shuts.
@@ -87,24 +102,39 @@ pub struct Folding {
     every_check: bool,
     /// Whether every file changed is named, or only how many.
     every_file: bool,
-    /// The comments shut, by who said them and when.
+    /// The comments the reader turned from how they start -- open, or shut
+    /// for a review's thread that is resolved or outdated -- by who said
+    /// them and when.
     ///
     /// Not by their place: the newest comes first, so a comment arriving
     /// moves every place down one, and the one the reader shut became the
     /// one above it -- shut, while theirs stood open.
-    shut: std::collections::HashSet<(String, Option<i64>)>,
+    comments_turned: std::collections::HashSet<(String, Option<i64>)>,
     /// The `<details>` the reader has turned from how they started: by the
-    /// comment they are in -- known the way a shut comment is, for the same
-    /// reason -- or none for the description, and where in it.
-    turned: std::collections::HashSet<(Option<Whose>, usize)>,
+    /// comment they are in -- known the way a turned comment is, for the
+    /// same reason -- or none for the description, which of its thread, and
+    /// where in it.
+    turned: std::collections::HashSet<(Option<Whose>, usize, usize)>,
+}
+
+/// Whether a comment starts open: every one but a review's thread that
+/// somebody resolved, or whose lines have moved on -- which is what GitHub
+/// folds away too.
+fn starts_open(comment: &Comment) -> bool {
+    comment
+        .on
+        .as_ref()
+        .is_none_or(|on| !on.resolved && !on.outdated)
 }
 
 /// What a `<details>` is known by while the reader has it turned: which
 /// text it is in, and where -- or nothing where that text is not there.
-fn which_details(of: Part, at: usize, said: &[Comment]) -> Option<(Option<Whose>, usize)> {
+fn which_details(of: Part, at: usize, said: &[Comment]) -> Option<(Option<Whose>, usize, usize)> {
     match of {
-        Part::Description => Some((None, at)),
-        Part::Comment(index) => said.get(index).map(|comment| (Some(whose(comment)), at)),
+        Part::Description => Some((None, 0, at)),
+        Part::Comment(index, reply) => said
+            .get(index)
+            .map(|comment| (Some(whose(comment)), reply, at)),
     }
 }
 
@@ -124,9 +154,9 @@ impl Folding {
         match fold {
             Fold::Checks => self.every_check,
             Fold::Files => self.every_file,
-            Fold::Comment(at) => said
-                .get(at)
-                .is_none_or(|comment| !self.shut.contains(&whose(comment))),
+            Fold::Comment(at) => said.get(at).is_none_or(|comment| {
+                starts_open(comment) != self.comments_turned.contains(&whose(comment))
+            }),
             Fold::Details { of, at, asked_open } => {
                 let turned =
                     which_details(of, at, said).is_some_and(|key| self.turned.contains(&key));
@@ -146,8 +176,8 @@ impl Folding {
                     return;
                 };
                 let key = whose(comment);
-                if !self.shut.remove(&key) {
-                    self.shut.insert(key);
+                if !self.comments_turned.remove(&key) {
+                    self.comments_turned.insert(key);
                 }
             }
             Fold::Details { of, at, .. } => {
@@ -160,6 +190,18 @@ impl Folding {
             }
         }
     }
+}
+
+/// A file a row opens, as the pull request's last commit has it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Opens {
+    /// Its path, from the top of the repository.
+    pub path: String,
+    /// The line to stand on, counted from one, where the row is about one.
+    pub line: Option<u64>,
+    /// Whether enter opens it, or only a click on its underlined name: a
+    /// thread's heading has enter for opening and shutting the thread.
+    pub by_enter: bool,
 }
 
 /// One row of the page, laid out at a width.
@@ -183,7 +225,7 @@ pub struct Row {
     pub goes: Option<String>,
     /// The file enter on it opens, as the pull request's last commit has
     /// it: a row of the files it changes.
-    pub opens: Option<String>,
+    pub opens: Option<Opens>,
     /// Whether it says something is on its way, which a mark that turns is
     /// drawn at the head of: the rows are kept, and a mark in them would
     /// stand still.
@@ -235,7 +277,10 @@ impl crate::page::Line for Row {
             let end = row + rows[row..].iter().take_while(same).count();
             return Some(start..end);
         }
-        (here.folds.is_some() || here.goes.is_some() || here.opens.is_some()).then(|| row..row + 1)
+        (here.folds.is_some()
+            || here.goes.is_some()
+            || here.opens.as_ref().is_some_and(|opens| opens.by_enter))
+        .then(|| row..row + 1)
     }
 
     fn held(&self) -> Option<&Range<usize>> {
@@ -487,7 +532,11 @@ fn files(said: &Discussion, folding: &Folding, width: u16) -> Vec<Row> {
         // the row's `opens`, and the pointer is told so.
         let name = 0..path.len();
         let mut row = Row {
-            opens: Some(file.path.clone()),
+            opens: Some(Opens {
+                path: file.path.clone(),
+                line: None,
+                by_enter: true,
+            }),
             ..Row::said(vec![
                 Span::new("  ", Ink::Plain),
                 Span::from_source(path, Ink::Plain, name.clone()),
@@ -614,51 +663,155 @@ fn comments(said: &[Comment], folding: &Folding, width: u16) -> Vec<Row> {
         return vec![Row::said(vec![Span::new("No comments", Ink::Aside)])];
     }
     let now = std::time::SystemTime::now();
+    let ago = |when: Option<i64>| {
+        when.map(|when| format!(" \u{b7} {}", obelus_git::how_long_ago(when, now)))
+            .unwrap_or_default()
+    };
     let mut rows = Vec::new();
     for (at, comment) in said.iter().enumerate() {
         if at > 0 {
             rows.push(Row::default());
         }
-        let mut did = format!("  {}", what_it_did(comment.did));
-        if let Some(when) = comment.when {
-            did.push_str(&format!(" \u{b7} {}", obelus_git::how_long_ago(when, now)));
-        }
         let open = folding.is_open(Fold::Comment(at), said);
-        rows.push(Row {
+        let mut heading = Row {
             folds: Some(Fold::Comment(at)),
             open,
-            ..Row::said(vec![
-                Span::new(comment.author.clone(), Ink::Name),
-                Span::new(did, Ink::Aside),
-            ])
-        });
-        if open {
-            let of = Part::Comment(at);
-            let laid =
-                obelus_markdown::render_folding(&comment.body, width, &|found, asked_open| {
-                    folding.is_open(
-                        Fold::Details {
-                            of,
-                            at: found,
-                            asked_open,
-                        },
-                        said,
-                    )
-                });
-            rows.extend(laid.into_iter().map(|row| Row {
-                folds: row.details.map(|details| Fold::Details {
-                    of,
-                    at: details.at,
-                    asked_open: details.asked_open,
-                }),
-                open: row.details.is_some_and(|details| details.open),
-                row,
-                from: Some(of),
-                ..Row::default()
-            }));
+            ..Row::said(vec![Span::new(comment.author.clone(), Ink::Name)])
+        };
+        match &comment.on {
+            None => heading.row.spans.push(Span::new(
+                format!("  {}{}", what_it_did(comment.did), ago(comment.when)),
+                Ink::Aside,
+            )),
+            // A thread on lines: where, and how it stands. The place is a
+            // link to the file at that line -- by a click, because enter
+            // on a heading opens and shuts what is under it -- except where
+            // the lines have moved on and the number names other ones.
+            Some(on) => {
+                let linked = on.line.filter(|_| !on.outdated);
+                let place = match linked {
+                    Some(line) => format!("{}:{line}", on.path),
+                    None => on.path.clone(),
+                };
+                let name = 0..place.len();
+                heading.row.spans.push(Span::new("  on ", Ink::Aside));
+                heading
+                    .row
+                    .spans
+                    .push(Span::from_source(place, Ink::Plain, name.clone()));
+                let mut after = ago(comment.when);
+                match comment.replies.len() {
+                    0 => {}
+                    1 => after.push_str(" \u{b7} 1 reply"),
+                    replies => after.push_str(&format!(" \u{b7} {replies} replies")),
+                }
+                if on.resolved {
+                    after.push_str(" \u{b7} Resolved");
+                } else if on.outdated {
+                    after.push_str(" \u{b7} Outdated");
+                }
+                heading.row.spans.push(Span::new(after, Ink::Aside));
+                if let Some(line) = linked {
+                    heading.row.links.push((name, on.path.clone()));
+                    heading.opens = Some(Opens {
+                        path: on.path.clone(),
+                        line: Some(line),
+                        by_enter: false,
+                    });
+                }
+            }
+        }
+        rows.push(heading);
+        if !open {
+            continue;
+        }
+        if let Some(on) = comment.on.as_ref().filter(|on| !on.hunk.is_empty()) {
+            rows.extend(hunk(&on.hunk, width));
+        }
+        rows.extend(written(
+            &comment.body,
+            Part::Comment(at, 0),
+            said,
+            folding,
+            width,
+        ));
+        for (reply, said_after) in comment.replies.iter().enumerate() {
+            rows.push(Row::default());
+            rows.push(Row::said(vec![
+                Span::new(said_after.author.clone(), Ink::Name),
+                Span::new(ago(said_after.when), Ink::Aside),
+            ]));
+            rows.extend(written(
+                &said_after.body,
+                Part::Comment(at, reply + 1),
+                said,
+                folding,
+                width,
+            ));
         }
     }
     rows
+}
+
+/// What one comment, or one reply in a thread, wrote: its markdown laid
+/// out, with its `<details>` as the reader has them.
+fn written(body: &str, of: Part, said: &[Comment], folding: &Folding, width: u16) -> Vec<Row> {
+    let laid = obelus_markdown::render_folding(body, width, &|found, asked_open| {
+        folding.is_open(
+            Fold::Details {
+                of,
+                at: found,
+                asked_open,
+            },
+            said,
+        )
+    });
+    laid.into_iter()
+        .map(|row| Row {
+            folds: row.details.map(|details| Fold::Details {
+                of,
+                at: details.at,
+                asked_open: details.asked_open,
+            }),
+            open: row.details.is_some_and(|details| details.open),
+            row,
+            from: Some(of),
+            ..Row::default()
+        })
+        .collect()
+}
+
+/// The lines a thread was said beside, as a block of code -- a copy takes
+/// them, as it takes any -- with what the change added and took away in
+/// the colours the margin marks them in.
+///
+/// Coloured here because there is no grammar for a diff to colour it: a
+/// line's first character is the whole of what says which it is.
+fn hunk(lines: &str, width: u16) -> Vec<Row> {
+    obelus_markdown::render(&format!("```\n{lines}\n```\n"), width)
+        .into_iter()
+        .map(|mut row| {
+            let said = row
+                .spans
+                .iter()
+                .filter(|span| span.ink != Ink::Mark)
+                .find_map(|span| span.text.chars().next());
+            let ink = match said {
+                Some('+') => Some(Ink::Added),
+                Some('-') => Some(Ink::Removed),
+                _ => None,
+            };
+            if let Some(ink) = ink {
+                for span in row.spans.iter_mut().filter(|span| span.ink != Ink::Mark) {
+                    span.ink = ink;
+                }
+            }
+            Row {
+                row,
+                ..Row::default()
+            }
+        })
+        .collect()
 }
 
 /// What a page says about why `gh` said nothing.
@@ -695,8 +848,40 @@ pub enum Outcome {
     /// Open this address, in whatever the machine opens the web in.
     Open(String),
     /// Open this file as the pull request's last commit has it, by its path
-    /// from the top of the repository.
-    OpenFile(String),
+    /// from the top of the repository -- on a line, counted from one, where
+    /// what was followed was about one.
+    OpenFile {
+        /// The file.
+        path: String,
+        /// The line.
+        line: Option<u64>,
+    },
+}
+
+/// Where a link enter would follow goes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Follows {
+    /// A file, as the pull request's last commit has it.
+    File(Opens),
+    /// An address on the web.
+    Web(String),
+}
+
+/// The link under `at`, where there is one: what enter there follows, and
+/// what the row's end says it does -- one answer, so the two cannot differ.
+#[must_use]
+pub fn followed_at(rows: &[Row], at: Place) -> Option<Follows> {
+    let row = rows.get(at.row)?;
+    let (_, to) = row.row.links.iter().find(|(bytes, _)| {
+        crate::page::row_held(&row.row.spans, bytes.start, bytes.end)
+            .is_some_and(|characters| characters.contains(&at.character))
+    })?;
+    // A link the row opens as a file is the file's name; any other goes to
+    // the web.
+    Some(match row.opens.as_ref().filter(|opens| opens.path == *to) {
+        Some(opens) => Follows::File(opens.clone()),
+        None => Follows::Web(to.clone()),
+    })
 }
 
 /// A pull request or an issue, while it is open.
@@ -1025,6 +1210,16 @@ impl DiscussionView {
             // under it, and a block of code is copied. On a row that is
             // only words it does nothing, because there is nothing to do.
             KeyCode::Enter if bare => {
+                match followed_at(&rows, self.cursor) {
+                    Some(Follows::File(opens)) => {
+                        return Outcome::OpenFile {
+                            path: opens.path,
+                            line: opens.line,
+                        };
+                    }
+                    Some(Follows::Web(to)) => return Outcome::Open(to),
+                    None => {}
+                }
                 let Some(on) = <Row as crate::page::Line>::acting(&rows, self.cursor.row) else {
                     return Outcome::Consumed;
                 };
@@ -1037,8 +1232,11 @@ impl DiscussionView {
                 if let Some(to) = &first.goes {
                     return Outcome::Open(to.clone());
                 }
-                if let Some(path) = &first.opens {
-                    return Outcome::OpenFile(path.clone());
+                if let Some(opens) = first.opens.as_ref().filter(|opens| opens.by_enter) {
+                    return Outcome::OpenFile {
+                        path: opens.path.clone(),
+                        line: opens.line,
+                    };
                 }
                 if let Some(fold) = first.folds {
                     // The heading stays under the reader: what moved is
@@ -1128,6 +1326,8 @@ mod tests {
                 did: Did::Commented,
                 when: None,
                 body: "Looks right to me.".to_string(),
+                on: None,
+                replies: Vec::new(),
             }],
         }
     }
@@ -1143,6 +1343,181 @@ mod tests {
 
     fn texts(page: &DiscussionView) -> Vec<String> {
         page.rows(ROOM.reading).iter().map(Row::text).collect()
+    }
+
+    /// Enter follows the link the cursor is on, and does what the row is
+    /// for anywhere else on it: on a thread's heading, the file at its line
+    /// or the thread shut; in the description, the address or nothing.
+    ///
+    /// Broken deliberately twice. Asking only the row, as this first did:
+    /// enter on the place in the heading shut the thread. And taking the
+    /// file's line off what is followed: the file opened on no line.
+    #[test]
+    fn enter_follows_the_link_the_cursor_is_on() {
+        let mut told = said();
+        told.body = "See [the docs](https://example.com/docs) first.".to_string();
+        told.said = vec![Comment {
+            author: "bob".to_string(),
+            did: Did::Commented,
+            when: Some(2),
+            body: "Why?".to_string(),
+            on: Some(obelus_github::On {
+                id: "T".to_string(),
+                path: "src/lib.rs".to_string(),
+                line: Some(12),
+                hunk: String::new(),
+                resolved: false,
+                outdated: false,
+            }),
+            replies: Vec::new(),
+        }];
+        let mut page = DiscussionView::new(About::PullRequest(pull()));
+        page.told(told);
+        let text = texts(&page);
+        let on = |page: &mut DiscussionView, words: &str, into: usize| {
+            let rows = texts(page);
+            let row = rows
+                .iter()
+                .position(|row| row.contains(words))
+                .unwrap_or_else(|| panic!("no {words:?}: {rows:?}"));
+            let character = rows[row]
+                .chars()
+                .collect::<Vec<_>>()
+                .windows(words.chars().count())
+                .position(|window| window.iter().collect::<String>() == words)
+                .expect("the words");
+            page.stand(Place {
+                row,
+                character: character + into,
+            });
+            press(page, KeyCode::Enter, KeyModifiers::NONE)
+        };
+        assert_eq!(
+            on(&mut page, "src/lib.rs:12", 2),
+            Outcome::OpenFile {
+                path: "src/lib.rs".to_string(),
+                line: Some(12),
+            },
+            "{text:?}"
+        );
+        assert_eq!(
+            on(&mut page, "the docs", 1),
+            Outcome::Open("https://example.com/docs".to_string())
+        );
+        assert_eq!(on(&mut page, "See", 0), Outcome::Consumed);
+        assert_eq!(on(&mut page, "bob", 0), Outcome::Consumed);
+        assert!(
+            !texts(&page).iter().any(|row| row.contains("Why?")),
+            "enter beside the place did not shut the thread"
+        );
+    }
+
+    /// A review's thread is a comment whose heading says where it is, how
+    /// many answered and how it stands; open, the lines it is about are a
+    /// block coloured as the change was, and the answers follow. A resolved
+    /// one starts shut. Enter on the heading opens and shuts it, and the
+    /// place is a link a click follows -- not enter.
+    ///
+    /// Broken deliberately five ways. Leaving the replies out: the answer
+    /// was not on the page. Colouring the block by nothing: the line added
+    /// was drawn as plain code. Letting a resolved thread start open: what
+    /// it said was on the page. Opening by enter: enter on the heading
+    /// opened the file rather than shutting the thread. And leaving the
+    /// link off: the place was not underlined, and a click did nothing.
+    #[test]
+    fn a_review_thread_is_a_comment_about_its_lines() {
+        let on = |resolved: bool| {
+            Some(obelus_github::On {
+                id: "T".to_string(),
+                path: "src/lib.rs".to_string(),
+                line: Some(12),
+                hunk: " a\n-b\n+c".to_string(),
+                resolved,
+                outdated: false,
+            })
+        };
+        let mut told = said();
+        told.said = vec![
+            Comment {
+                author: "bob".to_string(),
+                did: Did::Commented,
+                when: Some(2),
+                body: "Why?".to_string(),
+                on: on(false),
+                replies: vec![Comment {
+                    author: "alice".to_string(),
+                    did: Did::Commented,
+                    when: Some(3),
+                    body: "Because.".to_string(),
+                    on: None,
+                    replies: Vec::new(),
+                }],
+            },
+            Comment {
+                author: "carol".to_string(),
+                did: Did::Commented,
+                when: Some(1),
+                body: "Fixed?".to_string(),
+                on: on(true),
+                replies: Vec::new(),
+            },
+        ];
+        let mut page = DiscussionView::new(About::PullRequest(pull()));
+        page.told(told);
+        let rows = page.rows(ROOM.reading);
+        let text: Vec<String> = rows.iter().map(Row::text).collect();
+        let heading = text
+            .iter()
+            .position(|row| row.starts_with("bob  on src/lib.rs:12"))
+            .unwrap_or_else(|| panic!("no thread: {text:?}"));
+        assert!(text[heading].contains("1 reply"), "{:?}", text[heading]);
+        assert_eq!(
+            rows[heading].row.links.first().map(|(_, to)| to.as_str()),
+            Some("src/lib.rs"),
+            "the place is not a link"
+        );
+        let ink_of = |words: &str| {
+            rows.iter()
+                .find(|row| row.text().contains(words))
+                .and_then(|row| {
+                    row.row
+                        .spans
+                        .iter()
+                        .find(|span| span.text.contains(words))
+                        .map(|span| span.ink)
+                })
+        };
+        assert_eq!(ink_of("+c"), Some(Ink::Added), "{text:?}");
+        assert_eq!(ink_of("-b"), Some(Ink::Removed), "{text:?}");
+        assert!(text.iter().any(|row| row.contains("Why?")), "{text:?}");
+        assert!(
+            text.iter().any(|row| row.starts_with("alice"))
+                && text.iter().any(|row| row.contains("Because.")),
+            "the answer is not under it: {text:?}"
+        );
+        assert!(
+            text.iter()
+                .any(|row| row.starts_with("carol") && row.contains("Resolved")),
+            "{text:?}"
+        );
+        assert!(
+            !text.iter().any(|row| row.contains("Fixed?")),
+            "a resolved thread started open: {text:?}"
+        );
+
+        page.stand(Place {
+            row: heading,
+            character: 0,
+        });
+        assert_eq!(
+            press(&mut page, KeyCode::Enter, KeyModifiers::NONE),
+            Outcome::Consumed,
+            "enter on the heading did something else than shut it"
+        );
+        assert!(
+            !texts(&page).iter().any(|row| row.contains("Because.")),
+            "enter did not shut the thread"
+        );
     }
 
     /// The files a pull request changes are a heading that starts shut and
@@ -1222,7 +1597,10 @@ mod tests {
         });
         assert_eq!(
             press(&mut page, KeyCode::Enter, KeyModifiers::NONE),
-            Outcome::OpenFile("src/lib.rs".to_string())
+            Outcome::OpenFile {
+                path: "src/lib.rs".to_string(),
+                line: None,
+            }
         );
     }
 
@@ -1284,6 +1662,8 @@ mod tests {
                 did: Did::Commented,
                 when: Some(1),
                 body: "A second look.".to_string(),
+                on: None,
+                replies: Vec::new(),
             },
         );
         page.told(told);
@@ -1377,6 +1757,8 @@ mod tests {
                 did: Did::Commented,
                 when: Some(1),
                 body: "A second look.".to_string(),
+                on: None,
+                replies: Vec::new(),
             },
         );
         page.told(newer);

@@ -188,8 +188,8 @@ impl App {
                 self.open_link(&to);
                 true
             }
-            Outcome::OpenFile(path) => {
-                self.open_the_pull_requests_file(&path);
+            Outcome::OpenFile { path, line } => {
+                self.open_the_pull_requests_file(&path, line);
                 true
             }
             Outcome::Talk => {
@@ -238,7 +238,10 @@ impl App {
     /// on a thread, because Obelus does not fetch. Not the file on disk:
     /// that is a different document that happens to share a name, the
     /// branch it belongs to is very often not the one checked out.
-    fn open_the_pull_requests_file(&mut self, path: &str) {
+    ///
+    /// On `line`, counted from one, where the reader asked about one: a
+    /// review's thread is about the lines it was said beside.
+    fn open_the_pull_requests_file(&mut self, path: &str, line: Option<u64>) {
         let Some((number, sha)) = self.discussion().and_then(|page| match page.about()? {
             About::PullRequest(pull) => Some((pull.number, pull.sha.clone())),
             About::Issue(_) => None,
@@ -255,24 +258,45 @@ impl App {
                 .as_ref()
                 .and_then(Document::file)
                 .is_some_and(|buffer| {
-                    buffer.path() == full
-                        && *buffer.content() == obelus_buffer::Content::PullRequest { number, id }
+                    buffer.path() == full && buffer.content().is_of_pull_request(number, id)
                 })
         });
         if let Some(at) = open {
+            let at = DocumentId::new(at);
             let from = self.here();
             self.record(from);
-            self.go_to_file(DocumentId::new(at));
+            self.stand_on(at, line);
+            self.go_to_file(at);
+            // Going back to one GitHub refused is asking again.
+            let refused = self.file(at).is_some_and(|buffer| {
+                matches!(
+                    buffer.content().fetched(),
+                    Some(obelus_buffer::Fetched::Refused(_))
+                )
+            });
+            if !refused {
+                return;
+            }
+            if let Some(buffer) = self.file_mut(at) {
+                buffer.asked_again();
+            }
+        } else if let Some(text) = obelus_git::history::text_at(&self.working_directory, id, &full)
+        {
+            self.put_up_the_pull_requests_file(number, id, &full, &text, line);
             return;
-        }
-        if let Some(text) = obelus_git::history::text_at(&self.working_directory, id, &full) {
-            self.put_up_the_pull_requests_file(number, id, &full, &text, true);
-            return;
+        } else {
+            // Open at once, empty and saying it is on its way, rather than
+            // a second after the key with nothing in between.
+            let buffer = obelus_buffer::Buffer::on_its_way(&full, number, id);
+            self.documents.push(Some(Document::from(buffer)));
+            let at = DocumentId::new(self.documents.len() - 1);
+            let from = self.here();
+            self.record(from);
+            self.go_to_file(at);
         }
         let Some(sender) = self.events.clone() else {
             return;
         };
-        self.say(format!("Asking GitHub for {path}"));
         let root = self.working_directory.clone();
         let instead = self.gh_instead();
         let asked = path.to_string();
@@ -282,6 +306,7 @@ impl App {
                 number,
                 id,
                 path: full,
+                line,
                 answer,
             });
         });
@@ -295,6 +320,7 @@ impl App {
         number: u64,
         id: gix::ObjectId,
         path: &std::path::Path,
+        line: Option<u64>,
         answer: Result<Vec<u8>, crate::app::pulls::Unlisted>,
     ) {
         let named = path
@@ -302,42 +328,69 @@ impl App {
             .unwrap_or(path)
             .to_string_lossy()
             .replace('\\', "/");
-        let bytes = match answer {
-            Ok(bytes) => bytes,
-            Err(why) => {
-                self.wrong(obelus_component::discussion::unlisted(&why));
-                return;
-            }
-        };
-        let Some(read) = obelus_encoding::read(&bytes) else {
-            self.wrong(format!("Not text: {named}"));
+        // The document that is waiting for it, which the reader may have
+        // closed since: then nothing is.
+        let Some(at) = self.documents.iter().position(|document| {
+            document
+                .as_ref()
+                .and_then(Document::file)
+                .is_some_and(|buffer| {
+                    buffer.path() == path && buffer.content().is_of_pull_request(number, id)
+                })
+        }) else {
             return;
         };
-        let here = self
-            .discussion()
-            .is_some_and(|page| page.number() == number);
-        if here {
-            self.note = None;
+        let at = DocumentId::new(at);
+        let read = match answer {
+            Ok(bytes) => obelus_encoding::read(&bytes)
+                .map(obelus_encoding::Read::into_owned)
+                .ok_or_else(|| format!("Not text: {named}")),
+            Err(why) => Err(obelus_component::discussion::unlisted(&why)),
+        };
+        match read {
+            Ok(read) => {
+                if let Some(buffer) = self.file_mut(at) {
+                    buffer.arrived(read);
+                }
+                self.stand_on(at, line);
+            }
+            Err(why) => {
+                if let Some(buffer) = self.file_mut(at) {
+                    buffer.refused(why);
+                }
+            }
         }
-        self.put_up_the_pull_requests_file(number, id, path, &read.text, here);
     }
 
     /// Puts a pull request's file in the list of what is open, and goes to
-    /// it where `go`.
+    /// it.
     fn put_up_the_pull_requests_file(
         &mut self,
         number: u64,
         id: gix::ObjectId,
         path: &std::path::Path,
         text: &str,
-        go: bool,
+        line: Option<u64>,
     ) {
         let buffer = obelus_buffer::Buffer::at_pull_request(path, number, id, text);
         self.documents.push(Some(Document::from(buffer)));
-        if go {
-            let from = self.here();
-            self.record(from);
-            self.go_to_file(DocumentId::new(self.documents.len() - 1));
+        let at = DocumentId::new(self.documents.len() - 1);
+        self.stand_on(at, line);
+        let from = self.here();
+        self.record(from);
+        self.go_to_file(at);
+    }
+
+    /// Puts the caret of a file that is open on `line`, counted from one.
+    fn stand_on(&mut self, at: DocumentId, line: Option<u64>) {
+        let Some(line) = line.and_then(|line| usize::try_from(line).ok()) else {
+            return;
+        };
+        if let Some(buffer) = self.file_mut(at) {
+            buffer.place_cursor(
+                obelus_text::coordinates::LineNumber::new(line.saturating_sub(1)),
+                obelus_text::coordinates::CharColumn::new(0),
+            );
         }
     }
 
@@ -379,7 +432,7 @@ impl App {
         let file = place
             .and_then(|place| rows.get(place.row))
             .and_then(|row| row.opens.clone())
-            .filter(|opens| link.as_deref() == Some(opens.as_str()));
+            .filter(|opens| link.as_deref() == Some(opens.path.as_str()));
         let cursor = place.filter(|place| place.row < rows.len());
         // Whether the row is the page's words: a row Obelus wrote has none,
         // and `spot_under` answers for it with the nearest words there are --
@@ -412,7 +465,9 @@ impl App {
                 };
                 page.let_go_of_nothing();
                 match (clicked, file, link) {
-                    (true, Some(file), _) => self.open_the_pull_requests_file(&file),
+                    (true, Some(file), _) => {
+                        self.open_the_pull_requests_file(&file.path, file.line);
+                    }
                     (true, None, Some(link)) => self.open_link(&link),
                     _ => {}
                 }

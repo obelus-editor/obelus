@@ -273,8 +273,9 @@ pub fn cursor_position(area: Rect, app: &impl Screen) -> Option<Position> {
 
     let buffer = app.current_buffer()?;
     // No cursor over a rendering. The rows are not the file's lines, so
-    // there is nowhere in them the cursor honestly is.
-    if buffer.mode() != obelus_buffer::Mode::Edit {
+    // there is nowhere in them the cursor honestly is. Nor in a document
+    // whose lines have not come, which has none.
+    if buffer.mode() != obelus_buffer::Mode::Edit || editor::is_coming(buffer) {
         return None;
     }
     // Everything the editor draws before the text: the change margin, the
@@ -401,9 +402,17 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
             );
         }),
         Shown::File(_) | Shown::Nothing => bars::of(Whose::Document, || {
-            editor::EditorView::new(app)
-                .the_reader_has(room.height)
-                .render(canvas, cells);
+            match app
+                .current_buffer()
+                .filter(|buffer| editor::is_coming(buffer))
+            {
+                Some(buffer) => {
+                    editor::say_what_is_coming(cells, canvas, buffer, app.phase(), app.theme());
+                }
+                None => editor::EditorView::new(app)
+                    .the_reader_has(room.height)
+                    .render(canvas, cells),
+            }
         }),
     }
     // Nothing open and nothing to open: the one moment a reader needs

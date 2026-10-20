@@ -15,8 +15,9 @@
 # file beside it named `<that file>.view.N`, and with nothing said at all
 # where there is none. A file asked for at a commit (`gh api .../contents/`)
 # is answered from `<that file>.contents`, and with GitHub's 404 where there
-# is none. Every `gh api` asked is written down, a line each, in
-# `<that file>.log`.
+# is none. A pull request's review threads are answered from
+# `<that file>.threads`, and with none where there is none. Every `gh api`
+# asked is written down, a line each, in `<that file>.log`.
 #
 # Three answers are `gh`'s refusals rather than lists, each in the words and
 # with the code the real one gives, so that what Obelus makes of them is
@@ -34,6 +35,14 @@ if [ "$3" = "view" ]; then
 fi
 echo "$*" >> "$answer.log"
 case "$*" in
+    *reviewThreads*)
+        if [ -f "$answer.threads" ]; then
+            cat "$answer.threads"
+        else
+            printf '{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[]}}}}}'
+        fi
+        exit 0
+        ;;
     */contents/*)
         if [ -f "$answer.contents" ]; then
             cat "$answer.contents"

@@ -321,7 +321,57 @@ pub struct Comment {
     pub when: Option<i64>,
     /// What they wrote, as the markdown they wrote.
     pub body: String,
+    /// The lines it is about, where it was said on some: the first comment
+    /// of a review's thread.
+    pub on: Option<On>,
+    /// What was said under it since, oldest first: the rest of its thread.
+    pub replies: Vec<Comment>,
 }
+
+impl Comment {
+    /// When anything was last said in it: the comment, or its last reply --
+    /// which is what puts a thread somebody has just answered at the top.
+    #[must_use]
+    pub fn latest(&self) -> Option<i64> {
+        self.replies
+            .iter()
+            .filter_map(|reply| reply.when)
+            .chain(self.when)
+            .max()
+    }
+}
+
+/// The lines a review's thread is about.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct On {
+    /// GitHub's name for the thread, which outlives every place it is drawn.
+    pub id: String,
+    /// The file, from the top of the repository.
+    pub path: String,
+    /// The line, in the pull request's last commit -- none where the lines
+    /// have moved on since and GitHub calls the thread outdated.
+    pub line: Option<u64>,
+    /// The last lines of the change it was said beside, as a diff.
+    pub hunk: String,
+    /// Whether somebody marked it resolved.
+    pub resolved: bool,
+    /// Whether the lines it is about are not in the last commit any more.
+    pub outdated: bool,
+}
+
+/// How many lines of the change a thread shows above what was said: the
+/// lines it was said about, and a few before them, as GitHub shows.
+const HUNK_LINES: usize = 4;
+
+/// What GitHub is asked about a pull request's review threads.
+///
+/// Not something `gh pr view` will say: its reviews are the envelopes the
+/// comments on lines came in, and the comments themselves, and whether
+/// their thread is resolved, are GraphQL's alone.
+const THREADS: &str = "query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,\
+                       name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{id \
+                       isResolved isOutdated path line comments(first:100){nodes{author{login} \
+                       body createdAt diffHunk}}}}}}}";
 
 /// What a comment did.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -656,15 +706,126 @@ pub fn discussion(
     asked: Asked,
 ) -> Result<Discussion, Unlisted> {
     let number = asked.number().to_string();
-    let said = match asked {
-        Asked::PullRequest(_) => gh(root, instead, &["pr", "view", &number, "--json", VIEWED])?,
-        Asked::Issue(_) => gh(
-            root,
-            instead,
-            &["issue", "view", &number, "--json", ISSUE_VIEWED],
-        )?,
+    match asked {
+        Asked::PullRequest(_) => {
+            // Both at once, so the page waits on one round trip and not two.
+            let (said, threads) = std::thread::scope(|scope| {
+                let threads = scope.spawn(|| {
+                    // The crate's `asked`: the argument of that name is the
+                    // pull request.
+                    crate::asked(
+                        root,
+                        instead.clone(),
+                        THREADS,
+                        &[
+                            ("-F", "owner={owner}".to_string()),
+                            ("-F", "name={repo}".to_string()),
+                            ("-F", format!("number={number}")),
+                        ],
+                    )
+                });
+                let said = gh(
+                    root,
+                    instead.clone(),
+                    &["pr", "view", &number, "--json", VIEWED],
+                );
+                (said, threads.join())
+            });
+            let discussion = read_discussion(&said?, asked)?;
+            // Without its threads rather than without anything: what the
+            // page says beside them is still so.
+            let threads = match threads {
+                Ok(Ok(threads)) => read_threads(&threads),
+                Ok(Err(why)) => {
+                    tracing::warn!(?why, "the review threads were not said");
+                    Vec::new()
+                }
+                Err(_) => {
+                    tracing::warn!("asking for the review threads fell over");
+                    Vec::new()
+                }
+            };
+            Ok(with_threads(discussion, threads))
+        }
+        Asked::Issue(_) => {
+            let said = gh(
+                root,
+                instead,
+                &["issue", "view", &number, "--json", ISSUE_VIEWED],
+            )?;
+            read_discussion(&said, asked)
+        }
+    }
+}
+
+/// What was said on a pull request with its review threads among it, by
+/// when each last had something said in it, newest first -- so a thread
+/// somebody has just answered is at the top, wherever it began.
+fn with_threads(mut discussion: Discussion, threads: Vec<Comment>) -> Discussion {
+    discussion.said.extend(threads);
+    discussion
+        .said
+        .sort_by_key(|comment| std::cmp::Reverse(comment.latest()));
+    discussion
+}
+
+/// A pull request's review threads as GitHub described them, each as its
+/// first comment with the rest under it.
+fn read_threads(said: &serde_json::Value) -> Vec<Comment> {
+    let text = |value: &serde_json::Value, key: &str| {
+        value
+            .get(key)
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string()
     };
-    read_discussion(&said, asked)
+    let comment = |node: &serde_json::Value| Comment {
+        author: node
+            .get("author")
+            .map(|author| text(author, "login"))
+            .unwrap_or_default(),
+        did: Did::Commented,
+        when: text(node, "createdAt")
+            .parse::<jiff::Timestamp>()
+            .ok()
+            .map(jiff::Timestamp::as_second),
+        body: text(node, "body").replace("\r\n", "\n"),
+        on: None,
+        replies: Vec::new(),
+    };
+    said.pointer("/data/repository/pullRequest/reviewThreads/nodes")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|thread| {
+            let nodes = thread.pointer("/comments/nodes")?.as_array()?;
+            let (first, rest) = nodes.split_first()?;
+            let flag =
+                |key: &str| thread.get(key).and_then(serde_json::Value::as_bool) == Some(true);
+            Some(Comment {
+                on: Some(On {
+                    id: text(thread, "id"),
+                    path: text(thread, "path"),
+                    line: thread.get("line").and_then(serde_json::Value::as_u64),
+                    hunk: hunk_tail(&text(first, "diffHunk")),
+                    resolved: flag("isResolved"),
+                    outdated: flag("isOutdated"),
+                }),
+                replies: rest.iter().map(comment).collect(),
+                ..comment(first)
+            })
+        })
+        .collect()
+}
+
+/// The last lines of a change, without the `@@` line that says where it
+/// starts -- a reader is shown the lines, and told where they are already.
+fn hunk_tail(hunk: &str) -> String {
+    let lines: Vec<&str> = hunk
+        .lines()
+        .filter(|line| !line.starts_with("@@"))
+        .collect();
+    lines[lines.len().saturating_sub(HUNK_LINES)..].join("\n")
 }
 
 /// What `gh pr view --json` printed with [`VIEWED`] -- or `gh issue view`
@@ -736,6 +897,8 @@ fn read_discussion(said: &str, asked: Asked) -> Result<Discussion, Unlisted> {
             did: Did::Commented,
             when: when(comment, "createdAt"),
             body: text(comment, "body").replace("\r\n", "\n"),
+            on: None,
+            replies: Vec::new(),
         })
         .collect();
     // A review with nothing written in it is the envelope a comment on a
@@ -754,6 +917,8 @@ fn read_discussion(said: &str, asked: Asked) -> Result<Discussion, Unlisted> {
                 },
                 when: when(review, "submittedAt"),
                 body: text(review, "body").replace("\r\n", "\n"),
+                on: None,
+                replies: Vec::new(),
             }),
     );
     // Newest first: what is being looked for is what happened last.
@@ -1063,6 +1228,77 @@ mod tests {
         assert_eq!(named, [("src/lib.rs", 12, 3), ("docs/a b#c.md", 1, 0)]);
         assert_eq!(escaped("docs/a b#c.md"), "docs/a%20b%23c.md");
         assert_eq!(escaped("src/lib.rs"), "src/lib.rs");
+    }
+
+    /// A review's thread reads as its first comment, with the lines it is
+    /// about, the last of the change it was said beside without the `@@`
+    /// line, whether it is resolved or outdated, and the rest of it under
+    /// it -- and goes among what was said by when it was last answered.
+    ///
+    /// Broken deliberately four ways. Keeping the whole hunk: the lines
+    /// before the four were drawn too. Keeping the `@@` line: it was the
+    /// first of them. Putting every comment of the thread under it, the
+    /// first one included: the first was said twice. And ordering by when a
+    /// thread began: the one answered an hour ago sat under a comment from
+    /// yesterday.
+    #[test]
+    fn a_review_thread_reads_as_a_comment_with_its_replies() {
+        use super::{Did, Discussion, read_threads, with_threads};
+
+        let said = r#"{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[
+            {"id":"T1","isResolved":false,"isOutdated":false,"path":"src/lib.rs","line":12,
+             "comments":{"nodes":[
+                {"author":{"login":"bob"},"body":"Why?","createdAt":"2026-10-01T00:00:00Z",
+                 "diffHunk":"@@ -1,6 +1,7 @@\n one\n two\n three\n-four\n+four, again\n five"},
+                {"author":{"login":"alice"},"body":"Because.","createdAt":"2026-10-05T00:00:00Z","diffHunk":""}
+             ]}},
+            {"id":"T2","isResolved":true,"isOutdated":true,"path":"src/old.rs","line":null,
+             "comments":{"nodes":[
+                {"author":{"login":"carol"},"body":"Fixed?","createdAt":"2026-10-02T00:00:00Z","diffHunk":"@@ x @@\n+a"}
+             ]}}
+        ]}}}}}"#;
+        let threads = read_threads(&serde_json::from_str(said).expect("json"));
+        assert_eq!(threads.len(), 2);
+        let first = &threads[0];
+        let on = first.on.as_ref().expect("where it is");
+        assert_eq!((on.path.as_str(), on.line), ("src/lib.rs", Some(12)));
+        assert_eq!(on.hunk, " three\n-four\n+four, again\n five");
+        assert_eq!(
+            (first.author.as_str(), first.body.as_str()),
+            ("bob", "Why?")
+        );
+        let replies: Vec<&str> = first
+            .replies
+            .iter()
+            .map(|reply| reply.author.as_str())
+            .collect();
+        assert_eq!(replies, ["alice"]);
+        let outdated = threads[1].on.as_ref().expect("where it was");
+        assert!(outdated.resolved && outdated.outdated && outdated.line.is_none());
+        // Short enough that its `@@` is among the last four.
+        assert_eq!(outdated.hunk, "+a");
+
+        let comment = super::Comment {
+            author: "dave".to_string(),
+            did: Did::Commented,
+            when: Some(1_791_072_000), // 2026-10-04
+            body: "Hm.".to_string(),
+            on: None,
+            replies: Vec::new(),
+        };
+        let all = with_threads(
+            Discussion {
+                said: vec![comment],
+                ..Discussion::default()
+            },
+            threads,
+        );
+        let order: Vec<&str> = all.said.iter().map(|said| said.author.as_str()).collect();
+        assert_eq!(
+            order,
+            ["bob", "dave", "carol"],
+            "not by when each was last answered"
+        );
     }
 
     /// A check carries where it is told in full: a check run's page, or the
