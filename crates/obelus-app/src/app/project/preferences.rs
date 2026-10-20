@@ -1435,6 +1435,11 @@ impl App {
     /// One place, called at startup and after every change, so a setting
     /// cannot mean one thing on the way in and another when it is edited.
     fn apply_config(&mut self) {
+        // A number being turned on the settings page measures its change
+        // against what is set, which may just have moved under it.
+        if let Some(settings) = self.settings.as_mut() {
+            settings.hear_config(&self.settled.config);
+        }
         let called = self.settled.config.theme.clone();
         match self.theme_called(&called) {
             Some(theme) => {

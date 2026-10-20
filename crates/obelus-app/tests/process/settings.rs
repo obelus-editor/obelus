@@ -6175,3 +6175,43 @@ fn enter_twice_on_a_number_past_its_ends_writes_nothing() {
 
     obelus_text::lay_tabs_at(obelus_text::TAB_WIDTH);
 }
+
+/// A number being turned is measured against what is set now, which another
+/// Obelus may have changed while the box was up: a box nobody touched shows
+/// the new number, and typing back the old one is a change to write.
+///
+/// Broken deliberately by not hearing the settings in the box
+/// (`hear_config` returning at once): the box still said four, and enter on
+/// a typed four wrote nothing over the other window's eight.
+#[test]
+fn a_number_being_turned_hears_another_obelus() {
+    let _turn = crate::turn();
+    let scratch = temporary("dial-shared");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+
+    support::type_text(&mut app, "tab width");
+    support::press(&mut app, KeyCode::Enter);
+    std::fs::write(&file, "tab_width = 8\n").expect("the other window");
+    app.handle(Event::Watched(obelus_watch::Changed { path: file.clone() }));
+    let dialling = app
+        .settings()
+        .and_then(|settings| settings.dialling())
+        .expect("the box went");
+    assert_eq!(
+        dialling.typed, "8",
+        "the untouched box does not say what is set now"
+    );
+
+    support::type_text(&mut app, "4");
+    support::press(&mut app, KeyCode::Enter);
+    // Four is the default, so what is written is the eight taken out.
+    assert_eq!(
+        obelus_config::from_toml(&std::fs::read_to_string(&file).expect("the file")).tab_width,
+        4,
+        "the old number was taken for no change"
+    );
+    assert_eq!(app.config().tab_width, 4);
+
+    obelus_text::lay_tabs_at(obelus_text::TAB_WIDTH);
+}

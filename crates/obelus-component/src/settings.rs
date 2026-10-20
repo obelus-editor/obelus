@@ -1142,6 +1142,29 @@ impl Settings {
         self.dialling.as_ref()
     }
 
+    /// Hears the settings again, for a number being turned: what it opened
+    /// on may have been changed under it by another Obelus.
+    ///
+    /// What it was becomes what the file says now, so enter on the number
+    /// the reader typed is a change where it is one and none where it is
+    /// not; and a box nobody has touched shows the new number, since what
+    /// it showed was only ever what was set.
+    pub fn hear_config(&mut self, config: &Config) {
+        let Some(dialling) = self.dialling.as_mut() else {
+            return;
+        };
+        let Some(Value::Count(now)) = config.value_of(dialling.key) else {
+            return;
+        };
+        if now == dialling.was {
+            return;
+        }
+        dialling.was = now;
+        if dialling.held {
+            dialling.typed = now.to_string();
+        }
+    }
+
     /// Gives up a number being turned, as escape does: nothing it had come
     /// to is kept.
     pub fn let_go_of_the_dial(&mut self) {
