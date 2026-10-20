@@ -2030,11 +2030,17 @@ impl Settings {
                     return SettingsOutcome::Consumed;
                 };
                 let kept = dialling.kept();
-                // An empty box, or the number it opened on, is no change and
-                // nothing is written: a line in the file the reader never
-                // meant to put there is a setting that stops following the
-                // default.
-                match dialling.typed.is_empty() || kept == dialling.was {
+                // An empty box, a box nobody touched, or the number it opened
+                // on, is no change and nothing is written: a line in the file
+                // the reader never meant to put there is a setting that stops
+                // following the default. Untouched before clamped, because a
+                // number written by hand past the dial's ends is read as it
+                // was written, and enter pressed twice on it is not a turn.
+                let unchanged = dialling.held
+                    || dialling.typed.is_empty()
+                    || dialling.typed.parse() == Ok(dialling.was)
+                    || kept == dialling.was;
+                match unchanged {
                     true => SettingsOutcome::Consumed,
                     false => SettingsOutcome::Changed(dialling.key, Value::Count(kept)),
                 }

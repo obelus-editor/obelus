@@ -6150,3 +6150,28 @@ fn nothing_pasted_while_a_number_is_turned_goes_into_the_filter() {
     );
     assert!(settings.dialling().is_some(), "the paste let go of the box");
 }
+
+/// A number written by hand past the dial's ends is left as it was by enter
+/// pressed twice on it: nothing was turned, so nothing is written.
+///
+/// Broken deliberately by keeping what the box came to however it got
+/// there (`kept == was` alone): the file's forty became the dial's sixteen.
+#[test]
+fn enter_twice_on_a_number_past_its_ends_writes_nothing() {
+    let _turn = crate::turn();
+    let scratch = temporary("dial-past-the-ends");
+    let file = settings_file(&scratch);
+    std::fs::write(&file, "tab_width = 40\n").expect("the settings");
+    let mut app = open(&file);
+
+    support::type_text(&mut app, "tab width");
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        written_tab_width(&file),
+        Some(40),
+        "a number nobody turned was written"
+    );
+
+    obelus_text::lay_tabs_at(obelus_text::TAB_WIDTH);
+}
