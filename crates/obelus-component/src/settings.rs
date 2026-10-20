@@ -67,6 +67,13 @@ pub enum SettingsOutcome {
     Consumed,
     /// A setting was changed, and this is what to.
     Changed(&'static str, Value),
+    /// A setting is being turned, and this is where it has got to: in force
+    /// at once, so the reader watches what the number does, and written
+    /// down only when they keep it ([`SettingsOutcome::Changed`]).
+    ///
+    /// Escape sends the number the row started at, which puts back what
+    /// the reader had.
+    Tried(&'static str, Value),
     /// A setting should stop being the project's, and go back to being
     /// whatever the reader has.
     ///
@@ -87,6 +94,9 @@ pub enum SettingsOutcome {
     Deactivate,
     /// A setting with choices wants its list: which setting, what the
     /// choices are, and which one it is set to now.
+    ///
+    /// Words only. A number is turned on its own row instead
+    /// ([`Dialling`]).
     ///
     /// The list itself is the ordinary picker, opened by the application
     /// over this view. This one asks; it does not draw a list of its own.
@@ -568,6 +578,42 @@ pub struct Binding {
     pub replacing: bool,
 }
 
+/// A number being turned on its own row.
+///
+/// The page's second mode, beside a key being bound, and for the same
+/// reason: enter on the row said "the next keys are this number's", and
+/// until enter or escape every key is. The arrows turn it and the digits
+/// type it, so a reader who wants ninety days types `90` rather than
+/// pressing right sixty times.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Dialling {
+    /// Which setting.
+    pub key: &'static str,
+    /// How it turns.
+    pub dial: obelus_config::Dial,
+    /// What it was when enter was pressed, which escape puts back.
+    pub was: usize,
+    /// What is in force now: the last thing turned to, or typed that the
+    /// dial would turn to.
+    pub now: usize,
+    /// What has been typed, while something has. Not yet `now` where it is
+    /// a number on the way to one -- the `1` of `16`, on a dial that starts
+    /// at eight -- because a page that jumped to the least each time a
+    /// reader began a number would be a page that blinks at them.
+    pub typed: Option<String>,
+}
+
+impl Dialling {
+    /// What enter keeps: what is typed, brought inside the ends, or the
+    /// number in force where nothing is.
+    fn kept(&self) -> usize {
+        self.typed
+            .as_deref()
+            .and_then(|typed| typed.parse().ok())
+            .map_or(self.now, |typed| self.dial.held(typed))
+    }
+}
+
 /// One row of the keys page.
 #[derive(Clone, Copy, Debug)]
 pub enum KeyRow {
@@ -609,6 +655,8 @@ pub struct Settings {
     /// until the reader says "the next thing I press is this command's",
     /// and from then until they press it every key belongs to that row.
     binding: Option<Binding>,
+    /// Which number is being turned, while one is -- see [`Dialling`].
+    dialling: Option<Dialling>,
     /// The keys each command is on, as the table was when it was last
     /// heard ([`Settings::hear_keymap`]).
     ///
@@ -666,6 +714,7 @@ impl Settings {
         Self {
             query: Field::new(),
             binding: None,
+            dialling: None,
             held: Vec::new(),
             changed: Vec::new(),
             lined: Vec::new(),
@@ -683,6 +732,7 @@ impl Settings {
         Self {
             query: Field::new(),
             binding: None,
+            dialling: None,
             held: Vec::new(),
             changed: Vec::new(),
             lined: Vec::new(),
@@ -1051,7 +1101,7 @@ impl Settings {
         offering: Option<&Offering>,
         room: (u16, u16),
     ) {
-        if self.binding.is_some() {
+        if self.binding.is_some() || self.dialling.is_some() {
             return;
         }
         let heights = match self.on_cards() {
@@ -1072,6 +1122,24 @@ impl Settings {
     #[must_use]
     pub const fn binding_at(&self) -> Option<Binding> {
         self.binding
+    }
+
+    /// The number being turned, if one is.
+    #[must_use]
+    pub const fn dialling(&self) -> Option<&Dialling> {
+        self.dialling.as_ref()
+    }
+
+    /// Stops turning the number, and says what to put back: the setting and
+    /// what it was, where turning it had changed it.
+    ///
+    /// For whatever takes the page away while a number is being turned --
+    /// the keys cannot, since they are the row's, but a tree that goes
+    /// can -- because a number tried and never kept is not the reader's
+    /// setting, and the file still says the one they had.
+    pub fn put_back(&mut self) -> Option<(&'static str, Value)> {
+        let dialling = self.dialling.take()?;
+        (dialling.now != dialling.was).then_some((dialling.key, Value::Count(dialling.was)))
     }
 
     /// The key that would not do, and why.
@@ -1470,12 +1538,7 @@ impl Settings {
             ),
             Kind::Names => Value::Names(Vec::new()),
             Kind::Text => Value::Text(String::new()),
-            Kind::Count(counts) => Value::Count(
-                counts
-                    .first()
-                    .and_then(|first| first.parse().ok())
-                    .unwrap_or(1),
-            ),
+            Kind::Count(dial) => Value::Count(dial.least),
         })
     }
 
@@ -1496,6 +1559,9 @@ impl Settings {
         room: (u16, u16),
     ) -> SettingsOutcome {
         let agents = cards.agents;
+        if self.dialling.is_some() {
+            return self.turn(key);
+        }
         // A row waiting for a key takes the next one, whatever it is: that
         // is what the reader asked for by pressing enter on it, and a
         // modifier is half of most chords worth binding. Escape is the way
@@ -1791,7 +1857,7 @@ impl Settings {
             // enter does nothing: a key is added with `ctrl+enter`, there as
             // on every row.
             KeyCode::Enter if bare && self.on_keys() => match keys.get(self.window.focus()) {
-                Some((KeyRow::Setting(setting), _)) => Self::change(setting, config),
+                Some((KeyRow::Setting(setting), _)) => self.change(setting, config),
                 Some((KeyRow::Key { command, slot }, Some(_))) => {
                     self.binding = Some(Binding {
                         command: *command,
@@ -1849,7 +1915,7 @@ impl Settings {
             }
             KeyCode::Enter if bare => {
                 match rows.get(self.window.focus()).and_then(Shown::setting) {
-                    Some(setting) => Self::change(setting, config),
+                    Some(setting) => self.change(setting, config),
                     None => SettingsOutcome::Consumed,
                 }
             }
@@ -1930,24 +1996,128 @@ impl Settings {
         }
     }
 
+    /// A key while a number is being turned, which is every key: the row
+    /// asked for them.
+    ///
+    /// What the number comes to is in force as it changes -- each press,
+    /// and each digit that makes a number the dial turns through -- and
+    /// written down on enter. Escape puts back what it was, and is the
+    /// only way out besides enter, because it is the way out of
+    /// everything and gives up on the nearest thing first.
+    fn turn(&mut self, key: &KeyEvent) -> SettingsOutcome {
+        let Some(dialling) = self.dialling.as_mut() else {
+            return SettingsOutcome::Ignored;
+        };
+        let (setting, dial) = (dialling.key, dialling.dial);
+        // Shift is let through on a digit, which some layouts need for one.
+        let bare = !key
+            .modifiers
+            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER);
+        let tried = |count: usize| SettingsOutcome::Tried(setting, Value::Count(count));
+        match key.code {
+            KeyCode::Esc => {
+                let Some(dialling) = self.dialling.take() else {
+                    return SettingsOutcome::Consumed;
+                };
+                match dialling.now == dialling.was {
+                    true => SettingsOutcome::Consumed,
+                    false => tried(dialling.was),
+                }
+            }
+            KeyCode::Enter => {
+                let Some(dialling) = self.dialling.take() else {
+                    return SettingsOutcome::Consumed;
+                };
+                let kept = dialling.kept();
+                // Back where it started is no change, and nothing is
+                // written: a line in the file the reader never meant to
+                // put there is a setting that stops following the default.
+                match (kept == dialling.was, dialling.now == dialling.was) {
+                    (true, true) => SettingsOutcome::Consumed,
+                    (true, false) => tried(dialling.was),
+                    (false, _) => SettingsOutcome::Changed(setting, Value::Count(kept)),
+                }
+            }
+            KeyCode::Left | KeyCode::Right if bare => {
+                let from = dialling.kept();
+                dialling.now = dial.turned(from, key.code == KeyCode::Right);
+                dialling.typed = None;
+                tried(dialling.now)
+            }
+            KeyCode::Char(digit) if bare && digit.is_ascii_digit() => {
+                let mut typed = dialling.typed.take().unwrap_or_default();
+                // No longer than the most it may be: past that every digit
+                // is a number the dial would only bring back down.
+                if typed.len() < dial.most.to_string().len() {
+                    typed.push(digit);
+                }
+                dialling.typed = Some(typed);
+                self.try_typed()
+            }
+            KeyCode::Backspace if bare => {
+                let mut typed = dialling
+                    .typed
+                    .take()
+                    .unwrap_or_else(|| dialling.now.to_string());
+                typed.pop();
+                dialling.typed = Some(typed);
+                self.try_typed()
+            }
+            _ => SettingsOutcome::Consumed,
+        }
+    }
+
+    /// What is typed put in force, where it is a number the dial would turn
+    /// to -- and nothing done where it is not one yet.
+    fn try_typed(&mut self) -> SettingsOutcome {
+        let Some(dialling) = self.dialling.as_mut() else {
+            return SettingsOutcome::Consumed;
+        };
+        let typed = dialling
+            .typed
+            .as_deref()
+            .and_then(|typed| typed.parse::<usize>().ok())
+            .filter(|typed| dialling.dial.held(*typed) == *typed);
+        match typed {
+            Some(typed) if typed != dialling.now => {
+                dialling.now = typed;
+                SettingsOutcome::Tried(dialling.key, Value::Count(typed))
+            }
+            _ => SettingsOutcome::Consumed,
+        }
+    }
+
     /// What enter on one of Obelus's own settings asks for, whichever page
     /// the row is on.
-    fn change(setting: &'static Setting, config: &Config) -> SettingsOutcome {
+    fn change(&mut self, setting: &'static Setting, config: &Config) -> SettingsOutcome {
         match setting.kind {
             Kind::Switch => {
                 let on = matches!(Self::value_of(setting, config), Value::Switch(true));
                 SettingsOutcome::Changed(setting.key, Value::Switch(!on))
             }
-            // Both open the same short list. A number is picked
-            // from one the way a word is, and the only difference
-            // is what it is written down as.
-            Kind::Choice(choices) | Kind::Count(choices) => {
+            Kind::Choice(choices) => {
                 let word = match Self::value_of(setting, config) {
                     Value::Choice(word) => word,
                     Value::Count(count) => count.to_string(),
                     Value::Switch(_) | Value::Names(_) | Value::Text(_) => String::new(),
                 };
                 SettingsOutcome::Choose(setting.key, choices, word)
+            }
+            // Turned where it is, rather than picked from a list that
+            // opens over the row and hides what the number is doing.
+            Kind::Count(dial) => {
+                let now = match Self::value_of(setting, config) {
+                    Value::Count(count) => count,
+                    _ => dial.least,
+                };
+                self.dialling = Some(Dialling {
+                    key: setting.key,
+                    dial,
+                    was: now,
+                    now,
+                    typed: None,
+                });
+                SettingsOutcome::Consumed
             }
             // A list the reader builds rather than one Obelus
             // offers, so what opens is not the short list of

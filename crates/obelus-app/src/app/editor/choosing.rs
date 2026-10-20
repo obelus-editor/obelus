@@ -1008,15 +1008,7 @@ impl App {
                 None => self.go_to(&path, line, character),
             },
             PickerValue::Setting { key, word } => {
-                // A number is written down as one. The list it was picked
-                // from spells them, because a list is words either way.
-                let value = match obelus_config::Setting::named(key).map(|setting| setting.kind) {
-                    Some(obelus_config::Kind::Count(_)) => {
-                        obelus_config::Value::Count(word.parse().unwrap_or(1))
-                    }
-                    _ => obelus_config::Value::Choice(word),
-                };
-                self.change_setting(key, &value);
+                self.change_setting(key, &obelus_config::Value::Choice(word));
             }
             PickerValue::AgentValue { setting, value } => {
                 self.set_agent_setting(&setting, &value);

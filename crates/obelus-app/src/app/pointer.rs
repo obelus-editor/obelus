@@ -498,12 +498,12 @@ impl App {
     fn press_in_settings(&mut self, x: u16, y: u16, twice: bool) {
         // A row waiting for its key takes the next key and nothing else: a
         // press on a tab is turned into the tab key, and would be taken as
-        // the key for the row. Escape is the way out of the wait.
-        if self
-            .settings
-            .as_ref()
-            .is_some_and(|settings| settings.binding_at().is_some())
-        {
+        // the key for the row. Escape is the way out of the wait. The same
+        // for a number being turned, whose keys are its own until enter or
+        // escape: a press elsewhere would leave it tried and never kept.
+        if self.settings.as_ref().is_some_and(|settings| {
+            settings.binding_at().is_some() || settings.dialling().is_some()
+        }) {
             return;
         }
         let area = self.drawn_in();

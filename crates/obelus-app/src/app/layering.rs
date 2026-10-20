@@ -134,7 +134,15 @@ impl App {
             // Nothing to put back: the view it was over is as it was.
             Layer::Palette => self.palette = None,
             Layer::Names => self.names = None,
-            Layer::Settings => self.settings = None,
+            // A number turned and not kept is put back: it was in force
+            // only so the reader could watch it, and the file still says
+            // what they had.
+            Layer::Settings => {
+                if let Some((key, was)) = self.settings.as_mut().and_then(Settings::put_back) {
+                    self.try_setting(key, &was);
+                }
+                self.settings = None;
+            }
             Layer::Counts => self.counts = None,
             Layer::Prompt => self.prompt = None,
         }
