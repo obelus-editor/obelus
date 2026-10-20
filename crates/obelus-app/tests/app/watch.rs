@@ -1151,3 +1151,88 @@ fn settled_into(events: &Receiver<Event>, app: &mut obelus_app::app::App) {
         app.handle(event);
     }
 }
+
+/// The first theme taken from the registry, installed by another window
+/// while the themes page is open here, arrives on its card.
+///
+/// The registry's themes have no directory until the first one lands, and
+/// a watch cannot be taken on a directory that is not there -- so it is
+/// taken on the one it would be made in, and on the directory itself once
+/// that is heard. The page reads what is installed once and keeps it, so
+/// without the watch the card says `Install` until the settings are opened
+/// again. Against the real filesystem for the reason the project's first
+/// settings are: what is tested is whether a watch was taken.
+///
+/// Broken deliberately by watching only directories that are there, as
+/// `watch_theme` did: the card then never changes.
+#[test]
+fn the_first_theme_installed_elsewhere_arrives_on_the_page() {
+    let scratch = Scratch::new("first-theme");
+    let file = scratch.directory.join("one.rs");
+    fs::write(&file, "fn one() {}\n").expect("writing the file");
+    let data = scratch.directory.join("data");
+    fs::create_dir_all(&data).expect("making the data directory");
+    let installed = data.join("installed-themes");
+
+    let (sender, events) = std::sync::mpsc::channel();
+    let mut app = obelus_app::app::App::new(vec![
+        obelus_buffer::Buffer::open(&file).expect("opening the file"),
+    ]);
+    app.working_directory_for_test(scratch.directory.clone());
+    app.config_file_for_test(scratch.directory.join("config.toml"));
+    app.installed_themes_for_test(installed.clone());
+    app.start(sender);
+    support::lay_out(&mut app, 90, 30);
+    app.themes_index_for_test(vec![obelus_themes::Listed {
+        name: "fresh".to_string(),
+        group: obelus_themes::Group::Obelus,
+        dark: true,
+        author: "Somebody".to_string(),
+        description: "The fresh colours".to_string(),
+        wallpaper: None,
+        picture: None,
+        package: "fresh.tar.gz".to_string(),
+        sha256: "package".to_string(),
+        commit: "aaa".to_string(),
+        updated: "2026-10-01".to_string(),
+    }]);
+    obelus_app::app::dispatch::dispatch(&mut app, Command::ConfigOpen);
+    support::press(&mut app, crossterm::event::KeyCode::BackTab);
+    support::press(&mut app, crossterm::event::KeyCode::BackTab);
+    assert!(app.settings().expect("the settings").on_themes());
+    let status = |app: &obelus_app::app::App| {
+        app.listed_themes()
+            .into_iter()
+            .find(|card| card.theme.name == "fresh")
+            .map(|card| card.status)
+    };
+    assert_eq!(status(&app), Some(obelus_themes::Status::Missing));
+
+    // Another window installs it: made beside where it goes and put in
+    // place whole, the directory and the theme in it arriving as one.
+    let staged = data.join(".staged");
+    fs::create_dir_all(staged.join("fresh")).expect("making the theme");
+    fs::write(staged.join("fresh/theme.toml"), "base = \"dark\"\n").expect("the theme");
+    fs::write(
+        staged.join("fresh").join(obelus_themes::install::RECORD),
+        r#"{"commit": "aaa", "sha256": "package", "group": "obelus"}"#,
+    )
+    .expect("the record");
+    fs::rename(&staged, &installed).expect("putting it in place");
+
+    let deadline = Instant::now() + DEADLINE;
+    let mut heard = Vec::new();
+    while Instant::now() < deadline {
+        let Ok(event) = events.recv_timeout(Duration::from_millis(200)) else {
+            continue;
+        };
+        if let Event::Watched(obelus_watch::Changed { path }) = &event {
+            heard.push(path.display().to_string());
+        }
+        app.handle(event);
+        if status(&app) == Some(obelus_themes::Status::Installed) {
+            return;
+        }
+    }
+    panic!("the install was never heard; what arrived: {heard:?}");
+}

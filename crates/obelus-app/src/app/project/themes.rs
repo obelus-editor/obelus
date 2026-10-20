@@ -19,9 +19,14 @@
 //! directories once per card. With a hundred and thirty themes listed and
 //! fifteen installed, a press and its frame were measured at 225ms on
 //! Windows in a test build, and at 15ms reading nothing -- an arrow a
-//! reader watched arrive. Everything that can change those
-//! directories tells Obelus: its own install and removal, and the watch on
-//! both directories for everybody else's (`App::forget_the_themes_on_disk`).
+//! reader watched arrive. What changes those directories tells Obelus:
+//! its own install and removal, and the watch on both directories for
+//! everybody else's (`App::forget_the_themes_on_disk`) -- taken on the
+//! directory one would be made in while it is not there yet
+//! (`App::watch_theme`). The watch is not recursive, so it hears a theme
+//! arrive, be replaced or go, which is everything an install does; a file
+//! edited inside a theme's directory is read again when the settings next
+//! open.
 
 use std::cell::OnceCell;
 

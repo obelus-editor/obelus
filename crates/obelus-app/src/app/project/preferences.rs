@@ -1183,8 +1183,22 @@ impl App {
     /// the directory a theme really lives in can be *replaced* -- which is
     /// how a desktop swaps a whole theme at once, and which leaves the watch
     /// pointing at a directory nothing will ever write to again.
+    ///
+    /// **A directory that is not there yet is watched by the one it would
+    /// be made in**, because there is nothing to take a watch on: the
+    /// registry's themes have no directory until the first one is
+    /// installed, by this window or another. Its appearing is a change
+    /// under it, which `is_a_theme` hears and `reread_theme` answers by
+    /// coming back here and watching the directory itself.
     pub(in crate::app) fn watch_theme(&mut self) {
-        let wanted = self.theme_watches();
+        let wanted: Vec<PathBuf> = self
+            .theme_watches()
+            .into_iter()
+            .filter_map(|directory| match directory.is_dir() {
+                true => Some(directory),
+                false => directory.parent().map(Path::to_path_buf),
+            })
+            .collect();
         let held = std::mem::take(&mut self.theme_watched);
         let Some(watcher) = self.watcher.as_mut() else {
             return;
