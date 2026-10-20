@@ -1371,33 +1371,6 @@ impl StatusView<'_> {
     /// The row is the caller's because the page owns its own last row now:
     /// a dialog does not borrow Obelus's status row, so the one thing this
     /// must not assume is where it is being drawn.
-    /// The box a number is typed into, which takes the row the page's
-    /// filter is on while it is up: the setting's name and then what is in
-    /// the box, held while it is still the number it opened with.
-    pub(crate) fn render_dial(
-        &self,
-        name: &str,
-        dialling: &obelus_component::settings::Dialling,
-        area: Rect,
-        cells: &mut CellBuffer,
-        style: Style,
-    ) {
-        let held = dialling
-            .held
-            .then(|| 0..dialling.typed.chars().count())
-            .filter(|held| !held.is_empty());
-        let marked = held_after(held, None, &typed(Some(name), ""), self.theme);
-        write_marked(
-            cells,
-            area,
-            area.x + 1,
-            area.y,
-            &typed(Some(name), &dialling.typed),
-            style,
-            &marked,
-        );
-    }
-
     pub(crate) fn render_filter(
         &self,
         settings: &obelus_component::settings::Settings,

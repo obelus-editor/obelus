@@ -41,11 +41,13 @@
 //! prose, where a reader looking for one row had to read every row to find it.
 //! A column of names is *scanned*.
 //!
-//! **A number is turned in a box at the foot.** Enter on one brings up a box
-//! where a compact list comes up, the arrows turn what is in it a step and
-//! the digits type it, and enter keeps it -- nothing is in force before
-//! that, as nothing is while a list is walked. It was a list, which offered
-//! only the numbers Obelus thought of (`Dialling`).
+//! **A number is turned where it stands.** Enter on one makes its value a
+//! box, the arrows turn what is in it a step and the digits type it, and
+//! enter keeps it -- nothing is in force before that, as nothing is while
+//! a list is walked. It was a list, which offered only the numbers Obelus
+//! thought of; and it was a box at the foot of the page, where a compact
+//! list comes up, which put the number a screen away from its name
+//! (`Dialling`).
 //!
 //! The keys page, whose rows are one row each, starts what a command does in
 //! one column two past the longest name rather than two past its own: four
@@ -577,7 +579,7 @@ pub struct Binding {
     pub replacing: bool,
 }
 
-/// A number being turned, in the box that comes up at the foot of the page.
+/// A number being turned, in a box on its own row.
 ///
 /// The page's second mode, beside a key being bound, and for the same
 /// reason: enter on the row said "the next keys are this number's", and
@@ -586,8 +588,8 @@ pub struct Binding {
 /// pressing right sixty times.
 ///
 /// Nothing is in force until enter. The box is a question the reader is
-/// answering, the way a compact list is, and a list does not change the
-/// setting while the reader walks it either.
+/// answering, the way a list is, and a list does not change the setting
+/// while the reader walks it either.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Dialling {
     /// Which setting.
@@ -603,6 +605,11 @@ pub struct Dialling {
     /// because a reader who types `18` over `14` means eighteen and not
     /// fourteen hundred and eighteen.
     pub held: bool,
+    /// Whether what is in the box was typed rather than turned to: what
+    /// was typed is shown as it was typed, digit by digit, and what the
+    /// arrows came to is shown the way the row shows it, by its title
+    /// where it has one.
+    pub typing: bool,
 }
 
 impl Dialling {
@@ -2025,6 +2032,7 @@ impl Settings {
                     .turned(dialling.kept(), key.code == KeyCode::Right);
                 dialling.typed = turned.to_string();
                 dialling.held = false;
+                dialling.typing = false;
                 SettingsOutcome::Consumed
             }
             KeyCode::Char(digit) if bare && digit.is_ascii_digit() => {
@@ -2037,6 +2045,7 @@ impl Settings {
                 if dialling.typed.len() < dialling.dial.most.to_string().len() {
                     dialling.typed.push(digit);
                 }
+                dialling.typing = true;
                 SettingsOutcome::Consumed
             }
             KeyCode::Backspace if bare => {
@@ -2047,6 +2056,7 @@ impl Settings {
                     }
                 }
                 dialling.held = false;
+                dialling.typing = true;
                 SettingsOutcome::Consumed
             }
             _ => SettingsOutcome::Consumed,
@@ -2069,8 +2079,8 @@ impl Settings {
                 };
                 SettingsOutcome::Choose(setting.key, choices, word)
             }
-            // Turned in a box of its own rather than picked from a list of
-            // the few Obelus thought of.
+            // Turned where it stands rather than picked from a list of the
+            // few Obelus thought of.
             Kind::Count(dial) => {
                 let was = match Self::value_of(setting, config) {
                     Value::Count(count) => count,
@@ -2082,6 +2092,7 @@ impl Settings {
                     was,
                     typed: was.to_string(),
                     held: true,
+                    typing: false,
                 });
                 SettingsOutcome::Consumed
             }

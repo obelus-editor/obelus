@@ -16,7 +16,7 @@ use obelus_theme::Theme;
 use obelus_themes::Card as ThemeCard;
 use ratatui::{
     buffer::Buffer as CellBuffer,
-    layout::Rect,
+    layout::{Position, Rect},
     style::{Modifier, Style},
     widgets::Widget,
 };
@@ -176,12 +176,7 @@ impl<'a> SettingsView<'a> {
                 .to_string()
             }),
             phase: app.phase(),
-            // Not while a number is being turned: the box at the foot is
-            // where the keys are, and the row behind it is not marked.
-            in_front: crate::in_front(app, Some(crate::layers::Layer::Settings))
-                && app
-                    .settings()
-                    .is_some_and(|settings| settings.dialling().is_none()),
+            in_front: crate::in_front(app, Some(crate::layers::Layer::Settings)),
             called: obelus_config::ALL
                 .iter()
                 .flat_map(|setting| {
@@ -194,10 +189,18 @@ impl<'a> SettingsView<'a> {
                         Some(Value::Count(count)) => Some(count.to_string()),
                         _ => None,
                     };
+                    // And what a number being turned has got to, which is
+                    // in force nowhere yet and is said by its title too.
+                    let turned = app
+                        .settings()
+                        .and_then(Settings::dialling)
+                        .filter(|dialling| dialling.key == setting.key)
+                        .map(|dialling| dialling.kept().to_string());
                     words
                         .iter()
                         .map(|word| (*word).to_string())
                         .chain(in_force)
+                        .chain(turned)
                         .filter_map(|word| {
                             let title = app.called(setting.key, &word)?.into_owned();
                             Some((setting.key, word, title))
@@ -605,6 +608,30 @@ impl SettingsView<'_> {
         let (aside, _) = control_column(region, self.settings.on_keys());
         Some((found.at, x >= aside && x < region.x + room))
     }
+
+    /// Where the caret is, while a number is being turned: after what its
+    /// box says, on the row it is turned on.
+    ///
+    /// A number is a box once enter is pressed on it -- the digits go in
+    /// and backspace takes them out -- and a box is marked by the caret
+    /// sitting in it. Never on the keys page, whose rows are not the
+    /// settings' and which has no number to turn.
+    #[must_use]
+    pub fn caret(&self, area: Rect) -> Option<Position> {
+        let dialling = self.settings.dialling()?;
+        if self.settings.on_keys() {
+            return None;
+        }
+        let region = rows_region(area);
+        let rows = self.rows(region);
+        let found = placed(region, &rows, self.settings.window())
+            .into_iter()
+            .find(|placed| placed.at == self.settings.focus())?;
+        let (aside, width) = control_column(region, false);
+        let said = u16::try_from(text_width(&self.dial_said(dialling))).unwrap_or(width);
+        let x = aside + DIAL_OPENS + said;
+        (x < aside + width).then_some(Position { x, y: found.area.y })
+    }
 }
 
 impl Widget for SettingsView<'_> {
@@ -798,6 +825,19 @@ impl SettingsView<'_> {
             .map(|(.., title)| title.clone())
     }
 
+    /// What a number being turned says in its box: what was typed, digit by
+    /// digit, while the reader is typing; otherwise what it has got to, by
+    /// its title where it has one -- `A week` turned to `8 days` and back
+    /// is the row the reader pressed enter on, and `7` would be a second
+    /// name for it.
+    fn dial_said(&self, dialling: &Dialling) -> String {
+        if dialling.typing {
+            return dialling.typed.clone();
+        }
+        self.title(dialling.key, &dialling.typed)
+            .unwrap_or_else(|| dialling.typed.clone())
+    }
+
     /// One of them, without what is wrong with it.
     fn row(&self, shown: &Shown, width: u16) -> Row {
         match shown {
@@ -814,7 +854,14 @@ impl SettingsView<'_> {
                 body: self.settings.wrapped(setting.about, width),
                 warning: Vec::new(),
                 entry: true,
-                aside: Aside::Control(setting.kind, self.value_of(setting)),
+                // A box where the value was, while it is being turned: the
+                // number is changed beside its name and not somewhere else.
+                aside: match self.settings.dialling() {
+                    Some(dialling) if dialling.key == setting.key => {
+                        Aside::Dial(dialling.clone(), self.dial_said(dialling))
+                    }
+                    _ => Aside::Control(setting.kind, self.value_of(setting)),
+                },
                 // On the reader's page, the file that has this one
                 // instead of them. On the project's, nothing: a setting
                 // the project has is exactly what that page is for.
@@ -1057,6 +1104,8 @@ enum Aside {
     Nothing,
     /// A setting's control: a switch, or the word it is set to.
     Control(Kind, Value),
+    /// A number being turned, and what its box says.
+    Dial(Dialling, String),
     /// Words -- the key a command is on, and nothing when it is on none.
     Words(String),
     /// What pressing the row does or opens, and whether it can be pressed
@@ -1310,6 +1359,14 @@ impl SettingsView<'_> {
                     self.theme,
                     background,
                     row.pinned.is_none() && row.scope != Some(Scope::Project),
+                ),
+                Aside::Dial(dialling, said) => draw_dial(
+                    cells,
+                    Rect::new(aside_at, y, control, 1),
+                    dialling,
+                    said,
+                    self.theme,
+                    background,
                 ),
                 Aside::Words(words) => {
                     let keys = truncate_from_right(words, usize::from(control));
@@ -2246,6 +2303,48 @@ fn run_of(run: Option<std::ops::Range<usize>>) -> Matched<'static> {
     run.map_or(Matched::Nothing, |run| Matched::Run(run.start, run.end))
 }
 
+/// How many cells a number being turned starts after the column does: the
+/// arrow that turns it down, and a space.
+const DIAL_OPENS: u16 = 2;
+
+/// Writes a number being turned: what its box says, between the arrows that
+/// turn it.
+///
+/// An arrow is in the dim ink where the dial goes no further that way,
+/// which is how the row says it has reached an end -- in the ink, and not
+/// by taking the arrow away, which would move the number under the caret.
+/// What the box opened with is held, in the colour everything held is
+/// drawn in, because the first digit takes its place.
+fn draw_dial(
+    cells: &mut CellBuffer,
+    at: Rect,
+    dialling: &Dialling,
+    said: &str,
+    theme: &Theme,
+    background: ratatui::style::Color,
+) {
+    let style = Style::new().bg(background);
+    let ink = |goes: bool| match goes {
+        true => style.fg(theme.foreground),
+        false => style.fg(theme.gutter),
+    };
+    let (dial, now) = (dialling.dial, dialling.kept());
+    put(cells, at.x, at.y, '\u{25c2}', ink(now > dial.least));
+    let said = truncate_from_right(said, usize::from(at.width.saturating_sub(DIAL_OPENS * 2)));
+    let words = match dialling.held && !said.is_empty() {
+        true => style.fg(theme.foreground).bg(theme.selection_background),
+        false => style.fg(theme.foreground),
+    };
+    let after = write(cells, at.x + DIAL_OPENS, at.y, &said, words);
+    put(
+        cells,
+        arrow_at(at.x, after, at.width),
+        at.y,
+        '\u{25b8}',
+        ink(now < dial.most),
+    );
+}
+
 /// Writes a control: a switch, or the word a droplist is set to, in the
 /// row of the control's column it is given.
 fn draw_control(
@@ -2348,65 +2447,6 @@ fn draw_control(
         }
     }
 }
-
-/// Draws how far along its dial a number being turned is: the least it
-/// may be, a track with a mark where the box's number is, the most, and --
-/// where the number has a name of its own on the page -- that name.
-///
-/// The row above the box a number is typed into, which is where a compact
-/// list's rows would be: the box is the question and this is what there is
-/// to choose from, as a list's rows are.
-///
-/// The mark is in the ink of the text and the track in the dim ink, so the
-/// track says how much room there is and the mark says where in it the
-/// reader is.
-pub fn draw_dial(
-    cells: &mut CellBuffer,
-    strip: Rect,
-    dialling: &Dialling,
-    title: Option<&str>,
-    theme: &Theme,
-) {
-    let style = Style::new().bg(theme.background);
-    fill(cells, strip, style);
-    let dial = dialling.dial;
-    let (least, most) = (dial.least.to_string(), dial.most.to_string());
-    // The name at the far end, where the room allows it beside a track
-    // worth drawing; dropped whole rather than cut, as a warning on the
-    // status row is.
-    let named = title.map(|title| format!("  {title}")).unwrap_or_default();
-    let ends = 1 + text_width(&least) + 1 + 1 + text_width(&most) + 1;
-    let room = usize::from(strip.width);
-    let named = match room.saturating_sub(ends + text_width(&named)) >= LEAST_TRACK {
-        true => named,
-        false => String::new(),
-    };
-    let track = room.saturating_sub(ends + text_width(&named));
-    if track < LEAST_TRACK {
-        return;
-    }
-    let mut x = write(cells, strip.x + 1, strip.y, &least, style.fg(theme.gutter)) + 1;
-    let span = dial.most.saturating_sub(dial.least).max(1);
-    let along = dialling.kept().saturating_sub(dial.least).min(span);
-    let mark = along * (track - 1) / span;
-    for at in 0..track {
-        let (glyph, ink) = match at.cmp(&mark) {
-            std::cmp::Ordering::Less => ('\u{2501}', theme.foreground),
-            std::cmp::Ordering::Equal => ('\u{2503}', theme.foreground),
-            std::cmp::Ordering::Greater => ('\u{2500}', theme.gutter),
-        };
-        put(cells, x, strip.y, glyph, style.fg(ink));
-        x += 1;
-    }
-    let after = write(cells, x + 1, strip.y, &most, style.fg(theme.gutter));
-    if !named.is_empty() {
-        write(cells, after, strip.y, &named, style.fg(theme.foreground));
-    }
-}
-
-/// How short a dial's track may be and still say where along it the number
-/// is: under this, a mark has nowhere to move.
-const LEAST_TRACK: usize = 8;
 
 #[cfg(test)]
 mod tests {

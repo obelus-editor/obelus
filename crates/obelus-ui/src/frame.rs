@@ -209,16 +209,10 @@ pub fn cursor_position(area: Rect, app: &impl Screen) -> Option<Position> {
         }
         Some(Layer::Settings) => {
             let settings = app.settings()?;
-            // A number being turned is typed into the row the filter is on,
-            // after the setting's name, and the filter is not where the
-            // keys are going until the box goes.
-            if let Some(dialling) = settings.dialling() {
-                let name = obelus_config::Setting::named(dialling.key)?.name;
-                return on_the_status_row(status::typed_caret(
-                    Some(name),
-                    &dialling.typed,
-                    dialling.typed.chars().count(),
-                ));
+            // A number being turned is typed into on its own row, and the
+            // filter is not where the keys are going until it is let go.
+            if settings.dialling().is_some() {
+                return settings::SettingsView::new(app)?.caret(regions.editor);
             }
             let said = settings.query();
             // A filter nobody has typed into has no caret, the same answer
@@ -535,14 +529,7 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
                     // Asked before the page is drawn, which takes the view.
                     let keys = view.keys();
                     bars::of(Whose::Settings, || view.render(regions.editor, cells));
-                    // A number being turned comes up where a compact list
-                    // would: a row of its dial over the foot of the page,
-                    // and the box on the row under it.
-                    if let Some(dialling) = app.settings().and_then(Settings::dialling)
-                        && let Some(setting) = obelus_config::Setting::named(dialling.key)
-                    {
-                        dial_over(cells, app, dialling, setting.name, &regions);
-                    } else if let Some(settings) = app.settings() {
+                    if let Some(settings) = app.settings() {
                         let style = Style::new()
                             .bg(app.theme().background)
                             .fg(app.theme().status_foreground);
@@ -871,52 +858,6 @@ fn laid_over(
     if !rule.is_empty() {
         shapes::ruled(Rect { height: 1, ..rule });
     }
-}
-
-/// Draws a number being turned over the foot of the settings: its dial on
-/// the row above the status row, with a rule over it, and its box on the
-/// status row -- one pane, as a compact list and its query are one.
-fn dial_over(
-    cells: &mut CellBuffer,
-    app: &impl Screen,
-    dialling: &obelus_component::settings::Dialling,
-    name: &str,
-    regions: &Regions,
-) {
-    let editor = regions.editor;
-    if editor.height < 2 {
-        return;
-    }
-    let strip = Rect {
-        y: editor.bottom() - 1,
-        height: 1,
-        ..editor
-    };
-    let pane = Rect {
-        y: strip.y - 1,
-        height: regions.status.bottom() - (strip.y - 1),
-        ..editor
-    };
-    laid_over(cells, pane, shapes::Joined::Below, app, regions.edge);
-    rule(
-        cells,
-        Rect {
-            y: strip.y - 1,
-            height: 1,
-            ..strip
-        },
-        app.theme(),
-    );
-    let kept = dialling.kept().to_string();
-    let title = app
-        .called(dialling.key, &kept)
-        .filter(|title| *title != kept);
-    settings::draw_dial(cells, strip, dialling, title.as_deref(), app.theme());
-    let style = Style::new()
-        .bg(app.theme().background)
-        .fg(app.theme().status_foreground);
-    fill(cells, regions.status, style);
-    status::StatusView::new(app).render_dial(name, dialling, regions.status, cells, style);
 }
 
 /// Draws a list over whatever is behind it, with its edge and its preview.

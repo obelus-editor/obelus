@@ -5090,8 +5090,8 @@ fn a_workflow_is_called_by_its_title_and_written_by_its_name() {
 /// Broken deliberately three ways: `App::called` without its arm for this
 /// setting, which leaves `30` on the row; the settings row's `value_of`
 /// handing back the number, which leaves `30 ▸` on the page; and the dial
-/// at the foot drawn without its title (`dial_over` handing `draw_dial`
-/// none), which left the number in the box saying thirty of nothing.
+/// saying what the arrows came to by its number rather than its title
+/// (`dial_said` without the title), which turned `A month` into `◂ 29 ▸`.
 #[test]
 fn how_long_a_conversation_is_kept_is_said_as_a_length_of_time() {
     let _turn = crate::turn();
@@ -5110,13 +5110,13 @@ fn how_long_a_conversation_is_kept_is_said_as_a_length_of_time() {
     support::press(&mut app, KeyCode::Enter);
     let dump = support::render(&mut app, 100, 24);
     assert!(
-        foot(&dump).contains("A month"),
+        support::text_block(&dump).contains("\u{25c2} A month \u{25b8}"),
         "the dial does not say a month:\n{dump}"
     );
     support::press(&mut app, KeyCode::Left);
     let dump = support::render(&mut app, 100, 24);
     assert!(
-        foot(&dump).contains("29 days"),
+        support::text_block(&dump).contains("\u{25c2} 29 days \u{25b8}"),
         "a turn is not said as days:\n{dump}"
     );
 
@@ -5887,25 +5887,17 @@ fn written_tab_width(file: &std::path::Path) -> Option<i64> {
         .as_integer()
 }
 
-/// The last three rows of a dump: a box at the foot, the rule over it, and
-/// its dial.
-fn foot(dump: &str) -> String {
-    let text = support::text_block(dump);
-    let rows: Vec<&str> = text.lines().collect();
-    rows[rows.len().saturating_sub(3)..].join("\n")
-}
-
-/// A number comes up in a box at the foot of the page, where a compact list
-/// would: enter on its row opens it, the arrows turn what is in it, and
-/// nothing is in force or written down until enter.
+/// A number is turned where it stands: enter on its row makes the value a
+/// box, the arrows turn what is in it, and nothing is in force or written
+/// down until enter.
 ///
 /// Broken deliberately by putting each turn in force as it was made (the
 /// arrows answering `Changed`): the tab width was five after the first
 /// press, and the assertion that nothing has changed yet failed. And by
-/// drawing the box on the page's own row instead (`dial_over` not called):
-/// the foot said the filter and not the setting's name.
+/// drawing the row's value in place of the box (`Aside::Control` for every
+/// row): the row said `4 ▸` while the box held five.
 #[test]
-fn a_number_is_turned_in_a_box_at_the_foot_and_kept_with_enter() {
+fn a_number_is_turned_where_it_stands_and_kept_with_enter() {
     let _turn = crate::turn();
     let scratch = temporary("dial");
     let file = settings_file(&scratch);
@@ -5923,14 +5915,9 @@ fn a_number_is_turned_in_a_box_at_the_foot_and_kept_with_enter() {
     assert_eq!(obelus_text::tab_width(), 4, "the tabs moved before enter");
     assert_eq!(written_tab_width(&file), None, "a turn was written down");
     let dump = support::render(&mut app, 66, 12);
-    let foot = foot(&dump);
     assert!(
-        foot.contains("Tab width") && foot.contains('5'),
-        "the box at the foot does not say what is in it:\n{dump}"
-    );
-    assert!(
-        foot.contains("1 ") && foot.contains(" 16"),
-        "the dial does not say its ends:\n{dump}"
+        support::text_block(&dump).contains("\u{25c2} 5 \u{25b8}"),
+        "the row does not say what is in its box:\n{dump}"
     );
 
     support::press(&mut app, KeyCode::Right);
