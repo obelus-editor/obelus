@@ -375,12 +375,22 @@ pub fn gutter_width(line_count: usize) -> u16 {
         .max(MINIMUM_GUTTER_WIDTH)
 }
 
-/// Says, on the first line of a document whose text is not there yet, that
-/// it is coming -- behind a mark that turns while it is -- or why it is not.
+/// Whether a document's text is not there yet: on its way, or refused.
+#[must_use]
+pub fn is_coming(buffer: &Buffer) -> bool {
+    buffer
+        .content()
+        .fetched()
+        .is_some_and(|fetched| *fetched != obelus_buffer::Fetched::Here)
+}
+
+/// Draws a document whose text is not there yet, in place of the editor:
+/// a mark that turns and what is being asked for, or why it was not given
+/// -- as a page says it is asking GitHub, at its head.
 ///
-/// Where the text would start, after the gutter, because that is where the
-/// reader is looking for it; in the quieter ink, because it is not the
-/// file's.
+/// Not the editor with a line over it. An empty buffer is drawn as a file
+/// of one empty line, numbered `1`, with the caret on it -- a file nobody
+/// has, put where the reader looks for the one they asked for.
 pub fn say_what_is_coming(
     cells: &mut CellBuffer,
     area: Rect,
@@ -393,26 +403,22 @@ pub fn say_what_is_coming(
         Some(obelus_buffer::Fetched::Refused(why)) => (why.as_str(), false),
         Some(obelus_buffer::Fetched::Here) | None => return,
     };
+    let plain = Style::new().fg(theme.foreground).bg(theme.background);
+    fill(cells, area, plain);
     if area.width == 0 || area.height == 0 {
         return;
     }
-    let dim = Style::new().fg(theme.gutter).bg(theme.background);
-    let x = area.x.saturating_add(gutter_width(1)).saturating_add(1);
-    let stop = area.right().saturating_sub(SCROLLBAR_WIDTH);
-    if x >= stop {
-        return;
+    let dim = plain.fg(theme.gutter);
+    // Two cells in front of the words, where the mark goes while it turns:
+    // the words stay where they are when it stops.
+    if waiting {
+        put(cells, area.x, area.y, crate::spinning(phase), dim);
+        crate::shapes::spun(area.x, area.y);
     }
-    let after = match waiting {
-        true => {
-            put(cells, x, area.y, crate::spinning(phase), dim);
-            crate::shapes::spun(x, area.y);
-            x.saturating_add(2)
-        }
-        false => x,
-    };
-    let room = usize::from(stop.saturating_sub(after));
+    let x = area.x.saturating_add(2);
+    let room = usize::from(area.right().saturating_sub(x));
     let said: String = said.chars().take(room).collect();
-    crate::write(cells, after, area.y, &said, dim);
+    crate::write(cells, x, area.y, &said, dim);
 }
 
 /// The editor region.

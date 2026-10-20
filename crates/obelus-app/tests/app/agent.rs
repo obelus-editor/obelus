@@ -17464,8 +17464,11 @@ fn a_pull_requests_file_opens_from_the_repository() {
 /// nothing laid beside it: the reader's history has not got the commit
 /// either, and against nothing every line would read as new.
 ///
-/// Broken deliberately three ways. Opening the document only when the
+/// Broken deliberately five ways. Opening the document only when the
 /// answer came, as this first did: nothing was on screen after the key.
+/// Drawing the editor there, as for any file: a `1`, and nothing saying
+/// what was coming. Leaving `is_coming` out of `cursor_position`: a caret
+/// blinked on a line nobody has.
 /// Leaving `in_history` out of `refresh_changes`: every line was marked as
 /// added. And not asking GitHub where the repository had nothing: the
 /// document never filled.
@@ -17497,9 +17500,21 @@ fn a_pull_requests_file_not_here_is_asked_of_github() {
         "the key opened nothing yet"
     );
     let text = screen(&mut app);
+    let waiting = text
+        .lines()
+        .find(|row| row.contains("Asking GitHub for this file"))
+        .unwrap_or_else(|| panic!("the document does not say it is on its way:\n{text}"));
+    // Not drawn as a file of one empty line: no number in front of what it
+    // says, and no caret on a line nobody has.
+    let drawn = waiting.split_once('|').map_or(waiting, |(_, drawn)| drawn);
     assert!(
-        text.contains("Asking GitHub for this file"),
-        "the document does not say it is on its way:\n{text}"
+        !drawn.trim_start().starts_with('1'),
+        "the waiting document has a line number:\n{text}"
+    );
+    assert_eq!(
+        obelus_ui::cursor_position(ratatui::layout::Rect::new(0, 0, WIDTH, HEIGHT), &app),
+        None,
+        "the waiting document has a caret"
     );
     pump(&mut app, &events, "the file", |app| {
         fetched(app) == Some(obelus_buffer::Fetched::Here)
