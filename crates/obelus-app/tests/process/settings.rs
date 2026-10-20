@@ -6215,3 +6215,64 @@ fn a_number_being_turned_hears_another_obelus() {
 
     obelus_text::lay_tabs_at(obelus_text::TAB_WIDTH);
 }
+
+/// The caret of a number being turned sits after what its box says, on its
+/// own row; and while the box is up a press on the page or a notch of the
+/// wheel leaves it alone, the way they leave a row waiting for its key.
+///
+/// Broken deliberately three ways: the caret counted from where the arrow
+/// used to put the number (`aside + DIAL_OPENS`), which put it two cells
+/// past the digit; the pointer let through to the page (the guard in
+/// `press_in_settings` asking only about a binding), which took a press on
+/// the value for enter and kept the turn; and the wheel let through
+/// (`Settings::scroll` asking only about a binding), which moved the page.
+#[test]
+fn a_number_being_turned_has_its_caret_and_keeps_the_pointer_off() {
+    let _turn = crate::turn();
+    let scratch = temporary("dial-caret");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+    let screen = ratatui::layout::Rect::new(0, 0, 66, 12);
+
+    support::type_text(&mut app, "tab width");
+    support::press(&mut app, KeyCode::Enter);
+    let dump = support::render(&mut app, screen.width, screen.height);
+    let text = support::text_block(&dump);
+    // The screen's row is the number the dump writes in front of it.
+    let (y, drawn) = text
+        .lines()
+        .find(|row| row.contains("Tab width"))
+        .and_then(|row| row.split_once('|'))
+        .map(|(y, drawn)| (y.trim().parse::<usize>().expect("a row number"), drawn))
+        .expect("the row");
+    let digit = drawn
+        .find(" 4 ")
+        .map(|at| obelus_text::text_width(&drawn[..at]) + 1)
+        .expect("the number");
+    let caret = obelus_ui::cursor_position(screen, &app).expect("no caret in the box");
+    assert_eq!(
+        usize::from(caret.y),
+        y,
+        "the caret is not on the number's row"
+    );
+    assert_eq!(
+        usize::from(caret.x),
+        digit + 1,
+        "the caret is not after the number:\n{dump}"
+    );
+
+    support::press(&mut app, KeyCode::Right);
+    let top = app.settings().expect("the settings").top();
+    // On the value itself, where a press means enter when nothing is up.
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: u16::try_from(digit).expect("a column"),
+        y: u16::try_from(y).expect("a row"),
+    });
+    app.handle(Event::Scroll { rows: 3, at: None });
+    let settings = app.settings().expect("the settings");
+    assert!(settings.dialling().is_some(), "a press let go of the box");
+    assert_eq!(settings.top(), top, "a notch moved the page under the box");
+    assert_eq!(app.config().tab_width, 4, "a press kept the turn");
+    assert_eq!(written_tab_width(&file), None, "a press wrote the turn");
+}
