@@ -521,7 +521,9 @@ impl App {
 
     /// Whatever a key means to a file list, beyond moving about in it.
     ///
-    /// One key, and it is a setting: which files the list offers. Answered
+    /// One key, and it is a setting: which files the list offers -- and
+    /// which the search of the project reads, which walks the same ones and
+    /// so takes the same two switches. Answered
     /// here rather than in the picker because the picker knows about rows
     /// and a query, and this is about where the rows come from -- and
     /// because a setting is the application's to keep.
@@ -559,7 +561,7 @@ impl App {
         // and the row on the settings page says which file did. Here there
         // is no row to say it, so the status bar does.
         if let Some(path) = self.pinned_by(setting) {
-            self.wrong(format!("{} says which files to offer", path.display()));
+            self.wrong(format!("{} says which files to read", path.display()));
             return true;
         }
         let showing = !self

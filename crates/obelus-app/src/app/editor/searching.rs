@@ -316,6 +316,10 @@ impl App {
     /// index reaches. Answered here rather than in the picker for the reason
     /// the file list's one is: the picker knows about rows and a query, and
     /// these are about how the rows were found.
+    ///
+    /// The project's tab has two more, which files it walks, and those are
+    /// the file list's settings and answered where the file list's are
+    /// (`listing_key`).
     pub(in crate::app) fn searching_key(&mut self, key: &KeyEvent) -> bool {
         if key.modifiers != KeyModifiers::ALT {
             return false;

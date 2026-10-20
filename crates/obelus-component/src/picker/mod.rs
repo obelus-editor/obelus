@@ -930,7 +930,9 @@ pub struct Picker {
     ///
     /// `None` where the key means nothing: the changed files come from git
     /// rather than from a walk, and what a project ignores is not part of that
-    /// answer either way. Dim in the palette rather than dropped from it.
+    /// answer either way -- nor of a search of one file or of a server's
+    /// names, which walk nothing. Dim in the palette rather than dropped
+    /// from it.
     ///
     /// Set by whoever filled the list, because the walk and the setting
     /// behind it are both theirs -- what is the list's is only that the
