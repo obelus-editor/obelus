@@ -521,7 +521,9 @@ impl App {
 
     /// Whatever a key means to a file list, beyond moving about in it.
     ///
-    /// One key, and it is a setting: which files the list offers. Answered
+    /// One key, and it is a setting: which files the list offers -- and
+    /// which the search of the project reads, which walks the same ones and
+    /// so takes the same two switches. Answered
     /// here rather than in the picker because the picker knows about rows
     /// and a query, and this is about where the rows come from -- and
     /// because a setting is the application's to keep.
@@ -546,7 +548,8 @@ impl App {
             _ => return false,
         };
         // Only where the key means something: on the changed tab these rows
-        // are git's answer, and the foot greys it there.
+        // are git's answer, and the foot greys it there. The search asks the
+        // same two settings, on the one tab of it that walks the project.
         if !self
             .picker
             .as_ref()
@@ -558,7 +561,7 @@ impl App {
         // and the row on the settings page says which file did. Here there
         // is no row to say it, so the status bar does.
         if let Some(path) = self.pinned_by(setting) {
-            self.wrong(format!("{} says which files to offer", path.display()));
+            self.wrong(format!("{} says which files to read", path.display()));
             return true;
         }
         let showing = !self
@@ -566,9 +569,14 @@ impl App {
             .value_of(setting)
             .is_some_and(|value| matches!(value, obelus_config::Value::Switch(true)));
         self.change_setting(setting, &obelus_config::Value::Switch(showing));
-        // A different answer to "which files", so a different walk.
-        self.start_walk();
-        self.refresh_listing();
+        // A different answer to "which files", so a different walk -- of
+        // the project's text where it is the search that asked.
+        if self.searching().is_some() {
+            self.refresh_search();
+        } else {
+            self.start_walk();
+            self.refresh_listing();
+        }
         true
     }
 

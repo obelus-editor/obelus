@@ -179,3 +179,124 @@ fn the_tree_obeys_it_as_well() {
     assert_eq!(named(false), vec!["plain.rs"]);
     assert_eq!(named(true), vec![".env", ".ignore", "plain.rs"]);
 }
+
+/// The search of the project offers both switches, because it walks the
+/// files they choose: it obeyed them before it said so, and a reader who had
+/// turned them on in the file list found `target` in a search and nothing on
+/// screen saying why.
+///
+/// Deliberate breaks: leave `offering_hidden` out of `refresh_search`, and
+/// the palette over the search has no such key; leave `listing_key`
+/// refreshing the file list where the search asked, and pressing it fills
+/// the search with the project's tree; set them on the file's tab too, and
+/// that tab offers a switch about a walk it never takes.
+#[test]
+fn the_search_of_the_project_offers_them_too() {
+    let scratch = scratch("hiding-search");
+    let buffer = obelus_buffer::Buffer::open(&scratch.path().join("plain.rs")).expect("plain.rs");
+    let mut app = App::new(vec![buffer]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.statuses_for_test(std::collections::HashMap::new());
+    support::lay_out(&mut app, 76, 16);
+
+    // Not on the file's tab: one file is read, and nothing is walked.
+    obelus_app::app::dispatch::dispatch(&mut app, Command::SearchFile);
+    let offered = support::usable_here(&mut app);
+    // The tab's own keys first, so the absence below is of these two and
+    // not of every key the palette might have said.
+    assert!(
+        offered.contains(&"Regex".to_string()),
+        "the file's tab says none of its keys: {offered:?}"
+    );
+    assert!(
+        !offered.contains(&"Hidden files".to_string())
+            && !offered.contains(&"Ignored files".to_string()),
+        "the file's tab offers them: {offered:?}"
+    );
+    support::press(&mut app, KeyCode::Esc);
+
+    obelus_app::app::dispatch::dispatch(&mut app, Command::SearchProject);
+    let offered = support::usable_here(&mut app);
+    assert!(
+        offered.contains(&"Hidden files".to_string())
+            && offered.contains(&"Ignored files".to_string()),
+        "the project's tab does not offer them: {offered:?}"
+    );
+
+    support::press_alt_key(&mut app, KeyCode::Char('.'));
+    assert!(app.config().hidden_files, "the key did nothing");
+    assert!(!app.config().ignored_files, "it turned the other one on");
+    let set = support::keys_here(&mut app)
+        .into_iter()
+        .find(|key| key.does == "Hidden files")
+        .and_then(|key| key.set);
+    assert_eq!(set, Some(true), "the palette does not say it is on");
+
+    // Still the search, asked again: nothing typed, so nothing found --
+    // not the project's tree, which is the file list's answer.
+    let picker = app.picker().expect("the search closed");
+    assert!(picker.is_searching(), "the search became something else");
+    assert_eq!(picker.matches().count(), 0, "the search filled with files");
+
+    support::press_alt_key(&mut app, KeyCode::Char('.'));
+    assert!(!app.config().hidden_files, "it would not go back");
+}
+
+/// And the walk behind the search obeys the key pressed there: the switch
+/// on screen is the one the scan was started with, not a drawing of it.
+///
+/// Deliberate break: hand `spawn_scan` `false` for `hidden` in
+/// `search_the_project`. The palette still says the switch is on, and the
+/// line in `.env` is never found.
+#[test]
+fn the_key_pressed_in_the_search_is_the_one_its_walk_obeys() {
+    let scratch = scratch("hiding-search-walk");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.statuses_for_test(std::collections::HashMap::new());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 76, 16);
+
+    // Until the scan the app is waiting on says it has finished; a scan
+    // started before the key also finishes, and is dropped.
+    let settle = |app: &mut App| {
+        loop {
+            let event = events
+                .recv_timeout(std::time::Duration::from_secs(20))
+                .expect("the search never finished");
+            let finished = matches!(
+                &event,
+                Event::Search(obelus_search::Event::Matches { generation, done: true, .. })
+                    if *generation == app.search_generation()
+            );
+            app.handle(event);
+            if finished {
+                return;
+            }
+        }
+    };
+    let found = |app: &App| -> Vec<String> {
+        app.picker()
+            .expect("the search closed")
+            .matches()
+            .filter_map(|row| match &row.value {
+                obelus_component::picker::PickerValue::Place { path, .. } => path
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned()),
+                _ => None,
+            })
+            .collect()
+    };
+
+    obelus_app::app::dispatch::dispatch(&mut app, Command::SearchProject);
+    support::type_text(&mut app, "SECRET");
+    settle(&mut app);
+    assert!(
+        found(&app).is_empty(),
+        "found a hidden file with the switch off"
+    );
+
+    support::press_alt_key(&mut app, KeyCode::Char('.'));
+    settle(&mut app);
+    assert_eq!(found(&app), vec![".env"], "the walk did not obey the key");
+}
