@@ -357,10 +357,6 @@ impl App {
                 self.change_setting(key, &value);
                 true
             }
-            SettingsOutcome::Tried(key, value) => {
-                self.try_setting(key, &value);
-                true
-            }
             SettingsOutcome::Unset(key) => {
                 self.unset_setting(key);
                 true
@@ -1267,24 +1263,6 @@ impl App {
             tracing::warn!(%error, "not saving the configuration");
             self.wrong(format!("Not saved: {error}"));
         }
-    }
-
-    /// Puts a setting in force without writing it down: a number being
-    /// turned on the settings page, so the reader watches what it does.
-    ///
-    /// Laid straight on what Obelus is going by rather than on the reader's
-    /// layer and the project's over it again, which would read the
-    /// project's file once a press. On the reader's page, a setting the
-    /// project has is left as the project has it, the way a change to it
-    /// is ([`App::change_setting`]); on the project's page the project is
-    /// the one that has it, so what is tried is what would be in force.
-    pub(in crate::app) fn try_setting(&mut self, key: &'static str, value: &obelus_config::Value) {
-        let on_project = self.settings.as_ref().is_some_and(Settings::on_project);
-        if !on_project && self.pinned_by(key).is_some() {
-            return;
-        }
-        self.settled.config.set(key, value);
-        self.apply_config();
     }
 
     /// Takes a setting out of the project's file, from the project's own page.

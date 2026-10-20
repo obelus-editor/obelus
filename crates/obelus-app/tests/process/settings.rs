@@ -3299,11 +3299,11 @@ fn the_time_a_rest_takes_is_the_readers() {
 
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Right);
+    support::press(&mut app, KeyCode::Enter);
     assert_eq!(app.config().hover_delay, 450, "not a step of fifty");
 
-    support::press(&mut app, KeyCode::Backspace);
-    support::press(&mut app, KeyCode::Backspace);
-    support::press(&mut app, KeyCode::Backspace);
+    // What the box opens with is held, so the digits typed take its place.
+    support::press(&mut app, KeyCode::Enter);
     support::type_text(&mut app, "800");
     support::press(&mut app, KeyCode::Enter);
     assert_eq!(
@@ -5090,9 +5090,8 @@ fn a_workflow_is_called_by_its_title_and_written_by_its_name() {
 /// Broken deliberately three ways: `App::called` without its arm for this
 /// setting, which leaves `30` on the row; the settings row's `value_of`
 /// handing back the number, which leaves `30 ▸` on the page; and the dial
-/// saying its number rather than its title (`dial_said` without the
-/// title), which turned `A month` into `◂ 30 ▸` the moment enter was
-/// pressed.
+/// at the foot drawn without its title (`dial_over` handing `draw_dial`
+/// none), which left the number in the box saying thirty of nothing.
 #[test]
 fn how_long_a_conversation_is_kept_is_said_as_a_length_of_time() {
     let _turn = crate::turn();
@@ -5111,13 +5110,13 @@ fn how_long_a_conversation_is_kept_is_said_as_a_length_of_time() {
     support::press(&mut app, KeyCode::Enter);
     let dump = support::render(&mut app, 100, 24);
     assert!(
-        support::text_block(&dump).contains("\u{25c2} A month \u{25b8}"),
+        foot(&dump).contains("A month"),
         "the dial does not say a month:\n{dump}"
     );
     support::press(&mut app, KeyCode::Left);
     let dump = support::render(&mut app, 100, 24);
     assert!(
-        support::text_block(&dump).contains("\u{25c2} 29 days \u{25b8}"),
+        foot(&dump).contains("29 days"),
         "a turn is not said as days:\n{dump}"
     );
 
@@ -5888,15 +5887,25 @@ fn written_tab_width(file: &std::path::Path) -> Option<i64> {
         .as_integer()
 }
 
-/// A number is turned on its own row: enter takes hold of it, the arrows
-/// turn it and each turn is in force at once, and only enter writes it down.
+/// The last three rows of a dump: a box at the foot, the rule over it, and
+/// its dial.
+fn foot(dump: &str) -> String {
+    let text = support::text_block(dump);
+    let rows: Vec<&str> = text.lines().collect();
+    rows[rows.len().saturating_sub(3)..].join("\n")
+}
+
+/// A number comes up in a box at the foot of the page, where a compact list
+/// would: enter on its row opens it, the arrows turn what is in it, and
+/// nothing is in force or written down until enter.
 ///
-/// Broken deliberately by saving on every turn (`Tried` handled as
-/// `Changed`): the file said five after the first press, and the assertion
-/// that nothing is written yet failed. And by leaving the turn out of force
-/// until enter: the tab width stayed four while the row said five.
+/// Broken deliberately by putting each turn in force as it was made (the
+/// arrows answering `Changed`): the tab width was five after the first
+/// press, and the assertion that nothing has changed yet failed. And by
+/// drawing the box on the page's own row instead (`dial_over` not called):
+/// the foot said the filter and not the setting's name.
 #[test]
-fn a_number_is_turned_where_it_stands_and_written_when_kept() {
+fn a_number_is_turned_in_a_box_at_the_foot_and_kept_with_enter() {
     let _turn = crate::turn();
     let scratch = temporary("dial");
     let file = settings_file(&scratch);
@@ -5906,42 +5915,48 @@ fn a_number_is_turned_where_it_stands_and_written_when_kept() {
     support::press(&mut app, KeyCode::Enter);
     assert!(
         app.settings().expect("the settings").dialling().is_some(),
-        "enter did not take hold of the number"
+        "enter did not open the box"
     );
 
     support::press(&mut app, KeyCode::Right);
-    assert_eq!(app.config().tab_width, 5, "the turn is not in force");
-    assert_eq!(obelus_text::tab_width(), 5, "the tabs are not laid at it");
+    assert_eq!(app.config().tab_width, 4, "a turn is in force before enter");
+    assert_eq!(obelus_text::tab_width(), 4, "the tabs moved before enter");
     assert_eq!(written_tab_width(&file), None, "a turn was written down");
     let dump = support::render(&mut app, 66, 12);
+    let foot = foot(&dump);
     assert!(
-        support::text_block(&dump).contains("\u{25c2} 5 \u{25b8}"),
-        "the row does not say what it has got to:\n{dump}"
+        foot.contains("Tab width") && foot.contains('5'),
+        "the box at the foot does not say what is in it:\n{dump}"
+    );
+    assert!(
+        foot.contains("1 ") && foot.contains(" 16"),
+        "the dial does not say its ends:\n{dump}"
     );
 
     support::press(&mut app, KeyCode::Right);
     support::press(&mut app, KeyCode::Enter);
     assert!(
         app.settings().expect("the settings").dialling().is_none(),
-        "enter did not let go of the number"
+        "enter did not close the box"
     );
+    assert_eq!(app.config().tab_width, 6, "what was kept is not in force");
+    assert_eq!(obelus_text::tab_width(), 6);
     assert_eq!(
         written_tab_width(&file),
         Some(6),
         "what was kept is not written"
     );
-    assert_eq!(app.config().tab_width, 6);
 
     obelus_text::lay_tabs_at(obelus_text::TAB_WIDTH);
 }
 
-/// Escape puts back what the number was, and writes nothing: a turn is
-/// something the reader looked at, not something they chose.
+/// Escape gives the box up and changes nothing: a turn is something the
+/// reader looked at, not something they chose.
 ///
-/// Broken deliberately by letting escape go without sending the number back
-/// (`Consumed` in place of `Tried(was)`): the tab width stayed at six.
+/// Broken deliberately by letting escape keep what was in the box (`Esc`
+/// answered as enter is): the tab width was six.
 #[test]
-fn escape_puts_back_a_number_being_turned() {
+fn escape_gives_up_a_number_being_turned() {
     let _turn = crate::turn();
     let scratch = temporary("dial-escape");
     let file = settings_file(&scratch);
@@ -5951,24 +5966,28 @@ fn escape_puts_back_a_number_being_turned() {
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Right);
     support::press(&mut app, KeyCode::Right);
-    assert_eq!(app.config().tab_width, 6);
 
     support::press(&mut app, KeyCode::Esc);
-    assert_eq!(app.config().tab_width, 4, "escape did not put it back");
-    assert_eq!(obelus_text::tab_width(), 4, "the tabs were not put back");
+    assert_eq!(app.config().tab_width, 4, "escape kept the turn");
     assert_eq!(written_tab_width(&file), None, "escape wrote something");
-    // Escape gave up on the nearest thing, which was the number and not
-    // the page.
+    assert!(
+        app.settings().expect("the settings").dialling().is_none(),
+        "escape left the box up"
+    );
+    // Escape gave up on the nearest thing, which was the box and not the
+    // page.
     assert!(app.settings().is_some(), "escape closed the page as well");
 
     obelus_text::lay_tabs_at(obelus_text::TAB_WIDTH);
 }
 
-/// The digits type a number in, a number the dial would turn to is in force
-/// as soon as it is one, and enter brings one past the end back inside.
+/// The digits type a number into the box, over what it opened with, and
+/// enter brings one past the end back inside.
 ///
-/// Broken deliberately by keeping what was typed as it was: the file said
-/// ninety-nine, a tab no dial on the page could reach.
+/// Broken deliberately twice: keeping what was typed as it was, which wrote
+/// ninety-nine, a tab no dial on the page could reach; and putting the
+/// first digit on the end of what the box opened with, which made `48`
+/// out of an `8`.
 #[test]
 fn a_number_can_be_typed_and_is_kept_inside_its_ends() {
     let _turn = crate::turn();
@@ -5979,20 +5998,17 @@ fn a_number_can_be_typed_and_is_kept_inside_its_ends() {
     support::type_text(&mut app, "tab width");
     support::press(&mut app, KeyCode::Enter);
     support::type_text(&mut app, "8");
-    assert_eq!(app.config().tab_width, 8, "a typed number is not in force");
     support::press(&mut app, KeyCode::Enter);
-    assert_eq!(written_tab_width(&file), Some(8));
+    assert_eq!(
+        written_tab_width(&file),
+        Some(8),
+        "the digit did not take the box"
+    );
+    assert_eq!(app.config().tab_width, 8);
 
-    // Past the most a tab may be: the nine is in force, the second nine
-    // makes a number the dial would not turn to and changes nothing, and
-    // enter keeps the most there is.
+    // Past the most a tab may be: enter keeps the most there is.
     support::press(&mut app, KeyCode::Enter);
     support::type_text(&mut app, "99");
-    assert_eq!(
-        app.config().tab_width,
-        9,
-        "a number past the end was put in force"
-    );
     support::press(&mut app, KeyCode::Enter);
     assert_eq!(
         written_tab_width(&file),
@@ -6000,23 +6016,16 @@ fn a_number_can_be_typed_and_is_kept_inside_its_ends() {
         "not brought inside its ends"
     );
 
-    // And the arrows turn from what is typed rather than from what was in
-    // force before it.
+    // And the arrows turn from what is typed rather than from what the box
+    // opened with.
     support::press(&mut app, KeyCode::Enter);
-    support::press(&mut app, KeyCode::Backspace);
-    support::press(&mut app, KeyCode::Backspace);
     support::type_text(&mut app, "3");
     support::press(&mut app, KeyCode::Left);
+    support::press(&mut app, KeyCode::Enter);
     assert_eq!(
         app.config().tab_width,
         2,
         "the arrow did not turn from what was typed"
-    );
-    support::press(&mut app, KeyCode::Esc);
-    assert_eq!(
-        app.config().tab_width,
-        16,
-        "escape did not put back what was kept"
     );
 
     obelus_text::lay_tabs_at(obelus_text::TAB_WIDTH);
