@@ -338,8 +338,9 @@ impl App {
                 number,
                 id,
                 path,
+                line,
                 answer,
-            } => self.on_pull_request_file(number, id, &path, answer),
+            } => self.on_pull_request_file(number, id, &path, line, answer),
             Event::Agent(obelus_agent::Event::Registry { agents, failure }) => {
                 self.on_registry(agents, failure)
             }

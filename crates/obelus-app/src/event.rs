@@ -274,6 +274,8 @@ pub enum Event {
         id: gix::ObjectId,
         /// The file, where it would be in the working tree.
         path: std::path::PathBuf,
+        /// The line it was asked for on, counted from one.
+        line: Option<u64>,
         /// Its bytes as they are stored.
         answer: Result<Vec<u8>, crate::app::pulls::Unlisted>,
     },

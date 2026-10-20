@@ -189,7 +189,7 @@ impl App {
                 true
             }
             Outcome::OpenFile(path) => {
-                self.open_the_pull_requests_file(&path);
+                self.open_the_pull_requests_file(&path, None);
                 true
             }
             Outcome::Talk => {
@@ -238,7 +238,10 @@ impl App {
     /// on a thread, because Obelus does not fetch. Not the file on disk:
     /// that is a different document that happens to share a name, the
     /// branch it belongs to is very often not the one checked out.
-    fn open_the_pull_requests_file(&mut self, path: &str) {
+    ///
+    /// On `line`, counted from one, where the reader asked about one: a
+    /// review's thread is about the lines it was said beside.
+    fn open_the_pull_requests_file(&mut self, path: &str, line: Option<u64>) {
         let Some((number, sha)) = self.discussion().and_then(|page| match page.about()? {
             About::PullRequest(pull) => Some((pull.number, pull.sha.clone())),
             About::Issue(_) => None,
@@ -262,11 +265,12 @@ impl App {
         if let Some(at) = open {
             let from = self.here();
             self.record(from);
+            self.stand_on(DocumentId::new(at), line);
             self.go_to_file(DocumentId::new(at));
             return;
         }
         if let Some(text) = obelus_git::history::text_at(&self.working_directory, id, &full) {
-            self.put_up_the_pull_requests_file(number, id, &full, &text, true);
+            self.put_up_the_pull_requests_file(number, id, &full, &text, line, true);
             return;
         }
         let Some(sender) = self.events.clone() else {
@@ -282,6 +286,7 @@ impl App {
                 number,
                 id,
                 path: full,
+                line,
                 answer,
             });
         });
@@ -295,6 +300,7 @@ impl App {
         number: u64,
         id: gix::ObjectId,
         path: &std::path::Path,
+        line: Option<u64>,
         answer: Result<Vec<u8>, crate::app::pulls::Unlisted>,
     ) {
         let named = path
@@ -319,7 +325,7 @@ impl App {
         if here {
             self.note = None;
         }
-        self.put_up_the_pull_requests_file(number, id, path, &read.text, here);
+        self.put_up_the_pull_requests_file(number, id, path, &read.text, line, here);
     }
 
     /// Puts a pull request's file in the list of what is open, and goes to
@@ -330,14 +336,30 @@ impl App {
         id: gix::ObjectId,
         path: &std::path::Path,
         text: &str,
+        line: Option<u64>,
         go: bool,
     ) {
         let buffer = obelus_buffer::Buffer::at_pull_request(path, number, id, text);
         self.documents.push(Some(Document::from(buffer)));
+        let at = DocumentId::new(self.documents.len() - 1);
+        self.stand_on(at, line);
         if go {
             let from = self.here();
             self.record(from);
-            self.go_to_file(DocumentId::new(self.documents.len() - 1));
+            self.go_to_file(at);
+        }
+    }
+
+    /// Puts the caret of a file that is open on `line`, counted from one.
+    fn stand_on(&mut self, at: DocumentId, line: Option<u64>) {
+        let Some(line) = line.and_then(|line| usize::try_from(line).ok()) else {
+            return;
+        };
+        if let Some(buffer) = self.file_mut(at) {
+            buffer.place_cursor(
+                obelus_text::coordinates::LineNumber::new(line.saturating_sub(1)),
+                obelus_text::coordinates::CharColumn::new(0),
+            );
         }
     }
 
@@ -379,7 +401,7 @@ impl App {
         let file = place
             .and_then(|place| rows.get(place.row))
             .and_then(|row| row.opens.clone())
-            .filter(|opens| link.as_deref() == Some(opens.as_str()));
+            .filter(|opens| link.as_deref() == Some(opens.path.as_str()));
         let cursor = place.filter(|place| place.row < rows.len());
         // Whether the row is the page's words: a row Obelus wrote has none,
         // and `spot_under` answers for it with the nearest words there are --
@@ -412,7 +434,9 @@ impl App {
                 };
                 page.let_go_of_nothing();
                 match (clicked, file, link) {
-                    (true, Some(file), _) => self.open_the_pull_requests_file(&file),
+                    (true, Some(file), _) => {
+                        self.open_the_pull_requests_file(&file.path, file.line);
+                    }
                     (true, None, Some(link)) => self.open_link(&link),
                     _ => {}
                 }

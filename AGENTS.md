@@ -761,7 +761,8 @@ crates/
                       between what acts (page); reading one and asking an
                       agent about it are two different acts, a page with a
                       cursor like the transcript, what enter does is open or
-                      shut or copy or go, and laid out once and kept
+                      shut or copy or go, a review's thread is a comment
+                      about its lines, and laid out once and kept
                       (discussion);
                       the page is Obelus's, and so is the record of it
                       (chat/kept); folding is one

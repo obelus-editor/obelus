@@ -4647,6 +4647,7 @@ dependencies = [
  "jiff",
  "obelus-program",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]

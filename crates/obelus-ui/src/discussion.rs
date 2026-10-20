@@ -151,7 +151,9 @@ pub fn draw(
         if let Some(on) = acting.as_ref().filter(|on| at + 1 == on.end) {
             let does = match rows.get(on.start) {
                 Some(first) if first.goes.is_some() => "Opens its page",
-                Some(first) if first.opens.is_some() => "Opens the file",
+                Some(first) if first.opens.as_ref().is_some_and(|opens| opens.by_enter) => {
+                    "Opens the file"
+                }
                 Some(first) if first.open => "Closes it",
                 Some(_) => "Opens it",
                 None => continue,

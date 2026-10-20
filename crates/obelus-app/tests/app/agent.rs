@@ -17258,6 +17258,74 @@ fn a_pull_requests_file_opens_on_a_click() {
     assert_eq!(buffer.text().rope().to_string(), "fn clicked_open() {}\n");
 }
 
+/// A review's thread is on the page among what was said, and a click on
+/// the place it names opens the file there, on that line, as the pull
+/// request's last commit has it.
+///
+/// Broken deliberately twice. Leaving the threads out of what `discussion`
+/// hands back: no thread was on the page. And leaving `stand_on` out of
+/// putting the file up: it opened on its first line.
+#[test]
+fn a_review_threads_place_opens_its_file_on_its_line() {
+    use obelus_app::event::Pointer;
+
+    let _turn = support::clipboard_turn();
+    obelus_clipboard::links::use_opener_for_test(obelus_clipboard::links::Opener::Kept);
+    let scratch = support::Scratch::new("agent-pull-request-thread-place");
+    let root = scratch.path();
+    let sha = a_repository_with(root, "line one\nline two\nline three\n");
+    let answer = root.join("gh-answer.json");
+    std::fs::write(&answer, one_pull_request_at(&sha)).expect("the list");
+    std::fs::write(root.join("gh-answer.json.view.123"), FILES).expect("the page");
+    std::fs::write(
+        root.join("gh-answer.json.threads"),
+        r#"{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[
+            {"id":"T1","isResolved":false,"isOutdated":false,"path":"src/lib.rs","line":2,
+             "comments":{"nodes":[{"author":{"login":"bob"},"body":"Why this line?",
+               "createdAt":"2026-10-01T00:00:00Z","diffHunk":"@@ -1 +1 @@\n+line two"}]}}
+        ]}}}}}"#,
+    )
+    .expect("the threads");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
+    pump(&mut app, &events, "the list", |app| answered_with(app, 1));
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the page", |app| {
+        app.current_document_for_test()
+            .and_then(|id| app.document(id))
+            .and_then(obelus_app::app::document::Document::discussion)
+            .is_some_and(|page| !page.still_asking())
+    });
+
+    let text = screen(&mut app);
+    let row = text
+        .lines()
+        .find(|row| row.contains("on src/lib.rs:2"))
+        .unwrap_or_else(|| panic!("no thread on the page:\n{text}"));
+    assert!(text.contains("Why this line?"), "{text}");
+    let y: u16 = row
+        .split('|')
+        .next()
+        .and_then(|number| number.trim().parse().ok())
+        .expect("a row number");
+    let x = u16::try_from(support::column_of(row, "src/lib.rs:2")).expect("a column");
+    for kind in [Pointer::Pressed, Pointer::Released] {
+        app.handle(Event::Pointer { kind, x: x + 2, y });
+        support::lay_out(&mut app, WIDTH, HEIGHT);
+    }
+    assert_eq!(
+        obelus_clipboard::links::opened(),
+        None,
+        "a browser was asked to open a file"
+    );
+    let buffer = app.current_buffer().expect("the click opened nothing");
+    assert_eq!(
+        buffer.text().rope().to_string(),
+        "line one\nline two\nline three\n"
+    );
+    assert_eq!(buffer.cursor().line.get(), 1, "not on the thread's line");
+}
+
 /// Makes `root` a repository with `src/lib.rs` committed as `committed`,
 /// and hands back that commit.
 fn a_repository_with(root: &Path, committed: &str) -> String {
