@@ -477,13 +477,12 @@ pub enum Kind {
     Switch,
     /// One of a fixed list of words.
     Choice(&'static [&'static str]),
-    /// A number, turned up and down on its own row or typed there.
+    /// A number, turned up and down on its own row or typed there, and in
+    /// force when the reader keeps it.
     ///
-    /// Not a list to pick from, which is what it was: picking from a short
-    /// list closes the list before the reader sees what was picked, and the
-    /// numbers here are things to watch while they change -- the text
-    /// growing, a tab widening. A list is also all the numbers Obelus
-    /// thought of, and a reader who wanted ninety days had none of them.
+    /// Not a list to pick from, which is what it was: a list is all the
+    /// numbers Obelus thought of, and a reader who wanted ninety days or a
+    /// fifteen-point face had none of them to pick.
     Count(Dial),
     /// A list the reader builds by name, in the order they want it tried.
     ///
@@ -762,9 +761,9 @@ const WIDTHS: Dial = Dial {
 /// The text sizes a window offers, in points.
 ///
 /// Small enough to fit a lot of code on the screen and large enough to read
-/// across a room. A point at a time, because the size is watched while it
-/// changes: the reader turns until the text looks right, and a list of
-/// eight sizes was a list of the eight Obelus thought would.
+/// across a room. A point at a time, because a face can want any size in
+/// between, and a list of eight sizes was a list of the eight Obelus thought
+/// would do.
 const SIZES: Dial = Dial {
     least: 8,
     most: 32,

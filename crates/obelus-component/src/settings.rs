@@ -1102,9 +1102,10 @@ impl Settings {
     /// Scrolls the page by a wheel's rows of the screen, leaving the focus
     /// where it is.
     ///
-    /// Not while a row waits for its key: every key is that row's then, and
-    /// a notch that carried it off the screen would leave the reader
-    /// binding a row they could no longer see.
+    /// Not while a row waits for its key or a number is being turned: the
+    /// keys are that row's then, and a notch that carried it off the screen
+    /// would leave the reader binding, or turning, a row they could no
+    /// longer see.
     pub fn scroll(
         &mut self,
         rows: isize,
@@ -2045,7 +2046,7 @@ impl Settings {
                     false => SettingsOutcome::Changed(dialling.key, Value::Count(kept)),
                 }
             }
-            KeyCode::Left | KeyCode::Right if bare => {
+            KeyCode::Left | KeyCode::Right => {
                 let turned = dialling
                     .dial
                     .turned(dialling.kept(), key.code == KeyCode::Right);
@@ -2054,7 +2055,7 @@ impl Settings {
                 dialling.typing = false;
                 SettingsOutcome::Consumed
             }
-            KeyCode::Char(digit) if bare && digit.is_ascii_digit() => {
+            KeyCode::Char(digit) if digit.is_ascii_digit() => {
                 if dialling.held {
                     dialling.typed.clear();
                     dialling.held = false;
@@ -2067,7 +2068,7 @@ impl Settings {
                 dialling.typing = true;
                 SettingsOutcome::Consumed
             }
-            KeyCode::Backspace if bare => {
+            KeyCode::Backspace => {
                 match dialling.held {
                     true => dialling.typed.clear(),
                     false => {
@@ -2093,8 +2094,9 @@ impl Settings {
             Kind::Choice(choices) => {
                 let word = match Self::value_of(setting, config) {
                     Value::Choice(word) => word,
-                    Value::Count(count) => count.to_string(),
-                    Value::Switch(_) | Value::Names(_) | Value::Text(_) => String::new(),
+                    Value::Count(_) | Value::Switch(_) | Value::Names(_) | Value::Text(_) => {
+                        String::new()
+                    }
                 };
                 SettingsOutcome::Choose(setting.key, choices, word)
             }

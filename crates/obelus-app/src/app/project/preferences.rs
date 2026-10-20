@@ -973,10 +973,10 @@ impl App {
     /// it goes back to both read, so the two cannot call one choice by two
     /// names. A word like `feature-branch` is the setting's, written in the
     /// reader's file, and a name rather than copy -- and a number of days is
-    /// a number in the file and a length of time on the page, because `30`
-    /// alone does not say thirty of what. Any number of them, not only the
-    /// ones offered: a reader who wrote `14` into the file by hand is owed
-    /// the same answer.
+    /// a number in the file and a length of time on the page, on its row and
+    /// in the box it is turned in, because `30` alone does not say thirty of
+    /// what. Any number of them: a box turns through every one, and a reader
+    /// who wrote `14` into the file by hand is owed the same answer.
     #[must_use]
     pub fn called(&self, key: &str, word: &str) -> Option<std::borrow::Cow<'static, str>> {
         match key {
