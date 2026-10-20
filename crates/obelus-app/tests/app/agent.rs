@@ -17149,6 +17149,150 @@ fn the_last_answer_stands_in_while_the_next_is_asked() {
     );
 }
 
+/// One pull request, #123, whose last commit is `sha`.
+fn one_pull_request_at(sha: &str) -> String {
+    format!(
+        r#"[{{"number":123,"title":"Keep the fold","author":{{"login":"alice"}},"headRefName":"keep-fold","baseRefName":"master","headRefOid":"{sha}","isDraft":false,"reviewDecision":"","updatedAt":""}}]"#
+    )
+}
+
+/// Opens #123's page, opens its files, and presses enter on the first:
+/// the one that the page's `files` names, `src/lib.rs`.
+fn open_the_first_file(app: &mut App, events: &Receiver<Event>) {
+    obelus_app::app::dispatch::dispatch(app, obelus_command::Command::ShowPullRequests);
+    pump(app, events, "the list", |app| answered_with(app, 1));
+    support::press(app, KeyCode::Enter);
+    pump(app, events, "the page", |app| {
+        app.current_document_for_test()
+            .and_then(|id| app.document(id))
+            .and_then(obelus_app::app::document::Document::discussion)
+            .is_some_and(|page| !page.still_asking())
+    });
+    let text = screen(app);
+    let heading = text
+        .lines()
+        .position(|row| row.contains("Files  "))
+        .unwrap_or_else(|| panic!("no files:\n{text}"));
+    let rows = text.lines().count();
+    for _ in 0..rows {
+        let now = screen(app);
+        if now
+            .lines()
+            .nth(heading)
+            .is_some_and(|row| row.contains("Opens it"))
+        {
+            break;
+        }
+        support::press(app, KeyCode::Down);
+    }
+    support::press(app, KeyCode::Enter);
+    support::press(app, KeyCode::Down);
+    support::press(app, KeyCode::Enter);
+}
+
+/// Makes `root` a repository with `src/lib.rs` committed as `committed`,
+/// and hands back that commit.
+fn a_repository_with(root: &Path, committed: &str) -> String {
+    let git = |arguments: &[&str]| {
+        let done = support::git()
+            .arg("-C")
+            .arg(root)
+            .args(arguments)
+            .env("GIT_AUTHOR_NAME", "obelus")
+            .env("GIT_AUTHOR_EMAIL", "obelus@example.invalid")
+            .env("GIT_COMMITTER_NAME", "obelus")
+            .env("GIT_COMMITTER_EMAIL", "obelus@example.invalid")
+            .output()
+            .expect("running git");
+        assert!(done.status.success(), "git {arguments:?} failed");
+        String::from_utf8_lossy(&done.stdout).trim().to_string()
+    };
+    git(&["init", "--quiet"]);
+    std::fs::create_dir_all(root.join("src")).expect("src");
+    std::fs::write(root.join("src/lib.rs"), committed).expect("the file");
+    git(&["add", "."]);
+    git(&["commit", "--quiet", "-m", "committed"]);
+    git(&["rev-parse", "HEAD"])
+}
+
+/// The page that names `src/lib.rs` among what #123 changes.
+const FILES: &str =
+    r#"{"body":"","changedFiles":1,"files":[{"path":"src/lib.rs","additions":1,"deletions":0}]}"#;
+
+/// A file the pull request changes opens as its last commit has it, from
+/// the reader's own repository where that commit is there -- at once, and
+/// not the file on disk, which says something else.
+///
+/// Broken deliberately twice. Opening the file on disk rather than the
+/// commit's: the buffer said what the working tree says. And asking GitHub
+/// whatever the repository has: nothing opened at once, and GitHub's
+/// answer was a 404.
+#[test]
+fn a_pull_requests_file_opens_from_the_repository() {
+    let scratch = support::Scratch::new("agent-pull-request-file-local");
+    let root = scratch.path();
+    let sha = a_repository_with(root, "fn as_committed() {}\n");
+    std::fs::write(root.join("src/lib.rs"), "fn as_on_disk() {}\n").expect("the file again");
+
+    let answer = root.join("gh-answer.json");
+    std::fs::write(&answer, one_pull_request_at(&sha)).expect("the list");
+    std::fs::write(root.join("gh-answer.json.view.123"), FILES).expect("the page");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+    open_the_first_file(&mut app, &events);
+
+    let buffer = app.current_buffer().expect("the file opened at once");
+    assert_eq!(buffer.text().rope().to_string(), "fn as_committed() {}\n");
+    assert_eq!(
+        buffer.content().short().as_deref(),
+        Some(format!("#123 {}", &sha[..7]).as_str())
+    );
+}
+
+/// A file whose commit the repository has not got is asked of GitHub and
+/// opens when it answers, with nothing laid beside it: the reader's history
+/// has not got the commit either, and against nothing every line would
+/// read as new.
+///
+/// Broken deliberately twice. Leaving `in_history` out of
+/// `refresh_changes`: every line was marked as added. And not asking
+/// GitHub where the repository had nothing: nothing opened.
+#[test]
+fn a_pull_requests_file_not_here_is_asked_of_github() {
+    let scratch = support::Scratch::new("agent-pull-request-file-github");
+    // A repository, with a commit of its own and not the pull request's:
+    // where there is no repository there is no margin to draw anyway.
+    a_repository_with(scratch.path(), "fn committed_here() {}\n");
+    let answer = scratch.path().join("gh-answer.json");
+    let sha = "1234567890abcdef1234567890abcdef12345678";
+    std::fs::write(&answer, one_pull_request_at(sha)).expect("the list");
+    std::fs::write(scratch.path().join("gh-answer.json.view.123"), FILES).expect("the page");
+    std::fs::write(
+        scratch.path().join("gh-answer.json.contents"),
+        "fn from_github() {}\nfn and_more() {}\n",
+    )
+    .expect("the file");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+    open_the_first_file(&mut app, &events);
+    pump(&mut app, &events, "the file", |app| {
+        app.current_buffer().is_some_and(|buffer| {
+            matches!(
+                buffer.content(),
+                obelus_buffer::Content::PullRequest { number: 123, .. }
+            )
+        })
+    });
+    let _ = screen(&mut app);
+    let buffer = app.current_buffer().expect("the file");
+    assert_eq!(
+        buffer.text().rope().to_string(),
+        "fn from_github() {}\nfn and_more() {}\n"
+    );
+    assert!(
+        app.changes().is_none_or(|changes| changes.is_empty()),
+        "lines are marked as changed against a commit nobody has"
+    );
+}
+
 /// A check's name on a pull request's page is a link to where it is told
 /// in full: a click opens it, and a press on one let go on another, or a
 /// drag that comes back, opens nothing -- the same as a link in the words.
