@@ -5921,11 +5921,20 @@ fn a_number_is_turned_where_it_stands_and_kept_with_enter() {
         "enter did not open the box"
     );
     // The number stays where it was and the arrow comes in front of it.
+    // Measured in cells after the dump's own `NN|`, whose row number would
+    // otherwise be the first digit found -- and in cells rather than bytes,
+    // because the arrow is three bytes and one cell.
     let dump = support::render(&mut app, 66, 12);
     let after = row_of(&dump);
+    let column = |row: &str| {
+        let row = row.split_once('|').map_or(row, |(_, drawn)| drawn);
+        row.find(" 4 ")
+            .map(|at| obelus_text::text_width(&row[..at]))
+    };
+    assert!(column(&before).is_some(), "no number on the row:\n{before}");
     assert_eq!(
-        before.find('4'),
-        after.find('4'),
+        column(&before),
+        column(&after),
         "the number moved when enter was pressed on it:\n{before}\n{after}"
     );
     // And the row at the foot says the two ways out of the box.
