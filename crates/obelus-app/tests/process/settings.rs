@@ -6276,3 +6276,104 @@ fn a_number_being_turned_has_its_caret_and_keeps_the_pointer_off() {
     assert_eq!(app.config().tab_width, 4, "a press kept the turn");
     assert_eq!(written_tab_width(&file), None, "a press wrote the turn");
 }
+
+/// What a window is told about the picture under the page and how much of
+/// it shows.
+#[derive(Debug, Default)]
+struct Pictured {
+    /// Every picture it was told to hang, by its file.
+    hung: std::sync::Mutex<Vec<Option<std::path::PathBuf>>>,
+    /// Every share of what the theme lets through.
+    shares: std::sync::Mutex<Vec<usize>>,
+}
+
+impl obelus_app::app::Drawing for Pictured {
+    fn hang(&self, wallpaper: Option<&obelus_theme::Wallpaper>) {
+        self.hung
+            .lock()
+            .expect("what was said")
+            .push(wallpaper.map(|hung| hung.file.clone()));
+    }
+
+    fn picture_strength(&self, share: usize) {
+        self.shares.lock().expect("what was said").push(share);
+    }
+
+    // The rest are other tests'.
+    fn text_size(&self, _: usize) {}
+
+    fn animates(&self, _: bool) {}
+
+    fn bar_tabs(&self, _: bool) {}
+
+    fn use_fonts(&self, _: &[String]) {}
+
+    fn drawn_on(&self, _: ratatui::style::Color) {}
+
+    fn holding(&self, _: ratatui::style::Color, _: ratatui::style::Color) {}
+
+    fn caret_in(&self, _: ratatui::style::Color) {}
+
+    fn caret_is(
+        &self,
+        _: obelus_app::app::Caret,
+        _: Option<obelus_component::layers::Layer>,
+        _: bool,
+    ) {
+    }
+}
+
+/// How much of a theme's picture shows reaches the window when it says who
+/// it is and again when the setting changes -- and on its own, without the
+/// picture being asked for again, because a window asked for a picture
+/// reads and decodes the file.
+///
+/// Broken deliberately three ways: the call taken out of `drawn_by`, which
+/// left the window with nothing to start at; taken out of `apply_config`,
+/// which left it at a hundred after the file said a hundred and fifty; and
+/// the picture said again with the share (`say_the_wallpaper` beside the
+/// call in `apply_config`), which hung it a second time.
+#[test]
+fn how_much_of_the_picture_shows_reaches_the_window_alone() {
+    let _turn = crate::turn();
+    let scratch = temporary("picture-strength");
+    let file = settings_file(&scratch);
+    std::fs::create_dir_all(scratch.join("themes/rain")).expect("the directory");
+    std::fs::write(
+        scratch.join("themes/rain/theme.toml"),
+        "base = \"dark\"\n\n[wallpaper]\nfile = \"rain.jpg\"\n",
+    )
+    .expect("the theme");
+    // What is in it is the window's to decode, and a test has no window.
+    std::fs::write(scratch.join("themes/rain/rain.jpg"), "not decoded here").expect("the picture");
+    std::fs::write(&file, "theme = \"rain\"\n").expect("the settings");
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.config_file_for_test(file.clone());
+    assert!(
+        app.wallpaper().is_some(),
+        "the theme carries no picture, so this proves nothing"
+    );
+    let told = std::sync::Arc::new(Pictured::default());
+    app.drawn_by(told.clone());
+    assert_eq!(
+        told.shares.lock().expect("what was said").last().copied(),
+        Some(100),
+        "the window was not told what to start at"
+    );
+    let hung = told.hung.lock().expect("what was said").len();
+
+    std::fs::write(&file, "theme = \"rain\"\npicture_strength = 150\n").expect("the settings");
+    app.handle(Event::Watched(obelus_watch::Changed { path: file }));
+    assert_eq!(app.config().picture_strength, 150, "the file was not read");
+    assert_eq!(
+        told.shares.lock().expect("what was said").last().copied(),
+        Some(150),
+        "the change did not reach the window"
+    );
+    assert_eq!(
+        told.hung.lock().expect("what was said").len(),
+        hung,
+        "the picture was asked for again"
+    );
+}

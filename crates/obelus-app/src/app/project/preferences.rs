@@ -1468,6 +1468,7 @@ impl App {
             drawing.use_fonts(&self.settled.config.fonts);
             drawing.animates(self.settled.config.animation);
             drawing.bar_tabs(self.settled.config.bar_tabs);
+            drawing.picture_strength(self.settled.config.picture_strength);
         }
         // The table the reader's own bindings leave. Built rather than
         // patched: what is in the file is a list of changes over the

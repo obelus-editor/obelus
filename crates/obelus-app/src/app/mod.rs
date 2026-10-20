@@ -1677,6 +1677,16 @@ pub trait Drawing: std::fmt::Debug + Send + Sync {
     /// who it is, the way the page's ground is.
     fn hang(&self, wallpaper: Option<&obelus_theme::Wallpaper>);
 
+    /// How much of that picture shows, as a share of what the theme lets
+    /// through.
+    ///
+    /// A setting, said the way the size is and at the same moments -- and
+    /// apart from the picture, because the picture is the theme's and this
+    /// is the reader's: told with it, a share changed on the settings page
+    /// would be a picture asked for again, and a window asked for a picture
+    /// reads and decodes the file.
+    fn picture_strength(&self, _share: usize) {}
+
     /// What colour the caret is drawn in.
     ///
     /// Said the way the page's ground is and at the same two moments,

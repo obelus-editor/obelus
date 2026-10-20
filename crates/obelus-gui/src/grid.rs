@@ -89,6 +89,12 @@ pub(crate) enum Update {
     /// The same journey again, and the window's alone: it decides how tall
     /// the bar is, and so where the page starts.
     BarTabs(bool),
+    /// How much of the picture under the page shows, as a share of what
+    /// the theme lets through.
+    ///
+    /// The same journey again, and apart from the picture: a share is not
+    /// a picture to read and decode again.
+    PictureStrength(usize),
     /// What the page is drawn on, for the margin round the grid.
     ///
     /// The same journey once more. A terminal never asks: there the cells
@@ -1288,6 +1294,12 @@ impl obelus_app::app::Drawing for Telling {
         (self.wake)();
     }
 
+    fn picture_strength(&self, share: usize) {
+        if self.updates.send(Update::PictureStrength(share)).is_ok() {
+            (self.wake)();
+        }
+    }
+
     fn hang(&self, wallpaper: Option<&obelus_theme::Wallpaper>) {
         // The page lets go of its picture at once where it is not the one
         // wanted -- see `Decoder::ask` -- and that none is numbered like
@@ -1815,6 +1827,10 @@ impl Page {
             // of the queue with the size and the faces.
             Update::Animates(on) | Update::BarTabs(on) => {
                 tracing::warn!(on, "a setting reached the page");
+                false
+            }
+            Update::PictureStrength(share) => {
+                tracing::warn!(share, "a setting reached the page");
                 false
             }
             // Nor are these: they are what a run of cells *is* and what

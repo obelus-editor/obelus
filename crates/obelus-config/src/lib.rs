@@ -123,6 +123,16 @@ pub struct Config {
     /// machine are the normal case, and a reader who set this in a window
     /// has not asked for a second file to keep it in.
     pub font_size: usize,
+    /// How much of a theme's picture shows through the page, out of a
+    /// hundred of what the theme lets through.
+    ///
+    /// Against the theme rather than in place of it: one theme's picture
+    /// is a photograph that wants to be quiet under code and another's a
+    /// texture that can stand more, and each author said how much in the
+    /// theme. What the reader says is how much more or less of that they
+    /// want, the same for every theme they wear -- see
+    /// `obelus_theme::wallpaper::veil`.
+    pub picture_strength: usize,
     /// Whether the reader's own keys may change a file.
     ///
     /// For a reader who has the agent make every change: typing, pasting,
@@ -386,6 +396,7 @@ impl Default for Config {
             tab_width: obelus_text::TAB_WIDTH,
             fonts: Vec::new(),
             font_size: DEFAULT_FONT_SIZE,
+            picture_strength: 100,
             read_only: false,
             language_servers: false,
             // Off: a formatter that ran without being asked would rewrite
@@ -773,6 +784,15 @@ const SIZES: Dial = Dial {
 /// How big the text is where Obelus draws its own, in points.
 pub const DEFAULT_FONT_SIZE: usize = 14;
 
+/// How much of a theme's picture shows, as a share of what the theme lets
+/// through: from none of it, the page with no picture, to three times as
+/// much, ten at a time -- a step anybody can see, and few enough to walk.
+const STRENGTHS: Dial = Dial {
+    least: 0,
+    most: 300,
+    step: 10,
+};
+
 /// How long a rest is, in milliseconds.
 ///
 /// Zero is the dial's way of saying "not at all": a control meaning off,
@@ -960,6 +980,18 @@ pub const ALL: &[Setting] = &[
         group: Group::Appearance,
         reach: Reach::Anywhere,
         kind: Kind::Count(SIZES),
+        drawn: Drawn::InAWindow,
+    },
+    Setting {
+        key: "picture_strength",
+        name: "Picture strength",
+        about: "How much of a theme's picture shows through the page, as a share of what the theme lets through -- a hundred is as the theme has it",
+        group: Group::Appearance,
+        // The reader's alone: how loud a picture is under their code is a
+        // matter of their eyes, and a project has no picture of its own to
+        // speak for.
+        reach: Reach::ReaderOnly,
+        kind: Kind::Count(STRENGTHS),
         drawn: Drawn::InAWindow,
     },
     Setting {
@@ -1158,6 +1190,7 @@ impl Config {
             "wrap" => Some(Value::Switch(self.wrap)),
             "tab_width" => Some(Value::Count(self.tab_width)),
             "font_size" => Some(Value::Count(self.font_size)),
+            "picture_strength" => Some(Value::Count(self.picture_strength)),
             "fonts" => Some(Value::Names(self.fonts.clone())),
             "hover_delay" => Some(Value::Count(self.hover_delay)),
             "conversation_days" => Some(Value::Count(self.conversation_days)),
@@ -1198,6 +1231,7 @@ impl Config {
             ("conversation_days", Value::Count(days)) => self.conversation_days = *days,
             ("recent_projects", Value::Count(many)) => self.recent_projects = *many,
             ("font_size", Value::Count(points)) => self.font_size = *points,
+            ("picture_strength", Value::Count(share)) => self.picture_strength = *share,
             ("fonts", Value::Names(names)) => self.fonts = names.clone(),
             ("animation", Value::Switch(on)) => self.animation = *on,
             ("bar_tabs", Value::Switch(on)) => self.bar_tabs = *on,
@@ -1756,6 +1790,13 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
     {
         config.font_size = usize::try_from(points).unwrap_or(DEFAULT_FONT_SIZE);
     }
+    if let Some(share) = table
+        .get("picture_strength")
+        .and_then(toml::Value::as_integer)
+        && allowed("picture_strength")
+    {
+        config.picture_strength = usize::try_from(share).unwrap_or(100);
+    }
     if let Some(names) = table.get("fonts").and_then(toml::Value::as_array)
         && allowed("fonts")
     {
@@ -2170,6 +2211,11 @@ fn lay(existing: &str, config: &Config, every: bool) -> String {
         "font_size",
         config.font_size != default.font_size,
         toml_edit::value(i64::try_from(config.font_size).unwrap_or(14)),
+    );
+    put(
+        "picture_strength",
+        config.picture_strength != default.picture_strength,
+        toml_edit::value(i64::try_from(config.picture_strength).unwrap_or(100)),
     );
     put(
         "hover_delay",
@@ -3177,6 +3223,7 @@ mod tests {
             tab_width: 8,
             fonts: vec!["JetBrains Mono".to_string(), "Noto Sans CJK SC".to_string()],
             font_size: 18,
+            picture_strength: 150,
             hover_delay: 800,
             conversation_days: 90,
             recent_projects: 80,

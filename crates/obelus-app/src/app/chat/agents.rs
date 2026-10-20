@@ -356,6 +356,7 @@ impl App {
         drawing.use_fonts(&self.settled.config.fonts);
         drawing.animates(self.settled.config.animation);
         drawing.bar_tabs(self.settled.config.bar_tabs);
+        drawing.picture_strength(self.settled.config.picture_strength);
         self.drawing = Some(drawing);
         self.say_the_colours();
         self.say_the_wallpaper();
