@@ -17149,6 +17149,87 @@ fn the_last_answer_stands_in_while_the_next_is_asked() {
     );
 }
 
+/// A check's name on a pull request's page is a link to where it is told
+/// in full: a click opens it, and a press on one let go on another, or a
+/// drag that comes back, opens nothing -- the same as a link in the words.
+///
+/// Broken deliberately four ways. Leaving the link off the check's row:
+/// the click opened nothing. Answering "clicked" for a row of no text as
+/// the pointer letting go anywhere: the press on one let go on the other
+/// opened it -- and so did taking every row for the page's words, which
+/// asks the nearest words, the same for both checks. And not forgetting
+/// the press when the pointer moves off it: the drag that came back opened
+/// it.
+#[test]
+fn a_checks_name_is_a_link_to_it() {
+    use obelus_app::event::Pointer;
+
+    let _turn = support::clipboard_turn();
+    obelus_clipboard::links::use_opener_for_test(obelus_clipboard::links::Opener::Kept);
+    let scratch = support::Scratch::new("agent-pull-request-check-links");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, one_pull_request("abc123")).expect("the list");
+    std::fs::write(
+        scratch.path().join("gh-answer.json.view.123"),
+        r#"{"body":"","statusCheckRollup":[
+            {"name":"unit-tests","status":"COMPLETED","conclusion":"FAILURE","detailsUrl":"https://ci.example/unit-tests"},
+            {"name":"lint-check","status":"COMPLETED","conclusion":"FAILURE","detailsUrl":"https://ci.example/lint-check"}
+        ]}"#,
+    )
+    .expect("the page");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
+    pump(&mut app, &events, "the list", |app| answered_with(app, 1));
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the checks", |app| {
+        app.current_document_for_test()
+            .and_then(|id| app.document(id))
+            .and_then(obelus_app::app::document::Document::discussion)
+            .is_some_and(|page| !page.still_asking())
+    });
+
+    let text = screen(&mut app);
+    let at = |words: &str| {
+        let row = text
+            .lines()
+            .find(|row| row.contains(words))
+            .unwrap_or_else(|| panic!("no {words:?} on screen:\n{text}"));
+        let y: u16 = row
+            .split('|')
+            .next()
+            .and_then(|number| number.trim().parse().ok())
+            .expect("a row number");
+        let x = u16::try_from(support::column_of(row, words)).expect("a column");
+        (x + 2, y)
+    };
+    let (unit, lint) = (at("unit-tests"), at("lint-check"));
+    let opened = || {
+        let it = obelus_clipboard::links::opened();
+        obelus_clipboard::links::use_opener_for_test(obelus_clipboard::links::Opener::Kept);
+        it
+    };
+    let pointer = |app: &mut App, kind: Pointer, (x, y): (u16, u16)| {
+        app.handle(Event::Pointer { kind, x, y });
+        support::lay_out(app, WIDTH, HEIGHT);
+    };
+
+    pointer(&mut app, Pointer::Pressed, lint);
+    pointer(&mut app, Pointer::Released, unit);
+    assert_eq!(opened(), None, "a press on one let go on another opened it");
+    pointer(&mut app, Pointer::Pressed, unit);
+    pointer(&mut app, Pointer::Dragged, lint);
+    pointer(&mut app, Pointer::Dragged, unit);
+    pointer(&mut app, Pointer::Released, unit);
+    assert_eq!(opened(), None, "a drag that came back opened it");
+    pointer(&mut app, Pointer::Pressed, unit);
+    pointer(&mut app, Pointer::Released, unit);
+    assert_eq!(
+        opened().as_deref(),
+        Some("https://ci.example/unit-tests"),
+        "a click on the check's name did not open it"
+    );
+}
+
 /// The list opened from a pull request's page or an issue's stands on its
 /// row, on its tab; opened from anything else, where it always does.
 ///

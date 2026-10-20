@@ -453,10 +453,17 @@ fn checks(checks: &[Check], folding: &Folding) -> Vec<Row> {
     };
     for (stands, mark, _, ink) in named {
         for check in checks.iter().filter(|check| check.stands == *stands) {
-            rows.push(Row::said(vec![
+            // The name is the link, where the check has a page: where it
+            // failed is told there, and nowhere here.
+            let name = 0..check.name.len();
+            let mut row = Row::said(vec![
                 Span::new(format!("  {mark} "), *ink),
-                Span::new(check.name.clone(), Ink::Plain),
-            ]));
+                Span::from_source(check.name.clone(), Ink::Plain, name.clone()),
+            ]);
+            if let Some(link) = &check.link {
+                row.row.links.push((name, link.clone()));
+            }
+            rows.push(row);
         }
     }
     rows
@@ -572,6 +579,10 @@ pub struct DiscussionView {
     cursor: Place,
     /// What the reader has hold of.
     held: Hold<Part>,
+    /// Where the pointer went down, while it has not moved since: what
+    /// tells a press on a link from a drag that ends on one, on a row that
+    /// is none of the page's words and so has nothing to hold.
+    pressed: Option<Place>,
     /// Which rows are on screen.
     window: Window,
 }
@@ -600,6 +611,7 @@ impl DiscussionView {
             laid: std::cell::RefCell::new(None),
             cursor: Place::default(),
             held: Hold::default(),
+            pressed: None,
             window: Window::new(),
         }
     }
@@ -794,6 +806,26 @@ impl DiscussionView {
         self.held.clicked(at)
     }
 
+    /// Says the pointer went down here.
+    pub const fn press_at(&mut self, at: Place) {
+        self.pressed = Some(at);
+    }
+
+    /// Says the pointer went over here with the button down: anywhere but
+    /// where it went down, and it was not a click.
+    pub fn drag_over(&mut self, at: Place) {
+        if self.pressed != Some(at) {
+            self.pressed = None;
+        }
+    }
+
+    /// Whether letting go here ends a click: the pointer went down here and
+    /// has not been anywhere else since.
+    #[must_use]
+    pub fn pressed_here(&self, at: Place) -> bool {
+        self.pressed == Some(at)
+    }
+
     /// Whether anything is held.
     #[must_use]
     pub const fn holding(&self) -> bool {
@@ -922,6 +954,7 @@ mod tests {
         Check {
             name: name.to_string(),
             stands,
+            link: None,
         }
     }
 

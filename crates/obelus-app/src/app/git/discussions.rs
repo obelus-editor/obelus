@@ -249,6 +249,13 @@ impl App {
             .and_then(|place| rows.get(place.row))
             .and_then(|row| row.folds);
         let cursor = place.filter(|place| place.row < rows.len());
+        // Whether the row is the page's words: a row Obelus wrote has none,
+        // and `spot_under` answers for it with the nearest words there are --
+        // the same answer for every such row, so it cannot say where a press
+        // on one went down.
+        let in_words = cursor
+            .and_then(|cursor| rows.get(cursor.row))
+            .is_some_and(|row| row.from.is_some());
         let Some(page) = self.discussion_mut() else {
             return;
         };
@@ -256,11 +263,21 @@ impl App {
             && let Some(cursor) = cursor
         {
             page.stand(cursor);
+            match kind {
+                Pointer::Pressed => page.press_at(cursor),
+                _ => page.drag_over(cursor),
+            }
         }
         match kind {
             Pointer::Moved => {}
             Pointer::Released => {
-                let clicked = spot.is_some_and(|spot| page.clicked(spot));
+                // In the page's words, a click is a hold that never grew;
+                // on a row Obelus wrote -- a check's name -- nothing is
+                // held, so it is the pointer letting go where it went down.
+                let clicked = match (in_words, spot) {
+                    (true, Some(spot)) => page.clicked(spot),
+                    _ => cursor.is_some_and(|cursor| page.pressed_here(cursor)),
+                };
                 page.let_go_of_nothing();
                 if clicked && let Some(link) = link {
                     self.open_link(&link);
