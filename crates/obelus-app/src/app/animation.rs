@@ -71,6 +71,10 @@ impl App {
             || self
                 .discussion()
                 .is_some_and(obelus_component::discussion::DiscussionView::still_asking)
+            // Or a file of one, open and waiting on GitHub for what is in it.
+            || self.current_buffer().is_some_and(|buffer| {
+                buffer.content().fetched() == Some(&obelus_buffer::Fetched::Asking)
+            })
             // A row of a tree of calls waiting on a server. The same rule
             // as a conversation's: a mark that turns has to be woken, and
             // a mark that does not turn is a mark saying nothing is

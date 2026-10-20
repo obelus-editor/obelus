@@ -375,6 +375,46 @@ pub fn gutter_width(line_count: usize) -> u16 {
         .max(MINIMUM_GUTTER_WIDTH)
 }
 
+/// Says, on the first line of a document whose text is not there yet, that
+/// it is coming -- behind a mark that turns while it is -- or why it is not.
+///
+/// Where the text would start, after the gutter, because that is where the
+/// reader is looking for it; in the quieter ink, because it is not the
+/// file's.
+pub fn say_what_is_coming(
+    cells: &mut CellBuffer,
+    area: Rect,
+    buffer: &Buffer,
+    phase: u32,
+    theme: &Theme,
+) {
+    let (said, waiting) = match buffer.content().fetched() {
+        Some(obelus_buffer::Fetched::Asking) => ("Asking GitHub for this file", true),
+        Some(obelus_buffer::Fetched::Refused(why)) => (why.as_str(), false),
+        Some(obelus_buffer::Fetched::Here) | None => return,
+    };
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+    let dim = Style::new().fg(theme.gutter).bg(theme.background);
+    let x = area.x.saturating_add(gutter_width(1)).saturating_add(1);
+    let stop = area.right().saturating_sub(SCROLLBAR_WIDTH);
+    if x >= stop {
+        return;
+    }
+    let after = match waiting {
+        true => {
+            put(cells, x, area.y, crate::spinning(phase), dim);
+            crate::shapes::spun(x, area.y);
+            x.saturating_add(2)
+        }
+        false => x,
+    };
+    let room = usize::from(stop.saturating_sub(after));
+    let said: String = said.chars().take(room).collect();
+    crate::write(cells, after, area.y, &said, dim);
+}
+
 /// The editor region.
 pub struct EditorView<'a> {
     buffer: Option<&'a Buffer>,

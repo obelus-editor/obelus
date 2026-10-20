@@ -404,6 +404,9 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
             editor::EditorView::new(app)
                 .the_reader_has(room.height)
                 .render(canvas, cells);
+            if let Some(buffer) = app.current_buffer() {
+                editor::say_what_is_coming(cells, canvas, buffer, app.phase(), app.theme());
+            }
         }),
     }
     // Nothing open and nothing to open: the one moment a reader needs

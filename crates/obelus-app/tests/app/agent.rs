@@ -17459,14 +17459,16 @@ fn a_pull_requests_file_opens_from_the_repository() {
     );
 }
 
-/// A file whose commit the repository has not got is asked of GitHub and
-/// opens when it answers, with nothing laid beside it: the reader's history
-/// has not got the commit either, and against nothing every line would
-/// read as new.
+/// A file whose commit the repository has not got opens at once, empty and
+/// saying it is being asked of GitHub, and fills when GitHub answers -- with
+/// nothing laid beside it: the reader's history has not got the commit
+/// either, and against nothing every line would read as new.
 ///
-/// Broken deliberately twice. Leaving `in_history` out of
-/// `refresh_changes`: every line was marked as added. And not asking
-/// GitHub where the repository had nothing: nothing opened.
+/// Broken deliberately three ways. Opening the document only when the
+/// answer came, as this first did: nothing was on screen after the key.
+/// Leaving `in_history` out of `refresh_changes`: every line was marked as
+/// added. And not asking GitHub where the repository had nothing: the
+/// document never filled.
 #[test]
 fn a_pull_requests_file_not_here_is_asked_of_github() {
     let scratch = support::Scratch::new("agent-pull-request-file-github");
@@ -17484,15 +17486,26 @@ fn a_pull_requests_file_not_here_is_asked_of_github() {
     .expect("the file");
     let (mut app, events) = with_a_fake_gh(&scratch, &answer);
     open_the_first_file(&mut app, &events);
+    // At once, before anything has come back.
+    let fetched = |app: &App| {
+        app.current_buffer()
+            .and_then(|buffer| buffer.content().fetched().cloned())
+    };
+    assert_eq!(
+        fetched(&app),
+        Some(obelus_buffer::Fetched::Asking),
+        "the key opened nothing yet"
+    );
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Asking GitHub for this file"),
+        "the document does not say it is on its way:\n{text}"
+    );
     pump(&mut app, &events, "the file", |app| {
-        app.current_buffer().is_some_and(|buffer| {
-            matches!(
-                buffer.content(),
-                obelus_buffer::Content::PullRequest { number: 123, .. }
-            )
-        })
+        fetched(app) == Some(obelus_buffer::Fetched::Here)
     });
-    let _ = screen(&mut app);
+    let text = screen(&mut app);
+    assert!(!text.contains("Asking GitHub"), "{text}");
     let buffer = app.current_buffer().expect("the file");
     assert_eq!(
         buffer.text().rope().to_string(),
@@ -17501,6 +17514,38 @@ fn a_pull_requests_file_not_here_is_asked_of_github() {
     assert!(
         app.changes().is_none_or(|changes| changes.is_empty()),
         "lines are marked as changed against a commit nobody has"
+    );
+}
+
+/// A file GitHub will not give says why, in its document, and stops saying
+/// it is on its way.
+///
+/// Broken deliberately by leaving the refusal off the document: it went on
+/// saying it was being asked for, with a mark turning for an answer that
+/// had already come.
+#[test]
+fn a_pull_requests_file_github_refuses_says_why() {
+    let scratch = support::Scratch::new("agent-pull-request-file-refused");
+    a_repository_with(scratch.path(), "fn committed_here() {}\n");
+    let answer = scratch.path().join("gh-answer.json");
+    let sha = "1234567890abcdef1234567890abcdef12345678";
+    std::fs::write(&answer, one_pull_request_at(sha)).expect("the list");
+    std::fs::write(scratch.path().join("gh-answer.json.view.123"), FILES).expect("the page");
+    // No `.contents`: the fake answers with GitHub's 404.
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+    open_the_first_file(&mut app, &events);
+    pump(&mut app, &events, "the refusal", |app| {
+        app.current_buffer().is_some_and(|buffer| {
+            matches!(
+                buffer.content().fetched(),
+                Some(obelus_buffer::Fetched::Refused(_))
+            )
+        })
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("GitHub would not answer") && !text.contains("Asking GitHub"),
+        "the document does not say why:\n{text}"
     );
 }
 
