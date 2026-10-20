@@ -675,6 +675,14 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"tool_call","toolCallId":"f1","title":"Fetch https://a.example/fetched","kind":"fetch","status":"completed","content":[{"type":"content","content":{"type":"text","text":"what the page said"}}]}}}\n' "$session"
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
+        *'"method":"session/prompt"'*'/details'*)
+            # What a bot or a careful agent writes around a long log: a
+            # `<details>`, which starts shut.
+            set_turn "$session" "$(id_of "$line")"
+            said='The tests ran.\n\n<details>\n<summary>Full log</summary>\n\n```\nrunning 3 tests\ntest a ... ok\n```\n\n</details>\n\nAll passed.\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$session" "$said"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
         *'"method":"session/prompt"'*'/markdown'*)
             # What an agent actually sends: markdown. The protocol says so
             # in as many words -- "Text content. May be plain text or
