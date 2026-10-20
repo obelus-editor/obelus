@@ -581,11 +581,13 @@ pub struct Binding {
 
 /// A number being turned, in a box on its own row.
 ///
-/// The page's second mode, beside a key being bound, and for the same
-/// reason: enter on the row said "the next keys are this number's", and
-/// until enter or escape every key is. The arrows turn it and the digits
+/// The page's second mode, beside a key being bound: enter on the row said
+/// "the next keys are this number's". The arrows turn it and the digits
 /// type it, so a reader who wants ninety days types `90` rather than
-/// pressing right sixty times.
+/// pressing right sixty times. What it has no use for -- a chord, a
+/// function key -- goes on to the key table, the way it does from the
+/// names being built: the palette lets go of it as it lets go of those,
+/// and a key that names another view takes the page with it.
 ///
 /// Nothing is in force until enter. The box is a question the reader is
 /// answering, the way a list is, and a list does not change the setting
@@ -1137,6 +1139,12 @@ impl Settings {
     #[must_use]
     pub const fn dialling(&self) -> Option<&Dialling> {
         self.dialling.as_ref()
+    }
+
+    /// Gives up a number being turned, as escape does: nothing it had come
+    /// to is kept.
+    pub fn let_go_of_the_dial(&mut self) {
+        self.dialling = None;
     }
 
     /// The key that would not do, and why.
@@ -1993,12 +2001,14 @@ impl Settings {
         }
     }
 
-    /// A key while a number is being turned, which is every key: the box
-    /// asked for them.
+    /// A key while a number is being turned.
     ///
-    /// Enter keeps what is in it, brought inside the dial's ends, and
+    /// Enter keeps what is in the box, brought inside the dial's ends, and
     /// escape gives it up -- the way out of everything, nearest thing
-    /// first. Nothing is in force before enter.
+    /// first. Nothing is in force before enter. A chord or a function key
+    /// is not the box's and goes on; any other key it has no use for it
+    /// swallows, because a letter typed at a number is a slip and not a
+    /// filter.
     fn turn(&mut self, key: &KeyEvent) -> SettingsOutcome {
         let Some(dialling) = self.dialling.as_mut() else {
             return SettingsOutcome::Ignored;
@@ -2007,6 +2017,9 @@ impl Settings {
         let bare = !key
             .modifiers
             .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER);
+        if !bare || matches!(key.code, KeyCode::F(_)) {
+            return SettingsOutcome::Ignored;
+        }
         match key.code {
             KeyCode::Esc => {
                 self.dialling = None;

@@ -321,14 +321,15 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
     // A number being turned takes every key: the arrows turn it, the digits
     // type it, enter keeps what is in the box and escape gives it up. Escape
     // is said here, where it is elsewhere left unsaid, because the box is a
-    // question and its two answers belong side by side.
+    // question and its two answers belong side by side. Not `More` for the
+    // arrow up, which is the word the row points at the palette with.
     if let Some(dialling) = settings.dialling() {
         let key = |code| obelus_keymap::KeyChord::new(code, KeyModifiers::NONE);
         return vec![
-            Hint::new(key(KeyCode::Left), "Less")
+            Hint::new(key(KeyCode::Left), "Lower")
                 .about("Turn it down a step")
                 .when(dialling.kept() > dialling.dial.least),
-            Hint::new(key(KeyCode::Right), "More")
+            Hint::new(key(KeyCode::Right), "Higher")
                 .about("Turn it up a step")
                 .when(dialling.kept() < dialling.dial.most),
             // Said at the row's end, because they are the two ways out of

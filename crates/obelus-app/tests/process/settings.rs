@@ -6046,3 +6046,51 @@ fn a_number_can_be_typed_and_is_kept_inside_its_ends() {
 
     obelus_text::lay_tabs_at(obelus_text::TAB_WIDTH);
 }
+
+/// A number being turned keeps the keys it uses and hands the rest on, the
+/// way the names being built do: the palette opens, letting go of the box
+/// and keeping nothing it had come to. And the foot says which number it is
+/// and how far it turns, not the filter, which is not where typing goes.
+///
+/// Broken deliberately by swallowing every key in the box (`Consumed` for a
+/// chord): the palette did not open. By opening the palette without letting
+/// go of the box: the box was still up under it. And by leaving the foot to
+/// the filter: it said `Filter settings`.
+#[test]
+fn the_palette_lets_go_of_a_number_being_turned() {
+    let _turn = crate::turn();
+    let scratch = temporary("dial-palette");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+
+    support::type_text(&mut app, "tab width");
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Right);
+    let dump = support::render(&mut app, 66, 12);
+    let foot = support::text_block(&dump)
+        .lines()
+        .last()
+        .map(str::to_string)
+        .unwrap_or_default();
+    assert!(
+        foot.contains("Tab width") && foot.contains("1\u{2013}16"),
+        "the foot does not say which number and how far:\n{dump}"
+    );
+    assert!(
+        !foot.contains("Filter"),
+        "the foot still offers the filter:\n{dump}"
+    );
+
+    support::press_control(&mut app, 'p');
+    assert!(app.palette().is_some(), "the palette did not open");
+    assert!(
+        app.settings().expect("the settings").dialling().is_none(),
+        "the box is still up under the palette"
+    );
+    assert_eq!(app.config().tab_width, 4, "what was in the box was kept");
+    assert_eq!(
+        written_tab_width(&file),
+        None,
+        "what was in the box was written"
+    );
+}

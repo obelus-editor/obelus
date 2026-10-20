@@ -1379,6 +1379,32 @@ impl StatusView<'_> {
         cells: &mut CellBuffer,
         style: Style,
     ) {
+        // A number being turned: the filter is not where the keys go while
+        // it is, so the row says which number it is and how far it turns
+        // instead -- the way the names being built say what they are -- then
+        // the box's two ways out, and the palette where it has more.
+        if let Some(dialling) = settings.dialling() {
+            let name =
+                obelus_config::Setting::named(dialling.key).map_or("", |setting| setting.name);
+            let ends = format!("{}\u{2013}{}", dialling.dial.least, dialling.dial.most);
+            let after = write(cells, area.x + 1, area.y, name, style);
+            let after = write(cells, after + 2, area.y, &ends, style.fg(self.theme.gutter));
+            let taken = usize::from(after.saturating_sub(area.x)) + AFTER_WORDS;
+            let until = said_keys(
+                cells,
+                area,
+                taken,
+                area.right(),
+                &crate::said_on_its_row(keys),
+                self.theme,
+            );
+            if let Some(key) = &self.palette
+                && crate::says_more(keys)
+            {
+                more(cells, area, taken, until, key, self.theme);
+            }
+            return;
+        }
         let said = settings.query();
         let marked = held_after(
             settings.query_held(),
