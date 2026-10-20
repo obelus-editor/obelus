@@ -773,8 +773,8 @@ crates/
                       changed, a box is the reader's once they have put
                       something in it, and undo is the box's first and the
                       page's after (todo); a setting is two rows, and a name
-                      and a gloss, and a number is turned where it stands
-                      (settings); what a call takes is about a
+                      and a gloss, and a number is turned in a box at the
+                      foot (settings); what a call takes is about a
                       place, and somebody else's text is capped (signature);
                       wherever enter means something else a line is
                       `shift+enter` and `alt+enter`, and a box keeps what it
