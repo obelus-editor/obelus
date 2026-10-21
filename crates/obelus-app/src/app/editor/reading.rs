@@ -15,7 +15,7 @@ impl App {
     /// How much room the reading on screen has, in the terms its keys are
     /// measured in: the width it is laid out at (`frame`), and the rows of
     /// the region it is drawn on.
-    fn reading_room(&self) -> obelus_component::page::Room {
+    pub(in crate::app) fn reading_room(&self) -> obelus_component::page::Room {
         obelus_component::page::Room {
             height: self.editor_area.height,
             reading: self

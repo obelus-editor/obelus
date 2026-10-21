@@ -263,6 +263,7 @@ impl App {
             .as_ref()
             .is_some_and(|picker| picker.is_searching() && picker.row_count() > 0)
             && self.searching() == Some(Scope::File)
+            && self.search.here == Some(crate::app::editor::searching::Here::File)
             && self.search.searched
                 != self
                     .current_buffer()

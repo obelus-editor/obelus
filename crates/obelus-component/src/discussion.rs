@@ -1059,6 +1059,16 @@ impl DiscussionView {
         self.cursor = at;
     }
 
+    /// Puts the cursor somewhere and its row on screen, letting go of what
+    /// was held: a search of the page, chosen.
+    pub fn stand_in_view(&mut self, at: Place, room: crate::page::Room) {
+        let count = self.laid_out(room.reading).len();
+        self.held.let_go();
+        self.cursor = at;
+        self.window.set_count(count);
+        crate::page::show(&mut self.window, at.row, count, room.height);
+    }
+
     /// The first row on screen.
     #[must_use]
     pub const fn top(&self) -> usize {

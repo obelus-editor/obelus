@@ -161,6 +161,19 @@ pub enum PickerValue {
         /// And how far along that one.
         end_character: u32,
     },
+    /// Go to a place in the document being read, where that is not a file.
+    ///
+    /// Not [`PickerValue::Place`], whose line is a line of a file at a path:
+    /// a conversation, a pull request's page and a file's reading are rows
+    /// laid out at the width they are drawn at, and the notes are notes.
+    /// Which of those the row is counted in is the document's, and only
+    /// the document in front is ever searched this way.
+    Within {
+        /// Which row of the page, or which note.
+        row: usize,
+        /// How many characters along it the match begins.
+        character: usize,
+    },
     /// Put one of the agent's settings on one of its values.
     AgentValue {
         /// Which setting, by the agent's id for it.

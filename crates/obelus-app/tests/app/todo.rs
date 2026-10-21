@@ -3987,3 +3987,37 @@ fn undo_in_a_note_just_started_takes_only_it() {
         "the caret is not back in the note it was started from"
     );
 }
+
+/// The notes are searched by their words, and choosing a row puts the
+/// caret in the note, on the match -- in its third line here, past the
+/// two the box wraps above it.
+///
+/// Broken deliberately by standing on the note without walking along its
+/// words (`TodoView::stand_in`): the caret was at the note's start.
+#[test]
+fn the_notes_are_searched_and_a_match_is_gone_to() {
+    let scratch = tree("search", THREE);
+    let mut app = open(&scratch, 76, 18);
+    support::lay_out(&mut app, 76, 18);
+
+    support::press_function(&mut app, 5);
+    support::type_text(&mut app, "the colours");
+    let rows: Vec<String> = app
+        .picker()
+        .expect("the search")
+        .matches()
+        .map(|item| item.label.clone())
+        .collect();
+    assert_eq!(
+        rows,
+        vec!["changes the colours, not the count.".to_string()]
+    );
+    press(&mut app, KeyCode::Enter);
+    assert!(app.picker().is_none(), "the search is still open");
+    assert_eq!(
+        support::under_the_caret(&mut app, 76, 18, 11).as_deref(),
+        Some("the colours"),
+        "the caret is not on the match:\n{}",
+        support::render(&mut app, 76, 18)
+    );
+}

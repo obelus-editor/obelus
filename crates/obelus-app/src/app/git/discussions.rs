@@ -154,7 +154,7 @@ impl App {
 
     /// How much room the page being read has, in the terms its keys are
     /// measured in.
-    fn discussion_room(&self) -> obelus_component::page::Room {
+    pub(in crate::app) fn discussion_room(&self) -> obelus_component::page::Room {
         let area = self.editor_area;
         obelus_component::page::Room {
             height: obelus_ui::discussion::band(area).height,

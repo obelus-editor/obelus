@@ -1142,6 +1142,25 @@ impl TodoView {
         self.enter_note(note, false);
     }
 
+    /// Puts the caret in one of the notes, `character` characters into its
+    /// words: a search of the notes, chosen.
+    ///
+    /// A step at a time from the start rather than a column worked out
+    /// here, because the box is what knows how its words wrap. And only
+    /// into the note asked for: one folded away puts the caret in the note
+    /// standing in for it, whose words are other words.
+    pub fn stand_in(&mut self, note: usize, character: usize) {
+        self.enter_note(note, false);
+        if let Some((at, composer)) = self.writing.as_mut()
+            && *at == note
+        {
+            for _ in 0..character {
+                composer.right();
+            }
+        }
+        self.follow_caret();
+    }
+
     /// The note that is on the page in this one's place.
     ///
     /// Itself, unless it hangs under something folded -- then the note

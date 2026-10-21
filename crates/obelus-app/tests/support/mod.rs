@@ -316,6 +316,29 @@ pub(crate) fn cursor_line(dump: &str) -> &str {
         .map_or("", |index| dump[index + marker.len()..].trim_end())
 }
 
+/// The `count` characters drawn from the caret on, on a screen `width` by
+/// `height` -- or `None` where there is no caret.
+///
+/// What the reader sees the caret on, which is the question for every page
+/// whose cursor is a place in rows that only it lays out.
+pub(crate) fn under_the_caret(
+    app: &mut App,
+    width: u16,
+    height: u16,
+    count: u16,
+) -> Option<String> {
+    let dump = render(app, width, height);
+    let (x, y) = cursor_line(&dump)
+        .split_once(',')
+        .and_then(|(x, y)| Some((x.parse::<u16>().ok()?, y.parse::<u16>().ok()?)))?;
+    let cells = cells_of(app, width, height);
+    Some(
+        (x..(x + count).min(width))
+            .map(|x| cells[(x, y)].symbol().to_string())
+            .collect(),
+    )
+}
+
 /// The text rows of a dump.
 pub(crate) fn text_block(dump: &str) -> &str {
     section(dump, "-- text --", "-- style --")

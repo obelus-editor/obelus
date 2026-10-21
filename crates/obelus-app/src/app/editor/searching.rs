@@ -3,8 +3,83 @@
 //! The view is [`obelus_component::picker`] and the scanning is
 //! [`obelus_search`]; what is here is which of them to ask, what to do with
 //! what comes back, and how a row of a result is coloured.
+//!
+//! The narrowest scope is whatever is being read, and that is not always a
+//! file: a conversation, a pull request's page, a file's reading and the
+//! notes are searched too, each in the terms its own cursor stands in.
+
+use obelus_component::page::Place;
 
 use crate::app::*;
+
+/// What the narrowest scope is searching: the document in front, by the
+/// kind of thing it is.
+///
+/// One tab whatever it is, because the question is the same -- where in
+/// this is the thing I am looking at -- and only what "this" is changes.
+/// What changes with it is what a row is counted in and where choosing one
+/// puts the cursor: a line of a file, a row of a page laid out at the width
+/// it is drawn at, or a note.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::app) enum Here {
+    /// A file, read as its lines.
+    File,
+    /// A file shown as its reading: the rows as they are drawn, which is
+    /// where the reading's cursor stands, and not the lines behind them.
+    Reading,
+    /// A conversation's transcript.
+    Conversation,
+    /// A pull request or an issue.
+    Page,
+    /// The notes.
+    Notes,
+}
+
+impl Here {
+    /// The tab's name.
+    const fn label(self) -> &'static str {
+        match self {
+            Self::File => "File",
+            Self::Reading => "Reading",
+            Self::Conversation => "Conversation",
+            Self::Page => "Page",
+            Self::Notes => "Notes",
+        }
+    }
+
+    /// What typing does, for the row before anything has been typed.
+    const fn before_typing(self) -> &'static str {
+        match self {
+            Self::File => "Search this file",
+            Self::Reading => "Search this reading",
+            Self::Conversation => "Search this conversation",
+            Self::Page => "Search this page",
+            Self::Notes => "Search the notes",
+        }
+    }
+
+    /// What the list says before anything is asked.
+    const fn invitation(self) -> &'static str {
+        match self {
+            Self::File => "Type to search this file",
+            Self::Reading => "Type to search this reading",
+            Self::Conversation => "Type to search this conversation",
+            Self::Page => "Type to search this page",
+            Self::Notes => "Type to search the notes",
+        }
+    }
+
+    /// What the list says when nothing has the query in it.
+    const fn nothing_found(self) -> &'static str {
+        match self {
+            Self::File => "No match in this file",
+            Self::Reading => "No match in this reading",
+            Self::Conversation => "No match in this conversation",
+            Self::Page => "No match on this page",
+            Self::Notes => "No match in the notes",
+        }
+    }
+}
 
 impl App {
     /// Opens the search, at one of its three scopes.
@@ -20,14 +95,23 @@ impl App {
         let scopes = self.searchable();
         let Some(tab) = scopes.iter().position(|shown| *shown == scope) else {
             self.wrong(match scope {
-                Scope::File => "No file open".to_string(),
+                Scope::File => "Nothing here to search".to_string(),
                 Scope::Symbols => "No language server to ask".to_string(),
                 Scope::Project => "Nowhere to search".to_string(),
             });
             return;
         };
 
-        let names: Vec<&str> = scopes.iter().map(|scope| scope.label()).collect();
+        // Settled with the tabs, for the reason they are: the document in
+        // front does not change under a list that covers it.
+        let here = self.searched_here();
+        let names: Vec<&str> = scopes
+            .iter()
+            .map(|scope| match (scope, here) {
+                (Scope::File, Some(here)) => here.label(),
+                _ => scope.label(),
+            })
+            .collect();
         let mut picker = Picker::new(Vec::new(), PickerLayout::FullArea);
         picker.with_scopes(&names);
         picker.searches();
@@ -37,6 +121,7 @@ impl App {
         picker.says_its_keys();
         picker.go_to_tab(tab);
         self.search.searching = scopes;
+        self.search.here = here;
         self.show_list(picker);
         self.refresh_search();
     }
@@ -52,7 +137,7 @@ impl App {
         Scope::ALL
             .into_iter()
             .filter(|scope| match scope {
-                Scope::File => self.current_buffer().is_some(),
+                Scope::File => self.searched_here().is_some(),
                 // Somewhere to walk is all this one needs, and there always
                 // is: Obelus is started in a directory.
                 Scope::Project => true,
@@ -62,6 +147,27 @@ impl App {
                     .is_some_and(|language| self.servers.contains_key(&language)),
             })
             .collect()
+    }
+
+    /// What the narrowest scope would search, if a search opened now.
+    ///
+    /// Nothing in a terminal, whose screen is the program's and drawn a
+    /// screen at a time, and nothing with nothing open.
+    pub(in crate::app) fn searched_here(&self) -> Option<Here> {
+        if self
+            .current_buffer()
+            .is_some_and(|buffer| buffer.mode() == Mode::Preview)
+            && self.rendering().is_some()
+        {
+            return Some(Here::Reading);
+        }
+        match self.document(self.current?)? {
+            Document::File(_) => Some(Here::File),
+            Document::Chat(_) => Some(Here::Conversation),
+            Document::Discussion(_) => Some(Here::Page),
+            Document::Notes(_) => Some(Here::Notes),
+            Document::Terminal(_) => None,
+        }
     }
 
     /// Which scope the search is showing, if a search is open.
@@ -82,7 +188,12 @@ impl App {
     /// an outline's are names, a file list's are paths -- and there a
     /// column of the row means nothing in the file.
     pub(in crate::app) fn rows_are_lines(&self) -> bool {
-        self.searching().is_some_and(Scope::lists_lines)
+        match self.searching() {
+            // A row of a page is a row of the page, and says itself where
+            // it matched rather than through a column of a line.
+            Some(Scope::File) => self.search.here == Some(Here::File),
+            scope => scope.is_some_and(Scope::lists_lines),
+        }
     }
 
     /// The same, for a test: which list is showing is not otherwise
@@ -270,7 +381,16 @@ impl App {
         let walking = scope == Scope::Project;
         let ignored = walking.then_some(self.config().ignored_files);
         let hidden = walking.then_some(self.config().hidden_files);
+        let here = self.search.here.unwrap_or(Here::File);
+        // A row of a page names nowhere a preview could show: only the
+        // page's own view can draw it, and that is the page under the list.
+        let previews = scope != Scope::File || here == Here::File;
         if let Some(picker) = self.picker.as_mut() {
+            if previews {
+                picker.previews();
+            } else {
+                picker.stops_previewing();
+            }
             picker.looking_how(how);
             picker.reaching_outside(outside);
             picker.offering_ignored(ignored);
@@ -278,7 +398,10 @@ impl App {
             // And what typing does, which is the one thing on this row
             // that changes with the tab: the same keystroke looks in one
             // file, in every file, or at a server's index.
-            picker.before_typing(scope.before_typing());
+            picker.before_typing(match scope {
+                Scope::File => here.before_typing(),
+                _ => scope.before_typing(),
+            });
         }
         let Some(picker) = self.picker.as_ref() else {
             return;
@@ -291,17 +414,19 @@ impl App {
                     // which says nothing a list could add. With no file at
                     // all the reason is that, which is a fact about the
                     // world rather than an invitation to type.
-                    let reason = match self.current_buffer().is_some() {
-                        true => "Type to search this file",
-                        false => "No file open",
+                    let reason = match self.searched_here() {
+                        Some(_) => here.invitation(),
+                        None => "Nothing here to search",
                     };
                     self.search.searched = None;
                     if let Some(picker) = self.picker.as_mut() {
                         picker.replace(Vec::new());
                         picker.while_empty(reason);
                     }
-                } else {
+                } else if here == Here::File {
                     self.search_this_file();
+                } else {
+                    self.search_this_document(here);
                 }
             }
             Scope::Project => self.search_the_project(),
@@ -439,6 +564,145 @@ impl App {
         if let Some(picker) = self.picker.as_mut() {
             picker.replace(items);
             picker.while_empty("No match in this file");
+        }
+    }
+
+    /// The rows of the document in front that have the query in them, where
+    /// that is not a file.
+    ///
+    /// A row each, as it is drawn: a page is laid out at the width it is
+    /// read at, and its cursor stands on those rows, so a row is what a
+    /// match can be gone to. Which also means a query that a row's end
+    /// breaks in two is not found, and neither is anything folded shut,
+    /// which has no rows -- the same as a reader running their eye down
+    /// it. The notes are the exception, being notes rather than rows: a
+    /// row for each line of a note's words, gone to by the note.
+    fn search_this_document(&mut self, here: Here) {
+        let needle = self.needle();
+        if needle.is_broken() {
+            if let Some(picker) = self.picker.as_mut() {
+                picker.replace(Vec::new());
+                picker.while_empty("That is not a pattern");
+            }
+            return;
+        }
+        let found = match here {
+            // Not here: a file's lines are `search_this_file`'s.
+            Here::File => Vec::new(),
+            Here::Reading => self.rendering().map_or_else(Vec::new, |rows| {
+                let laid: Vec<_> = rows
+                    .iter()
+                    .map(obelus_component::reading::Laid::of)
+                    .collect();
+                rows_found(&laid, &needle)
+            }),
+            Here::Conversation => {
+                let width = obelus_ui::chat::reading_width(self.editor_area);
+                self.chat()
+                    .map_or_else(Vec::new, |chat| rows_found(&chat.rows(width), &needle))
+            }
+            Here::Page => {
+                let width = obelus_ui::discussion::reading_width(self.editor_area);
+                self.discussion()
+                    .map_or_else(Vec::new, |page| rows_found(&page.rows(width), &needle))
+            }
+            Here::Notes => self
+                .notes()
+                .map_or_else(Vec::new, |notes| notes_found(notes, &needle)),
+        };
+        let items: Vec<PickerItem> = found
+            .into_iter()
+            .map(|(row, character, said)| PickerItem {
+                prose: false,
+                marker: None,
+                icon: None,
+                enabled: true,
+                colours: None,
+                status: None,
+                depth: 0,
+                opens: None,
+                kind: None,
+                label: said.trim().to_string(),
+                version: None,
+                detail: None,
+                // No number: a row of a page is a place the width made, and
+                // its number says nothing a reader could go and find.
+                trailing: None,
+                changed: None,
+                value: PickerValue::Within { row, character },
+                tab: None,
+                section: None,
+            })
+            .collect();
+        self.search.searched = None;
+        if let Some(picker) = self.picker.as_mut() {
+            picker.replace(items);
+            picker.while_empty(here.nothing_found());
+        }
+    }
+
+    /// Goes to a row of the search of the document in front, chosen.
+    ///
+    /// By what the search searched rather than by what is in front now,
+    /// which is the same thing -- the list covered it -- unless something
+    /// moved it underneath, and then the row is about a page that is not
+    /// there and goes nowhere.
+    pub(in crate::app) fn go_within(&mut self, row: usize, character: usize) {
+        let Some(here) = self.search.here.take() else {
+            return;
+        };
+        if self.searched_here() != Some(here) {
+            return;
+        }
+        let at = Place { row, character };
+        match here {
+            Here::File => {}
+            Here::Reading => {
+                let room = self.reading_room();
+                let Some(top) = self
+                    .current_buffer()
+                    .map(|buffer| buffer.viewport().top.get())
+                else {
+                    return;
+                };
+                let Some(rendered) = self.rendered.as_mut() else {
+                    return;
+                };
+                rendered.cursor.let_go();
+                rendered.cursor.stand(at);
+                // The view is the buffer's, and moves only as far as it
+                // takes to show the row: the arithmetic a key's walk does,
+                // on a window lent for it.
+                let count = rendered.rows.len();
+                let mut window = obelus_component::window::Window::new();
+                window.set_count(count);
+                window.drag_to(top);
+                obelus_component::page::show(&mut window, row, count, room.height);
+                let by = isize::try_from(window.top()).unwrap_or(isize::MAX)
+                    - isize::try_from(top).unwrap_or(isize::MAX);
+                if by != 0
+                    && let Some(buffer) = self.current_buffer_mut()
+                {
+                    buffer.scroll_rendering(by, count, room.height);
+                }
+            }
+            Here::Conversation => {
+                let room = self.chat_room();
+                if let Some(talk) = self.conversation_mut() {
+                    talk.chat.stand_in_the_transcript(at, room);
+                }
+            }
+            Here::Page => {
+                let room = self.discussion_room();
+                if let Some(page) = self.discussion_mut() {
+                    page.stand_in_view(at, room);
+                }
+            }
+            Here::Notes => {
+                if let Some(notes) = self.notes_mut() {
+                    notes.stand_in(row, character);
+                }
+            }
         }
     }
 
@@ -590,4 +854,42 @@ impl App {
             });
         }
     }
+}
+
+/// The rows of a page that have the query in them: each one's place among
+/// them, how many characters along it the match begins, and what it says.
+fn rows_found<L: obelus_component::page::Line>(
+    rows: &[L],
+    needle: &obelus_search::Needle,
+) -> Vec<(usize, usize, String)> {
+    rows.iter()
+        .enumerate()
+        .filter_map(|(at, row)| {
+            let said = obelus_component::page::text(row);
+            let found = needle.found_in(&said)?;
+            Some((at, found.start, said))
+        })
+        .collect()
+}
+
+/// The lines of the notes that have the query in them: which note, how
+/// many characters into its words the match begins, and the line.
+///
+/// Counted through the whole of a note's words, its line breaks among
+/// them, because that is how far along them the caret is walked.
+fn notes_found(
+    notes: &obelus_component::todo::TodoView,
+    needle: &obelus_search::Needle,
+) -> Vec<(usize, usize, String)> {
+    let mut found = Vec::new();
+    for (at, note) in notes.todo().notes.iter().enumerate() {
+        let mut before = 0;
+        for line in note.said.split('\n') {
+            if let Some(range) = needle.found_in(line) {
+                found.push((at, before + range.start, line.to_string()));
+            }
+            before += line.chars().count() + 1;
+        }
+    }
+    found
 }

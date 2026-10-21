@@ -29,6 +29,9 @@ pub(in crate::app) struct Search {
     /// version they were read from: an agent rewriting the file while the
     /// search is open has to change what the list says.
     pub(in crate::app) searched: Option<(PathBuf, i32)>,
+    /// What the narrowest scope of the open search is searching, which is
+    /// whatever was in front when it opened.
+    pub(in crate::app) here: Option<searching::Here>,
     /// Whether the symbols search offers names from outside the project.
     ///
     /// Off, because a server that has indexed a project has indexed what it

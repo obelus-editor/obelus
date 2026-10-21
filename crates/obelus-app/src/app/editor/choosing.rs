@@ -509,6 +509,7 @@ impl App {
             // conversation is something open and is not a file.
             Requires::ADocumentOpen => !self.reading_nothing(),
             Requires::AnotherDocument => self.documents.iter().flatten().nth(1).is_some(),
+            Requires::SomethingToSearch => self.searched_here().is_some(),
             // A project before the walk, for all three of these: git asked
             // about a tree that has gone looks in the directory above it,
             // and that may well be some other repository.
@@ -1016,6 +1017,7 @@ impl App {
                 Some(column) => self.go_to_match(&path, line, column),
                 None => self.go_to(&path, line, character),
             },
+            PickerValue::Within { row, character } => self.go_within(row, character),
             PickerValue::Setting { key, word } => {
                 self.change_setting(key, &obelus_config::Value::Choice(word));
             }

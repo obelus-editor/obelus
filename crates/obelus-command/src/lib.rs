@@ -303,6 +303,15 @@ pub enum Requires {
     ADocumentOpen,
     /// Something else has to be open beside what is being read.
     AnotherDocument,
+    /// What is being read has to have words a search can find in it.
+    ///
+    /// A file, a file's reading, a conversation, a pull request's page or
+    /// the notes -- every document but a terminal, whose screen is the
+    /// program's, drawn a screen at a time, and not words laid out once.
+    /// Not [`Requires::AFileOpen`], which is what it asked for until the
+    /// documents that are not files were read with a cursor, and which
+    /// left the one key that finds a word dim on every page but a file.
+    SomethingToSearch,
     /// The open file has to be in a language Obelus can parse.
     AKnownLanguage,
     /// The open file has to have a reading, or be showing one.
@@ -597,7 +606,7 @@ pub const ALL: &[CommandSpec] = &[
     CommandSpec {
         command: Command::SearchFile,
         name: "search-file",
-        title: "Search this file",
+        title: "Search this document",
     },
     CommandSpec {
         command: Command::SearchProject,
@@ -1302,11 +1311,11 @@ impl Command {
             Self::Fold => Requires::AFoldHere,
             Self::FoldAll => Requires::AFoldableFile,
             Self::UnfoldAll => Requires::SomethingFolded,
-            // One scope needs a file, one needs nothing but the project, and
-            // one needs a server -- but all three open the same view, whose
-            // other tabs are a left or a right away. What each key requires
-            // is what the tab it lands on can answer.
-            Self::SearchFile => Requires::AFileOpen,
+            // One scope needs a document with words in it, one needs nothing
+            // but the project, and one needs a server -- but all three open
+            // the same view, whose other tabs are a left or a right away.
+            // What each key requires is what the tab it lands on can answer.
+            Self::SearchFile => Requires::SomethingToSearch,
             Self::SearchSymbols => Requires::ARunningServer,
             // Both ways, and it needs only a file: turning the names off
             // is exactly what a reader with no repository does not need to

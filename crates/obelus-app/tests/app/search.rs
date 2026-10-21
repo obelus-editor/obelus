@@ -853,7 +853,51 @@ fn searching_a_file_needs_a_file() {
         app.picker().is_none(),
         "a search opened with nothing to search"
     );
-    assert_eq!(app.note(), Some("No file open"));
+    assert_eq!(app.note(), Some("Nothing here to search"));
+}
+
+/// A file shown as its reading is searched as it is drawn, and choosing a
+/// row puts the reading's cursor on the match and the match on screen.
+///
+/// The words asked for are the reading's and not the file's: the source
+/// has `**` in the middle of them, so a search of the lines finds nothing.
+/// Broken deliberately two ways. Answering `Here::File` for a reading in
+/// `searched_here`: the lines were searched and the list was empty. And
+/// leaving the reading's view where it was in `go_within`: the cursor
+/// stood on a row below the screen, and no caret was drawn on the match.
+#[test]
+fn a_reading_is_searched_as_it_is_drawn() {
+    let path = std::path::Path::new("found.md");
+    let mut source: String = (0..40)
+        .map(|at| format!("Paragraph {at} says nothing much.\n\n"))
+        .collect();
+    source.push_str("The **pelican** wings it.\n");
+    let mut app = App::new(vec![obelus_buffer::Buffer::from_text(path, &source)]);
+    support::lay_out(&mut app, 60, 12);
+    dispatch::dispatch(&mut app, Command::PreviewToggle);
+    support::lay_out(&mut app, 60, 12);
+
+    support::press_function(&mut app, 5);
+    support::type_text(&mut app, "pelican wings");
+    let rows: Vec<String> = app
+        .picker()
+        .expect("the search")
+        .matches()
+        .map(|item| item.label.clone())
+        .collect();
+    assert_eq!(
+        rows,
+        vec!["The pelican wings it.".to_string()],
+        "the reading was not what was searched"
+    );
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.picker().is_none(), "the search is still open");
+    assert_eq!(
+        support::under_the_caret(&mut app, 60, 12, 7).as_deref(),
+        Some("pelican"),
+        "the caret is not on the match:\n{}",
+        support::render(&mut app, 60, 12)
+    );
 }
 
 /// The scan itself, against a real tree: what it finds, what it skips, and
