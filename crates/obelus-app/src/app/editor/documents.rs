@@ -1473,6 +1473,16 @@ impl App {
         self.rendering().map(<[_]>::len)
     }
 
+    /// The reading on screen and the cursor in it.
+    #[must_use]
+    pub fn rendering_with_its_cursor(
+        &self,
+    ) -> Option<(&[obelus_row::Row], &obelus_component::reading::Cursor)> {
+        self.rendered
+            .as_ref()
+            .map(|rendered| (rendered.rows.as_slice(), &rendered.cursor))
+    }
+
     /// Lays the current file out, if it needs laying out.
     ///
     /// Once per change of text, width or file, not once per frame: the
@@ -1495,6 +1505,7 @@ impl App {
             buffer.version(),
             width,
         );
+        let top = buffer.viewport().top.get();
         if self
             .rendered
             .as_ref()
@@ -1504,13 +1515,36 @@ impl App {
         }
         // Asked on a miss and nowhere else: deciding which reading a file
         // has means reading its first lines, and the answer changes only
-        // when one of the three things above does.
+        // when one of the four things above does.
         let Some(reading) = obelus_reading::of(buffer.path(), buffer.text()) else {
             self.rendered = None;
             return;
         };
         let rows = obelus_reading::render(reading, &buffer.text().rope().to_string(), width);
-        self.rendered = Some(Rendered { at, rows });
+        // The same file laid out again keeps its cursor, on the words it
+        // was on: a resize is not a reason to lose the reader's place. What
+        // is held is kept across a width, which it is measured to survive,
+        // and let go of across a change to the text, whose bytes it is a
+        // place in. Another file is another reading, with its cursor where
+        // its view is.
+        let cursor = match self.rendered.take() {
+            Some(Rendered {
+                at: was,
+                cursor,
+                rows: before,
+            }) if (&was.0, &was.1) == (&at.0, &at.1) => {
+                let mut cursor = cursor;
+                if was.2 != at.2 {
+                    cursor.let_go();
+                }
+                cursor.relaid(&before, &rows);
+                cursor
+            }
+            _ => obelus_component::reading::Cursor::at(top),
+        };
+        let mut rendered = Rendered { at, rows, cursor };
+        rendered.cursor.settle(&rendered.rows);
+        self.rendered = Some(rendered);
     }
 
     /// Opens a file, or switches to it if it is already open.
@@ -2145,7 +2179,13 @@ impl App {
 #[derive(Debug)]
 pub(in crate::app) struct Rendered {
     at: (PathBuf, obelus_buffer::Content, i32, u16),
-    rows: Vec<obelus_row::Row>,
+    pub(in crate::app) rows: Vec<obelus_row::Row>,
+    /// Where the cursor is in the rows, and what is held.
+    ///
+    /// Kept with them rather than with the buffer, because it is a place in
+    /// *these* rows: the file's own cursor is somewhere in its lines, and
+    /// stays there for when the reader goes back to them.
+    pub(in crate::app) cursor: obelus_component::reading::Cursor,
 }
 
 /// Re-reads one buffer, and says whether the text changed.

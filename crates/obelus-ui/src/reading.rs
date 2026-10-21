@@ -4,15 +4,25 @@
 //! carrying what each run *is*; this puts the theme's colours on them and
 //! writes the cells. One drawer for every reading, because by the time a
 //! reading is rows it is the same thing as any other: runs of text with a
-//! look, scrolled by rows, with no cursor in them -- the rows are not the
+//! look, scrolled by rows, with no gutter beside them -- the rows are not the
 //! file's lines, and a line number beside a wrapped paragraph would be a
 //! number for something that is not there.
+//!
+//! A file shown as its reading has a cursor in it all the same, which is
+//! [`obelus_component::page`]'s: what is held is drawn here, and where the
+//! caret goes and which character a point on the screen is are
+//! [`caret`] and [`place_at`], by the arithmetic [`crate::page`] keeps for
+//! every page.
 
+use obelus_component::{
+    page::{Line, Place},
+    reading::{Cursor, Laid},
+};
 use obelus_row::{Ink, Row};
 use obelus_theme::Theme;
 use ratatui::{
     buffer::Buffer as CellBuffer,
-    layout::Rect,
+    layout::{Position, Rect},
     style::{Modifier, Style},
 };
 
@@ -55,6 +65,112 @@ pub fn draw(
     theme: &Theme,
     ground: ratatui::style::Color,
 ) {
+    // A hover and a completion's documentation are not held: what holds
+    // anything is a page with a cursor in it, which is [`draw_held`].
+    draw_rows(
+        cells,
+        area,
+        rows.iter().map(|row| (row, None)),
+        rows.len(),
+        top,
+        theme,
+        ground,
+    );
+}
+
+/// Draws a file's reading, starting `top` rows in, with what the reader has
+/// hold of marked.
+///
+/// `cursor` is where the cursor is, while nothing is in front of the
+/// reading: where it is in a block of code, the key that copies the block
+/// is said on the block's own box, the way the transcript and a pull
+/// request's page say it.
+pub fn draw_held(
+    cells: &mut CellBuffer,
+    area: Rect,
+    rows: &[Laid<'_>],
+    top: usize,
+    cursor: Option<Place>,
+    theme: &Theme,
+) {
+    draw_rows(
+        cells,
+        area,
+        rows.iter().map(|laid| (laid.row, laid.held())),
+        rows.len(),
+        top,
+        theme,
+        theme.background,
+    );
+    let Some(on) = cursor.and_then(|cursor| Laid::acting(rows, cursor.row)) else {
+        return;
+    };
+    // Along the box's bottom, or its top where the bottom is off the
+    // screen -- the transcript's rule, by the transcript's code.
+    let height = usize::from(area.height);
+    let shown = |row: usize| row >= top && row < top + height;
+    let side = match (shown(on.end - 1), shown(on.start)) {
+        (true, _) => on.end - 1,
+        (false, true) => on.start,
+        (false, false) => return,
+    };
+    let Some(laid) = rows.get(side) else {
+        return;
+    };
+    let Ok(y) = u16::try_from(side - top) else {
+        return;
+    };
+    let stop = area.x + area.width.saturating_sub(crate::editor::SCROLLBAR_WIDTH);
+    let wide = u16::try_from(crate::text_width(&laid.text())).unwrap_or(u16::MAX);
+    let ended = area.x.saturating_add(wide).min(stop);
+    let dim = Style::new().fg(theme.gutter).bg(theme.background);
+    crate::page::offer_copy(cells, &laid.row.spans, area.y + y, ended, dim, theme);
+}
+
+/// Where the caret goes on a file's reading drawn in `area` from row `top`:
+/// where the cursor is, while its row is on screen.
+#[must_use]
+pub fn caret(area: Rect, rows: &[Row], cursor: &Cursor, top: usize) -> Option<Position> {
+    let place = cursor.place();
+    let row = rows.get(place.row)?;
+    let below = place.row.checked_sub(top)?;
+    let y = area.y + u16::try_from(below).ok()?;
+    if y >= area.bottom() {
+        return None;
+    }
+    let last = area.x + area.width.saturating_sub(crate::editor::SCROLLBAR_WIDTH);
+    let x = crate::page::cell_of(&Laid::of(row).text(), area.x, place.character)
+        .min(last.saturating_sub(1));
+    Some(Position { x, y })
+}
+
+/// Which row and character of a file's reading drawn in `area` from row
+/// `top` a point on the screen is: the band below the last row is the row
+/// after it, which a selection can start from.
+#[must_use]
+pub fn place_at(area: Rect, rows: &[Row], top: usize, x: u16, y: u16) -> Option<Place> {
+    if x < area.x || x >= area.right() || y < area.y || y >= area.bottom() {
+        return None;
+    }
+    let row = (top + usize::from(y - area.y)).min(rows.len());
+    Some(Place {
+        row,
+        character: rows.get(row).map_or(0, |it| {
+            crate::page::character_under(&Laid::of(it).text(), area.x, x)
+        }),
+    })
+}
+
+/// The rows, each with which of its characters are held.
+fn draw_rows<'a>(
+    cells: &mut CellBuffer,
+    area: Rect,
+    rows: impl Iterator<Item = (&'a Row, Option<&'a std::ops::Range<usize>>)>,
+    count: usize,
+    top: usize,
+    theme: &Theme,
+    ground: ratatui::style::Color,
+) {
     fill(cells, area, Style::new().fg(theme.foreground).bg(ground));
     if area.width == 0 || area.height == 0 {
         return;
@@ -63,8 +179,8 @@ pub fn draw(
     let column = crate::editor::SCROLLBAR_WIDTH.min(area.width);
     let width = area.width - column;
     // One row of the reading per row of the screen, so this is exact.
-    let bar = (rows.len() > usize::from(area.height))
-        .then(|| scrollbar(cells, area, top, rows.len(), theme))
+    let bar = (count > usize::from(area.height))
+        .then(|| scrollbar(cells, area, top, count, theme))
         .flatten();
 
     // And where this reading has got to, for a front end that can draw it
@@ -76,12 +192,7 @@ pub fn draw(
         crate::shapes::scrolled(Rect { width, ..area }, top, bar);
     }
 
-    for (offset, row) in rows
-        .iter()
-        .skip(top)
-        .take(usize::from(area.height))
-        .enumerate()
-    {
+    for (offset, (row, held)) in rows.skip(top).take(usize::from(area.height)).enumerate() {
         let Ok(offset) = u16::try_from(offset) else {
             break;
         };
@@ -109,10 +220,7 @@ pub fn draw(
                 base: Style::new().fg(theme.foreground).bg(ground),
                 theme,
                 stop: area.x + width,
-                // A reading on its own page is not held: what holds
-                // anything is a conversation, and this draws a file's
-                // preview and a server's answer as well.
-                held: None,
+                held,
                 linked: &[],
             },
         );

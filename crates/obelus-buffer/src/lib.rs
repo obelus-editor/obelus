@@ -243,12 +243,12 @@ impl Content {
 /// third variant would be this enum answering a question the format already
 /// answers.
 ///
-/// A file opens as its *bytes*, whatever reading it has, and `ctrl+t` asks
-/// for the reading; the bytes are where the cursor, the selection and the
-/// copy live. It used to open in the reading when it had one, under a
-/// setting that was on by default. Which reading a file has is the file's
-/// own business; whether to be shown one *instead of the file* is the
-/// reader's, and a program whose whole subject is what is in a file should
+/// A file opens as its *bytes*, whatever reading it has, and `ctrl+d` asks
+/// for the reading; the bytes are what is edited, and a reading has a
+/// cursor of its own to read and copy with. It used to open in the reading when
+/// it had one, under a setting that was on by default. Which reading a file has
+/// is the file's own business; whether to be shown one *instead of the file* is
+/// the reader's, and a program whose whole subject is what is in a file should
 /// not answer that for them. The setting went with the behaviour, because a
 /// switch that turns off something nothing does is a switch with nothing
 /// behind it -- and an old config naming it is simply ignored, the way any

@@ -1,0 +1,451 @@
+//! A file shown as its reading, with a cursor in it.
+//!
+//! **A reading is a page like any other.** It used to be rows scrolled by
+//! the arrows with nowhere for a cursor to be, on the argument that its rows
+//! are not the file's lines -- which is true, and is also true of a
+//! transcript and of a pull request, and neither of those went without one.
+//! What a reader does with a README on screen is read it and take a copy of
+//! a sentence of it, and with no cursor there was nothing to take hold of
+//! the sentence with. So the cursor is [`crate::page`]'s: the arrows walk the
+//! words, shift holds them, a drag of the pointer holds them, and a copy
+//! takes what is held.
+//!
+//! **The rows are not this module's.** A reading is laid out by the
+//! application once per change of text, width or file, and kept there; this
+//! is where the cursor is and what is held, and nothing else. The rows are
+//! lent a hold for as long as somebody asks ([`Laid`]) rather than copied to
+//! be marked, which is what a page that owns its rows can afford and a
+//! README of a few thousand rows, asked on every key, should not pay.
+//!
+//! **Enter copies the block of code the cursor is in**, whole, as it does in
+//! the transcript and on a pull request's page: holding it from corner to
+//! corner takes the box round it and the width's breaks with it. On any
+//! other row enter does nothing.
+//!
+//! A log is a reading too, and walks the same way: its rows carry nothing
+//! about where in the file they came from, so a log's cursor walks and holds
+//! nothing. Markdown's rows say where every word came from.
+
+use std::ops::Range;
+
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use obelus_row::{Row, Span};
+
+use crate::{
+    page::{Hold, Place, Room, Spot, Walked},
+    window::Window,
+};
+
+/// One row of a reading, with which of its characters are held.
+#[derive(Clone, Debug)]
+pub struct Laid<'a> {
+    /// The row, as the reading laid it out.
+    pub row: &'a Row,
+    held: Option<Range<usize>>,
+}
+
+impl<'a> Laid<'a> {
+    /// A row with nothing of it held.
+    #[must_use]
+    pub const fn of(row: &'a Row) -> Self {
+        Self { row, held: None }
+    }
+
+    /// What the row says, with nothing about how it is drawn.
+    #[must_use]
+    pub fn text(&self) -> String {
+        crate::page::text(self)
+    }
+}
+
+impl crate::page::Line for Laid<'_> {
+    /// A reading is laid out from one text, the file.
+    type Text = ();
+
+    fn spans(&self) -> &[Span] {
+        &self.row.spans
+    }
+
+    /// Every row, the layout's own blanks and borders too: which runs of
+    /// a row came from the file is said run by run, and a row with none
+    /// has no place in it for a selection to start whichever way this
+    /// answers.
+    fn laid_from(&self) -> Option<()> {
+        Some(())
+    }
+
+    fn indent(&self) -> u16 {
+        0
+    }
+
+    /// The block of code the row is in, which is one thing whichever row
+    /// of it the cursor is on; no other row of a reading acts.
+    fn acting(rows: &[Self], row: usize) -> Option<Range<usize>> {
+        let code = rows.get(row)?.row.code.as_ref()?;
+        let same = |laid: &&Self| laid.row.code.as_ref().is_some_and(|it| it.at == code.at);
+        let start = row - rows[..row].iter().rev().take_while(same).count();
+        let end = row + rows[row..].iter().take_while(same).count();
+        Some(start..end)
+    }
+
+    fn held(&self) -> Option<&Range<usize>> {
+        self.held.as_ref()
+    }
+
+    fn hold(&mut self, held: Range<usize>) {
+        self.held = Some(held);
+    }
+}
+
+/// What a key did on a reading.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Outcome {
+    /// It was not the reading's.
+    Ignored,
+    /// It was, and the cursor and the view are where it left them.
+    Consumed,
+    /// Enter, on a block of code: what is inside it, to be copied.
+    Copy(String),
+}
+
+/// Where the cursor is on a reading, and what the reader has hold of.
+#[derive(Clone, Debug, Default)]
+pub struct Cursor {
+    place: Place,
+    held: Hold<()>,
+}
+
+impl Cursor {
+    /// A cursor on the first row of what is on screen, `top` rows in: a
+    /// reading taken up again somewhere down its length, where a cursor at
+    /// its head would drag the view back there on the first key.
+    #[must_use]
+    pub fn at(top: usize) -> Self {
+        Self {
+            place: Place {
+                row: top,
+                character: 0,
+            },
+            held: Hold::default(),
+        }
+    }
+
+    /// Where the cursor is.
+    #[must_use]
+    pub const fn place(&self) -> Place {
+        self.place
+    }
+
+    /// Puts the cursor somewhere, for a press there.
+    pub const fn stand(&mut self, at: Place) {
+        self.place = at;
+    }
+
+    /// The rows, with what is held marked on them.
+    #[must_use]
+    pub fn laid<'a>(&self, rows: &'a [Row]) -> Vec<Laid<'a>> {
+        let mut laid: Vec<Laid<'a>> = rows.iter().map(Laid::of).collect();
+        self.held.mark(&mut laid);
+        laid
+    }
+
+    /// Keeps the cursor on one of the rows, which a narrower window or a
+    /// file shortened under it can leave it past the end of.
+    pub fn settle(&mut self, rows: &[Row]) {
+        let last = rows.len().saturating_sub(1);
+        if self.place.row > last {
+            self.place = Place {
+                row: last,
+                character: rows
+                    .get(last)
+                    .map_or(0, |row| crate::page::characters(&Laid::of(row))),
+            };
+        }
+    }
+
+    /// Puts the cursor on the same words in `after` as it was on in
+    /// `before`, for the same file laid out again: a row is what a width
+    /// made of the words, so a row kept across a resize is somewhere else
+    /// in them. Where the words are not there any more, it stays on its
+    /// row, and [`Self::settle`] keeps that on the page.
+    pub fn relaid(&mut self, before: &[Row], after: &[Row]) {
+        let laid: Vec<Laid<'_>> = before.iter().map(Laid::of).collect();
+        let Some(spot) = crate::page::spot_near(self.place, &laid) else {
+            return;
+        };
+        if let Some(place) = after.iter().enumerate().find_map(|(row, it)| {
+            crate::page::characters_at(&Laid::of(it), spot)
+                .map(|character| Place { row, character })
+        }) {
+            self.place = place;
+        }
+    }
+
+    /// Takes hold of a place, letting go of anything else.
+    pub fn hold_from(&mut self, spot: Spot<()>) {
+        self.held.from(spot);
+    }
+
+    /// Drags the far end of what is held.
+    pub fn hold_to(&mut self, spot: Spot<()>) {
+        self.held.to(spot);
+    }
+
+    /// Takes hold of the whole reading: from before the file's first byte
+    /// to past its last, which holds every row with any of it on.
+    pub fn hold_all(&mut self) {
+        self.held.from(Spot { of: (), at: 0 });
+        self.held.to(Spot {
+            of: (),
+            at: usize::MAX,
+        });
+    }
+
+    /// Lets go of whatever was held.
+    pub fn let_go(&mut self) {
+        self.held.let_go();
+    }
+
+    /// Lets go of a hold with nothing in it, which a press that never
+    /// became a drag leaves.
+    pub fn let_go_of_nothing(&mut self) {
+        self.held.let_go_of_nothing();
+    }
+
+    /// Whether anything is held.
+    #[must_use]
+    pub const fn holding(&self) -> bool {
+        self.held.holding()
+    }
+
+    /// What is held, as it is drawn.
+    #[must_use]
+    pub fn held_text(&self, rows: &[Row]) -> Option<String> {
+        if !self.held.holding() {
+            return None;
+        }
+        crate::page::held_text(&self.laid(rows))
+    }
+
+    /// Handles a key, on a reading `room` big whose view starts `top` rows
+    /// in -- and moves `top` where the cursor has to be seen.
+    ///
+    /// The cursor's keys and nothing else: the arrows, the ends and the
+    /// paging keys, with shift holding what they pass over and control
+    /// taking the ends to the ends of the whole reading -- and escape,
+    /// which lets go of what is held before it means anything else.
+    /// Control and an arrow are not here: those move the view and leave
+    /// the cursor, as they do in the file (`keys::editor_scrolling`).
+    pub fn handle_key(
+        &mut self,
+        key: &KeyEvent,
+        rows: &[Row],
+        room: Room,
+        top: &mut usize,
+    ) -> Outcome {
+        let Some(modifiers) = obelus_keymap::modifiers_of(key) else {
+            return Outcome::Ignored;
+        };
+        let bare = modifiers == KeyModifiers::NONE;
+        // Not a walk, so before one: enter on a block of code is the
+        // block's, and on anything else it is taken and does nothing.
+        if key.code == KeyCode::Enter && bare {
+            let laid: Vec<Laid<'_>> = rows.iter().map(Laid::of).collect();
+            return <Laid<'_> as crate::page::Line>::acting(&laid, self.place.row)
+                .and_then(|on| rows.get(on.start)?.code.as_ref())
+                .map_or(Outcome::Consumed, |code| {
+                    Outcome::Copy(code.text.to_string())
+                });
+        }
+        let ends = matches!(key.code, KeyCode::Home | KeyCode::End);
+        if bare || modifiers == KeyModifiers::SHIFT || (ends && modifiers == KeyModifiers::CONTROL)
+        {
+            let laid: Vec<Laid<'_>> = rows.iter().map(Laid::of).collect();
+            // The view is the buffer's, which is the one answer to where a
+            // reading is scrolled to that the bar and the wheel read: lent
+            // to the walk as a window, and what it made of it handed back.
+            let mut window = Window::new();
+            window.set_count(rows.len());
+            window.drag_to(*top);
+            if let Some(walked) = crate::page::walk(
+                self.place,
+                key.code,
+                modifiers,
+                &laid,
+                room,
+                &mut self.held,
+                &mut window,
+            ) {
+                if let Walked::To { place, .. } = walked {
+                    self.place = place;
+                    // `control+end` sends the window to the end without
+                    // moving its top, which is the window's settling to do
+                    // and nothing settles this one: the cursor is put on
+                    // screen here, the way every other key's is.
+                    crate::page::show(&mut window, place.row, rows.len(), room.height);
+                }
+                *top = window.top();
+                return Outcome::Consumed;
+            }
+        }
+        match key.code {
+            KeyCode::Esc if bare && self.held.holding() => {
+                self.held.let_go();
+                Outcome::Consumed
+            }
+            _ => Outcome::Ignored,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ROOM: Room = Room {
+        height: 3,
+        reading: 40,
+    };
+
+    fn press(cursor: &mut Cursor, code: KeyCode, modifiers: KeyModifiers, rows: &[Row]) -> usize {
+        let mut top = 0;
+        cursor.handle_key(&KeyEvent::new(code, modifiers), rows, ROOM, &mut top);
+        top
+    }
+
+    /// Shift and the arrows hold the words of a markdown file's reading,
+    /// and what is held is what is drawn: the bullet in front of a list's
+    /// item comes with it, and the hashes in front of the heading do not.
+    ///
+    /// Broken deliberately by not marking what is held on the rows in
+    /// `Cursor::laid`: nothing is held to copy.
+    #[test]
+    fn shift_and_the_arrows_hold_what_is_drawn() {
+        let rows = obelus_markdown::render("# Title\n\n- one\n- two\n", 40);
+        let mut cursor = Cursor::default();
+        press(&mut cursor, KeyCode::Down, KeyModifiers::SHIFT, &rows);
+        press(&mut cursor, KeyCode::Down, KeyModifiers::SHIFT, &rows);
+        press(&mut cursor, KeyCode::End, KeyModifiers::SHIFT, &rows);
+        let held = cursor.held_text(&rows).expect("something is held");
+        assert!(held.starts_with("Title"), "{held:?}");
+        assert!(!held.contains('#'), "the hashes came with it: {held:?}");
+        assert!(held.contains("one"), "{held:?}");
+
+        // A bare arrow lets go, the way it does in the file.
+        press(&mut cursor, KeyCode::Down, KeyModifiers::NONE, &rows);
+        assert!(!cursor.holding(), "a bare arrow kept hold");
+    }
+
+    /// The view follows the cursor down, and `control+end` takes both to
+    /// the end of the reading.
+    ///
+    /// Broken deliberately by leaving out the `show` after the walk:
+    /// `control+end` puts the cursor on the last row with the view still at
+    /// the top.
+    #[test]
+    fn the_view_follows_the_cursor() {
+        let source: String = (1..=10).map(|n| format!("Paragraph {n}.\n\n")).collect();
+        let rows = obelus_markdown::render(&source, 40);
+        let mut cursor = Cursor::default();
+        let top = press(&mut cursor, KeyCode::End, KeyModifiers::CONTROL, &rows);
+        assert_eq!(cursor.place().row, rows.len() - 1);
+        assert_eq!(
+            top,
+            rows.len() - usize::from(ROOM.height),
+            "the view stayed"
+        );
+    }
+
+    /// Enter copies the block of code the cursor is in, from whichever row
+    /// of it, and is taken and does nothing on a row of prose.
+    ///
+    /// Broken deliberately by answering `None` from `acting`: nothing is
+    /// copied.
+    #[test]
+    fn enter_copies_the_block_of_code() {
+        let rows = obelus_markdown::render("Words.\n\n```\none\ntwo\n```\n", 40);
+        let inside = rows
+            .iter()
+            .position(|row| crate::page::text(&Laid::of(row)).contains("two"))
+            .expect("the code's second line");
+        let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let mut top = 0;
+        let mut cursor = Cursor::at(inside);
+        match cursor.handle_key(&enter, &rows, ROOM, &mut top) {
+            Outcome::Copy(code) => assert_eq!(code.trim_end(), "one\ntwo"),
+            other => panic!("{other:?}"),
+        }
+        let mut cursor = Cursor::default();
+        assert_eq!(
+            cursor.handle_key(&enter, &rows, ROOM, &mut top),
+            Outcome::Consumed,
+        );
+    }
+
+    /// A cursor laid out again at another width stands on the words it was
+    /// on, not on the row it was on.
+    ///
+    /// Broken deliberately by leaving `relaid` empty: the cursor keeps its
+    /// row, which at the narrower width is further up the paragraph.
+    #[test]
+    fn a_cursor_relaid_stays_on_its_words() {
+        let source = "One two three four five six seven eight nine ten eleven twelve.";
+        let wide = obelus_markdown::render(source, 30);
+        let narrow = obelus_markdown::render(source, 12);
+        let row = wide
+            .iter()
+            .position(|row| crate::page::text(&Laid::of(row)).contains("eleven"))
+            .expect("eleven");
+        let character = crate::page::text(&Laid::of(&wide[row]))
+            .find("eleven")
+            .expect("eleven");
+        let mut cursor = Cursor::default();
+        cursor.stand(Place { row, character });
+        cursor.relaid(&wide, &narrow);
+        let place = cursor.place();
+        let text = crate::page::text(&Laid::of(&narrow[place.row]));
+        let under: String = text.chars().skip(place.character).take(6).collect();
+        assert_eq!(under, "eleven", "the cursor is on {text:?}");
+    }
+
+    /// Holding all of it holds what is drawn from the first word to the
+    /// last.
+    ///
+    /// Broken deliberately by holding to the file's length in characters
+    /// rather than past its end: a file with a character wider than a byte
+    /// in it stops short of its last words.
+    #[test]
+    fn holding_all_of_it_holds_every_row() {
+        let rows = obelus_markdown::render("# Café\n\nFirst.\n\n- one\n- two", 40);
+        let mut cursor = Cursor::default();
+        cursor.hold_all();
+        let held = cursor.held_text(&rows).expect("something is held");
+        assert!(held.starts_with("Café"), "{held:?}");
+        assert!(held.ends_with("two"), "{held:?}");
+    }
+
+    /// Escape lets go of what is held, and is not the reading's when
+    /// nothing is.
+    ///
+    /// Broken deliberately by taking escape out of `Cursor::handle_key`:
+    /// it is not the reading's even with something held, and nothing is
+    /// let go of.
+    #[test]
+    fn escape_lets_go_first() {
+        let rows = obelus_markdown::render("Some words here.\n", 40);
+        let mut cursor = Cursor::default();
+        press(&mut cursor, KeyCode::End, KeyModifiers::SHIFT, &rows);
+        assert!(cursor.holding());
+        let mut top = 0;
+        let escape = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        assert_eq!(
+            cursor.handle_key(&escape, &rows, ROOM, &mut top),
+            Outcome::Consumed
+        );
+        assert!(!cursor.holding());
+        assert_eq!(
+            cursor.handle_key(&escape, &rows, ROOM, &mut top),
+            Outcome::Ignored
+        );
+    }
+}

@@ -21,17 +21,21 @@ impl App {
     /// It answers `false` rather than swallowing the key, so what it has no
     /// use for goes on to the key table: `ctrl+q` still leaves Obelus.
     pub(in crate::app) fn editor_key(&mut self, key: &KeyEvent) -> bool {
-        // A rendering scrolls by rows. Its rows are not the file's lines, so
-        // the cursor has nowhere to be in it and the motions have nothing to
-        // move: what the keys do here is move the window.
-        if let Some(rows) = self.rendered_rows()
-            && let Some(step) = view_step(key, self.editor_area.height)
-        {
-            let height = self.editor_area.height;
-            if let Some(buffer) = self.current_buffer_mut() {
-                buffer.scroll_rendering(step, rows, height);
+        // A rendering has a cursor of its own. Its rows are not the file's
+        // lines, so the file's motions have nothing to move in it: the
+        // arrows walk the rows, and control with one moves the view a row
+        // and leaves the cursor, as it does in the file.
+        if let Some(rows) = self.rendered_rows() {
+            if self.reading_key(key) {
+                return true;
             }
-            return true;
+            if let Some(step) = editor_scrolling(key) {
+                let height = self.editor_area.height;
+                if let Some(buffer) = self.current_buffer_mut() {
+                    buffer.scroll_rendering(step, rows, height);
+                }
+                return true;
+            }
         }
 
         // Paging the file being read, which is scrolling and not a motion:
@@ -91,31 +95,6 @@ impl App {
         }
 
         false
-    }
-}
-
-/// How far a key moves a rendered view, in rows.
-///
-/// The arrows, the paging keys and the ends of the document, over a document
-/// whose rows are all there is: no columns, no cursor, nothing to remember.
-pub(in crate::app) fn view_step(key: &KeyEvent, height: u16) -> Option<isize> {
-    let modifiers = obelus_keymap::modifiers_of(key)?;
-    let page = isize::from(height.max(1) as i16).max(1);
-    match (modifiers, key.code) {
-        (KeyModifiers::NONE, KeyCode::Down) => Some(1),
-        (KeyModifiers::NONE, KeyCode::Up) => Some(-1),
-        // The same row as bare, because here the arrows move nothing but
-        // the view either: control and an arrow is the view a row at a time
-        // in the file being read and in a list's preview, and a key should
-        // not do nothing in one document and something in the next
-        // (`editor_scrolling`).
-        (KeyModifiers::CONTROL, KeyCode::Down) => Some(1),
-        (KeyModifiers::CONTROL, KeyCode::Up) => Some(-1),
-        (KeyModifiers::NONE, KeyCode::PageDown) => Some(page),
-        (KeyModifiers::NONE, KeyCode::PageUp) => Some(-page),
-        (KeyModifiers::CONTROL, KeyCode::End) => Some(isize::MAX),
-        (KeyModifiers::CONTROL, KeyCode::Home) => Some(isize::MIN),
-        _ => None,
     }
 }
 

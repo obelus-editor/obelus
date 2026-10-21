@@ -490,11 +490,10 @@ impl Buffer {
     /// offset keeps one answer to "where is this buffer scrolled to", which
     /// is what the status bar and the scrollbar both ask.
     ///
-    /// It stops with the last row on screen rather than at the top of it. A
-    /// reading has no cursor, so there is nothing to be at the end *of*
-    /// except the rows -- and blank rows under the last one are a screen
-    /// saying there is more to come when there is not. The text does it the
-    /// other way because there the cursor is the thing at the end.
+    /// It stops with the last row on screen rather than at the top of it:
+    /// blank rows under the last one are a screen saying there is more to
+    /// come when there is not. A reading's cursor is on one of its rows, so
+    /// the last row on screen is as far as it can need the view to go.
     pub fn scroll_rendering(&mut self, rows: isize, total: usize, height: u16) {
         let last = total.saturating_sub(usize::from(height).max(1));
         let top = self.viewport.top.get();

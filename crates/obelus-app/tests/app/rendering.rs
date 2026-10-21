@@ -1506,9 +1506,19 @@ fn markdown_is_a_mode_over_the_same_file() {
         text.contains("preview"),
         "the status bar does not name the mode:\n{rendered}"
     );
-    // And no cursor: the rows are not the file's lines, so there is nowhere
-    // in them the cursor honestly is.
-    assert_eq!(support::cursor_line(&rendered), "none", "{rendered}");
+    // And a cursor of its own, at the head of the reading: not the file's,
+    // whose lines are not these rows.
+    let title = text
+        .lines()
+        .find(|row| row.contains("Title"))
+        .and_then(|row| row.split('|').next())
+        .map(str::trim)
+        .expect("the title");
+    assert_eq!(
+        support::cursor_line(&rendered).split(',').nth(1),
+        Some(title),
+        "the caret is not on the first row of the reading:\n{rendered}"
+    );
 
     // The same command again puts the file back.
     obelus_app::app::dispatch::dispatch(&mut app, Command::PreviewToggle);
@@ -1516,6 +1526,112 @@ fn markdown_is_a_mode_over_the_same_file() {
         support::text_block(&support::render(&mut app, 60, 14)),
         support::text_block(&source),
         "the file did not come back"
+    );
+}
+
+/// A reading has a cursor, and what it walks over with shift held, or what
+/// the pointer drags across, is held, drawn held, and is what a copy takes
+/// -- the words as they are drawn, not the bytes they were laid out from.
+///
+/// Broken deliberately by leaving the reading out of the copy in
+/// `App::copy_selection` (the file's line under its own cursor, `# Title`,
+/// is copied), by drawing the reading with nothing held (the cell under the
+/// drag has the page's ground), by not handing the pointer to the reading
+/// (nothing is held and nothing is offered), and by leaving the reading out
+/// of `App::select_all` (the file's bytes are selected, and the copy keeps
+/// the word).
+#[test]
+fn what_is_held_in_a_reading_is_what_is_copied() {
+    use obelus_app::event::{Event, Pointer};
+    use obelus_command::Command;
+
+    let _turn = support::clipboard_turn();
+    obelus_clipboard::use_provider_for_test(obelus_clipboard::Provider::Kept);
+    let mut app = App::new(vec![support::open_fixture("sample.md")]);
+    support::lay_out(&mut app, 60, 14);
+    obelus_app::app::dispatch::dispatch(&mut app, Command::PreviewToggle);
+    support::render(&mut app, 60, 14);
+
+    // Nothing held, nothing to copy: not the file's line, which is not on
+    // the screen.
+    assert!(!app.offers(Command::SelectionCopy));
+
+    // The heading, by the keys.
+    press_shift(&mut app, KeyCode::End);
+    assert!(app.offers(Command::SelectionCopy));
+    support::press_control(&mut app, 'c');
+    assert_eq!(obelus_clipboard::paste().as_deref(), Some("Title"));
+
+    // And a word, by the pointer.
+    let dump = support::render(&mut app, 60, 14);
+    let row = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains("Some prose"))
+        .unwrap_or_else(|| panic!("no prose on screen:\n{dump}"));
+    let y: u16 = row
+        .split('|')
+        .next()
+        .and_then(|number| number.trim().parse().ok())
+        .expect("a row number");
+    let x = u16::try_from(support::column_of(row, "prose")).expect("a column");
+    for (kind, x) in [
+        (Pointer::Pressed, x),
+        (Pointer::Dragged, x + 5),
+        (Pointer::Released, x + 5),
+    ] {
+        app.handle(Event::Pointer { kind, x, y });
+    }
+    let cells = support::cells_of(&mut app, 60, 14);
+    assert_eq!(cells[(x + 2, y)].bg, app.theme().selection_background);
+    assert_eq!(
+        support::cursor_line(&support::render(&mut app, 60, 14)),
+        format!("{},{y}", x + 5),
+        "the caret is not where the drag let go"
+    );
+    support::press_control(&mut app, 'c');
+    assert_eq!(obelus_clipboard::paste().as_deref(), Some("prose"));
+
+    // And all of it, as it is drawn.
+    obelus_app::app::dispatch::dispatch(&mut app, Command::SelectionAll);
+    support::press_control(&mut app, 'c');
+    let all = obelus_clipboard::paste().unwrap_or_default();
+    assert!(all.starts_with("Title"), "{all:?}");
+    assert!(all.contains("fn main() {}"), "{all:?}");
+}
+
+/// Enter on a block of code in a reading copies the block, and the box says
+/// so; on prose it copies nothing.
+///
+/// Broken deliberately by leaving the copy out of `App::reading_key` (the
+/// clipboard keeps what was in it), and by drawing the reading with no
+/// cursor (the box does not say what enter does).
+#[test]
+fn enter_on_code_in_a_reading_copies_it() {
+    use obelus_command::Command;
+
+    let _turn = support::clipboard_turn();
+    obelus_clipboard::use_provider_for_test(obelus_clipboard::Provider::Kept);
+    obelus_clipboard::copy("before").expect("the clipboard");
+    let mut app = App::new(vec![support::open_fixture("sample.md")]);
+    support::lay_out(&mut app, 60, 14);
+    obelus_app::app::dispatch::dispatch(&mut app, Command::PreviewToggle);
+    support::render(&mut app, 60, 14);
+
+    // On the title, which is prose.
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(obelus_clipboard::paste().as_deref(), Some("before"));
+
+    // The block of code is the last thing in the file.
+    support::press_control_key(&mut app, KeyCode::End);
+    let dump = support::render(&mut app, 60, 14);
+    assert!(
+        support::text_block(&dump).contains("Copies the code"),
+        "the box does not say what enter does:\n{dump}"
+    );
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        obelus_clipboard::paste().as_deref().map(str::trim_end),
+        Some("fn main() {}")
     );
 }
 
@@ -1553,9 +1669,15 @@ fn only_a_markdown_file_can_be_rendered() {
     );
 }
 
-/// The rendering scrolls by rows, with the keys that scroll everything else.
+/// The paging keys move a rendering's cursor a screenful, and the view
+/// follows it -- the rule for the file -- and the right-hand corner says
+/// which row of the rendering the cursor is on, out of how many.
+///
+/// Broken deliberately by measuring the reading's room as one row high in
+/// `App::reading_room`: the cursor moves a row at a time, and the corner
+/// says so. And by the corner saying the first row whatever the cursor's.
 #[test]
-fn a_rendering_scrolls_by_rows() {
+fn a_rendering_pages_by_a_screenful() {
     use obelus_command::Command;
 
     let mut app = App::new(vec![support::open_fixture("sample.md")]);
@@ -1564,24 +1686,41 @@ fn a_rendering_scrolls_by_rows() {
 
     let first = support::render(&mut app, 60, 8);
     assert!(support::text_block(&first).contains("Title"), "{first}");
-
-    press(&mut app, KeyCode::PageDown);
-    let paged = support::render(&mut app, 60, 8);
-    assert!(
-        !support::text_block(&paged).contains("Title"),
-        "paging a rendering moved nothing:\n{paged}"
-    );
-
-    // And the right-hand corner counts rows rather than a cursor that is not
-    // there.
-    assert!(
-        support::text_block(&paged)
+    let rows = app.rendered_rows().expect("a reading");
+    // How many rows the reading is drawn in, from the dump's own header.
+    let height: usize = first
+        .lines()
+        .next()
+        .and_then(|header| header.split("editor ").nth(1))
+        .and_then(|editor| editor.split_whitespace().next())
+        .and_then(|size| size.split('x').nth(1))
+        .and_then(|height| height.parse().ok())
+        .expect("the editor's height");
+    assert!(rows > 2 * height, "{rows} rows do not page twice");
+    let corner = |dump: &str| {
+        support::text_block(dump)
             .lines()
             .last()
-            .is_some_and(|status| status.contains('/')),
-        "the status bar still reports a cursor:\n{paged}"
+            .and_then(|status| status.split_whitespace().last())
+            .map(str::to_string)
+            .unwrap_or_default()
+    };
+    assert_eq!(corner(&first), format!("1/{rows}"), "{first}");
+
+    press(&mut app, KeyCode::PageDown);
+    press(&mut app, KeyCode::PageDown);
+    let paged = support::render(&mut app, 60, 8);
+    assert_eq!(
+        corner(&paged),
+        format!("{}/{rows}", 2 * height + 1),
+        "two pages did not move the cursor two screenfuls:\n{paged}"
+    );
+    assert!(
+        !support::text_block(&paged).contains("Title"),
+        "the view did not follow the cursor:\n{paged}"
     );
 
+    press(&mut app, KeyCode::PageUp);
     press(&mut app, KeyCode::PageUp);
     assert_eq!(
         support::text_block(&support::render(&mut app, 60, 8)),
@@ -1590,15 +1729,92 @@ fn a_rendering_scrolls_by_rows() {
     );
 }
 
-/// Control and an arrow scroll a rendering a row, as they scroll the file:
-/// here the bare arrows do as well, because a rendering has no cursor, and a
-/// key that moved one document and did nothing in the next would be two
-/// rules for one key. A row of the rendering, which is not a line of the
-/// file, so the walk goes far enough down for the two to differ.
+/// A reading laid out again at another width keeps its cursor on the words
+/// it was on.
 ///
-/// Deliberate break: taking the control arms out of `view_step` hands the key
-/// to the file's own scrolling, which steps by lines, and the two part
-/// company by the tenth step.
+/// Broken deliberately by not relaying the cursor in
+/// `App::refresh_rendering`: it keeps its row, which at the narrower width
+/// is further up the paragraph.
+#[test]
+fn a_reading_resized_keeps_its_cursor_on_its_words() {
+    use obelus_app::event::{Event, Pointer};
+    use obelus_command::Command;
+
+    let path = std::path::Path::new("relaid.md");
+    let source = "One two three four five six seven eight nine ten eleven twelve thirteen.";
+    let mut app = App::new(vec![obelus_buffer::Buffer::from_text(path, source)]);
+    support::lay_out(&mut app, 60, 10);
+    obelus_app::app::dispatch::dispatch(&mut app, Command::PreviewToggle);
+    let dump = support::render(&mut app, 60, 10);
+    let row = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains("eleven"))
+        .unwrap_or_else(|| panic!("no eleven on screen:\n{dump}"));
+    let y: u16 = row
+        .split('|')
+        .next()
+        .and_then(|number| number.trim().parse().ok())
+        .expect("a row number");
+    let x = u16::try_from(support::column_of(row, "eleven")).expect("a column");
+    for kind in [Pointer::Pressed, Pointer::Released] {
+        app.handle(Event::Pointer { kind, x, y });
+    }
+
+    support::lay_out(&mut app, 24, 10);
+    let narrow = support::render(&mut app, 24, 10);
+    let (x, y) = support::cursor_line(&narrow)
+        .split_once(',')
+        .and_then(|(x, y)| Some((x.parse::<u16>().ok()?, y.parse::<u16>().ok()?)))
+        .unwrap_or_else(|| panic!("no caret:\n{narrow}"));
+    let cells = support::cells_of(&mut app, 24, 10);
+    let under: String = (x..x + 6)
+        .map(|x| cells[(x, y)].symbol().to_string())
+        .collect();
+    assert_eq!(under, "eleven", "the caret moved off its word:\n{narrow}");
+}
+
+/// A commit's version of a file wears the file's path, and its reading is
+/// its own: its cursor is not the one the file's reading left.
+///
+/// Broken deliberately by keying the reading on the path without the
+/// commit in `App::refresh_rendering`: the two are one version and one
+/// width, so the commit's reading is the file's, cursor and all.
+#[test]
+fn a_commits_reading_is_not_the_files() {
+    use obelus_command::Command;
+
+    let path = std::path::Path::new("both.md");
+    let source = "First.\n\nSecond.\n\nThird.\n";
+    let mut app = App::new(vec![obelus_buffer::Buffer::from_text(path, source)]);
+    support::lay_out(&mut app, 60, 10);
+    obelus_app::app::dispatch::dispatch(&mut app, Command::PreviewToggle);
+    support::render(&mut app, 60, 10);
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Down);
+    let file = support::render(&mut app, 60, 10);
+
+    let id = gix::ObjectId::from_hex(b"0123456789abcdef0123456789abcdef01234567").expect("an id");
+    app.open_buffer_for_test(obelus_buffer::Buffer::at_commit(path, id, source));
+    obelus_app::app::dispatch::dispatch(&mut app, Command::PreviewToggle);
+    let commit = support::render(&mut app, 60, 10);
+    assert_ne!(
+        support::cursor_line(&commit),
+        support::cursor_line(&file),
+        "the commit's reading has the file's cursor:\n{commit}"
+    );
+}
+
+/// Control and an arrow scroll a rendering a row, as they scroll the file,
+/// and leave its cursor where it was: the wheel's gesture, a notch of a row.
+/// A row of the rendering, which is not a line of the file, so the walk goes
+/// far enough down for the two to differ. The bare arrow is the cursor's,
+/// and moves the view only when the cursor would leave it.
+///
+/// Deliberate break: taking the control arm out of the rendering's keys in
+/// `App::editor_key` hands the key to the file's own scrolling, which steps
+/// by lines, and the two part company by the tenth step. And handing control
+/// and down to the cursor's walk as well: the cursor goes down with the
+/// view, and the corner that says where it is moves.
 #[test]
 fn control_and_an_arrow_scroll_a_rendering() {
     use obelus_command::Command;
@@ -1612,24 +1828,59 @@ fn control_and_an_arrow_scroll_a_rendering() {
         support::render(&mut app, 60, 8);
         app
     };
-    let mut bare = rendering();
+    let mut wheel = rendering();
     let mut control = rendering();
     let first = support::render(&mut control, 60, 8);
 
+    // The rows of the page, without the status row under them: its corner
+    // is where the cursor is, which is what the arrows move.
+    let page = |dump: &str| {
+        let text = support::text_block(dump).trim_end();
+        text.rsplit_once('\n')
+            .map_or("", |(page, _)| page)
+            .to_string()
+    };
+    let corner = |dump: &str| {
+        support::text_block(dump)
+            .trim_end()
+            .rsplit_once('\n')
+            .map(|(_, status)| status.split_whitespace().last().unwrap_or("").to_string())
+            .unwrap_or_default()
+    };
+    let mut bare = rendering();
+    press(&mut bare, KeyCode::Down);
+    let stepped = support::render(&mut bare, 60, 8);
+    assert_eq!(
+        page(&stepped),
+        page(&first),
+        "the bare arrow moved the view rather than the cursor"
+    );
+    assert_ne!(
+        support::cursor_line(&stepped),
+        support::cursor_line(&first),
+        "the bare arrow did not move the cursor"
+    );
+
     for step in 1..=10 {
-        press(&mut bare, KeyCode::Down);
+        wheel.handle(obelus_app::event::Event::Scroll { rows: 1, at: None });
         support::press_control_key(&mut control, KeyCode::Down);
-        let arrow = support::render(&mut bare, 60, 8);
+        let notch = support::render(&mut wheel, 60, 8);
         assert_eq!(
             support::text_block(&support::render(&mut control, 60, 8)),
-            support::text_block(&arrow),
-            "control and down {step} times is not the arrow {step} times"
+            support::text_block(&notch),
+            "control and down {step} times is not a notch {step} times"
         );
     }
+    let scrolled = support::render(&mut control, 60, 8);
     assert_ne!(
-        support::text_block(&support::render(&mut control, 60, 8)),
-        support::text_block(&first),
+        page(&scrolled),
+        page(&first),
         "not a rendering with anywhere to scroll"
+    );
+    assert_eq!(
+        corner(&scrolled),
+        corner(&first),
+        "control and down moved the cursor"
     );
     for _ in 1..=10 {
         support::press_control_key(&mut control, KeyCode::Up);
@@ -2351,8 +2602,8 @@ fn a_log_opens_in_its_own_reading() {
         written(theme.syntax.warning),
         "{dump}"
     );
-    // No cursor in a reading: the rows are not the file's lines.
-    assert_eq!(support::cursor_line(&dump), "none", "{dump}");
+    // A cursor of the reading's own, which is not the file's.
+    assert_ne!(support::cursor_line(&dump), "none", "{dump}");
 
     // And `ctrl+d` puts the bytes back, with the caret in them.
     support::press_control(&mut app, 'd');
@@ -2440,9 +2691,8 @@ fn a_file_with_a_reading_still_opens_as_its_bytes() {
 /// the viewport's top is a *row* of it while it is showing. The frame used
 /// to run the text's own scrolling over that top and clamp it to the line
 /// count, which put every row past the last line out of reach. What is at
-/// the end is the last screenful rather than the last row alone: a reading
-/// has no cursor to be at the end of, and blank rows under the last one are
-/// a screen saying there is more to come.
+/// the end is the last screenful rather than the last row alone: blank rows
+/// under the last one are a screen saying there is more to come.
 #[test]
 fn the_end_of_a_reading_is_its_last_screenful() {
     let path = std::env::temp_dir().join(format!("obelus-end-{}.log", std::process::id()));

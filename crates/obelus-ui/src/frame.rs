@@ -82,7 +82,7 @@ pub fn editor_room(area: Rect, app: &impl Screen) -> Rect {
     match app.shown() {
         Shown::Chat(_) | Shown::Terminal(_) => return editor,
         Shown::File(_)
-        | Shown::Reading(_)
+        | Shown::Reading(..)
         | Shown::Notes(_)
         | Shown::Discussion(_)
         | Shown::Nothing => {}
@@ -271,14 +271,24 @@ pub fn cursor_position(area: Rect, app: &impl Screen) -> Option<Position> {
                 }
                 // And a pull request or an issue, where its cursor is.
                 Shown::Discussion(page) => return discussion::caret(regions.editor, page),
-                Shown::File(_) | Shown::Reading(_) | Shown::Nothing => {}
+                // And a file read as what it is rather than as its bytes,
+                // where its own cursor is: not the file's, whose lines are
+                // not its rows.
+                Shown::Reading(rows, cursor) => {
+                    let top = app
+                        .current_buffer()
+                        .map_or(0, |buffer| buffer.viewport().top.get());
+                    return reading::caret(regions.editor, rows, cursor, top);
+                }
+                Shown::File(_) | Shown::Nothing => {}
             }
         }
     }
 
     let buffer = app.current_buffer()?;
-    // No cursor over a rendering. The rows are not the file's lines, so
-    // there is nowhere in them the cursor honestly is. Nor in a document
+    // Not the file's cursor over a rendering. The rows are not the file's
+    // lines, so there is nowhere in them that cursor honestly is: a
+    // rendering has a cursor of its own, answered above. Nor in a document
     // whose lines have not come, which has none.
     if buffer.mode() != obelus_buffer::Mode::Edit || editor::is_coming(buffer) {
         return None;
@@ -393,17 +403,17 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
                 bars::of(Whose::Discussion, || view.render(regions.editor, cells));
             }
         }
-        Shown::Reading(rows) => bars::of(Whose::Document, || {
+        Shown::Reading(rows, cursor) => bars::of(Whose::Document, || {
             let top = app
                 .current_buffer()
                 .map_or(0, |buffer| buffer.viewport().top.get());
-            reading::draw(
+            reading::draw_held(
                 cells,
                 canvas,
-                rows,
+                &cursor.laid(rows),
                 top,
+                in_front(app, None).then(|| cursor.place()),
                 app.theme(),
-                app.theme().background,
             );
         }),
         Shown::File(_) | Shown::Nothing => bars::of(Whose::Document, || {

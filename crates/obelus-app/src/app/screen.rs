@@ -104,8 +104,8 @@ impl Screen for App {
             Some(Document::Notes(notes)) => Shown::Notes(notes),
             Some(Document::Terminal(terminal)) => Shown::Terminal(terminal),
             Some(Document::Discussion(page)) => Shown::Discussion(page),
-            Some(Document::File(buffer)) => match App::rendering(self) {
-                Some(rows) => Shown::Reading(rows),
+            Some(Document::File(buffer)) => match App::rendering_with_its_cursor(self) {
+                Some((rows, cursor)) => Shown::Reading(rows, cursor),
                 None => Shown::File(buffer),
             },
             None => Shown::Nothing,
@@ -160,9 +160,6 @@ impl Screen for App {
     }
     fn registry_failure(&self) -> Option<&str> {
         App::registry_failure(self)
-    }
-    fn rendered_rows(&self) -> Option<usize> {
-        App::rendered_rows(self)
     }
     fn server_state(&self) -> Option<(&'static str, obelus_lsp::ServerState)> {
         App::server_state(self)

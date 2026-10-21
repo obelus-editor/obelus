@@ -247,8 +247,9 @@ impl<'a> Beside<'a> {
 pub enum Shown<'a> {
     /// A file, as its text.
     File(&'a Buffer),
-    /// A file shown some other way: these rows, laid out from it.
-    Reading(&'a [obelus_row::Row]),
+    /// A file shown some other way: these rows, laid out from it, and the
+    /// cursor in them.
+    Reading(&'a [obelus_row::Row], &'a obelus_component::reading::Cursor),
     /// A conversation.
     Chat(&'a Chat),
     /// The notes.
@@ -448,8 +449,6 @@ pub trait Screen {
     fn reading_nothing(&self) -> bool;
     /// Why the list could not be fetched, if it could not.
     fn registry_failure(&self) -> Option<&str>;
-    /// How many rows it has, for the keys that scroll it.
-    fn rendered_rows(&self) -> Option<usize>;
     /// The server for the file being read, and what it is doing.
     fn server_state(&self) -> Option<(&'static str, obelus_lsp::ServerState)>;
     /// Whether the server behind the file being read is busy with something.

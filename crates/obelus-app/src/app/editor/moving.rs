@@ -306,6 +306,13 @@ impl App {
             notes.select_all();
             return;
         }
+        // A reading, whose rows are what is on the screen: all of the file's
+        // bytes behind them selected is a selection nobody can see, and not
+        // one a copy takes.
+        if let Some(rendered) = self.rendered.as_mut() {
+            rendered.cursor.hold_all();
+            return;
+        }
         let Some(buffer) = self.current_buffer_mut() else {
             self.wrong("No file open".to_string());
             return;
@@ -403,6 +410,15 @@ impl App {
         // What is held on a page, which is the one thing on it to copy.
         if self.discussion().is_some() {
             if let Some(text) = self.held_on_the_page() {
+                self.copied(&text, "selection");
+            }
+            return;
+        }
+        // And in a file read as its reading, whose rows are not the file's
+        // lines: the line under the file's cursor is not on the screen to
+        // be taken.
+        if self.rendering().is_some() {
+            if let Some(text) = self.held_in_the_reading() {
                 self.copied(&text, "selection");
             }
             return;

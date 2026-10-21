@@ -39,8 +39,9 @@ pub struct StatusView<'a> {
     /// the cursor's position while a reader tries to read both. What is
     /// left of it is the badge, which turns.
     middle: Option<&'a str>,
-    /// How many rows the rendering has, when one is on screen.
-    rows: Option<usize>,
+    /// Which row of a rendering the cursor is on, and how many rows it
+    /// has, when one is on screen.
+    rows: Option<(usize, usize)>,
     /// The server for this file, and what it is doing.
     ///
     /// On screen the whole time, unlike `middle`, which comes and goes. A
@@ -130,7 +131,10 @@ impl<'a> StatusView<'a> {
         Self {
             buffer: app.current_buffer(),
             middle: app.note(),
-            rows: app.rendered_rows(),
+            rows: match app.shown() {
+                crate::Shown::Reading(rows, cursor) => Some((cursor.place().row, rows.len())),
+                _ => None,
+            },
             server: app.server_state(),
             busy: app.server_busy(),
             phase: app.phase(),
@@ -233,7 +237,7 @@ impl Widget for StatusView<'_> {
                     self.render_discussion(page, area, cells, style);
                 }
                 crate::Shown::File(_)
-                | crate::Shown::Reading(_)
+                | crate::Shown::Reading(..)
                 | crate::Shown::Chat(_)
                 | crate::Shown::Nothing => {
                     if let Some(buffer) = self.buffer {
@@ -1199,11 +1203,11 @@ impl StatusView<'_> {
         // counts characters rather than cells: it is the cursor's position in
         // the text, which is also the coordinate the LSP layer will speak in.
         //
-        // Over a rendering there is no cursor, so what goes here is how far
-        // down it the reader has scrolled: a position in what is on screen,
-        // which is the question the same corner answers either way.
+        // Over a rendering, the row its own cursor is on, out of how many:
+        // its rows are not the file's lines, so a line and a column would
+        // be a place in something that is not on the screen.
         let right = match (self.rows, buffer.in_block()) {
-            (Some(rows), _) => format!("{}/{rows}", buffer.viewport().top.get() + 1),
+            (Some((row, rows)), _) => format!("{}/{rows}", row + 1),
             // In a hunk's removed lines, which are not lines of this file:
             // they have no number here, so what is reported is where the
             // caret is in the block, marked as the file's own position is

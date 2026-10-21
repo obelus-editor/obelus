@@ -740,8 +740,9 @@ crates/
   obelus-component/ picker (one component, several instantiations), settings,
                     the conversation, the box a message is written in, the
                     window every list shares, the cursor every page of
-                    laid-out rows shares (page), and a pull request or an
-                    issue read as one (discussion)
+                    laid-out rows shares (page), a pull request or an
+                    issue read as one (discussion), and the cursor in a
+                    file shown as its reading (reading)
                     · a query is about the rows the list is of, whether it
                       ranks is settled per tab, a list still arriving sits
                       still, say "still reading" where it moves nothing, which
@@ -765,7 +766,8 @@ crates/
                       cursor like the transcript, what enter does is decided
                       by what the cursor is on, a review's thread is a comment
                       about its lines, and laid out once and kept
-                      (discussion);
+                      (discussion); a reading is a page like any other, and
+                      the rows are not this module's (reading);
                       the page is Obelus's, and so is the record of it
                       (chat/kept); folding is one
                       act and the notes are the fourth place it happens, a note
