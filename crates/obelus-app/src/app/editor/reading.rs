@@ -39,12 +39,16 @@ impl App {
             return false;
         };
         let count = rendered.rows.len();
-        if rendered
+        match rendered
             .cursor
             .handle_key(key, &rendered.rows, room, &mut top)
-            == Outcome::Ignored
         {
-            return false;
+            Outcome::Ignored => return false,
+            Outcome::Consumed => {}
+            Outcome::Copy(code) => {
+                self.copied(&code, "code");
+                return true;
+            }
         }
         if top != was
             && let Some(buffer) = self.current_buffer_mut()

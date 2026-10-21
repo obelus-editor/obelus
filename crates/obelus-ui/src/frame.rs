@@ -407,7 +407,14 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
             let top = app
                 .current_buffer()
                 .map_or(0, |buffer| buffer.viewport().top.get());
-            reading::draw_held(cells, canvas, &cursor.laid(rows), top, app.theme());
+            reading::draw_held(
+                cells,
+                canvas,
+                &cursor.laid(rows),
+                top,
+                in_front(app, None).then(|| cursor.place()),
+                app.theme(),
+            );
         }),
         Shown::File(_) | Shown::Nothing => bars::of(Whose::Document, || {
             match app

@@ -1596,6 +1596,43 @@ fn what_is_held_in_a_reading_is_what_is_copied() {
     assert_eq!(obelus_clipboard::paste().as_deref(), Some("prose"));
 }
 
+/// Enter on a block of code in a reading copies the block, and the box says
+/// so; on prose it copies nothing.
+///
+/// Broken deliberately by leaving the copy out of `App::reading_key` (the
+/// clipboard keeps what was in it), and by drawing the reading with no
+/// cursor (the box does not say what enter does).
+#[test]
+fn enter_on_code_in_a_reading_copies_it() {
+    use obelus_command::Command;
+
+    let _turn = support::clipboard_turn();
+    obelus_clipboard::use_provider_for_test(obelus_clipboard::Provider::Kept);
+    obelus_clipboard::copy("before").expect("the clipboard");
+    let mut app = App::new(vec![support::open_fixture("sample.md")]);
+    support::lay_out(&mut app, 60, 14);
+    obelus_app::app::dispatch::dispatch(&mut app, Command::PreviewToggle);
+    support::render(&mut app, 60, 14);
+
+    // On the title, which is prose.
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(obelus_clipboard::paste().as_deref(), Some("before"));
+
+    // The block of code is the last thing in the file.
+    support::press_control_key(&mut app, KeyCode::End);
+    let dump = support::render(&mut app, 60, 14);
+    assert!(
+        support::text_block(&dump).contains("Copies the code"),
+        "the box does not say what enter does:
+{dump}"
+    );
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        obelus_clipboard::paste().as_deref().map(str::trim_end),
+        Some("fn main() {}")
+    );
+}
+
 /// A file that is not markdown gets a note, not a screen of nonsense. By
 /// extension, case-insensitively, because the mode is a reading of the bytes
 /// and a reading that does not fit them produces gibberish.

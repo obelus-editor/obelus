@@ -80,7 +80,19 @@ pub fn draw(
 
 /// Draws a file's reading, starting `top` rows in, with what the reader has
 /// hold of marked.
-pub fn draw_held(cells: &mut CellBuffer, area: Rect, rows: &[Laid<'_>], top: usize, theme: &Theme) {
+///
+/// `cursor` is where the cursor is, while nothing is in front of the
+/// reading: where it is in a block of code, the key that copies the block
+/// is said on the block's own box, the way the transcript and a pull
+/// request's page say it.
+pub fn draw_held(
+    cells: &mut CellBuffer,
+    area: Rect,
+    rows: &[Laid<'_>],
+    top: usize,
+    cursor: Option<Place>,
+    theme: &Theme,
+) {
     draw_rows(
         cells,
         area,
@@ -90,6 +102,29 @@ pub fn draw_held(cells: &mut CellBuffer, area: Rect, rows: &[Laid<'_>], top: usi
         theme,
         theme.background,
     );
+    let Some(on) = cursor.and_then(|cursor| Laid::acting(rows, cursor.row)) else {
+        return;
+    };
+    // Along the box's bottom, or its top where the bottom is off the
+    // screen -- the transcript's rule, by the transcript's code.
+    let height = usize::from(area.height);
+    let shown = |row: usize| row >= top && row < top + height;
+    let side = match (shown(on.end - 1), shown(on.start)) {
+        (true, _) => on.end - 1,
+        (false, true) => on.start,
+        (false, false) => return,
+    };
+    let Some(laid) = rows.get(side) else {
+        return;
+    };
+    let Ok(y) = u16::try_from(side - top) else {
+        return;
+    };
+    let stop = area.x + area.width.saturating_sub(crate::editor::SCROLLBAR_WIDTH);
+    let wide = u16::try_from(crate::text_width(&laid.text())).unwrap_or(u16::MAX);
+    let ended = area.x.saturating_add(wide).min(stop);
+    let dim = Style::new().fg(theme.gutter).bg(theme.background);
+    crate::page::offer_copy(cells, &laid.row.spans, area.y + y, ended, dim, theme);
 }
 
 /// Where the caret goes on a file's reading drawn in `area` from row `top`:

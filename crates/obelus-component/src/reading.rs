@@ -17,6 +17,11 @@
 //! be marked, which is what a page that owns its rows can afford and a
 //! README of a few thousand rows, asked on every key, should not pay.
 //!
+//! **Enter copies the block of code the cursor is in**, whole, as it does in
+//! the transcript and on a pull request's page: holding it from corner to
+//! corner takes the box round it and the width's breaks with it. On any
+//! other row enter does nothing.
+//!
 //! A log is a reading too, and walks the same way: its rows carry nothing
 //! about where in the file they came from, so a log's cursor walks and holds
 //! nothing. Markdown's rows say where every word came from.
@@ -73,9 +78,14 @@ impl crate::page::Line for Laid<'_> {
         0
     }
 
-    /// Nothing: enter does nothing on a reading.
-    fn acting(_: &[Self], _: usize) -> Option<Range<usize>> {
-        None
+    /// The block of code the row is in, which is one thing whichever row
+    /// of it the cursor is on; no other row of a reading acts.
+    fn acting(rows: &[Self], row: usize) -> Option<Range<usize>> {
+        let code = rows.get(row)?.row.code.as_ref()?;
+        let same = |laid: &&Self| laid.row.code.as_ref().is_some_and(|it| it.at == code.at);
+        let start = row - rows[..row].iter().rev().take_while(same).count();
+        let end = row + rows[row..].iter().take_while(same).count();
+        Some(start..end)
     }
 
     fn held(&self) -> Option<&Range<usize>> {
@@ -88,12 +98,14 @@ impl crate::page::Line for Laid<'_> {
 }
 
 /// What a key did on a reading.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Outcome {
     /// It was not the reading's.
     Ignored,
     /// It was, and the cursor and the view are where it left them.
     Consumed,
+    /// Enter, on a block of code: what is inside it, to be copied.
+    Copy(String),
 }
 
 /// Where the cursor is on a reading, and what the reader has hold of.
@@ -239,6 +251,14 @@ impl Cursor {
             }
         }
         match key.code {
+            KeyCode::Enter if bare => {
+                let laid: Vec<Laid<'_>> = rows.iter().map(Laid::of).collect();
+                <Laid<'_> as crate::page::Line>::acting(&laid, self.place.row)
+                    .and_then(|on| rows.get(on.start)?.code.as_ref())
+                    .map_or(Outcome::Consumed, |code| {
+                        Outcome::Copy(code.text.to_string())
+                    })
+            }
             KeyCode::Esc if bare && self.held.holding() => {
                 self.held.let_go();
                 Outcome::Consumed
@@ -303,6 +323,45 @@ mod tests {
             top,
             rows.len() - usize::from(ROOM.height),
             "the view stayed"
+        );
+    }
+
+    /// Enter copies the block of code the cursor is in, from whichever row
+    /// of it, and is taken and does nothing on a row of prose.
+    ///
+    /// Broken deliberately by answering `None` from `acting`: nothing is
+    /// copied.
+    #[test]
+    fn enter_copies_the_block_of_code() {
+        let rows = obelus_markdown::render(
+            "Words.
+
+```
+one
+two
+```
+",
+            40,
+        );
+        let inside = rows
+            .iter()
+            .position(|row| crate::page::text(&Laid::of(row)).contains("two"))
+            .expect("the code's second line");
+        let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let mut top = 0;
+        let mut cursor = Cursor::at(inside);
+        match cursor.handle_key(&enter, &rows, ROOM, &mut top) {
+            Outcome::Copy(code) => assert_eq!(
+                code.trim_end(),
+                "one
+two"
+            ),
+            other => panic!("{other:?}"),
+        }
+        let mut cursor = Cursor::default();
+        assert_eq!(
+            cursor.handle_key(&enter, &rows, ROOM, &mut top),
+            Outcome::Consumed,
         );
     }
 
