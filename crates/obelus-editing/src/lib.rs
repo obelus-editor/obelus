@@ -86,7 +86,13 @@ pub struct Cursor {
     /// wrong place: the column would have been clamped on the way through and
     /// the original never recovered. Within a *row* rather than within a line,
     /// because with wrapping a row is what moving up and down steps over.
-    pub remembered_cell: DisplayColumn,
+    ///
+    /// `None` is a caret that was *put* somewhere -- by an edit, a jump, an
+    /// end of a selection -- and aims for wherever it now stands. A cell
+    /// kept from before is the cell of a place the reader has left: typing
+    /// ten characters and pressing down twice, through an empty line, went
+    /// back to the column the caret had before the typing.
+    pub remembered_cell: Option<DisplayColumn>,
 }
 
 impl Cursor {
@@ -96,8 +102,16 @@ impl Cursor {
         Self {
             line: LineNumber::new(0),
             column: CharColumn::new(0),
-            remembered_cell: DisplayColumn::new(0),
+            remembered_cell: None,
         }
+    }
+
+    /// The cell a vertical move aims for: the one remembered, or where the
+    /// caret stands if it was put there rather than moved.
+    #[must_use]
+    pub fn aim(&self, text: &Text, width: u16) -> DisplayColumn {
+        self.remembered_cell
+            .unwrap_or_else(|| text.visual_position(self.line, self.column, width).1)
     }
 }
 
@@ -367,11 +381,15 @@ fn move_within(
         }
     };
 
+    // Settled before the step, from where the caret stood: kept from here
+    // on, so the short rows passed through do not become the aim.
+    let aim = cursor.aim(text, width);
+    cursor.remembered_cell = Some(aim);
     let (line, row) = step_rows(text, folds, cursor.line, row, rows, width);
     cursor.line = line;
     // Aim for the remembered cell, then take whatever column covers it on
     // the row arrived at.
-    cursor.column = text.column_in_row(line, row, cursor.remembered_cell, width);
+    cursor.column = text.column_in_row(line, row, aim, width);
     moved(cursor)
 }
 
@@ -564,7 +582,7 @@ fn next_line(text: &Text, folds: &dyn Hides, line: LineNumber) -> Option<LineNum
 /// Records the cell a cursor is at, as the column to aim for later.
 fn remember(text: &Text, cursor: &mut Cursor, width: u16) {
     let (_, cell) = text.visual_position(cursor.line, cursor.column, width);
-    cursor.remembered_cell = cell;
+    cursor.remembered_cell = Some(cell);
 }
 
 /// The motion a navigation key stands for.
