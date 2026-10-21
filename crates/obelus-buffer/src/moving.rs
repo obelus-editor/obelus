@@ -111,7 +111,7 @@ impl Buffer {
             let (line, row) = block.place_at_row(at.1, width);
             let column = block.text().column_in_row(line, row, cell, width);
             block.editing.arrive(line, column);
-            block.editing.cursor_mut().remembered_cell = cell;
+            block.editing.cursor_mut().remembered_cell = Some(cell);
             // Held after arriving, not before: a drag that starts here is
             // holding nothing until it moves, and one already under way
             // keeps the end it started from.
@@ -128,7 +128,7 @@ impl Buffer {
             true => self.extend_to(line, column),
             false => {
                 self.place_cursor(line, column);
-                self.editing.cursor_mut().remembered_cell = cell;
+                self.editing.cursor_mut().remembered_cell = Some(cell);
             }
         }
     }
@@ -377,9 +377,6 @@ impl Buffer {
         // Walking there is the other thing, and walks around a fold.
         self.folds.reveal(self.editing.text().clamp_line(line));
         self.editing.arrive(line, column);
-        // The remembered cell is recomputed on the next vertical move, which
-        // needs the width; leaving it is right, arriving is not a move along
-        // a line.
     }
 
     /// Moves the viewport by whole screenfuls, and the cursor with it.
@@ -444,17 +441,10 @@ impl Buffer {
         let landed =
             self.step_screen_rows((self.viewport.top, self.viewport.top_row), screen_row, area);
         // The row it landed on is one the view drew and the text does not
-        // have -- inside a hunk the reader has opened. There is nowhere for
-        // the cursor to go that would keep its place on the screen, so it
-        // keeps its place in the *file* instead and the page is a scroll:
-        // the way through a deletion taller than the screen, and the same
-        // thing the wheel does. The next cursor move brings the screen back
-        // to it, as it does after any scroll.
-        // The row it landed on is one the view drew and the text does not
         // have -- inside a hunk the reader has opened. The caret goes there
         // instead: those rows are where a page through a long deletion
         // lands, and the cursor stays on the line the block belongs to.
-        let aim = self.editing.cursor().remembered_cell;
+        let aim = self.editing.cursor().aim(self.editing.text(), width);
         let Some((line, row)) = self.text_row_at(landed, area) else {
             // Into the block, on the row it landed on and at the cell it
             // was aiming for -- a page keeps the reader's place on the
@@ -464,7 +454,7 @@ impl Buffer {
                 let column = block.text().column_in_row(line, row, aim, width);
                 block.editing.clear_selection();
                 block.editing.arrive(line, column);
-                block.editing.cursor_mut().remembered_cell = aim;
+                block.editing.cursor_mut().remembered_cell = Some(aim);
                 self.in_block = Some(landed.0);
             }
             // Whatever was being selected was being selected in the file,
@@ -479,6 +469,7 @@ impl Buffer {
         // The remembered cell, like a vertical move: paging is one.
         let column = self.editing.text().column_in_row(line, row, aim, width);
         self.editing.arrive(line, column);
+        self.editing.cursor_mut().remembered_cell = Some(aim);
         // On screen again, wherever the wheel had left it.
         self.detached = false;
     }
@@ -728,14 +719,13 @@ impl Buffer {
             Motion::Up => block.text().row_count(entered, width).saturating_sub(1),
             _ => 0,
         };
+        let aim = cursor.aim(self.editing.text(), width);
         Some((
             block.above,
             Cursor {
                 line: entered,
-                column: block
-                    .text()
-                    .column_in_row(entered, row, cursor.remembered_cell, width),
-                remembered_cell: cursor.remembered_cell,
+                column: block.text().column_in_row(entered, row, aim, width),
+                remembered_cell: Some(aim),
             },
         ))
     }
@@ -763,7 +753,7 @@ impl Buffer {
         // Nothing hides a line of a block: it is a few lines the file used
         // to have, not a file, and it has no runs to fold.
         let moved = block.editing.step(motion, &(), width);
-        let aim = block.editing.cursor().remembered_cell;
+        let aim = block.editing.cursor().aim(block.text(), width);
         if moved || !matches!(motion, Motion::Up | Motion::Down) {
             return;
         }
@@ -788,7 +778,7 @@ impl Buffer {
                 let last = self.editing.text().row_count(line, width).saturating_sub(1);
                 let column = self.editing.text().column_in_row(line, last, aim, width);
                 self.editing.arrive(line, column);
-                self.editing.cursor_mut().remembered_cell = aim;
+                self.editing.cursor_mut().remembered_cell = Some(aim);
             }
             // Out of the bottom, onto the line the block was drawn above.
             // Said rather than assumed: the cursor is only already there
@@ -800,7 +790,7 @@ impl Buffer {
                 self.in_block = None;
                 let column = self.editing.text().column_in_row(above, 0, aim, width);
                 self.editing.arrive(above, column);
-                self.editing.cursor_mut().remembered_cell = aim;
+                self.editing.cursor_mut().remembered_cell = Some(aim);
             }
         }
     }

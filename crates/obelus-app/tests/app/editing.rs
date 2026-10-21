@@ -2525,6 +2525,28 @@ mod moving {
         ));
     }
 
+    /// Typing to a column and going down through an empty line comes out at
+    /// that column on the long line below: the caret the typing left is
+    /// where down aims from, not wherever it was aiming before.
+    ///
+    /// Broken deliberately by taking out the line in `Editing::arrive` that
+    /// forgets the remembered cell: the caret aims for column zero, where it
+    /// started, and ends at (2, 0).
+    #[test]
+    fn down_from_what_was_typed_keeps_its_column_past_an_empty_line() {
+        let (_scratch, mut app) = reading("move-typed-through-empty", "\n\n0123456789abcdef\n", 80);
+        // A walk first, so there is a cell remembered from before the
+        // typing: a caret that has never moved aims where it stands anyway.
+        support::press(&mut app, KeyCode::Down);
+        support::press(&mut app, KeyCode::Up);
+        support::type_text(&mut app, "0123456789");
+        assert_eq!(at(&app), (0, 10));
+        support::press(&mut app, KeyCode::Down);
+        assert_eq!(at(&app), (1, 0));
+        support::press(&mut app, KeyCode::Down);
+        assert_eq!(at(&app), (2, 10), "the column typed to was lost");
+    }
+
     /// `foo.bar` is three words, not one: punctuation is not blank, and a
     /// reader stepping through code expects to stop at the dot.
     #[test]

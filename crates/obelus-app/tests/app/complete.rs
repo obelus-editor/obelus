@@ -1779,7 +1779,12 @@ mod signatures {
             "a newline inside the call took the panel away"
         );
 
-        // And walking back up to the first line is still the same call.
+        // And walking back up to the first line is still the same call --
+        // from the end of the argument written on the second, so up aims
+        // past the first line's comma and lands inside the brackets. From
+        // the indent the newline left, up aims at the indent and lands in
+        // front of `copy`, which is out of the call.
+        support::type_text(&mut app, "destination");
         support::press(&mut app, crossterm::event::KeyCode::Up);
         support::render(&mut app, 60, 16);
         assert!(
