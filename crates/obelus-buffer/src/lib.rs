@@ -112,6 +112,21 @@ pub enum Content {
         /// Whether the bytes are here yet.
         fetched: Fetched,
     },
+    /// The plan an agent asked leave to act on, in the words it wrote.
+    ///
+    /// Text with no file behind it at all -- what this enum was drafted
+    /// for -- so it has every answer a commit's version has and one more:
+    /// nothing writes it, nothing re-reads it from the path it wears, and
+    /// no history can say what it is a change from. It is replaced whole
+    /// when the agent revises it ([`Buffer::revised`]), the way a file is
+    /// re-read rather than edited.
+    Plan {
+        /// The conversation it is from, as the application numbers it.
+        of: usize,
+        /// What it is called, which the application says: the plan's own
+        /// heading where it has one, its conversation's name where not.
+        called: String,
+    },
 }
 
 /// Whether the bytes of a version read from somewhere else are here.
@@ -141,7 +156,7 @@ impl Content {
     #[must_use]
     pub const fn at(&self) -> Option<gix::ObjectId> {
         match self {
-            Self::File => None,
+            Self::File | Self::Plan { .. } => None,
             Self::Commit { id } | Self::PullRequest { id, .. } => Some(*id),
         }
     }
@@ -159,7 +174,7 @@ impl Content {
     pub const fn fetched(&self) -> Option<&Fetched> {
         match self {
             Self::PullRequest { fetched, .. } => Some(fetched),
-            Self::File | Self::Commit { .. } => None,
+            Self::File | Self::Commit { .. } | Self::Plan { .. } => None,
         }
     }
 
@@ -170,6 +185,38 @@ impl Content {
         matches!(self, Self::PullRequest { number: of, id: at, .. } if *of == number && *at == id)
     }
 
+    /// Whether this is the plan of the conversation numbered `of`.
+    #[must_use]
+    pub const fn is_plan_of(&self, of: usize) -> bool {
+        matches!(self, Self::Plan { of: from, .. } if *from == of)
+    }
+
+    /// What a document with no file behind it is called wherever a file
+    /// would be named by its path -- its tab, its row in the list of what
+    /// is open, the status row -- which are all one document.
+    #[must_use]
+    pub fn name(&self) -> Option<&str> {
+        match self {
+            Self::Plan { called, .. } => Some(called),
+            Self::File | Self::Commit { .. } | Self::PullRequest { .. } => None,
+        }
+    }
+
+    /// The conversation this is the plan of, where it is a plan.
+    #[must_use]
+    pub const fn plan_of(&self) -> Option<usize> {
+        match self {
+            Self::Plan { of, .. } => Some(*of),
+            Self::File | Self::Commit { .. } | Self::PullRequest { .. } => None,
+        }
+    }
+
+    /// Whether this is an agent's plan, whichever conversation it is from.
+    #[must_use]
+    pub const fn is_plan(&self) -> bool {
+        matches!(self, Self::Plan { .. })
+    }
+
     /// That commit in the short form a reader recognises it by, and the
     /// pull request it is the last of where it is one.
     #[must_use]
@@ -177,7 +224,7 @@ impl Content {
         let id: String = self.at()?.to_string().chars().take(7).collect();
         Some(match self {
             Self::PullRequest { number, .. } => format!("#{number} {id}"),
-            Self::File | Self::Commit { .. } => id,
+            Self::File | Self::Commit { .. } | Self::Plan { .. } => id,
         })
     }
 }
@@ -912,6 +959,18 @@ impl Buffer {
             id,
             fetched: Fetched::Asking,
         };
+        buffer
+    }
+
+    /// An agent's plan, shown as its reading: a plan is written to be read,
+    /// and the markdown it arrives in is how it was written rather than
+    /// what it says. `path` is only what it is called -- markdown, so that
+    /// it has the reading -- and nothing is ever read from it.
+    #[must_use]
+    pub fn plan(path: &Path, of: usize, called: String, words: &str) -> Self {
+        let mut buffer = Self::from_text(path, words);
+        buffer.content = Content::Plan { of, called };
+        buffer.show_reading();
         buffer
     }
 
@@ -1816,6 +1875,25 @@ impl Buffer {
     pub fn arrived(&mut self, read: obelus_encoding::Read<'static>) -> bool {
         self.set_fetched(Fetched::Here);
         self.take_read(Ok((read, false))).unwrap_or(false)
+    }
+
+    /// Calls a plan something else -- its heading revised, or its
+    /// conversation named.
+    pub fn call_the_plan(&mut self, name: String) {
+        if let Content::Plan { called, .. } = &mut self.content {
+            *called = name;
+        }
+    }
+
+    /// Takes the agent's revision of a plan, as a re-read takes the disk's:
+    /// the place the reader had got to kept, nothing to undo back to, and
+    /// the version moved on. Says whether it said anything new.
+    pub fn revised(&mut self, words: &str) -> bool {
+        let read = obelus_encoding::Read {
+            text: std::borrow::Cow::Owned(words.to_string()),
+            written: self.written,
+        };
+        self.take_read(Ok((read, self.chosen))).unwrap_or(false)
     }
 
     /// Says the bytes on their way were refused, and why.

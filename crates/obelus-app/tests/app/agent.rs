@@ -7663,7 +7663,11 @@ fn a_plan_is_read_in_the_transcript_and_the_card_holds_the_answers() {
     });
     support::type_text(&mut app, "/plan");
     support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "the plan", |app| app.card().is_some());
+    // The plan opens a page of its own in front of the conversation; the
+    // transcript and the card are where the reader comes back to.
+    pump(&mut app, &events, "the plan", |app| the_plan(app).is_some());
+    support::press_alt_key(&mut app, KeyCode::Left);
+    pump(&mut app, &events, "the card", |app| app.card().is_some());
 
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     let screen = rows(&dump);
@@ -7717,6 +7721,304 @@ fn a_plan_is_read_in_the_transcript_and_the_card_holds_the_answers() {
     assert!(
         !screen.iter().any(|row| row.contains("# The plan")),
         "an answered plan stayed open:\n{dump}"
+    );
+}
+
+/// The document an agent's plan is shown in, wherever it is in the list.
+fn the_plan(app: &App) -> Option<&obelus_buffer::Buffer> {
+    (0..64)
+        .filter_map(|at| app.file(obelus_buffer::DocumentId::new(at)))
+        .find(|buffer| buffer.content().is_plan())
+}
+
+/// A plan an agent asks leave to act on opens in a document of its own, in
+/// front of the conversation the reader was waiting in, and a revision
+/// changes it where it is.
+///
+/// Read as its reading, because a plan is written to be read: the heading
+/// is a heading. Revised by an update that carries the words and not the
+/// kind -- the kind arrived with the call -- and the revision takes nobody
+/// anywhere: the reader is back in the conversation, and stays there.
+///
+/// Broken deliberately: with `show_the_plan` returning at once, no plan
+/// opens; with `plan_in` answering after the call is answered, what became
+/// of the asking is written over the plan; reading the kind off the update
+/// rather than the row, the revision never reaches the page; and pushing a
+/// second page rather than revising the first, the page that was open never
+/// says the revision; and not naming it again, it keeps the first plan's
+/// heading.
+#[test]
+fn a_plan_opens_in_a_document_of_its_own_and_follows_its_revisions() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/plan");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the plan", |app| the_plan(app).is_some());
+
+    let plan = app.current_buffer().expect("the plan is not in front");
+    assert!(plan.content().is_plan(), "what is in front is not the plan");
+    assert_eq!(plan.mode(), obelus_buffer::Mode::Preview);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let screen = rows(&dump);
+    assert!(
+        screen.iter().any(|row| row.contains("The plan")),
+        "the plan is not on screen:
+{dump}"
+    );
+    assert!(
+        screen.iter().any(|row| row.contains("5. Stop")),
+        "the plan is not all there:
+{dump}"
+    );
+    assert!(
+        !screen.iter().any(|row| row.contains("# The plan")),
+        "the plan is on screen as its markdown:
+{dump}"
+    );
+    // Named on the status row by its own heading, as its tab and its row in
+    // the list are: there is no `plan.md` anywhere to go looking for.
+    let status = screen.last().expect("no status row");
+    assert!(
+        status.contains("Plan: The plan") && !status.contains("plan.md"),
+        "the status row does not say what it is:
+{dump}"
+    );
+
+    // Back to the conversation to answer, and asked for more planning.
+    support::press_alt_key(&mut app, KeyCode::Left);
+    pump(&mut app, &events, "the card", |app| app.card().is_some());
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the turn to end", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    // The answer is said on the call, in words that replace the plan's
+    // under its row -- and not on the page, which is still the plan.
+    assert!(
+        the_plan(&app).is_some_and(|plan| plan.text().rope().to_string().contains("5. Stop")),
+        "what became of the asking was written over the plan"
+    );
+
+    support::type_text(&mut app, "/revise-the-plan");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the revision", |app| {
+        the_plan(app).is_some_and(|plan| plan.text().rope().to_string().contains("3. Tidy up"))
+    });
+    let plan = the_plan(&app).expect("the plan went");
+    assert!(
+        !plan.text().rope().to_string().contains("5. Stop"),
+        "the revision was added to the plan rather than put in its place"
+    );
+    assert_eq!(
+        (0..64)
+            .filter_map(|at| app.file(obelus_buffer::DocumentId::new(at)))
+            .filter(|buffer| buffer.content().is_plan())
+            .count(),
+        1,
+        "a revision opened a second plan"
+    );
+    assert!(
+        app.chat().is_some(),
+        "a revision took the reader off the conversation"
+    );
+    // And called what the revision calls itself.
+    assert_eq!(
+        the_plan(&app).and_then(|plan| plan.content().name()),
+        Some("Plan: The plan, revised"),
+        "the name stayed the first plan's"
+    );
+}
+
+/// A plan the reader has closed stays closed once they answer it: what the
+/// agent says of the call afterwards is not the plan asked about again.
+///
+/// Closed before the question arrives, too, which is the asking that
+/// follows the call.
+///
+/// Broken deliberately: without `plan_shown` asked, the permission request
+/// after the call opens the plan again, in front of the card.
+#[test]
+fn a_plan_closed_before_its_answer_stays_closed() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/plan");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the plan", |app| the_plan(app).is_some());
+    support::press_control(&mut app, 'w');
+    assert!(the_plan(&app).is_none(), "the plan did not close");
+    pump(&mut app, &events, "the card", |app| app.card().is_some());
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the turn to end", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    assert!(the_plan(&app).is_none(), "the answered plan opened again");
+    assert!(
+        app.chat().is_some(),
+        "the reader was taken off the conversation"
+    );
+}
+
+/// A plan that arrives while the reader is reading something else goes in
+/// the list of what is open and takes them nowhere: a plan has no business
+/// taking a reader off a file.
+///
+/// Broken deliberately: going to the plan whatever the reader is in, the
+/// file is no longer what is in front of them.
+#[test]
+fn a_plan_that_arrives_while_the_reader_is_elsewhere_waits_in_the_list() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/plan");
+    support::press(&mut app, KeyCode::Enter);
+    // Off to a file before the agent has answered, which nothing above has
+    // heard yet.
+    app.open_for_test(Path::new("src/lib.rs"));
+    pump(&mut app, &events, "the plan", |app| the_plan(app).is_some());
+    let reading = app.current_buffer().expect("nothing in front");
+    assert!(
+        reading.content().is_file() && reading.path().ends_with("src/lib.rs"),
+        "the plan took the reader off their file"
+    );
+}
+
+/// Two conversations' plans are two documents, and the list of what is open
+/// previews each as itself.
+///
+/// What is open is looked up by its path in more places than ask what is
+/// behind it, and the preview is one: two plans wearing one path previewed
+/// whichever of them was found first, on both rows.
+///
+/// Broken deliberately: with every plan at `<root>/plan.md`, both rows
+/// preview the first plan.
+#[test]
+fn two_conversations_plans_are_each_previewed_as_themselves() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/plan");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the first plan", |app| {
+        the_plan(app).is_some()
+    });
+
+    app.new_conversation();
+    app.open_a_session_for_test();
+    pump(&mut app, &events, "the second session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/plan-untitled");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the second plan", |app| {
+        (0..64)
+            .filter_map(|at| app.file(obelus_buffer::DocumentId::new(at)))
+            .filter(|buffer| buffer.content().is_plan())
+            .count()
+            == 2
+    });
+
+    support::press_function(&mut app, 2);
+    let rows = app.picker().expect("the open documents").matches().count();
+    let mut seen = Vec::new();
+    for _ in 0..rows {
+        support::render(&mut app, WIDTH, HEIGHT);
+        let label = app
+            .picker()
+            .and_then(|picker| picker.selected_item())
+            .map(|item| item.label.clone())
+            .unwrap_or_default();
+        if label.starts_with("Plan") {
+            let previewed = app
+                .preview()
+                .map(|preview| preview.buffer.text().rope().to_string())
+                .unwrap_or_default();
+            seen.push((label, previewed.contains("5. Stop")));
+        }
+        support::press(&mut app, KeyCode::Down);
+    }
+    seen.sort();
+    assert_eq!(
+        seen,
+        vec![
+            ("Plan: /plan-untitled".to_string(), false),
+            ("Plan: The plan".to_string(), true),
+        ],
+        "a plan's row previews another plan"
+    );
+}
+
+/// A plan with no heading of its own goes by its conversation's name, so
+/// two conversations' plans are not two rows saying `Plan`.
+///
+/// Named again when the conversation is, and only then: a plan whose
+/// conversation has closed keeps what it was called.
+///
+/// Broken deliberately: with `plan_called` answering `Plan` where there is
+/// no heading, the name is not the conversation's; without
+/// `call_the_plan_again`, the plan keeps the reader's first words after the
+/// agent names the conversation; and naming every plan again rather than
+/// the one, the closed conversation's plan is called `Plan`.
+#[test]
+fn a_plan_with_no_heading_goes_by_its_conversation_s_name() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/plan-untitled");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the plan", |app| the_plan(app).is_some());
+    // What the list calls a conversation nobody has named: the reader's
+    // first words in it.
+    assert_eq!(
+        the_plan(&app).and_then(|plan| plan.content().name()),
+        Some("Plan: /plan-untitled"),
+    );
+
+    // Named by the agent, and the plan with it.
+    support::press_alt_key(&mut app, KeyCode::Left);
+    assert!(app.chat().is_some(), "not back in the conversation");
+    support::type_text(&mut app, "/titled");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the plan named again", |app| {
+        the_plan(app).and_then(|plan| plan.content().name()) == Some("Plan: Renamed by the agent")
+    });
+
+    // The conversation closed, and another one named: the plan has nothing
+    // to be named after any more, and keeps what it was called. Waited on
+    // by the second conversation's own plan, which comes after its name.
+    support::press_control(&mut app, 'w');
+    assert!(
+        the_plan(&app).is_some(),
+        "the plan went with its conversation"
+    );
+    app.new_conversation();
+    app.open_a_session_for_test();
+    pump(&mut app, &events, "the second session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/titled");
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "/plan-untitled");
+    support::press(&mut app, KeyCode::Enter);
+    let plans = |app: &App| -> Vec<String> {
+        (0..64)
+            .filter_map(|at| app.file(obelus_buffer::DocumentId::new(at)))
+            .filter_map(|buffer| buffer.content().name().map(str::to_string))
+            .collect()
+    };
+    pump(&mut app, &events, "the second plan", |app| {
+        plans(app).len() == 2
+    });
+    assert_eq!(
+        plans(&app).first().map(String::as_str),
+        Some("Plan: Renamed by the agent"),
+        "naming another conversation renamed this one's plan"
     );
 }
 

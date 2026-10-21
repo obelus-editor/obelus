@@ -37,6 +37,10 @@ impl App {
         open()
             .map(|(id, document)| {
                 let name = match document {
+                    // A name rather than a path, where there is no file.
+                    Document::File(buffer) if let Some(name) = buffer.content().name() => {
+                        name.to_string()
+                    }
                     Document::File(buffer) => {
                         let name = file_name(buffer.path());
                         let mut name = match seen.get(&name).copied().unwrap_or(0) > 1 {

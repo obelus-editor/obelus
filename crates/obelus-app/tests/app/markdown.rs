@@ -1607,3 +1607,37 @@ fn a_heading_has_room_above_it() {
     let top = texts("# First\n\nWords.\n");
     assert_eq!(top[0], "First", "room above the first row: {top:?}");
 }
+
+/// Two documents wearing one path are each read as themselves: the file,
+/// and the file as a commit had it, both start at version one, and a
+/// reading kept by path and version alone was the first one's on both.
+///
+/// Broken deliberately: with the content left out of what the reading is
+/// kept by, the commit's version is read as the file.
+#[test]
+fn two_documents_on_one_path_are_each_read_as_themselves() {
+    use obelus_buffer::{Buffer, DocumentId};
+
+    let path = std::path::Path::new("NOTES.md");
+    let file = Buffer::from_text(path, "# On disk\n");
+    let version = Buffer::at_commit(
+        path,
+        gix::ObjectId::null(gix::hash::Kind::Sha1),
+        "# As committed\n",
+    );
+    let mut app = obelus_app::app::App::new(vec![file, version]);
+    for at in 0..2 {
+        app.file_mut(DocumentId::new(at))
+            .expect("both are open")
+            .show_reading();
+    }
+    app.go_to_document_for_test(DocumentId::new(0));
+    let dump = support::render(&mut app, 60, 10);
+    assert!(dump.contains("On disk"), "the file is not read:\n{dump}");
+    app.go_to_document_for_test(DocumentId::new(1));
+    let dump = support::render(&mut app, 60, 10);
+    assert!(
+        dump.contains("As committed") && !dump.contains("On disk"),
+        "the commit's version was read as the file:\n{dump}"
+    );
+}
