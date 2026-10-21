@@ -650,6 +650,16 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"plan","entries":[{"content":"read the counts tree","priority":"high","status":"completed"},{"content":"wire it to the search","priority":"medium","status":"pending"},{"content":"write the test","priority":"low","status":"pending"}]}}}\n' "$session"
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"plan","entries":[{"content":"read the counts tree","priority":"high","status":"completed"},{"content":"wire it to the search","priority":"medium","status":"in_progress"},{"content":"write the test","priority":"low","status":"pending"}]}}}\n' "$session"
             ;;
+        *'"method":"session/prompt"'*'"text":"/revise-the-plan'*)
+            # The plan `/plan` put to the reader, revised: an update to the
+            # same call carrying new words and not the kind, which an update
+            # leaves out because it has not changed. Before `/plan`; and
+            # not `/replan`, which would take `/replanning` from below.
+            set_turn "$session" "$(id_of "$line")"
+            plan="# The plan\n\n## Steps\n\n1. Write the file\n2. Run it\n3. Tidy up"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"tool_call_update","toolCallId":"p1","content":[{"type":"content","content":{"type":"text","text":"%s"}}]}}}\n' "$session" "$plan"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
         *'"method":"session/prompt"'*'/plan'*)
             # A plan put to the reader for leave to act on, which is how an
             # agent in plan mode ends its turn. The plan itself is the call's

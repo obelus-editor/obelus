@@ -1643,6 +1643,22 @@ impl Chat {
             .find(|said| said.speaker == Speaker::Tool && said.tag.as_deref() == Some(id))
     }
 
+    /// The plan the call with this id puts to the reader, if it is one: a
+    /// call that switches the mode -- out of planning -- with words.
+    ///
+    /// Asked of the row rather than of the update, for the reason
+    /// [`Self::wrote`] is: a revision sent as an update carries the words
+    /// and not the kind, which arrived with the call.
+    #[must_use]
+    pub fn plan_in(&self, id: &str) -> Option<String> {
+        let said = self
+            .said
+            .iter()
+            .rev()
+            .find(|said| said.speaker == Speaker::Tool && said.tag.as_deref() == Some(id))?;
+        (said.kind == "switch_mode" && !said.words.is_empty()).then(|| said.words.join("\n\n"))
+    }
+
     /// The file the call with this id changed, once it has.
     ///
     /// Asked of the row rather than of the update, because an update says

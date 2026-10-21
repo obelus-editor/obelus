@@ -37,6 +37,10 @@ const STILL_WRITING: std::time::Duration = std::time::Duration::from_millis(1500
 /// ways in are called by on the same card.
 const NOT_SIGNING_IN: &str = "obelus:not-now";
 
+/// What an agent's plan is called. Markdown, which is the reading it is
+/// shown in; nothing is read from or written to it.
+pub(in crate::app) const PLAN: &str = "plan.md";
+
 /// Which conversation a message from the agent is for.
 ///
 /// Its own type rather than an `Option<DocumentId>` because the two cases
@@ -4353,6 +4357,7 @@ impl App {
                 acp::Update::Tool { call, status } => {
                     self.mirror_paused(whose);
                     self.in_talk(whose, |chat| chat.tool(&call, &status));
+                    self.show_the_plan(whose, &call);
                     // And what the work it started has come to, which may
                     // have been said before this.
                     self.say_what_the_work_came_to(whose, &call.id);
@@ -4667,6 +4672,61 @@ impl App {
         self.talk_to(&id, &installed.command, &installed.arguments);
     }
 
+    /// Puts the plan an agent asks leave to act on in a document of its
+    /// own, and keeps it in step with every revision.
+    ///
+    /// A plan is something to read, and the transcript folds it away as a
+    /// call's words once the call is answered -- under the next turn's work.
+    /// So it is a page, opened the moment there is one: in front where the
+    /// reader is in the conversation it is from, which is what they were
+    /// waiting on, and only in the list of what is open where they have
+    /// gone to read something else, which a plan has no business taking
+    /// them off. Revised, it changes where it is and takes nobody anywhere.
+    /// It outlives the turn, because the next plan is what replaces it, and
+    /// closing it is the reader's.
+    ///
+    /// Read from the call's row once the call has gone into it, which is
+    /// where the kind an update leaves out is kept ([`Chat::plan_in`]).
+    fn show_the_plan(&mut self, whose: Whose, call: &acp::Call) {
+        let of = match whose {
+            Whose::One(id) => id,
+            Whose::Whoever => match self.current {
+                Some(id) => id,
+                None => return,
+            },
+        };
+        let Some(words) = self
+            .talk(whose)
+            .and_then(|talk| talk.chat.plan_in(&call.id))
+        else {
+            return;
+        };
+        let open = self.documents.iter().position(|document| {
+            document
+                .as_ref()
+                .and_then(Document::file)
+                .is_some_and(|buffer| buffer.content().is_plan_of(of.get()))
+        });
+        if let Some(at) = open {
+            if let Some(buffer) = self.file_mut(DocumentId::new(at)) {
+                buffer.revised(&words);
+            }
+            return;
+        }
+        let path = self.working_directory.join(PLAN);
+        let buffer = obelus_buffer::Buffer::plan(&path, of.get(), &words);
+        self.documents.push(Some(Document::from(buffer)));
+        let at = DocumentId::new(self.documents.len() - 1);
+        // In the conversation, and with nothing over it: a list or a page
+        // the reader opened is what they are doing now.
+        let watching = self.current == Some(of) && self.layers().furthest_first().next().is_none();
+        if watching {
+            let from = self.here();
+            self.record(from);
+            self.go_to_file(at);
+        }
+    }
+
     /// Puts a permission request to the reader, on the card everything
     /// else it asks is answered on.
     ///
@@ -4694,6 +4754,7 @@ impl App {
         // After the answer they stay, which is how a reader finds out later
         // what they agreed to.
         self.in_talk(whose, |chat| chat.tool(call, "pending"));
+        self.show_the_plan(whose, call);
         let choices = options
             .iter()
             .map(|choice| Choice {

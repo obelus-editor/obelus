@@ -7663,7 +7663,11 @@ fn a_plan_is_read_in_the_transcript_and_the_card_holds_the_answers() {
     });
     support::type_text(&mut app, "/plan");
     support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "the plan", |app| app.card().is_some());
+    // The plan opens a page of its own in front of the conversation; the
+    // transcript and the card are where the reader comes back to.
+    pump(&mut app, &events, "the plan", |app| the_plan(app).is_some());
+    support::press_alt_key(&mut app, KeyCode::Left);
+    pump(&mut app, &events, "the card", |app| app.card().is_some());
 
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     let screen = rows(&dump);
@@ -7717,6 +7721,98 @@ fn a_plan_is_read_in_the_transcript_and_the_card_holds_the_answers() {
     assert!(
         !screen.iter().any(|row| row.contains("# The plan")),
         "an answered plan stayed open:\n{dump}"
+    );
+}
+
+/// The document an agent's plan is shown in, wherever it is in the list.
+fn the_plan(app: &App) -> Option<&obelus_buffer::Buffer> {
+    (0..64)
+        .filter_map(|at| app.file(obelus_buffer::DocumentId::new(at)))
+        .find(|buffer| buffer.content().is_plan())
+}
+
+/// A plan an agent asks leave to act on opens in a document of its own, in
+/// front of the conversation the reader was waiting in, and a revision
+/// changes it where it is.
+///
+/// Read as its reading, because a plan is written to be read: the heading
+/// is a heading. Revised by an update that carries the words and not the
+/// kind -- the kind arrived with the call -- and the revision takes nobody
+/// anywhere: the reader is back in the conversation, and stays there.
+///
+/// Broken deliberately: with `show_the_plan` returning at once, no plan
+/// opens; reading the kind off the update rather than the row, the revision
+/// never reaches the page; and pushing a second page rather than revising
+/// the first, the page that was open never says the revision.
+#[test]
+fn a_plan_opens_in_a_document_of_its_own_and_follows_its_revisions() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/plan");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the plan", |app| the_plan(app).is_some());
+
+    let plan = app.current_buffer().expect("the plan is not in front");
+    assert!(plan.content().is_plan(), "what is in front is not the plan");
+    assert_eq!(plan.mode(), obelus_buffer::Mode::Preview);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let screen = rows(&dump);
+    assert!(
+        screen.iter().any(|row| row.contains("The plan")),
+        "the plan is not on screen:
+{dump}"
+    );
+    assert!(
+        screen.iter().any(|row| row.contains("5. Stop")),
+        "the plan is not all there:
+{dump}"
+    );
+    assert!(
+        !screen.iter().any(|row| row.contains("# The plan")),
+        "the plan is on screen as its markdown:
+{dump}"
+    );
+    // Named on the status row by what it is, as its tab and its row in the
+    // list are: there is no `plan.md` anywhere to go looking for.
+    let status = screen.last().expect("no status row");
+    assert!(
+        status.contains("Plan") && !status.contains("plan.md"),
+        "the status row does not say what it is:
+{dump}"
+    );
+
+    // Back to the conversation to answer, and asked for more planning.
+    support::press_alt_key(&mut app, KeyCode::Left);
+    pump(&mut app, &events, "the card", |app| app.card().is_some());
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the turn to end", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+
+    support::type_text(&mut app, "/revise-the-plan");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the revision", |app| {
+        the_plan(app).is_some_and(|plan| plan.text().rope().to_string().contains("3. Tidy up"))
+    });
+    let plan = the_plan(&app).expect("the plan went");
+    assert!(
+        !plan.text().rope().to_string().contains("5. Stop"),
+        "the revision was added to the plan rather than put in its place"
+    );
+    assert_eq!(
+        (0..64)
+            .filter_map(|at| app.file(obelus_buffer::DocumentId::new(at)))
+            .filter(|buffer| buffer.content().is_plan())
+            .count(),
+        1,
+        "a revision opened a second plan"
+    );
+    assert!(
+        app.chat().is_some(),
+        "a revision took the reader off the conversation"
     );
 }
 
