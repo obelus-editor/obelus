@@ -7741,10 +7741,12 @@ fn the_plan(app: &App) -> Option<&obelus_buffer::Buffer> {
 /// anywhere: the reader is back in the conversation, and stays there.
 ///
 /// Broken deliberately: with `show_the_plan` returning at once, no plan
-/// opens; reading the kind off the update rather than the row, the revision
-/// never reaches the page; and pushing a second page rather than revising
-/// the first, the page that was open never says the revision; and not
-/// naming it again, it keeps the first plan's heading.
+/// opens; with `plan_in` answering after the call is answered, what became
+/// of the asking is written over the plan; reading the kind off the update
+/// rather than the row, the revision never reaches the page; and pushing a
+/// second page rather than revising the first, the page that was open never
+/// says the revision; and not naming it again, it keeps the first plan's
+/// heading.
 #[test]
 fn a_plan_opens_in_a_document_of_its_own_and_follows_its_revisions() {
     let (mut app, events) = talking();
@@ -7792,6 +7794,12 @@ fn a_plan_opens_in_a_document_of_its_own_and_follows_its_revisions() {
     pump(&mut app, &events, "the turn to end", |app| {
         app.talking() == obelus_agent::Talking::Ready
     });
+    // The answer is said on the call, in words that replace the plan's
+    // under its row -- and not on the page, which is still the plan.
+    assert!(
+        the_plan(&app).is_some_and(|plan| plan.text().rope().to_string().contains("5. Stop")),
+        "what became of the asking was written over the plan"
+    );
 
     support::type_text(&mut app, "/revise-the-plan");
     support::press(&mut app, KeyCode::Enter);
@@ -7820,6 +7828,37 @@ fn a_plan_opens_in_a_document_of_its_own_and_follows_its_revisions() {
         the_plan(&app).and_then(|plan| plan.content().name()),
         Some("Plan: The plan, revised"),
         "the name stayed the first plan's"
+    );
+}
+
+/// A plan the reader has closed stays closed once they answer it: what the
+/// agent says of the call afterwards is not the plan asked about again.
+///
+/// Closed before the question arrives, too, which is the asking that
+/// follows the call.
+///
+/// Broken deliberately: without `plan_shown` asked, the permission request
+/// after the call opens the plan again, in front of the card.
+#[test]
+fn a_plan_closed_before_its_answer_stays_closed() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/plan");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the plan", |app| the_plan(app).is_some());
+    support::press_control(&mut app, 'w');
+    assert!(the_plan(&app).is_none(), "the plan did not close");
+    pump(&mut app, &events, "the card", |app| app.card().is_some());
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the turn to end", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    assert!(the_plan(&app).is_none(), "the answered plan opened again");
+    assert!(
+        app.chat().is_some(),
+        "the reader was taken off the conversation"
     );
 }
 

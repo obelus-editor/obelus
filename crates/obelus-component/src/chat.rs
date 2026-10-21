@@ -1644,11 +1644,14 @@ impl Chat {
     }
 
     /// The plan the call with this id puts to the reader, if it is one: a
-    /// call that switches the mode -- out of planning -- with words.
+    /// call that switches the mode -- out of planning -- with words, while
+    /// it is still being asked about.
     ///
     /// Asked of the row rather than of the update, for the reason
-    /// [`Self::wrote`] is: a revision sent as an update carries the words
-    /// and not the kind, which arrived with the call.
+    /// [`Self::wrote`] is: words sent as an update come without the kind,
+    /// which arrived with the call. And only while it is under way, because
+    /// once it is answered its words are what became of the asking
+    /// ([`Said::words`]) rather than the plan.
     #[must_use]
     pub fn plan_in(&self, id: &str) -> Option<String> {
         let said = self
@@ -1656,7 +1659,9 @@ impl Chat {
             .iter()
             .rev()
             .find(|said| said.speaker == Speaker::Tool && said.tag.as_deref() == Some(id))?;
-        (said.kind == "switch_mode" && !said.words.is_empty()).then(|| said.words.join("\n\n"))
+        let asking = matches!(said.state.as_deref(), Some("pending" | "in_progress"));
+        (asking && said.kind == "switch_mode" && !said.words.is_empty())
+            .then(|| said.words.join("\n\n"))
     }
 
     /// The file the call with this id changed, once it has.

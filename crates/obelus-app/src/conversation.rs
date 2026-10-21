@@ -337,6 +337,11 @@ pub struct Conversation {
     pub typed: Option<std::time::Instant>,
     /// The permission request waiting on the reader.
     pub permission: Option<Permission>,
+    /// The call whose plan has been put on a page of its own, so that a
+    /// page the reader closed is not opened again by the same asking -- a
+    /// permission request after the call, or what became of it. A plan
+    /// asked about again is a new call.
+    pub plan_shown: Option<String>,
     /// Somewhere the agent wants the reader to go, while they have not
     /// said whether they will.
     pub going: Option<Going>,

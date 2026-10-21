@@ -4715,6 +4715,12 @@ impl App {
     /// Read from the call's row once the call has gone into it, which is
     /// where the kind an update leaves out is kept ([`Chat::plan_in`]).
     fn show_the_plan(&mut self, whose: Whose, call: &acp::Call) {
+        // A conversation taken up again, being told what it already had:
+        // its plans were asked about then, and opening them now is opening
+        // a page about a question nobody is asking.
+        if self.replaying(whose) {
+            return;
+        }
         let of = match whose {
             Whose::One(id) => id,
             Whose::Whoever => match self.current {
@@ -4740,8 +4746,17 @@ impl App {
                 buffer.revised(&words);
                 buffer.call_the_plan(called);
             }
+            self.plan_shown(whose, &call.id);
             return;
         }
+        // Shown already, and closed since: the reader has read it.
+        if self
+            .talk(whose)
+            .is_some_and(|talk| talk.plan_shown.as_deref() == Some(call.id.as_str()))
+        {
+            return;
+        }
+        self.plan_shown(whose, &call.id);
         let path = self.working_directory.join(PLAN);
         let buffer = obelus_buffer::Buffer::plan(&path, of.get(), called, &words);
         self.documents.push(Some(Document::from(buffer)));
@@ -4753,6 +4768,13 @@ impl App {
             let from = self.here();
             self.record(from);
             self.go_to_file(at);
+        }
+    }
+
+    /// Writes down which call's plan is on a page.
+    fn plan_shown(&mut self, whose: Whose, id: &str) {
+        if let Some(talk) = self.talk_mut(whose) {
+            talk.plan_shown = Some(id.to_string());
         }
     }
 
