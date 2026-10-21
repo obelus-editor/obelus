@@ -671,6 +671,7 @@ impl App {
         self.looked_from = self
             .current
             .zip(self.current_buffer().map(Buffer::viewport));
+        self.keep_the_search();
         self.picker = Some(picker);
     }
 
@@ -952,6 +953,7 @@ impl App {
                 .first()
                 .map(|column| *column as usize)
         });
+        self.keep_the_search();
         self.picker = None;
         // A place is where the reader meant to be: the list has been
         // showing it to them, and choosing it is going there. Forgotten

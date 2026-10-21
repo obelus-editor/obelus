@@ -1304,3 +1304,125 @@ fn a_row_that_is_a_name_keeps_the_place_it_was_given() {
         "a symbol row is a name, not the line it is on"
     );
 }
+
+/// The search opened again is the one left: the same words, held so that
+/// typing replaces them, and the same row under the reader.
+///
+/// Broken deliberately three ways. Not keeping the search as the list is
+/// left (`keep_the_search` out of `leave`): it opened empty. Not holding
+/// the words (`hold_in_query` out of `open_search`): typing went on the
+/// end of them. And not putting the row back: the first row was selected.
+#[test]
+fn a_file_search_opened_again_is_the_one_left() {
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, 60, 16);
+    support::press_function(&mut app, 5);
+    support::type_text(&mut app, "greeting");
+    support::press(&mut app, KeyCode::Down);
+    assert_eq!(app.picker().map(|picker| picker.selected()), Some(1));
+    support::press(&mut app, KeyCode::Esc);
+    assert!(app.picker().is_none(), "the search did not close");
+
+    support::press_function(&mut app, 5);
+    let picker = app.picker().expect("the search");
+    assert_eq!(picker.query(), "greeting", "the words were not kept");
+    assert_eq!(picker.match_count(), 2, "the rows were not found again");
+    assert_eq!(picker.selected(), 1, "the row was not kept");
+
+    support::type_text(&mut app, "main");
+    assert_eq!(
+        app.picker().map(|picker| picker.query()).as_deref(),
+        Some("main"),
+        "typing did not replace the words"
+    );
+}
+
+/// Choosing a row keeps the search too, and the row chosen is the one the
+/// search opens on again -- the next match is one key away.
+///
+/// Broken deliberately by taking `keep_the_search` out of `accept`: the
+/// search opened empty.
+#[test]
+fn a_row_chosen_is_where_the_search_opens_again() {
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, 60, 16);
+    support::press_function(&mut app, 5);
+    support::type_text(&mut app, "greeting");
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.picker().is_none(), "the search did not close");
+
+    support::press_function(&mut app, 5);
+    let picker = app.picker().expect("the search");
+    assert_eq!(picker.query(), "greeting");
+    assert_eq!(picker.selected(), 1, "the row chosen was not kept");
+}
+
+/// The row stood on is a row of one document, and another document's
+/// search starts at its top -- with the same words asked of it.
+///
+/// Broken deliberately by matching what was kept on the scope and the
+/// words alone in `open_search`: the second file opened on its second row.
+#[test]
+fn another_documents_search_starts_at_its_top() {
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, 60, 16);
+    support::press_function(&mut app, 5);
+    support::type_text(&mut app, "greeting");
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Esc);
+
+    app.open_buffer_for_test(obelus_buffer::Buffer::from_text(
+        std::path::Path::new("other.rs"),
+        "greeting one\ngreeting two\ngreeting three\n",
+    ));
+    support::lay_out(&mut app, 60, 16);
+    support::press_function(&mut app, 5);
+    let picker = app.picker().expect("the search");
+    assert_eq!(picker.query(), "greeting");
+    assert_eq!(picker.match_count(), 3);
+    assert_eq!(
+        picker.selected(),
+        0,
+        "another file opened on the first's row"
+    );
+}
+
+/// The project's rows are kept whole, and the search opened again shows
+/// them at once on the row it was left on, without walking the project.
+///
+/// Broken deliberately by not reusing the rows (`reuse` never set): the
+/// search opened walking again, with nothing in it and nothing selected.
+#[test]
+fn a_project_search_opened_again_keeps_its_rows() {
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, 60, 16);
+    support::press_function(&mut app, 6);
+    support::type_text(&mut app, "needle");
+    let hits = (0..3)
+        .map(|line| Hit {
+            path: std::path::PathBuf::from(format!("found{line}.rs")),
+            line,
+            text: format!("the needle {line}"),
+        })
+        .collect();
+    app.handle(Event::Search(obelus_search::Event::Matches {
+        generation: app.search_generation(),
+        hits,
+        done: true,
+    }));
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Esc);
+
+    let generation = app.search_generation();
+    support::press_function(&mut app, 6);
+    let picker = app.picker().expect("the search");
+    assert_eq!(picker.query(), "needle");
+    let rows: Vec<String> = picker.matches().map(|item| item.label.clone()).collect();
+    assert_eq!(rows, ["the needle 0", "the needle 1", "the needle 2"]);
+    assert_eq!(picker.selected(), 2, "the row was not kept");
+    // And whatever was still walking is told it is answering a question
+    // nobody is asking, so none of it lands on the rows put back.
+    assert!(app.search_generation() > generation);
+}

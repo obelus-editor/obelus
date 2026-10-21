@@ -32,6 +32,18 @@ pub(in crate::app) struct Search {
     /// What the narrowest scope of the open search is searching, which is
     /// whatever was in front when it opened.
     pub(in crate::app) here: Option<searching::Here>,
+    /// What the last search to close was asking, which the next one opens
+    /// asking again.
+    pub(in crate::app) last_query: String,
+    /// Where each scope's last search was left, for the next one opened at
+    /// that scope to stand where it stood.
+    pub(in crate::app) kept: Vec<searching::Kept>,
+    /// Whether the walk of the project has finished, so that what it found
+    /// is all of it and worth keeping.
+    pub(in crate::app) walked: bool,
+    /// What the project's tab shows on its next refresh instead of walking
+    /// the project again: the rows a search left, put back.
+    pub(in crate::app) reuse: Option<Vec<PickerItem>>,
     /// Whether the symbols search offers names from outside the project.
     ///
     /// Off, because a server that has indexed a project has indexed what it

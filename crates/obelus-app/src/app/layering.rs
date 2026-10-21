@@ -104,6 +104,7 @@ impl App {
             // that went.
             Layer::Gone => {}
             Layer::Picker => {
+                self.keep_the_search();
                 self.picker = None;
                 // Back to where they were looking from. The other way out
                 // of a list is choosing a row, and that goes somewhere on

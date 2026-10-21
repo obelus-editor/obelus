@@ -81,7 +81,57 @@ impl Here {
     }
 }
 
+/// Where one scope's last search was left.
+///
+/// Kept so that the search a reader opens again is the one they left: the
+/// same words, held so that typing replaces them, and the same row under
+/// them. A file's rows are found again, which costs nothing and answers
+/// for the text as it is now -- and the row stood on is only stood on again
+/// in the document it was a row of. The project's rows are kept whole,
+/// because finding them again is a walk of the project, and the first key
+/// typed walks it afresh.
+#[derive(Debug)]
+pub(in crate::app) struct Kept {
+    /// Which scope.
+    scope: Scope,
+    /// What it was asking.
+    query: String,
+    /// Which row the reader was on.
+    selected: usize,
+    /// Which document the rows were about, for the narrowest scope.
+    about: Option<(DocumentId, Here)>,
+    /// What the walk found, for the project's: all of it, or nothing where
+    /// it had not finished.
+    rows: Option<Vec<PickerItem>>,
+}
+
 impl App {
+    /// Remembers where the search on screen is, as it is put away.
+    ///
+    /// Asked wherever a list goes: chosen from, left, or replaced by another
+    /// list. Nothing for a list that is not the search.
+    pub(in crate::app) fn keep_the_search(&mut self) {
+        let Some(picker) = self.picker.as_ref().filter(|picker| picker.is_searching()) else {
+            return;
+        };
+        let Some(scope) = self.search.searching.get(picker.tab()).copied() else {
+            return;
+        };
+        let query = picker.query();
+        let rows = (scope == Scope::Project && self.search.walked)
+            .then(|| picker.matches().cloned().collect());
+        let kept = Kept {
+            scope,
+            query: query.clone(),
+            selected: picker.selected(),
+            about: self.current.zip(self.search.here),
+            rows,
+        };
+        self.search.last_query = query;
+        self.search.kept.retain(|each| each.scope != scope);
+        self.search.kept.push(kept);
+    }
+
     /// Opens the search, at one of its three scopes.
     ///
     /// One view with three tabs rather than three views: the question is
@@ -120,10 +170,37 @@ impl App {
         // is set: a switch a reader has to flip to find out is not one.
         picker.says_its_keys();
         picker.go_to_tab(tab);
+        self.show_list(picker);
         self.search.searching = scopes;
         self.search.here = here;
-        self.show_list(picker);
+        // The words the last search was asking, held, so that the search
+        // opened again is that search -- and a reader who meant another one
+        // types it over them.
+        let query = self.search.last_query.clone();
+        if let Some(picker) = self.picker.as_mut()
+            && !query.is_empty()
+        {
+            picker.set_query(&query);
+            picker.hold_in_query(true);
+        }
+        // And the row the reader was on, where this scope was left asking
+        // the same thing -- about the same document, for the narrowest.
+        let about = self.current.zip(here);
+        let kept = self.search.kept.iter().find(|kept| {
+            kept.scope == scope
+                && kept.query == query
+                && (scope != Scope::File || kept.about == about)
+        });
+        let selected = kept.map(|kept| kept.selected);
+        self.search.reuse = kept
+            .filter(|kept| kept.scope == Scope::Project)
+            .and_then(|kept| kept.rows.clone());
         self.refresh_search();
+        if let Some(selected) = selected
+            && let Some(picker) = self.picker.as_mut()
+        {
+            picker.select_row(selected.min(picker.match_count().saturating_sub(1)));
+        }
     }
 
     /// Which scopes have something to search, in the order their tabs sit
@@ -429,7 +506,21 @@ impl App {
                     self.search_this_document(here);
                 }
             }
-            Scope::Project => self.search_the_project(),
+            // What the last walk found for the same words, put back rather
+            // than walked for again -- once: the next key asks afresh.
+            Scope::Project => match self.search.reuse.take() {
+                Some(rows) => {
+                    // Whatever is still walking is answering a question
+                    // nobody is asking now.
+                    self.ask_again();
+                    self.search.walked = true;
+                    if let Some(picker) = self.picker.as_mut() {
+                        picker.replace(rows);
+                        picker.while_empty("No match in the project");
+                    }
+                }
+                None => self.search_the_project(),
+            },
             Scope::Symbols => self.search_the_symbols(),
         }
     }
@@ -724,6 +815,7 @@ impl App {
         // a real question -- and the cheapest one there is, because it fills
         // the row limit in the first few files and stops.
         let generation = self.ask_again();
+        self.search.walked = false;
         if query.is_empty() {
             if let Some(picker) = self.picker.as_mut() {
                 picker.replace(Vec::new());
@@ -812,6 +904,7 @@ impl App {
             // own "no match" is about a query against rows it was given, and
             // here the rows never existed.
             picker.while_empty("No match in the project");
+            self.search.walked = true;
         }
     }
 
