@@ -247,6 +247,16 @@ impl Cursor {
             return Outcome::Ignored;
         };
         let bare = modifiers == KeyModifiers::NONE;
+        // Not a walk, so before one: enter on a block of code is the
+        // block's, and on anything else it is taken and does nothing.
+        if key.code == KeyCode::Enter && bare {
+            let laid: Vec<Laid<'_>> = rows.iter().map(Laid::of).collect();
+            return <Laid<'_> as crate::page::Line>::acting(&laid, self.place.row)
+                .and_then(|on| rows.get(on.start)?.code.as_ref())
+                .map_or(Outcome::Consumed, |code| {
+                    Outcome::Copy(code.text.to_string())
+                });
+        }
         let ends = matches!(key.code, KeyCode::Home | KeyCode::End);
         if bare || modifiers == KeyModifiers::SHIFT || (ends && modifiers == KeyModifiers::CONTROL)
         {
@@ -279,14 +289,6 @@ impl Cursor {
             }
         }
         match key.code {
-            KeyCode::Enter if bare => {
-                let laid: Vec<Laid<'_>> = rows.iter().map(Laid::of).collect();
-                <Laid<'_> as crate::page::Line>::acting(&laid, self.place.row)
-                    .and_then(|on| rows.get(on.start)?.code.as_ref())
-                    .map_or(Outcome::Consumed, |code| {
-                        Outcome::Copy(code.text.to_string())
-                    })
-            }
             KeyCode::Esc if bare && self.held.holding() => {
                 self.held.let_go();
                 Outcome::Consumed
@@ -424,6 +426,10 @@ mod tests {
 
     /// Escape lets go of what is held, and is not the reading's when
     /// nothing is.
+    ///
+    /// Broken deliberately by taking escape out of `Cursor::handle_key`:
+    /// it is not the reading's even with something held, and nothing is
+    /// let go of.
     #[test]
     fn escape_lets_go_first() {
         let rows = obelus_markdown::render("Some words here.\n", 40);
