@@ -1729,6 +1729,81 @@ fn a_rendering_pages_by_a_screenful() {
     );
 }
 
+/// A reading laid out again at another width keeps its cursor on the words
+/// it was on.
+///
+/// Broken deliberately by not relaying the cursor in
+/// `App::refresh_rendering`: it keeps its row, which at the narrower width
+/// is further up the paragraph.
+#[test]
+fn a_reading_resized_keeps_its_cursor_on_its_words() {
+    use obelus_app::event::{Event, Pointer};
+    use obelus_command::Command;
+
+    let path = std::path::Path::new("relaid.md");
+    let source = "One two three four five six seven eight nine ten eleven twelve thirteen.";
+    let mut app = App::new(vec![obelus_buffer::Buffer::from_text(path, source)]);
+    support::lay_out(&mut app, 60, 10);
+    obelus_app::app::dispatch::dispatch(&mut app, Command::PreviewToggle);
+    let dump = support::render(&mut app, 60, 10);
+    let row = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains("eleven"))
+        .unwrap_or_else(|| panic!("no eleven on screen:\n{dump}"));
+    let y: u16 = row
+        .split('|')
+        .next()
+        .and_then(|number| number.trim().parse().ok())
+        .expect("a row number");
+    let x = u16::try_from(support::column_of(row, "eleven")).expect("a column");
+    for kind in [Pointer::Pressed, Pointer::Released] {
+        app.handle(Event::Pointer { kind, x, y });
+    }
+
+    support::lay_out(&mut app, 24, 10);
+    let narrow = support::render(&mut app, 24, 10);
+    let (x, y) = support::cursor_line(&narrow)
+        .split_once(',')
+        .and_then(|(x, y)| Some((x.parse::<u16>().ok()?, y.parse::<u16>().ok()?)))
+        .unwrap_or_else(|| panic!("no caret:\n{narrow}"));
+    let cells = support::cells_of(&mut app, 24, 10);
+    let under: String = (x..x + 6)
+        .map(|x| cells[(x, y)].symbol().to_string())
+        .collect();
+    assert_eq!(under, "eleven", "the caret moved off its word:\n{narrow}");
+}
+
+/// A commit's version of a file wears the file's path, and its reading is
+/// its own: its cursor is not the one the file's reading left.
+///
+/// Broken deliberately by keying the reading on the path without the
+/// commit in `App::refresh_rendering`: the two are one version and one
+/// width, so the commit's reading is the file's, cursor and all.
+#[test]
+fn a_commits_reading_is_not_the_files() {
+    use obelus_command::Command;
+
+    let path = std::path::Path::new("both.md");
+    let source = "First.\n\nSecond.\n\nThird.\n";
+    let mut app = App::new(vec![obelus_buffer::Buffer::from_text(path, source)]);
+    support::lay_out(&mut app, 60, 10);
+    obelus_app::app::dispatch::dispatch(&mut app, Command::PreviewToggle);
+    support::render(&mut app, 60, 10);
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Down);
+    let file = support::render(&mut app, 60, 10);
+
+    let id = gix::ObjectId::from_hex(b"0123456789abcdef0123456789abcdef01234567").expect("an id");
+    app.open_buffer_for_test(obelus_buffer::Buffer::at_commit(path, id, source));
+    obelus_app::app::dispatch::dispatch(&mut app, Command::PreviewToggle);
+    let commit = support::render(&mut app, 60, 10);
+    assert_ne!(
+        support::cursor_line(&commit),
+        support::cursor_line(&file),
+        "the commit's reading has the file's cursor:\n{commit}"
+    );
+}
+
 /// Control and an arrow scroll a rendering a row, as they scroll the file,
 /// and leave its cursor where it was: the wheel's gesture, a notch of a row.
 /// A row of the rendering, which is not a line of the file, so the walk goes

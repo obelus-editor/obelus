@@ -1492,7 +1492,15 @@ impl App {
             self.rendered = None;
             return;
         };
-        let at = (buffer.path().to_path_buf(), buffer.version(), width);
+        // The path *and* the commit, because a commit's version of a file
+        // wears the file's path, and both start at version one: keyed on
+        // the path alone, the two shared their rows and their cursor.
+        let at = (
+            buffer.path().to_path_buf(),
+            buffer.content().at(),
+            buffer.version(),
+            width,
+        );
         let top = buffer.viewport().top.get();
         if self
             .rendered
@@ -1503,25 +1511,29 @@ impl App {
         }
         // Asked on a miss and nowhere else: deciding which reading a file
         // has means reading its first lines, and the answer changes only
-        // when one of the three things above does.
+        // when one of the four things above does.
         let Some(reading) = obelus_reading::of(buffer.path(), buffer.text()) else {
             self.rendered = None;
             return;
         };
         let rows = obelus_reading::render(reading, &buffer.text().rope().to_string(), width);
-        // The same file laid out again keeps its cursor: a resize is not a
-        // reason to lose the reader's place. What is held is kept across a
-        // width, which it is measured to survive, and let go of across a
-        // change to the text, whose bytes it is a place in. Another file is
-        // another reading, with its cursor where its view is.
+        // The same file laid out again keeps its cursor, on the words it
+        // was on: a resize is not a reason to lose the reader's place. What
+        // is held is kept across a width, which it is measured to survive,
+        // and let go of across a change to the text, whose bytes it is a
+        // place in. Another file is another reading, with its cursor where
+        // its view is.
         let cursor = match self.rendered.take() {
             Some(Rendered {
-                at: was, cursor, ..
-            }) if was.0 == at.0 => {
+                at: was,
+                cursor,
+                rows: before,
+            }) if (&was.0, was.1) == (&at.0, at.1) => {
                 let mut cursor = cursor;
-                if was.1 != at.1 {
+                if was.2 != at.2 {
                     cursor.let_go();
                 }
+                cursor.relaid(&before, &rows);
                 cursor
             }
             _ => obelus_component::reading::Cursor::at(top),
@@ -2157,7 +2169,7 @@ impl App {
 /// noticed: which file, which version of it, and how wide the screen was.
 #[derive(Debug)]
 pub(in crate::app) struct Rendered {
-    at: (PathBuf, i32, u16),
+    at: (PathBuf, Option<gix::ObjectId>, i32, u16),
     pub(in crate::app) rows: Vec<obelus_row::Row>,
     /// Where the cursor is in the rows, and what is held.
     ///

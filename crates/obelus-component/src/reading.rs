@@ -163,6 +163,24 @@ impl Cursor {
         }
     }
 
+    /// Puts the cursor on the same words in `after` as it was on in
+    /// `before`, for the same file laid out again: a row is what a width
+    /// made of the words, so a row kept across a resize is somewhere else
+    /// in them. Where the words are not there any more, it stays on its
+    /// row, and [`Self::settle`] keeps that on the page.
+    pub fn relaid(&mut self, before: &[Row], after: &[Row]) {
+        let laid: Vec<Laid<'_>> = before.iter().map(Laid::of).collect();
+        let Some(spot) = crate::page::spot_near(self.place, &laid) else {
+            return;
+        };
+        if let Some(place) = after.iter().enumerate().find_map(|(row, it)| {
+            crate::page::characters_at(&Laid::of(it), spot)
+                .map(|character| Place { row, character })
+        }) {
+            self.place = place;
+        }
+    }
+
     /// Takes hold of a place, letting go of anything else.
     pub fn hold_from(&mut self, spot: Spot<()>) {
         self.held.from(spot);
@@ -360,6 +378,32 @@ mod tests {
             cursor.handle_key(&enter, &rows, ROOM, &mut top),
             Outcome::Consumed,
         );
+    }
+
+    /// A cursor laid out again at another width stands on the words it was
+    /// on, not on the row it was on.
+    ///
+    /// Broken deliberately by leaving `relaid` empty: the cursor keeps its
+    /// row, which at the narrower width is further up the paragraph.
+    #[test]
+    fn a_cursor_relaid_stays_on_its_words() {
+        let source = "One two three four five six seven eight nine ten eleven twelve.";
+        let wide = obelus_markdown::render(source, 30);
+        let narrow = obelus_markdown::render(source, 12);
+        let row = wide
+            .iter()
+            .position(|row| crate::page::text(&Laid::of(row)).contains("eleven"))
+            .expect("eleven");
+        let character = crate::page::text(&Laid::of(&wide[row]))
+            .find("eleven")
+            .expect("eleven");
+        let mut cursor = Cursor::default();
+        cursor.stand(Place { row, character });
+        cursor.relaid(&wide, &narrow);
+        let place = cursor.place();
+        let text = crate::page::text(&Laid::of(&narrow[place.row]));
+        let under: String = text.chars().skip(place.character).take(6).collect();
+        assert_eq!(under, "eleven", "the cursor is on {text:?}");
     }
 
     /// Holding all of it holds what is drawn from the first word to the
