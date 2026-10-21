@@ -113,6 +113,46 @@ fn a_reload_keeps_the_cursor_where_it_was() {
     assert_eq!(after.column, before.column);
 }
 
+/// A reload in the middle of a walk down through a short line still comes
+/// out at the column the walk began from: the file changed, the reader did
+/// not go anywhere.
+///
+/// Broken deliberately by taking out the line in `Buffer::reload` that puts
+/// the remembered cell back after clamping: the caret aims for column zero,
+/// where the short line left it, and ends at (2, 0).
+#[test]
+fn a_reload_keeps_the_column_a_walk_was_aiming_for() {
+    let scratch = Scratch::new(
+        "aim",
+        "0123456789abcdef
+
+0123456789abcdef
+",
+    );
+    let mut buffer = Buffer::open(&scratch.path).expect("opening");
+    for _ in 0..10 {
+        buffer.move_cursor(obelus_buffer::Motion::Right, AREA);
+    }
+    buffer.move_cursor(obelus_buffer::Motion::Down, AREA);
+    assert_eq!(buffer.cursor().column, CharColumn::new(0));
+
+    scratch.write(
+        "0123456789abcdef
+
+0123456789ABCDEF
+",
+    );
+    assert!(buffer.reload().expect("reloading"));
+
+    buffer.move_cursor(obelus_buffer::Motion::Down, AREA);
+    let cursor = buffer.cursor();
+    assert_eq!(
+        (cursor.line, cursor.column),
+        (LineNumber::new(2), CharColumn::new(10)),
+        "the reload forgot the column"
+    );
+}
+
 /// The document can shrink out from under a cursor that was already past the
 /// new end. Clamping is the difference between a wrong position and a panic.
 #[test]

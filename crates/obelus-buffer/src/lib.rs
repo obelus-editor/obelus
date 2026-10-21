@@ -1847,6 +1847,9 @@ impl Buffer {
 
         let changed = self.edit(self.spanning_all(), &contents, undo::Doing::Whole);
         self.editing.arrive(cursor.line, cursor.column);
+        // And the cell it was aiming for: the reader has not gone anywhere,
+        // the file has changed under them.
+        self.editing.cursor_mut().remembered_cell = cursor.remembered_cell;
         self.viewport.top = self.editing.text().clamp_line(top);
         self.settle();
         self.stale = false;
@@ -2045,6 +2048,10 @@ impl Buffer {
 
         let cursor = self.editing.cursor();
         self.editing.arrive(cursor.line, cursor.column);
+        // Clamped into the new text, and still aiming where it was: an agent
+        // rewriting the file is not the reader going somewhere, and the next
+        // press of down is the one they had in mind before it.
+        self.editing.cursor_mut().remembered_cell = cursor.remembered_cell;
         // `top_row` is clamped by `scroll_into_view`, which knows the width.
         self.viewport.top = self.editing.text().clamp_line(self.viewport.top);
         Ok(true)
