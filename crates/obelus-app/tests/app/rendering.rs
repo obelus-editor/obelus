@@ -1537,8 +1537,10 @@ fn markdown_is_a_mode_over_the_same_file() {
 /// Broken deliberately by leaving the reading out of the copy in
 /// `App::copy_selection` (the file's line under its own cursor, `# Title`,
 /// is copied), by drawing the reading with nothing held (the cell under the
-/// drag has the page's ground), and by not handing the pointer to the
-/// reading (nothing is held and nothing is offered).
+/// drag has the page's ground), by not handing the pointer to the reading
+/// (nothing is held and nothing is offered), and by leaving the reading out
+/// of `App::select_all` (the file's bytes are selected, and the copy keeps
+/// the word).
 #[test]
 fn what_is_held_in_a_reading_is_what_is_copied() {
     use obelus_app::event::{Event, Pointer};
@@ -1594,6 +1596,13 @@ fn what_is_held_in_a_reading_is_what_is_copied() {
     );
     support::press_control(&mut app, 'c');
     assert_eq!(obelus_clipboard::paste().as_deref(), Some("prose"));
+
+    // And all of it, as it is drawn.
+    obelus_app::app::dispatch::dispatch(&mut app, Command::SelectionAll);
+    support::press_control(&mut app, 'c');
+    let all = obelus_clipboard::paste().unwrap_or_default();
+    assert!(all.starts_with("Title"), "{all:?}");
+    assert!(all.contains("fn main() {}"), "{all:?}");
 }
 
 /// Enter on a block of code in a reading copies the block, and the box says

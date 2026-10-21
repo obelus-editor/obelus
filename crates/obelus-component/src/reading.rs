@@ -173,6 +173,16 @@ impl Cursor {
         self.held.to(spot);
     }
 
+    /// Takes hold of the whole reading: from before the file's first byte
+    /// to past its last, which holds every row with any of it on.
+    pub fn hold_all(&mut self) {
+        self.held.from(Spot { of: (), at: 0 });
+        self.held.to(Spot {
+            of: (),
+            at: usize::MAX,
+        });
+    }
+
     /// Lets go of whatever was held.
     pub fn let_go(&mut self) {
         self.held.let_go();
@@ -333,16 +343,7 @@ mod tests {
     /// copied.
     #[test]
     fn enter_copies_the_block_of_code() {
-        let rows = obelus_markdown::render(
-            "Words.
-
-```
-one
-two
-```
-",
-            40,
-        );
+        let rows = obelus_markdown::render("Words.\n\n```\none\ntwo\n```\n", 40);
         let inside = rows
             .iter()
             .position(|row| crate::page::text(&Laid::of(row)).contains("two"))
@@ -351,11 +352,7 @@ two
         let mut top = 0;
         let mut cursor = Cursor::at(inside);
         match cursor.handle_key(&enter, &rows, ROOM, &mut top) {
-            Outcome::Copy(code) => assert_eq!(
-                code.trim_end(),
-                "one
-two"
-            ),
+            Outcome::Copy(code) => assert_eq!(code.trim_end(), "one\ntwo"),
             other => panic!("{other:?}"),
         }
         let mut cursor = Cursor::default();
@@ -363,6 +360,22 @@ two"
             cursor.handle_key(&enter, &rows, ROOM, &mut top),
             Outcome::Consumed,
         );
+    }
+
+    /// Holding all of it holds what is drawn from the first word to the
+    /// last.
+    ///
+    /// Broken deliberately by holding to the file's length in characters
+    /// rather than past its end: a file with a character wider than a byte
+    /// in it stops short of its last words.
+    #[test]
+    fn holding_all_of_it_holds_every_row() {
+        let rows = obelus_markdown::render("# Café\n\nFirst.\n\n- one\n- two", 40);
+        let mut cursor = Cursor::default();
+        cursor.hold_all();
+        let held = cursor.held_text(&rows).expect("something is held");
+        assert!(held.starts_with("Café"), "{held:?}");
+        assert!(held.ends_with("two"), "{held:?}");
     }
 
     /// Escape lets go of what is held, and is not the reading's when
