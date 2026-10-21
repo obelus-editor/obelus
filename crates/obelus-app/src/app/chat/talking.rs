@@ -37,9 +37,20 @@ const STILL_WRITING: std::time::Duration = std::time::Duration::from_millis(1500
 /// ways in are called by on the same card.
 const NOT_SIGNING_IN: &str = "obelus:not-now";
 
-/// What an agent's plan is called. Markdown, which is the reading it is
-/// shown in; nothing is read from or written to it.
-pub(in crate::app) const PLAN: &str = "plan.md";
+/// Where an agent's plan is said to be, under the project's own `.obelus`,
+/// one to a conversation.
+///
+/// A path of its own, because what is open is looked up by its path in
+/// more places than ask what is behind it -- a preview, a server's
+/// problems, a blame -- and two plans sharing one, or a plan sharing the
+/// project's own `plan.md`, are two documents answered for by whichever is
+/// found first. Somewhere Obelus writes nothing, so nothing is there to be
+/// found. Markdown, which is the reading it is shown in.
+fn where_the_plan_is(root: &Path, of: DocumentId) -> PathBuf {
+    root.join(".obelus")
+        .join("plans")
+        .join(format!("{}.md", of.get()))
+}
 
 /// The first heading of some markdown, without its marks: what a plan's
 /// author called it. Not one inside a fence, which is code that happens to
@@ -4402,7 +4413,7 @@ impl App {
                 // written down rather than only shown.
                 acp::Update::Titled(_) => {
                     self.remember_the_conversations();
-                    self.call_the_plans_again();
+                    self.call_the_plan_again(whose);
                     self.mirror_head(whose, None);
                     self.say_the_new_name();
                 }
@@ -4757,7 +4768,7 @@ impl App {
             return;
         }
         self.plan_shown(whose, &call.id);
-        let path = self.working_directory.join(PLAN);
+        let path = where_the_plan_is(&self.working_directory, of);
         let buffer = obelus_buffer::Buffer::plan(&path, of.get(), called, &words);
         self.documents.push(Some(Document::from(buffer)));
         let at = DocumentId::new(self.documents.len() - 1);
@@ -4794,24 +4805,35 @@ impl App {
             .map_or_else(|| "Plan".to_string(), |name| format!("Plan: {name}"))
     }
 
-    /// Names every plan again, because a conversation has been: a plan
-    /// with no heading of its own goes by its conversation's name.
-    fn call_the_plans_again(&mut self) {
-        let plans: Vec<(usize, usize, String)> = self
-            .documents
-            .iter()
-            .enumerate()
-            .filter_map(|(at, document)| {
-                let buffer = document.as_ref()?.file()?;
-                let of = buffer.content().plan_of()?;
-                Some((at, of, buffer.text().rope().to_string()))
-            })
-            .collect();
-        for (at, of, words) in plans {
-            let called = self.plan_called(DocumentId::new(of), &words);
-            if let Some(buffer) = self.file_mut(DocumentId::new(at)) {
-                buffer.call_the_plan(called);
-            }
+    /// Names a conversation's plan again, because the conversation has
+    /// been named: a plan with no heading of its own goes by its
+    /// conversation's name.
+    ///
+    /// That one plan and no other: a plan whose conversation has closed
+    /// has nothing to be named after any more, and keeps the name it had.
+    fn call_the_plan_again(&mut self, whose: Whose) {
+        let of = match whose {
+            Whose::One(id) => id,
+            Whose::Whoever => match self.current {
+                Some(id) => id,
+                None => return,
+            },
+        };
+        let Some(at) = self.documents.iter().position(|document| {
+            document
+                .as_ref()
+                .and_then(Document::file)
+                .is_some_and(|buffer| buffer.content().is_plan_of(of.get()))
+        }) else {
+            return;
+        };
+        let at = DocumentId::new(at);
+        let Some(words) = self.file(at).map(|plan| plan.text().rope().to_string()) else {
+            return;
+        };
+        let called = self.plan_called(of, &words);
+        if let Some(buffer) = self.file_mut(at) {
+            buffer.call_the_plan(called);
         }
     }
 
@@ -5109,7 +5131,10 @@ impl App {
                 .iter()
                 .flatten()
                 .filter_map(Document::file)
-                .find(|buffer| buffer.path() == full)
+                // The file, and not what else wears its path -- a commit's
+                // version of it, or a plan -- whose bytes are not what is
+                // there.
+                .find(|buffer| buffer.path() == full && buffer.content().is_file())
                 .map(|buffer| buffer.text().rope().to_string())
                 .or_else(|| {
                     obelus_encoding::read_file(&full)
