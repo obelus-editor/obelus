@@ -1239,16 +1239,22 @@ impl StatusView<'_> {
             .saturating_add(wrong_width);
         // The file's own glyph, the same one the pickers give it, so a row in
         // a list and the file on screen are recognizably the same thing.
+        // A document with no file behind it by its name, as its tab has it.
+        let named = buffer.content().name().map_or_else(
+            || {
+                relative_to(buffer.path(), self.working_directory)
+                    .display()
+                    .to_string()
+            },
+            str::to_string,
+        );
         let path = match obelus_icons::enabled() {
             true => format!(
-                "{}{}{}",
+                "{}{}{named}",
                 obelus_icons::for_path(buffer.path()),
                 crate::after_a_glyph(),
-                relative_to(buffer.path(), self.working_directory).display()
             ),
-            false => relative_to(buffer.path(), self.working_directory)
-                .display()
-                .to_string(),
+            false => named,
         };
         let available = usize::from(area.width).saturating_sub(reserved);
         // What the branch leaves, where there is anything left worth

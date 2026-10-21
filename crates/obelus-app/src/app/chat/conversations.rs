@@ -508,7 +508,12 @@ impl App {
         if self.notes().is_some() {
             return self.the_note_here().into_iter().collect();
         }
-        let Some(buffer) = self.current_buffer() else {
+        // Nor from an agent's plan, which is called a path that holds
+        // nothing.
+        let Some(buffer) = self
+            .current_buffer()
+            .filter(|buffer| !buffer.content().is_plan())
+        else {
             return Vec::new();
         };
         let path = buffer

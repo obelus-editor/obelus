@@ -38,7 +38,11 @@ impl App {
             }),
             // Said by `document_rows`, from `Document::icon`.
             icon: None,
-            label: relative(buffer.path(), root),
+            // What its tab says, where there is no file to name.
+            label: buffer
+                .content()
+                .name()
+                .map_or_else(|| relative(buffer.path(), root), str::to_string),
             // Which commit, for a buffer read from one. Two buffers can
             // wear a path -- the file, and the file as some commit had
             // it -- and without this they are two rows a reader has no
@@ -1492,12 +1496,12 @@ impl App {
             self.rendered = None;
             return;
         };
-        // The path *and* the commit, because a commit's version of a file
-        // wears the file's path, and both start at version one: keyed on
-        // the path alone, the two shared their rows and their cursor.
+        // The content as well as the path and the version: two buffers can
+        // wear one path -- a file and a commit's version of it, or two
+        // conversations' plans -- and both start at version one.
         let at = (
             buffer.path().to_path_buf(),
-            buffer.content().at(),
+            buffer.content().clone(),
             buffer.version(),
             width,
         );
@@ -1528,7 +1532,7 @@ impl App {
                 at: was,
                 cursor,
                 rows: before,
-            }) if (&was.0, was.1) == (&at.0, at.1) => {
+            }) if (&was.0, &was.1) == (&at.0, &at.1) => {
                 let mut cursor = cursor;
                 if was.2 != at.2 {
                     cursor.let_go();
@@ -2017,9 +2021,14 @@ impl App {
             return;
         };
         // A commit's version is not a file anybody can write back, and the
-        // path it wears belongs to a different document.
+        // path it wears belongs to a different document. Nor is a plan,
+        // whose path is only what it is called.
         if !buffer.content().is_file() {
-            self.wrong("This is a commit's version, not the file".to_string());
+            let why = match buffer.content().is_plan() {
+                true => "This is an agent's plan, not a file",
+                false => "This is a commit's version, not the file",
+            };
+            self.wrong(why.to_string());
             return;
         }
         if !buffer.is_dirty() {
@@ -2169,7 +2178,7 @@ impl App {
 /// noticed: which file, which version of it, and how wide the screen was.
 #[derive(Debug)]
 pub(in crate::app) struct Rendered {
-    at: (PathBuf, Option<gix::ObjectId>, i32, u16),
+    at: (PathBuf, obelus_buffer::Content, i32, u16),
     pub(in crate::app) rows: Vec<obelus_row::Row>,
     /// Where the cursor is in the rows, and what is held.
     ///

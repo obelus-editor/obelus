@@ -37,6 +37,47 @@ const STILL_WRITING: std::time::Duration = std::time::Duration::from_millis(1500
 /// ways in are called by on the same card.
 const NOT_SIGNING_IN: &str = "obelus:not-now";
 
+/// Where an agent's plan is said to be, under the project's own `.obelus`,
+/// one to a conversation.
+///
+/// A path of its own, because what is open is looked up by its path in
+/// more places than ask what is behind it -- a preview, a server's
+/// problems, a blame -- and two plans sharing one, or a plan sharing the
+/// project's own `plan.md`, are two documents answered for by whichever is
+/// found first. Somewhere Obelus writes nothing, so nothing is there to be
+/// found. Markdown, which is the reading it is shown in.
+fn where_the_plan_is(root: &Path, of: DocumentId) -> PathBuf {
+    root.join(".obelus")
+        .join("plans")
+        .join(format!("{}.md", of.get()))
+}
+
+/// The first heading of some markdown, without its marks: what a plan's
+/// author called it. Not one inside a fence, which is code that happens to
+/// start with a hash.
+fn heading_of(words: &str) -> Option<String> {
+    let mut fenced = false;
+    for line in words.lines() {
+        let line = line.trim_start();
+        if line.starts_with("```") || line.starts_with("~~~") {
+            fenced = !fenced;
+            continue;
+        }
+        if fenced {
+            continue;
+        }
+        let marks = line.chars().take_while(|&c| c == '#').count();
+        let rest = &line[marks..];
+        if (1..=6).contains(&marks) && (rest.is_empty() || rest.starts_with([' ', '\t'])) {
+            let heading = rest.trim().trim_end_matches('#').trim();
+            if !heading.is_empty() {
+                return Some(heading.to_string());
+            }
+        }
+    }
+    None
+}
+
 /// Which conversation a message from the agent is for.
 ///
 /// Its own type rather than an `Option<DocumentId>` because the two cases
@@ -4353,6 +4394,7 @@ impl App {
                 acp::Update::Tool { call, status } => {
                     self.mirror_paused(whose);
                     self.in_talk(whose, |chat| chat.tool(&call, &status));
+                    self.show_the_plan(whose, &call);
                     // And what the work it started has come to, which may
                     // have been said before this.
                     self.say_what_the_work_came_to(whose, &call.id);
@@ -4371,6 +4413,7 @@ impl App {
                 // written down rather than only shown.
                 acp::Update::Titled(_) => {
                     self.remember_the_conversations();
+                    self.call_the_plan_again(whose);
                     self.mirror_head(whose, None);
                     self.say_the_new_name();
                 }
@@ -4667,6 +4710,133 @@ impl App {
         self.talk_to(&id, &installed.command, &installed.arguments);
     }
 
+    /// Puts the plan an agent asks leave to act on in a document of its
+    /// own, and keeps it in step with every revision.
+    ///
+    /// A plan is something to read, and the transcript folds it away as a
+    /// call's words once the call is answered -- under the next turn's work.
+    /// So it is a page, opened the moment there is one: in front where the
+    /// reader is in the conversation it is from, which is what they were
+    /// waiting on, and only in the list of what is open where they have
+    /// gone to read something else, which a plan has no business taking
+    /// them off. Revised, it changes where it is and takes nobody anywhere.
+    /// It outlives the turn, because the next plan is what replaces it, and
+    /// closing it is the reader's.
+    ///
+    /// Read from the call's row once the call has gone into it, which is
+    /// where the kind an update leaves out is kept ([`Chat::plan_in`]).
+    fn show_the_plan(&mut self, whose: Whose, call: &acp::Call) {
+        // A conversation taken up again, being told what it already had:
+        // its plans were asked about then, and opening them now is opening
+        // a page about a question nobody is asking.
+        if self.replaying(whose) {
+            return;
+        }
+        let of = match whose {
+            Whose::One(id) => id,
+            Whose::Whoever => match self.current {
+                Some(id) => id,
+                None => return,
+            },
+        };
+        let Some(words) = self
+            .talk(whose)
+            .and_then(|talk| talk.chat.plan_in(&call.id))
+        else {
+            return;
+        };
+        let open = self.documents.iter().position(|document| {
+            document
+                .as_ref()
+                .and_then(Document::file)
+                .is_some_and(|buffer| buffer.content().is_plan_of(of.get()))
+        });
+        let called = self.plan_called(of, &words);
+        if let Some(at) = open {
+            if let Some(buffer) = self.file_mut(DocumentId::new(at)) {
+                buffer.revised(&words);
+                buffer.call_the_plan(called);
+            }
+            self.plan_shown(whose, &call.id);
+            return;
+        }
+        // Shown already, and closed since: the reader has read it.
+        if self
+            .talk(whose)
+            .is_some_and(|talk| talk.plan_shown.as_deref() == Some(call.id.as_str()))
+        {
+            return;
+        }
+        self.plan_shown(whose, &call.id);
+        let path = where_the_plan_is(&self.working_directory, of);
+        let buffer = obelus_buffer::Buffer::plan(&path, of.get(), called, &words);
+        self.documents.push(Some(Document::from(buffer)));
+        let at = DocumentId::new(self.documents.len() - 1);
+        // In the conversation, and with nothing over it: a list or a page
+        // the reader opened is what they are doing now.
+        let watching = self.current == Some(of) && self.layers().furthest_first().next().is_none();
+        if watching {
+            let from = self.here();
+            self.record(from);
+            self.go_to_file(at);
+        }
+    }
+
+    /// Writes down which call's plan is on a page.
+    fn plan_shown(&mut self, whose: Whose, id: &str) {
+        if let Some(talk) = self.talk_mut(whose) {
+            talk.plan_shown = Some(id.to_string());
+        }
+    }
+
+    /// What a plan is called: by its own heading, which is what its author
+    /// called it, and by the conversation it is from where it has none --
+    /// so that two conversations' plans are two names in the list.
+    fn plan_called(&self, of: DocumentId, words: &str) -> String {
+        if let Some(heading) = heading_of(words) {
+            return format!("Plan: {heading}");
+        }
+        let notes = obelus_todo::read(&self.working_directory)
+            .notes()
+            .unwrap_or_default();
+        self.document(of)
+            .and_then(Document::chat)
+            .and_then(|talk| self.conversation_name(talk, &notes))
+            .map_or_else(|| "Plan".to_string(), |name| format!("Plan: {name}"))
+    }
+
+    /// Names a conversation's plan again, because the conversation has
+    /// been named: a plan with no heading of its own goes by its
+    /// conversation's name.
+    ///
+    /// That one plan and no other: a plan whose conversation has closed
+    /// has nothing to be named after any more, and keeps the name it had.
+    fn call_the_plan_again(&mut self, whose: Whose) {
+        let of = match whose {
+            Whose::One(id) => id,
+            Whose::Whoever => match self.current {
+                Some(id) => id,
+                None => return,
+            },
+        };
+        let Some(at) = self.documents.iter().position(|document| {
+            document
+                .as_ref()
+                .and_then(Document::file)
+                .is_some_and(|buffer| buffer.content().is_plan_of(of.get()))
+        }) else {
+            return;
+        };
+        let at = DocumentId::new(at);
+        let Some(words) = self.file(at).map(|plan| plan.text().rope().to_string()) else {
+            return;
+        };
+        let called = self.plan_called(of, &words);
+        if let Some(buffer) = self.file_mut(at) {
+            buffer.call_the_plan(called);
+        }
+    }
+
     /// Puts a permission request to the reader, on the card everything
     /// else it asks is answered on.
     ///
@@ -4694,6 +4864,7 @@ impl App {
         // After the answer they stay, which is how a reader finds out later
         // what they agreed to.
         self.in_talk(whose, |chat| chat.tool(call, "pending"));
+        self.show_the_plan(whose, call);
         let choices = options
             .iter()
             .map(|choice| Choice {
@@ -4960,7 +5131,10 @@ impl App {
                 .iter()
                 .flatten()
                 .filter_map(Document::file)
-                .find(|buffer| buffer.path() == full)
+                // The file, and not what else wears its path -- a commit's
+                // version of it, or a plan -- whose bytes are not what is
+                // there.
+                .find(|buffer| buffer.path() == full && buffer.content().is_file())
                 .map(|buffer| buffer.text().rope().to_string())
                 .or_else(|| {
                     obelus_encoding::read_file(&full)
@@ -5227,6 +5401,20 @@ mod tests {
     use obelus_component::{chat::Chat, composer::Part};
 
     use super::{App, DocumentId, Whose, window};
+
+    /// What a plan's author called it is its first heading, and not a hash
+    /// at the start of a line of code or a tag.
+    ///
+    /// Broken deliberately: without the fence, the comment in the code is
+    /// the heading; and without the space, `#tag` is.
+    #[test]
+    fn a_plan_is_called_by_its_first_heading() {
+        assert_eq!(
+            super::heading_of("```sh\n# not this\n```\n#tag\n\n## Add a test ##\n# Later"),
+            Some("Add a test".to_string())
+        );
+        assert_eq!(super::heading_of("1. Write it\n2. Run it"), None);
+    }
 
     /// A window on a tree of its own, with nothing open.
     fn on_a_tree(name: &str) -> (App, std::path::PathBuf) {
