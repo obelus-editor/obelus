@@ -754,13 +754,18 @@ impl Editing {
 
     /// Puts the caret somewhere, clamped to a place the text has.
     ///
-    /// Arriving rather than moving: the cell a vertical move aims for is
-    /// left alone, because that is what the reader was last aiming at along
-    /// a line and being *put* somewhere is not a step along one.
+    /// Arriving rather than moving: the caret now aims for wherever it
+    /// stands, worked out on the next vertical move, which knows the width.
+    /// The cell it had is about the place it has left -- an edit puts the
+    /// caret here, and a reader who typed to column ten and pressed down
+    /// twice through an empty line was taken to the column they had before
+    /// typing. A caller whose place *is* a step along a line, a page or a
+    /// walk out of a block, says which cell it was aiming for afterwards.
     pub fn arrive(&mut self, line: LineNumber, column: CharColumn) {
         let line = self.text.clamp_line(line);
         self.cursor.line = line;
         self.cursor.column = self.text.clamp_column(line, column);
+        self.cursor.remembered_cell = None;
     }
 
     /// The same, and the caret is now aiming at the cell it landed on.

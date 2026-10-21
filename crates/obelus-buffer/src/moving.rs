@@ -377,12 +377,6 @@ impl Buffer {
         // Walking there is the other thing, and walks around a fold.
         self.folds.reveal(self.editing.text().clamp_line(line));
         self.editing.arrive(line, column);
-        // Aiming for wherever it now stands, worked out on the next vertical
-        // move, which knows the width. The cell it had is about the place it
-        // has left: an edit puts the caret through here, and a reader who
-        // typed to column ten and pressed down twice through an empty line
-        // was taken to the column they had before typing.
-        self.editing.cursor_mut().remembered_cell = None;
     }
 
     /// Moves the viewport by whole screenfuls, and the cursor with it.

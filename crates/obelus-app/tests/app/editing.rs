@@ -2529,9 +2529,9 @@ mod moving {
     /// that column on the long line below: the caret the typing left is
     /// where down aims from, not wherever it was aiming before.
     ///
-    /// Broken deliberately by taking out the line in `Buffer::place_cursor`
-    /// that forgets the remembered cell: the caret aims for column zero,
-    /// where it started, and ends at (2, 0).
+    /// Broken deliberately by taking out the line in `Editing::arrive` that
+    /// forgets the remembered cell: the caret aims for column zero, where it
+    /// started, and ends at (2, 0).
     #[test]
     fn down_from_what_was_typed_keeps_its_column_past_an_empty_line() {
         let (_scratch, mut app) = reading("move-typed-through-empty", "\n\n0123456789abcdef\n", 80);
