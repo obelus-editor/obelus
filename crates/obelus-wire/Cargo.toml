@@ -1,0 +1,18 @@
+[package]
+name = "obelus-wire"
+description = "The words between a window and the machine its project is on, as bytes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Cargo inherits nothing here on its own; every member says it.
+[lints]
+workspace = true
+
+[dependencies]
+postcard.workspace = true
+serde.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+obelus-runtime.workspace = true

@@ -119,6 +119,7 @@ pub const OURS: &[&str] = &[
     "obelus_todo",
     "obelus_ui",
     "obelus_watch",
+    "obelus_wire",
 ];
 
 /// What is logged when `RUST_LOG` says nothing.

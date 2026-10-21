@@ -72,6 +72,7 @@ obelus-ui = { path = "crates/obelus-ui" }
 obelus-theme = { path = "crates/obelus-theme" }
 obelus-themes = { path = "crates/obelus-themes" }
 obelus-watch = { path = "crates/obelus-watch" }
+obelus-wire = { path = "crates/obelus-wire" }
 
 # 0.30 split the backends into separate crates (ratatui-crossterm and friends).
 # `crossterm_0_29` pins the backend to the same crossterm we depend on directly
@@ -90,6 +91,9 @@ clap = { version = "4", features = ["derive"] }
 # with a lot of chances to get a JSON shape subtly wrong.
 lsp-types = "0.97"
 serde = { version = "1", features = ["derive"] }
+# The bytes between a window and the machine its project is on: compact, and
+# the same on every platform (`obelus-wire`).
+postcard = { version = "1.1", default-features = false, features = ["use-std"] }
 serde_json = "1"
 
 # Fuzzy matching. `nucleo-matcher` rather than `nucleo`: the latter adds a
