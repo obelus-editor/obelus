@@ -164,9 +164,9 @@ pub enum Command {
     /// Open the settings.
     ConfigOpen,
     /// Make this window the one the chat set in the settings talks to.
-    RemoteConnect,
+    BotConnect,
     /// Stop this window talking to the chat.
-    RemoteDisconnect,
+    BotDisconnect,
     /// Open the settings this project carries of its own.
     ConfigProject,
     /// Open the file Obelus logs to.
@@ -400,9 +400,9 @@ pub enum Requires {
     AnotherWorktree,
     /// A chat has to be set in the settings, and this window not already
     /// the one it talks to, nor asking to be.
-    ARemote,
+    ABot,
     /// This window has to be the one the chat talks to, or be asking to be.
-    TheRemote,
+    TheBot,
 }
 
 /// A command's name and description, for the palette to list and match on.
@@ -779,13 +779,13 @@ pub const ALL: &[CommandSpec] = &[
         title: "Change Obelus's settings",
     },
     CommandSpec {
-        command: Command::RemoteConnect,
-        name: "connect-remote",
+        command: Command::BotConnect,
+        name: "connect-to-chat",
         title: "Talk to the chat from this window, and from no other",
     },
     CommandSpec {
-        command: Command::RemoteDisconnect,
-        name: "disconnect-remote",
+        command: Command::BotDisconnect,
+        name: "disconnect-from-chat",
         title: "Stop talking to the chat from this window",
     },
     CommandSpec {
@@ -908,8 +908,8 @@ impl Command {
             | Self::TodoAdd
             | Self::ConfigFile
             | Self::ConfigOpen
-            | Self::RemoteConnect
-            | Self::RemoteDisconnect
+            | Self::BotConnect
+            | Self::BotDisconnect
             | Self::ConfigProject
             | Self::LogOpen
             | Self::LogServers
@@ -1018,8 +1018,8 @@ impl Command {
             | Self::GoForward
             | Self::TodoAdd
             | Self::ConfigFile
-            | Self::RemoteConnect
-            | Self::RemoteDisconnect
+            | Self::BotConnect
+            | Self::BotDisconnect
             | Self::LogOpen
             | Self::LogServers
             | Self::LspRestart
@@ -1115,8 +1115,8 @@ impl Command {
             | Self::GoForward
             | Self::TodoAdd
             | Self::ConfigFile
-            | Self::RemoteConnect
-            | Self::RemoteDisconnect
+            | Self::BotConnect
+            | Self::BotDisconnect
             | Self::LogOpen
             | Self::LogServers
             | Self::LspRestart
@@ -1211,8 +1211,8 @@ impl Command {
             | Self::ConfigOpen
             | Self::ConfigProject
             | Self::ConfigFile
-            | Self::RemoteConnect
-            | Self::RemoteDisconnect
+            | Self::BotConnect
+            | Self::BotDisconnect
             | Self::LogOpen
             | Self::LogServers
             | Self::ThemeSelect
@@ -1417,8 +1417,8 @@ impl Command {
             // logging failed.
             Self::LogServers => Requires::AServerLog,
             Self::WorktreeList => Requires::AnotherWorktree,
-            Self::RemoteConnect => Requires::ARemote,
-            Self::RemoteDisconnect => Requires::TheRemote,
+            Self::BotConnect => Requires::ABot,
+            Self::BotDisconnect => Requires::TheBot,
         }
     }
 
@@ -1497,8 +1497,8 @@ mod tests {
             Command::FileSave,
             Command::DocumentList,
             Command::WorktreeList,
-            Command::RemoteConnect,
-            Command::RemoteDisconnect,
+            Command::BotConnect,
+            Command::BotDisconnect,
             Command::DocumentClose,
             Command::DocumentCloseOthers,
             Command::ProjectClose,

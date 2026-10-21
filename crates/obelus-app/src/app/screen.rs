@@ -168,8 +168,8 @@ impl Screen for App {
         App::server_state(self)
     }
 
-    fn remote(&self) -> Option<(&'static str, obelus_remote::State)> {
-        App::remote_badge(self)
+    fn bot(&self) -> Option<(&'static str, obelus_bot::State)> {
+        App::bot_badge(self)
     }
 
     fn server_busy(&self) -> bool {

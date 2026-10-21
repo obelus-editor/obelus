@@ -4431,6 +4431,7 @@ dependencies = [
  "lsp-types",
  "notify",
  "obelus-agent",
+ "obelus-bot",
  "obelus-buffer",
  "obelus-claim",
  "obelus-clipboard",
@@ -4450,7 +4451,6 @@ dependencies = [
  "obelus-mcp",
  "obelus-program",
  "obelus-reading",
- "obelus-remote",
  "obelus-row",
  "obelus-runtime",
  "obelus-search",
@@ -4474,6 +4474,33 @@ dependencies = [
  "tracing",
  "unicode-width",
  "ureq",
+]
+
+[[package]]
+name = "obelus-bot"
+version = "0.17.1"
+dependencies = [
+ "apple-native-keyring-store",
+ "base64 0.23.1",
+ "futures",
+ "keyring-core",
+ "lark-websocket-protobuf",
+ "obelus-claim",
+ "obelus-config",
+ "obelus-runtime",
+ "obelus-sink",
+ "prost",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "slack-morphism",
+ "tokio",
+ "tokio-tungstenite",
+ "toml 1.1.5+spec-1.1.0",
+ "tracing",
+ "url",
+ "windows-native-keyring-store",
+ "zbus-secret-service-keyring-store",
 ]
 
 [[package]]
@@ -4552,6 +4579,7 @@ dependencies = [
  "gix",
  "nucleo-matcher",
  "obelus-agent",
+ "obelus-bot",
  "obelus-buffer",
  "obelus-command",
  "obelus-config",
@@ -4563,7 +4591,6 @@ dependencies = [
  "obelus-lsp",
  "obelus-markdown",
  "obelus-reading",
- "obelus-remote",
  "obelus-row",
  "obelus-search",
  "obelus-text",
@@ -4804,33 +4831,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "obelus-remote"
-version = "0.17.1"
-dependencies = [
- "apple-native-keyring-store",
- "base64 0.23.1",
- "futures",
- "keyring-core",
- "lark-websocket-protobuf",
- "obelus-claim",
- "obelus-config",
- "obelus-runtime",
- "obelus-sink",
- "prost",
- "reqwest",
- "serde",
- "serde_json",
- "slack-morphism",
- "tokio",
- "tokio-tungstenite",
- "toml 1.1.5+spec-1.1.0",
- "tracing",
- "url",
- "windows-native-keyring-store",
- "zbus-secret-service-keyring-store",
-]
-
-[[package]]
 name = "obelus-row"
 version = "0.17.1"
 dependencies = [
@@ -4972,6 +4972,7 @@ dependencies = [
  "crossterm",
  "image",
  "obelus-agent",
+ "obelus-bot",
  "obelus-buffer",
  "obelus-command",
  "obelus-component",
@@ -4981,7 +4982,6 @@ dependencies = [
  "obelus-keymap",
  "obelus-lsp",
  "obelus-reading",
- "obelus-remote",
  "obelus-row",
  "obelus-search",
  "obelus-syntax",

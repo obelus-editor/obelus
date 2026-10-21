@@ -55,7 +55,7 @@ use std::{
 
 use anyhow::Result;
 pub use chat::{agents, talking};
-use chat::{conversations, headless, mirroring, opening, relaying, remote};
+use chat::{bot, conversations, headless, mirroring, opening, relaying};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use document::Document;
 use documents::Rendered;
@@ -535,17 +535,17 @@ pub struct App {
     /// list of worktrees while it is showing.
     worktrees: worktrees::Worktrees,
     /// What this window knows about the chat it can be reached from.
-    remote: remote::Remote,
+    bot: bot::Bot,
     /// Which of its conversations is which thread in that chat.
     mirror: mirroring::Mirror,
     /// The other windows heard in that chat through this one, or the one
     /// this one is heard through.
     relaying: relaying::Relaying,
-    /// Whether to connect to the chat once started, as `connect-remote`
+    /// Whether to connect to the chat once started, as `connect-to-chat`
     /// would. A flag rather than a connection made on the spot, because
     /// connecting waits on the loop's channel and there is no channel until
     /// [`App::start`].
-    remote_at_start: bool,
+    bot_at_start: bool,
     /// Whether nobody is at the screen: `ob --headless` (`headless`).
     headless: bool,
     /// Why a headless Obelus gave up, where it did.
@@ -683,10 +683,10 @@ impl App {
             head: None,
             gone: false,
             worktrees: worktrees::Worktrees::default(),
-            remote: remote::Remote::default(),
+            bot: bot::Bot::default(),
             mirror: mirroring::Mirror::default(),
             relaying: relaying::Relaying::default(),
-            remote_at_start: false,
+            bot_at_start: false,
             headless: false,
             stopped_because: None,
             by_command: false,
@@ -951,8 +951,8 @@ impl App {
     }
 
     /// Says to connect to the chat once started.
-    pub fn remote_at_start(&mut self) {
-        self.remote_at_start = true;
+    pub fn bot_at_start(&mut self) {
+        self.bot_at_start = true;
     }
 
     /// One of what is open, by its id.

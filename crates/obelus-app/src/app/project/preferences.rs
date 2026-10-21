@@ -301,7 +301,7 @@ impl App {
         }
         // What the page is measured with, asked for the reasons a key asks
         // for them: the rows a notch counts are the rows the page shows now.
-        self.settle_the_remote_page();
+        self.settle_the_bot_page();
         let listed = self.listed_agents();
         let themes = self.themes_on_the_page();
         let offering = self.agent_offering();
@@ -321,11 +321,11 @@ impl App {
         if self.settings.is_none() {
             return false;
         }
-        // What the remote page says, before a key is judged against its
+        // What the chat page says, before a key is judged against its
         // rows: two keys can arrive between frames -- a chat chosen, then
         // the arrow down to its first field -- and the second would walk the
         // rows the page had before the first.
-        self.settle_the_remote_page();
+        self.settle_the_bot_page();
         // The agents the page would show, worked out before the component
         // is borrowed: it needs them to know what enter means on a card,
         // and it is not the thing that knows them.
@@ -423,7 +423,7 @@ impl App {
                 self.set_agent_default(&setting, None);
                 true
             }
-            SettingsOutcome::Remote(reaching) => {
+            SettingsOutcome::Bot(reaching) => {
                 self.reach(reaching);
                 true
             }
@@ -558,9 +558,9 @@ impl App {
                 .collect(),
             // The chats Obelus can be reached from, after none: which there
             // are is the remote crate's list, not a row of the table.
-            "remote" => std::iter::once(String::new())
+            "chat" => std::iter::once(String::new())
                 .chain(
-                    obelus_remote::platform::ALL
+                    obelus_bot::platform::ALL
                         .iter()
                         .map(|platform| platform.key.to_string()),
                 )
@@ -989,9 +989,9 @@ impl App {
                 .find(|(name, ..)| *name == word)
                 .map(|(_, title, _)| title.into()),
             // A platform by its name, and none by the page's word for it.
-            "remote" => match word {
+            "chat" => match word {
                 "" => Some("Off".into()),
-                key => obelus_remote::platform::named(key).map(|platform| platform.name.into()),
+                key => obelus_bot::platform::named(key).map(|platform| platform.name.into()),
             },
             "keys_from" => obelus_config::key_layout(word).map(|layout| layout.name.into()),
             // A share of the machine, with what it comes to on this one:

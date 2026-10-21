@@ -68,9 +68,15 @@ struct Arguments {
     paths: Vec<PathBuf>,
 
     /// Connect to the chat set in the settings once started, as
-    /// `connect-remote` does.
+    /// `connect-to-chat` does.
     #[arg(long)]
-    connect_remote: bool,
+    connect_to_chat: bool,
+
+    /// What `--connect-to-chat` was called before the word *remote* went
+    /// to working on another machine: still heard, so a shortcut written
+    /// for it keeps working, and said in the log.
+    #[arg(long, hide = true)]
+    connect_bot: bool,
 }
 
 fn main() -> Result<()> {
@@ -121,8 +127,11 @@ fn main() -> Result<()> {
     // inside a window that is about to close. The order inside is argued
     // where it lives.
     let mut app = startup::start(&arguments.paths, env!("OBELUS_BUILD"))?;
-    if arguments.connect_remote {
-        app.remote_at_start();
+    if arguments.connect_bot {
+        tracing::info!("--connect-remote is called --connect-to-chat now");
+    }
+    if arguments.connect_to_chat || arguments.connect_bot {
+        app.bot_at_start();
     }
     // The window's half of the line `startup::start` just wrote, which is
     // the first thing to suspect when a key or a colour did not do what it

@@ -1,8 +1,8 @@
 screen 66x20  editor 66x18  status 66x1
 -- text --
- 0|  Settings  Keys  Remote  Themes  Agents                      ⇤ ⇥ 
+ 0|  Settings  Keys  Chat  Themes  Agents                        ⇤ ⇥ 
  1|──────────────────────────────────────────────────────────────────
- 2| Remote                                                           
+ 2| Chat                                                             
  3|                                                                  
  4|   Platform                                Off ▸                  
  5|     Which chat a note can be worked on from                      
@@ -19,11 +19,11 @@ screen 66x20  editor 66x18  status 66x1
 16|                                                                  
 17|                                                                  
 18|──────────────────────────────────────────────────────────────────
-19| > Filter remote settings     Ctrl+p  More                        
+19| > Filter chat settings     Ctrl+p  More                          
 -- style --
- 0|aaaaaaaaaaaaaaaaabbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 0|aaaaaaaaaaaaaaaaabbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 2|cddddddccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 2|cddddccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  3|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbebbbbbbbbbbbbbbbbbb
  5|bbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebbbbbbbbbbbbbbbbbbbbbb
@@ -40,7 +40,7 @@ screen 66x20  editor 66x18  status 66x1
 16|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 17|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 18|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-19|dddaaaaaaaaaaaaaaaaaaaaaaddddffffffffdaaaadddddddddddddddddddddddd
+19|dddaaaaaaaaaaaaaaaaaaaaddddffffffffdaaaadddddddddddddddddddddddddd
 -- legend --
 a fg=#52525b bg=#18181b
 b fg=#e4e4e7 bg=#27272a

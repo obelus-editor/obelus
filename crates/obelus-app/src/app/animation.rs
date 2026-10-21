@@ -88,7 +88,7 @@ impl App {
             // second.
             || self.server_busy()
             // And the chat's mark, while the window it talks to connects.
-            || self.remote_turning()
+            || self.bot_turning()
             // And a list being matched somewhere else, or still being
             // filled. The same rule once more: the row that says so turns,
             // and a mark drawn once and never again is a mark saying

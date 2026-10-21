@@ -1320,8 +1320,8 @@ impl App {
             // is consumed and this is never reached with nothing in it. A
             // second answer here would be an unreachable one.
             PromptKind::NewPath => self.make_file(std::path::Path::new(text.trim())),
-            // What one of a chat's fields is, from the remote page.
-            PromptKind::Told(field) => self.tell_the_remote(field, Some(text)),
+            // What one of a chat's fields is, from the chat page.
+            PromptKind::Told(field) => self.tell_the_bot(field, Some(text)),
             // A variable the reader is adding to the agent's environment:
             // its name, and then what it holds.
             PromptKind::VariableName { agent, .. } => self.name_a_variable(&agent, text.trim()),

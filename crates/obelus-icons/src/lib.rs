@@ -404,8 +404,8 @@ pub fn for_command(command: obelus_command::Command) -> char {
         // A link, and the link broken: what the pair of them does between
         // this window and the chat. Not the plugs the server's mark is
         // drawn with, which say something else on the same row.
-        Command::RemoteConnect => '\u{f0337}',
-        Command::RemoteDisconnect => '\u{f0338}',
+        Command::BotConnect => '\u{f0337}',
+        Command::BotDisconnect => '\u{f0338}',
         // A folder with a cog on it: the same settings, belonging to the
         // tree rather than to the reader -- the folder is what says which.
         Command::ConfigProject => '\u{f0ee5}',

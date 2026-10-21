@@ -45,7 +45,7 @@ pub enum PromptKind {
     /// says which token was pasted into which row -- the commonest way to
     /// get this wrong -- and the end says whether it was the one meant; the
     /// rest is the part a reader sharing their screen would not want shown.
-    Told(&'static obelus_remote::platform::Field),
+    Told(&'static obelus_bot::platform::Field),
     /// What one of Obelus's own settings is, where it is typed rather than
     /// chosen: by the setting's key.
     Setting(&'static str),
@@ -316,7 +316,7 @@ impl Prompt {
         let PromptKind::Told(field) = &self.kind else {
             return said;
         };
-        let obelus_remote::platform::FieldKind::Secret { looks_like } = field.kind else {
+        let obelus_bot::platform::FieldKind::Secret { looks_like } = field.kind else {
             return said;
         };
         hidden(&said, looks_like)

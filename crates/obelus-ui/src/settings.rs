@@ -7,7 +7,7 @@
 
 use obelus_agent::Listed;
 use obelus_component::settings::{
-    DESCRIPTION_INDENT, Dialling, GROUP_INDENT, HEADING_ROWS, KeyRow, Offering, Refused, RemoteRow,
+    BotRow, DESCRIPTION_INDENT, Dialling, GROUP_INDENT, HEADING_ROWS, KeyRow, Offering, Refused,
     Settings, Shown,
 };
 use obelus_config::{Config, Kind, Value};
@@ -247,11 +247,11 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
                 }
             )
         });
-    // And on the remote page, what the row the reader is on does: most
+    // And on the chat page, what the row the reader is on does: most
     // rows there are not values to change but things to do, and "Change"
     // over a row that copies a manifest is a key that says the wrong thing.
     let remote = settings
-        .on_remote()
+        .on_bot()
         .then(|| settings.rows(offering).get(settings.focus()).copied())
         .flatten();
     // And on the agent's environment, the row the reader is on decides
@@ -265,15 +265,15 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
         false => "Change the setting on this row",
     };
     let (enter, enter_does) = match remote {
-        Some(Shown::Remote { row, .. }) => match row {
-            RemoteRow::Pair => ("Pair", "Make a code to pair the chat with"),
-            RemoteRow::Setup(obelus_remote::platform::Setup::Copy { .. }) => {
+        Some(Shown::Bot { row, .. }) => match row {
+            BotRow::Pair => ("Pair", "Make a code to pair the chat with"),
+            BotRow::Setup(obelus_bot::platform::Setup::Copy { .. }) => {
                 ("Copy", "Copy what this row holds")
             }
-            RemoteRow::Setup(obelus_remote::platform::Setup::Steps { .. }) => {
+            BotRow::Setup(obelus_bot::platform::Setup::Steps { .. }) => {
                 ("Open", "Open the steps this row points to")
             }
-            RemoteRow::Platform | RemoteRow::Field(_) | RemoteRow::People => ("Change", changes),
+            BotRow::Platform | BotRow::Field(_) | BotRow::People => ("Change", changes),
         },
         _ if adding => ("Add", "Give the agent another variable"),
         _ => ("Change", changes),
@@ -307,15 +307,15 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
     // that does nothing is not offered.
     let pairing_waits = matches!(
         remote,
-        Some(Shown::Remote {
-            row: RemoteRow::Pair,
+        Some(Shown::Bot {
+            row: BotRow::Pair,
             ..
         })
     ) && !settings.reached().state.may_connect();
     // Forgetting is for a field that has something to forget.
     let forgets = matches!(
         remote,
-        Some(Shown::Remote { row: RemoteRow::Field(field), .. })
+        Some(Shown::Bot { row: BotRow::Field(field), .. })
             if settings.reached().kept.contains_key(field.key)
     );
     // A number being turned: the arrows turn it, enter keeps what is in the
@@ -919,7 +919,7 @@ impl SettingsView<'_> {
                     scope: None,
                 }
             }
-            Shown::Remote { row, opens } => Row {
+            Shown::Bot { row, opens } => Row {
                 opens: opens.map(|name| Heading::Remote(name.to_string())),
                 label: shown.label().to_string(),
                 matched: self.settings.matched_in(shown.label()),
@@ -927,7 +927,7 @@ impl SettingsView<'_> {
                 body: self.settings.wrapped(shown.about(), width),
                 warning: Vec::new(),
                 entry: true,
-                aside: self.remote_aside(*row),
+                aside: self.bot_aside(*row),
                 // The reader's alone, the whole page: there is no project
                 // that could have taken a row of it, and no layer to name.
                 pinned: None,
@@ -1577,26 +1577,26 @@ impl SettingsView<'_> {
         }
     }
 
-    /// What a row of the remote page shows on the right.
+    /// What a row of the chat page shows on the right.
     ///
     /// A word and an arrow on every one, because every one opens or does
     /// something; and the words are what is so now -- the platform, the
     /// ends of a token, who is paired, the code that is waiting.
-    fn remote_aside(&self, row: RemoteRow) -> Aside {
+    fn bot_aside(&self, row: BotRow) -> Aside {
         let reached = self.settings.reached();
         match row {
-            RemoteRow::Platform => Aside::Does(
+            BotRow::Platform => Aside::Does(
                 reached
                     .platform
                     .map_or("Off", |platform| platform.name)
                     .to_string(),
                 true,
             ),
-            RemoteRow::Field(field) => match reached.kept.get(field.key) {
+            BotRow::Field(field) => match reached.kept.get(field.key) {
                 Some(kept) => Aside::Does(kept.clone(), true),
                 None => Aside::Does("Not set".to_string(), true),
             },
-            RemoteRow::People => Aside::Does(
+            BotRow::People => Aside::Does(
                 match reached.people.is_empty() {
                     true => "Nobody".to_string(),
                     false => reached.people.join(", "),
@@ -1607,17 +1607,17 @@ impl SettingsView<'_> {
             // reached is a code nobody can use. Dim rather than gone, the
             // way every row here that cannot be used is -- which takes a
             // word to be dim, until there is a code to show instead.
-            RemoteRow::Pair => Aside::Does(
+            BotRow::Pair => Aside::Does(
                 reached
                     .pairing
                     .clone()
                     .unwrap_or_else(|| "Make a code".to_string()),
                 reached.state.may_connect(),
             ),
-            RemoteRow::Setup(setup) => Aside::Does(
+            BotRow::Setup(setup) => Aside::Does(
                 match setup {
-                    obelus_remote::platform::Setup::Copy { .. } => "Copy",
-                    obelus_remote::platform::Setup::Steps { .. } => "Open",
+                    obelus_bot::platform::Setup::Copy { .. } => "Copy",
+                    obelus_bot::platform::Setup::Steps { .. } => "Open",
                 }
                 .to_string(),
                 true,

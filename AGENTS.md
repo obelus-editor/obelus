@@ -853,7 +853,7 @@ crates/
                     · a claim is held by a writer and looked at through a
                       read, and the other platform's lock is a byte past the
                       end (lib)
-  obelus-remote/    working on notes from a chat: what a platform declares
+  obelus-bot/    working on notes from a chat: what a platform declares
                     (platform), where its secrets are kept (secrets), a
                     connection to each (slack/, feishu/), the words between
                     them and the loop (model), what waits while one is down

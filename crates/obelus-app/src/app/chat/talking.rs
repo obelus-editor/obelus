@@ -2159,7 +2159,7 @@ impl App {
         // one would otherwise leave the question it was answering behind.
         self.keep_the_page(whose);
         // A turn has started, which its thread says at the top of it.
-        self.mirror_head(whose, Some(obelus_remote::model::Turning::Working));
+        self.mirror_head(whose, Some(obelus_bot::model::Turning::Working));
     }
 
     /// Says what the reader had waiting, now that the turn it was waiting

@@ -41,9 +41,9 @@ impl App {
             }
             Event::Terminal(heard) => self.heard_from_a_terminal(heard),
             Event::Summoned(token) => self.summoned(token),
-            Event::Remote(event) => self.remote_event(event),
-            Event::Reached(number, event) => self.reached_event(number, event),
-            Event::Held(number, lock) => self.held_the_remote(number, lock),
+            Event::Bot(event) => self.bot_event(event),
+            Event::BotReached(number, event) => self.reached_event(number, event),
+            Event::Held(number, lock) => self.held_the_bot(number, lock),
             Event::NotLetGo(number) => self.not_let_go(number),
             Event::NotHeld(number) => self.not_held(number),
             Event::Fonts { here, otherwise } => {
@@ -128,9 +128,9 @@ impl App {
                     // moved to another tree -- which the list of worktrees
                     // draws while it is up.
                     self.reread_the_windows();
-                } else if self.is_the_remote_wanted(&path) {
+                } else if self.is_the_bot_wanted(&path) {
                     // Another window asking for the chat this one has.
-                    self.somebody_wants_the_remote();
+                    self.somebody_wants_the_bot();
                 } else if self.is_the_relays_door(&path) {
                     // A window that has the chat saying where it is.
                     self.the_door_moved();

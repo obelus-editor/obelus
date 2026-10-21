@@ -420,7 +420,7 @@ fn every_setting_is_on_one_page_under_a_heading() {
             Shown::Obelus { opens, .. } => opens.map(obelus_config::Group::label),
             Shown::Agent { .. }
             | Shown::Silent { .. }
-            | Shown::Remote { .. }
+            | Shown::Bot { .. }
             | Shown::Variable { .. }
             | Shown::AddVariable { .. } => None,
         })
@@ -439,12 +439,12 @@ fn every_setting_is_on_one_page_under_a_heading() {
     // them.
     assert_eq!(
         app.settings().expect("the settings").tabs(),
-        ["Settings", "Keys", "Remote", "Themes", "Agents"]
+        ["Settings", "Keys", "Chat", "Themes", "Agents"]
     );
     support::press(&mut app, KeyCode::Tab);
     assert!(app.settings().expect("the settings").on_keys());
     support::press(&mut app, KeyCode::Tab);
-    assert!(app.settings().expect("the settings").on_remote());
+    assert!(app.settings().expect("the settings").on_bot());
     support::press(&mut app, KeyCode::Tab);
     assert!(app.settings().expect("the settings").on_themes());
     assert!(
@@ -460,7 +460,7 @@ fn every_setting_is_on_one_page_under_a_heading() {
     support::press(&mut app, KeyCode::BackTab);
     assert!(app.settings().expect("the settings").on_themes());
     support::press(&mut app, KeyCode::BackTab);
-    assert!(app.settings().expect("the settings").on_remote());
+    assert!(app.settings().expect("the settings").on_bot());
     support::press(&mut app, KeyCode::BackTab);
     assert!(app.settings().expect("the settings").on_keys());
 
@@ -4030,7 +4030,7 @@ fn the_projects_page_has_one_tab() {
     // The reader's own page has five.
     assert_eq!(
         app.settings().expect("the settings").tabs(),
-        ["Settings", "Keys", "Remote", "Themes", "Agents"]
+        ["Settings", "Keys", "Chat", "Themes", "Agents"]
     );
 
     dispatch::dispatch(&mut app, Command::ConfigProject);

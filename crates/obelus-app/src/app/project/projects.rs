@@ -616,10 +616,10 @@ impl crate::app::App {
         // connected again once there is a project, as going to another
         // worktree does (`App::move_to_tree`): the reader who reached this
         // window from the chat did not say "for this project".
-        let reached = self.has_the_remote();
+        let reached = self.has_the_bot();
         self.write_down_what_is_open_on_leaving();
         self.let_go_of_the_project();
-        self.remote_at_start = reached;
+        self.bot_at_start = reached;
         // Kept by `let_go_of_the_project`, which is the process's door, and
         // with it the claim on the tree -- which a window asking which
         // project no longer has.
@@ -1096,8 +1096,8 @@ impl crate::app::App {
         self.offer_the_tools();
         self.watch_the_project();
         self.say_where_this_window_is();
-        if self.remote_at_start {
-            self.connect_remote_at_start(false);
+        if self.bot_at_start {
+            self.connect_bot_at_start(false);
         }
         for file in files {
             self.open(file);

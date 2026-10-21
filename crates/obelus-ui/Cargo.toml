@@ -11,6 +11,7 @@ workspace = true
 
 [dependencies]
 obelus-agent.workspace = true
+obelus-bot.workspace = true
 obelus-buffer.workspace = true
 obelus-command.workspace = true
 obelus-component.workspace = true
@@ -20,7 +21,6 @@ obelus-icons.workspace = true
 obelus-keymap.workspace = true
 obelus-lsp.workspace = true
 obelus-reading.workspace = true
-obelus-remote.workspace = true
 obelus-row.workspace = true
 obelus-search.workspace = true
 obelus-syntax.workspace = true

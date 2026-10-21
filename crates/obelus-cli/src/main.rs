@@ -25,9 +25,15 @@ struct Arguments {
     paths: Vec<PathBuf>,
 
     /// Connect to the chat set in the settings once started, as
-    /// `connect-remote` does.
+    /// `connect-to-chat` does.
     #[arg(long)]
-    connect_remote: bool,
+    connect_to_chat: bool,
+
+    /// What `--connect-to-chat` was called before the word *remote* went
+    /// to working on another machine: still heard, so a shortcut written
+    /// for it keeps working, and said in the log.
+    #[arg(long, hide = true)]
+    connect_bot: bool,
 
     /// Draw nothing and take over no terminal: an Obelus there only to be
     /// reached from the chat set in the settings, which it connects to.
@@ -65,8 +71,11 @@ fn main() -> Result<ExitCode> {
     // itself on a normal screen rather than flashing past inside an
     // alternate one. The order inside is argued where it lives.
     let mut app = startup::start(&arguments.paths, env!("OBELUS_BUILD"))?;
-    if arguments.connect_remote {
-        app.remote_at_start();
+    if arguments.connect_bot {
+        tracing::info!("--connect-remote is called --connect-to-chat now");
+    }
+    if arguments.connect_to_chat || arguments.connect_bot {
+        app.bot_at_start();
     }
     // The terminal's half of the line `startup::start` just wrote: what was
     // drawing Obelus, which a log read a week later has no other way to
@@ -82,7 +91,7 @@ fn main() -> Result<ExitCode> {
     // asking means writing an escape sequence to the terminal and reading
     // what it writes back. A terminal that answers can draw an agent's own
     // mark on the agents page; one that does not gets a glyph.
-    let images = obelus_ui::image::Images::detect(obelus_app::event::remote());
+    let images = obelus_ui::image::Images::detect(obelus_app::event::over_a_network());
     // And whether `ctrl+enter` will arrive as itself, which the box offers
     // only where it will.
     let ctrl_enter = ctrl_enter_arrives();

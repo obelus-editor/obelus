@@ -16,10 +16,10 @@
 #[path = "../support/mod.rs"]
 mod support;
 
+mod bot;
 mod choosing_a_project;
 mod glyphs;
 mod headless;
-mod remote;
 mod reopening;
 mod settings;
 mod starting;

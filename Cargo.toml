@@ -37,6 +37,7 @@ private_interfaces = "deny"
 # member's manifest is a list of names and nothing else.
 obelus-agent = { path = "crates/obelus-agent" }
 obelus-app = { path = "crates/obelus-app" }
+obelus-bot = { path = "crates/obelus-bot" }
 obelus-buffer = { path = "crates/obelus-buffer" }
 obelus-claim = { path = "crates/obelus-claim" }
 obelus-cli = { path = "crates/obelus-cli" }
@@ -59,7 +60,6 @@ obelus-markdown = { path = "crates/obelus-markdown" }
 obelus-mcp = { path = "crates/obelus-mcp" }
 obelus-program = { path = "crates/obelus-program" }
 obelus-reading = { path = "crates/obelus-reading" }
-obelus-remote = { path = "crates/obelus-remote" }
 obelus-row = { path = "crates/obelus-row" }
 obelus-runtime = { path = "crates/obelus-runtime" }
 obelus-search = { path = "crates/obelus-search" }

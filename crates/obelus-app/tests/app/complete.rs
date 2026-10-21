@@ -771,7 +771,7 @@ mod against_a_real_server {
 
         let before = app.told_servers_for_test();
         app.handle(Event::Watched(obelus_watch::Changed {
-            path: std::env::temp_dir().join("obelus-remote-wanted"),
+            path: std::env::temp_dir().join("obelus-bot-wanted"),
         }));
         assert_eq!(
             app.told_servers_for_test(),
