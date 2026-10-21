@@ -161,9 +161,6 @@ impl Screen for App {
     fn registry_failure(&self) -> Option<&str> {
         App::registry_failure(self)
     }
-    fn rendered_rows(&self) -> Option<usize> {
-        App::rendered_rows(self)
-    }
     fn server_state(&self) -> Option<(&'static str, obelus_lsp::ServerState)> {
         App::server_state(self)
     }

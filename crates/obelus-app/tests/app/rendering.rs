@@ -1517,8 +1517,7 @@ fn markdown_is_a_mode_over_the_same_file() {
     assert_eq!(
         support::cursor_line(&rendered).split(',').nth(1),
         Some(title),
-        "the caret is not on the first row of the reading:
-{rendered}"
+        "the caret is not on the first row of the reading:\n{rendered}"
     );
 
     // The same command again puts the file back.
@@ -1568,12 +1567,7 @@ fn what_is_held_in_a_reading_is_what_is_copied() {
     let row = support::text_block(&dump)
         .lines()
         .find(|row| row.contains("Some prose"))
-        .unwrap_or_else(|| {
-            panic!(
-                "no prose on screen:
-{dump}"
-            )
-        });
+        .unwrap_or_else(|| panic!("no prose on screen:\n{dump}"));
     let y: u16 = row
         .split('|')
         .next()
@@ -1632,8 +1626,7 @@ fn enter_on_code_in_a_reading_copies_it() {
     let dump = support::render(&mut app, 60, 14);
     assert!(
         support::text_block(&dump).contains("Copies the code"),
-        "the box does not say what enter does:
-{dump}"
+        "the box does not say what enter does:\n{dump}"
     );
     press(&mut app, KeyCode::Enter);
     assert_eq!(
@@ -1676,9 +1669,15 @@ fn only_a_markdown_file_can_be_rendered() {
     );
 }
 
-/// The rendering scrolls by rows, with the keys that scroll everything else.
+/// The paging keys move a rendering's cursor a screenful, and the view
+/// follows it -- the rule for the file -- and the right-hand corner says
+/// which row of the rendering the cursor is on, out of how many.
+///
+/// Broken deliberately by measuring the reading's room as one row high in
+/// `App::reading_room`: the cursor moves a row at a time, and the corner
+/// says so. And by the corner saying the first row whatever the cursor's.
 #[test]
-fn a_rendering_scrolls_by_rows() {
+fn a_rendering_pages_by_a_screenful() {
     use obelus_command::Command;
 
     let mut app = App::new(vec![support::open_fixture("sample.md")]);
@@ -1687,24 +1686,41 @@ fn a_rendering_scrolls_by_rows() {
 
     let first = support::render(&mut app, 60, 8);
     assert!(support::text_block(&first).contains("Title"), "{first}");
-
-    press(&mut app, KeyCode::PageDown);
-    let paged = support::render(&mut app, 60, 8);
-    assert!(
-        !support::text_block(&paged).contains("Title"),
-        "paging a rendering moved nothing:\n{paged}"
-    );
-
-    // And the right-hand corner counts rows rather than a cursor that is not
-    // there.
-    assert!(
-        support::text_block(&paged)
+    let rows = app.rendered_rows().expect("a reading");
+    // How many rows the reading is drawn in, from the dump's own header.
+    let height: usize = first
+        .lines()
+        .next()
+        .and_then(|header| header.split("editor ").nth(1))
+        .and_then(|editor| editor.split_whitespace().next())
+        .and_then(|size| size.split('x').nth(1))
+        .and_then(|height| height.parse().ok())
+        .expect("the editor's height");
+    assert!(rows > 2 * height, "{rows} rows do not page twice");
+    let corner = |dump: &str| {
+        support::text_block(dump)
             .lines()
             .last()
-            .is_some_and(|status| status.contains('/')),
-        "the status bar still reports a cursor:\n{paged}"
+            .and_then(|status| status.split_whitespace().last())
+            .map(str::to_string)
+            .unwrap_or_default()
+    };
+    assert_eq!(corner(&first), format!("1/{rows}"), "{first}");
+
+    press(&mut app, KeyCode::PageDown);
+    press(&mut app, KeyCode::PageDown);
+    let paged = support::render(&mut app, 60, 8);
+    assert_eq!(
+        corner(&paged),
+        format!("{}/{rows}", 2 * height + 1),
+        "two pages did not move the cursor two screenfuls:\n{paged}"
+    );
+    assert!(
+        !support::text_block(&paged).contains("Title"),
+        "the view did not follow the cursor:\n{paged}"
     );
 
+    press(&mut app, KeyCode::PageUp);
     press(&mut app, KeyCode::PageUp);
     assert_eq!(
         support::text_block(&support::render(&mut app, 60, 8)),
@@ -1721,7 +1737,9 @@ fn a_rendering_scrolls_by_rows() {
 ///
 /// Deliberate break: taking the control arm out of the rendering's keys in
 /// `App::editor_key` hands the key to the file's own scrolling, which steps
-/// by lines, and the two part company by the tenth step.
+/// by lines, and the two part company by the tenth step. And handing control
+/// and down to the cursor's walk as well: the cursor goes down with the
+/// view, and the corner that says where it is moves.
 #[test]
 fn control_and_an_arrow_scroll_a_rendering() {
     use obelus_command::Command;
@@ -1739,12 +1757,27 @@ fn control_and_an_arrow_scroll_a_rendering() {
     let mut control = rendering();
     let first = support::render(&mut control, 60, 8);
 
+    // The rows of the page, without the status row under them: its corner
+    // is where the cursor is, which is what the arrows move.
+    let page = |dump: &str| {
+        let text = support::text_block(dump).trim_end();
+        text.rsplit_once('\n')
+            .map_or("", |(page, _)| page)
+            .to_string()
+    };
+    let corner = |dump: &str| {
+        support::text_block(dump)
+            .trim_end()
+            .rsplit_once('\n')
+            .map(|(_, status)| status.split_whitespace().last().unwrap_or("").to_string())
+            .unwrap_or_default()
+    };
     let mut bare = rendering();
     press(&mut bare, KeyCode::Down);
     let stepped = support::render(&mut bare, 60, 8);
     assert_eq!(
-        support::text_block(&stepped),
-        support::text_block(&first),
+        page(&stepped),
+        page(&first),
         "the bare arrow moved the view rather than the cursor"
     );
     assert_ne!(
@@ -1763,10 +1796,16 @@ fn control_and_an_arrow_scroll_a_rendering() {
             "control and down {step} times is not a notch {step} times"
         );
     }
+    let scrolled = support::render(&mut control, 60, 8);
     assert_ne!(
-        support::text_block(&support::render(&mut control, 60, 8)),
-        support::text_block(&first),
+        page(&scrolled),
+        page(&first),
         "not a rendering with anywhere to scroll"
+    );
+    assert_eq!(
+        corner(&scrolled),
+        corner(&first),
+        "control and down moved the cursor"
     );
     for _ in 1..=10 {
         support::press_control_key(&mut control, KeyCode::Up);
