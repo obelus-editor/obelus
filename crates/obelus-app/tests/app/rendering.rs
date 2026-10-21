@@ -2616,9 +2616,8 @@ fn a_file_with_a_reading_still_opens_as_its_bytes() {
 /// the viewport's top is a *row* of it while it is showing. The frame used
 /// to run the text's own scrolling over that top and clamp it to the line
 /// count, which put every row past the last line out of reach. What is at
-/// the end is the last screenful rather than the last row alone: a reading
-/// has no cursor to be at the end of, and blank rows under the last one are
-/// a screen saying there is more to come.
+/// the end is the last screenful rather than the last row alone: blank rows
+/// under the last one are a screen saying there is more to come.
 #[test]
 fn the_end_of_a_reading_is_its_last_screenful() {
     let path = std::env::temp_dir().join(format!("obelus-end-{}.log", std::process::id()));
