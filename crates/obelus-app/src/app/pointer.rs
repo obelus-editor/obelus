@@ -1201,11 +1201,15 @@ impl App {
             }
             return;
         }
+        // A reading, whose cursor is its own: its rows are not the file's
+        // lines, so a press there is no place in the file.
+        if self.rendering().is_some() {
+            self.pointer_in_reading(kind, x, y);
+            return;
+        }
         let Some(buffer) = self.current_buffer() else {
             return;
         };
-        // A reading has no places in it for a caret: its rows are not the
-        // file's lines.
         if buffer.mode() != Mode::Edit {
             return;
         }

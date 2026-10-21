@@ -1469,6 +1469,16 @@ impl App {
         self.rendering().map(<[_]>::len)
     }
 
+    /// The reading on screen and the cursor in it.
+    #[must_use]
+    pub fn rendering_with_its_cursor(
+        &self,
+    ) -> Option<(&[obelus_row::Row], &obelus_component::reading::Cursor)> {
+        self.rendered
+            .as_ref()
+            .map(|rendered| (rendered.rows.as_slice(), &rendered.cursor))
+    }
+
     /// Lays the current file out, if it needs laying out.
     ///
     /// Once per change of text, width or file, not once per frame: the
@@ -1483,6 +1493,7 @@ impl App {
             return;
         };
         let at = (buffer.path().to_path_buf(), buffer.version(), width);
+        let top = buffer.viewport().top.get();
         if self
             .rendered
             .as_ref()
@@ -1498,7 +1509,26 @@ impl App {
             return;
         };
         let rows = obelus_reading::render(reading, &buffer.text().rope().to_string(), width);
-        self.rendered = Some(Rendered { at, rows });
+        // The same file laid out again keeps its cursor: a resize is not a
+        // reason to lose the reader's place. What is held is kept across a
+        // width, which it is measured to survive, and let go of across a
+        // change to the text, whose bytes it is a place in. Another file is
+        // another reading, with its cursor where its view is.
+        let cursor = match self.rendered.take() {
+            Some(Rendered {
+                at: was, cursor, ..
+            }) if was.0 == at.0 => {
+                let mut cursor = cursor;
+                if was.1 != at.1 {
+                    cursor.let_go();
+                }
+                cursor
+            }
+            _ => obelus_component::reading::Cursor::at(top),
+        };
+        let mut rendered = Rendered { at, rows, cursor };
+        rendered.cursor.settle(&rendered.rows);
+        self.rendered = Some(rendered);
     }
 
     /// Opens a file, or switches to it if it is already open.
@@ -2128,7 +2158,13 @@ impl App {
 #[derive(Debug)]
 pub(in crate::app) struct Rendered {
     at: (PathBuf, i32, u16),
-    rows: Vec<obelus_row::Row>,
+    pub(in crate::app) rows: Vec<obelus_row::Row>,
+    /// Where the cursor is in the rows, and what is held.
+    ///
+    /// Kept with them rather than with the buffer, because it is a place in
+    /// *these* rows: the file's own cursor is somewhere in its lines, and
+    /// stays there for when the reader goes back to them.
+    pub(in crate::app) cursor: obelus_component::reading::Cursor,
 }
 
 /// Re-reads one buffer, and says whether the text changed.

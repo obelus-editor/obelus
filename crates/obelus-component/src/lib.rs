@@ -19,6 +19,7 @@ pub mod page;
 pub mod picker;
 pub mod prompt;
 pub mod question;
+pub mod reading;
 pub mod settings;
 pub mod signature;
 pub mod spelling;

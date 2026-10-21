@@ -1506,9 +1506,20 @@ fn markdown_is_a_mode_over_the_same_file() {
         text.contains("preview"),
         "the status bar does not name the mode:\n{rendered}"
     );
-    // And no cursor: the rows are not the file's lines, so there is nowhere
-    // in them the cursor honestly is.
-    assert_eq!(support::cursor_line(&rendered), "none", "{rendered}");
+    // And a cursor of its own, at the head of the reading: not the file's,
+    // whose lines are not these rows.
+    let title = text
+        .lines()
+        .find(|row| row.contains("Title"))
+        .and_then(|row| row.split('|').next())
+        .map(str::trim)
+        .expect("the title");
+    assert_eq!(
+        support::cursor_line(&rendered).split(',').nth(1),
+        Some(title),
+        "the caret is not on the first row of the reading:
+{rendered}"
+    );
 
     // The same command again puts the file back.
     obelus_app::app::dispatch::dispatch(&mut app, Command::PreviewToggle);
@@ -1517,6 +1528,72 @@ fn markdown_is_a_mode_over_the_same_file() {
         support::text_block(&source),
         "the file did not come back"
     );
+}
+
+/// A reading has a cursor, and what it walks over with shift held, or what
+/// the pointer drags across, is held, drawn held, and is what a copy takes
+/// -- the words as they are drawn, not the bytes they were laid out from.
+///
+/// Broken deliberately by leaving the reading out of the copy in
+/// `App::copy_selection` (the file's line under its own cursor, `# Title`,
+/// is copied), by drawing the reading with nothing held (the cell under the
+/// drag has the page's ground), and by not handing the pointer to the
+/// reading (nothing is held and nothing is offered).
+#[test]
+fn what_is_held_in_a_reading_is_what_is_copied() {
+    use obelus_app::event::{Event, Pointer};
+    use obelus_command::Command;
+
+    let _turn = support::clipboard_turn();
+    obelus_clipboard::use_provider_for_test(obelus_clipboard::Provider::Kept);
+    let mut app = App::new(vec![support::open_fixture("sample.md")]);
+    support::lay_out(&mut app, 60, 14);
+    obelus_app::app::dispatch::dispatch(&mut app, Command::PreviewToggle);
+    support::render(&mut app, 60, 14);
+
+    // Nothing held, nothing to copy: not the file's line, which is not on
+    // the screen.
+    assert!(!app.offers(Command::SelectionCopy));
+
+    // The heading, by the keys.
+    press_shift(&mut app, KeyCode::End);
+    assert!(app.offers(Command::SelectionCopy));
+    support::press_control(&mut app, 'c');
+    assert_eq!(obelus_clipboard::paste().as_deref(), Some("Title"));
+
+    // And a word, by the pointer.
+    let dump = support::render(&mut app, 60, 14);
+    let row = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains("Some prose"))
+        .unwrap_or_else(|| {
+            panic!(
+                "no prose on screen:
+{dump}"
+            )
+        });
+    let y: u16 = row
+        .split('|')
+        .next()
+        .and_then(|number| number.trim().parse().ok())
+        .expect("a row number");
+    let x = u16::try_from(support::column_of(row, "prose")).expect("a column");
+    for (kind, x) in [
+        (Pointer::Pressed, x),
+        (Pointer::Dragged, x + 5),
+        (Pointer::Released, x + 5),
+    ] {
+        app.handle(Event::Pointer { kind, x, y });
+    }
+    let cells = support::cells_of(&mut app, 60, 14);
+    assert_eq!(cells[(x + 2, y)].bg, app.theme().selection_background);
+    assert_eq!(
+        support::cursor_line(&support::render(&mut app, 60, 14)),
+        format!("{},{y}", x + 5),
+        "the caret is not where the drag let go"
+    );
+    support::press_control(&mut app, 'c');
+    assert_eq!(obelus_clipboard::paste().as_deref(), Some("prose"));
 }
 
 /// A file that is not markdown gets a note, not a screen of nonsense. By
@@ -1590,15 +1667,15 @@ fn a_rendering_scrolls_by_rows() {
     );
 }
 
-/// Control and an arrow scroll a rendering a row, as they scroll the file:
-/// here the bare arrows do as well, because a rendering has no cursor, and a
-/// key that moved one document and did nothing in the next would be two
-/// rules for one key. A row of the rendering, which is not a line of the
-/// file, so the walk goes far enough down for the two to differ.
+/// Control and an arrow scroll a rendering a row, as they scroll the file,
+/// and leave its cursor where it was: the wheel's gesture, a notch of a row.
+/// A row of the rendering, which is not a line of the file, so the walk goes
+/// far enough down for the two to differ. The bare arrow is the cursor's,
+/// and moves the view only when the cursor would leave it.
 ///
-/// Deliberate break: taking the control arms out of `view_step` hands the key
-/// to the file's own scrolling, which steps by lines, and the two part
-/// company by the tenth step.
+/// Deliberate break: taking the control arm out of the rendering's keys in
+/// `App::editor_key` hands the key to the file's own scrolling, which steps
+/// by lines, and the two part company by the tenth step.
 #[test]
 fn control_and_an_arrow_scroll_a_rendering() {
     use obelus_command::Command;
@@ -1612,18 +1689,32 @@ fn control_and_an_arrow_scroll_a_rendering() {
         support::render(&mut app, 60, 8);
         app
     };
-    let mut bare = rendering();
+    let mut wheel = rendering();
     let mut control = rendering();
     let first = support::render(&mut control, 60, 8);
 
+    let mut bare = rendering();
+    press(&mut bare, KeyCode::Down);
+    let stepped = support::render(&mut bare, 60, 8);
+    assert_eq!(
+        support::text_block(&stepped),
+        support::text_block(&first),
+        "the bare arrow moved the view rather than the cursor"
+    );
+    assert_ne!(
+        support::cursor_line(&stepped),
+        support::cursor_line(&first),
+        "the bare arrow did not move the cursor"
+    );
+
     for step in 1..=10 {
-        press(&mut bare, KeyCode::Down);
+        wheel.handle(obelus_app::event::Event::Scroll { rows: 1, at: None });
         support::press_control_key(&mut control, KeyCode::Down);
-        let arrow = support::render(&mut bare, 60, 8);
+        let notch = support::render(&mut wheel, 60, 8);
         assert_eq!(
             support::text_block(&support::render(&mut control, 60, 8)),
-            support::text_block(&arrow),
-            "control and down {step} times is not the arrow {step} times"
+            support::text_block(&notch),
+            "control and down {step} times is not a notch {step} times"
         );
     }
     assert_ne!(
@@ -2351,8 +2442,8 @@ fn a_log_opens_in_its_own_reading() {
         written(theme.syntax.warning),
         "{dump}"
     );
-    // No cursor in a reading: the rows are not the file's lines.
-    assert_eq!(support::cursor_line(&dump), "none", "{dump}");
+    // A cursor of the reading's own, which is not the file's.
+    assert_ne!(support::cursor_line(&dump), "none", "{dump}");
 
     // And `ctrl+d` puts the bytes back, with the caret in them.
     support::press_control(&mut app, 'd');

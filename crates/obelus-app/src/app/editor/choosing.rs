@@ -501,6 +501,8 @@ impl App {
                 None if self.discussion().is_some() => self
                     .discussion()
                     .is_some_and(obelus_component::discussion::DiscussionView::holding),
+                // Nor is a reading, whose rows are not the file's lines.
+                None if self.rendering().is_some() => self.holding_in_the_reading(),
                 None => buffer.is_some() || self.somewhere_to_type() || !self.reading_nothing(),
             },
             // Not `current_buffer`, which is the point of the distinction: a

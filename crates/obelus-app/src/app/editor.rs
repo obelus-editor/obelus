@@ -10,6 +10,7 @@ pub(super) mod documents;
 pub(super) mod keys;
 pub(super) mod moving;
 pub(super) mod previewing;
+pub(super) mod reading;
 pub(super) mod searching;
 pub(super) mod tabs;
 

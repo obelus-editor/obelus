@@ -233,7 +233,7 @@ impl Widget for StatusView<'_> {
                     self.render_discussion(page, area, cells, style);
                 }
                 crate::Shown::File(_)
-                | crate::Shown::Reading(_)
+                | crate::Shown::Reading(..)
                 | crate::Shown::Chat(_)
                 | crate::Shown::Nothing => {
                     if let Some(buffer) = self.buffer {

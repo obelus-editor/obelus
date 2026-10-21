@@ -247,8 +247,9 @@ impl<'a> Beside<'a> {
 pub enum Shown<'a> {
     /// A file, as its text.
     File(&'a Buffer),
-    /// A file shown some other way: these rows, laid out from it.
-    Reading(&'a [obelus_row::Row]),
+    /// A file shown some other way: these rows, laid out from it, and the
+    /// cursor in them.
+    Reading(&'a [obelus_row::Row], &'a obelus_component::reading::Cursor),
     /// A conversation.
     Chat(&'a Chat),
     /// The notes.

@@ -407,6 +407,15 @@ impl App {
             }
             return;
         }
+        // And in a file read as its reading, whose rows are not the file's
+        // lines: the line under the file's cursor is not on the screen to
+        // be taken.
+        if self.rendering().is_some() {
+            if let Some(text) = self.held_in_the_reading() {
+                self.copied(&text, "selection");
+            }
+            return;
+        }
         let width = obelus_ui::chat::reading_width(self.editor_area);
         // What is held on a card, which covers the box a message is
         // written in: before this, a copy over a card took what was in the
