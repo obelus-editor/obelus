@@ -1069,6 +1069,14 @@ impl DiscussionView {
         crate::page::show(&mut self.window, at.row, count, room.height);
     }
 
+    /// Puts a row on screen and leaves the cursor where it is: a search of
+    /// the page, looked at from a list over it.
+    pub fn look_at_row(&mut self, row: usize, room: crate::page::Room) {
+        let count = self.laid_out(room.reading).len();
+        self.window.set_count(count);
+        crate::page::show(&mut self.window, row, count, room.height);
+    }
+
     /// The first row on screen.
     #[must_use]
     pub const fn top(&self) -> usize {

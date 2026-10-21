@@ -44,6 +44,18 @@ pub(in crate::app) struct Search {
     /// What the project's tab shows on its next refresh instead of walking
     /// the project again: the rows a search left, put back.
     pub(in crate::app) reuse: Option<Vec<PickerItem>>,
+    /// Where the page under a search of it was scrolled to before the list
+    /// showed the reader somewhere else in it, to go back to if they leave
+    /// without choosing. A file's reading needs none of this: its view is
+    /// the buffer's, which `looked_from` already keeps.
+    pub(in crate::app) looked_within: Option<usize>,
+    /// Which row of the list the page was last scrolled to, so the frame
+    /// that asks again with the same row does no work.
+    pub(in crate::app) looked_at: Option<(usize, usize)>,
+    /// What the query matched on the row the search of the file is on, as
+    /// a run of the file: the file is that list's preview, and marks what
+    /// the preview of a list that covers it would mark.
+    pub(in crate::app) marked: Vec<obelus_text::coordinates::Span>,
     /// Whether the symbols search offers names from outside the project.
     ///
     /// Off, because a server that has indexed a project has indexed what it

@@ -10,11 +10,14 @@ use crate::support;
 const WIDTH: u16 = 76;
 const HEIGHT: u16 = 24;
 
-/// A reader in the search of the file they have open, with something typed.
+/// A reader in the search of the project, with something typed.
+///
+/// The project's and not the file's: the search of what is open is a list
+/// on the status bar, which the palette lets go of rather than opening over.
 fn searching() -> App {
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     support::lay_out(&mut app, WIDTH, HEIGHT);
-    support::press_function(&mut app, 5);
+    support::press_function(&mut app, 6);
     support::type_text(&mut app, "fn");
     app
 }
@@ -66,9 +69,13 @@ fn the_first_tab_is_the_views_keys_and_all_is_the_commands() {
     assert_eq!(&palette.tabs()[..2], ["Here", "All"]);
     assert_eq!(palette.tab(), 0, "it did not open on the view's own keys");
     let here: Vec<String> = palette.matches().map(|row| row.label.clone()).collect();
-    // Not "Outside": a search of one file has no outside to reach, and that
-    // switch is the symbols tab's.
-    assert_eq!(here, ["Regex", "Word", "Case"], "{here:?}");
+    // Not "Outside": that switch is the search of the symbols, which is a
+    // view of its own.
+    assert_eq!(
+        here,
+        ["Regex", "Word", "Case", "Ignored files", "Hidden files"],
+        "{here:?}"
+    );
     // Each with a sentence after its word, where a command has its title.
     assert!(
         palette.matches().all(|row| row.detail.is_some()),
@@ -150,17 +157,24 @@ fn a_switch_that_is_on_is_said_where_the_query_is() {
 }
 
 /// A key that names another view, from the palette over a view, is asked
-/// about that view: the palette goes and the search walks to its tab.
+/// about that view: the palette goes and the search of the file takes the
+/// project's place.
 ///
 /// Broken deliberately by not giving the palette up first in
-/// `switch_view`: the search walked to its tab under a palette still open.
+/// `switch_view`: the search of the file opened under a palette still open.
 #[test]
 fn a_key_naming_a_view_goes_past_the_palette() {
     let mut app = searching();
     support::press_control(&mut app, 'p');
-    support::press_function(&mut app, 6);
+    support::press_function(&mut app, 5);
     assert!(app.palette().is_none(), "the palette stayed up");
-    assert_eq!(app.picker().map(|search| search.tab()), Some(1));
+    assert!(
+        app.picker().is_some_and(|search| matches!(
+            search.layout(),
+            obelus_component::picker::PickerLayout::Compact { .. }
+        )),
+        "f5 did not open the search of the file"
+    );
 }
 
 /// A press on the status row puts the caret in the palette's query, which
@@ -211,7 +225,7 @@ fn a_press_on_the_query_is_in_the_palette() {
 fn the_palette_over_a_list_is_asked_as_the_list_is() {
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     support::lay_out(&mut app, WIDTH, HEIGHT);
-    support::press_function(&mut app, 5);
+    support::press_function(&mut app, 6);
     support::press_control(&mut app, 'p');
     assert!(
         app.palette().is_some(),

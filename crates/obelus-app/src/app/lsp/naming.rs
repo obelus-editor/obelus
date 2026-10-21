@@ -21,6 +21,11 @@ impl App {
     /// at once would be two claims a reader has to tell apart by colour.
     #[must_use]
     pub fn marked_runs(&self) -> &[obelus_text::coordinates::Span] {
+        // A search of the file on the status bar has the file as its
+        // preview, and what it matched is the run that is about.
+        if !self.search.marked.is_empty() {
+            return &self.search.marked;
+        }
         match self.hover().is_some() {
             true => self.hovered_range(),
             false => &self.lsp.uses,

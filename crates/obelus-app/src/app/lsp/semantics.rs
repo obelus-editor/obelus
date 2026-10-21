@@ -1468,11 +1468,13 @@ impl App {
 
     /// Everything the current file defines, to jump into.
     ///
-    /// A full-area picker, so it gets the preview the file picker has: the
-    /// list on top, the symbol in its own code below, marked. Filtering is
-    /// the prompt, moving is the arrows, and choosing is a jump -- all of
-    /// which the picker already does. What is new here is only where the
-    /// rows come from.
+    /// A list on the status bar, because every row is a place in the file
+    /// already on screen: the file above it is the preview, scrolled to the
+    /// symbol the reader is on, and covering it to show it again in a pane
+    /// of its own was showing the same code twice. Filtering is the prompt,
+    /// moving is the arrows, and choosing is a jump -- all of which the
+    /// picker already does. What is new here is only where the rows come
+    /// from.
     ///
     /// From the syntax tree. A language server knows more, and asking it is
     /// the next step; the tree is what makes the outline work on a file with
@@ -1499,7 +1501,12 @@ impl App {
         // saying it is waiting. That is the price of the better answer, and
         // it is a few milliseconds once the project is indexed.
         if self.servers.contains_key(&language) && self.ask_outline(&path, language) {
-            let mut picker = Picker::new(Vec::new(), PickerLayout::FullArea);
+            let mut picker = Picker::new(
+                Vec::new(),
+                PickerLayout::Compact {
+                    rows: crate::app::COMPACT_ROWS,
+                },
+            );
             picker.before_typing("Filter symbols");
             picker.when_empty("Asking the language server\u{2026}");
             picker.is_outline_of(path);
@@ -1564,7 +1571,12 @@ impl App {
             })
             .collect();
 
-        let mut picker = Picker::new(items, PickerLayout::FullArea);
+        let mut picker = Picker::new(
+            items,
+            PickerLayout::Compact {
+                rows: crate::app::COMPACT_ROWS,
+            },
+        );
         picker.before_typing("Filter symbols");
         picker.when_empty(if tags::has_tags(language) {
             "This file defines nothing"
@@ -1828,7 +1840,9 @@ impl App {
         // they meant is somewhere among them.
         let within = (!self.search.outside).then_some(root.as_path());
         let symbols = obelus_lsp::outline::found_in(reply.result, within);
-        let Some(picker) = self.picker.as_mut() else {
+        // Asked of the list as well as of the scope, which outlives it: the
+        // palette opened in its place stands on the same tab.
+        let Some(picker) = self.picker.as_mut().filter(|picker| picker.is_searching()) else {
             return;
         };
         if self.search.searching.get(picker.tab()) != Some(&Scope::Symbols) {

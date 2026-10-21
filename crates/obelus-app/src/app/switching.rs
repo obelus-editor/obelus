@@ -192,19 +192,6 @@ impl App {
             };
             return self.files.listing.iter().position(|shown| *shown == wanted);
         }
-        if picker.is_searching() {
-            let wanted = match command {
-                Command::SearchFile => Scope::File,
-                Command::SearchProject => Scope::Project,
-                Command::SearchSymbols => Scope::Symbols,
-                _ => return None,
-            };
-            return self
-                .search
-                .searching
-                .iter()
-                .position(|shown| *shown == wanted);
-        }
         let wanted = match command {
             Command::HistoryFile => history_view::About::File,
             Command::HistoryProject => history_view::About::Project,

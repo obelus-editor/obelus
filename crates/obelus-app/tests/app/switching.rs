@@ -65,6 +65,11 @@ fn a_view_s_key_goes_to_that_view_in_place_of_this_one() {
 /// A key naming a tab of the view already showing walks to that tab, and
 /// what was typed stays.
 ///
+/// The files' two tabs, now that the searches are views of their own: `f6`
+/// from the search of the file is another view, and what was typed goes
+/// with the reader all the same, held -- the search of the project opens
+/// asking what the last search asked.
+///
 /// Broken deliberately by having `tab_for` answer `None` for every command:
 /// the view is closed and opened again on the tab, and the query is gone.
 #[test]
@@ -74,10 +79,12 @@ fn a_key_naming_a_tab_here_walks_to_it_with_the_query() {
     type_text(&mut app, "ma");
     press_function(&mut app, 6);
     let picker = app.picker().expect("the search");
-    assert_eq!(
-        picker.tabs()[picker.tab()],
-        "Project",
-        "f6 did not walk to the project"
+    assert!(
+        matches!(
+            picker.layout(),
+            obelus_component::picker::PickerLayout::FullArea
+        ),
+        "f6 did not open the search of the project"
     );
     assert_eq!(picker.query(), "ma", "the query did not come along");
 

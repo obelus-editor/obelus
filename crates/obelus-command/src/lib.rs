@@ -1312,9 +1312,8 @@ impl Command {
             Self::FoldAll => Requires::AFoldableFile,
             Self::UnfoldAll => Requires::SomethingFolded,
             // One scope needs a document with words in it, one needs nothing
-            // but the project, and one needs a server -- but all three open
-            // the same view, whose other tabs are a left or a right away.
-            // What each key requires is what the tab it lands on can answer.
+            // but the project, and one needs a server: each key opens a
+            // search of its own, and requires what that search can answer.
             Self::SearchFile => Requires::SomethingToSearch,
             Self::SearchSymbols => Requires::ARunningServer,
             // Both ways, and it needs only a file: turning the names off

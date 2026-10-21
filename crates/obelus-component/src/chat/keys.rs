@@ -383,6 +383,12 @@ impl Chat {
         self.show_row(at.row, room);
     }
 
+    /// Puts a row of the transcript on screen and leaves the cursor where it
+    /// is: a search of the conversation, looked at from a list over it.
+    pub fn look_at_row(&mut self, row: usize, room: Room) {
+        self.show_row(row, room);
+    }
+
     /// Goes back to the box, remembering which column of the transcript
     /// this was.
     pub(super) fn leave_the_transcript(&mut self, at: Place) {

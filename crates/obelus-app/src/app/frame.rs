@@ -361,6 +361,8 @@ impl App {
 
         self.refresh_preview(editor_area);
         self.look_at_the_selection();
+        self.look_within_at_the_selection();
+        self.mark_the_match();
 
         let painted = obelus_ui::editor_canvas(self.screen_area).height;
         let Self {

@@ -19480,3 +19480,48 @@ fn a_pull_requests_page_is_searched_and_a_match_is_gone_to() {
         screen(&mut app)
     );
 }
+
+/// The search of a pull request's page sits on the status bar, and the page
+/// above it is its preview: the row the list is on is scrolled into view
+/// with the cursor left where it was, and escape puts the page back.
+///
+/// Broken deliberately two ways. Taking `look_within_at_the_selection` out
+/// of the frame: the page stayed at its top. And taking
+/// `put_the_page_back` out of leaving the list: escape left the page down
+/// at the match.
+#[test]
+fn a_pull_requests_page_under_its_search_is_the_preview() {
+    let scratch = support::Scratch::new("agent-pull-request-looked-at");
+    let answer = scratch.path().join("gh-answer.json");
+    let body: String = (0..60).map(|line| format!("line {line}\\n\\n")).collect();
+    std::fs::write(&answer, one_pull_request("abc123")).expect("the answer");
+    viewed(&answer, &body);
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
+    pump(&mut app, &events, "the list", |app| {
+        app.picker().is_some_and(|picker| picker.row_count() == 1)
+    });
+    support::press(&mut app, KeyCode::Enter);
+    until_the_screen_says(&mut app, &events, "line 0", HEIGHT);
+
+    support::press_function(&mut app, 5);
+    support::type_text(&mut app, "line 57");
+    let looking = screen(&mut app);
+    // Above the rule the list starts with, which is the page.
+    let above: Vec<&str> = looking
+        .lines()
+        .take_while(|row| !row.contains('\u{2500}'))
+        .collect();
+    assert!(
+        above.iter().any(|row| row.contains("line 57")),
+        "the page was not scrolled to the row:\n{looking}"
+    );
+
+    support::press(&mut app, KeyCode::Esc);
+    let back = screen(&mut app);
+    assert!(
+        back.contains("line 0"),
+        "escape did not put the page back:\n{back}"
+    );
+}

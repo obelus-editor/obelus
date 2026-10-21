@@ -1161,6 +1161,36 @@ impl TodoView {
         self.follow_caret();
     }
 
+    /// Puts the row of a note's words that holds `character` on screen, and
+    /// leaves the caret where it is: a search of the notes, looked at from a
+    /// list over them, in a page `height` rows high.
+    ///
+    /// Counted by the lines of its words as the box lays them out, for the
+    /// rule `stand_in` follows: the box knows how its words wrap.
+    pub fn look_at_note(&mut self, note: usize, character: usize, height: u16) {
+        let Some(said) = self.todo.notes.get(note).map(|note| note.said.clone()) else {
+            return;
+        };
+        let Some(first) = self
+            .rows
+            .iter()
+            .position(|row| row.note == note && row.words())
+        else {
+            return;
+        };
+        let mut composer = Composer::new();
+        composer.replace(&said);
+        let room = self.caret_width();
+        composer.home(room);
+        while composer.up(room) {}
+        for _ in 0..character {
+            composer.right();
+        }
+        let (line, _) = composer.caret(room);
+        let row = (first + line).min(self.rows.len().saturating_sub(1));
+        crate::page::show(&mut self.window, row, self.rows.len(), height);
+    }
+
     /// The note that is on the page in this one's place.
     ///
     /// Itself, unless it hangs under something folded -- then the note
