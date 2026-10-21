@@ -7743,7 +7743,8 @@ fn the_plan(app: &App) -> Option<&obelus_buffer::Buffer> {
 /// Broken deliberately: with `show_the_plan` returning at once, no plan
 /// opens; reading the kind off the update rather than the row, the revision
 /// never reaches the page; and pushing a second page rather than revising
-/// the first, the page that was open never says the revision.
+/// the first, the page that was open never says the revision; and not
+/// naming it again, it keeps the first plan's heading.
 #[test]
 fn a_plan_opens_in_a_document_of_its_own_and_follows_its_revisions() {
     let (mut app, events) = talking();
@@ -7774,11 +7775,11 @@ fn a_plan_opens_in_a_document_of_its_own_and_follows_its_revisions() {
         "the plan is on screen as its markdown:
 {dump}"
     );
-    // Named on the status row by what it is, as its tab and its row in the
-    // list are: there is no `plan.md` anywhere to go looking for.
+    // Named on the status row by its own heading, as its tab and its row in
+    // the list are: there is no `plan.md` anywhere to go looking for.
     let status = screen.last().expect("no status row");
     assert!(
-        status.contains("Plan") && !status.contains("plan.md"),
+        status.contains("Plan: The plan") && !status.contains("plan.md"),
         "the status row does not say what it is:
 {dump}"
     );
@@ -7813,6 +7814,34 @@ fn a_plan_opens_in_a_document_of_its_own_and_follows_its_revisions() {
     assert!(
         app.chat().is_some(),
         "a revision took the reader off the conversation"
+    );
+    // And called what the revision calls itself.
+    assert_eq!(
+        the_plan(&app).and_then(|plan| plan.content().name()),
+        Some("Plan: The plan, revised"),
+        "the name stayed the first plan's"
+    );
+}
+
+/// A plan with no heading of its own goes by its conversation's name, so
+/// two conversations' plans are not two rows saying `Plan`.
+///
+/// Broken deliberately: with `plan_called` answering `Plan` where there is
+/// no heading, the name is not the conversation's.
+#[test]
+fn a_plan_with_no_heading_goes_by_its_conversation_s_name() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/plan-untitled");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the plan", |app| the_plan(app).is_some());
+    // What the list calls a conversation nobody has named: the reader's
+    // first words in it.
+    assert_eq!(
+        the_plan(&app).and_then(|plan| plan.content().name()),
+        Some("Plan: /plan-untitled"),
     );
 }
 

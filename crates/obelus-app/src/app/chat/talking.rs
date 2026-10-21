@@ -41,6 +41,32 @@ const NOT_SIGNING_IN: &str = "obelus:not-now";
 /// shown in; nothing is read from or written to it.
 pub(in crate::app) const PLAN: &str = "plan.md";
 
+/// The first heading of some markdown, without its marks: what a plan's
+/// author called it. Not one inside a fence, which is code that happens to
+/// start with a hash.
+fn heading_of(words: &str) -> Option<String> {
+    let mut fenced = false;
+    for line in words.lines() {
+        let line = line.trim_start();
+        if line.starts_with("```") || line.starts_with("~~~") {
+            fenced = !fenced;
+            continue;
+        }
+        if fenced {
+            continue;
+        }
+        let marks = line.chars().take_while(|&c| c == '#').count();
+        let rest = &line[marks..];
+        if (1..=6).contains(&marks) && (rest.is_empty() || rest.starts_with([' ', '\t'])) {
+            let heading = rest.trim().trim_end_matches('#').trim();
+            if !heading.is_empty() {
+                return Some(heading.to_string());
+            }
+        }
+    }
+    None
+}
+
 /// Which conversation a message from the agent is for.
 ///
 /// Its own type rather than an `Option<DocumentId>` because the two cases
@@ -4376,6 +4402,7 @@ impl App {
                 // written down rather than only shown.
                 acp::Update::Titled(_) => {
                     self.remember_the_conversations();
+                    self.call_the_plans_again();
                     self.mirror_head(whose, None);
                     self.say_the_new_name();
                 }
@@ -4707,14 +4734,16 @@ impl App {
                 .and_then(Document::file)
                 .is_some_and(|buffer| buffer.content().is_plan_of(of.get()))
         });
+        let called = self.plan_called(of, &words);
         if let Some(at) = open {
             if let Some(buffer) = self.file_mut(DocumentId::new(at)) {
                 buffer.revised(&words);
+                buffer.call_the_plan(called);
             }
             return;
         }
         let path = self.working_directory.join(PLAN);
-        let buffer = obelus_buffer::Buffer::plan(&path, of.get(), &words);
+        let buffer = obelus_buffer::Buffer::plan(&path, of.get(), called, &words);
         self.documents.push(Some(Document::from(buffer)));
         let at = DocumentId::new(self.documents.len() - 1);
         // In the conversation, and with nothing over it: a list or a page
@@ -4724,6 +4753,43 @@ impl App {
             let from = self.here();
             self.record(from);
             self.go_to_file(at);
+        }
+    }
+
+    /// What a plan is called: by its own heading, which is what its author
+    /// called it, and by the conversation it is from where it has none --
+    /// so that two conversations' plans are two names in the list.
+    fn plan_called(&self, of: DocumentId, words: &str) -> String {
+        if let Some(heading) = heading_of(words) {
+            return format!("Plan: {heading}");
+        }
+        let notes = obelus_todo::read(&self.working_directory)
+            .notes()
+            .unwrap_or_default();
+        self.document(of)
+            .and_then(Document::chat)
+            .and_then(|talk| self.conversation_name(talk, &notes))
+            .map_or_else(|| "Plan".to_string(), |name| format!("Plan: {name}"))
+    }
+
+    /// Names every plan again, because a conversation has been: a plan
+    /// with no heading of its own goes by its conversation's name.
+    fn call_the_plans_again(&mut self) {
+        let plans: Vec<(usize, usize, String)> = self
+            .documents
+            .iter()
+            .enumerate()
+            .filter_map(|(at, document)| {
+                let buffer = document.as_ref()?.file()?;
+                let of = buffer.content().plan_of()?;
+                Some((at, of, buffer.text().rope().to_string()))
+            })
+            .collect();
+        for (at, of, words) in plans {
+            let called = self.plan_called(DocumentId::new(of), &words);
+            if let Some(buffer) = self.file_mut(DocumentId::new(at)) {
+                buffer.call_the_plan(called);
+            }
         }
     }
 
@@ -5288,6 +5354,20 @@ mod tests {
     use obelus_component::{chat::Chat, composer::Part};
 
     use super::{App, DocumentId, Whose, window};
+
+    /// What a plan's author called it is its first heading, and not a hash
+    /// at the start of a line of code or a tag.
+    ///
+    /// Broken deliberately: without the fence, the comment in the code is
+    /// the heading; and without the space, `#tag` is.
+    #[test]
+    fn a_plan_is_called_by_its_first_heading() {
+        assert_eq!(
+            super::heading_of("```sh\n# not this\n```\n#tag\n\n## Add a test ##\n# Later"),
+            Some("Add a test".to_string())
+        );
+        assert_eq!(super::heading_of("1. Write it\n2. Run it"), None);
+    }
 
     /// A window on a tree of its own, with nothing open.
     fn on_a_tree(name: &str) -> (App, std::path::PathBuf) {

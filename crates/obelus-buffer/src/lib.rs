@@ -123,6 +123,9 @@ pub enum Content {
     Plan {
         /// The conversation it is from, as the application numbers it.
         of: usize,
+        /// What it is called, which the application says: the plan's own
+        /// heading where it has one, its conversation's name where not.
+        called: String,
     },
 }
 
@@ -185,16 +188,25 @@ impl Content {
     /// Whether this is the plan of the conversation numbered `of`.
     #[must_use]
     pub const fn is_plan_of(&self, of: usize) -> bool {
-        matches!(self, Self::Plan { of: from } if *from == of)
+        matches!(self, Self::Plan { of: from, .. } if *from == of)
     }
 
     /// What a document with no file behind it is called wherever a file
     /// would be named by its path -- its tab, its row in the list of what
     /// is open, the status row -- which are all one document.
     #[must_use]
-    pub const fn name(&self) -> Option<&'static str> {
+    pub fn name(&self) -> Option<&str> {
         match self {
-            Self::Plan { .. } => Some("Plan"),
+            Self::Plan { called, .. } => Some(called),
+            Self::File | Self::Commit { .. } | Self::PullRequest { .. } => None,
+        }
+    }
+
+    /// The conversation this is the plan of, where it is a plan.
+    #[must_use]
+    pub const fn plan_of(&self) -> Option<usize> {
+        match self {
+            Self::Plan { of, .. } => Some(*of),
             Self::File | Self::Commit { .. } | Self::PullRequest { .. } => None,
         }
     }
@@ -955,9 +967,9 @@ impl Buffer {
     /// what it says. `path` is only what it is called -- markdown, so that
     /// it has the reading -- and nothing is ever read from it.
     #[must_use]
-    pub fn plan(path: &Path, of: usize, words: &str) -> Self {
+    pub fn plan(path: &Path, of: usize, called: String, words: &str) -> Self {
         let mut buffer = Self::from_text(path, words);
-        buffer.content = Content::Plan { of };
+        buffer.content = Content::Plan { of, called };
         buffer.show_reading();
         buffer
     }
@@ -1863,6 +1875,14 @@ impl Buffer {
     pub fn arrived(&mut self, read: obelus_encoding::Read<'static>) -> bool {
         self.set_fetched(Fetched::Here);
         self.take_read(Ok((read, false))).unwrap_or(false)
+    }
+
+    /// Calls a plan something else -- its heading revised, or its
+    /// conversation named.
+    pub fn call_the_plan(&mut self, name: String) {
+        if let Content::Plan { called, .. } = &mut self.content {
+            *called = name;
+        }
     }
 
     /// Takes the agent's revision of a plan, as a re-read takes the disk's:
