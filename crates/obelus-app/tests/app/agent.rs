@@ -19393,10 +19393,11 @@ fn a_double_click_on_a_call_that_opens_goes_where_the_first_press_was() {
 /// A conversation is searched by its transcript, as it is drawn, and
 /// choosing a row puts the transcript's cursor on the match.
 ///
-/// Broken deliberately two ways. Leaving `search-file` on a file being
-/// open (`Requires::AFileOpen`): `f5` in a conversation did nothing. And
-/// leaving the focus in the box in `Chat::stand_in_the_transcript`: the
-/// caret stayed in the box.
+/// Broken deliberately three ways. Leaving `search-file` on a file being
+/// open (`Requires::AFileOpen`): `f5` in a conversation did nothing.
+/// Leaving the focus in the box in `Chat::stand_in_the_transcript`: the
+/// caret stayed in the box. And leaving `found` out of the transcript's
+/// rows (`Chat::rows`): nothing was marked.
 #[test]
 fn a_conversation_is_searched_and_a_match_is_gone_to() {
     let (mut app, events) = talking();
@@ -19417,6 +19418,14 @@ fn a_conversation_is_searched_and_a_match_is_gone_to() {
     support::type_text(&mut app, "All passed");
     let rows = app.picker().map_or(0, |picker| picker.row_count());
     assert!(rows > 0, "the transcript was not searched");
+    // Before it is chosen, what was found is marked in the transcript above
+    // the list, as the file marks it.
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert_eq!(
+        support::found_on_screen(&dump, "All passed."),
+        "All passed",
+        "the match is not marked in the transcript:\n{dump}"
+    );
     support::press(&mut app, KeyCode::Enter);
     assert!(app.picker().is_none(), "the search is still open");
     assert!(
@@ -19485,10 +19494,11 @@ fn a_pull_requests_page_is_searched_and_a_match_is_gone_to() {
 /// above it is its preview: the row the list is on is scrolled into view
 /// with the cursor left where it was, and escape puts the page back.
 ///
-/// Broken deliberately two ways. Taking `look_within_at_the_selection` out
-/// of the frame: the page stayed at its top. And taking
+/// Broken deliberately three ways. Taking `look_within_at_the_selection`
+/// out of the frame: the page stayed at its top. Taking
 /// `put_the_page_back` out of leaving the list: escape left the page down
-/// at the match.
+/// at the match. And leaving `found` out of the page's rows
+/// (`DiscussionView::rows`): nothing was marked.
 #[test]
 fn a_pull_requests_page_under_its_search_is_the_preview() {
     let scratch = support::Scratch::new("agent-pull-request-looked-at");
@@ -19516,6 +19526,13 @@ fn a_pull_requests_page_under_its_search_is_the_preview() {
     assert!(
         above.iter().any(|row| row.contains("line 57")),
         "the page was not scrolled to the row:\n{looking}"
+    );
+    // And what was found is marked on it, as the file marks it.
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert_eq!(
+        support::found_on_screen(&dump, "line 57"),
+        "line 57",
+        "the match is not marked on the page:\n{dump}"
     );
 
     support::press(&mut app, KeyCode::Esc);

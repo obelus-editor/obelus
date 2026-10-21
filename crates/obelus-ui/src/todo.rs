@@ -641,9 +641,13 @@ impl TodoUi<'_> {
         // Obelus marks a run of itself -- and the way the file marks its
         // own selection, which is the colour a reader has learnt means
         // "this is what you are holding".
-        let marked = match row.held.clone() {
-            Some(held) => Marked::run(held, self.theme.selection_background),
-            None => Marked::plain(),
+        // And what a search of the notes found, in the colour the file marks
+        // what a search of it found -- under what is held, which is the
+        // reader's own act and wins where the two meet.
+        let marked = match (row.held.clone(), row.found.clone()) {
+            (Some(held), _) => Marked::run(held, self.theme.selection_background),
+            (None, Some(found)) => Marked::run(found, self.theme.marked_background),
+            (None, None) => Marked::plain(),
         }
         .spelling(row.spelled.clone());
         write_marked(

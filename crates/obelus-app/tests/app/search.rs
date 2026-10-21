@@ -1405,9 +1405,12 @@ fn a_project_search_opened_again_keeps_its_rows() {
 /// is its preview: the row the list is on is scrolled into view before
 /// anything is chosen, and escape puts the reading back where it was.
 ///
-/// Broken deliberately by taking `look_within_at_the_selection` out of the
-/// frame: the reading stayed at its top while the list stood on a row far
-/// below it.
+/// Broken deliberately three ways. Taking `look_within_at_the_selection`
+/// out of the frame: the reading stayed at its top while the list stood on
+/// a row far below it. Leaving `found` out of the reading's rows
+/// (`Cursor::laid`): nothing was marked. And not taking the mark away as
+/// the list goes (`forget_the_find` out of `go_within`): it stayed on the
+/// reading after the cursor had gone there.
 #[test]
 fn a_reading_under_its_search_is_the_preview() {
     let path = std::path::Path::new("looked.md");
@@ -1434,11 +1437,34 @@ fn a_reading_under_its_search_is_the_preview() {
             .any(|row| row.contains("The pelican wings it.")),
         "the reading was not scrolled to the row:\n{looking}"
     );
+    // And what was found is marked on it, as the file marks it.
+    let dump = support::render(&mut app, 60, 24);
+    assert_eq!(
+        support::found_on_screen(&dump, "The pelican wings it."),
+        "pelican",
+        "the match is not marked on the reading:\n{dump}"
+    );
 
     support::press(&mut app, KeyCode::Esc);
     let back = support::text_block(&support::render(&mut app, 60, 24)).to_string();
     assert!(
         back.contains("Paragraph 0 "),
         "escape did not put the reading back:\n{back}"
+    );
+
+    // Chosen, the cursor says where the match is, and the mark goes. A frame
+    // between, which is what puts the mark there to go.
+    support::press_function(&mut app, 5);
+    support::lay_out(&mut app, 60, 24);
+    support::press(&mut app, KeyCode::Enter);
+    let chosen = support::render(&mut app, 60, 24);
+    assert!(
+        support::text_block(&chosen).contains("The pelican wings it."),
+        "choosing it did not go there:\n{chosen}"
+    );
+    assert_eq!(
+        support::found_on_screen(&chosen, "The pelican wings it."),
+        "",
+        "the mark outlived the search:\n{chosen}"
     );
 }

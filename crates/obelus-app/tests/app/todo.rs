@@ -4021,3 +4021,34 @@ fn the_notes_are_searched_and_a_match_is_gone_to() {
         support::render(&mut app, 76, 18)
     );
 }
+
+/// The search of the notes sits on the status bar, and the notes above it
+/// are its preview: what was found is marked in the note's words, on the
+/// row of them it is on, and the mark goes with the list.
+///
+/// Broken deliberately two ways. Leaving the found run off the rows in
+/// `TodoView::rebuild`: nothing was marked. And not taking the mark away as
+/// the list goes (`forget_the_find` out of `leave`): it stayed on the note.
+#[test]
+fn the_notes_under_their_search_mark_what_it_found() {
+    let scratch = tree("search-marked", THREE);
+    let mut app = open(&scratch, 76, 24);
+    support::lay_out(&mut app, 76, 24);
+
+    support::press_function(&mut app, 5);
+    support::type_text(&mut app, "the colours");
+    let dump = support::render(&mut app, 76, 24);
+    assert_eq!(
+        support::found_on_screen(&dump, "changes the colours"),
+        "the colours",
+        "the match is not marked on the note:\n{dump}"
+    );
+
+    press(&mut app, KeyCode::Esc);
+    let back = support::render(&mut app, 76, 24);
+    assert_eq!(
+        support::found_on_screen(&back, "changes the colours"),
+        "",
+        "the mark outlived the search:\n{back}"
+    );
+}

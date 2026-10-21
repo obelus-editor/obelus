@@ -70,7 +70,7 @@ pub fn draw(
     draw_rows(
         cells,
         area,
-        rows.iter().map(|row| (row, None)),
+        rows.iter().map(|row| (row, None, None)),
         rows.len(),
         top,
         theme,
@@ -96,7 +96,8 @@ pub fn draw_held(
     draw_rows(
         cells,
         area,
-        rows.iter().map(|laid| (laid.row, laid.held())),
+        rows.iter()
+            .map(|laid| (laid.row, laid.held(), laid.found())),
         rows.len(),
         top,
         theme,
@@ -161,11 +162,20 @@ pub fn place_at(area: Rect, rows: &[Row], top: usize, x: u16, y: u16) -> Option<
     })
 }
 
-/// The rows, each with which of its characters are held.
+/// One row to draw, with which of its characters are held and which a
+/// search found.
+type Marked<'a> = (
+    &'a Row,
+    Option<&'a std::ops::Range<usize>>,
+    Option<&'a std::ops::Range<usize>>,
+);
+
+/// The rows, each with which of its characters are held and which a search
+/// found.
 fn draw_rows<'a>(
     cells: &mut CellBuffer,
     area: Rect,
-    rows: impl Iterator<Item = (&'a Row, Option<&'a std::ops::Range<usize>>)>,
+    rows: impl Iterator<Item = Marked<'a>>,
     count: usize,
     top: usize,
     theme: &Theme,
@@ -192,7 +202,7 @@ fn draw_rows<'a>(
         crate::shapes::scrolled(Rect { width, ..area }, top, bar);
     }
 
-    for (offset, (row, held)) in rows.skip(top).take(usize::from(area.height)).enumerate() {
+    for (offset, (row, held, found)) in rows.skip(top).take(usize::from(area.height)).enumerate() {
         let Ok(offset) = u16::try_from(offset) else {
             break;
         };
@@ -221,6 +231,7 @@ fn draw_rows<'a>(
                 theme,
                 stop: area.x + width,
                 held,
+                found,
                 linked: &[],
             },
         );
@@ -244,6 +255,10 @@ pub struct Drawn<'a> {
     pub stop: u16,
     /// Which of the row's characters are held, if any are.
     pub held: Option<&'a std::ops::Range<usize>>,
+    /// Which of them a search of the page found, on the row the search is
+    /// standing on: marked in the colour the file marks what a search of it
+    /// found, because the page is that search's preview.
+    pub found: Option<&'a std::ops::Range<usize>>,
     /// Which of the row's characters are the words of a link, which are
     /// underlined whether or not the cursor is on them: a reader scanning a
     /// paragraph should not have to walk it to find out what in it goes
@@ -276,6 +291,7 @@ pub fn write_spans(
         theme,
         stop,
         held,
+        found,
         linked,
     } = *drawn;
     // The runs as one string, because a cluster is one cell and a run is a
@@ -302,6 +318,12 @@ pub fn write_spans(
         // Obelus marks a run of itself with: a ground under whatever
         // colour the characters already carry, which is why the ink
         // above is worked out first and only the ground is replaced.
+        // And what a search found, under what is held: holding is the
+        // reader's own act and wins where the two meet.
+        let style = match found.is_some_and(|found| found.contains(&cluster.first)) {
+            true => style.bg(theme.marked_background),
+            false => style,
+        };
         let style = match held.is_some_and(|held| held.contains(&cluster.first)) {
             true => style.bg(theme.selection_background),
             false => style,
@@ -378,6 +400,7 @@ mod tests {
             theme,
             stop: 10,
             held: None,
+            found: None,
             linked: &[],
         };
         let spans = [
@@ -405,6 +428,7 @@ mod tests {
             theme,
             stop: 10,
             held: None,
+            found: None,
             linked: &[],
         };
         let spans = [

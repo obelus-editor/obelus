@@ -173,6 +173,8 @@ pub enum PickerValue {
         row: usize,
         /// How many characters along it the match begins.
         character: usize,
+        /// And one past where it ends, counted the same way.
+        end: usize,
     },
     /// Put one of the agent's settings on one of its values.
     AgentValue {

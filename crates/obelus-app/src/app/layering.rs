@@ -110,6 +110,7 @@ impl App {
                 // of a list is choosing a row, and that goes somewhere on
                 // purpose -- see `App::accept`.
                 self.look_back();
+                self.forget_the_find();
                 self.put_the_page_back();
                 self.history = history_view::Showing::default();
                 self.lsp.troubling.clear();

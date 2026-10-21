@@ -683,7 +683,7 @@ impl App {
         };
         let items: Vec<PickerItem> = found
             .into_iter()
-            .map(|(row, character, said)| PickerItem {
+            .map(|(row, found, said)| PickerItem {
                 prose: false,
                 marker: None,
                 icon: None,
@@ -700,7 +700,11 @@ impl App {
                 // its number says nothing a reader could go and find.
                 trailing: None,
                 changed: None,
-                value: PickerValue::Within { row, character },
+                value: PickerValue::Within {
+                    row,
+                    character: found.start,
+                    end: found.end,
+                },
                 tab: None,
                 section: None,
             })
@@ -719,9 +723,10 @@ impl App {
     /// moved it underneath, and then the row is about a page that is not
     /// there and goes nowhere.
     pub(in crate::app) fn go_within(&mut self, row: usize, character: usize) {
-        // Going there, so there is no going back to where it was.
+        // Going there, so there is no going back to where it was, and the
+        // cursor there says where the match is rather than a mark.
+        self.forget_the_find();
         self.search.looked_within = None;
-        self.search.looked_at = None;
         let Some(here) = self.search.here.take() else {
             return;
         };
@@ -802,15 +807,28 @@ impl App {
         let Some(picker) = self.picker.as_ref().filter(|picker| picker.is_searching()) else {
             return;
         };
-        let Some(PickerValue::Within { row, character }) =
-            picker.selected_item().map(|item| item.value.clone())
-        else {
-            return;
-        };
-        if self.search.looked_at == Some((row, character)) || self.searched_here() != Some(here) {
+        if self.searched_here() != Some(here) {
             return;
         }
-        self.search.looked_at = Some((row, character));
+        let found = match picker.selected_item().map(|item| item.value.clone()) {
+            Some(PickerValue::Within {
+                row,
+                character,
+                end,
+            }) => Some((row, character..end)),
+            _ => None,
+        };
+        let at = found.as_ref().map(|(row, found)| (*row, found.start));
+        if self.search.looked_at == at {
+            return;
+        }
+        self.search.looked_at = at;
+        // What it found is marked on the page, and a list that has found
+        // nothing takes the last mark away.
+        self.find_within(here, found);
+        let Some((row, character)) = at else {
+            return;
+        };
         if self.search.looked_within.is_none() {
             self.search.looked_within = self.page_top(here);
         }
@@ -890,6 +908,47 @@ impl App {
             end_line: line,
             end_column: at(*last + 1),
         });
+    }
+
+    /// Marks what a search found on the page it is searching, or takes the
+    /// mark away: which row, and which of its characters -- for the notes,
+    /// which note and which characters of its words.
+    fn find_within(&mut self, here: Here, found: Option<(usize, std::ops::Range<usize>)>) {
+        match here {
+            // The file's is `mark_the_match`, which the editor reads.
+            Here::File => {}
+            Here::Reading => {
+                if let Some(rendered) = self.rendered.as_mut() {
+                    rendered.cursor.find(found);
+                }
+            }
+            Here::Conversation => {
+                if let Some(talk) = self.conversation_mut() {
+                    talk.chat.find(found);
+                }
+            }
+            Here::Page => {
+                if let Some(page) = self.discussion_mut() {
+                    page.find(found);
+                }
+            }
+            Here::Notes => {
+                if let Some(notes) = self.notes_mut() {
+                    notes.find(found);
+                }
+            }
+        }
+    }
+
+    /// Takes the search's mark off the page it was searching, as the list
+    /// goes: chosen from or left.
+    pub(in crate::app) fn forget_the_find(&mut self) {
+        self.search.looked_at = None;
+        if let Some(here) = self.search.here
+            && self.searched_here() == Some(here)
+        {
+            self.find_within(here, None);
+        }
     }
 
     /// Where the page under a search of it is scrolled to, for the pages
@@ -1094,36 +1153,40 @@ impl App {
 }
 
 /// The rows of a page that have the query in them: each one's place among
-/// them, how many characters along it the match begins, and what it says.
+/// them, which of its characters the query found, and what it says.
 fn rows_found<L: obelus_component::page::Line>(
     rows: &[L],
     needle: &obelus_search::Needle,
-) -> Vec<(usize, usize, String)> {
+) -> Vec<(usize, std::ops::Range<usize>, String)> {
     rows.iter()
         .enumerate()
         .filter_map(|(at, row)| {
             let said = obelus_component::page::text(row);
             let found = needle.found_in(&said)?;
-            Some((at, found.start, said))
+            Some((at, found, said))
         })
         .collect()
 }
 
-/// The lines of the notes that have the query in them: which note, how
-/// many characters into its words the match begins, and the line.
+/// The lines of the notes that have the query in them: which note, which
+/// characters of its words the query found, and the line.
 ///
 /// Counted through the whole of a note's words, its line breaks among
 /// them, because that is how far along them the caret is walked.
 fn notes_found(
     notes: &obelus_component::todo::TodoView,
     needle: &obelus_search::Needle,
-) -> Vec<(usize, usize, String)> {
+) -> Vec<(usize, std::ops::Range<usize>, String)> {
     let mut found = Vec::new();
     for (at, note) in notes.todo().notes.iter().enumerate() {
         let mut before = 0;
         for line in note.said.split('\n') {
             if let Some(range) = needle.found_in(line) {
-                found.push((at, before + range.start, line.to_string()));
+                found.push((
+                    at,
+                    before + range.start..before + range.end,
+                    line.to_string(),
+                ));
             }
             before += line.chars().count() + 1;
         }

@@ -1019,7 +1019,7 @@ impl App {
                 Some(column) => self.go_to_match(&path, line, column),
                 None => self.go_to(&path, line, character),
             },
-            PickerValue::Within { row, character } => self.go_within(row, character),
+            PickerValue::Within { row, character, .. } => self.go_within(row, character),
             PickerValue::Setting { key, word } => {
                 self.change_setting(key, &obelus_config::Value::Choice(word));
             }

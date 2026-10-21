@@ -410,6 +410,10 @@ pub struct Row {
     /// given in the source would have to be worked out again by whoever
     /// draws it, at the width they happen to be drawing at.
     pub held: Option<std::ops::Range<usize>>,
+    /// Which of this row's characters a search of the conversation found,
+    /// on the row the search is standing on: the page is that search's
+    /// preview, and marks what it found the way the file marks it.
+    pub found: Option<std::ops::Range<usize>>,
 }
 
 /// Where a call says it was, which for a change is the file it changes.
@@ -802,6 +806,9 @@ pub struct Chat {
     /// a drag turn back on itself and shrink, and pass through where it
     /// started, without the two ends swapping meaning underneath it.
     held: crate::page::Hold<(usize, Source)>,
+    /// What a search of the conversation found on the row it is standing
+    /// on: which row, and which of its characters.
+    found: Option<(usize, std::ops::Range<usize>)>,
     /// How much had been said when the reader last left the end of it.
     ///
     /// `None` while they are at the end, which is where a transcript sits
@@ -889,6 +896,7 @@ impl Chat {
             window: Window::following(),
             focus: Focus::Writing,
             held: crate::page::Hold::default(),
+            found: None,
             left_at: None,
             stood: None,
             waiting_at: None,

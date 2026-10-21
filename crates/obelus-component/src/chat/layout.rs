@@ -193,7 +193,18 @@ impl Chat {
         // conversation does not lay the whole of it out again for every
         // report the terminal sends.
         self.mark_held(&mut rows);
+        if let Some((at, found)) = self.found.as_ref()
+            && let Some(row) = rows.get_mut(*at)
+        {
+            row.found = Some(found.clone());
+        }
         rows
+    }
+
+    /// Says what a search of the conversation found on the row it is
+    /// standing on, or that it has stopped looking.
+    pub fn find(&mut self, found: Option<(usize, std::ops::Range<usize>)>) {
+        self.found = found;
     }
 
     /// The rows, laid out or remembered from the last time they were.
@@ -273,6 +284,7 @@ impl Chat {
                 links: Vec::new(),
                 from: None,
                 held: None,
+                found: None,
                 // Anchored one past the end of what was said, which is the
                 // one index that can never name a [`Said`]: a plan is not a
                 // thing that was said, and giving it an index into the
@@ -296,6 +308,7 @@ impl Chat {
                             spans: plain(text),
                             from: None,
                             held: None,
+                            found: None,
                             first: false,
                             // On the first row of a step only, so a step
                             // that wraps is one step with one mark.
@@ -371,6 +384,7 @@ impl Chat {
             spans: plain(format!("{count} {what}")),
             from: None,
             held: None,
+            found: None,
             first: true,
             state: state.map(str::to_string),
             kind: said.kind.clone(),
@@ -613,6 +627,7 @@ impl Chat {
             spans,
             from,
             held: None,
+            found: None,
             first: true,
             state: said.state.clone(),
             kind: said.kind.clone(),
@@ -652,6 +667,7 @@ impl Chat {
             spans,
             from,
             held: None,
+            found: None,
             first: false,
             state: None,
             kind: said.kind.clone(),
@@ -677,6 +693,7 @@ impl Chat {
             // A blank is not a word of anybody's.
             from: None,
             held: None,
+            found: None,
             first: false,
             state: None,
             kind: String::new(),

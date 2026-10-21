@@ -232,6 +232,9 @@ pub struct Row {
     pub waiting: bool,
     /// Which of its characters the reader has hold of.
     pub held: Option<Range<usize>>,
+    /// Which of its characters a search of the page found, on the row the
+    /// search is standing on.
+    pub found: Option<Range<usize>>,
 }
 
 impl Row {
@@ -906,6 +909,9 @@ pub struct DiscussionView {
     cursor: Place,
     /// What the reader has hold of.
     held: Hold<Part>,
+    /// What a search of the page found on the row it is standing on:
+    /// which row, and which of its characters.
+    found: Option<(usize, Range<usize>)>,
     /// Where the pointer went down, while it has not moved since: what
     /// tells a press on a link from a drag that ends on one, on a row that
     /// is none of the page's words and so has nothing to hold.
@@ -938,6 +944,7 @@ impl DiscussionView {
             laid: std::cell::RefCell::new(None),
             cursor: Place::default(),
             held: Hold::default(),
+            found: None,
             pressed: None,
             window: Window::new(),
         }
@@ -1018,6 +1025,11 @@ impl DiscussionView {
     pub fn rows(&self, width: u16) -> Vec<Row> {
         let mut rows = self.laid_out(width);
         self.held.mark(&mut rows);
+        if let Some((at, found)) = self.found.as_ref()
+            && let Some(row) = rows.get_mut(*at)
+        {
+            row.found = Some(found.clone());
+        }
         rows
     }
 
@@ -1067,6 +1079,12 @@ impl DiscussionView {
         self.cursor = at;
         self.window.set_count(count);
         crate::page::show(&mut self.window, at.row, count, room.height);
+    }
+
+    /// Says what a search of the page found on the row it is standing on,
+    /// or that it has stopped looking.
+    pub fn find(&mut self, found: Option<(usize, Range<usize>)>) {
+        self.found = found;
     }
 
     /// Puts a row on screen and leaves the cursor where it is: a search of

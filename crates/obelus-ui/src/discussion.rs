@@ -108,6 +108,7 @@ pub fn draw(
                 theme,
                 stop,
                 held: row.held.as_ref(),
+                found: row.found.as_ref(),
                 linked: &linked,
             },
         );

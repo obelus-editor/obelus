@@ -339,6 +339,39 @@ pub(crate) fn under_the_caret(
     )
 }
 
+/// The characters of the first row of a dump holding `words` that wear the
+/// ground a search marks what it found with: what the page above a search
+/// of it says was found.
+///
+/// The first row, because the page is above the list and the list's own
+/// row holds the same words. The ground is the dark theme's
+/// `marked_background`, the colour the file marks a search's match in.
+pub(crate) fn found_on_screen(dump: &str, words: &str) -> String {
+    let marked: Vec<char> = legend_block(dump)
+        .lines()
+        .filter(|entry| entry.contains("bg=#1e3a5f"))
+        .filter_map(|entry| entry.trim_start().chars().next())
+        .collect();
+    let Some(at) = text_block(dump).lines().position(|row| row.contains(words)) else {
+        return String::new();
+    };
+    let text: Vec<char> = text_block(dump)
+        .lines()
+        .nth(at)
+        .unwrap_or_default()
+        .chars()
+        .collect();
+    style_block(dump)
+        .lines()
+        .nth(at)
+        .unwrap_or_default()
+        .chars()
+        .enumerate()
+        .filter(|(_, letter)| marked.contains(letter))
+        .filter_map(|(column, _)| text.get(column))
+        .collect()
+}
+
 /// The text rows of a dump.
 pub(crate) fn text_block(dump: &str) -> &str {
     section(dump, "-- text --", "-- style --")
