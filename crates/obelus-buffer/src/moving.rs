@@ -441,13 +441,6 @@ impl Buffer {
         let landed =
             self.step_screen_rows((self.viewport.top, self.viewport.top_row), screen_row, area);
         // The row it landed on is one the view drew and the text does not
-        // have -- inside a hunk the reader has opened. There is nowhere for
-        // the cursor to go that would keep its place on the screen, so it
-        // keeps its place in the *file* instead and the page is a scroll:
-        // the way through a deletion taller than the screen, and the same
-        // thing the wheel does. The next cursor move brings the screen back
-        // to it, as it does after any scroll.
-        // The row it landed on is one the view drew and the text does not
         // have -- inside a hunk the reader has opened. The caret goes there
         // instead: those rows are where a page through a long deletion
         // lands, and the cursor stays on the line the block belongs to.
