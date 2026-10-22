@@ -108,7 +108,12 @@ pub fn draw(
                 theme,
                 stop,
                 held: row.held.as_ref(),
-                found: row.found.as_ref(),
+                found: row.found.as_ref().map(|found| {
+                    (
+                        found,
+                        crate::shapes::Found::on("page", top + usize::from(offset), found.start),
+                    )
+                }),
                 linked: &linked,
             },
         );

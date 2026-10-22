@@ -240,7 +240,15 @@ impl Painter {
             .iter()
             .filter(|cap| cap.still_said(page))
             .collect();
-        self.backgrounds(page, cell, panes, &framed, &capped, said.paired);
+        // The cells a plate is drawn over, which the cells' own grounds
+        // leave for it.
+        let plated: Vec<ratatui::layout::Rect> = said
+            .paired
+            .iter()
+            .map(|half| half.area)
+            .chain(said.found.iter().map(|run| run.area))
+            .collect();
+        self.backgrounds(page, cell, panes, &framed, &capped, &plated);
         // Over the page and under everything written on it: a hold is a
         // ground, and the letters it is behind are the ones the reader is
         // holding.
@@ -255,6 +263,8 @@ impl Painter {
             moving.pair,
             cell,
         );
+        // And what a search found, which is a ground of the same kind.
+        self.finds(page, said.found, panes, &framed, moving.found, cell);
         self.rules(page, said.ruled, cell);
         // The boundaries with no row to be on, which go where there is no
         // cell: the pixel between one row and the one above it. Under the

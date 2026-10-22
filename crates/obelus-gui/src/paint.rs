@@ -822,6 +822,15 @@ const PAIR_REACH: f32 = 0.55;
 /// little.
 const PAIR_REACH_FROM: f32 = 0.4;
 
+/// How much larger every way the plate under what a search found starts,
+/// as a share of a row's height, before it comes down onto the match.
+///
+/// Most of a row: the plate has to be seen to close, and a match is often
+/// a word or two on one line, so less than this is a plate that seems to
+/// flicker rather than land. Not a whole row, which would have it lying
+/// over the lines above and below for longer than it lies on its own.
+const FOUND_FROM: f32 = 0.7;
+
 /// How far the plate and its light are from the page, as a share of how
 /// far the cells' own `bracket_background` is.
 ///
@@ -2359,6 +2368,7 @@ mod tests {
             stroked: &[],
             paired: &[],
             fading: &[],
+            found: &[],
             stack: &[],
             bands: &[],
         };
@@ -2419,6 +2429,7 @@ mod tests {
             stroked: &[],
             paired: &[],
             fading: &[],
+            found: &[],
             stack: &[],
             bands: &[],
         };
@@ -2798,6 +2809,7 @@ mod tests {
             stroked: &stroked,
             paired: &[],
             fading: &[],
+            found: &[],
             sheened: None,
             parted: &[],
             stack: &[],

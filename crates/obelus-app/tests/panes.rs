@@ -87,6 +87,8 @@ impl obelus_ui::shapes::Shapes for Heard {
 
     fn paired(&self, _area: Rect, _pair: obelus_ui::shapes::Pair) {}
 
+    fn found(&self, _area: Rect, _found: obelus_ui::shapes::Found) {}
+
     fn parted(&self, area: Rect) {
         if let Ok(mut partings) = self.partings.lock() {
             partings.push((std::thread::current().id(), area));

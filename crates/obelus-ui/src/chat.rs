@@ -1378,7 +1378,16 @@ impl ChatView<'_> {
                         false => stop,
                     },
                     held: row.held.as_ref(),
-                    found: row.found.as_ref(),
+                    found: row.found.as_ref().map(|found| {
+                        (
+                            found,
+                            crate::shapes::Found::on(
+                                "conversation",
+                                first + usize::from(offset),
+                                found.start,
+                            ),
+                        )
+                    }),
                     linked: &linked,
                 },
             );

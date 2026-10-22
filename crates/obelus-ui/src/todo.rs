@@ -650,6 +650,14 @@ impl TodoUi<'_> {
             (None, None) => Marked::plain(),
         }
         .spelling(row.spelled.clone());
+        let shown = crate::truncate_from_right(
+            &row.said,
+            usize::from(
+                area.width
+                    .saturating_sub(MARGIN + SCROLLBAR_WIDTH + step)
+                    .max(1),
+            ),
+        );
         write_marked(
             cells,
             Rect {
@@ -658,16 +666,20 @@ impl TodoUi<'_> {
             },
             x,
             y,
-            &crate::truncate_from_right(
-                &row.said,
-                usize::from(
-                    area.width
-                        .saturating_sub(MARGIN + SCROLLBAR_WIDTH + step)
-                        .max(1),
-                ),
-            ),
+            &shown,
             Style::new().fg(ink).bg(background),
             &marked,
         );
+        // And where the search's mark is, for a front end that draws it as
+        // a shape of its own. Not under a hold, which wins the cells.
+        if let (None, Some(found)) = (&row.held, &row.found) {
+            let stop = area.x + area.width.saturating_sub(SCROLLBAR_WIDTH);
+            let from = crate::page::cell_of(&shown, x, found.start).min(stop);
+            let to = crate::page::cell_of(&shown, x, found.end).min(stop);
+            crate::shapes::found(
+                Rect::new(from, y, to.saturating_sub(from), 1),
+                crate::shapes::Found::on("notes", row.note, found.start),
+            );
+        }
     }
 }

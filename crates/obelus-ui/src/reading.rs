@@ -203,6 +203,12 @@ fn draw_rows<'a>(
     }
 
     for (offset, (row, held, found)) in rows.skip(top).take(usize::from(area.height)).enumerate() {
+        let found = found.map(|found| {
+            (
+                found,
+                crate::shapes::Found::on("reading", top + offset, found.start),
+            )
+        });
         let Ok(offset) = u16::try_from(offset) else {
             break;
         };
@@ -257,8 +263,10 @@ pub struct Drawn<'a> {
     pub held: Option<&'a std::ops::Range<usize>>,
     /// Which of them a search of the page found, on the row the search is
     /// standing on: marked in the colour the file marks what a search of it
-    /// found, because the page is that search's preview.
-    pub found: Option<&'a std::ops::Range<usize>>,
+    /// found, because the page is that search's preview. And which match it
+    /// is, for a front end that draws it as a shape -- see
+    /// [`crate::shapes::Found`].
+    pub found: Option<(&'a std::ops::Range<usize>, crate::shapes::Found)>,
     /// Which of the row's characters are the words of a link, which are
     /// underlined whether or not the cursor is on them: a reader scanning a
     /// paragraph should not have to walk it to find out what in it goes
@@ -305,25 +313,30 @@ pub fn write_spans(
     });
     let mut run = runs.next();
     let mut column = x;
+    // Which cells what a search found took, for a front end that draws it
+    // as a shape of its own rather than as the cells' ground.
+    let mut marked: Option<(u16, u16)> = None;
     for cluster in obelus_text::clusters(&said) {
         if column >= stop {
-            return column;
+            break;
         }
         while run.is_some_and(|(end, _)| end <= cluster.first) {
             run = runs.next();
         }
         let Some((_, span)) = run else { break };
         let style = style_of(span.ink, span, theme, base);
+        // What a search found, in the colour the file marks it in. Under
+        // what is held, below: holding is the reader's own act and wins
+        // where the two meet.
+        let finding = found.is_some_and(|(found, _)| found.contains(&cluster.first));
+        let style = match finding {
+            true => style.bg(theme.marked_background),
+            false => style,
+        };
         // What the reader has hold of, in the colour every list in
         // Obelus marks a run of itself with: a ground under whatever
         // colour the characters already carry, which is why the ink
         // above is worked out first and only the ground is replaced.
-        // And what a search found, under what is held: holding is the
-        // reader's own act and wins where the two meet.
-        let style = match found.is_some_and(|found| found.contains(&cluster.first)) {
-            true => style.bg(theme.marked_background),
-            false => style,
-        };
         let style = match held.is_some_and(|held| held.contains(&cluster.first)) {
             true => style.bg(theme.selection_background),
             false => style,
@@ -332,7 +345,14 @@ pub fn write_spans(
             true => style.add_modifier(Modifier::UNDERLINED),
             false => style,
         };
+        let from = column;
         column = column.saturating_add(put_cluster(cells, column, y, cluster.text, style));
+        if finding {
+            marked = Some(marked.map_or((from, column), |(start, _)| (start, column)));
+        }
+    }
+    if let (Some((start, end)), Some((_, which))) = (marked, found) {
+        crate::shapes::found(Rect::new(start, y, end.min(stop) - start, 1), which);
     }
     column
 }

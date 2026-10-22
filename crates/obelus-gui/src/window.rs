@@ -74,8 +74,8 @@ use winit::{
 use crate::{
     blink::Blink,
     grid::{
-        Barred, Behind, Capped, Cells, Going, Marked, Marking, Measured, Page, Paired, Parted,
-        Rolled, Ruled, Said, Sheened, Spun, Stroked, Ticked, Update,
+        Barred, Behind, Capped, Cells, Finding, Going, Marked, Marking, Measured, Page, Paired,
+        Parted, Rolled, Ruled, Said, Sheened, Spun, Stroked, Ticked, Update,
     },
     keys,
     motion::{Lane, Motion, Wake},
@@ -157,6 +157,7 @@ struct Left {
     parted: Vec<Parted>,
     stroked: Vec<Stroked>,
     paired: Vec<Paired>,
+    found: Vec<Finding>,
     stack: Vec<Behind>,
     /// Which of its panes went.
     going: Vec<Going>,
@@ -191,6 +192,7 @@ impl Left {
             stroked: &self.stroked,
             paired: &self.paired,
             fading: &[],
+            found: &self.found,
             stack: &self.stack,
             bands: &[],
         }
@@ -484,6 +486,11 @@ struct Showing {
     pairing: Vec<Paired>,
     /// And the pairs the caret was in before, while their light goes out.
     unpaired: Vec<Paired>,
+    /// Which runs of cells are what a search found, on the frame being
+    /// shown.
+    found: Vec<Finding>,
+    /// And on the one being laid out.
+    finding: Vec<Finding>,
     /// Which bands of rows are lists, how far down each has got and what
     /// bar says so, on the frame being shown.
     ///
@@ -615,6 +622,8 @@ impl Showing {
             paired: Vec::new(),
             pairing: Vec::new(),
             unpaired: Vec::new(),
+            found: Vec::new(),
+            finding: Vec::new(),
             ruling: Vec::new(),
             linked: Vec::new(),
             linking: Vec::new(),
@@ -1366,6 +1375,7 @@ impl ApplicationHandler<Waking> for Showing {
                                 parted: self.parted.clone(),
                                 stroked: self.stroked.clone(),
                                 paired: self.paired.clone(),
+                                found: self.found.clone(),
                                 stack: self.stack.clone(),
                                 going: Vec::new(),
                             };
@@ -1525,6 +1535,11 @@ impl ApplicationHandler<Waking> for Showing {
                             depth: self.stacking.len(),
                             held: None,
                         }),
+                        Update::Found { area, found } => self.finding.push(Finding {
+                            area,
+                            found,
+                            depth: self.stacking.len(),
+                        }),
                         Update::Stroked { stroke } => {
                             self.stroking.push(Stroked {
                                 stroke,
@@ -1563,6 +1578,7 @@ impl ApplicationHandler<Waking> for Showing {
                                     parted: std::mem::take(&mut self.parted),
                                     stroked: std::mem::take(&mut self.stroked),
                                     paired: std::mem::take(&mut self.paired),
+                                    found: std::mem::take(&mut self.found),
                                     stack: std::mem::take(&mut self.stack),
                                     going: Vec::new(),
                                 });
@@ -1622,6 +1638,18 @@ impl ApplicationHandler<Waking> for Showing {
                                 &mut self.unpaired,
                                 &self.page,
                                 &mut self.motion,
+                                Instant::now(),
+                            );
+                            // What a search found, one run a match a row,
+                            // and only where nothing has been put over it
+                            // since -- and whether it is another match,
+                            // which is what puts its plate down.
+                            self.found = Finding::joined(std::mem::take(&mut self.finding))
+                                .into_iter()
+                                .filter(|run| run.still_said(&self.page))
+                                .collect();
+                            self.motion.found_drawn(
+                                self.found.iter().map(|run| run.found),
                                 Instant::now(),
                             );
                             self.stack = std::mem::take(&mut self.stacking);
@@ -2069,6 +2097,7 @@ impl ApplicationHandler<Waking> for Showing {
                         stroked: &self.stroked,
                         paired: &self.paired,
                         fading: &fading,
+                        found: &self.found,
                         stack: &self.stack,
                         bands: &rolled,
                     },

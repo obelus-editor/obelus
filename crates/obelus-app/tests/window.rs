@@ -22,6 +22,7 @@ struct Heard {
     links: Mutex<Vec<Rect>>,
     spellings: Mutex<Vec<Rect>>,
     pairs: Mutex<Vec<(Rect, obelus_ui::shapes::Pair)>>,
+    found: Mutex<Vec<(Rect, obelus_ui::shapes::Found)>>,
 }
 
 impl obelus_ui::shapes::Shapes for Heard {
@@ -65,6 +66,12 @@ impl obelus_ui::shapes::Shapes for Heard {
     fn paired(&self, area: Rect, pair: obelus_ui::shapes::Pair) {
         if let Ok(mut pairs) = self.pairs.lock() {
             pairs.push((area, pair));
+        }
+    }
+
+    fn found(&self, area: Rect, found: obelus_ui::shapes::Found) {
+        if let Ok(mut finds) = self.found.lock() {
+            finds.push((area, found));
         }
     }
 
@@ -831,4 +838,94 @@ fn a_spelling_says_where_it_is() {
             .collect::<Vec<_>>(),
         "not the spelling's cells and only those"
     );
+}
+
+/// The words under a set of cells of a dump: what is drawn where a window
+/// was told something is.
+fn under(dump: &str, areas: &[Rect]) -> String {
+    let grid: Vec<Vec<char>> = support::text_block(dump)
+        .lines()
+        .filter_map(|row| row.split_once('|'))
+        .map(|(_, cells)| cells.chars().collect())
+        .collect();
+    let mut cells: Vec<(u16, u16)> = areas
+        .iter()
+        .flat_map(|area| {
+            (area.left()..area.right())
+                .flat_map(move |x| (area.top()..area.bottom()).map(move |y| (y, x)))
+        })
+        .collect();
+    cells.sort_unstable();
+    cells
+        .into_iter()
+        .filter_map(|(y, x)| grid.get(usize::from(y))?.get(usize::from(x)).copied())
+        .collect()
+}
+
+/// What the window has been told a search found since this was last asked.
+fn found_since() -> Vec<(Rect, obelus_ui::shapes::Found)> {
+    heard()
+        .found
+        .lock()
+        .map(|mut found| std::mem::take(&mut *found))
+        .unwrap_or_default()
+}
+
+/// What a search of the file found is said to a window, which draws it as
+/// a plate of its own -- and which match it is, so that walking to the
+/// next match is another one and the plate comes down there.
+///
+/// Deliberate break: drop the `shapes::found` beside the match's ground in
+/// `ui::editor`. The window has nothing to draw the plate from, and this
+/// hears nothing.
+#[test]
+fn what_a_search_of_the_file_found_is_said_to_a_window() {
+    let _turn = turn();
+    obelus_config::drawn_in_a_window();
+    let path = std::path::Path::new("tests/fixtures/sample.rs");
+    let mut app = App::new(vec![obelus_buffer::Buffer::open(path).expect("opening it")]);
+    support::render(&mut app, 60, 16);
+    support::press(&mut app, crossterm::event::KeyCode::F(5));
+    support::type_text(&mut app, "greeting");
+    let _ = found_since();
+    let dump = support::render(&mut app, 60, 16);
+    let first = found_since();
+    let areas: Vec<Rect> = first.iter().map(|(area, _)| *area).collect();
+    assert_eq!(under(&dump, &areas), "greeting", "{first:?}\n{dump}");
+    let which: Vec<obelus_ui::shapes::Found> = first.iter().map(|(_, found)| *found).collect();
+    assert!(which.windows(2).all(|two| two[0] == two[1]), "{which:?}");
+    assert_eq!(which[0].row, 1, "not the first match's line");
+
+    support::press(&mut app, crossterm::event::KeyCode::Down);
+    let dump = support::render(&mut app, 60, 16);
+    let next = found_since();
+    let areas: Vec<Rect> = next.iter().map(|(area, _)| *area).collect();
+    assert_eq!(under(&dump, &areas), "greeting", "{next:?}\n{dump}");
+    assert_eq!(next[0].1.row, 2, "not the second match's line");
+    assert_ne!(next[0].1, which[0], "the next match is the same one");
+}
+
+/// And the same over a page that is not a file -- here a reading -- whose
+/// rows the row writer they share draws.
+///
+/// Deliberate break: drop the `shapes::found` at the end of
+/// `reading::write_spans`. Nothing is said.
+#[test]
+fn what_a_search_of_a_reading_found_is_said_to_a_window() {
+    let _turn = turn();
+    obelus_config::drawn_in_a_window();
+    let path = std::path::Path::new("found.md");
+    let source = "First paragraph.\n\nThe pelican wings it.\n";
+    let mut app = App::new(vec![obelus_buffer::Buffer::from_text(path, source)]);
+    support::render(&mut app, 60, 16);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PreviewToggle);
+    support::render(&mut app, 60, 16);
+    support::press(&mut app, crossterm::event::KeyCode::F(5));
+    support::type_text(&mut app, "pelican");
+    support::render(&mut app, 60, 16);
+    let _ = found_since();
+    let dump = support::render(&mut app, 60, 16);
+    let found = found_since();
+    let areas: Vec<Rect> = found.iter().map(|(area, _)| *area).collect();
+    assert_eq!(under(&dump, &areas), "pelican", "{found:?}\n{dump}");
 }

@@ -92,6 +92,8 @@ impl obelus_ui::shapes::Shapes for Heard {
 
     fn paired(&self, _area: Rect, _pair: obelus_ui::shapes::Pair) {}
 
+    fn found(&self, _area: Rect, _found: obelus_ui::shapes::Found) {}
+
     fn parted(&self, _area: Rect) {}
 
     fn sheened(&self, _area: Rect, _from: Color, _to: Color) {}
