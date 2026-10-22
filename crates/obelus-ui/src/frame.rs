@@ -383,6 +383,7 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
     match app.shown() {
         Shown::Notes(_) => {
             if let Some(view) = todo::TodoUi::new(app) {
+                let view = view.the_reader_has(room.height);
                 bars::of(Whose::Notes, || view.render(canvas, cells));
             }
         }
@@ -400,6 +401,7 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
         }
         Shown::Discussion(_) => {
             if let Some(view) = discussion::DiscussionUi::new(app) {
+                let view = view.the_reader_has(room.height);
                 bars::of(Whose::Discussion, || view.render(regions.editor, cells));
             }
         }
@@ -410,6 +412,7 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
             reading::draw_held(
                 cells,
                 canvas,
+                room.height,
                 &cursor.laid(rows),
                 top,
                 in_front(app, None).then(|| cursor.place()),
@@ -1012,6 +1015,7 @@ fn list_over(
                 discussion::draw(
                     cells,
                     discussion::band(preview),
+                    discussion::band(preview).height,
                     shown.rows,
                     shown.top,
                     None,

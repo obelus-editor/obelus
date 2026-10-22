@@ -69,7 +69,7 @@ pub fn draw(
     // anything is a page with a cursor in it, which is [`draw_held`].
     draw_rows(
         cells,
-        area,
+        (area, area.height),
         rows.iter().map(|row| (row, None, None)),
         rows.len(),
         top,
@@ -85,9 +85,14 @@ pub fn draw(
 /// reading: where it is in a block of code, the key that copies the block
 /// is said on the block's own box, the way the transcript and a pull
 /// request's page say it.
+///
+/// `seen` is how many of `area`'s rows the reader can see: where a list on
+/// the status bar covers the foot of it, the rows go on under it -- it is
+/// glass -- and the bar stops above it, the editor's rule.
 pub fn draw_held(
     cells: &mut CellBuffer,
     area: Rect,
+    seen: u16,
     rows: &[Laid<'_>],
     top: usize,
     cursor: Option<Place>,
@@ -95,7 +100,7 @@ pub fn draw_held(
 ) {
     draw_rows(
         cells,
-        area,
+        (area, seen),
         rows.iter()
             .map(|laid| (laid.row, laid.held(), laid.found())),
         rows.len(),
@@ -171,10 +176,11 @@ type Marked<'a> = (
 );
 
 /// The rows, each with which of its characters are held and which a search
-/// found.
+/// found, in `area` -- of which the reader sees the top `seen` rows, which
+/// is as tall as the bar is.
 fn draw_rows<'a>(
     cells: &mut CellBuffer,
-    area: Rect,
+    (area, seen): (Rect, u16),
     rows: impl Iterator<Item = Marked<'a>>,
     count: usize,
     top: usize,
@@ -189,8 +195,20 @@ fn draw_rows<'a>(
     let column = crate::editor::SCROLLBAR_WIDTH.min(area.width);
     let width = area.width - column;
     // One row of the reading per row of the screen, so this is exact.
-    let bar = (count > usize::from(area.height))
-        .then(|| scrollbar(cells, area, top, count, theme))
+    let seen = seen.min(area.height);
+    let bar = (count > usize::from(seen))
+        .then(|| {
+            scrollbar(
+                cells,
+                Rect {
+                    height: seen,
+                    ..area
+                },
+                top,
+                count,
+                theme,
+            )
+        })
         .flatten();
 
     // And where this reading has got to, for a front end that can draw it

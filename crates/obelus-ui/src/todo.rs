@@ -365,6 +365,10 @@ pub struct TodoUi<'a> {
     /// Whether nothing is over the notes, which is whether they may mark
     /// the note the keys are on -- see [`crate::in_front`].
     in_front: bool,
+    /// How many of the region's rows the reader can see: where a list on
+    /// the status bar covers the foot of it, the rows go on under the list
+    /// -- it is glass -- and the bar stops above it, the editor's rule.
+    seen: Option<u16>,
 }
 
 impl<'a> TodoUi<'a> {
@@ -377,7 +381,16 @@ impl<'a> TodoUi<'a> {
             talked: app.talked_about(),
             phase: app.phase(),
             in_front: crate::in_front(app, None),
+            seen: None,
         })
+    }
+
+    /// Says how many of the region's rows, from its top, the reader can
+    /// see -- the editor's `the_reader_has`, for the notes.
+    #[must_use]
+    pub const fn the_reader_has(mut self, rows: u16) -> Self {
+        self.seen = Some(rows);
+        self
     }
 }
 
@@ -469,12 +482,19 @@ impl Widget for TodoUi<'_> {
 
         // Only where there is somewhere to scroll: a track with no thumb on
         // it is a control that does not work.
+        let seen = self
+            .seen
+            .map_or(list.height, |rows| rows.saturating_sub(list.y - area.y))
+            .min(list.height);
         let bar = window
-            .scrollable(list.height)
+            .scrollable(seen)
             .then(|| {
                 crate::scrollbar(
                     cells,
-                    list,
+                    Rect {
+                        height: seen,
+                        ..list
+                    },
                     window.top(),
                     self.notes.rows().len(),
                     self.theme,

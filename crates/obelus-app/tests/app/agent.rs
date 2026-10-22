@@ -19542,3 +19542,47 @@ fn a_pull_requests_page_under_its_search_is_the_preview() {
         "escape did not put the page back:\n{back}"
     );
 }
+
+/// A pull request's page under a search of it says how much of it is out
+/// of sight in the rows the reader can see: at the end of it, the bar's
+/// thumb is at the foot of the rows above the list.
+///
+/// Broken deliberately by measuring the bar against the whole region (the
+/// `the_reader_has` for the page in `ui::frame` left off): the thumb for
+/// the end was under the list, where none of it could be seen.
+#[test]
+fn a_pull_requests_page_under_a_search_says_where_it_is() {
+    let scratch = support::Scratch::new("agent-pull-request-search-bar");
+    let answer = scratch.path().join("gh-answer.json");
+    let body: String = (0..60).map(|line| format!("line {line}\\n\\n")).collect();
+    std::fs::write(&answer, one_pull_request("abc123")).expect("the answer");
+    viewed(&answer, &body);
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
+    pump(&mut app, &events, "the list", |app| {
+        app.picker().is_some_and(|picker| picker.row_count() == 1)
+    });
+    support::press(&mut app, KeyCode::Enter);
+    until_the_screen_says(&mut app, &events, "line 0", HEIGHT);
+
+    support::press_function(&mut app, 5);
+    support::type_text(&mut app, "line");
+    let rows = app.picker().map_or(0, |picker| picker.row_count());
+    for _ in 1..rows {
+        support::press(&mut app, KeyCode::Down);
+    }
+    let looking = screen(&mut app);
+    let above: Vec<&str> = looking
+        .lines()
+        .take_while(|row| !row.contains('\u{2500}'))
+        .collect();
+    assert!(
+        above.iter().any(|row| row.contains("line 59")),
+        "the page was not scrolled to the last match:\n{looking}"
+    );
+    assert!(
+        above.last().is_some_and(|row| row.ends_with('\u{2588}')),
+        "the thumb is not at the foot of what can be seen:\n{looking}"
+    );
+}

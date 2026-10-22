@@ -1553,3 +1553,43 @@ fn a_page_laid_out_again_under_its_search_is_searched_again() {
         support::render(&mut app, 30, 24)
     );
 }
+
+/// A reading under a search of it says how much of it is out of sight in
+/// the rows the reader can see, the way the file does: at the end of it,
+/// the bar's thumb is at the foot of the rows above the list.
+///
+/// Broken deliberately by measuring the bar against the whole region (the
+/// `room.height` handed to `reading::draw_held` in `ui::frame` made the
+/// canvas's): the thumb for the end was under the list, where none of it
+/// could be seen.
+#[test]
+fn a_reading_under_a_search_says_where_it_is() {
+    let path = std::path::Path::new("long.md");
+    let source: String = (0..30)
+        .map(|at| format!("Paragraph {at} has a word.\n\n"))
+        .collect();
+    let mut app = App::new(vec![obelus_buffer::Buffer::from_text(path, &source)]);
+    support::lay_out(&mut app, 60, 20);
+    dispatch::dispatch(&mut app, Command::PreviewToggle);
+    support::lay_out(&mut app, 60, 20);
+    support::press_function(&mut app, 5);
+    support::type_text(&mut app, "has a word");
+    support::lay_out(&mut app, 60, 20);
+    for _ in 0..29 {
+        support::press(&mut app, KeyCode::Down);
+    }
+    let dump = support::render(&mut app, 60, 20);
+    let text = support::text_block(&dump);
+    let above: Vec<&str> = text
+        .lines()
+        .take_while(|row| !row.contains('\u{2500}'))
+        .collect();
+    assert!(
+        above.iter().any(|row| row.contains("Paragraph 29")),
+        "the reading was not scrolled to the match:\n{dump}"
+    );
+    assert!(
+        above.last().is_some_and(|row| row.ends_with('\u{2588}')),
+        "the thumb is not at the foot of what can be seen:\n{dump}"
+    );
+}

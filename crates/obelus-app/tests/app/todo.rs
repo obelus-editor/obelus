@@ -4151,3 +4151,48 @@ fn a_list_in_the_search_s_place_takes_its_mark_off_the_notes() {
         "the mark outlived the search:\n{after}"
     );
 }
+
+/// The notes under a search of them say how much of them is out of sight,
+/// in the rows the reader can see: the bar stops above the list, as the
+/// file's does, and its thumb is where the page is -- here at the end.
+///
+/// Broken deliberately by measuring the bar against the whole region (the
+/// `the_reader_has` in `ui::frame` left off): the thumb for the end of the
+/// notes was at the foot of the region, under the list, and none of it was
+/// where the reader could see it.
+#[test]
+fn the_notes_under_a_search_say_where_they_are() {
+    let lines: String = (0..30).map(|at| format!("line {at} has an a\n")).collect();
+    let notes = format!("[[todo]]\nsaid = \"\"\"\n{lines}\"\"\"\ndone = false\n");
+    let scratch = tree("search-bar", &notes);
+    let mut app = open(&scratch, 60, 20);
+    support::lay_out(&mut app, 60, 20);
+    support::press_function(&mut app, 5);
+    // Every line, so the list is as tall as it gets and the notes have only
+    // the few rows above it -- and to the last of them, the foot of a page
+    // longer than those rows.
+    support::type_text(&mut app, "has an a");
+    support::lay_out(&mut app, 60, 20);
+    for _ in 0..29 {
+        press(&mut app, KeyCode::Down);
+    }
+    support::lay_out(&mut app, 60, 20);
+    let dump = support::render(&mut app, 60, 20);
+    let text = support::text_block(&dump);
+    let above: Vec<&str> = text
+        .lines()
+        .take_while(|row| !row.contains('\u{2500}'))
+        .collect();
+    assert!(
+        above.iter().any(|row| row.contains("line 29")),
+        "the notes were not scrolled to the match:\n{dump}"
+    );
+    assert!(
+        above.iter().any(|row| row.ends_with('\u{2588}')),
+        "no bar where the reader can see it:\n{dump}"
+    );
+    assert!(
+        above.last().is_some_and(|row| row.ends_with('\u{2588}')),
+        "the thumb is not at the foot of what can be seen:\n{dump}"
+    );
+}

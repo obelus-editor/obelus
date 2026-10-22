@@ -41,11 +41,21 @@ pub const fn reading_width(area: Rect) -> u16 {
 
 /// Draws a page's rows in `area`, from row `top`.
 ///
+/// `seen` is how many of `area`'s rows the reader can see: where a list on
+/// the status bar covers the foot of it, the rows go on under the list --
+/// it is glass -- but the bar stops above it, because a thumb under the
+/// list is where nobody can read it. The editor's rule, for its reason.
+///
 /// `cursor` is where the cursor is, on the page and not in a preview: it is
 /// what the key at the end of a row that acts is said for.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a page, where it is drawn, and how much of that is seen"
+)]
 pub fn draw(
     cells: &mut CellBuffer,
     area: Rect,
+    seen: u16,
     rows: &[Row],
     top: usize,
     cursor: Option<Place>,
@@ -60,8 +70,20 @@ pub fn draw(
     }
     let column = crate::editor::SCROLLBAR_WIDTH.min(area.width);
     let width = area.width - column;
-    let bar = (rows.len() > usize::from(area.height))
-        .then(|| crate::scrollbar(cells, area, top, rows.len(), theme))
+    let seen = seen.min(area.height);
+    let bar = (rows.len() > usize::from(seen))
+        .then(|| {
+            crate::scrollbar(
+                cells,
+                Rect {
+                    height: seen,
+                    ..area
+                },
+                top,
+                rows.len(),
+                theme,
+            )
+        })
         .flatten();
     if let Ok(top) = i64::try_from(top) {
         crate::shapes::scrolled(Rect { width, ..area }, top, bar);
@@ -270,6 +292,9 @@ pub struct DiscussionUi<'a> {
     /// Whether nothing is over it, which is whether it may say what enter
     /// does where the cursor is -- see [`crate::in_front`].
     in_front: bool,
+    /// How many of the region's rows the reader can see, where a list on
+    /// the status bar covers the foot of it -- see [`draw`].
+    seen: Option<u16>,
 }
 
 impl<'a> DiscussionUi<'a> {
@@ -282,7 +307,16 @@ impl<'a> DiscussionUi<'a> {
             theme: app.theme(),
             phase: app.phase(),
             in_front: crate::in_front(app, None),
+            seen: None,
         })
+    }
+
+    /// Says how many of the region's rows, from its top, the reader can
+    /// see -- the editor's `the_reader_has`, for a page.
+    #[must_use]
+    pub const fn the_reader_has(mut self, rows: u16) -> Self {
+        self.seen = Some(rows);
+        self
     }
 }
 
@@ -296,9 +330,14 @@ impl Widget for DiscussionUi<'_> {
                 .bg(self.theme.background),
         );
         let rows = self.page.rows(reading_width(area));
+        let band = band(area);
+        let seen = self
+            .seen
+            .map_or(band.height, |rows| rows.saturating_sub(band.y - area.y));
         draw(
             cells,
-            band(area),
+            band,
+            seen,
             &rows,
             self.page.top(),
             self.in_front.then(|| self.page.cursor()),
