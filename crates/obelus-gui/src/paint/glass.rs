@@ -601,10 +601,19 @@ impl Painter {
     /// one a terminal already answers -- and it is added in the front
     /// end, from what the front end already knows: the rectangle it drew
     /// the glass in, and which edge the thing is joined to.
+    ///
+    /// `the_page_moves` says the page under the panes is catching up, and
+    /// then their shadows are not drawn into the frame but with the panes,
+    /// over the page once it has been put back -- see `panes_shadows`. A
+    /// pane's shadow is the pane's, but it falls outside the pane, on the
+    /// page; drawn into the frame it was in the page's picture, and went
+    /// along with the rows it fell on while the list casting it stood
+    /// still.
     pub(super) fn shadows(
         &mut self,
         stack: &[&Behind],
         sliding: Option<usize>,
+        the_page_moves: bool,
         boxes: f32,
         cell: CellSize,
     ) {
@@ -620,13 +629,32 @@ impl Painter {
                     spread,
                     boxes,
                 );
-            } else if sliding != Some(at)
-                && casts(stack, at)
-                && let Some(joined) = casting(over.joined)
-            {
-                let glass = self.placed.levels[at].rect;
-                self.shadow(glass, 0.0, joined, spread, 1.0);
+            } else if sliding != Some(at) && !the_page_moves {
+                self.pane_shadow(stack, at, spread);
             }
+        }
+    }
+
+    /// The panes' shadows over a page that is catching up, drawn once the
+    /// page has been put back from the frame -- the layer they belong to is
+    /// the panes', which have not moved, so they stand where they are while
+    /// the page goes under them. See `shadows`.
+    pub(super) fn panes_shadows(&mut self, stack: &[&Behind], cell: CellSize) {
+        let spread = cell.height * SHADOW_SPREAD;
+        for (at, over) in stack.iter().enumerate() {
+            if !over.is_a_box() {
+                self.pane_shadow(stack, at, spread);
+            }
+        }
+    }
+
+    /// One pane's shadow, where it casts one.
+    fn pane_shadow(&mut self, stack: &[&Behind], at: usize, spread: f32) {
+        if casts(stack, at)
+            && let Some(joined) = casting(stack[at].joined)
+        {
+            let glass = self.placed.levels[at].rect;
+            self.shadow(glass, 0.0, joined, spread, 1.0);
         }
     }
 

@@ -304,6 +304,7 @@ impl Painter {
         self.shadows(
             &stack,
             top.filter(|_| moving.pane.is_some()),
+            !catching_up.is_empty(),
             moving.card.unwrap_or(1.0),
             cell,
         );
@@ -399,6 +400,8 @@ impl Painter {
                 .collect();
             self.placed.composed = true;
             self.catching_up(catching_up, &panes, &stack, fonts);
+            // And the panes' shadows over the page put back -- see `shadows`.
+            self.panes_shadows(&stack, cell);
             self.going(moving.leaving);
         } else {
             self.going(moving.leaving);
