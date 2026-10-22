@@ -19389,3 +19389,200 @@ fn a_double_click_on_a_call_that_opens_goes_where_the_first_press_was() {
         "the double click left the call folded otherwise:\n{text}"
     );
 }
+
+/// A conversation is searched by its transcript, as it is drawn, and
+/// choosing a row puts the transcript's cursor on the match.
+///
+/// Broken deliberately three ways. Leaving `search-file` on a file being
+/// open (`Requires::AFileOpen`): `f5` in a conversation did nothing.
+/// Leaving the focus in the box in `Chat::stand_in_the_transcript`: the
+/// caret stayed in the box. And leaving `found` out of the transcript's
+/// rows (`Chat::rows`): nothing was marked.
+#[test]
+fn a_conversation_is_searched_and_a_match_is_gone_to() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/details");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer", |app| {
+        app.talking() == obelus_agent::Talking::Ready && said_in_transcript(app, "All passed.")
+    });
+
+    support::press_function(&mut app, 5);
+    assert!(
+        app.picker().is_some(),
+        "f5 opened no search in a conversation"
+    );
+    support::type_text(&mut app, "All passed");
+    let rows = app.picker().map_or(0, |picker| picker.row_count());
+    assert!(rows > 0, "the transcript was not searched");
+    // Before it is chosen, what was found is marked in the transcript above
+    // the list, as the file marks it.
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert_eq!(
+        support::found_on_screen(&dump, "All passed."),
+        "All passed",
+        "the match is not marked in the transcript:\n{dump}"
+    );
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.picker().is_none(), "the search is still open");
+    assert!(
+        matches!(
+            app.chat().map(obelus_component::chat::Chat::focus),
+            Some(obelus_component::chat::Focus::Transcript(_))
+        ),
+        "the cursor is not in the transcript"
+    );
+    assert_eq!(
+        support::under_the_caret(&mut app, WIDTH, HEIGHT, 10).as_deref(),
+        Some("All passed"),
+        "the caret is not on the match:\n{}",
+        screen(&mut app)
+    );
+}
+
+/// A pull request's page is searched as it is drawn, and choosing a row
+/// puts the page's cursor on the match and the match on screen -- here
+/// far down a description longer than the screen.
+///
+/// Broken deliberately by standing the cursor without moving the window in
+/// `DiscussionView::stand_in_view`: the cursor was below the screen, and no
+/// caret was drawn on the match.
+#[test]
+fn a_pull_requests_page_is_searched_and_a_match_is_gone_to() {
+    let scratch = support::Scratch::new("agent-pull-request-searched");
+    let answer = scratch.path().join("gh-answer.json");
+    let body: String = (0..60).map(|line| format!("line {line}\\n\\n")).collect();
+    std::fs::write(&answer, one_pull_request("abc123")).expect("the answer");
+    viewed(&answer, &body);
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
+    pump(&mut app, &events, "the list", |app| {
+        app.picker().is_some_and(|picker| picker.row_count() == 1)
+    });
+    support::press(&mut app, KeyCode::Enter);
+    until_the_screen_says(&mut app, &events, "line 0", HEIGHT);
+
+    support::press_function(&mut app, 5);
+    assert!(app.picker().is_some(), "f5 opened no search on the page");
+    support::type_text(&mut app, "line 57");
+    let rows: Vec<String> = app
+        .picker()
+        .expect("the search")
+        .matches()
+        .map(|item| item.label.clone())
+        .collect();
+    assert_eq!(
+        rows,
+        vec!["line 57".to_string()],
+        "the page was not searched"
+    );
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.picker().is_none(), "the search is still open");
+    assert_eq!(
+        support::under_the_caret(&mut app, WIDTH, HEIGHT, 7).as_deref(),
+        Some("line 57"),
+        "the caret is not on the match:\n{}",
+        screen(&mut app)
+    );
+}
+
+/// The search of a pull request's page sits on the status bar, and the page
+/// above it is its preview: the row the list is on is scrolled into view
+/// with the cursor left where it was, and escape puts the page back.
+///
+/// Broken deliberately three ways. Taking `look_within_at_the_selection`
+/// out of the frame: the page stayed at its top. Taking
+/// `put_the_page_back` out of leaving the list: escape left the page down
+/// at the match. And leaving `found` out of the page's rows
+/// (`DiscussionView::rows`): nothing was marked.
+#[test]
+fn a_pull_requests_page_under_its_search_is_the_preview() {
+    let scratch = support::Scratch::new("agent-pull-request-looked-at");
+    let answer = scratch.path().join("gh-answer.json");
+    let body: String = (0..60).map(|line| format!("line {line}\\n\\n")).collect();
+    std::fs::write(&answer, one_pull_request("abc123")).expect("the answer");
+    viewed(&answer, &body);
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
+    pump(&mut app, &events, "the list", |app| {
+        app.picker().is_some_and(|picker| picker.row_count() == 1)
+    });
+    support::press(&mut app, KeyCode::Enter);
+    until_the_screen_says(&mut app, &events, "line 0", HEIGHT);
+
+    support::press_function(&mut app, 5);
+    support::type_text(&mut app, "line 57");
+    let looking = screen(&mut app);
+    // Above the rule the list starts with, which is the page.
+    let above: Vec<&str> = looking
+        .lines()
+        .take_while(|row| !row.contains('\u{2500}'))
+        .collect();
+    assert!(
+        above.iter().any(|row| row.contains("line 57")),
+        "the page was not scrolled to the row:\n{looking}"
+    );
+    // And what was found is marked on it, as the file marks it.
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert_eq!(
+        support::found_on_screen(&dump, "line 57"),
+        "line 57",
+        "the match is not marked on the page:\n{dump}"
+    );
+
+    support::press(&mut app, KeyCode::Esc);
+    let back = screen(&mut app);
+    assert!(
+        back.contains("line 0"),
+        "escape did not put the page back:\n{back}"
+    );
+}
+
+/// A pull request's page under a search of it says how much of it is out
+/// of sight in the rows the reader can see: at the end of it, the bar's
+/// thumb is at the foot of the rows above the list.
+///
+/// Broken deliberately by measuring the bar against the whole region (the
+/// `the_reader_has` for the page in `ui::frame` left off): the thumb for
+/// the end was under the list, where none of it could be seen.
+#[test]
+fn a_pull_requests_page_under_a_search_says_where_it_is() {
+    let scratch = support::Scratch::new("agent-pull-request-search-bar");
+    let answer = scratch.path().join("gh-answer.json");
+    let body: String = (0..60).map(|line| format!("line {line}\\n\\n")).collect();
+    std::fs::write(&answer, one_pull_request("abc123")).expect("the answer");
+    viewed(&answer, &body);
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ShowPullRequests);
+    pump(&mut app, &events, "the list", |app| {
+        app.picker().is_some_and(|picker| picker.row_count() == 1)
+    });
+    support::press(&mut app, KeyCode::Enter);
+    until_the_screen_says(&mut app, &events, "line 0", HEIGHT);
+
+    support::press_function(&mut app, 5);
+    support::type_text(&mut app, "line");
+    let rows = app.picker().map_or(0, |picker| picker.row_count());
+    for _ in 1..rows {
+        support::press(&mut app, KeyCode::Down);
+    }
+    let looking = screen(&mut app);
+    let above: Vec<&str> = looking
+        .lines()
+        .take_while(|row| !row.contains('\u{2500}'))
+        .collect();
+    assert!(
+        above.iter().any(|row| row.contains("line 59")),
+        "the page was not scrolled to the last match:\n{looking}"
+    );
+    assert!(
+        above.last().is_some_and(|row| row.ends_with('\u{2588}')),
+        "the thumb is not at the foot of what can be seen:\n{looking}"
+    );
+}

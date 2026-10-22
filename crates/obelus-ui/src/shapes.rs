@@ -410,6 +410,56 @@ pub trait Shapes: Send + Sync {
     /// drawn in is the ground of that very cell, which the view has
     /// already written.
     fn paired(&self, area: Rect, pair: Pair);
+
+    /// These cells are what a search found, on the row the search is
+    /// standing on, in the page that is its preview.
+    ///
+    /// A terminal says it in `marked_background`, behind the characters.
+    /// What a window has is what it has for the cursor's brackets -- a
+    /// plate and a light -- and motion: a search walked to another match
+    /// puts its plate down there, which is how the eye follows it across a
+    /// page it did not move.
+    ///
+    /// `found` is which match -- see [`Found`], which says why it is numbers
+    /// to compare rather than a place on the screen. A run that wraps is
+    /// said once a row, each with the same `found`.
+    fn found(&self, area: Rect, found: Found);
+}
+
+/// Which match of a search some cells are, as numbers to be *compared*,
+/// the way [`Pair`] is.
+///
+/// What a front end does with it is notice that the match is another one --
+/// the search walked to it -- which nothing in the cells says: a match the
+/// page scrolled and a match the search moved to are the same cells
+/// somewhere else. So it is where the match is in what it is a match of,
+/// which a scroll does not change.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Found {
+    /// Which page: a file, by its path and which commit it is, or which of
+    /// the views that lay their own rows out. Hashed, because all it is for
+    /// is comparing.
+    pub page: u64,
+    /// Which line of the file, or row of the page.
+    pub row: usize,
+    /// How many characters along it the match begins.
+    pub start: usize,
+}
+
+impl Found {
+    /// A match on a page that is not a file: `of` says which kind of page,
+    /// and the row is a row as the page lays it out.
+    #[must_use]
+    pub fn on(of: &str, row: usize, start: usize) -> Self {
+        use std::hash::{Hash, Hasher};
+        let mut page = std::collections::hash_map::DefaultHasher::new();
+        of.hash(&mut page);
+        Self {
+            page: page.finish(),
+            row,
+            start,
+        }
+    }
 }
 
 /// Which pair of brackets a cell is half of, as numbers to be *compared*,
@@ -541,6 +591,16 @@ pub(crate) fn spelled(area: Rect) {
 pub(crate) fn paired(area: Rect, pair: Pair) {
     if let Some(shapes) = DRAWING.get() {
         shapes.paired(area, pair);
+    }
+}
+
+/// Tells whoever is drawing that what a search found is here.
+pub(crate) fn found(area: Rect, found: Found) {
+    if area.is_empty() {
+        return;
+    }
+    if let Some(shapes) = DRAWING.get() {
+        shapes.found(area, found);
     }
 }
 

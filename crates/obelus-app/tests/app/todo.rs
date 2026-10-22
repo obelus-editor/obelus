@@ -3987,3 +3987,212 @@ fn undo_in_a_note_just_started_takes_only_it() {
         "the caret is not back in the note it was started from"
     );
 }
+
+/// The notes are searched by their words, and choosing a row puts the
+/// caret in the note, on the match -- in its third line here, past the
+/// two the box wraps above it.
+///
+/// Broken deliberately by standing on the note without walking along its
+/// words (`TodoView::stand_in`): the caret was at the note's start.
+#[test]
+fn the_notes_are_searched_and_a_match_is_gone_to() {
+    let scratch = tree("search", THREE);
+    let mut app = open(&scratch, 76, 18);
+    support::lay_out(&mut app, 76, 18);
+
+    support::press_function(&mut app, 5);
+    support::type_text(&mut app, "the colours");
+    let rows: Vec<String> = app
+        .picker()
+        .expect("the search")
+        .matches()
+        .map(|item| item.label.clone())
+        .collect();
+    assert_eq!(
+        rows,
+        vec!["changes the colours, not the count.".to_string()]
+    );
+    press(&mut app, KeyCode::Enter);
+    assert!(app.picker().is_none(), "the search is still open");
+    assert_eq!(
+        support::under_the_caret(&mut app, 76, 18, 11).as_deref(),
+        Some("the colours"),
+        "the caret is not on the match:\n{}",
+        support::render(&mut app, 76, 18)
+    );
+}
+
+/// The search of the notes sits on the status bar, and the notes above it
+/// are its preview: what was found is marked in the note's words, on the
+/// row of them it is on, and the mark goes with the list.
+///
+/// Broken deliberately two ways. Leaving the found run off the rows in
+/// `TodoView::rebuild`: nothing was marked. And not taking the mark away as
+/// the list goes (`forget_the_find` out of `leave`): it stayed on the note.
+#[test]
+fn the_notes_under_their_search_mark_what_it_found() {
+    let scratch = tree("search-marked", THREE);
+    let mut app = open(&scratch, 76, 24);
+    support::lay_out(&mut app, 76, 24);
+
+    support::press_function(&mut app, 5);
+    support::type_text(&mut app, "the colours");
+    let dump = support::render(&mut app, 76, 24);
+    assert_eq!(
+        support::found_on_screen(&dump, "changes the colours"),
+        "the colours",
+        "the match is not marked on the note:\n{dump}"
+    );
+
+    press(&mut app, KeyCode::Esc);
+    let back = support::render(&mut app, 76, 24);
+    assert_eq!(
+        support::found_on_screen(&back, "changes the colours"),
+        "",
+        "the mark outlived the search:\n{back}"
+    );
+}
+
+/// The mark a search left on the notes comes off them as the list goes,
+/// even where something else has been put in front of the reader while it
+/// was up -- an agent opening a file, say -- so the notes do not still
+/// wear it when the reader comes back to them.
+///
+/// Broken deliberately by taking the mark off only the document in front
+/// (`forget_the_find` asking `searched_here` again): the notes kept it.
+#[test]
+fn a_search_s_mark_comes_off_the_notes_whatever_is_in_front() {
+    let scratch = tree("search-elsewhere", THREE);
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    support::lay_out(&mut app, 76, 24);
+    let file = app.current_document_for_test().expect("the file");
+    dispatch::dispatch(&mut app, Command::TodoOpen);
+    let notes = app.current_document_for_test().expect("the notes");
+    support::lay_out(&mut app, 76, 24);
+    support::press_function(&mut app, 5);
+    support::type_text(&mut app, "the colours");
+    let dump = support::render(&mut app, 76, 24);
+    assert_eq!(
+        support::found_on_screen(&dump, "changes the colours"),
+        "the colours",
+        "{dump}"
+    );
+
+    app.go_to_document_for_test(file);
+    press(&mut app, KeyCode::Esc);
+    support::lay_out(&mut app, 76, 24);
+    app.go_to_document_for_test(notes);
+    let back = support::render(&mut app, 76, 24);
+    assert!(
+        back.contains("changes the colours"),
+        "not the notes:\n{back}"
+    );
+    assert_eq!(
+        support::found_on_screen(&back, "changes the colours"),
+        "",
+        "the mark outlived the search:\n{back}"
+    );
+}
+
+/// A list put up in the search's place puts the search away: its mark comes
+/// off the notes. Seen once that list is chosen from, which is the way out
+/// of a list that does not put a search away -- escape does, whatever the
+/// list is.
+///
+/// What does it is `show_list` leaving the list it replaces, through the
+/// door escape goes through. Broken deliberately by taking the
+/// `make_room` out of `show_list`: the notes still wore the mark once the
+/// other list had gone.
+#[test]
+fn a_list_in_the_search_s_place_takes_its_mark_off_the_notes() {
+    let scratch = tree("search-replaced", THREE);
+    let mut app = open(&scratch, 76, 24);
+    support::lay_out(&mut app, 76, 24);
+    support::press_function(&mut app, 5);
+    support::type_text(&mut app, "the colours");
+    let dump = support::render(&mut app, 76, 24);
+    assert_eq!(
+        support::found_on_screen(&dump, "changes the colours"),
+        "the colours",
+        "{dump}"
+    );
+
+    let nothing = obelus_component::picker::PickerItem {
+        prose: false,
+        marker: None,
+        icon: None,
+        label: "Nothing".to_string(),
+        version: None,
+        detail: None,
+        trailing: None,
+        changed: None,
+        value: obelus_component::picker::PickerValue::Nothing,
+        enabled: true,
+        colours: None,
+        status: None,
+        depth: 0,
+        opens: None,
+        kind: None,
+        tab: None,
+        section: None,
+    };
+    app.open_picker_for_test(
+        vec![nothing],
+        obelus_component::picker::PickerLayout::Compact { rows: 3 },
+    );
+    support::lay_out(&mut app, 76, 24);
+    press(&mut app, KeyCode::Enter);
+    let after = support::render(&mut app, 76, 24);
+    assert!(app.picker().is_none(), "the other list is still up");
+    assert_eq!(
+        support::found_on_screen(&after, "changes the colours"),
+        "",
+        "the mark outlived the search:\n{after}"
+    );
+}
+
+/// The notes under a search of them say how much of them is out of sight,
+/// in the rows the reader can see: the bar stops above the list, as the
+/// file's does, and its thumb is where the page is -- here at the end.
+///
+/// Broken deliberately by measuring the bar against the whole region (the
+/// `the_reader_has` in `ui::frame` left off): the thumb for the end of the
+/// notes was at the foot of the region, under the list, and none of it was
+/// where the reader could see it.
+#[test]
+fn the_notes_under_a_search_say_where_they_are() {
+    let lines: String = (0..30).map(|at| format!("line {at} has an a\n")).collect();
+    let notes = format!("[[todo]]\nsaid = \"\"\"\n{lines}\"\"\"\ndone = false\n");
+    let scratch = tree("search-bar", &notes);
+    let mut app = open(&scratch, 60, 20);
+    support::lay_out(&mut app, 60, 20);
+    support::press_function(&mut app, 5);
+    // Every line, so the list is as tall as it gets and the notes have only
+    // the few rows above it -- and to the last of them, the foot of a page
+    // longer than those rows.
+    support::type_text(&mut app, "has an a");
+    support::lay_out(&mut app, 60, 20);
+    for _ in 0..29 {
+        press(&mut app, KeyCode::Down);
+    }
+    support::lay_out(&mut app, 60, 20);
+    let dump = support::render(&mut app, 60, 20);
+    let text = support::text_block(&dump);
+    let above: Vec<&str> = text
+        .lines()
+        .take_while(|row| !row.contains('\u{2500}'))
+        .collect();
+    assert!(
+        above.iter().any(|row| row.contains("line 29")),
+        "the notes were not scrolled to the match:\n{dump}"
+    );
+    assert!(
+        above.iter().any(|row| row.ends_with('\u{2588}')),
+        "no bar where the reader can see it:\n{dump}"
+    );
+    assert!(
+        above.last().is_some_and(|row| row.ends_with('\u{2588}')),
+        "the thumb is not at the foot of what can be seen:\n{dump}"
+    );
+}

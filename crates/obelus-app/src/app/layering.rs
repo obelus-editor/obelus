@@ -104,11 +104,14 @@ impl App {
             // that went.
             Layer::Gone => {}
             Layer::Picker => {
+                self.keep_the_search();
                 self.picker = None;
                 // Back to where they were looking from. The other way out
                 // of a list is choosing a row, and that goes somewhere on
                 // purpose -- see `App::accept`.
                 self.look_back();
+                self.forget_the_find();
+                self.put_the_page_back();
                 self.history = history_view::Showing::default();
                 self.lsp.troubling.clear();
                 self.conversing = conversations::Conversing::default();

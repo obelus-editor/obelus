@@ -779,6 +779,11 @@ pub struct ChatView<'a> {
     /// same mark a file's row carries, since this row is the one a reader
     /// working from a chat is most often on.
     remote: Option<(&'static str, obelus_remote::State)>,
+    /// How many of the region's rows, from its top, the reader can see:
+    /// a list on the status bar is drawn over the foot of a conversation
+    /// rather than taking room from it, and the bar stops above the list,
+    /// as every other page's does -- see `the_reader_has`.
+    seen: Option<u16>,
 }
 
 impl<'a> ChatView<'a> {
@@ -810,7 +815,16 @@ impl<'a> ChatView<'a> {
             usage: app.agent_usage(),
             tasks: app.background_tasks(),
             remote: app.remote(),
+            seen: None,
         })
+    }
+
+    /// Says how many of the region's rows, from its top, the reader can
+    /// see -- the editor's `the_reader_has`, for a conversation.
+    #[must_use]
+    pub const fn the_reader_has(mut self, rows: u16) -> Self {
+        self.seen = Some(rows);
+        self
     }
 
     /// Where in the transcript a point on the screen is, if it is in one
@@ -1064,7 +1078,13 @@ impl Widget for ChatView<'_> {
             );
         }
 
-        self.transcript(cells, regions.transcript, plain, dim);
+        let reached = self
+            .seen
+            .map_or(regions.transcript.height, |rows| {
+                (area.y + rows).saturating_sub(regions.transcript.y)
+            })
+            .min(regions.transcript.height);
+        self.transcript(cells, regions.transcript, reached, plain, dim);
         // The way back, on the rule over the box, while the reader is not
         // at the end.
         //
@@ -1169,7 +1189,14 @@ impl ChatView<'_> {
     }
 
     /// What has been said, and the commands being completed over it.
-    fn transcript(&self, cells: &mut CellBuffer, area: Rect, plain: Style, dim: Style) {
+    fn transcript(
+        &self,
+        cells: &mut CellBuffer,
+        area: Rect,
+        reached: u16,
+        plain: Style,
+        dim: Style,
+    ) {
         let words = area.x + MARGIN + indent();
         let rows = self.chat.rows(reading_width(area));
         if rows.is_empty() {
@@ -1180,10 +1207,22 @@ impl ChatView<'_> {
         // the one scrolling thing in Obelus with no answer to "how much of
         // this is there". The column is already spare -- the rows are
         // wrapped to leave it -- so nothing moves to make room.
-        let bar = self
-            .chat
-            .scrollable(area.height)
-            .then(|| crate::scrollbar(cells, area, self.chat.top(), rows.len(), self.theme))
+        // Only as tall as the rows the reader can see, where a list is
+        // drawn over the foot of the transcript: a thumb under the list is
+        // where nobody can read it.
+        let bar = (rows.len() > usize::from(reached))
+            .then(|| {
+                crate::scrollbar(
+                    cells,
+                    Rect {
+                        height: reached,
+                        ..area
+                    },
+                    self.chat.top(),
+                    rows.len(),
+                    self.theme,
+                )
+            })
             .flatten();
         // And where it has got to, for a front end that can draw it
         // arriving rather than simply being there -- the same thing every
@@ -1378,6 +1417,16 @@ impl ChatView<'_> {
                         false => stop,
                     },
                     held: row.held.as_ref(),
+                    found: row.found.as_ref().map(|found| {
+                        (
+                            found,
+                            crate::shapes::Found::on(
+                                "conversation",
+                                first + usize::from(offset),
+                                found.start,
+                            ),
+                        )
+                    }),
                     linked: &linked,
                 },
             );
@@ -2403,6 +2452,66 @@ mod tests {
         assert_eq!(super::tasks_said(0, 3, false, true), "3 finished");
     }
 
+    /// A conversation with a list drawn over its foot says how much of it is
+    /// out of sight in the rows the reader can see: its bar stops above the
+    /// list, as every other page's does.
+    ///
+    /// Broken deliberately by drawing the bar in the whole transcript's
+    /// height rather than `reached`: it ran on under the list, where its
+    /// thumb for the end of the conversation could not be seen.
+    #[test]
+    fn a_conversation_s_bar_stops_above_a_list_over_it() {
+        let mut chat = obelus_component::chat::Chat::new();
+        for at in 0..40 {
+            chat.chunk(
+                obelus_component::chat::Speaker::Agent,
+                &format!("line {at}\n\n"),
+            );
+        }
+        let area = ratatui::layout::Rect::new(0, 0, 40, 24);
+        let regions = super::bands(area, &chat, None);
+        chat.settle(
+            chat.rows(super::reading_width(regions.transcript)).len(),
+            regions.transcript.height,
+        );
+        let seen = regions.transcript.y + 6;
+        let view = super::ChatView {
+            chat: &chat,
+            theme: &obelus_theme::builtin::DARK,
+            state: obelus_agent::Talking::Ready,
+            name: None,
+            title: None,
+            settings: &[],
+            focus: obelus_component::chat::Focus::Writing,
+            card: None,
+            asked: false,
+            in_front: true,
+            pointer: None,
+            root: std::path::Path::new("/"),
+            phase: 0,
+            branch: None,
+            back_to_the_note: None,
+            note: None,
+            note_is_wrong: false,
+            usage: None,
+            tasks: None,
+            remote: None,
+            seen: Some(seen),
+        };
+        let mut cells = ratatui::buffer::Buffer::empty(area);
+        ratatui::widgets::Widget::render(view, area, &mut cells);
+        let column = area.right() - 1;
+        let barred = |y: u16| cells[(column, y)].symbol() == "\u{2588}";
+        assert!(
+            (regions.transcript.y..seen).any(barred),
+            "no thumb where the reader can see it"
+        );
+        assert!(
+            !(seen..regions.transcript.bottom()).any(barred),
+            "the bar ran on under the list"
+        );
+    }
+
     /// The count of background work is whole on a row with no settings, at
     /// a width where what the row says in their place does not fit beside it.
     ///
@@ -2433,6 +2542,7 @@ mod tests {
             usage: None,
             tasks: Some((2, 0)),
             remote: None,
+            seen: None,
         };
         let mut cells = ratatui::buffer::Buffer::empty(area);
         view.status(&mut cells, area);
@@ -2478,6 +2588,7 @@ mod tests {
             usage: None,
             tasks: None,
             remote: None,
+            seen: None,
         };
         let mut cells = ratatui::buffer::Buffer::empty(area);
         let plain = ratatui::style::Style::default();
@@ -2528,6 +2639,7 @@ mod tests {
                 usage: None,
                 tasks: None,
                 remote: None,
+                seen: None,
             };
             let mut cells = ratatui::buffer::Buffer::empty(area);
             let plain = ratatui::style::Style::default();
@@ -2708,6 +2820,7 @@ mod tests {
                 usage: None,
                 tasks: None,
                 remote: None,
+                seen: None,
             };
             let mut cells = ratatui::buffer::Buffer::empty(area);
             ratatui::widgets::Widget::render(view, area, &mut cells);
@@ -2782,6 +2895,7 @@ mod tests {
                 usage: None,
                 tasks: None,
                 remote: None,
+                seen: None,
             };
             let mut cells = ratatui::buffer::Buffer::empty(area);
             ratatui::widgets::Widget::render(view, area, &mut cells);
@@ -2844,6 +2958,7 @@ mod tests {
                 usage: None,
                 tasks: None,
                 remote: None,
+                seen: None,
             };
             let mut cells = ratatui::buffer::Buffer::empty(area);
             ratatui::widgets::Widget::render(view, area, &mut cells);
@@ -2953,6 +3068,7 @@ mod caret {
             usage: None,
             tasks: None,
             remote: None,
+            seen: None,
         }
     }
 
@@ -3051,6 +3167,7 @@ mod caret {
                         usage: None,
                         tasks: None,
                         remote: None,
+                        seen: None,
                     };
                     let mut cells = ratatui::buffer::Buffer::empty(area);
                     ratatui::widgets::Widget::render(view, area, &mut cells);

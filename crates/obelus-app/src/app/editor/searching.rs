@@ -1,67 +1,244 @@
-//! Searching, at its three scopes.
+//! Searching, at its three scopes, each a view of its own.
 //!
 //! The view is [`obelus_component::picker`] and the scanning is
 //! [`obelus_search`]; what is here is which of them to ask, what to do with
 //! what comes back, and how a row of a result is coloured.
+//!
+//! The narrowest scope is whatever is being read, and that is not always a
+//! file: a conversation, a pull request's page, a file's reading and the
+//! notes are searched too, each in the terms its own cursor stands in.
+
+use obelus_component::page::Place;
 
 use crate::app::*;
 
+/// What the narrowest scope is searching: the document in front, by the
+/// kind of thing it is.
+///
+/// One list whatever it is, because the question is the same -- where in
+/// this is the thing I am looking at -- and only what "this" is changes.
+/// What changes with it is what a row is counted in and where choosing one
+/// puts the cursor: a line of a file, a row of a page laid out at the width
+/// it is drawn at, or a note.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::app) enum Here {
+    /// A file, read as its lines.
+    File,
+    /// A file shown as its reading: the rows as they are drawn, which is
+    /// where the reading's cursor stands, and not the lines behind them.
+    Reading,
+    /// A conversation's transcript.
+    Conversation,
+    /// A pull request or an issue.
+    Page,
+    /// The notes.
+    Notes,
+}
+
+impl Here {
+    /// What typing does, for the row before anything has been typed.
+    const fn before_typing(self) -> &'static str {
+        match self {
+            Self::File => "Search this file",
+            Self::Reading => "Search this reading",
+            Self::Conversation => "Search this conversation",
+            Self::Page => "Search this page",
+            Self::Notes => "Search the notes",
+        }
+    }
+
+    /// What the list says before anything is asked.
+    const fn invitation(self) -> &'static str {
+        match self {
+            Self::File => "Type to search this file",
+            Self::Reading => "Type to search this reading",
+            Self::Conversation => "Type to search this conversation",
+            Self::Page => "Type to search this page",
+            Self::Notes => "Type to search the notes",
+        }
+    }
+
+    /// What the list says when nothing has the query in it.
+    const fn nothing_found(self) -> &'static str {
+        match self {
+            Self::File => "No match in this file",
+            Self::Reading => "No match in this reading",
+            Self::Conversation => "No match in this conversation",
+            Self::Page => "No match on this page",
+            Self::Notes => "No match in the notes",
+        }
+    }
+}
+
+/// Where a page under a search of it was before the list showed the reader
+/// somewhere else in it.
+#[derive(Clone, Copy, Debug)]
+pub(in crate::app) struct Before {
+    /// The first row on screen.
+    top: usize,
+    /// Whether it was at its end, following what arrives: a conversation
+    /// the agent is still writing in, put back at a top that is no longer
+    /// its end, would stop following it.
+    at_the_end: bool,
+}
+
+/// Where one scope's last search was left.
+///
+/// Kept so that the search a reader opens again is the one they left: the
+/// same words, held so that typing replaces them, and the same row under
+/// them. A file's rows are found again, which costs nothing and answers
+/// for the text as it is now -- and the row stood on is only stood on again
+/// in the document it was a row of. The project's rows are kept whole,
+/// because finding them again is a walk of the project, and the first key
+/// typed walks it afresh.
+#[derive(Debug)]
+pub(in crate::app) struct Kept {
+    /// Which scope.
+    scope: Scope,
+    /// What it was asking.
+    query: String,
+    /// Which row the reader was on.
+    selected: usize,
+    /// Which document the rows were about, for the narrowest scope.
+    about: Option<(DocumentId, Here)>,
+    /// What the walk found, for the project's: all of it, or nothing where
+    /// it had not finished.
+    rows: Option<Vec<PickerItem>>,
+}
+
 impl App {
+    /// Remembers where the search on screen is, as it is put away.
+    ///
+    /// Asked wherever a list goes: chosen from, or left -- which a list
+    /// replaced by another is, because `show_list` leaves the one it
+    /// replaces. Nothing for a list that is not the search.
+    pub(in crate::app) fn keep_the_search(&mut self) {
+        let Some(picker) = self.picker.as_ref().filter(|picker| picker.is_searching()) else {
+            return;
+        };
+        let Some(scope) = self.search.searching else {
+            return;
+        };
+        let query = picker.query();
+        let rows = (scope == Scope::Project && self.search.walked)
+            .then(|| picker.matches().cloned().collect());
+        let kept = Kept {
+            scope,
+            query: query.clone(),
+            selected: picker.selected(),
+            about: self.current.zip(self.search.here),
+            rows,
+        };
+        self.search.last_query = query;
+        self.search.kept.retain(|each| each.scope != scope);
+        self.search.kept.push(kept);
+    }
+
     /// Opens the search, at one of its three scopes.
     ///
-    /// One view with three tabs rather than three views: the question is
-    /// "where is this", and only its radius changes. The query survives a
-    /// walk between the tabs, which is the whole point -- a reader who does
-    /// not find it in this file looks in the project without retyping it.
+    /// Three views rather than one with three tabs, because what each is
+    /// read beside differs. The document in front is searched from a list on
+    /// the status bar, so the document stays on screen and is its own
+    /// preview -- the place a row names is the page above it, scrolled
+    /// there. The project and its symbols cover the screen, because their
+    /// rows are in files nobody has open and the preview under them is the
+    /// only place to read those. What the last search asked goes with the
+    /// reader from one to the next, held (`Kept`), so a reader who does not
+    /// find it in this document looks in the project without retyping it.
     pub fn open_search(&mut self, scope: Scope) {
-        // Only the scopes that can answer. A tab that says "no file open"
-        // whenever it is walked onto is a tab in the way of the two that
-        // work, and the tabs are how a reader moves between them.
-        let scopes = self.searchable();
-        let Some(tab) = scopes.iter().position(|shown| *shown == scope) else {
+        let here = self.searched_here();
+        let able = match scope {
+            Scope::File => here.is_some(),
+            // Somewhere to walk is all this one needs, and there always is:
+            // Obelus is started in a directory.
+            Scope::Project => true,
+            Scope::Symbols => self
+                .current_buffer()
+                .and_then(Buffer::language)
+                .is_some_and(|language| self.servers.contains_key(&language)),
+        };
+        if !able {
             self.wrong(match scope {
-                Scope::File => "No file open".to_string(),
+                Scope::File => "Nothing here to search".to_string(),
                 Scope::Symbols => "No language server to ask".to_string(),
                 Scope::Project => "Nowhere to search".to_string(),
             });
             return;
+        }
+        let (layout, opener) = match scope {
+            Scope::File => (
+                PickerLayout::Compact {
+                    rows: crate::app::COMPACT_ROWS,
+                },
+                Command::SearchFile,
+            ),
+            Scope::Project => (PickerLayout::FullArea, Command::SearchProject),
+            Scope::Symbols => (PickerLayout::FullArea, Command::SearchSymbols),
         };
-
-        let names: Vec<&str> = scopes.iter().map(|scope| scope.label()).collect();
-        let mut picker = Picker::new(Vec::new(), PickerLayout::FullArea);
-        picker.with_scopes(&names);
+        let mut picker = Picker::new(Vec::new(), layout);
         picker.searches();
         picker.previews();
         // Three keys of its own, so it says what they are and which way each
         // is set: a switch a reader has to flip to find out is not one.
         picker.says_its_keys();
-        picker.go_to_tab(tab);
-        self.search.searching = scopes;
+        // The key that opened it is this list: pressed again it stays, with
+        // what was typed, and another search's key is another view.
+        picker.opened_by(opener);
         self.show_list(picker);
+        self.search.searching = Some(scope);
+        self.search.here = (scope == Scope::File).then_some(here).flatten();
+        self.search.document = self.current.filter(|_| self.search.here.is_some());
+        self.search.looked_within = None;
+        self.search.looked_at = None;
+        // The words the last search was asking, held, so that the search
+        // opened again is that search -- and a reader who meant another one
+        // types it over them.
+        let query = self.search.last_query.clone();
+        if let Some(picker) = self.picker.as_mut()
+            && !query.is_empty()
+        {
+            picker.set_query(&query);
+            picker.hold_in_query(true);
+        }
+        // And the row the reader was on, where this scope was left asking
+        // the same thing -- about the same document, for the narrowest.
+        let about = self.current.zip(here);
+        let kept = self.search.kept.iter().find(|kept| {
+            kept.scope == scope
+                && kept.query == query
+                && (scope != Scope::File || kept.about == about)
+        });
+        let selected = kept.map(|kept| kept.selected);
+        self.search.reuse = kept
+            .filter(|kept| kept.scope == Scope::Project)
+            .and_then(|kept| kept.rows.clone());
         self.refresh_search();
+        if let Some(selected) = selected
+            && let Some(picker) = self.picker.as_mut()
+        {
+            picker.select_row(selected.min(picker.match_count().saturating_sub(1)));
+        }
     }
 
-    /// Which scopes have something to search, in the order their tabs sit
-    /// in.
+    /// What the narrowest scope would search, if a search opened now.
     ///
-    /// Settled when the search opens rather than watched while it is open: a
-    /// server starts when a file does, so by the time a reader is searching
-    /// there either is one or there is not -- and tabs appearing under the
-    /// arrow keys would move the ground while they walk it.
-    fn searchable(&self) -> Vec<Scope> {
-        Scope::ALL
-            .into_iter()
-            .filter(|scope| match scope {
-                Scope::File => self.current_buffer().is_some(),
-                // Somewhere to walk is all this one needs, and there always
-                // is: Obelus is started in a directory.
-                Scope::Project => true,
-                Scope::Symbols => self
-                    .current_buffer()
-                    .and_then(Buffer::language)
-                    .is_some_and(|language| self.servers.contains_key(&language)),
-            })
-            .collect()
+    /// Nothing in a terminal, whose screen is the program's and drawn a
+    /// screen at a time, and nothing with nothing open.
+    pub(in crate::app) fn searched_here(&self) -> Option<Here> {
+        if self
+            .current_buffer()
+            .is_some_and(|buffer| buffer.mode() == Mode::Preview)
+            && self.rendering().is_some()
+        {
+            return Some(Here::Reading);
+        }
+        match self.document(self.current?)? {
+            Document::File(_) => Some(Here::File),
+            Document::Chat(_) => Some(Here::Conversation),
+            Document::Discussion(_) => Some(Here::Page),
+            Document::Notes(_) => Some(Here::Notes),
+            Document::Terminal(_) => None,
+        }
     }
 
     /// Which scope the search is showing, if a search is open.
@@ -70,7 +247,7 @@ impl App {
         if !picker.is_searching() {
             return None;
         }
-        self.search.searching.get(picker.tab()).copied()
+        self.search.searching
     }
 
     /// Whether a row of the list on screen *is* the line it names.
@@ -82,7 +259,12 @@ impl App {
     /// an outline's are names, a file list's are paths -- and there a
     /// column of the row means nothing in the file.
     pub(in crate::app) fn rows_are_lines(&self) -> bool {
-        self.searching().is_some_and(Scope::lists_lines)
+        match self.searching() {
+            // A row of a page is a row of the page, and says itself where
+            // it matched rather than through a column of a line.
+            Some(Scope::File) => self.search.here == Some(Here::File),
+            scope => scope.is_some_and(Scope::lists_lines),
+        }
     }
 
     /// The same, for a test: which list is showing is not otherwise
@@ -243,21 +425,20 @@ impl App {
         runs
     }
 
-    /// Fills the search with the rows of whichever scope is showing.
+    /// Fills the search with the rows of the scope it was opened at.
     ///
-    /// Asked whenever the query or the tab moves, and every scope answers
+    /// Asked whenever the query moves, and every scope answers
     /// the same way: the rows are what has the query in it. It used to take
     /// a flag saying which of the two had moved, because the file's rows
     /// were every line of it and were worth gathering only once per visit --
     /// which is exactly the arrangement that let a fuzzy matcher stand
     /// between the reader and their answer.
     pub(in crate::app) fn refresh_search(&mut self) {
-        let tab = self.picker.as_ref().map(Picker::tab);
-        let Some(scope) = tab.and_then(|tab| self.search.searching.get(tab).copied()) else {
+        let Some(scope) = self.searching() else {
             return;
         };
-        // What the foot says the switches are set to. Nothing on the symbols
-        // tab: those rows come from a language server that did its own
+        // What the foot says the switches are set to. Nothing for the
+        // symbols: those rows come from a language server that did its own
         // matching and has never heard of our pattern.
         let how = (scope != Scope::Symbols).then_some(self.search.looking);
         // And the other way round: reaching past the project is a question
@@ -266,19 +447,31 @@ impl App {
         // Which files the walk reads, which is the file list's two switches
         // and asked of the same settings: a search obeying them without
         // saying so is a search that finds `target` and does not say why.
-        // Only the project's tab walks anything.
+        // Only the search of the project walks anything.
         let walking = scope == Scope::Project;
         let ignored = walking.then_some(self.config().ignored_files);
         let hidden = walking.then_some(self.config().hidden_files);
+        let here = self.search.here.unwrap_or(Here::File);
+        // A row of a page names nowhere a preview could show: only the
+        // page's own view can draw it, and that is the page under the list.
+        let previews = scope != Scope::File || here == Here::File;
         if let Some(picker) = self.picker.as_mut() {
+            if previews {
+                picker.previews();
+            } else {
+                picker.stops_previewing();
+            }
             picker.looking_how(how);
             picker.reaching_outside(outside);
             picker.offering_ignored(ignored);
             picker.offering_hidden(hidden);
             // And what typing does, which is the one thing on this row
-            // that changes with the tab: the same keystroke looks in one
-            // file, in every file, or at a server's index.
-            picker.before_typing(scope.before_typing());
+            // that changes with the search: the same keystroke looks in
+            // one document, in every file, or at a server's index.
+            picker.before_typing(match scope {
+                Scope::File => here.before_typing(),
+                _ => scope.before_typing(),
+            });
         }
         let Some(picker) = self.picker.as_ref() else {
             return;
@@ -291,40 +484,57 @@ impl App {
                     // which says nothing a list could add. With no file at
                     // all the reason is that, which is a fact about the
                     // world rather than an invitation to type.
-                    let reason = match self.current_buffer().is_some() {
-                        true => "Type to search this file",
-                        false => "No file open",
+                    let reason = match self.searched_here() {
+                        Some(_) => here.invitation(),
+                        None => "Nothing here to search",
                     };
                     self.search.searched = None;
                     if let Some(picker) = self.picker.as_mut() {
                         picker.replace(Vec::new());
                         picker.while_empty(reason);
                     }
-                } else {
+                } else if here == Here::File {
                     self.search_this_file();
+                } else {
+                    self.search_this_document(here);
                 }
             }
-            Scope::Project => self.search_the_project(),
+            // What the last walk found for the same words, put back rather
+            // than walked for again -- once: the next key asks afresh.
+            Scope::Project => match self.search.reuse.take() {
+                Some(rows) => {
+                    // Whatever is still walking is answering a question
+                    // nobody is asking now.
+                    self.ask_again();
+                    self.search.walked = true;
+                    if let Some(picker) = self.picker.as_mut() {
+                        picker.replace(rows);
+                        picker.while_empty("No match in the project");
+                    }
+                }
+                None => self.search_the_project(),
+            },
             Scope::Symbols => self.search_the_symbols(),
         }
     }
 
     /// Whatever one of the search's own keys means, if it is one of them.
     ///
-    /// Four switches, and which of them mean anything depends on the tab:
+    /// Four switches, and which of them mean anything depends on the
+    /// search:
     /// three are about reading a text and the fourth is about how far an
     /// index reaches. Answered here rather than in the picker for the reason
     /// the file list's one is: the picker knows about rows and a query, and
     /// these are about how the rows were found.
     ///
-    /// The project's tab has two more, which files it walks, and those are
+    /// The project's search has two more, which files it walks, and those are
     /// the file list's settings and answered where the file list's are
     /// (`listing_key`).
     pub(in crate::app) fn searching_key(&mut self, key: &KeyEvent) -> bool {
         if key.modifiers != KeyModifiers::ALT {
             return false;
         }
-        // Only where they mean something: on the symbols tab the server did
+        // Only where they mean something: for the symbols the server did
         // the matching, and the foot greys them there.
         let Some(picker) = self.picker.as_ref().filter(|picker| picker.is_searching()) else {
             return false;
@@ -364,7 +574,7 @@ impl App {
     ///
     /// Done here and now rather than on a thread: the file is already in
     /// memory, and a pass over it per keystroke is nothing beside the walk
-    /// the project tab starts for the same key.
+    /// the project's search starts for the same key.
     pub(in crate::app) fn search_this_file(&mut self) {
         let needle = self.needle();
         if needle.is_broken() {
@@ -374,11 +584,10 @@ impl App {
             }
             return;
         }
+        // With no file in front -- an agent took the reader to a
+        // conversation while the list was up -- there is nothing here to
+        // find in, and the rows are left saying what they said.
         let Some(buffer) = self.current_buffer() else {
-            if let Some(picker) = self.picker.as_mut() {
-                picker.replace(Vec::new());
-                picker.when_empty("No file open");
-            }
             return;
         };
         let path = buffer.path().to_path_buf();
@@ -442,6 +651,445 @@ impl App {
         }
     }
 
+    /// The rows of the document in front that have the query in them, where
+    /// that is not a file.
+    ///
+    /// A row each, as it is drawn: a page is laid out at the width it is
+    /// read at, and its cursor stands on those rows, so a row is what a
+    /// match can be gone to. Which also means a query that a row's end
+    /// breaks in two is not found, and neither is anything folded shut,
+    /// which has no rows -- the same as a reader running their eye down
+    /// it. The notes are the exception, being notes rather than rows: a
+    /// row for each line of a note's words, gone to by the note.
+    fn search_this_document(&mut self, here: Here) {
+        let needle = self.needle();
+        if needle.is_broken() {
+            if let Some(picker) = self.picker.as_mut() {
+                picker.replace(Vec::new());
+                picker.while_empty("That is not a pattern");
+            }
+            return;
+        }
+        let found = match here {
+            // Not here: a file's lines are `search_this_file`'s.
+            Here::File => Vec::new(),
+            Here::Reading => self.rendering().map_or_else(Vec::new, |rows| {
+                let laid: Vec<_> = rows
+                    .iter()
+                    .map(obelus_component::reading::Laid::of)
+                    .collect();
+                rows_found(&laid, &needle)
+            }),
+            Here::Conversation => {
+                let width = obelus_ui::chat::reading_width(self.editor_area);
+                self.chat()
+                    .map_or_else(Vec::new, |chat| rows_found(&chat.rows(width), &needle))
+            }
+            Here::Page => {
+                let width = obelus_ui::discussion::reading_width(self.editor_area);
+                self.discussion()
+                    .map_or_else(Vec::new, |page| rows_found(&page.rows(width), &needle))
+            }
+            Here::Notes => self
+                .notes()
+                .map_or_else(Vec::new, |notes| notes_found(notes, &needle)),
+        };
+        let items: Vec<PickerItem> = found
+            .into_iter()
+            .map(|(row, found, said)| PickerItem {
+                prose: false,
+                marker: None,
+                icon: None,
+                enabled: true,
+                colours: None,
+                status: None,
+                depth: 0,
+                opens: None,
+                kind: None,
+                label: said.trim().to_string(),
+                version: None,
+                detail: None,
+                // No number: a row of a page is a place the width made, and
+                // its number says nothing a reader could go and find.
+                trailing: None,
+                changed: None,
+                value: PickerValue::Within {
+                    row,
+                    character: found.start,
+                    end: found.end,
+                },
+                tab: None,
+                section: None,
+            })
+            .collect();
+        self.search.searched = None;
+        self.search.stamp = self.page_stamp(here);
+        if let Some(picker) = self.picker.as_mut() {
+            picker.replace(items);
+            picker.while_empty(here.nothing_found());
+        }
+    }
+
+    /// What says whether a page's rows are still the rows its search found
+    /// its places in, asked without laying anything out: how many times it
+    /// has changed and the width it is laid out at, or for the notes how
+    /// many there are and how much they say.
+    ///
+    /// A row of a page is a place a width made out of what was there, so an
+    /// agent still answering, a window resized or a note put in above moves
+    /// every place after it -- and the mark, and where enter goes, would be
+    /// on the wrong words.
+    fn page_stamp(&self, here: Here) -> Option<(u64, usize, u16)> {
+        match here {
+            Here::File => None,
+            Here::Reading => Some((
+                self.current_buffer()
+                    .map_or(0, |buffer| u64::try_from(buffer.version()).unwrap_or(0)),
+                self.rendered_rows().unwrap_or(0),
+                self.reading_room().reading,
+            )),
+            Here::Conversation => self.chat().map(|chat| {
+                (
+                    chat.changes(),
+                    0,
+                    obelus_ui::chat::reading_width(self.editor_area),
+                )
+            }),
+            Here::Page => self.discussion().map(|page| {
+                (
+                    page.changes(),
+                    0,
+                    obelus_ui::discussion::reading_width(self.editor_area),
+                )
+            }),
+            Here::Notes => self.notes().map(|notes| {
+                let said = notes.todo().notes.iter().map(|note| note.said.len()).sum();
+                (notes.todo().notes.len() as u64, said, 0)
+            }),
+        }
+    }
+
+    /// Finds the search of the page in front again where the page has
+    /// changed under it, standing on the row the reader was on.
+    ///
+    /// Asked every frame the search of a page is up, and nothing is laid
+    /// out unless the page has said it changed (`page_stamp`).
+    pub(in crate::app) fn follow_the_page(&mut self) {
+        let Some(here) = self.search.here.filter(|here| *here != Here::File) else {
+            return;
+        };
+        let up = self
+            .picker
+            .as_ref()
+            .is_some_and(|picker| picker.is_searching() && !picker.query().is_empty());
+        if !up || self.searched_here() != Some(here) || self.search.stamp == self.page_stamp(here) {
+            return;
+        }
+        let selected = self.picker.as_ref().map_or(0, Picker::selected);
+        self.search_this_document(here);
+        if let Some(picker) = self.picker.as_mut() {
+            picker.select_row(selected.min(picker.match_count().saturating_sub(1)));
+        }
+    }
+
+    /// Goes to a row of the search of the document in front, chosen.
+    ///
+    /// By what the search searched rather than by what is in front now,
+    /// which is the same thing -- the list covered it -- unless something
+    /// moved it underneath, and then the row is about a page that is not
+    /// there and goes nowhere.
+    pub(in crate::app) fn go_within(&mut self, row: usize, character: usize) {
+        // Going there, so there is no going back to where it was, and the
+        // cursor there says where the match is rather than a mark.
+        self.forget_the_find();
+        self.search.looked_within = None;
+        let Some(here) = self.search.here.take() else {
+            return;
+        };
+        if self.searched_here() != Some(here) {
+            return;
+        }
+        let at = Place { row, character };
+        match here {
+            Here::File => {}
+            Here::Reading => {
+                if let Some(rendered) = self.rendered.as_mut() {
+                    rendered.cursor.let_go();
+                    rendered.cursor.stand(at);
+                }
+                self.show_in_the_reading(row);
+            }
+            Here::Conversation => {
+                let room = self.chat_room();
+                if let Some(talk) = self.conversation_mut() {
+                    talk.chat.stand_in_the_transcript(at, room);
+                }
+            }
+            Here::Page => {
+                let room = self.discussion_room();
+                if let Some(page) = self.discussion_mut() {
+                    page.stand_in_view(at, room);
+                }
+            }
+            Here::Notes => {
+                if let Some(notes) = self.notes_mut() {
+                    notes.stand_in(row, character);
+                }
+            }
+        }
+    }
+
+    /// Puts a row of the reading on screen.
+    ///
+    /// The view is the buffer's, and moves only as far as it takes to show
+    /// the row: the arithmetic a key's walk does, on a window lent for it.
+    fn show_in_the_reading(&mut self, row: usize) {
+        let room = self.reading_room();
+        let Some(top) = self
+            .current_buffer()
+            .map(|buffer| buffer.viewport().top.get())
+        else {
+            return;
+        };
+        let Some(count) = self.rendered_rows() else {
+            return;
+        };
+        let mut window = obelus_component::window::Window::new();
+        window.set_count(count);
+        window.drag_to(top);
+        obelus_component::page::show(&mut window, row, count, room.height);
+        let by = isize::try_from(window.top()).unwrap_or(isize::MAX)
+            - isize::try_from(top).unwrap_or(isize::MAX);
+        if by != 0
+            && let Some(buffer) = self.current_buffer_mut()
+        {
+            buffer.scroll_rendering(by, count, room.height);
+        }
+    }
+
+    /// Shows the reader where the search's selection is, in the page the
+    /// list sits on.
+    ///
+    /// What `look_at_the_selection` is for a file, for every other document:
+    /// the list is on the status bar so that the page stays readable, and
+    /// then the page is the preview. A look and not a move -- the cursor
+    /// stays where the reader left it, and the view goes back where it was
+    /// if they leave without choosing (`put_the_page_back`). Asked every
+    /// frame, and does nothing unless the row has moved since the last.
+    pub(in crate::app) fn look_within_at_the_selection(&mut self) {
+        let Some(here) = self.search.here.filter(|here| *here != Here::File) else {
+            return;
+        };
+        let Some(picker) = self.picker.as_ref().filter(|picker| picker.is_searching()) else {
+            return;
+        };
+        if self.searched_here() != Some(here) {
+            return;
+        }
+        let found = match picker.selected_item().map(|item| item.value.clone()) {
+            Some(PickerValue::Within {
+                row,
+                character,
+                end,
+            }) => Some((row, character..end)),
+            _ => None,
+        };
+        // The whole of what it found, where it ends as well as where it
+        // starts: a query typed on finds the same place and more of it, and
+        // the mark has to grow with it.
+        if self.search.looked_at == found {
+            return;
+        }
+        self.search.looked_at.clone_from(&found);
+        // What it found is marked on the page, and a list that has found
+        // nothing takes the last mark away.
+        self.find_within(here, found.clone());
+        let Some((row, character)) = found.map(|(row, found)| (row, found.start)) else {
+            return;
+        };
+        if self.search.looked_within.is_none() {
+            self.search.looked_within = self.page_top(here);
+        }
+        match here {
+            Here::File => {}
+            Here::Reading => self.show_in_the_reading(row),
+            Here::Conversation => {
+                // The list is drawn over a conversation rather than taking
+                // room from it, so what can be seen of the transcript is
+                // what is above the list.
+                let mut room = self.chat_room();
+                let above = self
+                    .picker
+                    .as_ref()
+                    .map(|picker| obelus_ui::picker::room_above(picker, self.editor_area));
+                if let (Some(above), Some(talk)) = (above, self.conversation()) {
+                    let band =
+                        obelus_ui::chat::bands(self.editor_area, &talk.chat, talk.card_in_front())
+                            .transcript;
+                    let seen = (above.y + above.height).saturating_sub(band.y);
+                    room.transcript = room.transcript.min(seen).max(1);
+                }
+                if let Some(talk) = self.conversation_mut() {
+                    talk.chat.look_at_row(row, room);
+                }
+            }
+            Here::Page => {
+                let room = self.discussion_room();
+                if let Some(page) = self.discussion_mut() {
+                    page.look_at_row(row, room);
+                }
+            }
+            Here::Notes => {
+                let height = obelus_ui::todo::list_region(self.editor_area).height;
+                if let Some(notes) = self.notes_mut() {
+                    notes.look_at_note(row, character, height);
+                }
+            }
+        }
+    }
+
+    /// Works out what the search of the file marks in the file under it:
+    /// the characters the query matched on the row the reader is on.
+    ///
+    /// Asked every frame, and nothing but a line's indentation is read: the
+    /// list has already said which characters of the row matched.
+    pub(in crate::app) fn mark_the_match(&mut self) {
+        self.search.marked = None;
+        if self.search.here != Some(Here::File) || !self.rows_are_lines() {
+            return;
+        }
+        let Some((line, _)) = self.the_selection_in_this_file() else {
+            return;
+        };
+        let Some(picker) = self.picker.as_ref() else {
+            return;
+        };
+        let columns = picker.indices_at(picker.selected());
+        let (Some(&first), Some(&last)) = (columns.iter().min(), columns.iter().max()) else {
+            return;
+        };
+        let Some(buffer) = self.current_buffer() else {
+            return;
+        };
+        // The row's columns, which are the line's past its indentation --
+        // the same answer choosing the row goes by.
+        let text = buffer.text();
+        self.search.marked = Some(obelus_text::coordinates::Span {
+            line,
+            column: text.past_the_indent(line, first as usize),
+            end_line: line,
+            end_column: text.past_the_indent(line, last as usize + 1),
+        });
+    }
+
+    /// Marks what a search found on the page it is searching, or takes the
+    /// mark away: which row, and which of its characters -- for the notes,
+    /// which note and which characters of its words.
+    fn find_within(&mut self, here: Here, found: Option<(usize, std::ops::Range<usize>)>) {
+        match here {
+            // The file's is `mark_the_match`, which the editor reads.
+            Here::File => {}
+            // A reading's rows are laid out for the document in front and
+            // nothing else, and are laid out again with a cursor of their own
+            // for any other: a mark on them goes with them.
+            Here::Reading => {
+                if self.searched_here() == Some(Here::Reading)
+                    && let Some(rendered) = self.rendered.as_mut()
+                {
+                    rendered.cursor.find(found);
+                }
+            }
+            // The rest by which document was searched rather than by which
+            // is in front: an agent can open another while the list is up,
+            // and a mark left on the page it was over would be there when
+            // the reader came back to it.
+            Here::Conversation => {
+                if let Some(talk) = self.searched_document().and_then(Document::chat_mut) {
+                    talk.chat.find(found);
+                }
+            }
+            Here::Page => {
+                if let Some(page) = self.searched_document().and_then(Document::discussion_mut) {
+                    page.find(found);
+                }
+            }
+            Here::Notes => {
+                if let Some(notes) = self.searched_document().and_then(Document::notes_mut) {
+                    notes.find(found);
+                }
+            }
+        }
+    }
+
+    /// The document the open search is searching, where it is still open.
+    fn searched_document(&mut self) -> Option<&mut Document> {
+        let id = self.search.document?;
+        self.document_mut(id)
+    }
+
+    /// Takes the search's mark off the page it was searching, as the list
+    /// goes: chosen from or left.
+    pub(in crate::app) fn forget_the_find(&mut self) {
+        self.search.looked_at = None;
+        if let Some(here) = self.search.here {
+            self.find_within(here, None);
+        }
+    }
+
+    /// Where the page under a search of it is scrolled to, for the pages
+    /// that keep that themselves.
+    fn page_top(&self, here: Here) -> Option<Before> {
+        match here {
+            // A file and its reading are scrolled by the buffer, which the
+            // list already keeps (`looked_from`).
+            Here::File | Here::Reading => None,
+            Here::Conversation => self.chat().map(|chat| Before {
+                top: chat.top(),
+                at_the_end: chat.at_the_end(),
+            }),
+            Here::Page => self.discussion().map(|page| Before {
+                top: page.top(),
+                at_the_end: false,
+            }),
+            Here::Notes => self.notes().map(|notes| Before {
+                top: notes.window().top(),
+                at_the_end: false,
+            }),
+        }
+    }
+
+    /// Puts the page under a search back where it was before the list
+    /// showed the reader somewhere else in it -- the page that was
+    /// searched, whatever is in front now.
+    pub(in crate::app) fn put_the_page_back(&mut self) {
+        let (Some(before), Some(here)) = (self.search.looked_within.take(), self.search.here)
+        else {
+            return;
+        };
+        self.search.looked_at = None;
+        let Some(document) = self.searched_document() else {
+            return;
+        };
+        match here {
+            Here::File | Here::Reading => {}
+            Here::Conversation => {
+                if let Some(talk) = document.chat_mut() {
+                    talk.chat.look_back(before.top, before.at_the_end);
+                }
+            }
+            Here::Page => {
+                if let Some(page) = document.discussion_mut() {
+                    page.drag_to(before.top);
+                }
+            }
+            Here::Notes => {
+                if let Some(notes) = document.notes_mut() {
+                    notes.drag_to(before.top);
+                }
+            }
+        }
+    }
+
     /// Starts a walk of the project looking for the query.
     ///
     /// A thread per query, and the answers carry the generation they were
@@ -460,6 +1108,7 @@ impl App {
         // a real question -- and the cheapest one there is, because it fills
         // the row limit in the first few files and stops.
         let generation = self.ask_again();
+        self.search.walked = false;
         if query.is_empty() {
             if let Some(picker) = self.picker.as_mut() {
                 picker.replace(Vec::new());
@@ -507,10 +1156,14 @@ impl App {
             return;
         }
         let root = self.working_directory.clone();
-        let Some(picker) = self.picker.as_mut() else {
+        // Only into the search of the project. Asked of the list as well as
+        // of the scope it was opened at, because the scope outlives the
+        // list: a list opened in its place -- the palette -- would be
+        // taken for the search.
+        let Some(picker) = self.picker.as_mut().filter(|picker| picker.is_searching()) else {
             return;
         };
-        if self.search.searching.get(picker.tab()) != Some(&Scope::Project) {
+        if self.search.searching != Some(Scope::Project) {
             return;
         }
         picker.extend(hits.into_iter().map(|hit| PickerItem {
@@ -548,6 +1201,7 @@ impl App {
             // own "no match" is about a query against rows it was given, and
             // here the rows never existed.
             picker.while_empty("No match in the project");
+            self.search.walked = true;
         }
     }
 
@@ -590,4 +1244,46 @@ impl App {
             });
         }
     }
+}
+
+/// The rows of a page that have the query in them: each one's place among
+/// them, which of its characters the query found, and what it says.
+fn rows_found<L: obelus_component::page::Line>(
+    rows: &[L],
+    needle: &obelus_search::Needle,
+) -> Vec<(usize, std::ops::Range<usize>, String)> {
+    rows.iter()
+        .enumerate()
+        .filter_map(|(at, row)| {
+            let said = obelus_component::page::text(row);
+            let found = needle.found_in(&said)?;
+            Some((at, found, said))
+        })
+        .collect()
+}
+
+/// The lines of the notes that have the query in them: which note, which
+/// characters of its words the query found, and the line.
+///
+/// Counted through the whole of a note's words, its line breaks among
+/// them, because that is how far along them the caret is walked.
+fn notes_found(
+    notes: &obelus_component::todo::TodoView,
+    needle: &obelus_search::Needle,
+) -> Vec<(usize, std::ops::Range<usize>, String)> {
+    let mut found = Vec::new();
+    for (at, note) in notes.todo().notes.iter().enumerate() {
+        let mut before = 0;
+        for line in note.said.split('\n') {
+            if let Some(range) = needle.found_in(line) {
+                found.push((
+                    at,
+                    before + range.start..before + range.end,
+                    line.to_string(),
+                ));
+            }
+            before += line.chars().count() + 1;
+        }
+    }
+    found
 }

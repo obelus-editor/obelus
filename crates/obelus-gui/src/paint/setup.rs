@@ -418,6 +418,8 @@ impl Painter {
             scratch,
             scratch_bindings,
             picture: None,
+            standing: None,
+            page_bindings: None,
             lifted: None,
             left: None,
             left_lifted: None,
@@ -557,9 +559,21 @@ impl Painter {
             .picture
             .as_ref()
             .map(|_| Whole::made(&binder, &self.nothing, self.view, width, height));
+        // And the page layer's where there was one, with the bindings that
+        // read the two together -- see `page_bindings`.
+        let standing = self
+            .standing
+            .as_ref()
+            .zip(picture.as_ref())
+            .map(|(_, picture)| {
+                let standing = Whole::made(&binder, &self.nothing, self.view, width, height);
+                let page = binder.bound(&picture.view, &standing.view);
+                (standing, page)
+            });
         self.levels = levels;
         (self.scratch, self.scratch_bindings) = (scratch, scratch_bindings);
         self.picture = picture;
+        (self.standing, self.page_bindings) = standing.unzip();
         // Made again by the next frame that wants it, at the new size.
         self.lifted = None;
         // A picture of the window at its old size is a pane leaving from the
@@ -589,13 +603,37 @@ impl Painter {
     /// What making it costs is the first frame of a pane coming in: 1.6ms
     /// where it was 1.25, measured over a dozen openings, for 31 MiB of a
     /// 1882 by 2052 window given back while nothing is open.
+    ///
+    /// And the page layer's picture, from the first frame that has a band
+    /// scrolling under a pane -- the one thing that draws or reads it -- for
+    /// as long as the frame's is kept, and for the frame's reason: made and
+    /// let go with each slide, it would be another picture the size of the
+    /// window made at every press of a key that scrolls. Not made with the
+    /// frame's, which is wanted whenever anything is open at all: that was
+    /// the memory of a second window kept behind every list, for a slide
+    /// most of them never have.
     fn picture_while_wanted(&mut self) {
         let placed = &self.placed;
         let wanted = placed.composed || placed.under.is_some() || !placed.levels.is_empty();
+        let under = placed.under.is_some();
         match (wanted, self.picture.is_some()) {
             (true, false) => self.picture = Some(self.whole()),
-            (false, true) => self.picture = None,
+            (false, true) => {
+                self.picture = None;
+                self.standing = None;
+                self.page_bindings = None;
+            }
             _ => {}
+        }
+        // Made beside the frame's, so `page_bindings` never points at a
+        // picture that is not there.
+        if under
+            && self.standing.is_none()
+            && let Some(picture) = &self.picture
+        {
+            let standing = self.whole();
+            self.page_bindings = Some(self.binder().bound(&picture.view, &standing.view));
+            self.standing = Some(standing);
         }
         // And what is written on a pane on its way in, only for as long as
         // one is: a fifth of a second, against a window's worth of memory.
@@ -617,6 +655,14 @@ impl Painter {
             .collect();
         let scratch = binder.bound(&self.scratch, &self.nothing);
         let showing = (self.picture.as_ref()).map(|whole| binder.bound(&whole.view, &self.nothing));
+        // And the two read together -- see `page_bindings`.
+        let page = self
+            .picture
+            .as_ref()
+            .zip(self.standing.as_ref())
+            .map(|(picture, standing)| binder.bound(&picture.view, &standing.view));
+        let standing =
+            (self.standing.as_ref()).map(|whole| binder.bound(&whole.view, &self.nothing));
         let left = (self.left.as_ref()).map(|whole| binder.bound(&whole.view, &self.nothing));
         let lifted = (self.lifted.as_ref()).map(|whole| binder.bound(&whole.view, &self.nothing));
         let left_lifted =
@@ -630,6 +676,12 @@ impl Painter {
         self.scratch_bindings = scratch;
         if let (Some(whole), Some(bindings)) = (self.picture.as_mut(), showing) {
             whole.bindings = bindings;
+        }
+        if let (Some(whole), Some(bindings)) = (self.standing.as_mut(), standing) {
+            whole.bindings = bindings;
+        }
+        if page.is_some() {
+            self.page_bindings = page;
         }
         if let (Some(whole), Some(bindings)) = (self.left.as_mut(), left) {
             whole.bindings = bindings;
@@ -874,19 +926,20 @@ impl Painter {
         // page does none of this.
         match placed.under.clone() {
             // A band scrolling under the pane: what is behind it is drawn
-            // where it stands into the frame's picture, which nothing has
-            // drawn into yet, and put back into the backdrop with the band
-            // taken from where it has got to -- the same two steps the
-            // screen is put back in, so what the glass shows moves with
-            // what is round it.
+            // where it stands into the page layer's own picture, and put
+            // back into the backdrop with the band taken from where it has
+            // got to -- the same two steps the screen is put back in, so
+            // what the glass shows moves with what is round it. Kept past
+            // this pass, because a row of the screen sliding past the
+            // pane's edge is taken from it too -- see `standing`.
             // Less the picture under the page, which stands still while the
             // band goes over it: drawn into the backdrop first, and what is
             // put back over it is clear where it is the page.
             Some((above, put_back)) => {
-                if let Some(picture) = &self.picture {
+                if let Some(standing) = &self.standing {
                     {
                         let mut pass =
-                            self.cleared(encoder, "obelus behind, standing", &picture.view);
+                            self.cleared(encoder, "obelus behind, standing", &standing.view);
                         pass.set_bind_group(0, &self.plain_bindings, &[]);
                         drawing(&mut pass, placed.hung..placed.behind().max(placed.hung));
                         drawing(&mut pass, above);
@@ -894,7 +947,7 @@ impl Painter {
                     let mut pass = self.pass(encoder, "obelus behind", &self.levels[0].backdrop);
                     pass.set_bind_group(0, &self.plain_bindings, &[]);
                     drawing(&mut pass, 0..placed.hung);
-                    pass.set_bind_group(0, &picture.bindings, &[]);
+                    pass.set_bind_group(0, &standing.bindings, &[]);
                     drawing(&mut pass, put_back);
                 }
             }
@@ -1244,6 +1297,7 @@ impl Painter {
                 Reads::LeftLifted => {
                     (self.left_lifted.as_ref()).map_or(otherwise, |lifted| &lifted.bindings)
                 }
+                Reads::Page => self.page_bindings.as_ref().unwrap_or(otherwise),
             };
             pass.set_bind_group(0, bindings, &[]);
             drawing(pass, quads.clone());

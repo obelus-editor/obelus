@@ -389,6 +389,13 @@ pub trait Screen {
     /// The runs the editor marks: the uses of the name the pointer is
     /// resting on.
     fn marked_runs(&self) -> &[obelus_text::coordinates::Span];
+    /// What a search of the file being read found, on the row the search
+    /// is standing on: the file is that search's preview.
+    ///
+    /// Not among the marked runs, though it is drawn in their colour: a
+    /// window draws it as a shape of its own, and has to be told which run
+    /// is the search's and which are the uses of a name.
+    fn found_run(&self) -> Option<obelus_text::coordinates::Span>;
     /// What Obelus has to say, until the next key.
     fn note(&self) -> Option<&str>;
     /// The document on screen, which is one kind of thing and never two.

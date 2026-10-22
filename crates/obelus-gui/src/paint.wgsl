@@ -489,7 +489,12 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
         if (taken_at.y < in.box.y || taken_at.y >= in.box.w) {
             discard;
         }
-        let taken = textureSample(behind, behind_sampler, taken_at / screen.size);
+        // Out of the page layer's own picture, the second this quad is
+        // drawn with, where what is taken comes from under the first pane:
+        // the frame has the pane over the page there -- see `UNDER_GLASS`.
+        let framed = textureSample(behind, behind_sampler, taken_at / screen.size);
+        let page = textureSample(blurred, behind_sampler, taken_at / screen.size);
+        let taken = select(framed, page, (in.flags & 268435456u) != 0u);
         return whole(taken, in.colour.a);
     }
     // What is behind a pane, blurred one way: across on the first pass and

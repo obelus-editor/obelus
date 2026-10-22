@@ -316,6 +316,62 @@ pub(crate) fn cursor_line(dump: &str) -> &str {
         .map_or("", |index| dump[index + marker.len()..].trim_end())
 }
 
+/// The `count` characters drawn from the caret on, on a screen `width` by
+/// `height` -- or `None` where there is no caret.
+///
+/// What the reader sees the caret on, which is the question for every page
+/// whose cursor is a place in rows that only it lays out.
+pub(crate) fn under_the_caret(
+    app: &mut App,
+    width: u16,
+    height: u16,
+    count: u16,
+) -> Option<String> {
+    let dump = render(app, width, height);
+    let (x, y) = cursor_line(&dump)
+        .split_once(',')
+        .and_then(|(x, y)| Some((x.parse::<u16>().ok()?, y.parse::<u16>().ok()?)))?;
+    let cells = cells_of(app, width, height);
+    Some(
+        (x..(x + count).min(width))
+            .map(|x| cells[(x, y)].symbol().to_string())
+            .collect(),
+    )
+}
+
+/// The characters of the first row of a dump holding `words` that wear the
+/// ground a search marks what it found with: what the page above a search
+/// of it says was found.
+///
+/// The first row, because the page is above the list and the list's own
+/// row holds the same words. The ground is the dark theme's
+/// `marked_background`, the colour the file marks a search's match in.
+pub(crate) fn found_on_screen(dump: &str, words: &str) -> String {
+    let marked: Vec<char> = legend_block(dump)
+        .lines()
+        .filter(|entry| entry.contains("bg=#1e3a5f"))
+        .filter_map(|entry| entry.trim_start().chars().next())
+        .collect();
+    let Some(at) = text_block(dump).lines().position(|row| row.contains(words)) else {
+        return String::new();
+    };
+    let text: Vec<char> = text_block(dump)
+        .lines()
+        .nth(at)
+        .unwrap_or_default()
+        .chars()
+        .collect();
+    style_block(dump)
+        .lines()
+        .nth(at)
+        .unwrap_or_default()
+        .chars()
+        .enumerate()
+        .filter(|(_, letter)| marked.contains(letter))
+        .filter_map(|(column, _)| text.get(column))
+        .collect()
+}
+
 /// The text rows of a dump.
 pub(crate) fn text_block(dump: &str) -> &str {
     section(dump, "-- text --", "-- style --")

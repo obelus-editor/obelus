@@ -199,19 +199,19 @@ fn the_search_of_the_project_offers_them_too() {
     app.statuses_for_test(std::collections::HashMap::new());
     support::lay_out(&mut app, 76, 16);
 
-    // Not on the file's tab: one file is read, and nothing is walked.
+    // Not in the search of the file: one file is read, and nothing is
+    // walked. Asked of the list rather than of the palette, which lets go of
+    // a list on the status bar rather than opening over it.
     obelus_app::app::dispatch::dispatch(&mut app, Command::SearchFile);
-    let offered = support::usable_here(&mut app);
-    // The tab's own keys first, so the absence below is of these two and
-    // not of every key the palette might have said.
+    let picker = app.picker().expect("the search of the file");
     assert!(
-        offered.contains(&"Regex".to_string()),
-        "the file's tab says none of its keys: {offered:?}"
+        picker.looks_how().is_some(),
+        "the search of the file has none of its own switches"
     );
-    assert!(
-        !offered.contains(&"Hidden files".to_string())
-            && !offered.contains(&"Ignored files".to_string()),
-        "the file's tab offers them: {offered:?}"
+    assert_eq!(
+        (picker.offers_hidden(), picker.offers_ignored()),
+        (None, None),
+        "the search of the file offers them"
     );
     support::press(&mut app, KeyCode::Esc);
 

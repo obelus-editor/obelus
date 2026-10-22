@@ -438,6 +438,11 @@ pub struct EditorView<'a> {
     /// search names whatever characters the query matched, which is as many
     /// runs as the match is scattered over.
     marked: &'a [Span],
+    /// What a search of the file found, on the row the search is standing
+    /// on, and which match that is for a window -- see
+    /// [`crate::shapes::Found`]. Only the document's: a preview is not what
+    /// a search of the file being read is about.
+    found: Option<(Span, crate::shapes::Found)>,
     /// What is drawn in the file that the file does not contain: the
     /// colours a server found written down, and what it would have the
     /// reader know.
@@ -622,6 +627,17 @@ impl<'a> EditorView<'a> {
             // What is being talked about: the uses of the name the pointer
             // is resting on, or what a hover is about while one is up.
             marked: app.marked_runs(),
+            found: app
+                .found_run()
+                .zip(app.current_buffer())
+                .map(|(span, buffer)| {
+                    let which = crate::shapes::Found {
+                        page: which_document(buffer),
+                        row: span.line.get(),
+                        start: span.column.get(),
+                    };
+                    (span, which)
+                }),
             drawn: app.drawn(),
             selection: app.current_buffer().and_then(Buffer::selection),
             spelled: app.current_buffer().and_then(Buffer::spelled),
@@ -685,6 +701,7 @@ impl<'a> EditorView<'a> {
             highlights,
             theme,
             marked,
+            found: None,
             troubles,
             // Nothing for a preview: what is drawn there is somewhere else,
             // and where a colour or a hint goes is a fact about the file
@@ -1044,6 +1061,7 @@ impl Widget for EditorView<'_> {
                                     .severity
                                     .map(|severity| self.theme.colour_for(Some(severity.kind()))),
                                 marked: &[],
+                                found: None,
                                 // A block is a commit's version of these
                                 // lines, and what a server found is in the
                                 // file as it is now -- at columns that mean
@@ -1233,6 +1251,7 @@ impl Widget for EditorView<'_> {
                         // The file's own lines, which have a syntax tree.
                         ink: None,
                         marked: self.marked,
+                        found: self.found,
                         drawn: self.drawn,
                         selection: self.selection,
                         spelled: self.spelled,
@@ -1608,6 +1627,8 @@ struct Painting<'a> {
     ink: Option<Color>,
     /// The run a preview is about.
     marked: &'a [Span],
+    /// What a search of the file found, and which match it is.
+    found: Option<(Span, crate::shapes::Found)>,
     /// What is drawn in the line that the line does not contain: the
     /// colours a server found written down, and what it would have the
     /// reader know.
@@ -1626,15 +1647,22 @@ struct Painting<'a> {
 /// Which pair of brackets this is, as a window compares them -- see
 /// [`crate::shapes::Pair`].
 fn which_pair(buffer: &Buffer, open: ByteOffset) -> crate::shapes::Pair {
+    crate::shapes::Pair {
+        document: which_document(buffer),
+        version: buffer.version(),
+        open: open.get(),
+    }
+}
+
+/// Which document this is, as a window compares them: its path and which
+/// commit it is, because two buffers can wear one path. Hashed, because all
+/// it is for is comparing.
+fn which_document(buffer: &Buffer) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut document = std::hash::DefaultHasher::new();
     buffer.path().hash(&mut document);
     buffer.content().at().hash(&mut document);
-    crate::shapes::Pair {
-        document: document.finish(),
-        version: buffer.version(),
-        open: open.get(),
-    }
+    document.finish()
 }
 
 /// Draws one visual row of a line, and says which column it ended at.
@@ -1723,10 +1751,32 @@ fn draw_row(
         {
             style = style.bg(painting.theme.marked_background);
         }
-        if painting
+        // What a search found, in the same colour -- and said to a window,
+        // which draws it as a shape of its own. A cell at a time, and the
+        // window joins the cells of one match on one row. Not where the
+        // reader has selected, which wins the cells: a plate laid over what
+        // they hold would be a mark over theirs.
+        let selected = painting
             .selection
-            .is_some_and(|selection| selection.contains(line, CharColumn::new(column)))
+            .is_some_and(|selection| selection.contains(line, CharColumn::new(column)));
+        if let Some((_, which)) = painting
+            .found
+            .filter(|(found, _)| found.contains(line, CharColumn::new(column)))
         {
+            style = style.bg(painting.theme.marked_background);
+            if !selected {
+                crate::shapes::found(
+                    Rect::new(
+                        x + offset,
+                        y,
+                        u16::try_from(glyph.cells.max(1)).unwrap_or(1),
+                        1,
+                    ),
+                    which,
+                );
+            }
+        }
+        if selected {
             style = style.bg(painting.theme.selection_background);
         }
         // Underlined where a server says something is wrong, in the colour

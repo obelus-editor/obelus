@@ -937,7 +937,10 @@ impl App {
             | PickerValue::AgentDefault { .. }
             // A list of background work is compact, and what a row has
             // written is opened rather than shown.
-            | PickerValue::Task { .. } => None,
+            | PickerValue::Task { .. }
+            // A row of the page behind the list, which only that page's own
+            // view can draw -- and the search stops previewing on that tab.
+            | PickerValue::Within { .. } => None,
             // What choosing the row gives, which is not the same thing in
             // both radii. In a file's history it gives that file as the
             // commit had it, message and all; in the project's it opens the

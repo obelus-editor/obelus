@@ -226,6 +226,27 @@ pub(crate) struct Painter {
     /// one most often on the screen, and a picture the size of it is the
     /// memory of a whole window kept for a moment that is not coming.
     picture: Option<Whole>,
+    /// The page layer alone, where it stands, under the first pane and in
+    /// the rows of a band above it: what the first pane's glass reads while
+    /// a band scrolls under it, and what a row sliding past the pane's edge
+    /// is taken from where it comes from under the pane.
+    ///
+    /// Its own picture rather than the frame's, which is what it was drawn
+    /// into and then cleared for the frame: the frame has the pane composed
+    /// over the page, so a row taken from under the pane out of it was the
+    /// list's top edge drawn again above the list. Made the first time a band
+    /// scrolls under a pane and kept with `picture` from then on -- see
+    /// `picture_while_wanted` -- and read through `page_bindings`.
+    /// See `UNDER_GLASS`.
+    standing: Option<Whole>,
+    /// The frame's picture with the page layer's as its second, for the
+    /// pieces taken out of the page layer and nothing else (`Reads::Page`).
+    ///
+    /// Not the frame's own bindings with the page layer put in them, which
+    /// it was: everything drawn with the frame read it then, and a list
+    /// scrolling inside its pane -- with no band under it, so a page layer
+    /// not drawn that frame -- went white for the length of the slide.
+    page_bindings: Option<wgpu::BindGroup>,
     /// What is written on a pane on its way in, on nothing: its rows, its
     /// letters, its caret -- everything said over the page after its glass.
     ///
@@ -341,6 +362,9 @@ struct Placed {
     arriving: Option<usize>,
     /// And the piece that puts that picture back on the screen.
     lifting: Option<Range<usize>>,
+    /// The pieces of bands taken out of the page layer rather than the
+    /// frame -- see `Reads::Page`.
+    from_the_page: Vec<usize>,
     /// Where what is written over the page begins, on the screen being
     /// kept for the panes that went: drawn into `left_lifted` where they
     /// were, and into `left` everywhere else.
@@ -474,6 +498,12 @@ enum Reads {
     Lifted,
     /// What was written on the panes that went.
     LeftLifted,
+    /// The frame with the page layer beside it: a row of a band taken from
+    /// under the first pane, out of the page layer -- see `UNDER_GLASS`.
+    /// A reading of its own, so that nothing else drawn with the frame
+    /// reads a page layer that is only drawn while a band scrolls under a
+    /// pane, and holds whatever it held last the rest of the time.
+    Page,
 }
 
 /// Runs of quads, each with the pictures it is drawn with.
@@ -610,6 +640,12 @@ fn catching(placed: &Placed) -> Plan {
                 .lifting
                 .clone()
                 .map(|lifting| (lifting, Reads::Lifted)),
+        )
+        .chain(
+            placed
+                .from_the_page
+                .iter()
+                .map(|&piece| (piece..piece + 1, Reads::Page)),
         )
         .collect();
     reading.sort_by_key(|(quads, _)| quads.start);
@@ -822,6 +858,15 @@ const PAIR_REACH: f32 = 0.55;
 /// little.
 const PAIR_REACH_FROM: f32 = 0.4;
 
+/// How much larger every way the plate under what a search found starts,
+/// as a share of a row's height, before it comes down onto the match.
+///
+/// Most of a row: the plate has to be seen to close, and a match is often
+/// a word or two on one line, so less than this is a plate that seems to
+/// flicker rather than land. Not a whole row, which would have it lying
+/// over the lines above and below for longer than it lies on its own.
+const FOUND_FROM: f32 = 0.7;
+
 /// How far the plate and its light are from the page, as a share of how
 /// far the cells' own `bracket_background` is.
 ///
@@ -974,6 +1019,11 @@ const SEAM_BASE: f32 = 1.5;
 const FRAME: u32 = 32;
 /// And the pane out of it, higher up than it will end.
 const SLID: u32 = 64;
+/// Beside `SLID`: taken from the page layer's own picture rather than the
+/// frame, for a row of a band whose pixels come from under the first pane
+/// -- see `glass::by_source`. The one bit left free, between the three a
+/// light says its rows in (`HELD_NEAR`) and the light itself (`LIGHT`).
+const UNDER_GLASS: u32 = 268_435_456;
 
 /// What the shader needs to know about the window.
 #[repr(C)]
@@ -1783,6 +1833,40 @@ mod tests {
             );
         }
 
+        /// Of what is put back while a band catches up, only the pieces taken
+        /// out of the page layer are drawn with the page layer's reading, and
+        /// everything else with the frame's.
+        ///
+        /// Which is the half of it a plan can say. The page layer is drawn
+        /// only while a band scrolls under a pane, and when the frame's own
+        /// bindings held it, everything put back with the frame read it: a
+        /// list scrolling in its own pane went white for the length of the
+        /// slide. That half is in `bound_again` and `picture_while_wanted`,
+        /// which bind pictures on a device, and no test here reaches it.
+        ///
+        /// Deliberate break: give `from_the_page` the frame's reading
+        /// (`Reads::Nothing` in `catching`). The pieces then read the frame,
+        /// the pane over the page, for the rows coming out from under it.
+        #[test]
+        fn only_the_pieces_out_of_the_page_layer_read_it() {
+            let placed = Placed {
+                drawn: 10,
+                moved: 20,
+                gaps: vec![(12, 0)],
+                from_the_page: vec![15, 16],
+                ..Placed::default()
+            };
+            let plan = catching(&placed);
+            let paged: Vec<usize> = plan
+                .iter()
+                .filter(|(_, reads)| *reads == Reads::Page)
+                .flat_map(|(quads, _)| quads.clone())
+                .collect();
+            assert_eq!(paged, [15, 16], "{plan:?}");
+            let drawn: Vec<usize> = plan.iter().flat_map(|(quads, _)| quads.clone()).collect();
+            assert_eq!(drawn, (10..20).collect::<Vec<_>>(), "{plan:?}");
+        }
+
         /// What a level was put over is the glass of every level under it
         /// and what it was put over -- and never its own picture, which is
         /// the one being drawn into.
@@ -1798,7 +1882,7 @@ mod tests {
                     plan.iter().all(|(_, reads)| match reads {
                         Reads::Nothing => true,
                         Reads::Level(read) => *read < level,
-                        Reads::Left | Reads::Lifted | Reads::LeftLifted => false,
+                        Reads::Left | Reads::Lifted | Reads::LeftLifted | Reads::Page => false,
                     }),
                     "level {level} reads its own picture or one over it: {plan:?}"
                 );
@@ -1849,7 +1933,8 @@ mod tests {
 
     use super::{
         glass::{
-            above_its_line, behind_row, beneath, casting, lettered_behind, reached, sliding, tiles,
+            Source, above_its_line, behind_row, beneath, by_source, casting, left_out,
+            lettered_behind, plates_behind, reached, sliding, tiles,
         },
         ground::{held_runs, runs, without},
         shapes::underline_ink,
@@ -2198,6 +2283,122 @@ mod tests {
         );
     }
 
+    /// The picture of what a pane was put over plates the page's plates it
+    /// covers -- a half of the cursor's pair, a run a search found -- and
+    /// none it does not.
+    ///
+    /// Deliberate break: answer the runs alone (the pairs' half of the chain
+    /// left off in `plates_behind`), and the bracket under the list is a
+    /// square in its picture.
+    #[test]
+    fn what_a_pane_was_put_over_keeps_its_plates() {
+        use crate::grid::{Finding, Paired};
+        let mut cells = vec![Cell::default(); 10 * 3];
+        cells[10 + 4].set_symbol("(");
+        let behind = Behind {
+            area: Rect::new(0, 5, 10, 3),
+            joined: obelus_ui::shapes::Joined::Below,
+            ground: Color::Reset,
+            cells,
+            depth: 1,
+        };
+        let half = Paired {
+            area: Rect::new(4, 6, 1, 1),
+            pair: obelus_ui::shapes::Pair {
+                document: 1,
+                version: 1,
+                open: 0,
+            },
+            depth: 0,
+            held: None,
+        };
+        let found = obelus_ui::shapes::Found {
+            page: 1,
+            row: 7,
+            start: 0,
+        };
+        let covered = Finding {
+            area: Rect::new(1, 7, 3, 1),
+            found,
+            depth: 0,
+        };
+        let above = Finding {
+            area: Rect::new(1, 2, 3, 1),
+            found,
+            depth: 0,
+        };
+        assert_eq!(
+            plates_behind(&behind, (&[half], &[covered, above])),
+            [half.area, covered.area]
+        );
+    }
+
+    /// A band catching up leaves out of what it puts back the bands inside
+    /// it and beside it, which put back their own -- and never a band round
+    /// it, which would leave out all of it.
+    ///
+    /// A list in its pane scrolling while the page under it scrolled too
+    /// was a blank until the page arrived: the list left out the page's
+    /// room, which holds the list's whole room. Deliberate break: leave out
+    /// every other band's room (the `holds` test dropped in `left_out`).
+    #[test]
+    fn a_band_inside_another_puts_itself_back() {
+        let page = [0.0, 0.0, 100.0, 100.0];
+        let list = [0.0, 60.0, 98.0, 90.0];
+        let beside = [0.0, 0.0, 100.0, 10.0];
+        let rooms = [page, list, beside];
+        assert_eq!(left_out(&rooms, 1), [beside], "the list left the page out");
+        assert_eq!(
+            left_out(&rooms, 0),
+            [list, beside],
+            "the page took the list along"
+        );
+    }
+
+    /// A row of a band slid into place takes its pixels from the layer
+    /// they are in: from under the first pane out of the page layer, from
+    /// under another pane out of nothing, and otherwise out of the frame.
+    ///
+    /// The page scrolling back under a list on the status bar, the rows
+    /// just above the list come from under it. Out of the frame that is the
+    /// list, which is what showed there -- its top edge again above itself,
+    /// shrinking away -- while the rows that belonged arrived only with the
+    /// slide. Deliberate breaks: move the holes the other way (`- shift`),
+    /// and the page is taken for rows that come from above the list and
+    /// the frame for the ones from under it; answer `Frame` for the first
+    /// pane's hole, which is the bug.
+    #[test]
+    fn a_row_coming_out_from_under_a_list_is_the_pages() {
+        // A band 0..100 down with the list over 60..100, scrolled back: a
+        // row is taken from `y - shift`, so a shift of -10 takes each from
+        // ten pixels below.
+        let list = [0.0, 60.0, 100.0, 100.0];
+        let above_the_list = [0.0, 0.0, 100.0, 60.0];
+        let parts = by_source(above_the_list, -10.0, Some(list), &[]);
+        assert!(
+            parts.contains(&([0.0, 50.0, 100.0, 60.0], Source::Page)),
+            "the rows that come from under the list: {parts:?}"
+        );
+        assert!(
+            parts.contains(&([0.0, 0.0, 100.0, 50.0], Source::Frame)),
+            "the rest: {parts:?}"
+        );
+        assert_eq!(parts.len(), 2, "{parts:?}");
+
+        // Scrolled on instead, every row comes from above: all the frame.
+        assert_eq!(
+            by_source(above_the_list, 10.0, Some(list), &[]),
+            vec![(above_the_list, Source::Frame)]
+        );
+
+        // And under a pane whose page nothing holds, nothing at all.
+        let parts = by_source(above_the_list, -10.0, None, &[list]);
+        assert!(
+            parts.contains(&([0.0, 50.0, 100.0, 60.0], Source::Nowhere)),
+            "{parts:?}"
+        );
+    }
+
     /// A pane's shadow falls from the edge the pane has reached.
     ///
     /// The frame is drawn once and put back in two pieces, and a shadow
@@ -2359,6 +2560,8 @@ mod tests {
             stroked: &[],
             paired: &[],
             fading: &[],
+            found: &[],
+            plated_behind: (&[], &[]),
             stack: &[],
             bands: &[],
         };
@@ -2419,6 +2622,8 @@ mod tests {
             stroked: &[],
             paired: &[],
             fading: &[],
+            found: &[],
+            plated_behind: (&[], &[]),
             stack: &[],
             bands: &[],
         };
@@ -2798,6 +3003,8 @@ mod tests {
             stroked: &stroked,
             paired: &[],
             fading: &[],
+            found: &[],
+            plated_behind: (&[], &[]),
             sheened: None,
             parted: &[],
             stack: &[],

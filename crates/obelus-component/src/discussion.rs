@@ -232,6 +232,9 @@ pub struct Row {
     pub waiting: bool,
     /// Which of its characters the reader has hold of.
     pub held: Option<Range<usize>>,
+    /// Which of its characters a search of the page found, on the row the
+    /// search is standing on.
+    pub found: Option<Range<usize>>,
 }
 
 impl Row {
@@ -902,10 +905,16 @@ pub struct DiscussionView {
     /// The rows as they were last laid out, and the width they were laid
     /// out at. Dropped by everything that changes what there is to lay out.
     laid: std::cell::RefCell<Option<(u16, Vec<Row>)>>,
+    /// How many times what there is to lay out has changed -- see
+    /// [`Self::changes`].
+    changes: u64,
     /// Where the cursor is.
     cursor: Place,
     /// What the reader has hold of.
     held: Hold<Part>,
+    /// What a search of the page found on the row it is standing on:
+    /// which row, and which of its characters.
+    found: Option<(usize, Range<usize>)>,
     /// Where the pointer went down, while it has not moved since: what
     /// tells a press on a link from a drag that ends on one, on a row that
     /// is none of the page's words and so has nothing to hold.
@@ -936,8 +945,10 @@ impl DiscussionView {
             refused: None,
             folding: Folding::default(),
             laid: std::cell::RefCell::new(None),
+            changes: 0,
             cursor: Place::default(),
             held: Hold::default(),
+            found: None,
             pressed: None,
             window: Window::new(),
         }
@@ -1018,6 +1029,11 @@ impl DiscussionView {
     pub fn rows(&self, width: u16) -> Vec<Row> {
         let mut rows = self.laid_out(width);
         self.held.mark(&mut rows);
+        if let Some((at, found)) = self.found.as_ref()
+            && let Some(row) = rows.get_mut(*at)
+        {
+            row.found = Some(found.clone());
+        }
         rows
     }
 
@@ -1046,6 +1062,15 @@ impl DiscussionView {
     /// Forgets the rows, because what they are made of has changed.
     fn forget_the_layout(&mut self) {
         *self.laid.get_mut() = None;
+        self.changes += 1;
+    }
+
+    /// How many times what there is to lay out has changed: a place kept in
+    /// the rows -- a search of the page -- means at one width what it did
+    /// while this has not moved.
+    #[must_use]
+    pub const fn changes(&self) -> u64 {
+        self.changes
     }
 
     /// Where the cursor is.
@@ -1057,6 +1082,30 @@ impl DiscussionView {
     /// Puts the cursor somewhere, for a press there.
     pub const fn stand(&mut self, at: Place) {
         self.cursor = at;
+    }
+
+    /// Puts the cursor somewhere and its row on screen, letting go of what
+    /// was held: a search of the page, chosen.
+    pub fn stand_in_view(&mut self, at: Place, room: crate::page::Room) {
+        let count = self.laid_out(room.reading).len();
+        self.held.let_go();
+        self.cursor = at;
+        self.window.set_count(count);
+        crate::page::show(&mut self.window, at.row, count, room.height);
+    }
+
+    /// Says what a search of the page found on the row it is standing on,
+    /// or that it has stopped looking.
+    pub fn find(&mut self, found: Option<(usize, Range<usize>)>) {
+        self.found = found;
+    }
+
+    /// Puts a row on screen and leaves the cursor where it is: a search of
+    /// the page, looked at from a list over it.
+    pub fn look_at_row(&mut self, row: usize, room: crate::page::Room) {
+        let count = self.laid_out(room.reading).len();
+        self.window.set_count(count);
+        crate::page::show(&mut self.window, row, count, room.height);
     }
 
     /// The first row on screen.

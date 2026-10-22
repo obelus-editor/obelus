@@ -26,7 +26,7 @@ use regex::Regex;
 /// How far a search reaches.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Scope {
-    /// The file being read.
+    /// The document being read: a file, or a page with words in it.
     File,
     /// Every file under the working directory.
     Project,
@@ -35,14 +35,6 @@ pub enum Scope {
 }
 
 impl Scope {
-    /// Every scope, in the order their tabs sit in.
-    ///
-    /// Which of them a search *shows* is a question about the state of the
-    /// world -- whether a file is open, whether a server is running -- so
-    /// the tab a scope sits on is not fixed and the application keeps the
-    /// list it built.
-    pub const ALL: [Self; 3] = [Self::File, Self::Project, Self::Symbols];
-
     /// Whether this scope's rows *are* the lines they name.
     ///
     /// A search of a file or of the project lists lines, trimmed of their
@@ -60,15 +52,6 @@ impl Scope {
         match self {
             Self::File | Self::Project => true,
             Self::Symbols => false,
-        }
-    }
-
-    /// The tab's name.
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::File => "File",
-            Self::Project => "Project",
-            Self::Symbols => "Symbols",
         }
     }
 

@@ -18,17 +18,54 @@ pub(super) mod tabs;
 /// the walk, what it has found, and the file each row's colours come from.
 #[derive(Debug, Default)]
 pub(in crate::app) struct Search {
-    /// Which scopes the open search is showing, in tab order.
+    /// Which scope the last search opened at, which is the open search's
+    /// while one is up.
     ///
-    /// The tabs are only the scopes that can answer, so which tab is which
-    /// scope is not a fixed mapping and has to be remembered.
-    pub(in crate::app) searching: Vec<Scope>,
+    /// Outlives the list, so whatever reads it asks whether the list on
+    /// screen is a search as well: the palette opened in a search's place
+    /// is not one.
+    pub(in crate::app) searching: Option<Scope>,
     /// Which file and version the search's rows were gathered from.
     ///
     /// The file scope's rows are its lines, so they are only right for the
     /// version they were read from: an agent rewriting the file while the
     /// search is open has to change what the list says.
     pub(in crate::app) searched: Option<(PathBuf, i32)>,
+    /// What the narrowest scope of the open search is searching, which is
+    /// whatever was in front when it opened.
+    pub(in crate::app) here: Option<searching::Here>,
+    /// And which document that is, for the marks and the scroll a search of
+    /// a page leaves on it: taken off that document whatever is in front
+    /// by the time the list goes.
+    pub(in crate::app) document: Option<DocumentId>,
+    /// What the page searched was when its rows were found -- see
+    /// `page_stamp`.
+    pub(in crate::app) stamp: Option<(u64, usize, u16)>,
+    /// What the last search to close was asking, which the next one opens
+    /// asking again.
+    pub(in crate::app) last_query: String,
+    /// Where each scope's last search was left, for the next one opened at
+    /// that scope to stand where it stood.
+    pub(in crate::app) kept: Vec<searching::Kept>,
+    /// Whether the walk of the project has finished, so that what it found
+    /// is all of it and worth keeping.
+    pub(in crate::app) walked: bool,
+    /// What the project's tab shows on its next refresh instead of walking
+    /// the project again: the rows a search left, put back.
+    pub(in crate::app) reuse: Option<Vec<PickerItem>>,
+    /// Where the page under a search of it was scrolled to before the list
+    /// showed the reader somewhere else in it, to go back to if they leave
+    /// without choosing. A file's reading needs none of this: its view is
+    /// the buffer's, which `looked_from` already keeps.
+    pub(in crate::app) looked_within: Option<searching::Before>,
+    /// What the page was last marked and scrolled for -- which row, and
+    /// which of its characters -- so the frame that asks again about the
+    /// same match does no work.
+    pub(in crate::app) looked_at: Option<(usize, std::ops::Range<usize>)>,
+    /// What the query matched on the row the search of the file is on, as
+    /// a run of the file: the file is that list's preview, and marks what
+    /// the preview of a list that covers it would mark.
+    pub(in crate::app) marked: Option<obelus_text::coordinates::Span>,
     /// Whether the symbols search offers names from outside the project.
     ///
     /// Off, because a server that has indexed a project has indexed what it

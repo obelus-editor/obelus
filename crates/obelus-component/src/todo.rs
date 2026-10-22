@@ -125,6 +125,10 @@ pub struct Row {
     /// Which of them an input method is still spelling, counted the same
     /// way.
     pub spelled: Option<Range<usize>>,
+    /// Which of them a search of the notes found, counted the same way: the
+    /// page is that search's preview, and marks what it found the way the
+    /// file marks it.
+    pub found: Option<Range<usize>>,
     /// Whether this row heads notes hanging under it, and whether they are
     /// showing.
     ///
@@ -254,6 +258,9 @@ pub struct TodoView {
     /// frame -- the draw path is the one place that cannot afford to do work
     /// it could have done once.
     rows: Vec<Row>,
+    /// What a search of the notes found on the row it is standing on:
+    /// which note, and which characters of its words.
+    found: Option<(usize, Range<usize>)>,
     /// Which row is selected and which is on top.
     window: Window,
     /// How wide a note's own text is, which is where it wraps.
@@ -1019,6 +1026,18 @@ impl TodoView {
                 Some((_, composer)) => composer.laid(room),
                 None => crate::composer::wrapped(&note.said, room),
             };
+            // What a search of the notes found in this one, broken up across
+            // the rows its words are laid out in.
+            let found_in = match self.found.as_ref().filter(|(at, _)| *at == index) {
+                Some((_, found)) => {
+                    let said = match self.writing.as_ref().filter(|(at, _)| *at == index) {
+                        Some((_, composer)) => composer.text(),
+                        None => note.said.clone(),
+                    };
+                    crate::composer::marked_in_rows(&said, room, found.start, found.end)
+                }
+                None => Vec::new(),
+            };
             let mut lines = laid.into_iter();
             let first: Laid = lines.next().unwrap_or_default();
             // A blank above every note but the first on the page: what
@@ -1038,6 +1057,7 @@ impl TodoView {
                     depth: note.depth,
                     held: None,
                     spelled: None,
+                    found: None,
                     under: None,
                 });
             }
@@ -1051,9 +1071,10 @@ impl TodoView {
                 depth: note.depth,
                 held: first.held,
                 spelled: first.spelled,
+                found: found_in.first().cloned().flatten(),
                 under,
             });
-            for line in lines {
+            for (row, line) in lines.enumerate().map(|(at, line)| (at + 1, line)) {
                 rows.push(Row {
                     note: index,
                     said: line.said,
@@ -1064,6 +1085,7 @@ impl TodoView {
                     depth: note.depth,
                     held: line.held,
                     spelled: line.spelled,
+                    found: found_in.get(row).cloned().flatten(),
                     // Only the note's own row carries it: the mark is
                     // about the note, and one on every line of it would
                     // be a column of arrows saying the same thing.
@@ -1091,6 +1113,7 @@ impl TodoView {
                     // by selecting it.
                     held: None,
                     spelled: None,
+                    found: None,
                     under: None,
                 });
             }
@@ -1140,6 +1163,65 @@ impl TodoView {
     /// has said nothing about where in them to stand.
     pub fn stand_on(&mut self, note: usize) {
         self.enter_note(note, false);
+    }
+
+    /// Puts the caret in one of the notes, `character` characters into its
+    /// words: a search of the notes, chosen.
+    ///
+    /// A step at a time from the start rather than a column worked out
+    /// here, because the box is what knows how its words wrap. And only
+    /// into the note asked for: one folded away puts the caret in the note
+    /// standing in for it, whose words are other words.
+    pub fn stand_in(&mut self, note: usize, character: usize) {
+        self.enter_note(note, false);
+        if let Some((at, composer)) = self.writing.as_mut()
+            && *at == note
+        {
+            for _ in 0..character {
+                composer.right();
+            }
+        }
+        self.follow_caret();
+    }
+
+    /// Says what a search of the notes found on the row it is standing on,
+    /// or that it has stopped looking: which note, and which characters of
+    /// its words.
+    pub fn find(&mut self, found: Option<(usize, Range<usize>)>) {
+        if self.found != found {
+            self.found = found;
+            self.rebuild();
+        }
+    }
+
+    /// Puts the row of a note's words that holds `character` on screen, and
+    /// leaves the caret where it is: a search of the notes, looked at from a
+    /// list over them, in a page `height` rows high.
+    ///
+    /// Counted by the lines of its words as the box lays them out, for the
+    /// rule `stand_in` follows: the box knows how its words wrap.
+    pub fn look_at_note(&mut self, note: usize, character: usize, height: u16) {
+        let Some(said) = self.todo.notes.get(note).map(|note| note.said.clone()) else {
+            return;
+        };
+        let Some(first) = self
+            .rows
+            .iter()
+            .position(|row| row.note == note && row.words())
+        else {
+            return;
+        };
+        let mut composer = Composer::new();
+        composer.replace(&said);
+        let room = self.caret_width();
+        composer.home(room);
+        while composer.up(room) {}
+        for _ in 0..character {
+            composer.right();
+        }
+        let (line, _) = composer.caret(room);
+        let row = (first + line).min(self.rows.len().saturating_sub(1));
+        crate::page::show(&mut self.window, row, self.rows.len(), height);
     }
 
     /// The note that is on the page in this one's place.

@@ -74,8 +74,8 @@ use winit::{
 use crate::{
     blink::Blink,
     grid::{
-        Barred, Behind, Capped, Cells, Going, Marked, Marking, Measured, Page, Paired, Parted,
-        Rolled, Ruled, Said, Sheened, Spun, Stroked, Ticked, Update,
+        Barred, Behind, Capped, Cells, Finding, Going, Marked, Marking, Measured, Page, Paired,
+        Parted, Rolled, Ruled, Said, Sheened, Spun, Stroked, Ticked, Update,
     },
     keys,
     motion::{Lane, Motion, Wake},
@@ -157,6 +157,7 @@ struct Left {
     parted: Vec<Parted>,
     stroked: Vec<Stroked>,
     paired: Vec<Paired>,
+    found: Vec<Finding>,
     stack: Vec<Behind>,
     /// Which of its panes went.
     going: Vec<Going>,
@@ -191,6 +192,8 @@ impl Left {
             stroked: &self.stroked,
             paired: &self.paired,
             fading: &[],
+            found: &self.found,
+            plated_behind: (&[], &[]),
             stack: &self.stack,
             bands: &[],
         }
@@ -484,6 +487,16 @@ struct Showing {
     pairing: Vec<Paired>,
     /// And the pairs the caret was in before, while their light goes out.
     unpaired: Vec<Paired>,
+    /// Which runs of cells are what a search found, on the frame being
+    /// shown.
+    found: Vec<Finding>,
+    /// And on the one being laid out.
+    finding: Vec<Finding>,
+    /// The halves of a pair and the runs a search found that a pane has been
+    /// put over, for the picture of what it was put over -- see
+    /// `Said::plated_behind`.
+    paired_behind: Vec<Paired>,
+    found_behind: Vec<Finding>,
     /// Which bands of rows are lists, how far down each has got and what
     /// bar says so, on the frame being shown.
     ///
@@ -615,6 +628,10 @@ impl Showing {
             paired: Vec::new(),
             pairing: Vec::new(),
             unpaired: Vec::new(),
+            found: Vec::new(),
+            finding: Vec::new(),
+            paired_behind: Vec::new(),
+            found_behind: Vec::new(),
             ruling: Vec::new(),
             linked: Vec::new(),
             linking: Vec::new(),
@@ -1366,6 +1383,7 @@ impl ApplicationHandler<Waking> for Showing {
                                 parted: self.parted.clone(),
                                 stroked: self.stroked.clone(),
                                 paired: self.paired.clone(),
+                                found: self.found.clone(),
                                 stack: self.stack.clone(),
                                 going: Vec::new(),
                             };
@@ -1525,6 +1543,11 @@ impl ApplicationHandler<Waking> for Showing {
                             depth: self.stacking.len(),
                             held: None,
                         }),
+                        Update::Found { area, found } => self.finding.push(Finding {
+                            area,
+                            found,
+                            depth: self.stacking.len(),
+                        }),
                         Update::Stroked { stroke } => {
                             self.stroking.push(Stroked {
                                 stroke,
@@ -1563,6 +1586,7 @@ impl ApplicationHandler<Waking> for Showing {
                                     parted: std::mem::take(&mut self.parted),
                                     stroked: std::mem::take(&mut self.stroked),
                                     paired: std::mem::take(&mut self.paired),
+                                    found: std::mem::take(&mut self.found),
                                     stack: std::mem::take(&mut self.stack),
                                     going: Vec::new(),
                                 });
@@ -1620,8 +1644,21 @@ impl ApplicationHandler<Waking> for Showing {
                                 std::mem::take(&mut self.pairing),
                                 &mut self.paired,
                                 &mut self.unpaired,
+                                &mut self.paired_behind,
                                 &self.page,
                                 &mut self.motion,
+                                Instant::now(),
+                            );
+                            // What a search found, one run a match a row,
+                            // and only where nothing has been put over it
+                            // since -- and whether it is another match,
+                            // which is what puts its plate down.
+                            (self.found, self.found_behind) =
+                                Finding::joined(std::mem::take(&mut self.finding))
+                                    .into_iter()
+                                    .partition(|run| run.still_said(&self.page));
+                            self.motion.found_drawn(
+                                self.found.iter().map(|run| run.found),
                                 Instant::now(),
                             );
                             self.stack = std::mem::take(&mut self.stacking);
@@ -2069,6 +2106,8 @@ impl ApplicationHandler<Waking> for Showing {
                         stroked: &self.stroked,
                         paired: &self.paired,
                         fading: &fading,
+                        found: &self.found,
+                        plated_behind: (&self.paired_behind, &self.found_behind),
                         stack: &self.stack,
                         bands: &rolled,
                     },
@@ -2473,12 +2512,19 @@ fn pairs_arrived(
     said: Vec<Paired>,
     paired: &mut Vec<Paired>,
     unpaired: &mut Vec<Paired>,
+    behind: &mut Vec<Paired>,
     page: &Page,
     motion: &mut Motion,
     now: Instant,
 ) {
-    let was = std::mem::replace(paired, said);
-    paired.retain(|half| half.still_said(page));
+    // The halves a pane has been put over are kept apart rather than let
+    // go: the picture of what the pane was put over is the page with its
+    // plates on it -- see `pane_under`. Not lit, and not the pair the
+    // light comes on for, which is the one the reader can see.
+    let (shown, covered): (Vec<Paired>, Vec<Paired>) =
+        said.into_iter().partition(|half| half.still_said(page));
+    *behind = covered;
+    let was = std::mem::replace(paired, shown);
     for half in paired.iter_mut() {
         half.hold(page);
     }
@@ -2841,6 +2887,64 @@ mod tests {
         assert_eq!(Regrid::from(true, Some(14), 14.0).resized, None);
     }
 
+    /// A half of the cursor's pair a pane has been put over is kept apart,
+    /// for the picture of what the pane was put over, and is not the pair
+    /// the light comes on for.
+    ///
+    /// Deliberate break: let the covered halves go (`*behind = covered`
+    /// left out of `pairs_arrived`), and the bracket under the list is a
+    /// square in what its glass shows.
+    #[test]
+    fn a_half_a_pane_is_over_is_kept_apart() {
+        let mut page = Page::default();
+        page.resized(6, 3);
+        for (x, y, text) in [(0, 0, "("), (2, 2, ")")] {
+            let mut cell = ratatui::buffer::Cell::default();
+            cell.set_symbol(text);
+            page.apply(Update::Cell {
+                x,
+                y,
+                cell: Box::new(cell),
+            });
+        }
+        // A list over the bottom row.
+        page.put_over(&[crate::grid::Behind {
+            area: Rect::new(0, 2, 6, 1),
+            joined: obelus_ui::shapes::Joined::Below,
+            ground: ratatui::style::Color::Reset,
+            cells: Vec::new(),
+            depth: 0,
+        }]);
+        let half = |x, y| crate::grid::Paired {
+            area: Rect::new(x, y, 1, 1),
+            pair: obelus_ui::shapes::Pair {
+                document: 1,
+                version: 1,
+                open: 0,
+            },
+            depth: 0,
+            held: None,
+        };
+        let (mut paired, mut unpaired, mut behind) = (Vec::new(), Vec::new(), Vec::new());
+        pairs_arrived(
+            vec![half(0, 0), half(2, 2)],
+            &mut paired,
+            &mut unpaired,
+            &mut behind,
+            &page,
+            &mut Motion::new(None),
+            Instant::now(),
+        );
+        let at = |halves: &[crate::grid::Paired]| -> Vec<(u16, u16)> {
+            halves
+                .iter()
+                .map(|half| (half.area.x, half.area.y))
+                .collect()
+        };
+        assert_eq!(at(&paired), [(0, 0)], "the half on the page");
+        assert_eq!(at(&behind), [(2, 2)], "the half under the list");
+    }
+
     /// The pair the caret left is kept for its light to go out on, while
     /// its cell is still that bracket, and let go of once it has gone out.
     ///
@@ -2881,7 +2985,15 @@ mod tests {
         let mut motion = Motion::new(None);
         let (mut paired, mut unpaired) = (Vec::new(), Vec::new());
         let mut arrive = |said, page: &Page, at| {
-            pairs_arrived(said, &mut paired, &mut unpaired, page, &mut motion, at);
+            pairs_arrived(
+                said,
+                &mut paired,
+                &mut unpaired,
+                &mut Vec::new(),
+                page,
+                &mut motion,
+                at,
+            );
             (xs(&paired), xs(&unpaired))
         };
         let base = Instant::now();

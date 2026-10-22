@@ -786,6 +786,29 @@ pub fn wrapped(text: &str, width: u16) -> Vec<Laid> {
     laid_out(&Text::from_string(text), width, [None, None])
 }
 
+/// Which characters of each of the rows [`wrapped`] lays `text` out in fall
+/// between the `from`th character of it and the `to`th: a run of the text,
+/// broken up across its rows the way a selection is.
+///
+/// For a mark on a note that is not a selection -- what a search of the
+/// notes found -- which has to land on the same rows the words do.
+#[must_use]
+pub fn marked_in_rows(text: &str, width: u16, from: usize, to: usize) -> Vec<Option<Range<usize>>> {
+    let text = Text::from_string(text);
+    let (line, column) = text.position(obelus_text::coordinates::CharOffset::new(from));
+    let (end_line, end_column) = text.position(obelus_text::coordinates::CharOffset::new(to));
+    let run = Span {
+        line,
+        column,
+        end_line,
+        end_column,
+    };
+    laid_out(&text, width, [Some(run), None])
+        .into_iter()
+        .map(|laid| laid.held)
+        .collect()
+}
+
 /// The rows of a text at a width, with what is held and what is being
 /// spelled broken up across them.
 fn laid_out(text: &Text, width: u16, [held, spelled]: [Option<Span>; 2]) -> Vec<Laid> {

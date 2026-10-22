@@ -365,6 +365,10 @@ pub struct TodoUi<'a> {
     /// Whether nothing is over the notes, which is whether they may mark
     /// the note the keys are on -- see [`crate::in_front`].
     in_front: bool,
+    /// How many of the region's rows the reader can see: where a list on
+    /// the status bar covers the foot of it, the rows go on under the list
+    /// -- it is glass -- and the bar stops above it, the editor's rule.
+    seen: Option<u16>,
 }
 
 impl<'a> TodoUi<'a> {
@@ -377,7 +381,16 @@ impl<'a> TodoUi<'a> {
             talked: app.talked_about(),
             phase: app.phase(),
             in_front: crate::in_front(app, None),
+            seen: None,
         })
+    }
+
+    /// Says how many of the region's rows, from its top, the reader can
+    /// see -- the editor's `the_reader_has`, for the notes.
+    #[must_use]
+    pub const fn the_reader_has(mut self, rows: u16) -> Self {
+        self.seen = Some(rows);
+        self
     }
 }
 
@@ -445,7 +458,7 @@ impl Widget for TodoUi<'_> {
                 continue;
             }
             let selected = self.in_front && Some(row.note) == on;
-            self.row(cells, at_row, row, selected);
+            self.row(cells, at_row, (at, row), selected);
             if selected {
                 let (top, _) = *marked.get_or_insert((at_row.y, at_row.y));
                 marked = Some((top, at_row.y));
@@ -469,12 +482,19 @@ impl Widget for TodoUi<'_> {
 
         // Only where there is somewhere to scroll: a track with no thumb on
         // it is a control that does not work.
+        let seen = self
+            .seen
+            .map_or(list.height, |rows| rows.saturating_sub(list.y - area.y))
+            .min(list.height);
         let bar = window
-            .scrollable(list.height)
+            .scrollable(seen)
             .then(|| {
                 crate::scrollbar(
                     cells,
-                    list,
+                    Rect {
+                        height: seen,
+                        ..list
+                    },
                     window.top(),
                     self.notes.rows().len(),
                     self.theme,
@@ -498,7 +518,7 @@ impl Widget for TodoUi<'_> {
 
 impl TodoUi<'_> {
     /// One row: the mark, the box, what it says, and where it points.
-    fn row(&self, cells: &mut CellBuffer, area: Rect, row: &Row, selected: bool) {
+    fn row(&self, cells: &mut CellBuffer, area: Rect, (at, row): (usize, &Row), selected: bool) {
         let background = self.theme.background;
         fill(
             cells,
@@ -641,11 +661,23 @@ impl TodoUi<'_> {
         // Obelus marks a run of itself -- and the way the file marks its
         // own selection, which is the colour a reader has learnt means
         // "this is what you are holding".
-        let marked = match row.held.clone() {
-            Some(held) => Marked::run(held, self.theme.selection_background),
-            None => Marked::plain(),
+        // And what a search of the notes found, in the colour the file marks
+        // what a search of it found -- under what is held, which is the
+        // reader's own act and wins where the two meet.
+        let marked = match (row.held.clone(), row.found.clone()) {
+            (Some(held), _) => Marked::run(held, self.theme.selection_background),
+            (None, Some(found)) => Marked::run(found, self.theme.marked_background),
+            (None, None) => Marked::plain(),
         }
         .spelling(row.spelled.clone());
+        let shown = crate::truncate_from_right(
+            &row.said,
+            usize::from(
+                area.width
+                    .saturating_sub(MARGIN + SCROLLBAR_WIDTH + step)
+                    .max(1),
+            ),
+        );
         write_marked(
             cells,
             Rect {
@@ -654,16 +686,23 @@ impl TodoUi<'_> {
             },
             x,
             y,
-            &crate::truncate_from_right(
-                &row.said,
-                usize::from(
-                    area.width
-                        .saturating_sub(MARGIN + SCROLLBAR_WIDTH + step)
-                        .max(1),
-                ),
-            ),
+            &shown,
             Style::new().fg(ink).bg(background),
             &marked,
         );
+        // And where the search's mark is, for a front end that draws it as
+        // a shape of its own. Not under a hold, which wins the cells.
+        if let (None, Some(found)) = (&row.held, &row.found) {
+            let stop = area.x + area.width.saturating_sub(SCROLLBAR_WIDTH);
+            let from = crate::page::cell_of(&shown, x, found.start).min(stop);
+            let to = crate::page::cell_of(&shown, x, found.end).min(stop);
+            crate::shapes::found(
+                Rect::new(from, y, to.saturating_sub(from), 1),
+                // By the row it is on rather than by the note: a match on
+                // each of two rows a note wraps into, at the same column,
+                // are two matches.
+                crate::shapes::Found::on("notes", at, found.start),
+            );
+        }
     }
 }

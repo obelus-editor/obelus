@@ -72,6 +72,17 @@ const FADE: Duration = Duration::from_millis(120);
 /// would otherwise keep it coming on for ever.
 const LIGHT_UP: Duration = Duration::from_millis(160);
 
+/// How long the plate under what a search found takes to come down onto
+/// it, from a little larger than the match to the match.
+///
+/// The light round a bracket's length and a little more, because this one
+/// has travelled: the search walked to another match, often somewhere else
+/// on the page, and what the reader is owed is to see where it landed --
+/// which a plate closing on it says and one simply there does not. Short
+/// enough to have landed before the next press of a key held down to walk
+/// the list.
+const FOUND_SETTLE: Duration = Duration::from_millis(220);
+
 /// How long the picture under the page takes to come up out of the
 /// page's colour once it has been decoded: slower than anything the
 /// reader did, because nothing they did is arriving -- a photograph
@@ -431,6 +442,10 @@ pub(crate) struct Moving {
     /// The pairs going out are not here: there can be several, each on a
     /// clock of its own -- see [`Motion::fading`].
     pub(crate) pair: Option<f32>,
+    /// And how far the plate under what a search found has come down onto
+    /// it, from a little larger than the match to the match, or `None` for
+    /// one that is simply there.
+    pub(crate) found: Option<f32>,
     /// Where the light on the welcome screen's mark has got to, as a part
     /// of the mark's own width, or `None` while it is resting between
     /// passes -- and on a screen with no mark on it.
@@ -466,6 +481,7 @@ impl Moving {
             card: None,
             recoloured: None,
             pair: None,
+            found: None,
             sheen: None,
             turn: None,
             drift: (0.0, 0.0),
@@ -913,6 +929,11 @@ pub(crate) struct Motion {
     pair: Arriving,
     /// And how bright it was when it set out.
     pair_from: f32,
+    /// The plate under what a search found, coming down onto it.
+    found: Arriving,
+    /// Which matches the last frame drew, which is what says the next
+    /// one's are other ones -- see `found_drawn`.
+    finds: Vec<obelus_ui::shapes::Found>,
     /// Which pairs the last frame drew, which is what says the next one's
     /// are other ones -- see `pairs_drawn`.
     pairs: Vec<Pair>,
@@ -992,6 +1013,11 @@ impl Motion {
                 takes: LIGHT_UP,
             },
             pair_from: 0.0,
+            found: Arriving {
+                opened: None,
+                takes: FOUND_SETTLE,
+            },
+            finds: Vec::new(),
             pairs: Vec::new(),
             fading: Vec::new(),
             bands: Bands::default(),
@@ -1026,6 +1052,7 @@ impl Motion {
             self.veiling.opened = None;
             self.recolouring.opened = None;
             self.pair.opened = None;
+            self.found.opened = None;
             self.fading.clear();
             self.bands.seen.clear();
         }
@@ -1276,6 +1303,7 @@ impl Motion {
         let left = self.leaving.settle(now);
         let faded = self.card.settle(now);
         let lit = self.pair.settle(now);
+        let landed = self.found.settle(now);
         let unveiled = self.unveiling.settle(now);
         let veiled = self.veiling.settle(now);
         let recoloured = self.recolouring.settle(now);
@@ -1296,6 +1324,7 @@ impl Motion {
             || left
             || faded
             || lit
+            || landed
             || unveiled
             || veiled
             || recoloured
@@ -1314,6 +1343,7 @@ impl Motion {
             || self.leaving.moving(now)
             || self.card.moving(now)
             || self.pair.moving(now)
+            || self.found.moving(now)
             || self.unveiling.moving(now)
             || self.veiling.moving(now)
             || self.recolouring.moving(now)
@@ -1413,6 +1443,7 @@ impl Motion {
             card: self.card.along(now),
             recoloured: self.recoloured(now),
             pair: self.pair_lit(now),
+            found: self.found.along(now),
             sheen: self.sheen(now),
             turn: self.turn(now),
         }
@@ -1492,6 +1523,32 @@ impl Motion {
         }
         self.pairs = drawn;
         went
+    }
+
+    /// The frame drew what a search found -- this match, another, or none.
+    ///
+    /// Told by which match rather than by where its cells are, for the
+    /// pair's reason: a page the wheel scrolled under the list has the same
+    /// match in other cells, and a plate coming down again at every notch
+    /// is a match that jumps while the reader is only looking around. What
+    /// puts it down is the match being another one -- the search walked to
+    /// it, or found it where it had found nothing.
+    ///
+    /// Several runs are one match where it wraps, so what is compared is
+    /// the set of them.
+    pub(crate) fn found_drawn(
+        &mut self,
+        finds: impl Iterator<Item = obelus_ui::shapes::Found>,
+        now: Instant,
+    ) {
+        let mut drawn: Vec<obelus_ui::shapes::Found> = finds.collect();
+        drawn.sort_unstable();
+        drawn.dedup();
+        if drawn == self.finds {
+            return;
+        }
+        self.found.opened = (self.animates && !drawn.is_empty()).then_some(now);
+        self.finds = drawn;
     }
 
     /// How bright the cursor's pair is while it comes on.
@@ -3012,5 +3069,60 @@ mod tests {
         motion.recolouring(base);
         motion.animates(false);
         assert_eq!(motion.moving(base + RECOLOUR / 4).recoloured, None);
+    }
+
+    /// A match in the first page, on row `row` from character `start`.
+    fn found(row: usize, start: usize) -> obelus_ui::shapes::Found {
+        obelus_ui::shapes::Found {
+            page: 1,
+            row,
+            start,
+        }
+    }
+
+    /// The plate under what a search found comes down when the match is
+    /// another one, and not when the same match is drawn again -- a page
+    /// the wheel scrolled under the list -- nor where the reader has
+    /// turned animation off.
+    ///
+    /// Break: start the clock on every frame that draws one, and the
+    /// second half fails; leave the plate out of `Motion::wake`, and it
+    /// lands at whatever rate the blink happens to want.
+    #[test]
+    fn a_match_s_plate_comes_down_when_the_search_walks_to_it() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        motion.found_drawn([found(3, 4), found(4, 0)].into_iter(), base);
+        assert_eq!(motion.moving(base).found, Some(0.0), "coming down");
+        assert_eq!(motion.wake(base, false), Some(Wake::EveryFrame));
+        let half = motion
+            .moving(base + FOUND_SETTLE / 2)
+            .found
+            .expect("still coming down");
+        assert!(half > 0.0 && half < 1.0, "{half}");
+        assert_eq!(motion.moving(base + FOUND_SETTLE).found, None, "landed");
+
+        // The same match again, as a scroll draws it: nothing starts.
+        let later = base + FOUND_SETTLE * 2;
+        motion.advance(later, true);
+        motion.found_drawn([found(4, 0), found(3, 4)].into_iter(), later);
+        assert_eq!(
+            motion.moving(later).found,
+            None,
+            "the same match came down again"
+        );
+
+        // Another: it does.
+        motion.found_drawn([found(9, 1)].into_iter(), later);
+        assert_eq!(motion.moving(later).found, Some(0.0));
+
+        // And none at all, with animation off, for the next.
+        motion.animates(false);
+        motion.found_drawn([found(12, 0)].into_iter(), later);
+        assert_eq!(
+            motion.moving(later).found,
+            None,
+            "it moved with animation off"
+        );
     }
 }

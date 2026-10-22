@@ -42,13 +42,25 @@ pub struct Laid<'a> {
     /// The row, as the reading laid it out.
     pub row: &'a Row,
     held: Option<Range<usize>>,
+    found: Option<Range<usize>>,
 }
 
 impl<'a> Laid<'a> {
     /// A row with nothing of it held.
     #[must_use]
     pub const fn of(row: &'a Row) -> Self {
-        Self { row, held: None }
+        Self {
+            row,
+            held: None,
+            found: None,
+        }
+    }
+
+    /// Which of its characters a search of the reading found, on the row
+    /// the search is standing on.
+    #[must_use]
+    pub const fn found(&self) -> Option<&Range<usize>> {
+        self.found.as_ref()
     }
 
     /// What the row says, with nothing about how it is drawn.
@@ -113,6 +125,10 @@ pub enum Outcome {
 pub struct Cursor {
     place: Place,
     held: Hold<()>,
+    /// What a search of the reading found on the row it is standing on:
+    /// which row, and which of its characters. Kept with what is held,
+    /// because both are marks on these rows and nowhere else.
+    found: Option<(usize, Range<usize>)>,
 }
 
 impl Cursor {
@@ -127,6 +143,7 @@ impl Cursor {
                 character: 0,
             },
             held: Hold::default(),
+            found: None,
         }
     }
 
@@ -146,7 +163,18 @@ impl Cursor {
     pub fn laid<'a>(&self, rows: &'a [Row]) -> Vec<Laid<'a>> {
         let mut laid: Vec<Laid<'a>> = rows.iter().map(Laid::of).collect();
         self.held.mark(&mut laid);
+        if let Some((at, found)) = self.found.as_ref()
+            && let Some(row) = laid.get_mut(*at)
+        {
+            row.found = Some(found.clone());
+        }
         laid
+    }
+
+    /// Says what a search of the reading found on the row it is standing
+    /// on, or that it has stopped looking.
+    pub fn find(&mut self, found: Option<(usize, Range<usize>)>) {
+        self.found = found;
     }
 
     /// Keeps the cursor on one of the rows, which a narrower window or a

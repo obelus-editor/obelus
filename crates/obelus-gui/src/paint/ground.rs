@@ -2,7 +2,7 @@
 //! with the light round them, and the cursor's pair of brackets lit.
 
 use super::*;
-use crate::grid::{Capped, Page, Paired};
+use crate::grid::{Capped, Finding, Page, Paired};
 
 impl Painter {
     /// The colour behind the text, as few rectangles as it takes.
@@ -17,7 +17,7 @@ impl Painter {
         panes: &[&Behind],
         framed: &[&Behind],
         capped: &[&Capped],
-        paired: &[Paired],
+        plated: &[ratatui::layout::Rect],
     ) {
         let (width, height) = (cell.width, cell.height);
         let spilt: Vec<(u16, u16)> = framed.iter().flat_map(|card| card.spilt(page)).collect();
@@ -73,14 +73,15 @@ impl Painter {
                         .into_iter()
                         .map(|(from, to, _)| (from, to)),
                 );
-                // And the cursor's brackets, for the same reason: `pairs`
-                // draws each as a plate, and the square under it would
-                // stand outside its corners.
+                // And the cursor's brackets and what a search found, for
+                // the same reason: `pairs` and `finds` draw each as a
+                // plate, and the square under it would stand outside its
+                // corners.
                 holes.extend(
-                    paired
+                    plated
                         .iter()
-                        .filter(|half| half.area.y == row)
-                        .map(|half| (half.area.x, half.area.right())),
+                        .filter(|area| area.y == row)
+                        .map(|area| (area.x, area.right())),
                 );
                 for (start, end) in without(start, end, &mut holes) {
                     self.block(
@@ -291,21 +292,60 @@ impl Painter {
         coming_on: Option<f32>,
         cell: CellSize,
     ) {
-        let corner = (cell.height * HELD_CORNER).min(cell.width / 2.0);
         let halves = lit_halves(page, paired, fading, panes, coming_on, cell, |x, y| {
             self.under(panes, framed, x, y)
         });
-        // Every light under every plate, so the light round one half does
-        // not lie over the other where the two are side by side: `()`.
+        // Close in while it comes on, and out to all of its reach: see
+        // `PAIR_REACH_FROM`.
+        self.lights(page, &halves, panes, cell, |strength| {
+            cell.height * PAIR_REACH * PAIR_REACH_FROM.mul_add(1.0 - strength, strength)
+        });
+    }
+
+    /// What a search found, in the page that is its preview: a plate with
+    /// a light round it, the cursor's brackets' look, so a match reads as
+    /// the same kind of thing as the pair the caret is in.
+    ///
+    /// `settling` is how far the plate has come down onto the match, from
+    /// `FOUND_FROM` larger every way to the match itself, or `None` for one
+    /// that is simply there. The light comes with it at all of its reach --
+    /// what moves is where it is, not how bright: the search walked to it,
+    /// and a plate closing on the place says where it landed.
+    pub(super) fn finds(
+        &mut self,
+        page: &Page,
+        found: &[Finding],
+        panes: &[&Behind],
+        framed: &[&Behind],
+        settling: Option<f32>,
+        cell: CellSize,
+    ) {
+        let plates = found_plates(page, found, panes, settling, cell, |x, y| {
+            self.under(panes, framed, x, y)
+        });
+        self.lights(page, &plates, panes, cell, |_| cell.height * PAIR_REACH);
+    }
+
+    /// Plates with a light round each, every light under every plate so the
+    /// light round one does not lie over the next where two are side by
+    /// side: `()`. `reach` is how far a light reaches at a strength.
+    fn lights(
+        &mut self,
+        page: &Page,
+        plates: &[Lit],
+        panes: &[&Behind],
+        cell: CellSize,
+        reach: impl Fn(f32) -> f32,
+    ) {
+        let corner = (cell.height * HELD_CORNER).min(cell.width / 2.0);
         for &Lit {
             rect: [left, top, width, height],
             colour: lit,
             pane,
             strength,
-        } in &halves
+        } in plates
         {
-            let reach =
-                cell.height * PAIR_REACH * PAIR_REACH_FROM.mul_add(1.0 - strength, strength);
+            let reach = reach(strength);
             let glow = [
                 left - reach,
                 top - reach,
@@ -339,7 +379,7 @@ impl Painter {
             colour: lit,
             strength,
             ..
-        } in &halves
+        } in plates
         {
             self.rounded(
                 left,
@@ -908,6 +948,43 @@ fn lit_halves(
         .collect()
 }
 
+/// The plates under what a search found, as `finds` draws them: a run each,
+/// `FOUND_FROM` of a row larger every way while `settling` is at nothing
+/// and the run's own cells once it has come all the way, in the ground the
+/// cells wear lifted off whatever is `under` them.
+fn found_plates(
+    page: &Page,
+    found: &[Finding],
+    panes: &[&Behind],
+    settling: Option<f32>,
+    cell: CellSize,
+    under: impl Fn(u16, u16) -> [f32; 4],
+) -> Vec<Lit> {
+    let wider = cell.height * FOUND_FROM * (1.0 - settling.unwrap_or(1.0));
+    found
+        .iter()
+        .map(|run| {
+            let (x, y) = (run.area.x, run.area.y);
+            let ink = rgba(page.look(x, y).background, Ink::Background);
+            let pane = panes.iter().rposition(|pane| {
+                (pane.area.left()..pane.area.right()).contains(&x)
+                    && (pane.area.top()..pane.area.bottom()).contains(&y)
+            });
+            Lit {
+                rect: [
+                    f32::from(x).mul_add(cell.width, -wider),
+                    f32::from(y).mul_add(cell.height, -wider),
+                    f32::from(run.area.width).mul_add(cell.width, 2.0 * wider),
+                    2.0f32.mul_add(wider, cell.height),
+                ],
+                colour: lifted(under(x, y), ink, PAIR_LIFT),
+                pane,
+                strength: 1.0,
+            }
+        })
+        .collect()
+}
+
 /// Half a pair of brackets, as `pairs` draws it.
 #[derive(Clone, Copy)]
 struct Lit {
@@ -983,7 +1060,7 @@ fn lit_within(
 
 /// `to` carried on away from `from`, to `by` times as far from it as it
 /// is -- `away` is twice.
-fn lifted(from: [f32; 4], to: [f32; 4], by: f32) -> [f32; 4] {
+pub(super) fn lifted(from: [f32; 4], to: [f32; 4], by: f32) -> [f32; 4] {
     let mut out = to;
     for channel in 0..3 {
         out[channel] = (to[channel] - from[channel])
@@ -1268,5 +1345,55 @@ mod tests {
         let pieces = Turn::corners(10, 20, &[(0, 12), (18, 30)], &[], (false, false));
         assert_eq!(at(pieces, 0), Turn::Other as u32, "top left, in two");
         assert_eq!(at(pieces, 1), Turn::Other as u32, "top right, in two");
+    }
+
+    /// The plate under what a search found starts larger every way and
+    /// comes down onto the run's own cells.
+    ///
+    /// Deliberate break: grow it from where it lands rather than shrink it
+    /// there (`1.0 - settling` read as `settling`), and the plate at rest is
+    /// the larger one.
+    #[test]
+    fn a_match_s_plate_comes_down_onto_its_cells() {
+        let cell = CellSize {
+            width: 10.0,
+            height: 20.0,
+            baseline: 15.0,
+        };
+        let page = {
+            let mut page = Page::default();
+            page.resized(10, 3);
+            page
+        };
+        let run = Finding {
+            area: ratatui::layout::Rect::new(2, 1, 4, 1),
+            found: obelus_ui::shapes::Found {
+                page: 1,
+                row: 1,
+                start: 2,
+            },
+            depth: 0,
+        };
+        let under = |_, _| [0.1, 0.1, 0.1, 1.0];
+        let at_rest = found_plates(&page, &[run], &[], None, cell, under);
+        assert_eq!(
+            at_rest[0].rect,
+            [20.0, 20.0, 40.0, 20.0],
+            "not the run's cells"
+        );
+        let landed = found_plates(&page, &[run], &[], Some(1.0), cell, under);
+        assert_eq!(landed[0].rect, at_rest[0].rect);
+        let wider = 20.0 * FOUND_FROM;
+        let setting_out = found_plates(&page, &[run], &[], Some(0.0), cell, under);
+        assert_eq!(
+            setting_out[0].rect,
+            [
+                20.0 - wider,
+                20.0 - wider,
+                40.0 + 2.0 * wider,
+                20.0 + 2.0 * wider
+            ],
+            "it did not start larger every way"
+        );
     }
 }

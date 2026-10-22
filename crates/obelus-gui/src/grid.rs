@@ -255,6 +255,14 @@ pub(crate) enum Update {
         /// `obelus_ui::shapes::Pair`.
         pair: Pair,
     },
+    /// What a search found, in the page that is its preview.
+    Found {
+        /// Which cells, on one row.
+        area: Rect,
+        /// Which match, as numbers to compare -- see
+        /// `obelus_ui::shapes::Found`.
+        found: obelus_ui::shapes::Found,
+    },
     /// The words of a link, on one row.
     Linked {
         /// Which cells they are.
@@ -338,6 +346,13 @@ pub(crate) struct Said<'a> {
     /// And the pairs that were, where their light is still going out, each
     /// with how bright it still is.
     pub(crate) fading: &'a [(Paired, f32)],
+    /// And which runs of cells are what a search found.
+    pub(crate) found: &'a [Finding],
+    /// And the plates a pane has been put over -- the halves of a pair and
+    /// the runs a search found that the page no longer shows, because a
+    /// pane is over them -- for the picture of what that pane was put
+    /// over, which is the page with its plates on it. See `pane_under`.
+    pub(crate) plated_behind: (&'a [Paired], &'a [Finding]),
     /// And what is under each pane and each box, furthest first: each is
     /// glass over everything before it.
     pub(crate) stack: &'a [Behind],
@@ -618,6 +633,17 @@ impl Paired {
             .is_some_and(|(held, _)| self.bracket(page) == Some(held))
     }
 
+    /// Whether this half is in the picture of what a pane was put over:
+    /// said before the pane, under it, and a bracket in the cell the pane
+    /// was put over -- `Finding::still_behind`, for a pair.
+    pub(crate) fn still_behind(&self, behind: &Behind) -> bool {
+        self.depth <= behind.depth
+            && behind.area.intersection(self.area) == self.area
+            && behind
+                .look(self.area.x, self.area.y)
+                .is_some_and(|look| a_bracket(look.text).is_some())
+    }
+
     /// Writes down what the cell holds, as the frame that said it arrives.
     pub(crate) fn hold(&mut self, page: &Page) {
         self.held = self
@@ -628,11 +654,70 @@ impl Paired {
     /// The bracket in the cell, where it is one and nothing is over it.
     fn bracket(&self, page: &Page) -> Option<char> {
         let (x, y) = (self.area.x, self.area.y);
-        let mut text = page.look(x, y).text.chars();
-        let bracket = text
-            .next()
-            .filter(|&c| obelus_syntax::brackets::opens(c) || obelus_syntax::brackets::closes(c))?;
-        (page.layer(x, y) <= self.depth && text.next().is_none()).then_some(bracket)
+        a_bracket(page.look(x, y).text).filter(|_| page.layer(x, y) <= self.depth)
+    }
+}
+
+/// The bracket a cell holds, where what it holds is one and nothing else --
+/// the one judgement of whether a cell is half a pair, for the page and for
+/// what a pane was put over alike.
+fn a_bracket(text: &str) -> Option<char> {
+    let mut text = text.chars();
+    let bracket = text
+        .next()
+        .filter(|&c| obelus_syntax::brackets::opens(c) || obelus_syntax::brackets::closes(c))?;
+    text.next().is_none().then_some(bracket)
+}
+
+/// Where what a search found is in the frame being drawn: one run of cells
+/// on one row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Finding {
+    /// Which cells.
+    pub(crate) area: Rect,
+    /// Which match they are.
+    pub(crate) found: obelus_ui::shapes::Found,
+    /// How many panes and boxes had been put over the page when it was
+    /// said -- see `Page::layer`.
+    pub(crate) depth: usize,
+}
+
+impl Finding {
+    /// Whether the page still says what this was said about: nothing put
+    /// over any of its cells since. The question a pair asks, for its
+    /// reason -- a list opened over the page is drawn after the page in
+    /// the same frame, and a plate left where the match was would be
+    /// lying on a row of the list.
+    pub(crate) fn still_said(&self, page: &Page) -> bool {
+        (self.area.left()..self.area.right()).all(|x| page.layer(x, self.area.y) <= self.depth)
+    }
+
+    /// Whether this is in the picture of what a pane was put over: said
+    /// before the pane, and all of it under the pane -- the question a cap
+    /// asks (`Capped::still_behind`), for a run the page no longer shows.
+    pub(crate) fn still_behind(&self, behind: &Behind) -> bool {
+        self.depth <= behind.depth && behind.area.intersection(self.area) == self.area
+    }
+
+    /// The runs said cell by cell joined into one each: the cells of one
+    /// match, side by side on one row. The editor says a match a cell at
+    /// a time, because it draws a cell at a time.
+    pub(crate) fn joined(mut runs: Vec<Self>) -> Vec<Self> {
+        runs.sort_by_key(|run| (run.found, run.area.y, run.area.x));
+        let mut joined: Vec<Self> = Vec::with_capacity(runs.len());
+        for run in runs {
+            match joined.last_mut() {
+                Some(last)
+                    if last.found == run.found
+                        && last.area.y == run.area.y
+                        && last.area.right() == run.area.x =>
+                {
+                    last.area.width += run.area.width;
+                }
+                _ => joined.push(run),
+            }
+        }
+        joined
     }
 }
 
@@ -1172,6 +1257,10 @@ impl obelus_ui::shapes::Shapes for Marking {
 
     fn paired(&self, area: Rect, pair: Pair) {
         let _ = self.updates.send(Update::Paired { area, pair });
+    }
+
+    fn found(&self, area: Rect, found: obelus_ui::shapes::Found) {
+        let _ = self.updates.send(Update::Found { area, found });
     }
 
     fn capped(&self, keys: &str, area: Rect, cap: Color, page: Color, edge: Color) {
@@ -1843,6 +1932,7 @@ impl Page {
             | Update::Linked { area }
             | Update::Spelled { area }
             | Update::Paired { area, .. }
+            | Update::Found { area, .. }
             | Update::Sheened { area, .. }
             | Update::Parted { area }
             | Update::Behind { area, .. }
@@ -2983,5 +3073,94 @@ mod tests {
         // And with no title bar it is only the margin.
         let window = [400.0, 20.0 * 36.0 + 8.0];
         assert_eq!(super::origin(window, 0.0, [20.0, 36.0], [20, 20])[1], 4.0);
+    }
+
+    /// The cells of one match on one row, said a cell at a time by the
+    /// editor, are one run -- and another match beside it on the same row,
+    /// or the part of a match that wrapped, are runs of their own.
+    ///
+    /// Deliberate break: join cells side by side whatever match they are,
+    /// and the second match becomes the end of the first.
+    #[test]
+    fn the_cells_of_one_match_are_one_run() {
+        let found = |row, start| obelus_ui::shapes::Found {
+            page: 1,
+            row,
+            start,
+        };
+        let cell = |x, y, which| Finding {
+            area: Rect::new(x, y, 1, 1),
+            found: which,
+            depth: 0,
+        };
+        let one = found(0, 2);
+        let other = found(0, 6);
+        let runs = Finding::joined(vec![
+            cell(3, 0, one),
+            cell(2, 0, one),
+            cell(4, 0, one),
+            cell(5, 0, other),
+            cell(6, 0, other),
+            cell(0, 1, other),
+        ]);
+        let areas: Vec<Rect> = runs.iter().map(|run| run.area).collect();
+        assert_eq!(
+            areas,
+            [
+                Rect::new(2, 0, 3, 1),
+                Rect::new(5, 0, 2, 1),
+                Rect::new(0, 1, 1, 1)
+            ],
+            "{runs:?}"
+        );
+    }
+
+    /// A plate a pane was put over is in the picture of what it was put
+    /// over: said before the pane and all of it under the pane -- and for
+    /// half a pair, a bracket in the cell the pane was put over.
+    ///
+    /// Deliberate breaks: leave out the depth, and a run the pane's own
+    /// list said -- a match in a row of the list -- is drawn as the page's
+    /// under it; leave out the bracket, and a pair moved off since is drawn
+    /// on whatever the pane was put over in its place.
+    #[test]
+    fn a_plate_a_pane_was_put_over_is_in_its_picture() {
+        let mut cells = vec![Cell::default(); 10 * 3];
+        cells[10 + 4].set_symbol("(");
+        let behind = Behind {
+            area: Rect::new(0, 5, 10, 3),
+            joined: Joined::Below,
+            ground: Color::Reset,
+            cells,
+            depth: 1,
+        };
+        let found = obelus_ui::shapes::Found {
+            page: 1,
+            row: 6,
+            start: 2,
+        };
+        let run = |area, depth| Finding { area, found, depth };
+        assert!(run(Rect::new(2, 6, 3, 1), 0).still_behind(&behind));
+        assert!(
+            !run(Rect::new(2, 6, 3, 1), 2).still_behind(&behind),
+            "the pane's own"
+        );
+        assert!(
+            !run(Rect::new(8, 6, 4, 1), 0).still_behind(&behind),
+            "half out from under it"
+        );
+
+        let half = |x| Paired {
+            area: Rect::new(x, 6, 1, 1),
+            pair: Pair {
+                document: 1,
+                version: 1,
+                open: 0,
+            },
+            depth: 0,
+            held: None,
+        };
+        assert!(half(4).still_behind(&behind), "the bracket");
+        assert!(!half(5).still_behind(&behind), "no bracket there");
     }
 }

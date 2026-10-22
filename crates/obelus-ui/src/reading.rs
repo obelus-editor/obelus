@@ -69,8 +69,8 @@ pub fn draw(
     // anything is a page with a cursor in it, which is [`draw_held`].
     draw_rows(
         cells,
-        area,
-        rows.iter().map(|row| (row, None)),
+        (area, area.height),
+        rows.iter().map(|row| (row, None, None)),
         rows.len(),
         top,
         theme,
@@ -85,9 +85,14 @@ pub fn draw(
 /// reading: where it is in a block of code, the key that copies the block
 /// is said on the block's own box, the way the transcript and a pull
 /// request's page say it.
+///
+/// `seen` is how many of `area`'s rows the reader can see: where a list on
+/// the status bar covers the foot of it, the rows go on under it -- it is
+/// glass -- and the bar stops above it, the editor's rule.
 pub fn draw_held(
     cells: &mut CellBuffer,
     area: Rect,
+    seen: u16,
     rows: &[Laid<'_>],
     top: usize,
     cursor: Option<Place>,
@@ -95,8 +100,9 @@ pub fn draw_held(
 ) {
     draw_rows(
         cells,
-        area,
-        rows.iter().map(|laid| (laid.row, laid.held())),
+        (area, seen),
+        rows.iter()
+            .map(|laid| (laid.row, laid.held(), laid.found())),
         rows.len(),
         top,
         theme,
@@ -161,11 +167,21 @@ pub fn place_at(area: Rect, rows: &[Row], top: usize, x: u16, y: u16) -> Option<
     })
 }
 
-/// The rows, each with which of its characters are held.
+/// One row to draw, with which of its characters are held and which a
+/// search found.
+type Marked<'a> = (
+    &'a Row,
+    Option<&'a std::ops::Range<usize>>,
+    Option<&'a std::ops::Range<usize>>,
+);
+
+/// The rows, each with which of its characters are held and which a search
+/// found, in `area` -- of which the reader sees the top `seen` rows, which
+/// is as tall as the bar is.
 fn draw_rows<'a>(
     cells: &mut CellBuffer,
-    area: Rect,
-    rows: impl Iterator<Item = (&'a Row, Option<&'a std::ops::Range<usize>>)>,
+    (area, seen): (Rect, u16),
+    rows: impl Iterator<Item = Marked<'a>>,
     count: usize,
     top: usize,
     theme: &Theme,
@@ -179,8 +195,20 @@ fn draw_rows<'a>(
     let column = crate::editor::SCROLLBAR_WIDTH.min(area.width);
     let width = area.width - column;
     // One row of the reading per row of the screen, so this is exact.
-    let bar = (count > usize::from(area.height))
-        .then(|| scrollbar(cells, area, top, count, theme))
+    let seen = seen.min(area.height);
+    let bar = (count > usize::from(seen))
+        .then(|| {
+            scrollbar(
+                cells,
+                Rect {
+                    height: seen,
+                    ..area
+                },
+                top,
+                count,
+                theme,
+            )
+        })
         .flatten();
 
     // And where this reading has got to, for a front end that can draw it
@@ -192,7 +220,13 @@ fn draw_rows<'a>(
         crate::shapes::scrolled(Rect { width, ..area }, top, bar);
     }
 
-    for (offset, (row, held)) in rows.skip(top).take(usize::from(area.height)).enumerate() {
+    for (offset, (row, held, found)) in rows.skip(top).take(usize::from(area.height)).enumerate() {
+        let found = found.map(|found| {
+            (
+                found,
+                crate::shapes::Found::on("reading", top + offset, found.start),
+            )
+        });
         let Ok(offset) = u16::try_from(offset) else {
             break;
         };
@@ -221,6 +255,7 @@ fn draw_rows<'a>(
                 theme,
                 stop: area.x + width,
                 held,
+                found,
                 linked: &[],
             },
         );
@@ -244,6 +279,12 @@ pub struct Drawn<'a> {
     pub stop: u16,
     /// Which of the row's characters are held, if any are.
     pub held: Option<&'a std::ops::Range<usize>>,
+    /// Which of them a search of the page found, on the row the search is
+    /// standing on: marked in the colour the file marks what a search of it
+    /// found, because the page is that search's preview. And which match it
+    /// is, for a front end that draws it as a shape -- see
+    /// [`crate::shapes::Found`].
+    pub found: Option<(&'a std::ops::Range<usize>, crate::shapes::Found)>,
     /// Which of the row's characters are the words of a link, which are
     /// underlined whether or not the cursor is on them: a reader scanning a
     /// paragraph should not have to walk it to find out what in it goes
@@ -276,6 +317,7 @@ pub fn write_spans(
         theme,
         stop,
         held,
+        found,
         linked,
     } = *drawn;
     // The runs as one string, because a cluster is one cell and a run is a
@@ -289,20 +331,36 @@ pub fn write_spans(
     });
     let mut run = runs.next();
     let mut column = x;
+    // Which cells what a search found took, for a front end that draws it
+    // as a shape of its own rather than as the cells' ground.
+    let mut marked: Option<(u16, u16)> = None;
+    // And whether any of it is held, which wins the cells: a plate laid
+    // over what the reader is holding would be a mark over theirs.
+    let mut held_over = false;
     for cluster in obelus_text::clusters(&said) {
         if column >= stop {
-            return column;
+            break;
         }
         while run.is_some_and(|(end, _)| end <= cluster.first) {
             run = runs.next();
         }
         let Some((_, span)) = run else { break };
         let style = style_of(span.ink, span, theme, base);
+        // What a search found, in the colour the file marks it in. Under
+        // what is held, below: holding is the reader's own act and wins
+        // where the two meet.
+        let finding = found.is_some_and(|(found, _)| found.contains(&cluster.first));
+        let style = match finding {
+            true => style.bg(theme.marked_background),
+            false => style,
+        };
         // What the reader has hold of, in the colour every list in
         // Obelus marks a run of itself with: a ground under whatever
         // colour the characters already carry, which is why the ink
         // above is worked out first and only the ground is replaced.
-        let style = match held.is_some_and(|held| held.contains(&cluster.first)) {
+        let holding = held.is_some_and(|held| held.contains(&cluster.first));
+        held_over |= finding && holding;
+        let style = match holding {
             true => style.bg(theme.selection_background),
             false => style,
         };
@@ -310,7 +368,14 @@ pub fn write_spans(
             true => style.add_modifier(Modifier::UNDERLINED),
             false => style,
         };
+        let from = column;
         column = column.saturating_add(put_cluster(cells, column, y, cluster.text, style));
+        if finding {
+            marked = Some(marked.map_or((from, column), |(start, _)| (start, column)));
+        }
+    }
+    if let (Some((start, end)), Some((_, which)), false) = (marked, found, held_over) {
+        crate::shapes::found(Rect::new(start, y, end.min(stop) - start, 1), which);
     }
     column
 }
@@ -378,6 +443,7 @@ mod tests {
             theme,
             stop: 10,
             held: None,
+            found: None,
             linked: &[],
         };
         let spans = [
@@ -405,6 +471,7 @@ mod tests {
             theme,
             stop: 10,
             held: None,
+            found: None,
             linked: &[],
         };
         let spans = [

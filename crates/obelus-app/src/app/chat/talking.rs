@@ -2688,6 +2688,22 @@ impl App {
         }
     }
 
+    /// The room the two halves of the conversation in front have, from the
+    /// same functions the view lays them out with: a page of scrolling is
+    /// the page on screen, and the caret moves by the rows the box really
+    /// has.
+    pub(in crate::app) fn chat_room(&self) -> ChatRoom {
+        ChatRoom {
+            transcript: self.conversation().map_or(0, |talk| {
+                obelus_ui::chat::bands(self.editor_area, &talk.chat, talk.card_in_front())
+                    .transcript
+                    .height
+            }),
+            reading: obelus_ui::chat::reading_width(self.editor_area),
+            writing: obelus_ui::chat::writing_width(self.editor_area),
+        }
+    }
+
     /// The key itself, which [`App::chat_key`] watches go by.
     fn offer_to_the_conversation(&mut self, key: &crossterm::event::KeyEvent) -> bool {
         if self.conversation().is_none() {
@@ -2702,18 +2718,7 @@ impl App {
             return true;
         }
         let thinking = self.talking() == Talking::Thinking;
-        // The room the two halves have, from the same functions the view
-        // lays them out with: a page of scrolling is the page on screen,
-        // and the caret moves by the rows the box really has.
-        let room = ChatRoom {
-            transcript: self.conversation().map_or(0, |talk| {
-                obelus_ui::chat::bands(self.editor_area, &talk.chat, talk.card_in_front())
-                    .transcript
-                    .height
-            }),
-            reading: obelus_ui::chat::reading_width(self.editor_area),
-            writing: obelus_ui::chat::writing_width(self.editor_area),
-        };
+        let room = self.chat_room();
         // The list of the agent's own commands, when one is showing: it
         // follows what is being typed in the box, so it takes the keys that
         // move about a list and leaves the rest to the box.

@@ -4,7 +4,7 @@
 use obelus_font::{Fonts, Size};
 
 use super::{ground::runs_from, setup::halved, *};
-use crate::grid::{Barred, Capped, Look, Page, Rolled, Ruled, Spun};
+use crate::grid::{Barred, Look, Page, Rolled, Ruled, Said, Spun};
 
 impl Painter {
     /// The bands drawn behind where their lists have got to.
@@ -27,10 +27,17 @@ impl Painter {
     /// with it -- every line an agent wrote behind a list was the list
     /// coming up again. A band the pane's own view drew is the list, and
     /// moves.
+    ///
+    /// `panes` is each pane's glass, the first pane's first where it is the
+    /// first level: the glass and not its cells, because the half row above
+    /// a list's line is the page's, and held still with the list it was a
+    /// strip of the page that did not scroll. `first` is the first pane's
+    /// cells, which is where the page layer is held apart -- see `standing`.
     pub(super) fn catching_up(
         &mut self,
         bands: &[Rolled<'_>],
         panes: &[[f32; 4]],
+        first: Option<[f32; 4]>,
         stack: &[&Behind],
         fonts: &mut Fonts,
     ) {
@@ -49,35 +56,8 @@ impl Painter {
                     ..self.quads[self.placed.levels[level].glass]
                 });
             }
-            // Where the page it scrolled off has got to, which is further
-            // back than the band by however much of the move is already
-            // done.
-            let offset = (band.behind - band.since) * cell.height;
             let rows = self.quads.len();
-            for y in room.top()..room.bottom() {
-                for x in room.left()..room.right() {
-                    let look = band.before.look(x, y);
-                    let left = f32::from(x) * cell.width;
-                    let top = f32::from(y).mul_add(cell.height, offset);
-                    // Nor the page over a picture, which stands where it
-                    // is under the band -- see `encode`.
-                    if glass.is_none_or(|level| look.background != stack[level].ground)
-                        && !(glass.is_none() && self.on_the_picture(look.background))
-                    {
-                        self.block(
-                            left,
-                            top,
-                            cell.width,
-                            cell.height,
-                            rgba(look.background, Ink::Background),
-                        );
-                    }
-                    if !look.text.trim().is_empty() {
-                        let ink = rgba(look.foreground, Ink::Foreground);
-                        self.glyphs_at((left, top), look, ink, 0, fonts, Size::Cell);
-                    }
-                }
-            }
+            self.scrolled_off(band, room.left()..room.right(), glass, stack, fonts);
             // Over a picture, what covers these is not opaque: the frame
             // is put back clear where it is the page, so these rows would
             // show through it -- the same line twice inside the band, drawn
@@ -114,18 +94,53 @@ impl Painter {
             .collect();
         self.covering(&moving);
         for (at, (band, room)) in bands.iter().zip(&rooms).enumerate() {
-            // Less the rooms of the other bands, so that a band with one
-            // inside it -- a hover over the file it is about -- does not
-            // take the inner one along on its own journey.
-            let others: Vec<[f32; 4]> = rooms
-                .iter()
-                .enumerate()
-                .filter(|&(other, _)| other != at)
-                .map(|(_, room)| *room)
-                .collect();
+            // Less the rooms of the bands inside this one, so that a band with
+            // one inside it -- a hover over the file it is about -- does not
+            // take the inner one along on its own journey. See `left_out`.
+            let others = left_out(&rooms, at);
+            // Each piece by the layer its pixels are in: the page under
+            // the first pane is held apart, so a row coming out from under
+            // the list is the page's -- see `by_source`.
+            let shift = band.behind * cell.height;
+            let (page, elsewhere) = match band.under {
+                true => (
+                    first.filter(|pane| beneath(*room, *pane, true).is_some()),
+                    &panes[usize::from(first.is_some())..],
+                ),
+                false => (None, &[][..]),
+            };
             for part in sliding(*room, panes, band.under) {
                 for piece in tiles(part, &others) {
-                    self.slid_piece(piece, *room, band.behind * cell.height, 1.0);
+                    for (piece, from) in by_source(piece, shift, page, elsewhere) {
+                        match from {
+                            Source::Frame => self.slid_piece(piece, *room, shift, 1.0),
+                            Source::Page => self.slid_from_the_page(piece, *room, shift),
+                            // Left to the page the band scrolled off, which
+                            // is drawn under all of it -- except over a
+                            // picture, where it is kept to the rows scrolled
+                            // past, and a strip of the picture showed here.
+                            // So drawn again for this piece alone.
+                            Source::Nowhere if self.laid.is_some() => {
+                                let across = band.room.left()..band.room.right();
+                                let mut columns = across.filter(|&x| {
+                                    f32::from(x) * cell.width < piece[2]
+                                        && f32::from(x + 1) * cell.width > piece[0]
+                                });
+                                let Some(from) = columns.next() else {
+                                    continue;
+                                };
+                                let to = columns.next_back().unwrap_or(from) + 1;
+                                let start = self.quads.len();
+                                self.scrolled_off(band, from..to, None, stack, fonts);
+                                for quad in &mut self.quads[start..] {
+                                    quad.flags |= ONLY_ROWS;
+                                    quad.radius = piece[1];
+                                    quad.lower = piece[3];
+                                }
+                            }
+                            Source::Nowhere => {}
+                        }
+                    }
                 }
             }
 
@@ -165,6 +180,46 @@ impl Painter {
                     });
                 }
                 self.slid(column, shift, 1.0);
+            }
+        }
+    }
+
+    /// The page a band scrolled off, where it has got to -- further back
+    /// than the band by however much of the move is already done -- in the
+    /// band's rows and the columns `columns` of them.
+    fn scrolled_off(
+        &mut self,
+        band: &Rolled<'_>,
+        columns: std::ops::Range<u16>,
+        glass: Option<usize>,
+        stack: &[&Behind],
+        fonts: &mut Fonts,
+    ) {
+        let cell = fonts.cell();
+        let room = band.room;
+        let offset = (band.behind - band.since) * cell.height;
+        for y in room.top()..room.bottom() {
+            for x in columns.clone() {
+                let look = band.before.look(x, y);
+                let left = f32::from(x) * cell.width;
+                let top = f32::from(y).mul_add(cell.height, offset);
+                // Nor the page over a picture, which stands where it
+                // is under the band -- see `encode`.
+                if glass.is_none_or(|level| look.background != stack[level].ground)
+                    && !(glass.is_none() && self.on_the_picture(look.background))
+                {
+                    self.block(
+                        left,
+                        top,
+                        cell.width,
+                        cell.height,
+                        rgba(look.background, Ink::Background),
+                    );
+                }
+                if !look.text.trim().is_empty() {
+                    let ink = rgba(look.foreground, Ink::Foreground);
+                    self.glyphs_at((left, top), look, ink, 0, fonts, Size::Cell);
+                }
             }
         }
     }
@@ -316,11 +371,11 @@ impl Painter {
     /// Out of a picture rather than drawn from cells, for the reason a bar
     /// catching up is: a pane is glass, and its cells carry its own colour
     /// where the glass let what was behind show through.
-    pub(super) fn going(&mut self, along: Option<f32>) {
+    pub(super) fn going(&mut self, along: Option<f32>, cell: CellSize) {
         let Some(along) = along else {
             return;
         };
-        let shifts: Vec<([f32; 4], f32)> = self
+        let shifts: Vec<([f32; 4], f32, Joined)> = self
             .gone
             .iter()
             .map(|&(pane, joined, _)| {
@@ -328,10 +383,30 @@ impl Painter {
                     Joined::Below => 1.0,
                     _ => -1.0,
                 };
-                (pane, toward * along * (pane[3] - pane[1]) * TRAVEL)
+                (pane, toward * along * (pane[3] - pane[1]) * TRAVEL, joined)
             })
             .collect();
         let start = self.quads.len();
+        // Each one's shadow first, from the edge it has got back to and
+        // going as it goes: the pieces below are cut to the pane, and a
+        // shadow is the one part of a pane outside it, so taken with them
+        // it was gone the moment the pane began to go. The way a pane
+        // arriving casts from the edge it has reached -- see `lay`.
+        for &(pane, shift, joined) in &shifts {
+            if let Some(joined) = casting(joined) {
+                self.shadow(
+                    reached(pane, shift),
+                    0.0,
+                    joined,
+                    cell.height * SHADOW_SPREAD,
+                    1.0 - along,
+                );
+            }
+        }
+        let shifts: Vec<([f32; 4], f32)> = shifts
+            .into_iter()
+            .map(|(pane, shift, _)| (pane, shift))
+            .collect();
         match self.left_lifted {
             // The glass stands where it was, over what it showed, and only
             // as much of it as the pane still covers: the slab goes and
@@ -391,12 +466,24 @@ impl Painter {
     /// region less the rooms of the bands inside it, and each of those
     /// puts back its own.
     pub(super) fn slid_piece(&mut self, piece: [f32; 4], room: [f32; 4], shift: f32, fade: f32) {
+        self.slid_from(piece, room, shift, fade, SLID);
+    }
+
+    /// The same, out of the page layer's own picture -- see `by_source`.
+    fn slid_from_the_page(&mut self, piece: [f32; 4], room: [f32; 4], shift: f32) {
+        self.placed.from_the_page.push(self.quads.len());
+        self.slid_from(piece, room, shift, 1.0, SLID | UNDER_GLASS);
+    }
+
+    /// A piece taken from a picture `shift` pixels further up, as `flags`
+    /// say which picture.
+    fn slid_from(&mut self, piece: [f32; 4], room: [f32; 4], shift: f32, fade: f32, flags: u32) {
         let [left, top, far, low] = piece;
         self.quads.push(Quad {
             rect: [left, top, (far - left).max(1.0), (low - top).max(1.0)],
             uv: room,
             colour: [0.0, 0.0, 0.0, fade],
-            flags: SLID,
+            flags,
             radius: shift,
             layer: 0,
             lower: 0.0,
@@ -412,31 +499,67 @@ impl Painter {
     pub(super) fn pane_under(
         &mut self,
         behind: &Behind,
-        barred: &[Barred],
-        capped: &[Capped],
-        spun: &[Spun],
+        said: &Said<'_>,
         turn: Option<f32>,
         fonts: &mut Fonts,
     ) {
+        let (barred, capped, spun) = (said.barred, said.capped, said.spun);
         let cell = fonts.cell();
+        // The plates the page had under the pane -- the cursor's pair, what
+        // a search found -- which are what a window draws those cells'
+        // grounds as: left out, the page in this picture was a terminal's,
+        // a square where the page has a plate, and a row coming out from
+        // under the list wore the square until it arrived. Plates and no
+        // light, which would reach out of the pane and onto nothing this
+        // picture holds.
+        let plates = plates_behind(behind, said.plated_behind);
+        let corner = (cell.height * HELD_CORNER).min(cell.width / 2.0);
         for y in behind.area.top()..behind.area.bottom() {
             let ground = self.ground_colour();
             let (grounds, lettered) = behind_row(behind, barred, spun, y);
+            // Where a plate is, the square under it would stand outside its
+            // corners -- the hole `backgrounds` leaves for the page's own.
+            let mut holes: Vec<(u16, u16)> = plates
+                .iter()
+                .filter(|area| area.y == y)
+                .map(|area| (area.x, area.right()))
+                .collect();
             for (start, end, colour) in grounds {
                 // Straight after the picture under the page, which is the
                 // page here already -- see `backgrounds`.
                 if self.on_the_picture(colour) {
                     continue;
                 }
-                // What a pane was put over is the page, so a hold in it
-                // is a plate on the page's own ground.
-                self.block(
-                    f32::from(start) * cell.width,
-                    f32::from(y) * cell.height,
-                    f32::from(end - start) * cell.width,
+                for (start, end) in super::ground::without(start, end, &mut holes) {
+                    // What a pane was put over is the page, so a hold in it
+                    // is a plate on the page's own ground.
+                    self.block(
+                        f32::from(start) * cell.width,
+                        f32::from(y) * cell.height,
+                        f32::from(end - start) * cell.width,
+                        cell.height,
+                        as_held(colour, self.holding, ground)
+                            .unwrap_or_else(|| rgba(colour, Ink::Background)),
+                    );
+                }
+            }
+            // Under the letters, which are what is on the plate.
+            for area in plates.iter().filter(|area| area.y == y) {
+                let Some(look) = behind.look(area.x, area.y) else {
+                    continue;
+                };
+                let [r, g, b, _] = super::ground::lifted(
+                    ground,
+                    rgba(look.background, Ink::Background),
+                    PAIR_LIFT,
+                );
+                self.rounded(
+                    f32::from(area.x) * cell.width,
+                    f32::from(area.y) * cell.height,
+                    f32::from(area.width) * cell.width,
                     cell.height,
-                    as_held(colour, self.holding, ground)
-                        .unwrap_or_else(|| rgba(colour, Ink::Background)),
+                    corner,
+                    [r, g, b, 1.0],
                 );
             }
             for x in lettered {
@@ -601,10 +724,19 @@ impl Painter {
     /// one a terminal already answers -- and it is added in the front
     /// end, from what the front end already knows: the rectangle it drew
     /// the glass in, and which edge the thing is joined to.
+    ///
+    /// `the_page_moves` says the page under the panes is catching up, and
+    /// then their shadows are not drawn into the frame but with the panes,
+    /// over the page once it has been put back -- see `panes_shadows`. A
+    /// pane's shadow is the pane's, but it falls outside the pane, on the
+    /// page; drawn into the frame it was in the page's picture, and went
+    /// along with the rows it fell on while the list casting it stood
+    /// still.
     pub(super) fn shadows(
         &mut self,
         stack: &[&Behind],
         sliding: Option<usize>,
+        the_page_moves: bool,
         boxes: f32,
         cell: CellSize,
     ) {
@@ -620,13 +752,32 @@ impl Painter {
                     spread,
                     boxes,
                 );
-            } else if sliding != Some(at)
-                && casts(stack, at)
-                && let Some(joined) = casting(over.joined)
-            {
-                let glass = self.placed.levels[at].rect;
-                self.shadow(glass, 0.0, joined, spread, 1.0);
+            } else if sliding != Some(at) && !the_page_moves {
+                self.pane_shadow(stack, at, spread);
             }
+        }
+    }
+
+    /// The panes' shadows over a page that is catching up, drawn once the
+    /// page has been put back from the frame -- the layer they belong to is
+    /// the panes', which have not moved, so they stand where they are while
+    /// the page goes under them. See `shadows`.
+    pub(super) fn panes_shadows(&mut self, stack: &[&Behind], cell: CellSize) {
+        let spread = cell.height * SHADOW_SPREAD;
+        for (at, over) in stack.iter().enumerate() {
+            if !over.is_a_box() {
+                self.pane_shadow(stack, at, spread);
+            }
+        }
+    }
+
+    /// One pane's shadow, where it casts one.
+    fn pane_shadow(&mut self, stack: &[&Behind], at: usize, spread: f32) {
+        if casts(stack, at)
+            && let Some(joined) = casting(stack[at].joined)
+        {
+            let glass = self.placed.levels[at].rect;
+            self.shadow(glass, 0.0, joined, spread, 1.0);
         }
     }
 
@@ -970,6 +1121,113 @@ pub(super) fn scrolled_past(top: f32, bottom: f32, shift: f32) -> (f32, f32) {
 /// agent wrote.
 pub(super) fn sliding(room: [f32; 4], panes: &[[f32; 4]], under: bool) -> Vec<[f32; 4]> {
     tiles(room, if under { panes } else { &[] })
+}
+
+/// The cells of the page's plates a pane was put over -- halves of the
+/// cursor's pair, runs a search found -- which the picture of what it was
+/// put over draws as plates, under their letters (`Painter::pane_under`).
+pub(super) fn plates_behind(
+    behind: &Behind,
+    (paired, found): (&[crate::grid::Paired], &[crate::grid::Finding]),
+) -> Vec<ratatui::layout::Rect> {
+    paired
+        .iter()
+        .filter(|half| half.still_behind(behind))
+        .map(|half| half.area)
+        .chain(
+            found
+                .iter()
+                .filter(|run| run.still_behind(behind))
+                .map(|run| run.area),
+        )
+        .collect()
+}
+
+/// The rooms of the bands that are not the one at `at` and do not hold it:
+/// what a band catching up leaves out of what it puts back, because each is
+/// put back by its own band.
+///
+/// Not every other band's. A band inside another -- a list in its pane
+/// over the page scrolling under it -- left out the room of the band round
+/// it, which is all of its own, so it put nothing back: the list was a
+/// blank for as long as the page took to arrive, whenever the two scrolled
+/// at once.
+///
+/// Two bands that cross, neither holding the other, each leave the other's
+/// room out, and what they share is put back by neither for the length of
+/// the slide -- as it always was. No view lays two scrolling things across
+/// each other; a list is inside what it is over or beside it.
+pub(super) fn left_out(rooms: &[[f32; 4]], at: usize) -> Vec<[f32; 4]> {
+    let Some(&own) = rooms.get(at) else {
+        return Vec::new();
+    };
+    let holds = |room: &[f32; 4]| {
+        room[0] <= own[0] && room[1] <= own[1] && room[2] >= own[2] && room[3] >= own[3]
+    };
+    rooms
+        .iter()
+        .enumerate()
+        .filter(|&(other, room)| other != at && !holds(room))
+        .map(|(_, room)| *room)
+        .collect()
+}
+
+/// Which layer a piece of a band slid into place takes its pixels from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Source {
+    /// The frame, which is the page wherever no pane is over it.
+    Frame,
+    /// The page layer alone, under the first pane -- see `standing`.
+    Page,
+    /// Nothing: under a pane whose page no picture holds. Left undrawn, so
+    /// what shows is the page the band scrolled off, at the place it has
+    /// got to -- see `catching_up`.
+    Nowhere,
+}
+
+/// `piece` cut by where its pixels come from, when it is taken from
+/// `shift` pixels further up the frame -- the pixel at `y` is the frame's
+/// at `y - shift`, so a source under a pane is a piece as far down from it.
+///
+/// What the layers are for, kept while the page moves. The frame has the
+/// panes composed over the page, so the rows of a band that come from
+/// under a pane, taken out of it, were the pane: scrolling back under a
+/// list on the status bar, the list's top edge was drawn again above the
+/// list and shrank away, and the rows that belonged there arrived only
+/// when the slide did. `page` is where the page layer is held apart --
+/// under the first pane -- and `elsewhere` the other panes, which hold no
+/// page of their own.
+pub(super) fn by_source(
+    piece: [f32; 4],
+    shift: f32,
+    page: Option<[f32; 4]>,
+    elsewhere: &[[f32; 4]],
+) -> Vec<([f32; 4], Source)> {
+    let moved = |hole: [f32; 4]| [hole[0], hole[1] + shift, hole[2], hole[3] + shift];
+    let holes = page
+        .map(|hole| (moved(hole), Source::Page))
+        .into_iter()
+        .chain(elsewhere.iter().map(|hole| (moved(*hole), Source::Nowhere)));
+    let mut found = Vec::new();
+    let mut rest = vec![piece];
+    for (hole, from) in holes {
+        let mut kept = Vec::with_capacity(rest.len());
+        for part in rest {
+            let inside = [
+                part[0].max(hole[0]),
+                part[1].max(hole[1]),
+                part[2].min(hole[2]),
+                part[3].min(hole[3]),
+            ];
+            if inside[0] < inside[2] && inside[1] < inside[3] {
+                found.push((inside, from));
+            }
+            kept.extend(tiles(part, &[hole]));
+        }
+        rest = kept;
+    }
+    found.extend(rest.into_iter().map(|part| (part, Source::Frame)));
+    found
 }
 
 /// The part of a band's room a pane is over, where the band is under the

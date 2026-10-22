@@ -3154,9 +3154,9 @@ fn closing_the_last_file_goes_back_to_the_welcome_screen() {
     );
 }
 
-/// The outline: every symbol the file defines, coloured by what it is, with
-/// the symbol shown in its own code below. Everything except where the rows
-/// come from is the file picker's machinery.
+/// The outline: every symbol the file defines, coloured by what it is, in a
+/// list on the status bar with the file above it scrolled to the symbol.
+/// Everything except where the rows come from is the picker's machinery.
 #[test]
 fn the_outline_lists_what_a_file_defines_and_colours_it() {
     let mut app = App::new(vec![
@@ -3216,7 +3216,7 @@ fn the_outline_lists_what_a_file_defines_and_colours_it() {
         "a type and a function are the same colour:\n{dump}"
     );
 
-    // And the preview below shows the selected symbol in its own code, which
+    // And the file above shows the selected symbol in its own code, which
     // is what makes an outline readable rather than an index.
     assert!(
         rows.iter().any(|row| row.contains("pub struct Jump")),
@@ -3225,11 +3225,21 @@ fn the_outline_lists_what_a_file_defines_and_colours_it() {
 
     // Choosing one goes there.
     press(&mut app, KeyCode::Down);
+    let line = match app
+        .picker()
+        .and_then(|picker| picker.selected_item())
+        .map(|item| item.value.clone())
+    {
+        Some(obelus_component::picker::PickerValue::Place { line, .. }) => line,
+        other => panic!("a symbol's row names no place: {other:?}"),
+    };
     press(&mut app, KeyCode::Enter);
-    let after = support::render(&mut app, 60, 24);
-    assert!(
-        support::text_block(&after).contains("pub struct JumpList"),
-        "choosing a symbol did not go to it:\n{after}"
+    assert!(app.picker().is_none(), "the outline is still open");
+    let cursor = app.current_buffer().expect("the file").cursor();
+    assert_eq!(
+        u32::try_from(cursor.line.get()).ok(),
+        Some(line),
+        "choosing a symbol did not go to it"
     );
 }
 

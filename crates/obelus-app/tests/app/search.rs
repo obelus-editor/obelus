@@ -6,72 +6,48 @@ use obelus_app::{
     event::Event,
 };
 use obelus_command::Command;
-use obelus_search::{Hit, Scope};
+use obelus_search::Hit;
 
 use crate::support;
 
-/// The three keys open the same view at three tabs. One view because the
-/// reader's question is "where is this" and only its radius changes; three
-/// keys because the radius they usually mean is worth a key rather than a
-/// walk through the tabs.
+/// Each key opens a search of its own. The document in front is searched
+/// from a list on the status bar, with the document above it as its
+/// preview; the project covers the screen, because its rows are in files
+/// nobody has open and the pane under them is the only place to read those.
+///
+/// Broken deliberately by opening the search of the file full-area again
+/// in `open_search`: it covered the file it was searching.
 #[test]
-fn each_key_opens_the_same_view_at_its_own_tab() {
+fn each_key_opens_a_search_of_its_own() {
+    use obelus_component::picker::PickerLayout;
+
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     support::lay_out(&mut app, 60, 16);
 
-    // A file is open and no language server is running, so those are the
-    // two scopes that can answer anything.
     support::press_function(&mut app, 5);
     let picker = app.picker().expect("the search");
-    assert_eq!(
-        picker.tabs(),
-        ["File", "Project"],
-        "not the scopes that can answer"
-    );
-    assert_eq!(picker.tab(), 0, "ctrl+f did not open the file's own tab");
     assert!(picker.is_searching(), "not marked as a search");
-    support::press(&mut app, KeyCode::Esc);
-
-    support::press_function(&mut app, 6);
-    let picker = app.picker().expect("the search");
-    assert_eq!(picker.tab(), 1, "alt+f did not open the project's tab");
-    support::press(&mut app, KeyCode::Esc);
-}
-
-/// A scope with nothing to answer gets no tab. A tab that says "no file
-/// open" whenever it is walked onto is a tab in the way of the ones that
-/// work, and the tabs are how a reader moves between the scopes.
-#[test]
-fn a_scope_with_nothing_to_say_has_no_tab() {
-    // Nothing open: the file's own lines are not a scope, and there is no
-    // language server either, so the project is all that is left.
-    let mut app = App::new(Vec::new());
-    support::lay_out(&mut app, 60, 16);
-    support::press_function(&mut app, 6);
-    let picker = app.picker().expect("the search");
-    assert_eq!(picker.tabs(), ["Project"], "not just the project");
-    assert_eq!(picker.tab(), 0);
-
-    // And the arrows have nowhere to go, which is what one tab means.
-    support::press(&mut app, KeyCode::Right);
-    assert_eq!(app.picker().expect("the search").tab(), 0);
-    support::press(&mut app, KeyCode::Esc);
-
-    // With a file open, its lines are a scope again.
-    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
-    support::lay_out(&mut app, 60, 16);
-    support::press_function(&mut app, 5);
-    assert_eq!(
-        app.picker().expect("the search").tabs(),
-        ["File", "Project"]
+    assert!(
+        matches!(picker.layout(), PickerLayout::Compact { .. }),
+        "the search of the file covered the file"
     );
+    assert!(picker.tabs().is_empty(), "{:?}", picker.tabs());
+    support::press(&mut app, KeyCode::Esc);
+
+    support::press_function(&mut app, 6);
+    let picker = app.picker().expect("the search");
+    assert!(picker.is_searching(), "not marked as a search");
+    assert!(
+        matches!(picker.layout(), PickerLayout::FullArea),
+        "the search of the project did not cover the screen"
+    );
+    assert!(picker.tabs().is_empty(), "{:?}", picker.tabs());
+    support::press(&mut app, KeyCode::Esc);
 }
 
-/// With nothing typed yet, the preview is the file being read, at the place
-/// it is being read. A blank half-screen under an empty list is the search
-/// having taken the reader's file away before they have asked it anything;
-/// the file, still there under the list, reads as the list having pushed it
-/// down the screen.
+/// With nothing typed yet, the file being read is still on screen, at the
+/// place it is being read: the search of it sits on the status bar, and the
+/// file above it is its preview.
 #[test]
 fn an_empty_search_previews_the_file_being_read() {
     let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
@@ -98,13 +74,8 @@ fn an_empty_search_previews_the_file_being_read() {
         text.contains("LINE_24"),
         "the search is showing nothing where the file was:\n{searching}"
     );
-    assert!(
-        !text.contains("LINE_01"),
-        "the preview went back to the top of the file:\n{searching}"
-    );
 
-    // And typing gives the rows the preview back: the file under an empty
-    // search is what there is to show, not a row of its own.
+    // And typing scrolls the file to the row the list is on.
     support::type_text(&mut app, "LINE_03");
     let narrowed = support::render(&mut app, 60, 30);
     assert!(
@@ -166,7 +137,7 @@ fn the_file_scope_finds_the_query_and_not_something_like_it() {
 }
 
 /// The search's three switches: a pattern, a whole word, the capitals as
-/// typed. Each says in the palette which way it is set.
+/// typed. The list knows which way each is set.
 #[test]
 fn the_three_switches_change_what_the_search_finds() {
     let scratch = temporary("switches");
@@ -198,20 +169,17 @@ fn the_three_switches_change_what_the_search_finds() {
     support::type_text(&mut app, "ab.d");
     assert_eq!(found(&app), 1, "the query was not read as a pattern");
 
-    // And the palette says which way each is set, rather than making the
-    // reader press one to find out.
-    let set: Vec<(String, Option<bool>)> = support::keys_here(&mut app)
-        .into_iter()
-        .map(|key| (key.does, key.set))
-        .collect();
+    // And the list knows which way each is set, which is what the row the
+    // query is typed into says -- the palette lets go of a list on the
+    // status bar rather than opening over it.
     assert_eq!(
-        &set[..3],
-        [
-            ("Regex".to_string(), Some(true)),
-            ("Word".to_string(), Some(false)),
-            ("Case".to_string(), Some(false)),
-        ],
-        "the palette does not say which way the switches are set"
+        app.picker().and_then(|picker| picker.looks_how()),
+        Some(obelus_search::Looking {
+            regex: true,
+            word: false,
+            sensitive: false,
+        }),
+        "the list does not know which way the switches are set"
     );
 
     // Half a pattern is not an error in front of the reader: it is a
@@ -222,15 +190,15 @@ fn the_three_switches_change_what_the_search_finds() {
     assert_eq!(picker.nothing_to_show(), Some("That is not a pattern"));
 }
 
-/// Which switches mean anything depends on the tab: three of them read a
-/// text, and the fourth is about how far an index reaches.
+/// Which switches mean anything depends on the search: three of them read
+/// a text, and the fourth is about how far an index reaches.
 ///
-/// A tab only offers what it can answer. The file and project tabs are
+/// A search only offers what it can answer. The file and the project are
 /// inside this tree by construction, so there is nothing for "Outside" to
-/// do; the symbols tab's rows come from a server that did its own matching
-/// and has never heard of our pattern.
+/// do; the symbols come from a server that did its own matching and has
+/// never heard of our pattern.
 #[test]
-fn a_tab_offers_only_the_switches_it_can_answer() {
+fn a_search_offers_only_the_switches_it_can_answer() {
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     support::lay_out(&mut app, 84, 16);
     support::press_function(&mut app, 5);
@@ -238,18 +206,23 @@ fn a_tab_offers_only_the_switches_it_can_answer() {
     let picker = app.picker().expect("the search");
     assert!(
         picker.looks_how().is_some(),
-        "the file tab says reading a text means nothing to it"
+        "the search of the file says reading a text means nothing to it"
     );
     assert!(
         picker.reaches_outside().is_none(),
-        "the file tab offers to reach past a tree it is inside"
+        "the search of the file offers to reach past a tree it is inside"
     );
+    support::press(&mut app, KeyCode::Esc);
 
+    // The project's says so in the palette, which opens over it.
+    support::press_function(&mut app, 6);
+    let offered = support::usable_here(&mut app);
     assert_eq!(
-        support::usable_here(&mut app),
+        &offered[..3],
         ["Regex", "Word", "Case"],
         "the palette offers a key that would do nothing, or not one that would"
     );
+    assert!(!offered.contains(&"Outside".to_string()), "{offered:?}");
 }
 
 /// A symbol outside the project is left out unless the reader asks for it.
@@ -541,22 +514,27 @@ fn only_the_rows_on_screen_cost_anything() {
     );
 }
 
-/// The query survives a walk between the tabs, which is the whole reason the
-/// three scopes are one view: a reader who does not find it in this file
-/// looks in the project without retyping it.
+/// The query goes from one search to the next: a reader who does not find
+/// it in this file looks in the project without retyping it, and back.
+///
+/// Broken deliberately by not keeping the search as a list is left
+/// (`keep_the_search` out of `leave`), which is the way one search gives
+/// way to another: the project's search opened empty.
 #[test]
-fn the_query_walks_between_the_tabs() {
+fn the_query_goes_from_one_search_to_the_next() {
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     support::lay_out(&mut app, 60, 16);
     support::press_function(&mut app, 5);
     support::type_text(&mut app, "greeting");
 
-    support::press(&mut app, KeyCode::Tab);
+    support::press_function(&mut app, 6);
     let picker = app.picker().expect("the search");
-    assert_eq!(
-        picker.tabs()[picker.tab()],
-        Scope::Project.label(),
-        "the right arrow did not reach the project"
+    assert!(
+        matches!(
+            picker.layout(),
+            obelus_component::picker::PickerLayout::FullArea
+        ),
+        "f6 did not open the search of the project"
     );
     assert_eq!(picker.query(), "greeting", "the query did not come along");
 
@@ -566,13 +544,8 @@ fn the_query_walks_between_the_tabs() {
     assert_eq!(picker.nothing_to_show(), Some("Searching\u{2026}"));
 
     // And back again, onto the file's own lines, still narrowed.
-    support::press(&mut app, KeyCode::BackTab);
+    support::press_function(&mut app, 5);
     let picker = app.picker().expect("the search");
-    assert_eq!(
-        picker.tabs()[picker.tab()],
-        Scope::File.label(),
-        "the left arrow did not come back to the file"
-    );
     assert_eq!(picker.query(), "greeting");
     assert_eq!(picker.match_count(), 2, "the file's rows did not come back");
 }
@@ -736,13 +709,14 @@ fn matches_do_not_land_in_a_list_that_did_not_ask() {
         text: "let greeting = elsewhere();".to_string(),
     };
 
-    // Asked for in the project, and then the reader walks back to the file.
+    // Asked for in the project, and then the reader goes to the search of
+    // the file -- which asks the same thing, of the file.
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     support::lay_out(&mut app, 60, 16);
     support::press_function(&mut app, 6);
     support::type_text(&mut app, "greeting");
     let generation = app.search_generation();
-    support::press(&mut app, KeyCode::BackTab);
+    support::press_function(&mut app, 5);
     app.handle(Event::Search(obelus_search::Event::Matches {
         generation,
         hits: vec![hit.clone()],
@@ -853,7 +827,51 @@ fn searching_a_file_needs_a_file() {
         app.picker().is_none(),
         "a search opened with nothing to search"
     );
-    assert_eq!(app.note(), Some("No file open"));
+    assert_eq!(app.note(), Some("Nothing here to search"));
+}
+
+/// A file shown as its reading is searched as it is drawn, and choosing a
+/// row puts the reading's cursor on the match and the match on screen.
+///
+/// The words asked for are the reading's and not the file's: the source
+/// has `**` in the middle of them, so a search of the lines finds nothing.
+/// Broken deliberately two ways. Answering `Here::File` for a reading in
+/// `searched_here`: the lines were searched and the list was empty. And
+/// leaving the reading's view where it was in `go_within`: the cursor
+/// stood on a row below the screen, and no caret was drawn on the match.
+#[test]
+fn a_reading_is_searched_as_it_is_drawn() {
+    let path = std::path::Path::new("found.md");
+    let mut source: String = (0..40)
+        .map(|at| format!("Paragraph {at} says nothing much.\n\n"))
+        .collect();
+    source.push_str("The **pelican** wings it.\n");
+    let mut app = App::new(vec![obelus_buffer::Buffer::from_text(path, &source)]);
+    support::lay_out(&mut app, 60, 12);
+    dispatch::dispatch(&mut app, Command::PreviewToggle);
+    support::lay_out(&mut app, 60, 12);
+
+    support::press_function(&mut app, 5);
+    support::type_text(&mut app, "pelican wings");
+    let rows: Vec<String> = app
+        .picker()
+        .expect("the search")
+        .matches()
+        .map(|item| item.label.clone())
+        .collect();
+    assert_eq!(
+        rows,
+        vec!["The pelican wings it.".to_string()],
+        "the reading was not what was searched"
+    );
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.picker().is_none(), "the search is still open");
+    assert_eq!(
+        support::under_the_caret(&mut app, 60, 12, 7).as_deref(),
+        Some("pelican"),
+        "the caret is not on the match:\n{}",
+        support::render(&mut app, 60, 12)
+    );
 }
 
 /// The scan itself, against a real tree: what it finds, what it skips, and
@@ -1110,8 +1128,8 @@ fn the_preview_marks_what_the_query_matched() {
     /// The columns of the preview's row for `line` that wear the marked
     /// background.
     fn marked(dump: &str, line: &str) -> Vec<usize> {
-        // The preview is under the list, so the row wanted is the *last*
-        // one holding that text: the list holds it too.
+        // The file is above the list, so the row wanted is the *first* one
+        // holding that text: the list holds it too.
         let rows: Vec<usize> = support::text_block(dump)
             .lines()
             .enumerate()
@@ -1119,7 +1137,7 @@ fn the_preview_marks_what_the_query_matched() {
             .map(|(at, _)| at)
             .collect();
         let at = rows
-            .last()
+            .first()
             .copied()
             .unwrap_or_else(|| panic!("no preview of {line:?}:\n{dump}"));
         let marked = support::legend_block(dump)
@@ -1167,7 +1185,7 @@ fn the_preview_marks_what_the_query_matched() {
         .filter(|row| row.contains("let greeting"))
         .map(str::to_string)
         .collect();
-    let row = rows.last().expect("the preview's row").clone();
+    let row = rows.first().expect("the file's row").clone();
     let letters: String = columns
         .iter()
         .filter_map(|column| row.chars().nth(*column))
@@ -1258,5 +1276,320 @@ fn a_row_that_is_a_name_keeps_the_place_it_was_given() {
     assert!(
         !Scope::Symbols.lists_lines(),
         "a symbol row is a name, not the line it is on"
+    );
+}
+
+/// The search opened again is the one left: the same words, held so that
+/// typing replaces them, and the same row under the reader.
+///
+/// Broken deliberately three ways. Not keeping the search as the list is
+/// left (`keep_the_search` out of `leave`): it opened empty. Not holding
+/// the words (`hold_in_query` out of `open_search`): typing went on the
+/// end of them. And not putting the row back: the first row was selected.
+#[test]
+fn a_file_search_opened_again_is_the_one_left() {
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, 60, 16);
+    support::press_function(&mut app, 5);
+    support::type_text(&mut app, "greeting");
+    support::press(&mut app, KeyCode::Down);
+    assert_eq!(app.picker().map(|picker| picker.selected()), Some(1));
+    support::press(&mut app, KeyCode::Esc);
+    assert!(app.picker().is_none(), "the search did not close");
+
+    support::press_function(&mut app, 5);
+    let picker = app.picker().expect("the search");
+    assert_eq!(picker.query(), "greeting", "the words were not kept");
+    assert_eq!(picker.match_count(), 2, "the rows were not found again");
+    assert_eq!(picker.selected(), 1, "the row was not kept");
+
+    support::type_text(&mut app, "main");
+    assert_eq!(
+        app.picker().map(|picker| picker.query()).as_deref(),
+        Some("main"),
+        "typing did not replace the words"
+    );
+}
+
+/// Choosing a row keeps the search too, and the row chosen is the one the
+/// search opens on again -- the next match is one key away.
+///
+/// Broken deliberately by taking `keep_the_search` out of `accept`: the
+/// search opened empty.
+#[test]
+fn a_row_chosen_is_where_the_search_opens_again() {
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, 60, 16);
+    support::press_function(&mut app, 5);
+    support::type_text(&mut app, "greeting");
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.picker().is_none(), "the search did not close");
+
+    support::press_function(&mut app, 5);
+    let picker = app.picker().expect("the search");
+    assert_eq!(picker.query(), "greeting");
+    assert_eq!(picker.selected(), 1, "the row chosen was not kept");
+}
+
+/// The row stood on is a row of one document, and another document's
+/// search starts at its top -- with the same words asked of it.
+///
+/// Broken deliberately by matching what was kept on the scope and the
+/// words alone in `open_search`: the second file opened on its second row.
+#[test]
+fn another_documents_search_starts_at_its_top() {
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, 60, 16);
+    support::press_function(&mut app, 5);
+    support::type_text(&mut app, "greeting");
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Esc);
+
+    app.open_buffer_for_test(obelus_buffer::Buffer::from_text(
+        std::path::Path::new("other.rs"),
+        "greeting one\ngreeting two\ngreeting three\n",
+    ));
+    support::lay_out(&mut app, 60, 16);
+    support::press_function(&mut app, 5);
+    let picker = app.picker().expect("the search");
+    assert_eq!(picker.query(), "greeting");
+    assert_eq!(picker.match_count(), 3);
+    assert_eq!(
+        picker.selected(),
+        0,
+        "another file opened on the first's row"
+    );
+}
+
+/// The project's rows are kept whole, and the search opened again shows
+/// them at once on the row it was left on, without walking the project.
+///
+/// Broken deliberately by not reusing the rows (`reuse` never set): the
+/// search opened walking again, with nothing in it and nothing selected.
+#[test]
+fn a_project_search_opened_again_keeps_its_rows() {
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, 60, 16);
+    support::press_function(&mut app, 6);
+    support::type_text(&mut app, "needle");
+    let hits = (0..3)
+        .map(|line| Hit {
+            path: std::path::PathBuf::from(format!("found{line}.rs")),
+            line,
+            text: format!("the needle {line}"),
+        })
+        .collect();
+    app.handle(Event::Search(obelus_search::Event::Matches {
+        generation: app.search_generation(),
+        hits,
+        done: true,
+    }));
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Esc);
+
+    let generation = app.search_generation();
+    support::press_function(&mut app, 6);
+    let picker = app.picker().expect("the search");
+    assert_eq!(picker.query(), "needle");
+    let rows: Vec<String> = picker.matches().map(|item| item.label.clone()).collect();
+    assert_eq!(rows, ["the needle 0", "the needle 1", "the needle 2"]);
+    assert_eq!(picker.selected(), 2, "the row was not kept");
+    // And whatever was still walking is told it is answering a question
+    // nobody is asking, so none of it lands on the rows put back.
+    assert!(app.search_generation() > generation);
+}
+
+/// The search of a reading sits on the status bar, and the reading above it
+/// is its preview: the row the list is on is scrolled into view before
+/// anything is chosen, and escape puts the reading back where it was.
+///
+/// Broken deliberately three ways. Taking `look_within_at_the_selection`
+/// out of the frame: the reading stayed at its top while the list stood on
+/// a row far below it. Leaving `found` out of the reading's rows
+/// (`Cursor::laid`): nothing was marked. And not taking the mark away as
+/// the list goes (`forget_the_find` out of `go_within`): it stayed on the
+/// reading after the cursor had gone there.
+#[test]
+fn a_reading_under_its_search_is_the_preview() {
+    let path = std::path::Path::new("looked.md");
+    let mut source: String = (0..40)
+        .map(|at| format!("Paragraph {at} says nothing much.\n\n"))
+        .collect();
+    source.push_str("The pelican wings it.\n");
+    let mut app = App::new(vec![obelus_buffer::Buffer::from_text(path, &source)]);
+    support::lay_out(&mut app, 60, 24);
+    dispatch::dispatch(&mut app, Command::PreviewToggle);
+    support::lay_out(&mut app, 60, 24);
+
+    support::press_function(&mut app, 5);
+    support::type_text(&mut app, "pelican");
+    let looking = support::text_block(&support::render(&mut app, 60, 24)).to_string();
+    // Above the rule the list starts with, which is the reading.
+    let above: Vec<&str> = looking
+        .lines()
+        .take_while(|row| !row.contains('\u{2500}'))
+        .collect();
+    assert!(
+        above
+            .iter()
+            .any(|row| row.contains("The pelican wings it.")),
+        "the reading was not scrolled to the row:\n{looking}"
+    );
+    // And what was found is marked on it, as the file marks it.
+    let dump = support::render(&mut app, 60, 24);
+    assert_eq!(
+        support::found_on_screen(&dump, "The pelican wings it."),
+        "pelican",
+        "the match is not marked on the reading:\n{dump}"
+    );
+
+    support::press(&mut app, KeyCode::Esc);
+    let back = support::text_block(&support::render(&mut app, 60, 24)).to_string();
+    assert!(
+        back.contains("Paragraph 0 "),
+        "escape did not put the reading back:\n{back}"
+    );
+
+    // Chosen, the cursor says where the match is, and the mark goes. A frame
+    // between, which is what puts the mark there to go.
+    support::press_function(&mut app, 5);
+    support::lay_out(&mut app, 60, 24);
+    support::press(&mut app, KeyCode::Enter);
+    let chosen = support::render(&mut app, 60, 24);
+    assert!(
+        support::text_block(&chosen).contains("The pelican wings it."),
+        "choosing it did not go there:\n{chosen}"
+    );
+    assert_eq!(
+        support::found_on_screen(&chosen, "The pelican wings it."),
+        "",
+        "the mark outlived the search:\n{chosen}"
+    );
+}
+
+/// The mark on a page follows the query as it is typed: more letters find
+/// the same place and more of it, and the mark grows with them -- and goes
+/// back with a backspace.
+///
+/// Broken deliberately by keying what the page was last marked for on where
+/// the match starts alone (`looked_at`): typing on kept the first letters'
+/// mark, because the match started in the same place.
+#[test]
+fn a_page_s_mark_follows_the_query_as_it_is_typed() {
+    let path = std::path::Path::new("typed.md");
+    let source = "First paragraph.\n\nThe pelican wings it.\n";
+    let mut app = App::new(vec![obelus_buffer::Buffer::from_text(path, source)]);
+    support::lay_out(&mut app, 60, 24);
+    dispatch::dispatch(&mut app, Command::PreviewToggle);
+    support::lay_out(&mut app, 60, 24);
+
+    support::press_function(&mut app, 5);
+    support::type_text(&mut app, "pel");
+    let dump = support::render(&mut app, 60, 24);
+    assert_eq!(
+        support::found_on_screen(&dump, "The pelican"),
+        "pel",
+        "{dump}"
+    );
+    support::type_text(&mut app, "ican");
+    let dump = support::render(&mut app, 60, 24);
+    assert_eq!(
+        support::found_on_screen(&dump, "The pelican"),
+        "pelican",
+        "the mark did not grow with the query:\n{dump}"
+    );
+    support::press(&mut app, KeyCode::Backspace);
+    let dump = support::render(&mut app, 60, 24);
+    assert_eq!(
+        support::found_on_screen(&dump, "The pelican"),
+        "pelica",
+        "the mark did not go back with the query:\n{dump}"
+    );
+}
+
+/// A page laid out again under its search -- here a reading made narrower,
+/// which wraps every paragraph above the match into more rows -- is
+/// searched again, so the mark and where enter goes are still the match.
+///
+/// Broken deliberately by taking `follow_the_page` out of the frame: the
+/// mark stayed on the row number it had at the old width, which is other
+/// words at the new one.
+#[test]
+fn a_page_laid_out_again_under_its_search_is_searched_again() {
+    let path = std::path::Path::new("narrowed.md");
+    let mut source: String = (0..3)
+        .map(|at| format!("Paragraph {at} says nothing much at all here.\n\n"))
+        .collect();
+    source.push_str("The pelican wings it.\n");
+    let mut app = App::new(vec![obelus_buffer::Buffer::from_text(path, &source)]);
+    support::lay_out(&mut app, 60, 24);
+    dispatch::dispatch(&mut app, Command::PreviewToggle);
+    support::lay_out(&mut app, 60, 24);
+
+    support::press_function(&mut app, 5);
+    support::type_text(&mut app, "pelican");
+    let wide = support::render(&mut app, 60, 24);
+    assert_eq!(
+        support::found_on_screen(&wide, "The pelican"),
+        "pelican",
+        "{wide}"
+    );
+
+    support::lay_out(&mut app, 30, 24);
+    let narrow = support::render(&mut app, 30, 24);
+    assert_eq!(
+        support::found_on_screen(&narrow, "The pelican"),
+        "pelican",
+        "the mark did not follow the page:\n{narrow}"
+    );
+
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        support::under_the_caret(&mut app, 30, 24, 7).as_deref(),
+        Some("pelican"),
+        "enter did not go to the match:\n{}",
+        support::render(&mut app, 30, 24)
+    );
+}
+
+/// A reading under a search of it says how much of it is out of sight in
+/// the rows the reader can see, the way the file does: at the end of it,
+/// the bar's thumb is at the foot of the rows above the list.
+///
+/// Broken deliberately by measuring the bar against the whole region (the
+/// `room.height` handed to `reading::draw_held` in `ui::frame` made the
+/// canvas's): the thumb for the end was under the list, where none of it
+/// could be seen.
+#[test]
+fn a_reading_under_a_search_says_where_it_is() {
+    let path = std::path::Path::new("long.md");
+    let source: String = (0..30)
+        .map(|at| format!("Paragraph {at} has a word.\n\n"))
+        .collect();
+    let mut app = App::new(vec![obelus_buffer::Buffer::from_text(path, &source)]);
+    support::lay_out(&mut app, 60, 20);
+    dispatch::dispatch(&mut app, Command::PreviewToggle);
+    support::lay_out(&mut app, 60, 20);
+    support::press_function(&mut app, 5);
+    support::type_text(&mut app, "has a word");
+    support::lay_out(&mut app, 60, 20);
+    for _ in 0..29 {
+        support::press(&mut app, KeyCode::Down);
+    }
+    let dump = support::render(&mut app, 60, 20);
+    let text = support::text_block(&dump);
+    let above: Vec<&str> = text
+        .lines()
+        .take_while(|row| !row.contains('\u{2500}'))
+        .collect();
+    assert!(
+        above.iter().any(|row| row.contains("Paragraph 29")),
+        "the reading was not scrolled to the match:\n{dump}"
+    );
+    assert!(
+        above.last().is_some_and(|row| row.ends_with('\u{2588}')),
+        "the thumb is not at the foot of what can be seen:\n{dump}"
     );
 }

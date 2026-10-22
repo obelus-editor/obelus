@@ -263,6 +263,7 @@ impl App {
             .as_ref()
             .is_some_and(|picker| picker.is_searching() && picker.row_count() > 0)
             && self.searching() == Some(Scope::File)
+            && self.search.here == Some(crate::app::editor::searching::Here::File)
             && self.search.searched
                 != self
                     .current_buffer()
@@ -360,6 +361,9 @@ impl App {
 
         self.refresh_preview(editor_area);
         self.look_at_the_selection();
+        self.follow_the_page();
+        self.look_within_at_the_selection();
+        self.mark_the_match();
 
         let painted = obelus_ui::editor_canvas(self.screen_area).height;
         let Self {

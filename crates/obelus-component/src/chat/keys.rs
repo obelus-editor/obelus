@@ -372,6 +372,34 @@ impl Chat {
         crate::page::show(&mut self.window, at, count, room.transcript);
     }
 
+    /// Puts the cursor in the transcript at `at`, and the row it is on on
+    /// screen: a search of the conversation, chosen.
+    ///
+    /// Letting go of what was held, the way any walk that is not shift's
+    /// does.
+    pub fn stand_in_the_transcript(&mut self, at: Place, room: Room) {
+        self.let_go();
+        self.focus = Focus::Transcript(at);
+        self.show_row(at.row, room);
+    }
+
+    /// Puts a row of the transcript on screen and leaves the cursor where it
+    /// is: a search of the conversation, looked at from a list over it.
+    pub fn look_at_row(&mut self, row: usize, room: Room) {
+        self.show_row(row, room);
+    }
+
+    /// Puts the transcript back where it was before a search of it looked
+    /// somewhere else: `top` rows in, or at its end where it was there --
+    /// following what arrives, which a top taken while it was at the end
+    /// would stop doing the moment anything did.
+    pub fn look_back(&mut self, top: usize, at_the_end: bool) {
+        match at_the_end {
+            true => self.window.end(),
+            false => self.window.drag_to(top),
+        }
+    }
+
     /// Goes back to the box, remembering which column of the transcript
     /// this was.
     pub(super) fn leave_the_transcript(&mut self, at: Place) {

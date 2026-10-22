@@ -344,6 +344,25 @@ impl Text {
         column.min(self.line_length(line))
     }
 
+    /// The column of `line` that is `characters` past its indentation,
+    /// clamped to the line.
+    ///
+    /// What a row of a search is counted in: the line trimmed of the
+    /// whitespace it starts with, because the indentation is the same on
+    /// every row of a block and showing it spends the width where the
+    /// answer is. So a column of the row is a column of the line from where
+    /// the indentation ends -- asked by whatever goes to a match and by
+    /// whatever marks one, which must agree.
+    #[must_use]
+    pub fn past_the_indent(&self, line: LineNumber, characters: usize) -> CharColumn {
+        let indent = self
+            .line(line)
+            .chars()
+            .take_while(|character| character.is_whitespace())
+            .count();
+        self.clamp_column(line, CharColumn::new(indent + characters))
+    }
+
     /// Where the caret goes one step left: the start of the cluster behind it.
     ///
     /// A cluster is what a reader sees as one character -- `❤` and the
