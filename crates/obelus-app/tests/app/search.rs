@@ -1468,3 +1468,88 @@ fn a_reading_under_its_search_is_the_preview() {
         "the mark outlived the search:\n{chosen}"
     );
 }
+
+/// The mark on a page follows the query as it is typed: more letters find
+/// the same place and more of it, and the mark grows with them -- and goes
+/// back with a backspace.
+///
+/// Broken deliberately by keying what the page was last marked for on where
+/// the match starts alone (`looked_at`): typing on kept the first letters'
+/// mark, because the match started in the same place.
+#[test]
+fn a_page_s_mark_follows_the_query_as_it_is_typed() {
+    let path = std::path::Path::new("typed.md");
+    let source = "First paragraph.\n\nThe pelican wings it.\n";
+    let mut app = App::new(vec![obelus_buffer::Buffer::from_text(path, source)]);
+    support::lay_out(&mut app, 60, 24);
+    dispatch::dispatch(&mut app, Command::PreviewToggle);
+    support::lay_out(&mut app, 60, 24);
+
+    support::press_function(&mut app, 5);
+    support::type_text(&mut app, "pel");
+    let dump = support::render(&mut app, 60, 24);
+    assert_eq!(
+        support::found_on_screen(&dump, "The pelican"),
+        "pel",
+        "{dump}"
+    );
+    support::type_text(&mut app, "ican");
+    let dump = support::render(&mut app, 60, 24);
+    assert_eq!(
+        support::found_on_screen(&dump, "The pelican"),
+        "pelican",
+        "the mark did not grow with the query:\n{dump}"
+    );
+    support::press(&mut app, KeyCode::Backspace);
+    let dump = support::render(&mut app, 60, 24);
+    assert_eq!(
+        support::found_on_screen(&dump, "The pelican"),
+        "pelica",
+        "the mark did not go back with the query:\n{dump}"
+    );
+}
+
+/// A page laid out again under its search -- here a reading made narrower,
+/// which wraps every paragraph above the match into more rows -- is
+/// searched again, so the mark and where enter goes are still the match.
+///
+/// Broken deliberately by taking `follow_the_page` out of the frame: the
+/// mark stayed on the row number it had at the old width, which is other
+/// words at the new one.
+#[test]
+fn a_page_laid_out_again_under_its_search_is_searched_again() {
+    let path = std::path::Path::new("narrowed.md");
+    let mut source: String = (0..3)
+        .map(|at| format!("Paragraph {at} says nothing much at all here.\n\n"))
+        .collect();
+    source.push_str("The pelican wings it.\n");
+    let mut app = App::new(vec![obelus_buffer::Buffer::from_text(path, &source)]);
+    support::lay_out(&mut app, 60, 24);
+    dispatch::dispatch(&mut app, Command::PreviewToggle);
+    support::lay_out(&mut app, 60, 24);
+
+    support::press_function(&mut app, 5);
+    support::type_text(&mut app, "pelican");
+    let wide = support::render(&mut app, 60, 24);
+    assert_eq!(
+        support::found_on_screen(&wide, "The pelican"),
+        "pelican",
+        "{wide}"
+    );
+
+    support::lay_out(&mut app, 30, 24);
+    let narrow = support::render(&mut app, 30, 24);
+    assert_eq!(
+        support::found_on_screen(&narrow, "The pelican"),
+        "pelican",
+        "the mark did not follow the page:\n{narrow}"
+    );
+
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        support::under_the_caret(&mut app, 30, 24, 7).as_deref(),
+        Some("pelican"),
+        "enter did not go to the match:\n{}",
+        support::render(&mut app, 30, 24)
+    );
+}

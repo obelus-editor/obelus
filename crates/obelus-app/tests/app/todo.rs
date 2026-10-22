@@ -4052,3 +4052,102 @@ fn the_notes_under_their_search_mark_what_it_found() {
         "the mark outlived the search:\n{back}"
     );
 }
+
+/// The mark a search left on the notes comes off them as the list goes,
+/// even where something else has been put in front of the reader while it
+/// was up -- an agent opening a file, say -- so the notes do not still
+/// wear it when the reader comes back to them.
+///
+/// Broken deliberately by taking the mark off only the document in front
+/// (`forget_the_find` asking `searched_here` again): the notes kept it.
+#[test]
+fn a_search_s_mark_comes_off_the_notes_whatever_is_in_front() {
+    let scratch = tree("search-elsewhere", THREE);
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    support::lay_out(&mut app, 76, 24);
+    let file = app.current_document_for_test().expect("the file");
+    dispatch::dispatch(&mut app, Command::TodoOpen);
+    let notes = app.current_document_for_test().expect("the notes");
+    support::lay_out(&mut app, 76, 24);
+    support::press_function(&mut app, 5);
+    support::type_text(&mut app, "the colours");
+    let dump = support::render(&mut app, 76, 24);
+    assert_eq!(
+        support::found_on_screen(&dump, "changes the colours"),
+        "the colours",
+        "{dump}"
+    );
+
+    app.go_to_document_for_test(file);
+    press(&mut app, KeyCode::Esc);
+    support::lay_out(&mut app, 76, 24);
+    app.go_to_document_for_test(notes);
+    let back = support::render(&mut app, 76, 24);
+    assert!(
+        back.contains("changes the colours"),
+        "not the notes:\n{back}"
+    );
+    assert_eq!(
+        support::found_on_screen(&back, "changes the colours"),
+        "",
+        "the mark outlived the search:\n{back}"
+    );
+}
+
+/// A list put up in the search's place puts the search away: its mark comes
+/// off the notes. Seen once that list is chosen from, which is the way out
+/// of a list that does not put a search away -- escape does, whatever the
+/// list is.
+///
+/// What does it is `show_list` leaving the list it replaces, through the
+/// door escape goes through. Broken deliberately by taking the
+/// `make_room` out of `show_list`: the notes still wore the mark once the
+/// other list had gone.
+#[test]
+fn a_list_in_the_search_s_place_takes_its_mark_off_the_notes() {
+    let scratch = tree("search-replaced", THREE);
+    let mut app = open(&scratch, 76, 24);
+    support::lay_out(&mut app, 76, 24);
+    support::press_function(&mut app, 5);
+    support::type_text(&mut app, "the colours");
+    let dump = support::render(&mut app, 76, 24);
+    assert_eq!(
+        support::found_on_screen(&dump, "changes the colours"),
+        "the colours",
+        "{dump}"
+    );
+
+    let nothing = obelus_component::picker::PickerItem {
+        prose: false,
+        marker: None,
+        icon: None,
+        label: "Nothing".to_string(),
+        version: None,
+        detail: None,
+        trailing: None,
+        changed: None,
+        value: obelus_component::picker::PickerValue::Nothing,
+        enabled: true,
+        colours: None,
+        status: None,
+        depth: 0,
+        opens: None,
+        kind: None,
+        tab: None,
+        section: None,
+    };
+    app.open_picker_for_test(
+        vec![nothing],
+        obelus_component::picker::PickerLayout::Compact { rows: 3 },
+    );
+    support::lay_out(&mut app, 76, 24);
+    press(&mut app, KeyCode::Enter);
+    let after = support::render(&mut app, 76, 24);
+    assert!(app.picker().is_none(), "the other list is still up");
+    assert_eq!(
+        support::found_on_screen(&after, "changes the colours"),
+        "",
+        "the mark outlived the search:\n{after}"
+    );
+}

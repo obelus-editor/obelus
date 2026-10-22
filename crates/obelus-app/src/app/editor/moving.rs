@@ -73,15 +73,7 @@ impl App {
             Column::InRow(column) => {
                 let text = buffer.text();
                 let line = text.clamp_line(LineNumber::new(line as usize));
-                let indent = text
-                    .line(line)
-                    .chars()
-                    .take_while(|character| character.is_whitespace())
-                    .count();
-                (
-                    line,
-                    text.clamp_column(line, CharColumn::new(indent + column)),
-                )
+                (line, text.past_the_indent(line, column))
             }
         };
         buffer.place_cursor(line, column);

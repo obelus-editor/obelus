@@ -316,6 +316,9 @@ pub fn write_spans(
     // Which cells what a search found took, for a front end that draws it
     // as a shape of its own rather than as the cells' ground.
     let mut marked: Option<(u16, u16)> = None;
+    // And whether any of it is held, which wins the cells: a plate laid
+    // over what the reader is holding would be a mark over theirs.
+    let mut held_over = false;
     for cluster in obelus_text::clusters(&said) {
         if column >= stop {
             break;
@@ -337,7 +340,9 @@ pub fn write_spans(
         // Obelus marks a run of itself with: a ground under whatever
         // colour the characters already carry, which is why the ink
         // above is worked out first and only the ground is replaced.
-        let style = match held.is_some_and(|held| held.contains(&cluster.first)) {
+        let holding = held.is_some_and(|held| held.contains(&cluster.first));
+        held_over |= finding && holding;
+        let style = match holding {
             true => style.bg(theme.selection_background),
             false => style,
         };
@@ -351,7 +356,7 @@ pub fn write_spans(
             marked = Some(marked.map_or((from, column), |(start, _)| (start, column)));
         }
     }
-    if let (Some((start, end)), Some((_, which))) = (marked, found) {
+    if let (Some((start, end)), Some((_, which)), false) = (marked, found, held_over) {
         crate::shapes::found(Rect::new(start, y, end.min(stop) - start, 1), which);
     }
     column

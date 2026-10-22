@@ -1753,26 +1753,30 @@ fn draw_row(
         }
         // What a search found, in the same colour -- and said to a window,
         // which draws it as a shape of its own. A cell at a time, and the
-        // window joins the cells of one match on one row.
+        // window joins the cells of one match on one row. Not where the
+        // reader has selected, which wins the cells: a plate laid over what
+        // they hold would be a mark over theirs.
+        let selected = painting
+            .selection
+            .is_some_and(|selection| selection.contains(line, CharColumn::new(column)));
         if let Some((_, which)) = painting
             .found
             .filter(|(found, _)| found.contains(line, CharColumn::new(column)))
         {
             style = style.bg(painting.theme.marked_background);
-            crate::shapes::found(
-                Rect::new(
-                    x + offset,
-                    y,
-                    u16::try_from(glyph.cells.max(1)).unwrap_or(1),
-                    1,
-                ),
-                which,
-            );
+            if !selected {
+                crate::shapes::found(
+                    Rect::new(
+                        x + offset,
+                        y,
+                        u16::try_from(glyph.cells.max(1)).unwrap_or(1),
+                        1,
+                    ),
+                    which,
+                );
+            }
         }
-        if painting
-            .selection
-            .is_some_and(|selection| selection.contains(line, CharColumn::new(column)))
-        {
+        if selected {
             style = style.bg(painting.theme.selection_background);
         }
         // Underlined where a server says something is wrong, in the colour

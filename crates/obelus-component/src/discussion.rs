@@ -905,6 +905,9 @@ pub struct DiscussionView {
     /// The rows as they were last laid out, and the width they were laid
     /// out at. Dropped by everything that changes what there is to lay out.
     laid: std::cell::RefCell<Option<(u16, Vec<Row>)>>,
+    /// How many times what there is to lay out has changed -- see
+    /// [`Self::changes`].
+    changes: u64,
     /// Where the cursor is.
     cursor: Place,
     /// What the reader has hold of.
@@ -942,6 +945,7 @@ impl DiscussionView {
             refused: None,
             folding: Folding::default(),
             laid: std::cell::RefCell::new(None),
+            changes: 0,
             cursor: Place::default(),
             held: Hold::default(),
             found: None,
@@ -1058,6 +1062,15 @@ impl DiscussionView {
     /// Forgets the rows, because what they are made of has changed.
     fn forget_the_layout(&mut self) {
         *self.laid.get_mut() = None;
+        self.changes += 1;
+    }
+
+    /// How many times what there is to lay out has changed: a place kept in
+    /// the rows -- a search of the page -- means at one width what it did
+    /// while this has not moved.
+    #[must_use]
+    pub const fn changes(&self) -> u64 {
+        self.changes
     }
 
     /// Where the cursor is.

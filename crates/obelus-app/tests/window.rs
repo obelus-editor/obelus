@@ -929,3 +929,90 @@ fn what_a_search_of_a_reading_found_is_said_to_a_window() {
     let areas: Vec<Rect> = found.iter().map(|(area, _)| *area).collect();
     assert_eq!(under(&dump, &areas), "pelican", "{found:?}\n{dump}");
 }
+
+/// Two matches in one note, on two of its rows at the same column, are two
+/// matches to a window: walking from one to the other puts the plate down
+/// again.
+///
+/// Deliberate break: say a match on the notes by the note rather than by
+/// the row (`row.note` in `ui::todo`): the two matches were one, and the
+/// plate stayed where it was.
+#[test]
+fn two_matches_in_one_note_are_two_to_a_window() {
+    let _turn = turn();
+    obelus_config::drawn_in_a_window();
+    let scratch = support::Scratch::new("window-notes-found");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
+        "[[todo]]\nsaid = \"\"\"\nfind one\nfind two\n\"\"\"\ndone = false\n",
+    )
+    .expect("the notes");
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    support::render(&mut app, 60, 16);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    support::render(&mut app, 60, 16);
+    support::press(&mut app, crossterm::event::KeyCode::F(5));
+    support::type_text(&mut app, "find");
+    support::render(&mut app, 60, 16);
+    let _ = found_since();
+    let dump = support::render(&mut app, 60, 16);
+    let first = found_since();
+    assert!(!first.is_empty(), "nothing was said:\n{dump}");
+
+    support::press(&mut app, crossterm::event::KeyCode::Down);
+    support::render(&mut app, 60, 16);
+    let _ = found_since();
+    let dump = support::render(&mut app, 60, 16);
+    let second = found_since();
+    assert!(!second.is_empty(), "nothing was said:\n{dump}");
+    assert_ne!(
+        first[0].1, second[0].1,
+        "two matches in one note were one match:\n{dump}"
+    );
+}
+
+/// What the reader holds wins the cells over what a search found: no
+/// plate is said over a selection, in the file or on a page.
+///
+/// Deliberate break: say the match whether or not it is held -- the
+/// `!selected` in `ui::editor`, or `held_over` in `reading::write_spans` --
+/// and a plate is said over the reader's own selection.
+#[test]
+fn no_plate_is_said_over_what_the_reader_holds() {
+    let _turn = turn();
+    obelus_config::drawn_in_a_window();
+    let path = std::path::Path::new("tests/fixtures/sample.rs");
+    let mut app = App::new(vec![obelus_buffer::Buffer::open(path).expect("opening it")]);
+    support::render(&mut app, 60, 16);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::SelectionAll);
+    support::press(&mut app, crossterm::event::KeyCode::F(5));
+    support::type_text(&mut app, "greeting");
+    support::render(&mut app, 60, 16);
+    let _ = found_since();
+    let dump = support::render(&mut app, 60, 16);
+    assert_eq!(
+        found_since(),
+        Vec::new(),
+        "a plate over the selection:\n{dump}"
+    );
+
+    let path = std::path::Path::new("held.md");
+    let source = "First paragraph.\n\nThe pelican wings it.\n";
+    let mut app = App::new(vec![obelus_buffer::Buffer::from_text(path, source)]);
+    support::render(&mut app, 60, 16);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PreviewToggle);
+    support::render(&mut app, 60, 16);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::SelectionAll);
+    support::press(&mut app, crossterm::event::KeyCode::F(5));
+    support::type_text(&mut app, "pelican");
+    support::render(&mut app, 60, 16);
+    let _ = found_since();
+    let dump = support::render(&mut app, 60, 16);
+    assert_eq!(
+        found_since(),
+        Vec::new(),
+        "a plate over what is held:\n{dump}"
+    );
+}

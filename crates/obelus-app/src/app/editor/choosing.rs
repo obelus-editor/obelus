@@ -671,7 +671,6 @@ impl App {
         self.looked_from = self
             .current
             .zip(self.current_buffer().map(Buffer::viewport));
-        self.keep_the_search();
         self.picker = Some(picker);
     }
 

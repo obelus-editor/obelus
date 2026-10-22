@@ -389,6 +389,17 @@ impl Chat {
         self.show_row(row, room);
     }
 
+    /// Puts the transcript back where it was before a search of it looked
+    /// somewhere else: `top` rows in, or at its end where it was there --
+    /// following what arrives, which a top taken while it was at the end
+    /// would stop doing the moment anything did.
+    pub fn look_back(&mut self, top: usize, at_the_end: bool) {
+        match at_the_end {
+            true => self.window.end(),
+            false => self.window.drag_to(top),
+        }
+    }
+
     /// Goes back to the box, remembering which column of the transcript
     /// this was.
     pub(super) fn leave_the_transcript(&mut self, at: Place) {

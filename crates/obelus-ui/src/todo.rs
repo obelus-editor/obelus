@@ -445,7 +445,7 @@ impl Widget for TodoUi<'_> {
                 continue;
             }
             let selected = self.in_front && Some(row.note) == on;
-            self.row(cells, at_row, row, selected);
+            self.row(cells, at_row, (at, row), selected);
             if selected {
                 let (top, _) = *marked.get_or_insert((at_row.y, at_row.y));
                 marked = Some((top, at_row.y));
@@ -498,7 +498,7 @@ impl Widget for TodoUi<'_> {
 
 impl TodoUi<'_> {
     /// One row: the mark, the box, what it says, and where it points.
-    fn row(&self, cells: &mut CellBuffer, area: Rect, row: &Row, selected: bool) {
+    fn row(&self, cells: &mut CellBuffer, area: Rect, (at, row): (usize, &Row), selected: bool) {
         let background = self.theme.background;
         fill(
             cells,
@@ -678,7 +678,10 @@ impl TodoUi<'_> {
             let to = crate::page::cell_of(&shown, x, found.end).min(stop);
             crate::shapes::found(
                 Rect::new(from, y, to.saturating_sub(from), 1),
-                crate::shapes::Found::on("notes", row.note, found.start),
+                // By the row it is on rather than by the note: a match on
+                // each of two rows a note wraps into, at the same column,
+                // are two matches.
+                crate::shapes::Found::on("notes", at, found.start),
             );
         }
     }

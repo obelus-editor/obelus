@@ -84,7 +84,7 @@ impl Screen for App {
         App::marked_runs(self)
     }
     fn found_run(&self) -> Option<obelus_text::coordinates::Span> {
-        self.search.marked.first().copied()
+        self.search.marked
     }
     fn note(&self) -> Option<&str> {
         App::note(self)

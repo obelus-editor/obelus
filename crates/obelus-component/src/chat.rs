@@ -753,6 +753,11 @@ pub struct Chat {
     /// is to drop it wherever there is a doubt: laying out again costs
     /// milliseconds and being wrong costs the reader their conversation.
     laid: std::cell::RefCell<Option<(LaidAt, Vec<Row>)>>,
+    /// How many times what there is to lay out has changed, for whoever
+    /// keeps a place in the rows -- a search of the conversation -- and has
+    /// to know without laying them out whether that place still means
+    /// anything.
+    changes: u64,
     /// What is happening now, if anything is.
     ///
     /// One slot rather than a line of the transcript: a state has no
@@ -887,6 +892,7 @@ impl Chat {
         Self {
             said: Vec::new(),
             laid: std::cell::RefCell::new(None),
+            changes: 0,
             doing: None,
             can_send_now: false,
             plan: Vec::new(),
@@ -1788,6 +1794,7 @@ impl Chat {
     /// stopped saying what happened, which is why the test that walks
     /// every one of them is where the promise really lives.
     fn forget_the_layout(&mut self) {
+        self.changes += 1;
         if let Some((_, rows)) = self.laid.get_mut().take() {
             self.remember_where_the_cursor_waits(&rows);
         }
@@ -1873,6 +1880,13 @@ impl Chat {
     #[must_use]
     pub const fn at_the_end(&self) -> bool {
         self.window.at_the_end()
+    }
+
+    /// How many times what there is to lay out has changed: a place kept in
+    /// the rows, at one width, means what it did while this has not moved.
+    #[must_use]
+    pub const fn changes(&self) -> u64 {
+        self.changes
     }
 
     /// How many times the agent has spoken since the reader left the end.
@@ -4641,5 +4655,48 @@ mod remembering {
             Some(0..5),
             "what is held did not reach the page"
         );
+    }
+
+    /// A transcript a search looked about in goes back where it was -- and
+    /// one that was at its end goes back to its end, following what
+    /// arrives, even where more has arrived since and the top it had is no
+    /// longer the end.
+    ///
+    /// Broken deliberately by putting it back at its old top whatever it
+    /// was doing (`drag_to` in `look_back`): it stayed where it had been
+    /// and stopped following the agent.
+    #[test]
+    fn a_transcript_a_search_looked_about_in_goes_back_to_following() {
+        let short = Room {
+            transcript: 3,
+            reading: 60,
+            writing: 60,
+        };
+        let mut chat = Chat::new();
+        for turn in 0..8 {
+            chat.asked(&[crate::composer::Part::Words(format!("question {turn}"))]);
+            chat.chunk(Speaker::Agent, &format!("answer {turn}"));
+        }
+        chat.settle(chat.rows(short.reading).len(), short.transcript);
+        assert!(chat.at_the_end(), "a new transcript is not at its end");
+        let top = chat.top();
+
+        // A search looks at the first row, and more arrives meanwhile.
+        chat.look_at_row(0, short);
+        chat.asked(&[crate::composer::Part::Words("question 8".to_string())]);
+        chat.chunk(Speaker::Agent, "answer 8, while the list was up");
+        chat.settle(chat.rows(short.reading).len(), short.transcript);
+
+        chat.look_back(top, true);
+        chat.settle(chat.rows(short.reading).len(), short.transcript);
+        assert!(chat.at_the_end(), "it stopped following what arrives");
+        assert!(chat.top() > top, "it is not at the end of what arrived");
+
+        // And one that was not at its end goes back to where it was.
+        chat.look_at_row(0, short);
+        chat.look_back(2, false);
+        chat.settle(chat.rows(short.reading).len(), short.transcript);
+        assert_eq!(chat.top(), 2);
+        assert!(!chat.at_the_end());
     }
 }

@@ -1845,7 +1845,7 @@ impl App {
         let Some(picker) = self.picker.as_mut().filter(|picker| picker.is_searching()) else {
             return;
         };
-        if self.search.searching.get(picker.tab()) != Some(&Scope::Symbols) {
+        if self.search.searching != Some(Scope::Symbols) {
             tracing::debug!("symbols with nothing waiting for them");
             return;
         }

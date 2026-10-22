@@ -2688,7 +2688,6 @@ impl App {
         }
     }
 
-    /// The key itself, which [`App::chat_key`] watches go by.
     /// The room the two halves of the conversation in front have, from the
     /// same functions the view lays them out with: a page of scrolling is
     /// the page on screen, and the caret moves by the rows the box really
@@ -2705,6 +2704,7 @@ impl App {
         }
     }
 
+    /// The key itself, which [`App::chat_key`] watches go by.
     fn offer_to_the_conversation(&mut self, key: &crossterm::event::KeyEvent) -> bool {
         if self.conversation().is_none() {
             return false;
