@@ -396,6 +396,19 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
         }
         Shown::Chat(_) => {
             if let Some(view) = chat::ChatView::new(app) {
+                // A list on the status bar is drawn over the foot of a
+                // conversation rather than taking room from it -- see
+                // `editor_room` -- so the rows the reader sees stop above
+                // it, which is where the bar does too.
+                let seen = app
+                    .picker()
+                    .filter(|list| {
+                        list.layout() != obelus_component::picker::PickerLayout::FullArea
+                    })
+                    .map_or(regions.editor.height, |list| {
+                        picker::room_above(list, regions.editor).height
+                    });
+                let view = view.the_reader_has(seen);
                 bars::of(Whose::Conversation, || view.render(regions.editor, cells));
             }
         }

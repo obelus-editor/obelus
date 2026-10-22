@@ -4,7 +4,7 @@
 use obelus_font::{Fonts, Size};
 
 use super::{ground::runs_from, setup::halved, *};
-use crate::grid::{Barred, Capped, Look, Page, Rolled, Ruled, Spun};
+use crate::grid::{Barred, Look, Page, Rolled, Ruled, Said, Spun};
 
 impl Painter {
     /// The bands drawn behind where their lists have got to.
@@ -27,10 +27,17 @@ impl Painter {
     /// with it -- every line an agent wrote behind a list was the list
     /// coming up again. A band the pane's own view drew is the list, and
     /// moves.
+    ///
+    /// `panes` is each pane's glass, the first pane's first where it is the
+    /// first level: the glass and not its cells, because the half row above
+    /// a list's line is the page's, and held still with the list it was a
+    /// strip of the page that did not scroll. `first` is the first pane's
+    /// cells, which is where the page layer is held apart -- see `standing`.
     pub(super) fn catching_up(
         &mut self,
         bands: &[Rolled<'_>],
         panes: &[[f32; 4]],
+        first: Option<[f32; 4]>,
         stack: &[&Behind],
         fonts: &mut Fonts,
     ) {
@@ -123,9 +130,26 @@ impl Painter {
                 .filter(|&(other, _)| other != at)
                 .map(|(_, room)| *room)
                 .collect();
+            // Each piece by the layer its pixels are in: the page under
+            // the first pane is held apart, so a row coming out from under
+            // the list is the page's -- see `by_source`.
+            let shift = band.behind * cell.height;
+            let (page, elsewhere) = match band.under {
+                true => (
+                    first.filter(|pane| beneath(*room, *pane, true).is_some()),
+                    &panes[usize::from(first.is_some())..],
+                ),
+                false => (None, &[][..]),
+            };
             for part in sliding(*room, panes, band.under) {
                 for piece in tiles(part, &others) {
-                    self.slid_piece(piece, *room, band.behind * cell.height, 1.0);
+                    for (piece, from) in by_source(piece, shift, page, elsewhere) {
+                        match from {
+                            Source::Frame => self.slid_piece(piece, *room, shift, 1.0),
+                            Source::Page => self.slid_from_the_page(piece, *room, shift),
+                            Source::Nowhere => {}
+                        }
+                    }
                 }
             }
 
@@ -316,11 +340,11 @@ impl Painter {
     /// Out of a picture rather than drawn from cells, for the reason a bar
     /// catching up is: a pane is glass, and its cells carry its own colour
     /// where the glass let what was behind show through.
-    pub(super) fn going(&mut self, along: Option<f32>) {
+    pub(super) fn going(&mut self, along: Option<f32>, cell: CellSize) {
         let Some(along) = along else {
             return;
         };
-        let shifts: Vec<([f32; 4], f32)> = self
+        let shifts: Vec<([f32; 4], f32, Joined)> = self
             .gone
             .iter()
             .map(|&(pane, joined, _)| {
@@ -328,10 +352,30 @@ impl Painter {
                     Joined::Below => 1.0,
                     _ => -1.0,
                 };
-                (pane, toward * along * (pane[3] - pane[1]) * TRAVEL)
+                (pane, toward * along * (pane[3] - pane[1]) * TRAVEL, joined)
             })
             .collect();
         let start = self.quads.len();
+        // Each one's shadow first, from the edge it has got back to and
+        // going as it goes: the pieces below are cut to the pane, and a
+        // shadow is the one part of a pane outside it, so taken with them
+        // it was gone the moment the pane began to go. The way a pane
+        // arriving casts from the edge it has reached -- see `lay`.
+        for &(pane, shift, joined) in &shifts {
+            if let Some(joined) = casting(joined) {
+                self.shadow(
+                    reached(pane, shift),
+                    0.0,
+                    joined,
+                    cell.height * SHADOW_SPREAD,
+                    1.0 - along,
+                );
+            }
+        }
+        let shifts: Vec<([f32; 4], f32)> = shifts
+            .into_iter()
+            .map(|(pane, shift, _)| (pane, shift))
+            .collect();
         match self.left_lifted {
             // The glass stands where it was, over what it showed, and only
             // as much of it as the pane still covers: the slab goes and
@@ -391,12 +435,23 @@ impl Painter {
     /// region less the rooms of the bands inside it, and each of those
     /// puts back its own.
     pub(super) fn slid_piece(&mut self, piece: [f32; 4], room: [f32; 4], shift: f32, fade: f32) {
+        self.slid_from(piece, room, shift, fade, SLID);
+    }
+
+    /// The same, out of the page layer's own picture -- see `by_source`.
+    fn slid_from_the_page(&mut self, piece: [f32; 4], room: [f32; 4], shift: f32) {
+        self.slid_from(piece, room, shift, 1.0, SLID | UNDER_GLASS);
+    }
+
+    /// A piece taken from a picture `shift` pixels further up, as `flags`
+    /// say which picture.
+    fn slid_from(&mut self, piece: [f32; 4], room: [f32; 4], shift: f32, fade: f32, flags: u32) {
         let [left, top, far, low] = piece;
         self.quads.push(Quad {
             rect: [left, top, (far - left).max(1.0), (low - top).max(1.0)],
             uv: room,
             colour: [0.0, 0.0, 0.0, fade],
-            flags: SLID,
+            flags,
             radius: shift,
             layer: 0,
             lower: 0.0,
@@ -412,12 +467,11 @@ impl Painter {
     pub(super) fn pane_under(
         &mut self,
         behind: &Behind,
-        barred: &[Barred],
-        capped: &[Capped],
-        spun: &[Spun],
+        said: &Said<'_>,
         turn: Option<f32>,
         fonts: &mut Fonts,
     ) {
+        let (barred, capped, spun) = (said.barred, said.capped, said.spun);
         let cell = fonts.cell();
         for y in behind.area.top()..behind.area.bottom() {
             let ground = self.ground_colour();
@@ -466,6 +520,41 @@ impl Painter {
             if let Some(look) = mark.behind(behind) {
                 self.turn(mark, look, turn, cell);
             }
+        }
+        // And the plates the page had under the pane -- the cursor's pair,
+        // what a search found -- which are what a window draws those cells'
+        // grounds as: left out, the page in this picture was a terminal's,
+        // a square where the page has a plate, and a row coming out from
+        // under the list wore the square until it arrived. Plates and no
+        // light, which would reach out of the pane and onto nothing this
+        // picture holds.
+        let (paired, found) = said.plated_behind;
+        let ground = self.ground_colour();
+        let corner = (cell.height * HELD_CORNER).min(cell.width / 2.0);
+        let plates = paired
+            .iter()
+            .filter(|half| half.still_behind(behind))
+            .map(|half| half.area)
+            .chain(
+                found
+                    .iter()
+                    .filter(|run| run.still_behind(behind))
+                    .map(|run| run.area),
+            );
+        for area in plates.collect::<Vec<_>>() {
+            let Some(look) = behind.look(area.x, area.y) else {
+                continue;
+            };
+            let [r, g, b, _] =
+                super::ground::lifted(ground, rgba(look.background, Ink::Background), PAIR_LIFT);
+            self.rounded(
+                f32::from(area.x) * cell.width,
+                f32::from(area.y) * cell.height,
+                f32::from(area.width) * cell.width,
+                cell.height,
+                corner,
+                [r, g, b, 1.0],
+            );
         }
     }
 
@@ -998,6 +1087,64 @@ pub(super) fn scrolled_past(top: f32, bottom: f32, shift: f32) -> (f32, f32) {
 /// agent wrote.
 pub(super) fn sliding(room: [f32; 4], panes: &[[f32; 4]], under: bool) -> Vec<[f32; 4]> {
     tiles(room, if under { panes } else { &[] })
+}
+
+/// Which layer a piece of a band slid into place takes its pixels from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Source {
+    /// The frame, which is the page wherever no pane is over it.
+    Frame,
+    /// The page layer alone, under the first pane -- see `standing`.
+    Page,
+    /// Nothing: under a pane whose page no picture holds. Left undrawn, so
+    /// what shows is the page the band scrolled off, at the place it has
+    /// got to -- see `catching_up`.
+    Nowhere,
+}
+
+/// `piece` cut by where its pixels come from, when it is taken from
+/// `shift` pixels further up the frame -- the pixel at `y` is the frame's
+/// at `y - shift`, so a source under a pane is a piece as far down from it.
+///
+/// What the layers are for, kept while the page moves. The frame has the
+/// panes composed over the page, so the rows of a band that come from
+/// under a pane, taken out of it, were the pane: scrolling back under a
+/// list on the status bar, the list's top edge was drawn again above the
+/// list and shrank away, and the rows that belonged there arrived only
+/// when the slide did. `page` is where the page layer is held apart --
+/// under the first pane -- and `elsewhere` the other panes, which hold no
+/// page of their own.
+pub(super) fn by_source(
+    piece: [f32; 4],
+    shift: f32,
+    page: Option<[f32; 4]>,
+    elsewhere: &[[f32; 4]],
+) -> Vec<([f32; 4], Source)> {
+    let moved = |hole: [f32; 4]| [hole[0], hole[1] + shift, hole[2], hole[3] + shift];
+    let holes = page
+        .map(|hole| (moved(hole), Source::Page))
+        .into_iter()
+        .chain(elsewhere.iter().map(|hole| (moved(*hole), Source::Nowhere)));
+    let mut found = Vec::new();
+    let mut rest = vec![piece];
+    for (hole, from) in holes {
+        let mut kept = Vec::with_capacity(rest.len());
+        for part in rest {
+            let inside = [
+                part[0].max(hole[0]),
+                part[1].max(hole[1]),
+                part[2].min(hole[2]),
+                part[3].min(hole[3]),
+            ];
+            if inside[0] < inside[2] && inside[1] < inside[3] {
+                found.push((inside, from));
+            }
+            kept.extend(tiles(part, &[hole]));
+        }
+        rest = kept;
+    }
+    found.extend(rest.into_iter().map(|part| (part, Source::Frame)));
+    found
 }
 
 /// The part of a band's room a pane is over, where the band is under the

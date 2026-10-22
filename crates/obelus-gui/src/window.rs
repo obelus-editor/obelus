@@ -193,6 +193,7 @@ impl Left {
             paired: &self.paired,
             fading: &[],
             found: &self.found,
+            plated_behind: (&[], &[]),
             stack: &self.stack,
             bands: &[],
         }
@@ -491,6 +492,11 @@ struct Showing {
     found: Vec<Finding>,
     /// And on the one being laid out.
     finding: Vec<Finding>,
+    /// The halves of a pair and the runs a search found that a pane has been
+    /// put over, for the picture of what it was put over -- see
+    /// `Said::plated_behind`.
+    paired_behind: Vec<Paired>,
+    found_behind: Vec<Finding>,
     /// Which bands of rows are lists, how far down each has got and what
     /// bar says so, on the frame being shown.
     ///
@@ -624,6 +630,8 @@ impl Showing {
             unpaired: Vec::new(),
             found: Vec::new(),
             finding: Vec::new(),
+            paired_behind: Vec::new(),
+            found_behind: Vec::new(),
             ruling: Vec::new(),
             linked: Vec::new(),
             linking: Vec::new(),
@@ -1636,6 +1644,7 @@ impl ApplicationHandler<Waking> for Showing {
                                 std::mem::take(&mut self.pairing),
                                 &mut self.paired,
                                 &mut self.unpaired,
+                                &mut self.paired_behind,
                                 &self.page,
                                 &mut self.motion,
                                 Instant::now(),
@@ -1644,10 +1653,10 @@ impl ApplicationHandler<Waking> for Showing {
                             // and only where nothing has been put over it
                             // since -- and whether it is another match,
                             // which is what puts its plate down.
-                            self.found = Finding::joined(std::mem::take(&mut self.finding))
-                                .into_iter()
-                                .filter(|run| run.still_said(&self.page))
-                                .collect();
+                            (self.found, self.found_behind) =
+                                Finding::joined(std::mem::take(&mut self.finding))
+                                    .into_iter()
+                                    .partition(|run| run.still_said(&self.page));
                             self.motion.found_drawn(
                                 self.found.iter().map(|run| run.found),
                                 Instant::now(),
@@ -2098,6 +2107,7 @@ impl ApplicationHandler<Waking> for Showing {
                         paired: &self.paired,
                         fading: &fading,
                         found: &self.found,
+                        plated_behind: (&self.paired_behind, &self.found_behind),
                         stack: &self.stack,
                         bands: &rolled,
                     },
@@ -2502,12 +2512,19 @@ fn pairs_arrived(
     said: Vec<Paired>,
     paired: &mut Vec<Paired>,
     unpaired: &mut Vec<Paired>,
+    behind: &mut Vec<Paired>,
     page: &Page,
     motion: &mut Motion,
     now: Instant,
 ) {
-    let was = std::mem::replace(paired, said);
-    paired.retain(|half| half.still_said(page));
+    // The halves a pane has been put over are kept apart rather than let
+    // go: the picture of what the pane was put over is the page with its
+    // plates on it -- see `pane_under`. Not lit, and not the pair the
+    // light comes on for, which is the one the reader can see.
+    let (shown, covered): (Vec<Paired>, Vec<Paired>) =
+        said.into_iter().partition(|half| half.still_said(page));
+    *behind = covered;
+    let was = std::mem::replace(paired, shown);
     for half in paired.iter_mut() {
         half.hold(page);
     }
@@ -2910,7 +2927,15 @@ mod tests {
         let mut motion = Motion::new(None);
         let (mut paired, mut unpaired) = (Vec::new(), Vec::new());
         let mut arrive = |said, page: &Page, at| {
-            pairs_arrived(said, &mut paired, &mut unpaired, page, &mut motion, at);
+            pairs_arrived(
+                said,
+                &mut paired,
+                &mut unpaired,
+                &mut Vec::new(),
+                page,
+                &mut motion,
+                at,
+            );
             (xs(&paired), xs(&unpaired))
         };
         let base = Instant::now();

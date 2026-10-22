@@ -155,14 +155,7 @@ impl Painter {
                 _ => self.quads.len(),
             };
             match (at, over.is_a_box()) {
-                (0, false) => self.pane_under(
-                    over,
-                    said.barred,
-                    said.capped,
-                    said.spun,
-                    moving.turn,
-                    fonts,
-                ),
+                (0, false) => self.pane_under(over, &said, moving.turn, fonts),
                 _ => self.seen_under(over, lower, said.spun, moving.turn, fonts),
             }
             let under = start..self.quads.len();
@@ -365,7 +358,7 @@ impl Painter {
             self.covering(&[pane]);
             // Under the one arriving, which comes over it: the files come
             // down over the palette going.
-            self.going(moving.leaving);
+            self.going(moving.leaving, cell);
             // The glass coming up where it has reached, over what stands
             // under it in the frame -- and then what is written on it,
             // slid in out of its own picture.
@@ -390,21 +383,24 @@ impl Painter {
                 );
             }
         } else if !catching_up.is_empty() {
-            // The pane's cells rather than its glass, which starts half
-            // way down the rule over it: the half row above the line,
-            // slid, would be filled from inside the list.
+            // Each pane's glass, which starts half way down the rule over
+            // it: the half row above the line is the page's, and slides
+            // with it -- taking what comes from under the list out of the
+            // page layer rather than out of the list (`by_source`).
             let panes: Vec<[f32; 4]> = stack
                 .iter()
-                .filter(|over| !over.is_a_box())
-                .map(|over| box_of(over.area, cell))
+                .enumerate()
+                .filter(|(_, over)| !over.is_a_box())
+                .map(|(at, _)| self.placed.levels[at].rect)
                 .collect();
+            let first = first.map(|over| box_of(over.area, cell));
             self.placed.composed = true;
-            self.catching_up(catching_up, &panes, &stack, fonts);
+            self.catching_up(catching_up, &panes, first, &stack, fonts);
             // And the panes' shadows over the page put back -- see `shadows`.
             self.panes_shadows(&stack, cell);
-            self.going(moving.leaving);
+            self.going(moving.leaving, cell);
         } else {
-            self.going(moving.leaving);
+            self.going(moving.leaving, cell);
         }
         // The buttons over a pane on its way in or out -- see `bar_on_top`.
         if matches!(bar_on_top, Some(BarOnTop::Arriving | BarOnTop::Leaving)) {

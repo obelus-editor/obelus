@@ -348,6 +348,11 @@ pub(crate) struct Said<'a> {
     pub(crate) fading: &'a [(Paired, f32)],
     /// And which runs of cells are what a search found.
     pub(crate) found: &'a [Finding],
+    /// And the plates a pane has been put over -- the halves of a pair and
+    /// the runs a search found that the page no longer shows, because a
+    /// pane is over them -- for the picture of what that pane was put
+    /// over, which is the page with its plates on it. See `pane_under`.
+    pub(crate) plated_behind: (&'a [Paired], &'a [Finding]),
     /// And what is under each pane and each box, furthest first: each is
     /// glass over everything before it.
     pub(crate) stack: &'a [Behind],
@@ -628,6 +633,20 @@ impl Paired {
             .is_some_and(|(held, _)| self.bracket(page) == Some(held))
     }
 
+    /// Whether this half is in the picture of what a pane was put over:
+    /// said before the pane, under it, and a bracket in the cell the pane
+    /// was put over -- `Finding::still_behind`, for a pair.
+    pub(crate) fn still_behind(&self, behind: &Behind) -> bool {
+        self.depth <= behind.depth
+            && behind.area.intersection(self.area) == self.area
+            && behind
+                .look(self.area.x, self.area.y)
+                .and_then(|look| look.text.chars().next())
+                .is_some_and(|c| {
+                    obelus_syntax::brackets::opens(c) || obelus_syntax::brackets::closes(c)
+                })
+    }
+
     /// Writes down what the cell holds, as the frame that said it arrives.
     pub(crate) fn hold(&mut self, page: &Page) {
         self.held = self
@@ -667,6 +686,13 @@ impl Finding {
     /// lying on a row of the list.
     pub(crate) fn still_said(&self, page: &Page) -> bool {
         (self.area.left()..self.area.right()).all(|x| page.layer(x, self.area.y) <= self.depth)
+    }
+
+    /// Whether this is in the picture of what a pane was put over: said
+    /// before the pane, and all of it under the pane -- the question a cap
+    /// asks (`Capped::still_behind`), for a run the page no longer shows.
+    pub(crate) fn still_behind(&self, behind: &Behind) -> bool {
+        self.depth <= behind.depth && behind.area.intersection(self.area) == self.area
     }
 
     /// The runs said cell by cell joined into one each: the cells of one
@@ -3083,5 +3109,54 @@ mod tests {
             ],
             "{runs:?}"
         );
+    }
+
+    /// A plate a pane was put over is in the picture of what it was put
+    /// over: said before the pane and all of it under the pane -- and for
+    /// half a pair, a bracket in the cell the pane was put over.
+    ///
+    /// Deliberate breaks: leave out the depth, and a run the pane's own
+    /// list said -- a match in a row of the list -- is drawn as the page's
+    /// under it; leave out the bracket, and a pair moved off since is drawn
+    /// on whatever the pane was put over in its place.
+    #[test]
+    fn a_plate_a_pane_was_put_over_is_in_its_picture() {
+        let mut cells = vec![Cell::default(); 10 * 3];
+        cells[10 + 4].set_symbol("(");
+        let behind = Behind {
+            area: Rect::new(0, 5, 10, 3),
+            joined: Joined::Below,
+            ground: Color::Reset,
+            cells,
+            depth: 1,
+        };
+        let found = obelus_ui::shapes::Found {
+            page: 1,
+            row: 6,
+            start: 2,
+        };
+        let run = |area, depth| Finding { area, found, depth };
+        assert!(run(Rect::new(2, 6, 3, 1), 0).still_behind(&behind));
+        assert!(
+            !run(Rect::new(2, 6, 3, 1), 2).still_behind(&behind),
+            "the pane's own"
+        );
+        assert!(
+            !run(Rect::new(8, 6, 4, 1), 0).still_behind(&behind),
+            "half out from under it"
+        );
+
+        let half = |x| Paired {
+            area: Rect::new(x, 6, 1, 1),
+            pair: Pair {
+                document: 1,
+                version: 1,
+                open: 0,
+            },
+            depth: 0,
+            held: None,
+        };
+        assert!(half(4).still_behind(&behind), "the bracket");
+        assert!(!half(5).still_behind(&behind), "no bracket there");
     }
 }

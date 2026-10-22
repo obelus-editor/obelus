@@ -418,6 +418,7 @@ impl Painter {
             scratch,
             scratch_bindings,
             picture: None,
+            standing: None,
             lifted: None,
             left: None,
             left_lifted: None,
@@ -553,13 +554,14 @@ impl Painter {
             .collect();
         let scratch = made_to_draw_into(&self.device, self.view, halved(width), halved(height));
         let scratch_bindings = binder.bound(&scratch, &self.nothing);
-        let picture = self
-            .picture
-            .as_ref()
-            .map(|_| Whole::made(&binder, &self.nothing, self.view, width, height));
+        let pictures = self.picture.as_ref().map(|_| {
+            let standing = Whole::made(&binder, &self.nothing, self.view, width, height);
+            let picture = Whole::made(&binder, &standing.view, self.view, width, height);
+            (picture, standing)
+        });
         self.levels = levels;
         (self.scratch, self.scratch_bindings) = (scratch, scratch_bindings);
-        self.picture = picture;
+        (self.picture, self.standing) = pictures.unzip();
         // Made again by the next frame that wants it, at the new size.
         self.lifted = None;
         // A picture of the window at its old size is a pane leaving from the
@@ -589,12 +591,26 @@ impl Painter {
     /// What making it costs is the first frame of a pane coming in: 1.6ms
     /// where it was 1.25, measured over a dozen openings, for 31 MiB of a
     /// 1882 by 2052 window given back while nothing is open.
+    ///
+    /// And the page layer's picture with it, which the frame's reads as its
+    /// second: the two are wanted at the same moments -- a band scrolling
+    /// under a pane -- and made together, the frame's bindings never point
+    /// at a page layer that is not there.
     fn picture_while_wanted(&mut self) {
         let placed = &self.placed;
         let wanted = placed.composed || placed.under.is_some() || !placed.levels.is_empty();
         match (wanted, self.picture.is_some()) {
-            (true, false) => self.picture = Some(self.whole()),
-            (false, true) => self.picture = None,
+            (true, false) => {
+                let standing = self.whole();
+                let (width, height) = (self.configured.width, self.configured.height);
+                let picture = Whole::made(&self.binder(), &standing.view, self.view, width, height);
+                self.picture = Some(picture);
+                self.standing = Some(standing);
+            }
+            (false, true) => {
+                self.picture = None;
+                self.standing = None;
+            }
             _ => {}
         }
         // And what is written on a pane on its way in, only for as long as
@@ -616,7 +632,15 @@ impl Painter {
             .map(|seen| binder.bound(&seen.backdrop, &seen.blurred))
             .collect();
         let scratch = binder.bound(&self.scratch, &self.nothing);
-        let showing = (self.picture.as_ref()).map(|whole| binder.bound(&whole.view, &self.nothing));
+        // The frame's with the page layer as its second picture -- see
+        // `standing`.
+        let page = self
+            .standing
+            .as_ref()
+            .map_or(&self.nothing, |whole| &whole.view);
+        let showing = (self.picture.as_ref()).map(|whole| binder.bound(&whole.view, page));
+        let standing =
+            (self.standing.as_ref()).map(|whole| binder.bound(&whole.view, &self.nothing));
         let left = (self.left.as_ref()).map(|whole| binder.bound(&whole.view, &self.nothing));
         let lifted = (self.lifted.as_ref()).map(|whole| binder.bound(&whole.view, &self.nothing));
         let left_lifted =
@@ -629,6 +653,9 @@ impl Painter {
         }
         self.scratch_bindings = scratch;
         if let (Some(whole), Some(bindings)) = (self.picture.as_mut(), showing) {
+            whole.bindings = bindings;
+        }
+        if let (Some(whole), Some(bindings)) = (self.standing.as_mut(), standing) {
             whole.bindings = bindings;
         }
         if let (Some(whole), Some(bindings)) = (self.left.as_mut(), left) {
@@ -874,19 +901,20 @@ impl Painter {
         // page does none of this.
         match placed.under.clone() {
             // A band scrolling under the pane: what is behind it is drawn
-            // where it stands into the frame's picture, which nothing has
-            // drawn into yet, and put back into the backdrop with the band
-            // taken from where it has got to -- the same two steps the
-            // screen is put back in, so what the glass shows moves with
-            // what is round it.
+            // where it stands into the page layer's own picture, and put
+            // back into the backdrop with the band taken from where it has
+            // got to -- the same two steps the screen is put back in, so
+            // what the glass shows moves with what is round it. Kept past
+            // this pass, because a row of the screen sliding past the
+            // pane's edge is taken from it too -- see `standing`.
             // Less the picture under the page, which stands still while the
             // band goes over it: drawn into the backdrop first, and what is
             // put back over it is clear where it is the page.
             Some((above, put_back)) => {
-                if let Some(picture) = &self.picture {
+                if let Some(standing) = &self.standing {
                     {
                         let mut pass =
-                            self.cleared(encoder, "obelus behind, standing", &picture.view);
+                            self.cleared(encoder, "obelus behind, standing", &standing.view);
                         pass.set_bind_group(0, &self.plain_bindings, &[]);
                         drawing(&mut pass, placed.hung..placed.behind().max(placed.hung));
                         drawing(&mut pass, above);
@@ -894,7 +922,7 @@ impl Painter {
                     let mut pass = self.pass(encoder, "obelus behind", &self.levels[0].backdrop);
                     pass.set_bind_group(0, &self.plain_bindings, &[]);
                     drawing(&mut pass, 0..placed.hung);
-                    pass.set_bind_group(0, &picture.bindings, &[]);
+                    pass.set_bind_group(0, &standing.bindings, &[]);
                     drawing(&mut pass, put_back);
                 }
             }

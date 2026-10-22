@@ -1060,7 +1060,7 @@ fn lit_within(
 
 /// `to` carried on away from `from`, to `by` times as far from it as it
 /// is -- `away` is twice.
-fn lifted(from: [f32; 4], to: [f32; 4], by: f32) -> [f32; 4] {
+pub(super) fn lifted(from: [f32; 4], to: [f32; 4], by: f32) -> [f32; 4] {
     let mut out = to;
     for channel in 0..3 {
         out[channel] = (to[channel] - from[channel])

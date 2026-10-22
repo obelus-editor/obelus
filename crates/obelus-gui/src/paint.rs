@@ -226,6 +226,17 @@ pub(crate) struct Painter {
     /// one most often on the screen, and a picture the size of it is the
     /// memory of a whole window kept for a moment that is not coming.
     picture: Option<Whole>,
+    /// The page layer alone, where it stands, under the first pane and in
+    /// the rows of a band above it: what the first pane's glass reads while
+    /// a band scrolls under it, and what a row sliding past the pane's edge
+    /// is taken from where it comes from under the pane.
+    ///
+    /// Its own picture rather than the frame's, which is what it was drawn
+    /// into and then cleared for the frame: the frame has the pane composed
+    /// over the page, so a row taken from under the pane out of it was the
+    /// list's top edge drawn again above the list. Kept with `picture`, and
+    /// read through its bindings' second picture -- see `UNDER_GLASS`.
+    standing: Option<Whole>,
     /// What is written on a pane on its way in, on nothing: its rows, its
     /// letters, its caret -- everything said over the page after its glass.
     ///
@@ -983,6 +994,11 @@ const SEAM_BASE: f32 = 1.5;
 const FRAME: u32 = 32;
 /// And the pane out of it, higher up than it will end.
 const SLID: u32 = 64;
+/// Beside `SLID`: taken from the page layer's own picture rather than the
+/// frame, for a row of a band whose pixels come from under the first pane
+/// -- see `glass::by_source`. The one bit left free between the held
+/// plate's turns and the light round a hold.
+const UNDER_GLASS: u32 = 268_435_456;
 
 /// What the shader needs to know about the window.
 #[repr(C)]
@@ -1858,7 +1874,8 @@ mod tests {
 
     use super::{
         glass::{
-            above_its_line, behind_row, beneath, casting, lettered_behind, reached, sliding, tiles,
+            Source, above_its_line, behind_row, beneath, by_source, casting, lettered_behind,
+            reached, sliding, tiles,
         },
         ground::{held_runs, runs, without},
         shapes::underline_ink,
@@ -2207,6 +2224,50 @@ mod tests {
         );
     }
 
+    /// A row of a band slid into place takes its pixels from the layer
+    /// they are in: from under the first pane out of the page layer, from
+    /// under another pane out of nothing, and otherwise out of the frame.
+    ///
+    /// The page scrolling back under a list on the status bar, the rows
+    /// just above the list come from under it. Out of the frame that is the
+    /// list, which is what showed there -- its top edge again above itself,
+    /// shrinking away -- while the rows that belonged arrived only with the
+    /// slide. Deliberate breaks: move the holes the other way (`- shift`),
+    /// and the page is taken for rows that come from above the list and
+    /// the frame for the ones from under it; answer `Frame` for the first
+    /// pane's hole, which is the bug.
+    #[test]
+    fn a_row_coming_out_from_under_a_list_is_the_pages() {
+        // A band 0..100 down with the list over 60..100, scrolled back: a
+        // row is taken from `y - shift`, so a shift of -10 takes each from
+        // ten pixels below.
+        let list = [0.0, 60.0, 100.0, 100.0];
+        let above_the_list = [0.0, 0.0, 100.0, 60.0];
+        let parts = by_source(above_the_list, -10.0, Some(list), &[]);
+        assert!(
+            parts.contains(&([0.0, 50.0, 100.0, 60.0], Source::Page)),
+            "the rows that come from under the list: {parts:?}"
+        );
+        assert!(
+            parts.contains(&([0.0, 0.0, 100.0, 50.0], Source::Frame)),
+            "the rest: {parts:?}"
+        );
+        assert_eq!(parts.len(), 2, "{parts:?}");
+
+        // Scrolled on instead, every row comes from above: all the frame.
+        assert_eq!(
+            by_source(above_the_list, 10.0, Some(list), &[]),
+            vec![(above_the_list, Source::Frame)]
+        );
+
+        // And under a pane whose page nothing holds, nothing at all.
+        let parts = by_source(above_the_list, -10.0, None, &[list]);
+        assert!(
+            parts.contains(&([0.0, 50.0, 100.0, 60.0], Source::Nowhere)),
+            "{parts:?}"
+        );
+    }
+
     /// A pane's shadow falls from the edge the pane has reached.
     ///
     /// The frame is drawn once and put back in two pieces, and a shadow
@@ -2369,6 +2430,7 @@ mod tests {
             paired: &[],
             fading: &[],
             found: &[],
+            plated_behind: (&[], &[]),
             stack: &[],
             bands: &[],
         };
@@ -2430,6 +2492,7 @@ mod tests {
             paired: &[],
             fading: &[],
             found: &[],
+            plated_behind: (&[], &[]),
             stack: &[],
             bands: &[],
         };
@@ -2810,6 +2873,7 @@ mod tests {
             paired: &[],
             fading: &[],
             found: &[],
+            plated_behind: (&[], &[]),
             sheened: None,
             parted: &[],
             stack: &[],
