@@ -419,6 +419,7 @@ impl Painter {
             scratch_bindings,
             picture: None,
             standing: None,
+            page_bindings: None,
             lifted: None,
             left: None,
             left_lifted: None,
@@ -556,12 +557,15 @@ impl Painter {
         let scratch_bindings = binder.bound(&scratch, &self.nothing);
         let pictures = self.picture.as_ref().map(|_| {
             let standing = Whole::made(&binder, &self.nothing, self.view, width, height);
-            let picture = Whole::made(&binder, &standing.view, self.view, width, height);
-            (picture, standing)
+            let picture = Whole::made(&binder, &self.nothing, self.view, width, height);
+            let page = binder.bound(&picture.view, &standing.view);
+            ((picture, standing), page)
         });
         self.levels = levels;
         (self.scratch, self.scratch_bindings) = (scratch, scratch_bindings);
+        let (pictures, page) = pictures.unzip();
         (self.picture, self.standing) = pictures.unzip();
+        self.page_bindings = page;
         // Made again by the next frame that wants it, at the new size.
         self.lifted = None;
         // A picture of the window at its old size is a pane leaving from the
@@ -592,24 +596,24 @@ impl Painter {
     /// where it was 1.25, measured over a dozen openings, for 31 MiB of a
     /// 1882 by 2052 window given back while nothing is open.
     ///
-    /// And the page layer's picture with it, which the frame's reads as its
-    /// second: the two are wanted at the same moments -- a band scrolling
-    /// under a pane -- and made together, the frame's bindings never point
-    /// at a page layer that is not there.
+    /// And the page layer's picture with it, and the bindings that read the
+    /// two together: they are wanted at the same moments -- a band
+    /// scrolling under a pane -- and made together, `page_bindings` never
+    /// points at a picture that is not there.
     fn picture_while_wanted(&mut self) {
         let placed = &self.placed;
         let wanted = placed.composed || placed.under.is_some() || !placed.levels.is_empty();
         match (wanted, self.picture.is_some()) {
             (true, false) => {
-                let standing = self.whole();
-                let (width, height) = (self.configured.width, self.configured.height);
-                let picture = Whole::made(&self.binder(), &standing.view, self.view, width, height);
+                let (picture, standing) = (self.whole(), self.whole());
+                self.page_bindings = Some(self.binder().bound(&picture.view, &standing.view));
                 self.picture = Some(picture);
                 self.standing = Some(standing);
             }
             (false, true) => {
                 self.picture = None;
                 self.standing = None;
+                self.page_bindings = None;
             }
             _ => {}
         }
@@ -632,13 +636,13 @@ impl Painter {
             .map(|seen| binder.bound(&seen.backdrop, &seen.blurred))
             .collect();
         let scratch = binder.bound(&self.scratch, &self.nothing);
-        // The frame's with the page layer as its second picture -- see
-        // `standing`.
+        let showing = (self.picture.as_ref()).map(|whole| binder.bound(&whole.view, &self.nothing));
+        // And the two read together -- see `page_bindings`.
         let page = self
-            .standing
+            .picture
             .as_ref()
-            .map_or(&self.nothing, |whole| &whole.view);
-        let showing = (self.picture.as_ref()).map(|whole| binder.bound(&whole.view, page));
+            .zip(self.standing.as_ref())
+            .map(|(picture, standing)| binder.bound(&picture.view, &standing.view));
         let standing =
             (self.standing.as_ref()).map(|whole| binder.bound(&whole.view, &self.nothing));
         let left = (self.left.as_ref()).map(|whole| binder.bound(&whole.view, &self.nothing));
@@ -657,6 +661,9 @@ impl Painter {
         }
         if let (Some(whole), Some(bindings)) = (self.standing.as_mut(), standing) {
             whole.bindings = bindings;
+        }
+        if page.is_some() {
+            self.page_bindings = page;
         }
         if let (Some(whole), Some(bindings)) = (self.left.as_mut(), left) {
             whole.bindings = bindings;
@@ -1272,6 +1279,7 @@ impl Painter {
                 Reads::LeftLifted => {
                     (self.left_lifted.as_ref()).map_or(otherwise, |lifted| &lifted.bindings)
                 }
+                Reads::Page => self.page_bindings.as_ref().unwrap_or(otherwise),
             };
             pass.set_bind_group(0, bindings, &[]);
             drawing(pass, quads.clone());

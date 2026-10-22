@@ -440,6 +440,7 @@ impl Painter {
 
     /// The same, out of the page layer's own picture -- see `by_source`.
     fn slid_from_the_page(&mut self, piece: [f32; 4], room: [f32; 4], shift: f32) {
+        self.placed.from_the_page.push(self.quads.len());
         self.slid_from(piece, room, shift, 1.0, SLID | UNDER_GLASS);
     }
 

@@ -235,8 +235,16 @@ pub(crate) struct Painter {
     /// into and then cleared for the frame: the frame has the pane composed
     /// over the page, so a row taken from under the pane out of it was the
     /// list's top edge drawn again above the list. Kept with `picture`, and
-    /// read through its bindings' second picture -- see `UNDER_GLASS`.
+    /// read through `page_bindings` -- see `UNDER_GLASS`.
     standing: Option<Whole>,
+    /// The frame's picture with the page layer's as its second, for the
+    /// pieces taken out of the page layer and nothing else (`Reads::Page`).
+    ///
+    /// Not the frame's own bindings with the page layer put in them, which
+    /// it was: everything drawn with the frame read it then, and a list
+    /// scrolling inside its pane -- with no band under it, so a page layer
+    /// not drawn that frame -- went white for the length of the slide.
+    page_bindings: Option<wgpu::BindGroup>,
     /// What is written on a pane on its way in, on nothing: its rows, its
     /// letters, its caret -- everything said over the page after its glass.
     ///
@@ -352,6 +360,9 @@ struct Placed {
     arriving: Option<usize>,
     /// And the piece that puts that picture back on the screen.
     lifting: Option<Range<usize>>,
+    /// The pieces of bands taken out of the page layer rather than the
+    /// frame -- see `Reads::Page`.
+    from_the_page: Vec<usize>,
     /// Where what is written over the page begins, on the screen being
     /// kept for the panes that went: drawn into `left_lifted` where they
     /// were, and into `left` everywhere else.
@@ -485,6 +496,12 @@ enum Reads {
     Lifted,
     /// What was written on the panes that went.
     LeftLifted,
+    /// The frame with the page layer beside it: a row of a band taken from
+    /// under the first pane, out of the page layer -- see `UNDER_GLASS`.
+    /// A reading of its own, so that nothing else drawn with the frame
+    /// reads a page layer that is only drawn while a band scrolls under a
+    /// pane, and holds whatever it held last the rest of the time.
+    Page,
 }
 
 /// Runs of quads, each with the pictures it is drawn with.
@@ -621,6 +638,12 @@ fn catching(placed: &Placed) -> Plan {
                 .lifting
                 .clone()
                 .map(|lifting| (lifting, Reads::Lifted)),
+        )
+        .chain(
+            placed
+                .from_the_page
+                .iter()
+                .map(|&piece| (piece..piece + 1, Reads::Page)),
         )
         .collect();
     reading.sort_by_key(|(quads, _)| quads.start);
@@ -1808,6 +1831,37 @@ mod tests {
             );
         }
 
+        /// Of what is put back while a band catches up, only the pieces taken
+        /// out of the page layer read it, and everything else reads what it
+        /// read before there was one.
+        ///
+        /// The page layer is drawn only while a band scrolls under a pane;
+        /// read by everything put back with the frame, a list scrolling in
+        /// its own pane -- no band under it, a page layer left from before --
+        /// went white for the length of the slide. Deliberate break: draw
+        /// the pieces with the frame's own reading (`Reads::Nothing` for
+        /// `from_the_page` in `catching`), which is what puts the page layer
+        /// in front of everything else again.
+        #[test]
+        fn only_the_pieces_out_of_the_page_layer_read_it() {
+            let placed = Placed {
+                drawn: 10,
+                moved: 20,
+                gaps: vec![(12, 0)],
+                from_the_page: vec![15, 16],
+                ..Placed::default()
+            };
+            let plan = catching(&placed);
+            let paged: Vec<usize> = plan
+                .iter()
+                .filter(|(_, reads)| *reads == Reads::Page)
+                .flat_map(|(quads, _)| quads.clone())
+                .collect();
+            assert_eq!(paged, [15, 16], "{plan:?}");
+            let drawn: Vec<usize> = plan.iter().flat_map(|(quads, _)| quads.clone()).collect();
+            assert_eq!(drawn, (10..20).collect::<Vec<_>>(), "{plan:?}");
+        }
+
         /// What a level was put over is the glass of every level under it
         /// and what it was put over -- and never its own picture, which is
         /// the one being drawn into.
@@ -1823,7 +1877,7 @@ mod tests {
                     plan.iter().all(|(_, reads)| match reads {
                         Reads::Nothing => true,
                         Reads::Level(read) => *read < level,
-                        Reads::Left | Reads::Lifted | Reads::LeftLifted => false,
+                        Reads::Left | Reads::Lifted | Reads::LeftLifted | Reads::Page => false,
                     }),
                     "level {level} reads its own picture or one over it: {plan:?}"
                 );
