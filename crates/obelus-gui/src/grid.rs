@@ -641,10 +641,7 @@ impl Paired {
             && behind.area.intersection(self.area) == self.area
             && behind
                 .look(self.area.x, self.area.y)
-                .and_then(|look| look.text.chars().next())
-                .is_some_and(|c| {
-                    obelus_syntax::brackets::opens(c) || obelus_syntax::brackets::closes(c)
-                })
+                .is_some_and(|look| a_bracket(look.text).is_some())
     }
 
     /// Writes down what the cell holds, as the frame that said it arrives.
@@ -657,12 +654,19 @@ impl Paired {
     /// The bracket in the cell, where it is one and nothing is over it.
     fn bracket(&self, page: &Page) -> Option<char> {
         let (x, y) = (self.area.x, self.area.y);
-        let mut text = page.look(x, y).text.chars();
-        let bracket = text
-            .next()
-            .filter(|&c| obelus_syntax::brackets::opens(c) || obelus_syntax::brackets::closes(c))?;
-        (page.layer(x, y) <= self.depth && text.next().is_none()).then_some(bracket)
+        a_bracket(page.look(x, y).text).filter(|_| page.layer(x, y) <= self.depth)
     }
+}
+
+/// The bracket a cell holds, where what it holds is one and nothing else --
+/// the one judgement of whether a cell is half a pair, for the page and for
+/// what a pane was put over alike.
+fn a_bracket(text: &str) -> Option<char> {
+    let mut text = text.chars();
+    let bracket = text
+        .next()
+        .filter(|&c| obelus_syntax::brackets::opens(c) || obelus_syntax::brackets::closes(c))?;
+    text.next().is_none().then_some(bracket)
 }
 
 /// Where what a search found is in the frame being drawn: one run of cells

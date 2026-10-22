@@ -555,17 +555,25 @@ impl Painter {
             .collect();
         let scratch = made_to_draw_into(&self.device, self.view, halved(width), halved(height));
         let scratch_bindings = binder.bound(&scratch, &self.nothing);
-        let pictures = self.picture.as_ref().map(|_| {
-            let standing = Whole::made(&binder, &self.nothing, self.view, width, height);
-            let picture = Whole::made(&binder, &self.nothing, self.view, width, height);
-            let page = binder.bound(&picture.view, &standing.view);
-            ((picture, standing), page)
-        });
+        let picture = self
+            .picture
+            .as_ref()
+            .map(|_| Whole::made(&binder, &self.nothing, self.view, width, height));
+        // And the page layer's where there was one, with the bindings that
+        // read the two together -- see `page_bindings`.
+        let standing = self
+            .standing
+            .as_ref()
+            .zip(picture.as_ref())
+            .map(|(_, picture)| {
+                let standing = Whole::made(&binder, &self.nothing, self.view, width, height);
+                let page = binder.bound(&picture.view, &standing.view);
+                (standing, page)
+            });
         self.levels = levels;
         (self.scratch, self.scratch_bindings) = (scratch, scratch_bindings);
-        let (pictures, page) = pictures.unzip();
-        (self.picture, self.standing) = pictures.unzip();
-        self.page_bindings = page;
+        self.picture = picture;
+        (self.standing, self.page_bindings) = standing.unzip();
         // Made again by the next frame that wants it, at the new size.
         self.lifted = None;
         // A picture of the window at its old size is a pane leaving from the
@@ -596,26 +604,36 @@ impl Painter {
     /// where it was 1.25, measured over a dozen openings, for 31 MiB of a
     /// 1882 by 2052 window given back while nothing is open.
     ///
-    /// And the page layer's picture with it, and the bindings that read the
-    /// two together: they are wanted at the same moments -- a band
-    /// scrolling under a pane -- and made together, `page_bindings` never
-    /// points at a picture that is not there.
+    /// And the page layer's picture, from the first frame that has a band
+    /// scrolling under a pane -- the one thing that draws or reads it -- for
+    /// as long as the frame's is kept, and for the frame's reason: made and
+    /// let go with each slide, it would be another picture the size of the
+    /// window made at every press of a key that scrolls. Not made with the
+    /// frame's, which is wanted whenever anything is open at all: that was
+    /// the memory of a second window kept behind every list, for a slide
+    /// most of them never have.
     fn picture_while_wanted(&mut self) {
         let placed = &self.placed;
         let wanted = placed.composed || placed.under.is_some() || !placed.levels.is_empty();
+        let under = placed.under.is_some();
         match (wanted, self.picture.is_some()) {
-            (true, false) => {
-                let (picture, standing) = (self.whole(), self.whole());
-                self.page_bindings = Some(self.binder().bound(&picture.view, &standing.view));
-                self.picture = Some(picture);
-                self.standing = Some(standing);
-            }
+            (true, false) => self.picture = Some(self.whole()),
             (false, true) => {
                 self.picture = None;
                 self.standing = None;
                 self.page_bindings = None;
             }
             _ => {}
+        }
+        // Made beside the frame's, so `page_bindings` never points at a
+        // picture that is not there.
+        if under
+            && self.standing.is_none()
+            && let Some(picture) = &self.picture
+        {
+            let standing = self.whole();
+            self.page_bindings = Some(self.binder().bound(&picture.view, &standing.view));
+            self.standing = Some(standing);
         }
         // And what is written on a pane on its way in, only for as long as
         // one is: a fifth of a second, against a window's worth of memory.

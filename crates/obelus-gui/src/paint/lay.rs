@@ -397,6 +397,14 @@ impl Painter {
             self.placed.composed = true;
             self.catching_up(catching_up, &panes, first, &stack, fonts);
             // And the panes' shadows over the page put back -- see `shadows`.
+            // After the caret and the boxes, which `shadows` is before. The
+            // caret does not mind: with a pane open it is in the row the pane
+            // types into, which is the pane's, and a shadow falls outside the
+            // pane. A box near a pane's edge but not over it can stand in
+            // its shadow for the length of a slide -- a pane with something
+            // over it casts nothing (`casts`), and a box beside it is not
+            // over it. Boxes open beside a list are rare enough that the
+            // order is left as it is.
             self.panes_shadows(&stack, cell);
             self.going(moving.leaving, cell);
         } else {

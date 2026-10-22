@@ -2887,6 +2887,64 @@ mod tests {
         assert_eq!(Regrid::from(true, Some(14), 14.0).resized, None);
     }
 
+    /// A half of the cursor's pair a pane has been put over is kept apart,
+    /// for the picture of what the pane was put over, and is not the pair
+    /// the light comes on for.
+    ///
+    /// Deliberate break: let the covered halves go (`*behind = covered`
+    /// left out of `pairs_arrived`), and the bracket under the list is a
+    /// square in what its glass shows.
+    #[test]
+    fn a_half_a_pane_is_over_is_kept_apart() {
+        let mut page = Page::default();
+        page.resized(6, 3);
+        for (x, y, text) in [(0, 0, "("), (2, 2, ")")] {
+            let mut cell = ratatui::buffer::Cell::default();
+            cell.set_symbol(text);
+            page.apply(Update::Cell {
+                x,
+                y,
+                cell: Box::new(cell),
+            });
+        }
+        // A list over the bottom row.
+        page.put_over(&[crate::grid::Behind {
+            area: Rect::new(0, 2, 6, 1),
+            joined: obelus_ui::shapes::Joined::Below,
+            ground: ratatui::style::Color::Reset,
+            cells: Vec::new(),
+            depth: 0,
+        }]);
+        let half = |x, y| crate::grid::Paired {
+            area: Rect::new(x, y, 1, 1),
+            pair: obelus_ui::shapes::Pair {
+                document: 1,
+                version: 1,
+                open: 0,
+            },
+            depth: 0,
+            held: None,
+        };
+        let (mut paired, mut unpaired, mut behind) = (Vec::new(), Vec::new(), Vec::new());
+        pairs_arrived(
+            vec![half(0, 0), half(2, 2)],
+            &mut paired,
+            &mut unpaired,
+            &mut behind,
+            &page,
+            &mut Motion::new(None),
+            Instant::now(),
+        );
+        let at = |halves: &[crate::grid::Paired]| -> Vec<(u16, u16)> {
+            halves
+                .iter()
+                .map(|half| (half.area.x, half.area.y))
+                .collect()
+        };
+        assert_eq!(at(&paired), [(0, 0)], "the half on the page");
+        assert_eq!(at(&behind), [(2, 2)], "the half under the list");
+    }
+
     /// The pair the caret left is kept for its light to go out on, while
     /// its cell is still that bracket, and let go of once it has gone out.
     ///

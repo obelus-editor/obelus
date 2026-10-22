@@ -234,8 +234,10 @@ pub(crate) struct Painter {
     /// Its own picture rather than the frame's, which is what it was drawn
     /// into and then cleared for the frame: the frame has the pane composed
     /// over the page, so a row taken from under the pane out of it was the
-    /// list's top edge drawn again above the list. Kept with `picture`, and
-    /// read through `page_bindings` -- see `UNDER_GLASS`.
+    /// list's top edge drawn again above the list. Made the first time a band
+    /// scrolls under a pane and kept with `picture` from then on -- see
+    /// `picture_while_wanted` -- and read through `page_bindings`.
+    /// See `UNDER_GLASS`.
     standing: Option<Whole>,
     /// The frame's picture with the page layer's as its second, for the
     /// pieces taken out of the page layer and nothing else (`Reads::Page`).
@@ -1019,8 +1021,8 @@ const FRAME: u32 = 32;
 const SLID: u32 = 64;
 /// Beside `SLID`: taken from the page layer's own picture rather than the
 /// frame, for a row of a band whose pixels come from under the first pane
-/// -- see `glass::by_source`. The one bit left free between the held
-/// plate's turns and the light round a hold.
+/// -- see `glass::by_source`. The one bit left free, between the three a
+/// light says its rows in (`HELD_NEAR`) and the light itself (`LIGHT`).
 const UNDER_GLASS: u32 = 268_435_456;
 
 /// What the shader needs to know about the window.
@@ -1832,16 +1834,19 @@ mod tests {
         }
 
         /// Of what is put back while a band catches up, only the pieces taken
-        /// out of the page layer read it, and everything else reads what it
-        /// read before there was one.
+        /// out of the page layer are drawn with the page layer's reading, and
+        /// everything else with the frame's.
         ///
-        /// The page layer is drawn only while a band scrolls under a pane;
-        /// read by everything put back with the frame, a list scrolling in
-        /// its own pane -- no band under it, a page layer left from before --
-        /// went white for the length of the slide. Deliberate break: draw
-        /// the pieces with the frame's own reading (`Reads::Nothing` for
-        /// `from_the_page` in `catching`), which is what puts the page layer
-        /// in front of everything else again.
+        /// Which is the half of it a plan can say. The page layer is drawn
+        /// only while a band scrolls under a pane, and when the frame's own
+        /// bindings held it, everything put back with the frame read it: a
+        /// list scrolling in its own pane went white for the length of the
+        /// slide. That half is in `bound_again` and `picture_while_wanted`,
+        /// which bind pictures on a device, and no test here reaches it.
+        ///
+        /// Deliberate break: give `from_the_page` the frame's reading
+        /// (`Reads::Nothing` in `catching`). The pieces then read the frame,
+        /// the pane over the page, for the rows coming out from under it.
         #[test]
         fn only_the_pieces_out_of_the_page_layer_read_it() {
             let placed = Placed {
@@ -1929,7 +1934,7 @@ mod tests {
     use super::{
         glass::{
             Source, above_its_line, behind_row, beneath, by_source, casting, left_out,
-            lettered_behind, reached, sliding, tiles,
+            lettered_behind, plates_behind, reached, sliding, tiles,
         },
         ground::{held_runs, runs, without},
         shapes::underline_ink,
@@ -2275,6 +2280,56 @@ mod tests {
             beneath([0.0, 0.0, 100.0, 90.0], [0.0, 0.0, 100.0, 100.0], true),
             Some([0.0, 0.0, 100.0, 90.0]),
             "a transcript the settings are over"
+        );
+    }
+
+    /// The picture of what a pane was put over plates the page's plates it
+    /// covers -- a half of the cursor's pair, a run a search found -- and
+    /// none it does not.
+    ///
+    /// Deliberate break: answer the runs alone (the pairs' half of the chain
+    /// left off in `plates_behind`), and the bracket under the list is a
+    /// square in its picture.
+    #[test]
+    fn what_a_pane_was_put_over_keeps_its_plates() {
+        use crate::grid::{Finding, Paired};
+        let mut cells = vec![Cell::default(); 10 * 3];
+        cells[10 + 4].set_symbol("(");
+        let behind = Behind {
+            area: Rect::new(0, 5, 10, 3),
+            joined: obelus_ui::shapes::Joined::Below,
+            ground: Color::Reset,
+            cells,
+            depth: 1,
+        };
+        let half = Paired {
+            area: Rect::new(4, 6, 1, 1),
+            pair: obelus_ui::shapes::Pair {
+                document: 1,
+                version: 1,
+                open: 0,
+            },
+            depth: 0,
+            held: None,
+        };
+        let found = obelus_ui::shapes::Found {
+            page: 1,
+            row: 7,
+            start: 0,
+        };
+        let covered = Finding {
+            area: Rect::new(1, 7, 3, 1),
+            found,
+            depth: 0,
+        };
+        let above = Finding {
+            area: Rect::new(1, 2, 3, 1),
+            found,
+            depth: 0,
+        };
+        assert_eq!(
+            plates_behind(&behind, (&[half], &[covered, above])),
+            [half.area, covered.area]
         );
     }
 

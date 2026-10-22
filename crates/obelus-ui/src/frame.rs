@@ -69,12 +69,6 @@ pub fn regions(area: Rect) -> Regions {
 #[must_use]
 pub fn editor_room(area: Rect, app: &impl Screen) -> Rect {
     let editor = regions(area).editor;
-    let Some(list) = app
-        .picker()
-        .filter(|list| list.layout() != obelus_component::picker::PickerLayout::FullArea)
-    else {
-        return editor;
-    };
     // Nor a terminal: a list over it is over it, and its program is not
     // told it is smaller for as long as the palette is open -- which would
     // make a shell draw its prompt again under a list the reader is about
@@ -87,7 +81,16 @@ pub fn editor_room(area: Rect, app: &impl Screen) -> Rect {
         | Shown::Discussion(_)
         | Shown::Nothing => {}
     }
-    picker::room_above(list, editor)
+    above_a_list(app.picker(), editor)
+}
+
+/// What of `editor` is above `list`, where it is a list on the status bar
+/// -- the rows the reader can still see of what it is drawn over -- and all
+/// of it otherwise. One answer, for the room a document is read in and for
+/// how far a conversation's bar runs, which a list is drawn over instead.
+fn above_a_list(list: Option<&Picker>, editor: Rect) -> Rect {
+    list.filter(|list| list.layout() != obelus_component::picker::PickerLayout::FullArea)
+        .map_or(editor, |list| picker::room_above(list, editor))
 }
 
 /// The rows a document is *painted* on, which is not the room it is read
@@ -398,16 +401,12 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
             if let Some(view) = chat::ChatView::new(app) {
                 // A list on the status bar is drawn over the foot of a
                 // conversation rather than taking room from it -- see
-                // `editor_room` -- so the rows the reader sees stop above
-                // it, which is where the bar does too.
-                let seen = app
-                    .picker()
-                    .filter(|list| {
-                        list.layout() != obelus_component::picker::PickerLayout::FullArea
-                    })
-                    .map_or(regions.editor.height, |list| {
-                        picker::room_above(list, regions.editor).height
-                    });
+                // `editor_room` -- and so are the agent's own commands, so
+                // the rows the reader sees stop above whichever reaches
+                // higher, which is where the bar does too.
+                let seen = above_a_list(app.picker(), regions.editor)
+                    .height
+                    .min(above_a_list(app.slash(), regions.editor).height);
                 let view = view.the_reader_has(seen);
                 bars::of(Whose::Conversation, || view.render(regions.editor, cells));
             }

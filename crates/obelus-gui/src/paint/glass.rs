@@ -56,35 +56,8 @@ impl Painter {
                     ..self.quads[self.placed.levels[level].glass]
                 });
             }
-            // Where the page it scrolled off has got to, which is further
-            // back than the band by however much of the move is already
-            // done.
-            let offset = (band.behind - band.since) * cell.height;
             let rows = self.quads.len();
-            for y in room.top()..room.bottom() {
-                for x in room.left()..room.right() {
-                    let look = band.before.look(x, y);
-                    let left = f32::from(x) * cell.width;
-                    let top = f32::from(y).mul_add(cell.height, offset);
-                    // Nor the page over a picture, which stands where it
-                    // is under the band -- see `encode`.
-                    if glass.is_none_or(|level| look.background != stack[level].ground)
-                        && !(glass.is_none() && self.on_the_picture(look.background))
-                    {
-                        self.block(
-                            left,
-                            top,
-                            cell.width,
-                            cell.height,
-                            rgba(look.background, Ink::Background),
-                        );
-                    }
-                    if !look.text.trim().is_empty() {
-                        let ink = rgba(look.foreground, Ink::Foreground);
-                        self.glyphs_at((left, top), look, ink, 0, fonts, Size::Cell);
-                    }
-                }
-            }
+            self.scrolled_off(band, room.left()..room.right(), glass, stack, fonts);
             // Over a picture, what covers these is not opaque: the frame
             // is put back clear where it is the page, so these rows would
             // show through it -- the same line twice inside the band, drawn
@@ -142,6 +115,29 @@ impl Painter {
                         match from {
                             Source::Frame => self.slid_piece(piece, *room, shift, 1.0),
                             Source::Page => self.slid_from_the_page(piece, *room, shift),
+                            // Left to the page the band scrolled off, which
+                            // is drawn under all of it -- except over a
+                            // picture, where it is kept to the rows scrolled
+                            // past, and a strip of the picture showed here.
+                            // So drawn again for this piece alone.
+                            Source::Nowhere if self.laid.is_some() => {
+                                let across = band.room.left()..band.room.right();
+                                let mut columns = across.filter(|&x| {
+                                    f32::from(x) * cell.width < piece[2]
+                                        && f32::from(x + 1) * cell.width > piece[0]
+                                });
+                                let Some(from) = columns.next() else {
+                                    continue;
+                                };
+                                let to = columns.next_back().unwrap_or(from) + 1;
+                                let start = self.quads.len();
+                                self.scrolled_off(band, from..to, None, stack, fonts);
+                                for quad in &mut self.quads[start..] {
+                                    quad.flags |= ONLY_ROWS;
+                                    quad.radius = piece[1];
+                                    quad.lower = piece[3];
+                                }
+                            }
                             Source::Nowhere => {}
                         }
                     }
@@ -184,6 +180,46 @@ impl Painter {
                     });
                 }
                 self.slid(column, shift, 1.0);
+            }
+        }
+    }
+
+    /// The page a band scrolled off, where it has got to -- further back
+    /// than the band by however much of the move is already done -- in the
+    /// band's rows and the columns `columns` of them.
+    fn scrolled_off(
+        &mut self,
+        band: &Rolled<'_>,
+        columns: std::ops::Range<u16>,
+        glass: Option<usize>,
+        stack: &[&Behind],
+        fonts: &mut Fonts,
+    ) {
+        let cell = fonts.cell();
+        let room = band.room;
+        let offset = (band.behind - band.since) * cell.height;
+        for y in room.top()..room.bottom() {
+            for x in columns.clone() {
+                let look = band.before.look(x, y);
+                let left = f32::from(x) * cell.width;
+                let top = f32::from(y).mul_add(cell.height, offset);
+                // Nor the page over a picture, which stands where it
+                // is under the band -- see `encode`.
+                if glass.is_none_or(|level| look.background != stack[level].ground)
+                    && !(glass.is_none() && self.on_the_picture(look.background))
+                {
+                    self.block(
+                        left,
+                        top,
+                        cell.width,
+                        cell.height,
+                        rgba(look.background, Ink::Background),
+                    );
+                }
+                if !look.text.trim().is_empty() {
+                    let ink = rgba(look.foreground, Ink::Foreground);
+                    self.glyphs_at((left, top), look, ink, 0, fonts, Size::Cell);
+                }
             }
         }
     }
@@ -469,24 +505,61 @@ impl Painter {
     ) {
         let (barred, capped, spun) = (said.barred, said.capped, said.spun);
         let cell = fonts.cell();
+        // The plates the page had under the pane -- the cursor's pair, what
+        // a search found -- which are what a window draws those cells'
+        // grounds as: left out, the page in this picture was a terminal's,
+        // a square where the page has a plate, and a row coming out from
+        // under the list wore the square until it arrived. Plates and no
+        // light, which would reach out of the pane and onto nothing this
+        // picture holds.
+        let plates = plates_behind(behind, said.plated_behind);
+        let corner = (cell.height * HELD_CORNER).min(cell.width / 2.0);
         for y in behind.area.top()..behind.area.bottom() {
             let ground = self.ground_colour();
             let (grounds, lettered) = behind_row(behind, barred, spun, y);
+            // Where a plate is, the square under it would stand outside its
+            // corners -- the hole `backgrounds` leaves for the page's own.
+            let mut holes: Vec<(u16, u16)> = plates
+                .iter()
+                .filter(|area| area.y == y)
+                .map(|area| (area.x, area.right()))
+                .collect();
             for (start, end, colour) in grounds {
                 // Straight after the picture under the page, which is the
                 // page here already -- see `backgrounds`.
                 if self.on_the_picture(colour) {
                     continue;
                 }
-                // What a pane was put over is the page, so a hold in it
-                // is a plate on the page's own ground.
-                self.block(
-                    f32::from(start) * cell.width,
-                    f32::from(y) * cell.height,
-                    f32::from(end - start) * cell.width,
+                for (start, end) in super::ground::without(start, end, &mut holes) {
+                    // What a pane was put over is the page, so a hold in it
+                    // is a plate on the page's own ground.
+                    self.block(
+                        f32::from(start) * cell.width,
+                        f32::from(y) * cell.height,
+                        f32::from(end - start) * cell.width,
+                        cell.height,
+                        as_held(colour, self.holding, ground)
+                            .unwrap_or_else(|| rgba(colour, Ink::Background)),
+                    );
+                }
+            }
+            // Under the letters, which are what is on the plate.
+            for area in plates.iter().filter(|area| area.y == y) {
+                let Some(look) = behind.look(area.x, area.y) else {
+                    continue;
+                };
+                let [r, g, b, _] = super::ground::lifted(
+                    ground,
+                    rgba(look.background, Ink::Background),
+                    PAIR_LIFT,
+                );
+                self.rounded(
+                    f32::from(area.x) * cell.width,
+                    f32::from(area.y) * cell.height,
+                    f32::from(area.width) * cell.width,
                     cell.height,
-                    as_held(colour, self.holding, ground)
-                        .unwrap_or_else(|| rgba(colour, Ink::Background)),
+                    corner,
+                    [r, g, b, 1.0],
                 );
             }
             for x in lettered {
@@ -516,41 +589,6 @@ impl Painter {
             if let Some(look) = mark.behind(behind) {
                 self.turn(mark, look, turn, cell);
             }
-        }
-        // And the plates the page had under the pane -- the cursor's pair,
-        // what a search found -- which are what a window draws those cells'
-        // grounds as: left out, the page in this picture was a terminal's,
-        // a square where the page has a plate, and a row coming out from
-        // under the list wore the square until it arrived. Plates and no
-        // light, which would reach out of the pane and onto nothing this
-        // picture holds.
-        let (paired, found) = said.plated_behind;
-        let ground = self.ground_colour();
-        let corner = (cell.height * HELD_CORNER).min(cell.width / 2.0);
-        let plates = paired
-            .iter()
-            .filter(|half| half.still_behind(behind))
-            .map(|half| half.area)
-            .chain(
-                found
-                    .iter()
-                    .filter(|run| run.still_behind(behind))
-                    .map(|run| run.area),
-            );
-        for area in plates.collect::<Vec<_>>() {
-            let Some(look) = behind.look(area.x, area.y) else {
-                continue;
-            };
-            let [r, g, b, _] =
-                super::ground::lifted(ground, rgba(look.background, Ink::Background), PAIR_LIFT);
-            self.rounded(
-                f32::from(area.x) * cell.width,
-                f32::from(area.y) * cell.height,
-                f32::from(area.width) * cell.width,
-                cell.height,
-                corner,
-                [r, g, b, 1.0],
-            );
         }
     }
 
@@ -1085,6 +1123,26 @@ pub(super) fn sliding(room: [f32; 4], panes: &[[f32; 4]], under: bool) -> Vec<[f
     tiles(room, if under { panes } else { &[] })
 }
 
+/// The cells of the page's plates a pane was put over -- halves of the
+/// cursor's pair, runs a search found -- which the picture of what it was
+/// put over draws as plates, under their letters (`Painter::pane_under`).
+pub(super) fn plates_behind(
+    behind: &Behind,
+    (paired, found): (&[crate::grid::Paired], &[crate::grid::Finding]),
+) -> Vec<ratatui::layout::Rect> {
+    paired
+        .iter()
+        .filter(|half| half.still_behind(behind))
+        .map(|half| half.area)
+        .chain(
+            found
+                .iter()
+                .filter(|run| run.still_behind(behind))
+                .map(|run| run.area),
+        )
+        .collect()
+}
+
 /// The rooms of the bands that are not the one at `at` and do not hold it:
 /// what a band catching up leaves out of what it puts back, because each is
 /// put back by its own band.
@@ -1094,6 +1152,11 @@ pub(super) fn sliding(room: [f32; 4], panes: &[[f32; 4]], under: bool) -> Vec<[f
 /// it, which is all of its own, so it put nothing back: the list was a
 /// blank for as long as the page took to arrive, whenever the two scrolled
 /// at once.
+///
+/// Two bands that cross, neither holding the other, each leave the other's
+/// room out, and what they share is put back by neither for the length of
+/// the slide -- as it always was. No view lays two scrolling things across
+/// each other; a list is inside what it is over or beside it.
 pub(super) fn left_out(rooms: &[[f32; 4]], at: usize) -> Vec<[f32; 4]> {
     let Some(&own) = rooms.get(at) else {
         return Vec::new();
