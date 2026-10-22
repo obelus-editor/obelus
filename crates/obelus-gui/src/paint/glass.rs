@@ -121,15 +121,10 @@ impl Painter {
             .collect();
         self.covering(&moving);
         for (at, (band, room)) in bands.iter().zip(&rooms).enumerate() {
-            // Less the rooms of the other bands, so that a band with one
-            // inside it -- a hover over the file it is about -- does not
-            // take the inner one along on its own journey.
-            let others: Vec<[f32; 4]> = rooms
-                .iter()
-                .enumerate()
-                .filter(|&(other, _)| other != at)
-                .map(|(_, room)| *room)
-                .collect();
+            // Less the rooms of the bands inside this one, so that a band with
+            // one inside it -- a hover over the file it is about -- does not
+            // take the inner one along on its own journey. See `left_out`.
+            let others = left_out(&rooms, at);
             // Each piece by the layer its pixels are in: the page under
             // the first pane is held apart, so a row coming out from under
             // the list is the page's -- see `by_source`.
@@ -1088,6 +1083,30 @@ pub(super) fn scrolled_past(top: f32, bottom: f32, shift: f32) -> (f32, f32) {
 /// agent wrote.
 pub(super) fn sliding(room: [f32; 4], panes: &[[f32; 4]], under: bool) -> Vec<[f32; 4]> {
     tiles(room, if under { panes } else { &[] })
+}
+
+/// The rooms of the bands that are not the one at `at` and do not hold it:
+/// what a band catching up leaves out of what it puts back, because each is
+/// put back by its own band.
+///
+/// Not every other band's. A band inside another -- a list in its pane
+/// over the page scrolling under it -- left out the room of the band round
+/// it, which is all of its own, so it put nothing back: the list was a
+/// blank for as long as the page took to arrive, whenever the two scrolled
+/// at once.
+pub(super) fn left_out(rooms: &[[f32; 4]], at: usize) -> Vec<[f32; 4]> {
+    let Some(&own) = rooms.get(at) else {
+        return Vec::new();
+    };
+    let holds = |room: &[f32; 4]| {
+        room[0] <= own[0] && room[1] <= own[1] && room[2] >= own[2] && room[3] >= own[3]
+    };
+    rooms
+        .iter()
+        .enumerate()
+        .filter(|&(other, room)| other != at && !holds(room))
+        .map(|(_, room)| *room)
+        .collect()
 }
 
 /// Which layer a piece of a band slid into place takes its pixels from.

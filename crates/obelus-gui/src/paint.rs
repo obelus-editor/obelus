@@ -1928,8 +1928,8 @@ mod tests {
 
     use super::{
         glass::{
-            Source, above_its_line, behind_row, beneath, by_source, casting, lettered_behind,
-            reached, sliding, tiles,
+            Source, above_its_line, behind_row, beneath, by_source, casting, left_out,
+            lettered_behind, reached, sliding, tiles,
         },
         ground::{held_runs, runs, without},
         shapes::underline_ink,
@@ -2275,6 +2275,28 @@ mod tests {
             beneath([0.0, 0.0, 100.0, 90.0], [0.0, 0.0, 100.0, 100.0], true),
             Some([0.0, 0.0, 100.0, 90.0]),
             "a transcript the settings are over"
+        );
+    }
+
+    /// A band catching up leaves out of what it puts back the bands inside
+    /// it and beside it, which put back their own -- and never a band round
+    /// it, which would leave out all of it.
+    ///
+    /// A list in its pane scrolling while the page under it scrolled too
+    /// was a blank until the page arrived: the list left out the page's
+    /// room, which holds the list's whole room. Deliberate break: leave out
+    /// every other band's room (the `holds` test dropped in `left_out`).
+    #[test]
+    fn a_band_inside_another_puts_itself_back() {
+        let page = [0.0, 0.0, 100.0, 100.0];
+        let list = [0.0, 60.0, 98.0, 90.0];
+        let beside = [0.0, 0.0, 100.0, 10.0];
+        let rooms = [page, list, beside];
+        assert_eq!(left_out(&rooms, 1), [beside], "the list left the page out");
+        assert_eq!(
+            left_out(&rooms, 0),
+            [list, beside],
+            "the page took the list along"
         );
     }
 
