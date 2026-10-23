@@ -396,6 +396,15 @@ impl App {
                     waited,
                 }),
             },
+            // By the thread, which is what it was said in: nothing was
+            // numbered for it on the way out.
+            E::Unsaid { thread, why } => match self.window_with(&thread) {
+                Some(window) => {
+                    self.to_the_window(window, Down::Unsaid { thread, why });
+                    None
+                }
+                None => Some(E::Unsaid { thread, why }),
+            },
             E::Unasked { asked } => match self.relaying.numbers.asked(asked)? {
                 (Asker::Window(window), theirs) => {
                     self.to_the_window(window, Down::Unasked { asked: theirs });

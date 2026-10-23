@@ -4293,3 +4293,66 @@ fn cancel_on_which_project_begins_nothing() {
         );
     }
 }
+
+/// Something the platform would not take for a conversation's thread is
+/// said in the conversation, in the platform's words -- and as what it was
+/// where it was let go of here, waiting for a connection.
+///
+/// Broken deliberately twice. Not handling `Unsaid`: the conversation said
+/// nothing. And saying the one thing for both: a message let go of while
+/// waiting was blamed on the platform.
+#[test]
+fn what_a_thread_was_not_told_is_said_in_its_conversation() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-unsaid");
+    let (mut app, events, _log) = paired_with_an_agent(&scratch);
+    app.new_conversation();
+    app.open_a_session_for_test();
+    let said = said_until(&mut app, &events, "a thread to be asked for", |said| {
+        said.iter()
+            .any(|out| matches!(out, obelus_remote::model::Out::Open { .. }))
+    });
+    let asked = said
+        .iter()
+        .find_map(|out| match out {
+            obelus_remote::model::Out::Open { asked, .. } => Some(*asked),
+            _ => None,
+        })
+        .expect("asked for");
+    let platform = the_platform();
+    let _ = platform.send(obelus_remote::Event::Opened {
+        asked,
+        thread: "T-unsaid".to_string(),
+        link: None,
+    });
+    let _ = platform.send(obelus_remote::Event::Unsaid {
+        thread: "T-unsaid".to_string(),
+        why: Some("message too long".to_string()),
+    });
+    for _ in 0..10 {
+        if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(30)) {
+            app.handle(event);
+        }
+        support::lay_out(&mut app, 100, 24);
+    }
+    let dump = support::render(&mut app, 100, 24);
+    assert!(
+        dump.contains("Slack would not take a message for this conversation: message too long"),
+        "the conversation said nothing:\n{dump}"
+    );
+    let _ = platform.send(obelus_remote::Event::Unsaid {
+        thread: "T-unsaid".to_string(),
+        why: None,
+    });
+    for _ in 0..10 {
+        if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(30)) {
+            app.handle(event);
+        }
+        support::lay_out(&mut app, 100, 24);
+    }
+    let dump = support::render(&mut app, 100, 24);
+    assert!(
+        dump.contains("Slack was not reached in time for a message"),
+        "a message let go of here was blamed on the platform:\n{dump}"
+    );
+}

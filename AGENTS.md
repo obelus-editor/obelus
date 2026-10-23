@@ -857,12 +857,18 @@ crates/
                     (platform), where its secrets are kept (secrets), a
                     connection to each (slack/, feishu/), the words between
                     them and the loop (model), what waits while one is down
-                    (waiting), and one window relaying for every other (relay)
+                    (waiting), saying one thing until it is taken (sending),
+                    and one window relaying for every other (relay)
                     · words, and a card for a question; a platform declares,
                       Obelus keeps (lib); words, and a question (model); a
                       platform declares and does not keep (platform); three
                       places, one question, and every one of these waits
-                      (secrets); kept, and only so much of it (waiting); one
+                      (secrets); kept, and only so much of it, and a thread
+                      that missed something says so with the next thing it
+                      gets (waiting); a platform that did not answer is
+                      asked again and one that said no is not, still not
+                      answered is the connection and not the message, and
+                      said once however many times it was asked (sending); one
                       window talks to the chat and every window is heard in
                       it, a number is the relay's, the door is the one a
                       window is brought forward through, and a relay that goes
