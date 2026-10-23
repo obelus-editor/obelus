@@ -75,6 +75,7 @@ pub fn start(
             .build()
             .unwrap_or_default(),
         base: base(domain),
+        pauses: &PAUSES,
         app_id,
         app_secret,
         token: tokio::sync::Mutex::new(None),
@@ -87,6 +88,8 @@ pub fn start(
 struct Api {
     http: reqwest::Client,
     base: &'static str,
+    /// How long between tries: [`PAUSES`], and none at all in a test.
+    pauses: &'static [Duration],
     app_id: String,
     app_secret: String,
     /// The tenant's token and when it stops working. Asked for again a
@@ -215,7 +218,10 @@ impl Api {
         path: &str,
         body: Option<Value>,
     ) -> Result<Value, Failed> {
-        tried(&PAUSES, |_| self.call(method.clone(), path, body.clone())).await
+        tried(self.pauses, |_| {
+            self.call(method.clone(), path, body.clone())
+        })
+        .await
     }
 
     /// Where the long connection is, and how often to ping on it.
@@ -829,7 +835,7 @@ async fn say(
     Ok(())
 }
 
-// The long connection, made and made again for as long as it is wanted.
+/// The long connection, made and made again for as long as it is wanted.
 async fn listen(api: Arc<Api>, sink: Arc<dyn Sink<Event>>) {
     // Which events have been heard lately, kept across connections: Feishu
     // sends an event again when it thinks the answer did not arrive, and a
@@ -1236,6 +1242,8 @@ fn words_of(kind: &str, content: &Value) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
     use super::*;
 
     /// What a frame carries arrives whole whether it came in one piece or
@@ -1649,5 +1657,214 @@ mod tests {
             answered(StatusCode::NOT_FOUND, None, None),
             Err(Failure::Refused(_))
         ));
+    }
+
+    /// A Feishu on the loopback that answers a token, no long connection,
+    /// and replies by what they say: "flaky" with a gateway's 502 four
+    /// times and then taken, "stuck" with a 502 every time, anything else
+    /// taken. Every reply asked for is written down, in order.
+    async fn a_feishu(listener: tokio::net::TcpListener, replies: Arc<Mutex<Vec<Value>>>) {
+        use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+        loop {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                return;
+            };
+            let replies = replies.clone();
+            tokio::spawn(async move {
+                let mut read = Vec::new();
+                loop {
+                    let mut chunk = [0_u8; 4096];
+                    let Some(end) = read.windows(4).position(|four| four == b"\r\n\r\n") else {
+                        match socket.read(&mut chunk).await {
+                            Ok(0) | Err(_) => return,
+                            Ok(n) => read.extend_from_slice(&chunk[..n]),
+                        }
+                        continue;
+                    };
+                    let head = String::from_utf8_lossy(&read[..end]).to_string();
+                    let length = head
+                        .lines()
+                        .find_map(|line| {
+                            let (name, value) = line.split_once(':')?;
+                            name.eq_ignore_ascii_case("content-length")
+                                .then(|| value.trim().parse::<usize>().ok())?
+                        })
+                        .unwrap_or(0);
+                    while read.len() < end + 4 + length {
+                        match socket.read(&mut chunk).await {
+                            Ok(0) | Err(_) => return,
+                            Ok(n) => read.extend_from_slice(&chunk[..n]),
+                        }
+                    }
+                    let body: Value = serde_json::from_slice(&read[end + 4..end + 4 + length])
+                        .unwrap_or(Value::Null);
+                    read.drain(..end + 4 + length);
+                    let path = head
+                        .split_whitespace()
+                        .nth(1)
+                        .unwrap_or_default()
+                        .to_string();
+                    let (status, answer) = if path.contains("tenant_access_token") {
+                        (
+                            200,
+                            json!({ "code": 0, "tenant_access_token": "t", "expire": 7200 }),
+                        )
+                    } else if path.contains("/callback/ws/endpoint") {
+                        (
+                            200,
+                            json!({ "code": 1_000_040_350, "msg": "no long connection here" }),
+                        )
+                    } else {
+                        let content = body["content"].as_str().unwrap_or_default().to_string();
+                        let before = {
+                            let mut replies = replies.lock().unwrap();
+                            let before = replies
+                                .iter()
+                                .filter(|reply| reply["uuid"] == body["uuid"])
+                                .count();
+                            replies.push(body.clone());
+                            before
+                        };
+                        if content.contains("stuck") || (content.contains("flaky") && before < 4) {
+                            (502, Value::Null)
+                        } else {
+                            (
+                                200,
+                                json!({ "code": 0, "data": { "message_id": "m", "root_id": "T1" } }),
+                            )
+                        }
+                    };
+                    let answer = match answer {
+                        Value::Null => "bad gateway".to_string(),
+                        answer => answer.to_string(),
+                    };
+                    let written = format!(
+                        "HTTP/1.1 {status} X\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{answer}",
+                        answer.len()
+                    );
+                    if socket.write_all(written.as_bytes()).await.is_err() {
+                        return;
+                    }
+                }
+            });
+        }
+    }
+
+    /// What Feishu does not answer waits for it, in order, and goes once it
+    /// answers again -- under one id however often it is asked -- while a
+    /// message that stops every connection goes as refused, is said not to
+    /// have arrived, and lets what is behind it be said.
+    ///
+    /// Broken deliberately three ways. Letting go of what stopped rather
+    /// than keeping it: "flaky" was asked four times and was gone. Never
+    /// counting the rounds: "stuck" was asked for until the test gave up,
+    /// and "two" never went. And giving it a new id each time it went back:
+    /// Feishu could not have told a retried "flaky" from a second one.
+    /// Where it goes back to is `waiting`'s own test: here nothing else is
+    /// waiting when it does.
+    #[test]
+    fn what_feishu_does_not_answer_waits_for_it_in_order() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("a runtime");
+        let listener = runtime
+            .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
+            .expect("a port");
+        let address = listener.local_addr().expect("an address");
+        let replies = Arc::new(Mutex::new(Vec::new()));
+        runtime.spawn(a_feishu(listener, replies.clone()));
+        let api = Api {
+            http: reqwest::Client::new(),
+            base: Box::leak(format!("http://{address}").into_boxed_str()),
+            pauses: &[Duration::ZERO; 3],
+            app_id: "a".to_string(),
+            app_secret: "s".to_string(),
+            token: tokio::sync::Mutex::new(None),
+        };
+        let (sender, heard) = std::sync::mpsc::channel::<Event>();
+        let sink: Arc<dyn Sink<Event>> = Arc::new(sender);
+        let (out, said) = tokio::sync::mpsc::unbounded_channel();
+        for text in ["flaky", "stuck", "two"] {
+            out.send(Out::Say {
+                room: "C".to_string(),
+                thread: "T1".to_string(),
+                to: "U".to_string(),
+                text: text.to_string(),
+                notify: false,
+            })
+            .expect("sent");
+        }
+        let running = runtime.spawn(run(Arc::new(api), sink, said));
+        let until = std::time::Instant::now() + Duration::from_secs(60);
+        let said_of = |reply: &Value| reply["content"].as_str().unwrap_or_default().to_string();
+        while !replies
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|reply| said_of(reply).contains("two"))
+        {
+            assert!(std::time::Instant::now() < until, "\"two\" was never said");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        drop(out);
+        let _ = runtime.block_on(running);
+
+        let replies = replies.lock().unwrap().clone();
+        let which = |reply: &Value| {
+            let said = said_of(reply);
+            ["flaky", "stuck", "two"]
+                .into_iter()
+                .find(|text| said.contains(text))
+                .unwrap_or("?")
+        };
+        let mut runs: Vec<(&str, usize, std::collections::BTreeSet<String>)> = Vec::new();
+        for reply in &replies {
+            let uuid = reply["uuid"].as_str().unwrap_or_default().to_string();
+            match runs.last_mut() {
+                Some((text, count, uuids)) if *text == which(reply) => {
+                    *count += 1;
+                    uuids.insert(uuid);
+                }
+                _ => runs.push((which(reply), 1, [uuid].into())),
+            }
+        }
+        let shape: Vec<(&str, usize, usize)> = runs
+            .iter()
+            .map(|(text, count, uuids)| (*text, *count, uuids.len()))
+            .collect();
+        let tries = PAUSES.len() + 1;
+        assert_eq!(
+            shape,
+            [
+                ("flaky", tries + 1, 1),
+                ("stuck", tries * crate::sending::ROUNDS as usize, 1),
+                ("two", 1, 1),
+            ],
+            "asked in the wrong order, number or ids"
+        );
+        let last = said_of(replies.last().expect("two"));
+        assert!(
+            last.contains("1 message before this one did not arrive."),
+            "the thread was not told: {last}"
+        );
+        let events: Vec<Event> = heard.try_iter().collect();
+        assert!(
+            events.iter().any(|event| matches!(
+                event,
+                Event::Unsaid { thread, why: Some(why) } if thread == "T1" && why.contains("502")
+            )),
+            "the conversation was not told"
+        );
+        assert!(
+            events.iter().any(|event| matches!(
+                event,
+                Event::Connection {
+                    state: State::Unreachable,
+                    ..
+                }
+            )),
+            "nothing said Feishu had stopped answering"
+        );
     }
 }

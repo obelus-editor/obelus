@@ -891,6 +891,21 @@ mod tests {
         let read: Down =
             serde_json::from_str(&serde_json::to_string(&down).expect("written")).expect("read");
         assert_eq!(read, down);
+        for down in [
+            Down::Unsaid {
+                thread: "T1".to_string(),
+                why: Some("msg_too_long".to_string()),
+            },
+            Down::Unsaid {
+                thread: "T1".to_string(),
+                why: None,
+            },
+        ] {
+            let read: Down = serde_json::from_str(&serde_json::to_string(&down).expect("written"))
+                .expect("read");
+            assert_eq!(read, down);
+            assert!(matches!(down.heard(), Event::Unsaid { thread, .. } if thread == "T1"));
+        }
         let door = Door {
             address: "127.0.0.1:4100".parse().expect("an address"),
             key: "k".to_string(),

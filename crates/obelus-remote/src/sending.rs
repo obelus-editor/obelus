@@ -93,6 +93,9 @@ pub(crate) struct Saying {
     /// How many times it has stopped the connection, which answered again
     /// each time ([`ROUNDS`]).
     pub(crate) rounds: u32,
+    /// When it was first asked for, in seconds since the epoch: from then
+    /// on the platform may have it, on this connection or the next.
+    pub(crate) first_tried: Option<u64>,
 }
 
 impl From<Out> for Saying {
@@ -106,6 +109,7 @@ impl From<Out> for Saying {
                 NEXT.fetch_add(1, Ordering::Relaxed)
             ),
             rounds: 0,
+            first_tried: None,
         }
     }
 }
@@ -118,6 +122,7 @@ impl Saying {
             out,
             id: format!("{}w", self.id),
             rounds: self.rounds,
+            first_tried: None,
         }
     }
 
@@ -128,7 +133,18 @@ impl Saying {
             out,
             id: self.id.clone(),
             rounds: self.rounds,
+            first_tried: self.first_tried,
         }
+    }
+
+    /// When it was first asked for, which is now if it never has been.
+    pub(crate) fn first_tried(&mut self) -> u64 {
+        *self.first_tried.get_or_insert_with(|| {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs()
+        })
     }
 }
 
@@ -251,16 +267,29 @@ mod tests {
         assert_eq!(count, NONE.len() + 1);
     }
 
-    /// One id for one thing said, a different one for the next.
+    /// One id for one thing said, kept when it is said again, and a
+    /// different one for the next -- and for the words said instead of a
+    /// card, which are another message.
+    ///
+    /// Broken deliberately three ways. Counting once per process rather
+    /// than per saying: the next had the first's id. Giving `again` a fresh
+    /// id: a retried message was not one Feishu could tell from a new one.
+    /// And giving `instead` the card's id: Feishu took the words for the
+    /// card it had refused, and said nothing.
     #[test]
     fn a_saying_keeps_its_id() {
         let out = || Out::Name {
             id: "U".to_string(),
         };
-        let first = Saying::from(out());
-        let again = first.clone();
+        let mut first = Saying::from(out());
+        let tried = first.first_tried();
+        let again = first.again(out());
+        let instead = first.instead(out());
         let next = Saying::from(out());
         assert_eq!(first.id, again.id);
+        assert_eq!(again.first_tried, Some(tried));
+        assert_ne!(first.id, instead.id);
+        assert_eq!(instead.first_tried, None);
         assert_ne!(first.id, next.id);
         assert!(first.id.len() <= 50, "past Feishu's limit: {}", first.id);
     }

@@ -4356,3 +4356,72 @@ fn what_a_thread_was_not_told_is_said_in_its_conversation() {
         "a message let go of here was blamed on the platform:\n{dump}"
     );
 }
+
+/// Something the platform would not take for a thread of a window joined
+/// to the chat is said in that window's conversation, not in the one that
+/// holds the chat.
+///
+/// Broken deliberately twice. Leaving `Unsaid` to the arm that keeps
+/// anything else here: the window holding the chat looked for the thread
+/// among its own conversations, found none, and nothing was said. And
+/// losing the platform's words on the way down: the joined window blamed
+/// the wait for a connection instead.
+#[test]
+fn what_a_joined_window_s_thread_was_not_told_is_said_there() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-relayed-unsaid");
+    let ((mut first, firsts), (mut second, seconds)) = the_first_with_the_chat(&scratch);
+    second.new_conversation();
+    second.open_a_session_for_test();
+    let said = both_said_until(
+        &mut first,
+        &firsts,
+        &mut second,
+        &seconds,
+        "the second's conversation to ask for a thread",
+        |said| {
+            said.iter()
+                .any(|out| matches!(out, obelus_remote::model::Out::Open { .. }))
+        },
+    );
+    let asked = said
+        .iter()
+        .find_map(|out| match out {
+            obelus_remote::model::Out::Open { asked, .. } => Some(*asked),
+            _ => None,
+        })
+        .expect("a thread asked for");
+    let _ = the_platform().send(obelus_remote::Event::Opened {
+        asked,
+        thread: "T2".to_string(),
+        link: None,
+    });
+    let _ = the_platform().send(obelus_remote::Event::Unsaid {
+        thread: "T2".to_string(),
+        why: Some("msg_too_long".to_string()),
+    });
+    let wanted = "Slack would not take a message for this conversation: msg_too_long";
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    loop {
+        while let Ok(event) = firsts.try_recv() {
+            first.handle(event);
+        }
+        if let Ok(event) = seconds.recv_timeout(std::time::Duration::from_millis(20)) {
+            second.handle(event);
+        }
+        let dump = support::render(&mut second, 100, 24);
+        if dump.contains(wanted) {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < until,
+            "the joined window's conversation said nothing:\n{dump}"
+        );
+        support::lay_out(&mut first, 100, 24);
+    }
+    let dump = support::render(&mut first, 100, 24);
+    assert!(
+        !dump.contains(wanted),
+        "the window holding the chat said it:\n{dump}"
+    );
+}

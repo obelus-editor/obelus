@@ -178,8 +178,17 @@ async fn say(
     sink: &Arc<dyn Sink<Event>>,
     cards: &mut HashMap<u64, (SlackChannelId, SlackTs, String)>,
     waiting: &mut Waiting,
-    saying: Saying,
+    mut saying: Saying,
 ) -> Result<(), Stopped> {
+    // Whether an earlier connection asked for it already, and so whether
+    // Slack may have it from the first try on this one.
+    let tried_before = saying.first_tried.is_some();
+    let first_tried = saying.first_tried();
+    let asked_as = Asked {
+        id: &saying.id,
+        first_tried,
+        tried_before,
+    };
     let stopped = |why: String, out: Out| Stopped {
         why,
         again: Box::new(saying.again(out)),
@@ -208,7 +217,7 @@ async fn say(
                 words,
                 Some(SlackTs::new(thread.clone())),
             );
-            match post(session, request, &saying.id).await {
+            match post(session, request, asked_as).await {
                 Ok(_) => waiting.said_in(&thread),
                 Err(Failed::Refused(why)) => {
                     tracing::warn!(thread, %why, "Slack would not take a message");
@@ -231,7 +240,7 @@ async fn say(
         Out::Open { asked, room, head } => {
             let channel = SlackChannelId::new(room.clone());
             let request = posted(channel.clone(), head.in_words(), None);
-            match post(session, request, &saying.id).await {
+            match post(session, request, asked_as).await {
                 Ok(ts) => {
                     // Asked once: a thread with no link is still a thread.
                     let link = session
@@ -323,7 +332,7 @@ async fn say(
             content.blocks = Some(asking(asked, &question, &to));
             let mut request = SlackApiChatPostMessageRequest::new(channel.clone(), content);
             request.thread_ts = Some(SlackTs::new(thread.clone()));
-            match post(session, request, &saying.id).await {
+            match post(session, request, asked_as).await {
                 Ok(ts) => {
                     cards.insert(asked, (channel, ts, question.about));
                 }
@@ -415,25 +424,24 @@ const SAID: &str = "obelus_said";
 async fn post(
     session: &Session<'_>,
     mut request: SlackApiChatPostMessageRequest,
-    id: &str,
+    saying: Asked<'_>,
 ) -> Result<SlackTs, Failed> {
+    let Asked {
+        id,
+        first_tried,
+        tried_before,
+    } = saying;
     request.content.metadata = Some(SlackMessageMetadata {
         event_type: SAID.to_string(),
         event_payload: Some(HashMap::from([("id".to_string(), id.to_string())])),
     });
-    // From a little before the first try, for a clock that is not Slack's.
-    let since = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
-        .saturating_sub(60);
-    let since = format!("{since}.000000");
+    let since = looked_for_since(first_tried);
     tried(&PAUSES, |tries| {
         let request = &request;
         let since = &since;
         async move {
-            if tries > 0
-                && let Some(ts) = landed(session, request, since, id).await.map_err(failure)?
+            if looks_first(tries, tried_before)
+                && let Some(ts) = looked(landed(session, request, since, id).await)?
             {
                 tracing::info!(id, "a message Slack had taken after all");
                 return Ok(ts);
@@ -446,6 +454,29 @@ async fn post(
         }
     })
     .await
+}
+
+/// Which saying a message is posted for: its id, when it was first asked
+/// for, and whether that was on an earlier connection.
+#[derive(Clone, Copy)]
+struct Asked<'a> {
+    id: &'a str,
+    first_tried: u64,
+    tried_before: bool,
+}
+
+/// Whether to ask Slack for the message before posting it: once it may
+/// have been taken, which is after any try at all -- on this connection,
+/// or on one before it, where the tries began again from nought.
+fn looks_first(tries: usize, tried_before: bool) -> bool {
+    tries > 0 || tried_before
+}
+
+/// Where Slack is asked to look for a message from: a minute before it was
+/// first asked for -- on whichever connection that was -- for a clock that
+/// is not Slack's.
+fn looked_for_since(first_tried: u64) -> String {
+    format!("{}.000000", first_tried.saturating_sub(60))
 }
 
 /// Where the message `request` posts under `id` is, if Slack has it.
@@ -489,6 +520,21 @@ async fn landed(
     Ok(found(&answer, id))
 }
 
+/// What a look for the message comes to: where it is, that it is not
+/// there, or a Slack not answering, which is worth asking again before
+/// posting anything. A look Slack refuses -- a scope an older install lacks,
+/// a channel the bot was taken out of -- says nothing about the message, so
+/// the message is posted: a copy is the lesser loss.
+fn looked(found: Result<Option<SlackTs>, SlackClientError>) -> Result<Option<SlackTs>, Failure> {
+    match found.map_err(failure) {
+        Err(Failure::Refused(why)) => {
+            tracing::warn!(%why, "Slack would not say whether it had a message; it goes");
+            Ok(None)
+        }
+        found => found,
+    }
+}
+
 /// The message in an answer of Slack's that was posted under `id`.
 fn found(answer: &Value, id: &str) -> Option<SlackTs> {
     answer["messages"]
@@ -500,6 +546,22 @@ fn found(answer: &Value, id: &str) -> Option<SlackTs> {
         })
         .and_then(|message| message["ts"].as_str())
         .map(|ts| SlackTs::new(ts.to_string()))
+}
+
+/// What Slack said, as the reader is shown it: its own word for it, rather
+/// than the crate's sentence with the whole of the answer's body after it.
+fn said(error: &SlackClientError) -> String {
+    match error {
+        SlackClientError::ApiError(said) => said.code.clone(),
+        SlackClientError::RateLimitError(_) => "ratelimited".to_string(),
+        SlackClientError::HttpError(http) => format!("answered {}", http.status_code),
+        other => other
+            .to_string()
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .to_string(),
+    }
 }
 
 /// Codes Slack answers with that say ask again later.
@@ -516,7 +578,9 @@ const AGAIN: &[&str] = &[
 /// connection is asked about again, and says -- are all worth it; anything
 /// else Slack said no to is the same no next time.
 fn failure(error: SlackClientError) -> Failure {
-    let why = error.to_string();
+    // The whole of it in the log; the reader is shown what Slack called it.
+    tracing::info!(%error, "Slack did not do it");
+    let why = said(&error);
     match &error {
         SlackClientError::RateLimitError(limit) => Failure::Again {
             why,
@@ -538,7 +602,7 @@ fn failure(error: SlackClientError) -> Failure {
     }
 }
 
-// The bot token checked and the socket up, or the state that says why not
+/// The bot token checked and the socket up, or the state that says why not
 /// and what Slack said.
 async fn connect(
     client: &Arc<SlackHyperClient>,
@@ -1084,5 +1148,54 @@ mod tests {
             ))),
             Failure::Again { .. }
         ));
+    }
+
+    /// A message asked for on an earlier connection is looked for before
+    /// the first try on the next, from when it was first asked for -- not
+    /// from this try, which may be minutes later.
+    ///
+    /// Broken deliberately twice. Looking only after a try on this
+    /// connection: the first try after a reconnection posted a second copy
+    /// of a message the last try before it had got through with. And
+    /// looking from now: a minute back from a reconnection that took ten
+    /// did not reach the first copy.
+    #[test]
+    fn a_message_asked_for_before_is_looked_for_from_then() {
+        assert!(!looks_first(0, false), "a first try looked for nothing");
+        assert!(looks_first(1, false));
+        assert!(looks_first(0, true), "posted again without looking");
+        let mut saying = Saying::from(Out::Name {
+            id: "U".to_string(),
+        });
+        let first = saying.first_tried();
+        let again = saying.again(Out::Name {
+            id: "U".to_string(),
+        });
+        assert_eq!(again.first_tried, Some(first));
+        assert_eq!(looked_for_since(first), format!("{}.000000", first - 60));
+    }
+
+    /// The reader is shown Slack's word for what went wrong, not the
+    /// crate's sentence with the raw answer after it -- and a look Slack
+    /// refuses posts the message rather than losing it.
+    ///
+    /// Broken deliberately twice. Showing `to_string()`: the note carried
+    /// "Body: '{...". And passing a refused look on as the message's
+    /// refusal: a `missing_scope` on the look lost the message.
+    #[test]
+    fn what_slack_said_is_its_word_and_a_refused_look_posts() {
+        use slack_morphism::errors::SlackClientApiError;
+        let mut refused = SlackClientApiError::new("msg_too_long".to_string());
+        refused.http_response_body = Some(r#"{"ok":false,"error":"msg_too_long"}"#.to_string());
+        assert!(matches!(
+            failure(SlackClientError::ApiError(refused)),
+            Failure::Refused(why) if why == "msg_too_long"
+        ));
+        let scope =
+            SlackClientError::ApiError(SlackClientApiError::new("missing_scope".to_string()));
+        assert!(matches!(looked(Err(scope)), Ok(None)));
+        let busy =
+            SlackClientError::ApiError(SlackClientApiError::new("internal_error".to_string()));
+        assert!(matches!(looked(Err(busy)), Err(Failure::Again { .. })));
     }
 }
