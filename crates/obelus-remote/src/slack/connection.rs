@@ -27,7 +27,7 @@ use slack_morphism::{errors::SlackClientError, listener::HttpStatusCode, prelude
 use crate::{
     Event, State,
     model::{Out, Question, Where},
-    sending::{Failed, Failure, PAUSES, Saying, Stopped, tried},
+    sending::{ANSWER_WITHIN, Failed, Failure, PAUSES, Saying, Stopped, tried},
     waiting::Waiting,
 };
 
@@ -117,23 +117,26 @@ async fn run(
         };
         let why = stopped.why.clone();
         tracing::warn!(%why, "Slack stopped answering; what is to be said waits for it");
-        waiting.stopped(stopped, &sink);
+        if let Some(Out::Settle { asked, .. }) = waiting.stopped(stopped, &sink) {
+            cards.remove(&asked);
+        }
         let _ = sink.send(Event::connection(State::Unreachable, Some(why)));
         // The socket mends itself; the Web API is asked whether it answers
         // again, with the bot token, which is also what would say it had
         // been revoked meanwhile.
         loop {
-            let state = match session.auth_test().await {
-                Ok(_) => break,
-                Err(error) => {
-                    let state = match refused(&error) {
-                        true => State::Refused,
-                        false => State::Unreachable,
-                    };
-                    let _ = sink.send(Event::connection(state, Some(error.to_string())));
-                    state
-                }
+            // With the same limit as a try: a connection left half open by
+            // a sleeping machine would otherwise hold this for minutes.
+            let (state, why) = match tokio::time::timeout(ANSWER_WITHIN, session.auth_test()).await
+            {
+                Ok(Ok(_)) => break,
+                Ok(Err(error)) => match refused(&error) {
+                    true => (State::Refused, what_slack_said(&error)),
+                    false => (State::Unreachable, what_slack_said(&error)),
+                },
+                Err(_) => (State::Unreachable, "no answer in time".to_string()),
             };
+            let _ = sink.send(Event::connection(state, Some(why)));
             if !paused(state, &sink, &mut said, &mut waiting).await {
                 break 'connected;
             }
@@ -556,7 +559,7 @@ fn found(answer: &Value, id: &str) -> Option<SlackTs> {
 
 /// What Slack said, as the reader is shown it: its own word for it, rather
 /// than the crate's sentence with the whole of the answer's body after it.
-fn said(error: &SlackClientError) -> String {
+fn what_slack_said(error: &SlackClientError) -> String {
     match error {
         SlackClientError::ApiError(said) => said.code.clone(),
         SlackClientError::RateLimitError(_) => "ratelimited".to_string(),
@@ -586,7 +589,7 @@ const AGAIN: &[&str] = &[
 fn failure(error: SlackClientError) -> Failure {
     // The whole of it in the log; the reader is shown what Slack called it.
     tracing::info!(%error, "Slack did not do it");
-    let why = said(&error);
+    let why = what_slack_said(&error);
     match &error {
         SlackClientError::RateLimitError(limit) => Failure::later(why, limit.retry_after),
         SlackClientError::HttpError(http)

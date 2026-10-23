@@ -39,7 +39,7 @@ pub(crate) const PAUSES: [Duration; 3] = [
 const LONGEST: Duration = Duration::from_secs(30);
 
 /// How long one try is given to answer.
-const ANSWER_WITHIN: Duration = Duration::from_secs(20);
+pub(crate) const ANSWER_WITHIN: Duration = Duration::from_secs(20);
 
 /// How many times the platform may answer a message with "later", a round
 /// of tries each, before it is taken to be the message: one Slack or Feishu

@@ -61,8 +61,9 @@ impl Waiting {
     /// Puts back at the front what was being said when the connection
     /// stopped answering, so it is said first once it answers again -- or,
     /// where the platform has answered it with "later" [`ROUNDS`] times,
-    /// takes it to be the message, and lets it go as refused.
-    pub(crate) fn stopped(&mut self, stopped: Stopped, sink: &Arc<dyn Sink<Event>>) {
+    /// takes it to be the message, and lets it go as refused -- handing it
+    /// back, so that what the connection keeps for it can go too.
+    pub(crate) fn stopped(&mut self, stopped: Stopped, sink: &Arc<dyn Sink<Event>>) -> Option<Out> {
         let Stopped {
             why,
             answered,
@@ -74,10 +75,11 @@ impl Waiting {
         }
         if again.rounds >= ROUNDS {
             tracing::warn!(%why, rounds = again.rounds, "the same message stopped every connection; it goes");
-            self.let_go(again.out, Some(why), sink);
-            return;
+            self.let_go(again.out.clone(), Some(why), sink);
+            return Some(again.out);
         }
         self.sayings.push_front(again);
+        None
     }
 
     /// The next thing to say, oldest first.
@@ -88,8 +90,7 @@ impl Waiting {
     /// Something for a thread that the platform would not take: counted,
     /// and said to the conversation in the platform's words.
     pub(crate) fn refused(&mut self, thread: &str, why: &str, sink: &Arc<dyn Sink<Event>>) {
-        *self.missed.entry(thread.to_string()).or_default() += 1;
-        let _ = sink.send(Event::unsaid(thread.to_string(), Some(why.to_string())));
+        self.missed_in(thread.to_string(), Some(why.to_string()), sink);
     }
 
     /// `text` as it goes into `thread`: after a line saying how much did
@@ -131,8 +132,20 @@ impl Waiting {
             // anything the reader reads as a message.
             Out::Settle { .. } | Out::Retitle { .. } | Out::Name { .. } => return,
         };
-        *self.missed.entry(thread.clone()).or_default() += 1;
-        let _ = sink.send(Event::unsaid(thread, why));
+        self.missed_in(thread, why, sink);
+    }
+
+    /// One more thing `thread` was not told, counted -- and said to the
+    /// conversation where it is the first since something last arrived
+    /// there: a thread that has gone refuses everything said to it, and a
+    /// note for each was the conversation filling with them. How many it
+    /// was is said in the thread, once something gets there.
+    fn missed_in(&mut self, thread: String, why: Option<String>, sink: &Arc<dyn Sink<Event>>) {
+        let missed = self.missed.entry(thread.clone()).or_default();
+        *missed += 1;
+        if *missed == 1 {
+            let _ = sink.send(Event::unsaid(thread, why));
+        }
     }
 }
 
@@ -237,14 +250,17 @@ mod tests {
     }
 
     /// The count is the thread's until something arrives there, and then
-    /// it is gone.
+    /// it is gone -- and the conversation is told of the first miss in a
+    /// run, not of each.
     ///
-    /// Broken deliberately by clearing it when the preface was asked for:
-    /// a message that then did not arrive took the count with it, and the
-    /// one after said nothing.
+    /// Broken deliberately three ways. Clearing the count when the preface
+    /// was asked for: a message that then did not arrive took the count
+    /// with it, and the one after said nothing. Telling the conversation
+    /// of every miss: two notes for two. And never clearing it: a miss
+    /// after something had arrived was not told.
     #[test]
     fn the_count_goes_once_something_arrives() {
-        let (sink, _heard) = heard();
+        let (sink, heard) = heard();
         let mut waiting = Waiting::default();
         waiting.refused("T", "too long", &sink);
         waiting.refused("T", "too long", &sink);
@@ -256,8 +272,23 @@ mod tests {
             waiting.prefaced("T", "next"),
             "2 messages before this one did not arrive.\n\nnext"
         );
+        assert_eq!(
+            heard
+                .try_iter()
+                .filter(|event| matches!(event, Event::Unsaid { .. }))
+                .count(),
+            1,
+            "the conversation was told of each"
+        );
         waiting.said_in("T");
         assert_eq!(waiting.prefaced("T", "next"), "next");
+        waiting.refused("T", "too long", &sink);
+        assert!(
+            heard
+                .try_iter()
+                .any(|event| matches!(event, Event::Unsaid { .. })),
+            "a miss after something arrived was not told"
+        );
     }
 
     /// What was being said when the connection went is said first when it

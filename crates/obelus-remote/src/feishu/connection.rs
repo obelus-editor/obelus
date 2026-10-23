@@ -79,6 +79,7 @@ pub fn start(
         app_id,
         app_secret,
         token: tokio::sync::Mutex::new(None),
+        socket: std::sync::Mutex::new((State::Connecting, None)),
     };
     obelus_runtime::handle().spawn(run(Arc::new(api), sink, said));
     out
@@ -96,6 +97,10 @@ struct Api {
     /// little before then: a token Feishu has just let lapse is a message
     /// that does not go.
     token: tokio::sync::Mutex<Option<(String, std::time::Instant)>>,
+    /// Where the long connection last said it had got to, and why: what the
+    /// row goes back to once the API answers again, since the two are one
+    /// connection on the row and the long connection may have gone with it.
+    socket: std::sync::Mutex<(State, Option<String>)>,
 }
 
 /// Why the API would not do something.
@@ -162,6 +167,23 @@ impl Api {
             std::time::Instant::now() + Duration::from_secs(lasts),
         ));
         Ok(token)
+    }
+
+    /// Says where the long connection has got to, and keeps it.
+    fn socket_is(&self, state: State, why: Option<String>, sink: &Arc<dyn Sink<Event>>) {
+        *self
+            .socket
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = (state, why.clone());
+        let _ = sink.send(Event::connection(state, why));
+    }
+
+    /// Where the long connection last said it had got to.
+    fn socket(&self) -> (State, Option<String>) {
+        self.socket
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 
     /// The token let go of, so that the next asking for one asks Feishu:
@@ -484,10 +506,12 @@ async fn run(
             None => {
                 listening = Some(obelus_runtime::handle().spawn(listen(api.clone(), sink.clone())));
             }
-            // Back after the API stopped answering: the long connection
-            // says where it is when it changes, and it may not have.
+            // Back after the API stopped answering: the row goes back to
+            // where the long connection is, which may be on its way up
+            // again itself -- it says when that changes, and not before.
             Some(_) => {
-                let _ = sink.send(Event::connection(State::Connected, None));
+                let (state, why) = api.socket();
+                let _ = sink.send(Event::connection(state, why));
             }
         }
         loop {
@@ -501,7 +525,9 @@ async fn run(
             if let Err(stopped) = say(&api, &sink, &mut cards, &mut waiting, saying).await {
                 let why = stopped.why.clone();
                 tracing::warn!(%why, "Feishu stopped answering; what is to be said waits for it");
-                waiting.stopped(stopped, &sink);
+                if let Some(Out::Settle { asked, .. }) = waiting.stopped(stopped, &sink) {
+                    cards.remove(&asked);
+                }
                 let _ = sink.send(Event::connection(State::Unreachable, Some(why)));
                 api.forget_token().await;
                 continue 'connected;
@@ -559,7 +585,9 @@ async fn up(
 /// Everything that posts a message posts it under the saying's id as
 /// Feishu's `uuid`, which it keeps an hour: a try that timed out after
 /// Feishu took it is answered by the next with the message already there,
-/// rather than with a second one.
+/// rather than with a second one. A message that waits out a longer
+/// outage than that may arrive twice, which is the lesser loss: the other
+/// way to keep the hour is to let it go.
 async fn say(
     api: &Api,
     sink: &Arc<dyn Sink<Event>>,
@@ -853,7 +881,7 @@ async fn listen(api: Arc<Api>, sink: Arc<dyn Sink<Event>>) {
         // never opened is not on its way back, and saying it was turned
         // the mark for as long as Feishu went on refusing it.
         let (state, why, again) = match api.endpoint().await {
-            Ok((url, ping)) => match connected(&url, ping, &mut seen, &sink).await {
+            Ok((url, ping)) => match connected(&api, &url, ping, &mut seen, &sink).await {
                 Lost::Dropped(why) => {
                     tracing::warn!(%why, "the long connection to Feishu dropped");
                     (State::Connecting, None, 5)
@@ -872,7 +900,7 @@ async fn listen(api: Arc<Api>, sink: Arc<dyn Sink<Event>>) {
                 (State::Unreachable, Some(why.to_string()), 5)
             }
         };
-        let _ = sink.send(Event::connection(state, why));
+        api.socket_is(state, why, &sink);
         tokio::time::sleep(Duration::from_secs(again)).await;
     }
 }
@@ -887,6 +915,7 @@ enum Lost {
 
 /// One long connection, until it drops.
 async fn connected(
+    api: &Api,
     url: &str,
     ping: Duration,
     seen: &mut std::collections::VecDeque<String>,
@@ -911,7 +940,7 @@ async fn connected(
         Err(_) => return Lost::Unmade("no answer".to_string()),
     };
     let (mut out, mut heard) = socket.split();
-    let _ = sink.send(Event::connection(State::Connected, None));
+    api.socket_is(State::Connected, None, sink);
     match listened(&mut out, &mut heard, service, ping, seen, sink).await {
         Ok(()) => Lost::Dropped("closed".to_string()),
         Err(why) => Lost::Dropped(why),
@@ -1766,8 +1795,10 @@ mod tests {
     /// counting the rounds: "stuck" was asked for until the test gave up,
     /// and "two" never went. And giving it a new id each time it went back:
     /// Feishu could not have told a retried "flaky" from a second one.
-    /// Where it goes back to is `waiting`'s own test: here nothing else is
-    /// waiting when it does.
+    /// And, since, saying `Connected` whenever the API answered again: the
+    /// row said so of a long connection that never opened. Where it goes
+    /// back to is `waiting`'s own test: here nothing else is waiting when
+    /// it does.
     #[test]
     fn what_feishu_does_not_answer_waits_for_it_in_order() {
         let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -1787,6 +1818,7 @@ mod tests {
             app_id: "a".to_string(),
             app_secret: "s".to_string(),
             token: tokio::sync::Mutex::new(None),
+            socket: std::sync::Mutex::new((State::Connecting, None)),
         };
         let (sender, heard) = std::sync::mpsc::channel::<Event>();
         let sink: Arc<dyn Sink<Event>> = Arc::new(sender);
@@ -1871,6 +1903,16 @@ mod tests {
                 }
             )),
             "nothing said Feishu had stopped answering"
+        );
+        assert!(
+            !events.iter().any(|event| matches!(
+                event,
+                Event::Connection {
+                    state: State::Connected,
+                    ..
+                }
+            )),
+            "the API answering again was said as a long connection that never opened"
         );
     }
 }
