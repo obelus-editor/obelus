@@ -189,8 +189,9 @@ async fn say(
         first_tried,
         tried_before,
     };
-    let stopped = |why: String, out: Out| Stopped {
+    let stopped = |why: String, answered: bool, out: Out| Stopped {
         why,
+        answered,
         again: Box::new(saying.again(out)),
     };
     // What became of a question that never went up as a card is said in
@@ -223,9 +224,10 @@ async fn say(
                     tracing::warn!(thread, %why, "Slack would not take a message");
                     waiting.refused(&thread, &why, sink);
                 }
-                Err(Failed::Down(why)) => {
+                Err(Failed::Down { why, answered }) => {
                     return Err(stopped(
                         why,
+                        answered,
                         Out::Say {
                             room,
                             thread,
@@ -264,8 +266,8 @@ async fn say(
                         waited: false,
                     });
                 }
-                Err(Failed::Down(why)) => {
-                    return Err(stopped(why, Out::Open { asked, room, head }));
+                Err(Failed::Down { why, answered }) => {
+                    return Err(stopped(why, answered, Out::Open { asked, room, head }));
                 }
             }
         }
@@ -288,8 +290,8 @@ async fn say(
                 Err(Failed::Refused(why)) => {
                     tracing::warn!(%why, "Slack would not say what a thread is again");
                 }
-                Err(Failed::Down(why)) => {
-                    return Err(stopped(why, Out::Retitle { room, thread, head }));
+                Err(Failed::Down { why, answered }) => {
+                    return Err(stopped(why, answered, Out::Retitle { room, thread, head }));
                 }
             }
         }
@@ -315,7 +317,9 @@ async fn say(
                 Err(Failed::Refused(why)) => {
                     tracing::warn!(%why, "Slack would not say who that is")
                 }
-                Err(Failed::Down(why)) => return Err(stopped(why, Out::Name { id })),
+                Err(Failed::Down { why, answered }) => {
+                    return Err(stopped(why, answered, Out::Name { id }));
+                }
             }
         }
         Out::Ask {
@@ -336,9 +340,10 @@ async fn say(
                 Ok(ts) => {
                     cards.insert(asked, (channel, ts, question.about));
                 }
-                Err(Failed::Down(why)) => {
+                Err(Failed::Down { why, answered }) => {
                     return Err(stopped(
                         why,
+                        answered,
                         Out::Ask {
                             room,
                             thread,
@@ -393,9 +398,10 @@ async fn say(
                         tracing::warn!(%why, asked, "Slack would not close a question");
                         cards.remove(&asked);
                     }
-                    Err(Failed::Down(why)) => {
+                    Err(Failed::Down { why, answered }) => {
                         return Err(stopped(
                             why,
+                            answered,
                             Out::Settle {
                                 room,
                                 thread,
@@ -582,22 +588,22 @@ fn failure(error: SlackClientError) -> Failure {
     tracing::info!(%error, "Slack did not do it");
     let why = said(&error);
     match &error {
-        SlackClientError::RateLimitError(limit) => Failure::Again {
-            why,
-            after: limit.retry_after,
-        },
+        SlackClientError::RateLimitError(limit) => Failure::later(why, limit.retry_after),
         SlackClientError::HttpError(http)
             if http.status_code.is_server_error() || http.status_code.as_u16() == 429 =>
         {
-            Failure::again(why)
+            Failure::later(why, None)
         }
+        // An answer that could not be read: a proxy's page as often as
+        // anything of Slack's, which Feishu's side asks again too.
+        SlackClientError::ProtocolError(_) => Failure::later(why, None),
         SlackClientError::HttpProtocolError(_) | SlackClientError::EndOfStream(_) => {
             Failure::again(why)
         }
         SlackClientError::ApiError(said) if AGAIN.contains(&said.code.as_str()) => {
-            Failure::again(why)
+            Failure::later(why, None)
         }
-        _ if refused(&error) => Failure::again(why),
+        _ if refused(&error) => Failure::later(why, None),
         _ => Failure::Refused(why),
     }
 }
@@ -1197,5 +1203,32 @@ mod tests {
         let busy =
             SlackClientError::ApiError(SlackClientApiError::new("internal_error".to_string()));
         assert!(matches!(looked(Err(busy)), Err(Failure::Again { .. })));
+    }
+
+    /// What Slack answered counts towards giving a message up; what never
+    /// reached it does not -- and an answer that could not be read is asked
+    /// again, as Feishu's is.
+    ///
+    /// Broken deliberately twice. Taking a dropped connection for an
+    /// answer: a network that came and went three times lost the message.
+    /// And refusing an unreadable answer: a proxy's page lost it at once.
+    #[test]
+    fn only_what_slack_answered_counts() {
+        use slack_morphism::errors::{SlackClientHttpProtocolError, SlackClientProtocolError};
+        assert!(matches!(
+            failure(SlackClientError::HttpProtocolError(
+                SlackClientHttpProtocolError::new()
+            )),
+            Failure::Again {
+                answered: false,
+                ..
+            }
+        ));
+        assert!(matches!(
+            failure(SlackClientError::ProtocolError(
+                SlackClientProtocolError::new(serde_json::from_str::<Value>("<html>").unwrap_err())
+            )),
+            Failure::Again { answered: true, .. }
+        ));
     }
 }

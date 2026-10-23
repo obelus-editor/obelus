@@ -60,13 +60,18 @@ impl Waiting {
 
     /// Puts back at the front what was being said when the connection
     /// stopped answering, so it is said first once it answers again -- or,
-    /// where it has stopped it [`ROUNDS`] times with the connection
-    /// answering in between, takes it to be the message, and lets it go as
-    /// refused.
+    /// where the platform has answered it with "later" [`ROUNDS`] times,
+    /// takes it to be the message, and lets it go as refused.
     pub(crate) fn stopped(&mut self, stopped: Stopped, sink: &Arc<dyn Sink<Event>>) {
-        let Stopped { why, again } = stopped;
+        let Stopped {
+            why,
+            answered,
+            again,
+        } = stopped;
         let mut again = *again;
-        again.rounds += 1;
+        if answered {
+            again.rounds += 1;
+        }
         if again.rounds >= ROUNDS {
             tracing::warn!(%why, rounds = again.rounds, "the same message stopped every connection; it goes");
             self.let_go(again.out, Some(why), sink);
@@ -268,6 +273,7 @@ mod tests {
         waiting.stopped(
             Stopped {
                 why: "down".to_string(),
+                answered: false,
                 again: Box::new(say("T", "first")),
             },
             &sink,
@@ -298,6 +304,7 @@ mod tests {
             waiting.stopped(
                 Stopped {
                     why: "answered 502".to_string(),
+                    answered: true,
                     again: Box::new(stuck.clone()),
                 },
                 &sink,
@@ -314,6 +321,34 @@ mod tests {
                 Event::Unsaid { thread, why: Some(why) } if thread == "T" && why == "answered 502"
             )),
             "it went without a word"
+        );
+    }
+
+    /// A message stopped by no answer at all -- a network coming and
+    /// going, a machine asleep -- is put back however often it happens:
+    /// that is nothing the message did.
+    ///
+    /// Broken deliberately by counting every round: after three it went as
+    /// refused, in the words "no answer in time".
+    #[test]
+    fn what_no_answer_stops_is_never_let_go() {
+        let (sink, heard) = heard();
+        let mut waiting = Waiting::default();
+        let mut kept = say("T", "kept");
+        for _ in 0..ROUNDS * 3 {
+            waiting.stopped(
+                Stopped {
+                    why: "no answer in time".to_string(),
+                    answered: false,
+                    again: Box::new(kept.clone()),
+                },
+                &sink,
+            );
+            kept = waiting.next().expect("it was let go of");
+        }
+        assert!(
+            heard.try_iter().next().is_none(),
+            "something was said of it"
         );
     }
 }

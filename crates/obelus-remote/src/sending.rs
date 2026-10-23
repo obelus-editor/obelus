@@ -41,11 +41,12 @@ const LONGEST: Duration = Duration::from_secs(30);
 /// How long one try is given to answer.
 const ANSWER_WITHIN: Duration = Duration::from_secs(20);
 
-/// How many times something may stop a connection that answered in
-/// between before it is taken to be the message: one Slack or Feishu
+/// How many times the platform may answer a message with "later", a round
+/// of tries each, before it is taken to be the message: one Slack or Feishu
 /// cannot take, for a reason that looks like trouble on its side, would
 /// otherwise hold up everything behind it for as long as the window is
-/// open.
+/// open. A round with no answer at all is not counted: that is the
+/// network's, and a message waits out a network however long it takes.
 pub(crate) const ROUNDS: u32 = 3;
 
 /// Why one try did not do it.
@@ -57,17 +58,31 @@ pub(crate) enum Failure {
         why: String,
         /// How long the platform asked to be left, where it said.
         after: Option<Duration>,
+        /// Whether the platform answered at all: a no-answer is the
+        /// network's, and says nothing about the message.
+        answered: bool,
     },
     /// Said no, and would say it again.
     Refused(String),
 }
 
 impl Failure {
-    /// Worth asking again, with no word on when.
+    /// No answer at all: worth asking again, and nothing to do with the
+    /// message.
     pub(crate) fn again(why: impl ToString) -> Self {
         Self::Again {
             why: why.to_string(),
             after: None,
+            answered: false,
+        }
+    }
+
+    /// An answer that says later, after `after` where it says how long.
+    pub(crate) fn later(why: impl ToString, after: Option<Duration>) -> Self {
+        Self::Again {
+            why: why.to_string(),
+            after,
+            answered: true,
         }
     }
 }
@@ -75,8 +90,14 @@ impl Failure {
 /// Why it was not said in the end.
 #[derive(Debug)]
 pub(crate) enum Failed {
-    /// Asked every time there was a try for, and never answered.
-    Down(String),
+    /// Asked every time there was a try for, and never taken.
+    Down {
+        /// What the last try came to.
+        why: String,
+        /// Whether that was the platform saying later, rather than no
+        /// answer at all.
+        answered: bool,
+    },
     /// The platform said no.
     Refused(String),
 }
@@ -90,8 +111,8 @@ pub(crate) struct Saying {
     /// This process's mark and a count: unique on the machine, and short
     /// enough for Feishu's fifty characters.
     pub(crate) id: String,
-    /// How many times it has stopped the connection, which answered again
-    /// each time ([`ROUNDS`]).
+    /// How many rounds of tries the platform has answered with "later"
+    /// ([`ROUNDS`]).
     pub(crate) rounds: u32,
     /// When it was first asked for, in seconds since the epoch: from then
     /// on the platform may have it, on this connection or the next.
@@ -155,6 +176,10 @@ impl Saying {
 pub(crate) struct Stopped {
     /// What would not answer.
     pub(crate) why: String,
+    /// Whether the platform answered, saying later: only those count
+    /// towards [`ROUNDS`], so a network that comes and goes does not wear
+    /// out a message that did nothing wrong.
+    pub(crate) answered: bool,
     /// What to say again, boxed: it is the whole message, and this is the
     /// error of every call that says one.
     pub(crate) again: Box<Saying>,
@@ -180,9 +205,13 @@ where
         match answered {
             Ok(done) => return Ok(done),
             Err(Failure::Refused(why)) => return Err(Failed::Refused(why)),
-            Err(Failure::Again { why, after }) => {
+            Err(Failure::Again {
+                why,
+                after,
+                answered,
+            }) => {
                 let Some(pause) = pauses.next() else {
-                    return Err(Failed::Down(why));
+                    return Err(Failed::Down { why, answered });
                 };
                 tracing::info!(%why, tries, "asking the platform again");
                 tokio::time::sleep(after.map_or(*pause, |after| after.min(LONGEST))).await;
@@ -263,7 +292,7 @@ mod tests {
     #[test]
     fn never_answered_is_down() {
         let (done, count) = run(asked((0..4).map(|n| Err(Failure::again(n))).collect()));
-        assert!(matches!(done, Err(Failed::Down(why)) if why == "3"));
+        assert!(matches!(done, Err(Failed::Down { why, answered: false }) if why == "3"));
         assert_eq!(count, NONE.len() + 1);
     }
 

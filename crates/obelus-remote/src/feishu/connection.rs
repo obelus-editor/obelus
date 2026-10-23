@@ -304,7 +304,7 @@ fn answered(
             || status == reqwest::StatusCode::TOO_MANY_REQUESTS
             || status.is_success()
         {
-            true => Err(Failure::Again { why, after: reset }),
+            true => Err(Failure::later(why, reset)),
             false => Err(Failure::Refused(why)),
         };
     };
@@ -320,7 +320,7 @@ fn answered(
         answer["error"]["log_id"].as_str().unwrap_or("none")
     );
     match AGAIN.contains(&code) || STALE.contains(&code) {
-        true => Err(Failure::Again { why, after: reset }),
+        true => Err(Failure::later(why, reset)),
         false => Err(Failure::Refused(why)),
     }
 }
@@ -568,8 +568,9 @@ async fn say(
     saying: Saying,
 ) -> Result<(), Stopped> {
     let id = &saying.id;
-    let stopped = |why: String, out: Out| Stopped {
+    let stopped = |why: String, answered: bool, out: Out| Stopped {
         why,
+        answered,
         again: Box::new(saying.again(out)),
     };
     match saying.out.clone() {
@@ -599,9 +600,10 @@ async fn say(
                         cards.insert(asked, (message.to_string(), question.about));
                     }
                 }
-                Err(Failed::Down(why)) => {
+                Err(Failed::Down { why, answered }) => {
                     return Err(stopped(
                         why,
+                        answered,
                         Out::Ask {
                             room,
                             thread,
@@ -658,9 +660,10 @@ async fn say(
                         tracing::warn!(message, %why, "a question's card not closed");
                         cards.remove(&asked);
                     }
-                    Err(Failed::Down(why)) => {
+                    Err(Failed::Down { why, answered }) => {
                         return Err(stopped(
                             why,
+                            answered,
                             Out::Settle {
                                 room,
                                 thread,
@@ -742,9 +745,10 @@ async fn say(
                     tracing::warn!(thread, notify, opening, %why, "not said in a thread");
                     waiting.refused(&thread, &why, sink);
                 }
-                Err(Failed::Down(why)) => {
+                Err(Failed::Down { why, answered }) => {
                     return Err(stopped(
                         why,
+                        answered,
                         Out::Say {
                             room,
                             thread,
@@ -779,8 +783,8 @@ async fn say(
                         link: None,
                     });
                 }
-                Err(Failed::Down(why)) => {
-                    return Err(stopped(why, Out::Open { asked, room, head }));
+                Err(Failed::Down { why, answered }) => {
+                    return Err(stopped(why, answered, Out::Open { asked, room, head }));
                 }
                 failed => {
                     if let Err(Failed::Refused(why)) = failed {
@@ -807,8 +811,8 @@ async fn say(
                 Err(Failed::Refused(why)) => {
                     tracing::warn!(thread, %why, "a thread's head not said again");
                 }
-                Err(Failed::Down(why)) => {
-                    return Err(stopped(why, Out::Retitle { room, thread, head }));
+                Err(Failed::Down { why, answered }) => {
+                    return Err(stopped(why, answered, Out::Retitle { room, thread, head }));
                 }
             }
         }
@@ -825,7 +829,9 @@ async fn say(
             {
                 Ok(data) => data["user"]["name"].as_str().map(str::to_string),
                 Err(Failed::Refused(_)) => None,
-                Err(Failed::Down(why)) => return Err(stopped(why, Out::Name { id: who })),
+                Err(Failed::Down { why, answered }) => {
+                    return Err(stopped(why, answered, Out::Name { id: who }));
+                }
             }
             .filter(|name| !name.is_empty())
             .unwrap_or_else(|| who.clone());
