@@ -433,6 +433,7 @@ impl App {
             } => self.heard(&from, &room, &at, &text),
             obelus_remote::Event::Named { id, name } => self.let_in(id, name),
             obelus_remote::Event::Unasked { asked } => self.question_not_put(asked),
+            obelus_remote::Event::Unsaid { thread, why } => self.thread_unsaid(&thread, why),
             obelus_remote::Event::Answered {
                 from,
                 asked,

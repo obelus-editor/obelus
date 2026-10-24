@@ -24,6 +24,7 @@ pub mod model;
 pub mod platform;
 pub mod relay;
 pub mod secrets;
+mod sending;
 pub mod slack;
 mod waiting;
 
@@ -100,6 +101,14 @@ pub enum Event {
         /// rather than refused by the platform: the conversation says which,
         /// since only one of them is the platform's doing.
         waited: bool,
+    },
+    /// Something for a thread that will not arrive in it.
+    Unsaid {
+        /// Which thread, as the platform calls it.
+        thread: String,
+        /// The platform's own words where it refused it, capped; `None`
+        /// where it was let go of here, waiting too long for a connection.
+        why: Option<String>,
     },
     /// What somebody is called.
     Named {
@@ -250,6 +259,15 @@ impl Event {
     pub fn connection(state: State, why: Option<String>) -> Self {
         Self::Connection {
             state,
+            why: why.map(|why| capped(why.trim(), REASON_AT_MOST)),
+        }
+    }
+
+    /// Something for `thread` that will not arrive, with why capped the
+    /// way a connection's is: it is the platform's text.
+    pub(crate) fn unsaid(thread: String, why: Option<String>) -> Self {
+        Self::Unsaid {
+            thread,
             why: why.map(|why| capped(why.trim(), REASON_AT_MOST)),
         }
     }
