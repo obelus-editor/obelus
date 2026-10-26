@@ -57,6 +57,7 @@ ratatui-image.workspace = true
 reqwest.workspace = true
 resvg.workspace = true
 semver.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 toml.workspace = true

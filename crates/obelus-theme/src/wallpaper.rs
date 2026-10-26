@@ -14,7 +14,7 @@
 use std::path::{Path, PathBuf};
 
 /// The picture, and how it is laid under the page.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Wallpaper {
     /// Where the picture is.
     pub file: PathBuf,
@@ -72,7 +72,7 @@ pub fn veil(opacity: u8, strength: usize) -> f32 {
 }
 
 /// How a picture is fitted to a window whose shape is not its own.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Fit {
     /// As large as it takes to cover the window, and what does not fit
     /// is cut off.
@@ -110,7 +110,7 @@ impl Fit {
 }
 
 /// One side of a picture, or its middle, along one way.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Edge {
     /// The left, or the top.
     Start,
@@ -123,7 +123,7 @@ pub enum Edge {
 
 /// Which point of a picture is held to the same point of the window: what
 /// is cut off, where there is room left over, and where a tiling starts.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Anchor {
     /// Left, middle or right.
     pub across: Edge,

@@ -397,7 +397,7 @@ from_worker! {
 }
 
 /// What the pointer's button did.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Pointer {
     /// Moved with nothing held down.
     ///

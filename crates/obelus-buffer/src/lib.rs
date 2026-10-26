@@ -48,7 +48,9 @@ use obelus_text::{
 /// with text and a syntax tree and a cursor in it. What this names is a
 /// place in the list of what the reader can switch between, and that list
 /// holds conversations as well -- see the application's `Document`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub struct DocumentId(usize);
 
 impl DocumentId {

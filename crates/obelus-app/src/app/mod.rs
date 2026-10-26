@@ -1559,7 +1559,7 @@ struct Complaint {
 /// what is there, or go over it. A terminal has four of these and the
 /// reader has chosen one of them for their terminal; a window draws its own
 /// and so has to be told which.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Caret {
     /// Between two characters: what is typed goes in.
     Bar,
@@ -1718,7 +1718,7 @@ pub trait Drawing: std::fmt::Debug + Send + Sync {
 }
 
 /// One open document, as a row of tabs says it.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Tab {
     /// Which document, for choosing it again -- see `Event::Chose`.
     pub document: DocumentId,

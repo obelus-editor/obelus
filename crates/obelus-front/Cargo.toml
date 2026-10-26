@@ -15,5 +15,15 @@ obelus-app.workspace = true
 obelus-component.workspace = true
 obelus-theme.workspace = true
 obelus-ui.workspace = true
+# The key a window hears, as it crosses back.
+crossterm = { workspace = true, features = ["serde"] }
+# For `obelus_app::event::Event`'s documents alone.
+obelus-buffer.workspace = true
 ratatui.workspace = true
+# For what crosses as ratatui writes it -- see `wire`.
+ratatui-core = { workspace = true, features = ["serde"] }
+serde.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+obelus-wire.workspace = true

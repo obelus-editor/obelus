@@ -10,6 +10,7 @@ license.workspace = true
 workspace = true
 
 [dependencies]
+serde.workspace = true
 obelus-agent.workspace = true
 obelus-bot.workspace = true
 obelus-buffer.workspace = true
@@ -32,6 +33,10 @@ obelus-todo.workspace = true
 crossterm.workspace = true
 image.workspace = true
 ratatui.workspace = true
+# `serde` for the places a shape is said to be, which cross to a window
+# that may be on another machine. On the core rather than on ratatui, whose
+# own `serde` reaches for every backend it has.
+ratatui-core = { workspace = true, features = ["serde"] }
 ratatui-image.workspace = true
 resvg.workspace = true
 tracing.workspace = true

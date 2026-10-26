@@ -80,6 +80,8 @@ obelus-wire = { path = "crates/obelus-wire" }
 # below: the tree must contain exactly one crossterm, or `KeyEvent` is two
 # unrelated types and the mismatch surfaces as an unreadable trait error.
 ratatui = { version = "0.30", features = ["crossterm_0_29"] }
+# The types ratatui is made of, for `serde` on them alone.
+ratatui-core = "0.1"
 
 # Declared directly, not taken from ratatui's re-export, so the version this
 # crate compiles against is stated in one place next to the feature that pins

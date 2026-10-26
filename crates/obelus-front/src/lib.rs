@@ -22,6 +22,10 @@ use std::sync::{
     atomic::{AtomicU16, AtomicU32, Ordering},
 };
 
+mod input;
+pub mod wire;
+
+pub use input::Input;
 use obelus_app::app::Caret;
 use obelus_component::layers::Layer;
 use obelus_ui::{
@@ -58,7 +62,7 @@ pub trait Showing: Send + Sync {
 /// The theme's whole word, file and all, because which file it is and when
 /// it was written is what says whether it is another picture or the same
 /// one laid differently -- see the window's decoder.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Hanging {
     /// What the theme said.
     pub wallpaper: obelus_theme::Wallpaper,
@@ -74,7 +78,7 @@ pub struct Hanging {
 ///
 /// `P` is what a picture under the page is, which is its bytes on the way
 /// to whoever draws ([`Hanging`]) and whatever they decode it into after.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Update<P = Option<Hanging>> {
     /// A cell, at a place.
     Cell {
@@ -83,6 +87,7 @@ pub enum Update<P = Option<Hanging>> {
         /// The row.
         y: u16,
         /// What is in it.
+        #[serde(with = "wire::boxed_cell")]
         cell: Box<Cell>,
     },
     /// Everything, gone.
@@ -122,7 +127,7 @@ pub enum Update<P = Option<Hanging>> {
     /// The same journey once more. A terminal never asks: there the cells
     /// are the whole of the screen, and it is only a window that has a
     /// strip outside them to put a colour in.
-    Ground(Color),
+    Ground(#[serde(with = "wire::ink")] Color),
     /// Which two colours mean the reader has hold of something: a run of
     /// characters, and the row their keys are on.
     ///
@@ -132,8 +137,10 @@ pub enum Update<P = Option<Hanging>> {
     /// `paint::holdings`.
     Holding {
         /// Behind the characters the reader is holding.
+        #[serde(with = "wire::ink")]
         held: Color,
         /// Behind the row their keys are on.
+        #[serde(with = "wire::ink")]
         row: Color,
     },
     /// The picture under the page, or that there is none.
@@ -159,7 +166,7 @@ pub enum Update<P = Option<Hanging>> {
     /// by the page rather than the window because it is the page that is
     /// kept when the theme goes -- see `Drawing::recoloured` -- and the
     /// screen going is in the caret it had.
-    CaretInk(Color),
+    CaretInk(#[serde(with = "wire::ink")] Color),
     /// What shape the caret is, and whose it is.
     ///
     /// Which is a fact about the frame it arrives with -- both depend on
@@ -187,6 +194,7 @@ pub enum Update<P = Option<Hanging>> {
         /// The drawing itself.
         svg: String,
         /// The colours to ink it in.
+        #[serde(with = "wire::palette")]
         palette: Palette,
     },
     /// And that mark goes here, in the frame being laid out.
@@ -212,10 +220,13 @@ pub enum Update<P = Option<Hanging>> {
         /// Which cells it is.
         area: Rect,
         /// The ground the key sits on.
+        #[serde(with = "wire::ink")]
         cap: Color,
         /// What is behind the cap, which shows through its corners.
+        #[serde(with = "wire::ink")]
         page: Color,
         /// What draws its outline.
+        #[serde(with = "wire::ink")]
         edge: Color,
     },
     /// A column that is a bar, and how much of it is the mark.
@@ -293,8 +304,10 @@ pub enum Update<P = Option<Hanging>> {
         /// Which cells it is.
         area: Rect,
         /// What it rests at.
+        #[serde(with = "wire::ink")]
         from: Color,
         /// And what the light carries it to.
+        #[serde(with = "wire::ink")]
         to: Color,
     },
     /// A band of rows, and which row of its list it starts at.
@@ -319,8 +332,10 @@ pub enum Update<P = Option<Hanging>> {
         /// from.
         joined: Joined,
         /// The pane's own colour, which is where the glass is.
+        #[serde(with = "wire::ink")]
         ground: Color,
         /// Row-major, `area.width` to a row.
+        #[serde(with = "wire::cells")]
         cells: Vec<Cell>,
     },
 }
@@ -708,7 +723,8 @@ impl Measured {
     }
 
     /// How many columns and rows there are room for.
-    fn size(&self) -> Size {
+    #[must_use]
+    pub fn size(&self) -> Size {
         Size::new(
             self.columns.load(Ordering::Relaxed),
             self.rows.load(Ordering::Relaxed),
@@ -716,7 +732,8 @@ impl Measured {
     }
 
     /// And how many pixels that is.
-    fn pixels(&self) -> Size {
+    #[must_use]
+    pub fn pixels(&self) -> Size {
         let packed = self.pixels.load(Ordering::Relaxed);
         // Both halves were clamped to a `u16` on the way in.
         Size::new((packed >> 16) as u16, (packed & 0xffff) as u16)
@@ -843,6 +860,7 @@ impl Backend for Cells {
 mod tests {
     use std::sync::Mutex;
 
+    use crossterm::event::KeyEvent;
     use obelus_app::app::Drawing as _;
 
     use super::*;
@@ -858,6 +876,265 @@ mod tests {
         }
 
         fn wake(&self) {}
+    }
+
+    /// A cell with something in every field that crosses.
+    fn styled(symbol: &str) -> Cell {
+        let mut cell = Cell::default();
+        cell.set_symbol(symbol);
+        cell.fg = Color::Rgb(1, 2, 3);
+        cell.bg = Color::Indexed(7);
+        cell.underline_color = Color::LightMagenta;
+        cell.modifier = ratatui::style::Modifier::BOLD | ratatui::style::Modifier::ITALIC;
+        cell.diff_option = ratatui::buffer::CellDiffOption::ForcedWidth(
+            std::num::NonZeroU16::MIN.saturating_add(1),
+        );
+        cell
+    }
+
+    /// One of every update, as it crosses.
+    fn every_update() -> Vec<Update> {
+        let area = Rect::new(1, 2, 3, 4);
+        let bar = Bar {
+            area,
+            mark: 1,
+            thumb: 2,
+        };
+        vec![
+            Update::Cell {
+                x: 3,
+                y: 4,
+                cell: Box::new(styled("中")),
+            },
+            Update::Cleared,
+            Update::Caret(Some(Position::new(5, 6))),
+            Update::Frame,
+            Update::TextSize(14),
+            Update::Fonts(vec!["JetBrains Mono".to_string()]),
+            Update::Animates(true),
+            Update::BarTabs(false),
+            Update::PictureStrength(60),
+            Update::Ground(Color::Rgb(9, 8, 7)),
+            Update::Holding {
+                held: Color::Blue,
+                row: Color::Reset,
+            },
+            Update::Picture(Some(Hanging {
+                wallpaper: obelus_theme::Wallpaper {
+                    file: std::path::PathBuf::from("/themes/dusk.jpg"),
+                    opacity: 80,
+                    fit: obelus_theme::wallpaper::Fit::Cover,
+                    anchor: obelus_theme::wallpaper::Anchor::default(),
+                    modified: None,
+                },
+                bytes: vec![0xff, 0xd8],
+            })),
+            Update::Tabs(vec![obelus_app::app::Tab {
+                document: obelus_buffer::DocumentId::new(2),
+                name: "main.rs".to_string(),
+                icon: Some('r'),
+                reading: true,
+                unwritten: false,
+            }]),
+            Update::Recoloured,
+            Update::CaretInk(Color::White),
+            Update::CaretIs {
+                shape: Caret::Bar,
+                whose: Some(Layer::Settings),
+                typing: true,
+            },
+            Update::Mark {
+                id: "claude".to_string(),
+                focused: true,
+                svg: "<svg/>".to_string(),
+                palette: Palette {
+                    ink: Color::Black,
+                    paper: Color::Rgb(250, 250, 250),
+                    selected: Color::Indexed(4),
+                },
+            },
+            Update::Marked {
+                id: "claude".to_string(),
+                focused: false,
+                x: 7,
+                y: 8,
+            },
+            Update::Capped {
+                keys: "ctrl+p".to_string(),
+                area,
+                cap: Color::DarkGray,
+                page: Color::Black,
+                edge: Color::Gray,
+            },
+            Update::Barred { bar },
+            Update::Stroked {
+                stroke: Stroke {
+                    area,
+                    side: obelus_ui::shapes::Side::Left,
+                    about: obelus_ui::shapes::About::Rows,
+                },
+            },
+            Update::Ticked { area, on: true },
+            Update::Spun { area },
+            Update::Ruled { area },
+            Update::Parted { area },
+            Update::Paired {
+                area,
+                pair: Pair {
+                    document: 1,
+                    version: 2,
+                    open: 3,
+                },
+            },
+            Update::Found {
+                area,
+                found: obelus_ui::shapes::Found {
+                    page: 1,
+                    row: 2,
+                    start: 3,
+                },
+            },
+            Update::Linked { area },
+            Update::Spelled { area },
+            Update::Sheened {
+                area,
+                from: Color::Green,
+                to: Color::LightGreen,
+            },
+            Update::Scrolled {
+                area,
+                top: -1,
+                bar: Some(bar),
+            },
+            Update::Behind {
+                area,
+                joined: Joined::Below,
+                ground: Color::Rgb(20, 20, 20),
+                cells: vec![styled("a"), Cell::default()],
+            },
+        ]
+    }
+
+    /// One of every input, as it crosses.
+    fn every_input() -> Vec<Input> {
+        use crossterm::event::{KeyCode, KeyModifiers};
+        let key = KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL);
+        let document = obelus_buffer::DocumentId::new(1);
+        vec![
+            Input::Key(key),
+            Input::Command(key),
+            Input::Resize {
+                columns: 120,
+                rows: 40,
+                width: 1440,
+                height: 960,
+            },
+            Input::Fonts {
+                here: vec!["Menlo".to_string()],
+                otherwise: None,
+            },
+            Input::Closed,
+            Input::Shifted(true),
+            Input::Scroll {
+                rows: -3,
+                at: Some((1, 2)),
+            },
+            Input::Pointer {
+                kind: obelus_app::event::Pointer::Dragged,
+                x: 4,
+                y: 5,
+            },
+            Input::Chose(document),
+            Input::Shut(document),
+            Input::Placed {
+                document,
+                beside: obelus_buffer::DocumentId::new(3),
+                after: true,
+            },
+            Input::Paste("words".to_string()),
+            Input::Spelling("にほ".to_string(), Some(1)),
+            Input::Dropped(std::path::PathBuf::from("/tmp/a.png")),
+            Input::Summoned(Some("token".to_string())),
+        ]
+    }
+
+    /// Every update crosses as itself.
+    ///
+    /// Broken deliberately by writing a colour given in red, green and blue
+    /// as `Reset` (in `Ink::from`): the cells came back colourless.
+    #[test]
+    fn every_update_crosses_as_itself() {
+        for update in every_update() {
+            let frame = obelus_wire::framed(&update).expect("framed");
+            let back: Update = obelus_wire::unframed(&frame[4..]).expect("read");
+            assert_eq!(back, update);
+        }
+    }
+
+    /// Every input crosses as itself.
+    ///
+    /// Broken deliberately by leaving where the wheel turned out of the
+    /// bytes (`serde(skip)` on `Scroll::at`): it arrived over no cell.
+    #[test]
+    fn every_input_crosses_as_itself() {
+        for input in every_input() {
+            let frame = obelus_wire::framed(&input).expect("framed");
+            let back: Input = obelus_wire::unframed(&frame[4..]).expect("read");
+            assert_eq!(back, input);
+        }
+    }
+
+    /// What crosses, as bytes: what a window and an Obelus of another build
+    /// read. The bytes move with the shape, and moving them is the moment
+    /// to move `obelus_wire::WIRE_VERSION` too. `UPDATE_FIXTURES=1` writes
+    /// them again.
+    ///
+    /// Broken deliberately by putting `Cleared` before `Cell` in `Update`:
+    /// every update's first byte moved.
+    #[test]
+    fn what_crosses_is_these_bytes() {
+        let mut bytes = Vec::new();
+        for update in every_update() {
+            bytes.extend(obelus_wire::framed(&update).expect("framed"));
+        }
+        for input in every_input() {
+            bytes.extend(obelus_wire::framed(&input).expect("framed"));
+        }
+        let written: String = bytes
+            .chunks(32)
+            .map(|line| {
+                let mut hex: String = line.iter().map(|byte| format!("{byte:02x}")).collect();
+                hex.push('\n');
+                hex
+            })
+            .collect();
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/frames.hex");
+        if std::env::var_os("UPDATE_FIXTURES").is_some() {
+            std::fs::create_dir_all(path.parent().expect("a directory")).expect("the directory");
+            std::fs::write(&path, &written).expect("the bytes");
+        }
+        let kept = std::fs::read_to_string(&path).expect("the bytes as they were");
+        assert_eq!(
+            written, kept,
+            "what crosses moved: move WIRE_VERSION, and write these again"
+        );
+    }
+
+    /// A resize takes the size with it, and it is written down at the far
+    /// end before the loop is told to look.
+    ///
+    /// Broken deliberately by `into_event` answering `Event::Resize`
+    /// without writing it down: the far end's backend still said nothing.
+    #[test]
+    fn a_resize_takes_the_size_with_it() {
+        let here = Measured::default();
+        here.resized(80, 24, 800, 480);
+        let input = Input::of(obelus_app::event::Event::Resize, &here).expect("a resize");
+        let there = Measured::default();
+        let event = input.into_event(&there);
+        assert!(matches!(event, obelus_app::event::Event::Resize));
+        assert_eq!(there.size(), Size::new(80, 24));
+        assert_eq!(there.pixels(), Size::new(800, 480));
     }
 
     /// A picture under the page is handed on as what its file holds, and

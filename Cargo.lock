@@ -548,6 +548,9 @@ name = "bitflags"
 version = "2.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b588b76d00fde79687d7646a9b5bdf3cc0f655e0bbd080335a95d7e96f3587da"
+dependencies = [
+ "serde_core",
+]
 
 [[package]]
 name = "bitvec"
@@ -957,6 +960,7 @@ dependencies = [
  "itoa",
  "rustversion",
  "ryu",
+ "serde",
  "static_assertions",
 ]
 
@@ -1159,6 +1163,7 @@ dependencies = [
  "mio",
  "parking_lot",
  "rustix 1.1.4",
+ "serde",
  "signal-hook 0.3.18",
  "signal-hook-mio",
  "winapi",
@@ -4489,6 +4494,7 @@ dependencies = [
  "reqwest",
  "resvg",
  "semver",
+ "serde",
  "serde_json",
  "tokio",
  "toml 1.1.5+spec-1.1.0",
@@ -4535,6 +4541,7 @@ dependencies = [
  "obelus-encoding",
  "obelus-syntax",
  "obelus-text",
+ "serde",
  "tracing",
 ]
 
@@ -4679,11 +4686,16 @@ dependencies = [
 name = "obelus-front"
 version = "0.17.1"
 dependencies = [
+ "crossterm",
  "obelus-app",
+ "obelus-buffer",
  "obelus-component",
  "obelus-theme",
  "obelus-ui",
+ "obelus-wire",
  "ratatui",
+ "ratatui-core",
+ "serde",
  "tracing",
 ]
 
@@ -4964,6 +4976,7 @@ dependencies = [
  "image",
  "obelus-text",
  "ratatui",
+ "serde",
  "toml 1.1.5+spec-1.1.0",
  "toml_edit 0.22.27",
 ]
@@ -5025,8 +5038,10 @@ dependencies = [
  "obelus-themes",
  "obelus-todo",
  "ratatui",
+ "ratatui-core",
  "ratatui-image",
  "resvg",
+ "serde",
  "tracing",
  "unicode-width",
 ]
