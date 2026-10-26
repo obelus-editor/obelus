@@ -22,7 +22,9 @@ obelus-buffer.workspace = true
 ratatui.workspace = true
 # For what crosses as ratatui writes it -- see `wire`.
 ratatui-core = { workspace = true, features = ["serde"] }
+hmac.workspace = true
 serde.workspace = true
+sha2.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]

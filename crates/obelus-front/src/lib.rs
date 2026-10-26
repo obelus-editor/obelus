@@ -23,6 +23,8 @@ use std::sync::{
 };
 
 mod input;
+pub mod link;
+pub mod replay;
 pub mod wire;
 
 pub use input::Input;
@@ -78,7 +80,7 @@ pub struct Hanging {
 ///
 /// `P` is what a picture under the page is, which is its bytes on the way
 /// to whoever draws ([`Hanging`]) and whatever they decode it into after.
-#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Update<P = Option<Hanging>> {
     /// A cell, at a place.
     Cell {
@@ -1099,6 +1101,56 @@ mod tests {
         }
         for input in every_input() {
             bytes.extend(obelus_wire::framed(&input).expect("framed"));
+        }
+        bytes.extend(obelus_wire::framed(&link::Challenge([3; 32])).expect("framed"));
+        bytes.extend(
+            obelus_wire::framed(&link::Knock {
+                signed: [4; 32],
+                front: link::Front::Window {
+                    screen: [2560, 1440],
+                },
+                size: [120, 40, 1440, 960],
+                path: None,
+                window: None,
+            })
+            .expect("framed"),
+        );
+        for answered in [
+            link::Answered::Open {
+                window: "w1".to_string(),
+                again: false,
+            },
+            link::Answered::Refused("no".to_string()),
+        ] {
+            bytes.extend(obelus_wire::framed(&answered).expect("framed"));
+        }
+        for down in [
+            link::Down::Update(Update::Frame),
+            link::Down::Copy("c".to_string()),
+            link::Down::Paste(1),
+            link::Down::Picture(2),
+            link::Down::HoldsAPicture(3),
+            link::Down::Open("u".to_string()),
+            link::Down::Finished,
+        ] {
+            bytes.extend(obelus_wire::framed(&down).expect("framed"));
+        }
+        for up in [
+            link::Up::Input(Input::Closed),
+            link::Up::Pasted {
+                number: 1,
+                words: None,
+            },
+            link::Up::Pictured {
+                number: 2,
+                picture: Some(("image/png".to_string(), vec![1])),
+            },
+            link::Up::Holds {
+                number: 3,
+                picture: true,
+            },
+        ] {
+            bytes.extend(obelus_wire::framed(&up).expect("framed"));
         }
         let written: String = bytes
             .chunks(32)
