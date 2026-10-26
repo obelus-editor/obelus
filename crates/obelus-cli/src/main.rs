@@ -11,6 +11,7 @@ use anyhow::Result;
 use clap::Parser;
 use obelus_app::{app, event, startup};
 
+mod client;
 mod serve;
 mod server;
 
@@ -60,6 +61,17 @@ struct Arguments {
     #[arg(long, requires = "server")]
     listen: Option<std::net::SocketAddr>,
 
+    /// Draw an Obelus on another machine, started there with `ob --server`:
+    /// the machine, and its port where it is not the server's own. What to
+    /// open is said the way it is to `ob`, as it is named on that machine.
+    #[arg(long, value_name = "MACHINE[:PORT]")]
+    connect: Option<String>,
+
+    /// The key that server printed, needed the first time and kept after.
+    /// `OBELUS_KEY` says it as well.
+    #[arg(long, requires = "connect")]
+    key: Option<String>,
+
     /// One window's Obelus, which `--server` starts and nothing else does:
     /// its standard input and output are the window's connection.
     #[arg(long, hide = true)]
@@ -85,6 +97,13 @@ fn main() -> Result<ExitCode> {
     }
     if arguments.serve_one {
         return serve::one();
+    }
+    if let Some(at) = arguments.connect {
+        let path = arguments
+            .paths
+            .first()
+            .map(|path| path.display().to_string());
+        return client::connect(at, arguments.key, path);
     }
     if arguments.headless {
         let outcome = app::run_headless(&arguments.paths, env!("OBELUS_BUILD"));
@@ -151,7 +170,9 @@ fn main() -> Result<ExitCode> {
         app.amiss("The wheel will not be reported, so it moves the cursor");
     }
     // And what the terminal pastes, wrapped so it can be told from typing.
-    enable_paste(&mut app);
+    if !enable_paste() {
+        app.amiss("Pasting will arrive a character at a time, not in one go");
+    }
     // And the keyboard, for the one key Obelus needs that a terminal
     // cannot otherwise report.
     let keyboard = enable_keyboard();
@@ -170,19 +191,7 @@ fn main() -> Result<ExitCode> {
     let outcome = app::run(&mut terminal, &mut app, events);
     startup::finish(&outcome);
 
-    if mouse {
-        let _ = crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture);
-    }
-    let _ = crossterm::execute!(std::io::stdout(), crossterm::event::DisableBracketedPaste);
-    if keyboard {
-        let _ = crossterm::execute!(
-            std::io::stdout(),
-            crossterm::event::PopKeyboardEnhancementFlags
-        );
-    }
-    if let Err(error) = ratatui::try_restore() {
-        tracing::warn!(%error, "the terminal was not put back");
-    }
+    give_back(mouse, keyboard);
 
     outcome.map(|()| ExitCode::SUCCESS)
 }
@@ -269,12 +278,13 @@ fn enable_keyboard() -> bool {
 ///
 /// Best effort, like the mouse: a terminal that does not know the mode says
 /// nothing and pastes the old way.
-fn enable_paste(app: &mut obelus_app::app::App) {
-    if let Err(error) =
-        crossterm::execute!(std::io::stdout(), crossterm::event::EnableBracketedPaste)
-    {
-        tracing::warn!(%error, "no bracketed paste");
-        app.amiss("Pasting will arrive a character at a time, not in one go");
+fn enable_paste() -> bool {
+    match crossterm::execute!(std::io::stdout(), crossterm::event::EnableBracketedPaste) {
+        Ok(()) => true,
+        Err(error) => {
+            tracing::warn!(%error, "no bracketed paste");
+            false
+        }
     }
 }
 
@@ -290,5 +300,23 @@ fn enable_mouse() -> bool {
             tracing::warn!(%error, "no mouse reporting");
             false
         }
+    }
+}
+
+/// Hands the terminal back the way it was found: the mouse, pasting and
+/// the keyboard as they were, and the screen it had.
+fn give_back(mouse: bool, keyboard: bool) {
+    if mouse {
+        let _ = crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture);
+    }
+    let _ = crossterm::execute!(std::io::stdout(), crossterm::event::DisableBracketedPaste);
+    if keyboard {
+        let _ = crossterm::execute!(
+            std::io::stdout(),
+            crossterm::event::PopKeyboardEnhancementFlags
+        );
+    }
+    if let Err(error) = ratatui::try_restore() {
+        tracing::warn!(%error, "the terminal was not put back");
     }
 }

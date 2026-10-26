@@ -36,7 +36,6 @@
 // started it in.
 #![cfg_attr(not(test), windows_subsystem = "windows")]
 
-mod afar;
 mod blink;
 mod clipboard;
 mod elsewhere;
@@ -137,7 +136,7 @@ fn main() -> Result<()> {
     // Nothing to open here: what is named is the other machine's, and the
     // settings that say how a window is drawn are the reader's there.
     if let Some(at) = arguments.connect {
-        let key = afar::key(
+        let key = obelus_front::client::key(
             &at,
             arguments.key.or_else(|| std::env::var("OBELUS_KEY").ok()),
         )?;
@@ -146,7 +145,12 @@ fn main() -> Result<()> {
             .first()
             .map(|path| path.display().to_string());
         tracing::info!(at, "drawing an Obelus on another machine");
-        return window::show(window::Start::Afar(afar::Afar { at, key, path }));
+        return window::show(window::Start::Afar(obelus_front::client::Afar {
+            at,
+            key,
+            path,
+            build: env!("OBELUS_BUILD"),
+        }));
     }
 
     // Opened before there is a window, so that a bad path reports itself on

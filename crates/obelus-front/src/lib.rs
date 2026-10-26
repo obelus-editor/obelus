@@ -22,6 +22,7 @@ use std::sync::{
     atomic::{AtomicU16, AtomicU32, Ordering},
 };
 
+pub mod client;
 mod input;
 pub mod link;
 pub mod replay;

@@ -4692,11 +4692,14 @@ dependencies = [
 name = "obelus-front"
 version = "0.17.1"
 dependencies = [
+ "anyhow",
  "crossterm",
  "hmac",
  "obelus-app",
  "obelus-buffer",
+ "obelus-clipboard",
  "obelus-component",
+ "obelus-logging",
  "obelus-theme",
  "obelus-ui",
  "obelus-wire",

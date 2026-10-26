@@ -10,7 +10,13 @@ license.workspace = true
 workspace = true
 
 [dependencies]
+anyhow.workspace = true
 obelus-app.workspace = true
+# The reader's clipboard and browser, for an Obelus on another machine
+# that asks for them -- see `client`.
+obelus-clipboard.workspace = true
+# Where the key for a server is kept.
+obelus-logging.workspace = true
 # For `Layer` alone: the caret says which of them owns it.
 obelus-component.workspace = true
 obelus-theme.workspace = true
@@ -27,5 +33,4 @@ serde.workspace = true
 sha2.workspace = true
 tracing.workspace = true
 
-[dev-dependencies]
 obelus-wire.workspace = true

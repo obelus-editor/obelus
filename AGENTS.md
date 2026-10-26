@@ -938,9 +938,10 @@ crates/
                       there is nothing to own, so a terminal offers Obelus's
                       own shape too (native); what is taken for a picture is
                       a file that is one (dropped)
-  obelus-cli/       the `ob` binary: Obelus drawn on a terminal, and Obelus
-                    for windows on other machines (`--server`), one Obelus
-                    of its own for each (serve)
+  obelus-cli/       the `ob` binary: Obelus drawn on a terminal, Obelus for
+                    windows on other machines (`--server`), one Obelus of
+                    its own for each (serve), and this terminal drawing one
+                    on another machine (`--connect`, client)
                     · two keys need the terminal's permission, and the
                       editors' `ctrl+shift` chords are the only others that
                       depend on the protocol (main); one Obelus for each
@@ -958,7 +959,10 @@ crates/
                     cells is, the marks -- and the parts of Obelus that say
                     it, wherever the window that hears it is
                     · a picture crosses as its bytes, and the window decodes
-                      it (lib); a connection is a knock first, what is said
+                      it (lib); the front end is the same front end, what
+                      only this machine can do is done here, and a
+                      connection that goes is knocked on again (client); a
+                      connection is a knock first, what is said
                       after it is not hidden, and a window is named so that
                       it can be found again (link); a window that comes back
                       has nothing (replay); Obelus's own spelling and not
@@ -972,9 +976,7 @@ crates/
                     the window keeps -- and a window on an Obelus running on
                     another machine (`--connect`)
                     · Obelus is drawn on two things and the loop knows neither
-                      (main); the window is the same window, what only this
-                      machine can do is done here, and a connection that goes
-                      is knocked on again (afar); a window started from a terminal gives the
+                      (main); a window started from a terminal gives the
                       terminal back (leaving); `App` crosses a thread and
                       stays there, and what an input method is spelling is
                       written in, the way Zed does it (window); closing the

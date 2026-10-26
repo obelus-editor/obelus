@@ -1,16 +1,17 @@
-//! A window on an Obelus running on another machine: `obg --connect`.
+//! A front end drawing an Obelus that runs on another machine: `obg
+//! --connect` and `ob --connect`, which differ in what they are and what
+//! they draw on, and in nothing here.
 //!
-//! **The window is the same window.** What arrives is what Obelus on this
-//! machine would have put on the window's channel -- the frames, what the
-//! settings tell a window, the shapes and the marks -- and it goes into
-//! that channel through the same door (`grid::Here`), the picture under
-//! the page decoded here as it always is. What the reader does goes back
-//! the way it would have reached Obelus's loop, as an `Input`. Nothing
-//! else about the window knows the difference.
+//! **The front end is the same front end.** What arrives is what Obelus on
+//! this machine would have said to it -- the frames, and for a window what
+//! the settings tell one, the shapes and the marks -- and it is handed over
+//! through the same door ([`Showing`]). What the reader does goes back the
+//! way it would have reached Obelus's loop, as an [`Input`]. Nothing else
+//! about the front end knows the difference.
 //!
 //! **What only this machine can do is done here.** The reader's clipboard
 //! and browser are this machine's, so what Obelus there asks of them is
-//! answered here (`obelus_front::link::Down`).
+//! answered here (`crate::link::Down`).
 //!
 //! **A connection that goes is knocked on again.** With the window's name,
 //! which takes up the Obelus that was there -- still running, with
@@ -31,8 +32,9 @@ use std::{
 
 use anyhow::{Context as _, Result};
 use obelus_app::event::Event;
-use obelus_front::{
-    Input, Measured, Showing as _, Update,
+
+use crate::{
+    Input, Measured, Showing, Update,
     link::{Answered, Challenge, Down, Front, Knock, Up},
 };
 
@@ -42,15 +44,17 @@ const LONGEST: Duration = Duration::from_secs(10);
 /// Where a server listens when the reader names only the machine.
 const PORT: u16 = 7787;
 
-/// The server a window is for, and what it is to open there.
+/// The server a front end is for, and what it is to open there.
 #[derive(Debug)]
-pub(crate) struct Afar {
+pub struct Afar {
     /// The machine, and the port where one was given.
-    pub(crate) at: String,
+    pub at: String,
     /// The key it printed.
-    pub(crate) key: Vec<u8>,
+    pub key: Vec<u8>,
     /// What to open there, as `ob path` would be told.
-    pub(crate) path: Option<String>,
+    pub path: Option<String>,
+    /// Which build of Obelus this is, for the hello.
+    pub build: &'static str,
 }
 
 impl Afar {
@@ -69,7 +73,7 @@ impl Afar {
 /// # Errors
 ///
 /// Where there is none, or it is not the letters a server prints.
-pub(crate) fn key(at: &str, given: Option<String>) -> Result<Vec<u8>> {
+pub fn key(at: &str, given: Option<String>) -> Result<Vec<u8>> {
     let kept = obelus_logging::state_directory().map(|directory| {
         let file: String = at
             .chars()
@@ -108,21 +112,21 @@ pub(crate) fn key(at: &str, given: Option<String>) -> Result<Vec<u8>> {
                 .and_then(|pair| u8::from_str_radix(pair, 16).ok())
         })
         .collect::<Option<Vec<u8>>>()
-        .filter(|key| !key.is_empty() && letters.len() % 2 == 0)
+        .filter(|key| !key.is_empty() && letters.len().is_multiple_of(2))
         .context("that key is not one a server prints")
 }
 
 /// Knocks on the server, and says what it answered and the connection.
 fn knock(
     afar: &Afar,
+    front: &Front,
     measured: &Measured,
-    screen: [u32; 2],
     window: Option<&str>,
 ) -> Result<(TcpStream, Answered)> {
     let mut stream = TcpStream::connect(afar.address())
         .with_context(|| format!("connecting to {}", afar.address()))?;
     stream.set_nodelay(true)?;
-    let ours = obelus_wire::Hello::here(env!("OBELUS_BUILD"));
+    let ours = obelus_wire::Hello::here(afar.build);
     obelus_wire::write(&mut stream, &ours)?;
     let theirs: obelus_wire::Hello =
         obelus_wire::read(&mut stream)?.context("the server went before it said hello")?;
@@ -136,11 +140,8 @@ fn knock(
     obelus_wire::write(
         &mut stream,
         &Knock {
-            signed: obelus_front::link::sign(&afar.key, &challenge),
-            front: Front::Window {
-                screen,
-                command_is_control: crate::keys::COMMAND_IS_CONTROL,
-            },
+            signed: crate::link::sign(&afar.key, &challenge),
+            front: front.clone(),
             size: [size.width, size.height, pixels.width, pixels.height],
             path: afar.path.clone(),
             window: window.map(str::to_string),
@@ -151,36 +152,67 @@ fn knock(
     Ok((stream, answered))
 }
 
-/// Starts the window's connection to `afar`, with what arrives going to
-/// the window through `here` and what the window says arriving on `done`.
+/// What becomes of the front end when there is no more connection: told
+/// once, with why -- `Ok` for an Obelus that ended because the reader left
+/// it, or that was never there to ask.
+pub type Ended = Box<dyn FnOnce(Result<()>) + Send>;
+
+/// Says how the connection ended, once, however its thread ends -- a
+/// panic included, because a front end waiting for an end that never comes
+/// is one that cannot even be closed.
+struct Ending(Mutex<Option<Ended>>);
+
+impl Ending {
+    fn with(&self, outcome: Result<()>) {
+        let ended = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        if let Some(ended) = ended {
+            ended(outcome);
+        }
+    }
+}
+
+impl Drop for Ending {
+    fn drop(&mut self) {
+        self.with(Err(anyhow::anyhow!("the connection's thread stopped")));
+    }
+}
+
+/// Starts a front end's connection to `afar`, saying it is `front` --
+/// with what arrives going to `here`, and what the front end says arriving
+/// on `done` as `measured` measures it.
 ///
-/// The window is told to go when Obelus there has ended, or will not let
-/// it in, with what became of it in `outcome`.
+/// `ended` is told when there is no more connection to have: Obelus there
+/// ended, or would not let it in, or the reader left with nobody there to
+/// ask.
 ///
 /// # Errors
 ///
 /// Where there is no thread to keep the connection on.
-pub(crate) fn start(
+pub fn start(
     afar: Afar,
-    here: Arc<crate::grid::Here>,
+    front: Front,
+    here: Arc<dyn Showing>,
     measured: Arc<Measured>,
     done: Receiver<Event>,
-    proxy: winit::event_loop::EventLoopProxy<crate::window::Waking>,
-    outcome: Arc<Mutex<Option<Result<()>>>>,
-    screen: [u32; 2],
+    ended: Ended,
 ) -> std::io::Result<()> {
+    let ending = Arc::new(Ending(Mutex::new(Some(ended))));
     let writing: Arc<Mutex<Option<TcpStream>>> = Arc::default();
     let leaving = Arc::new(AtomicBool::new(false));
 
-    // What the window says, to whichever connection there is now.
+    // What the front end says, to whichever connection there is now.
     let (said_to, said_size, said_leaving) = (
         Arc::clone(&writing),
         Arc::clone(&measured),
         Arc::clone(&leaving),
     );
-    let telling = proxy.clone();
+    let left = Arc::clone(&ending);
     std::thread::Builder::new()
-        .name("obelus window to server".to_string())
+        .name("obelus front end to server".to_string())
         .spawn(move || {
             while let Ok(event) = done.recv() {
                 let closed = matches!(event, Event::Closed);
@@ -194,26 +226,25 @@ pub(crate) fn start(
                     .as_mut()
                     .is_some_and(|stream| obelus_wire::write(stream, &Up::Input(input)).is_ok());
                 // Closed with nobody to ask: there is no Obelus to say
-                // whether anything is unwritten, so the window goes.
+                // whether anything is unwritten, so the front end goes.
                 if closed && !sent {
                     said_leaving.store(true, Ordering::Release);
-                    let _ = telling.send_event(crate::window::Waking::Finished);
+                    left.with(Ok(()));
                     return;
                 }
             }
         })?;
 
     std::thread::Builder::new()
-        .name("obelus server to window".to_string())
+        .name("obelus server to front end".to_string())
         .spawn(move || {
-            let _finished = crate::window::Finished(proxy);
             let mut window: Option<String> = None;
             let mut wait = Duration::from_millis(250);
             loop {
                 if leaving.load(Ordering::Acquire) {
                     return;
                 }
-                let knocked = knock(&afar, &measured, screen, window.as_deref());
+                let knocked = knock(&afar, &front, &measured, window.as_deref());
                 let mut stream = match knocked {
                     Ok((
                         stream,
@@ -228,18 +259,13 @@ pub(crate) fn start(
                         stream
                     }
                     Ok((_, Answered::Refused(why))) => {
-                        *outcome
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner) =
-                            Some(Err(anyhow::anyhow!(why)));
+                        ending.with(Err(anyhow::anyhow!(why)));
                         return;
                     }
                     // Never in at all: the machine or the port is wrong,
                     // and saying so beats a window waiting on nothing.
                     Err(error) if window.is_none() => {
-                        *outcome
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Err(error));
+                        ending.with(Err(error));
                         return;
                     }
                     Err(error) => {
@@ -252,14 +278,12 @@ pub(crate) fn start(
                 if let (Ok(mut writing), Ok(clone)) = (writing.lock(), stream.try_clone()) {
                     *writing = Some(clone);
                 }
-                let ended = hear(&mut stream, &here, &writing);
+                let finished = hear(&mut stream, &*here, &writing);
                 if let Ok(mut writing) = writing.lock() {
                     *writing = None;
                 }
-                if ended {
-                    *outcome
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Ok(()));
+                if finished {
+                    ending.with(Ok(()));
                     return;
                 }
                 tracing::info!("the connection to the server went; knocking again");
@@ -270,11 +294,7 @@ pub(crate) fn start(
 
 /// Hears what the server says until the connection goes, and says whether
 /// it went because Obelus there ended.
-fn hear(
-    stream: &mut TcpStream,
-    here: &crate::grid::Here,
-    writing: &Mutex<Option<TcpStream>>,
-) -> bool {
+fn hear(stream: &mut TcpStream, here: &dyn Showing, writing: &Mutex<Option<TcpStream>>) -> bool {
     let answer = |up: &Up| {
         if let Ok(mut writing) = writing.lock()
             && let Some(stream) = writing.as_mut()
@@ -286,14 +306,14 @@ fn hear(
         match obelus_wire::read::<_, Down>(stream) {
             Ok(Some(Down::Update(update))) => {
                 // What ends a frame, or arrives with none behind it, is
-                // what makes the window look -- as `Cells` and the picture's
-                // reader make it look on this machine.
+                // what makes the front end look -- as `Cells` and the
+                // picture's reader make it look on this machine.
                 let looks = matches!(update, Update::Frame | Update::Picture(_));
                 if here.show(update).is_err() {
                     return true;
                 }
                 if looks {
-                    obelus_front::Showing::wake(here);
+                    here.wake();
                 }
             }
             Ok(Some(Down::Copy(words))) => {
@@ -332,6 +352,24 @@ fn hear(
 mod tests {
     use super::*;
 
+    /// A front end that keeps what it was shown, and counts its looks.
+    #[derive(Default)]
+    struct Kept {
+        shown: Mutex<Vec<Update>>,
+        woken: std::sync::atomic::AtomicUsize,
+    }
+
+    impl Showing for Kept {
+        fn show(&self, update: Update) -> Result<(), crate::Closed> {
+            self.shown.lock().expect("what was shown").push(update);
+            Ok(())
+        }
+
+        fn wake(&self) {
+            self.woken.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
     /// A machine named alone is reached at the server's own port, and one
     /// named with a port at that one.
     ///
@@ -343,20 +381,21 @@ mod tests {
             at: at.to_string(),
             key: Vec::new(),
             path: None,
+            build: "the test",
         };
         assert_eq!(at("devbox").address(), "devbox:7787");
         assert_eq!(at("devbox:9000").address(), "devbox:9000");
         assert_eq!(at("10.0.0.2").address(), "10.0.0.2:7787");
     }
 
-    /// What the server says reaches the window, the window looks when a
-    /// frame ends, a question about the reader's clipboard is answered
+    /// What the server says reaches the front end, the front end looks when
+    /// a frame ends, a question about the reader's clipboard is answered
     /// from this machine's, and Obelus there ending is said to be the end.
     ///
     /// Broken deliberately by leaving the clipboard's question unanswered
     /// (no `answer` for `Down::Paste`): the server waited for nothing.
     #[test]
-    fn what_the_server_says_reaches_the_window_and_is_answered() {
+    fn what_the_server_says_reaches_the_front_end_and_is_answered() {
         obelus_clipboard::use_provider_for_test(obelus_clipboard::Provider::Kept);
         obelus_clipboard::copy("on this machine").expect("the clipboard here");
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("loopback");
@@ -387,16 +426,7 @@ mod tests {
         });
         let mut stream = TcpStream::connect(at).expect("connected");
         let writing = Mutex::new(Some(stream.try_clone().expect("both halves")));
-        let (frames, drawn) = std::sync::mpsc::channel();
-        let woken = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let wakes = Arc::clone(&woken);
-        let here = crate::grid::Here::new(
-            frames,
-            Arc::new(move || {
-                wakes.fetch_add(1, Ordering::Relaxed);
-            }),
-            [1920, 1080],
-        );
+        let here = Kept::default();
         assert!(
             hear(&mut stream, &here, &writing),
             "the end was not heard as one"
@@ -408,16 +438,16 @@ mod tests {
                 words: Some("on this machine".to_string()),
             }
         );
-        let arrived: Vec<_> = drawn.try_iter().collect();
+        let arrived = here.shown.lock().expect("what was shown");
         assert!(
             arrived
                 .iter()
                 .any(|update| matches!(update, Update::Cell { x: 1, y: 2, .. })),
-            "the cell did not reach the window: {arrived:?}"
+            "the cell did not reach the front end: {arrived:?}"
         );
         assert!(
-            woken.load(Ordering::Relaxed) >= 1,
-            "the window never looked"
+            here.woken.load(Ordering::Relaxed) >= 1,
+            "the front end never looked"
         );
     }
 }

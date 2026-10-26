@@ -319,7 +319,7 @@ pub(crate) enum Start {
     /// This process's own.
     Here(Box<App>),
     /// One at the other end of a connection.
-    Afar(crate::afar::Afar),
+    Afar(obelus_front::client::Afar),
 }
 
 /// Everything the window has, and Obelus on the other side of it.
@@ -1255,14 +1255,22 @@ impl ApplicationHandler<Waking> for Showing {
             // Nothing of Obelus here: what it draws arrives on the
             // connection, and what the window hears goes back on it.
             Start::Afar(afar) => {
-                let started = crate::afar::start(
+                let (proxy, outcome) = (self.proxy.clone(), Arc::clone(&self.outcome));
+                let started = obelus_front::client::start(
                     afar,
+                    obelus_front::link::Front::Window {
+                        screen,
+                        command_is_control: crate::keys::COMMAND_IS_CONTROL,
+                    },
                     showing,
                     Arc::clone(&self.measured),
                     done,
-                    self.proxy.clone(),
-                    Arc::clone(&self.outcome),
-                    screen,
+                    Box::new(move |ended| {
+                        *outcome
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(ended);
+                        let _ = proxy.send_event(Waking::Finished);
+                    }),
                 );
                 if let Err(error) = started {
                     tracing::error!(%error, "no thread for the connection");
