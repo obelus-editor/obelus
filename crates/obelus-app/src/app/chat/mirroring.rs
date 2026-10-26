@@ -767,6 +767,38 @@ impl App {
         }
     }
 
+    /// Something for a conversation's thread that will not arrive there:
+    /// said in the conversation, as a thread that would not open is, and
+    /// as what it was -- the platform's no, in its words, or a message let
+    /// go of here while the connection was down too long. The thread itself
+    /// is told with the next thing that does arrive in it.
+    pub(in crate::app) fn thread_unsaid(&mut self, thread: &str, why: Option<String>) {
+        let Some(chat) = self
+            .mirror
+            .threads
+            .iter()
+            .find(|(_, kept)| kept.thread == thread)
+            .map(|(chat, _)| chat.clone())
+        else {
+            tracing::info!(thread, "something not said in a thread no conversation has");
+            return;
+        };
+        tracing::info!(chat, ?why, "something not said in its thread");
+        if let (Some(id), Some(platform)) = (self.document_named(&chat), self.platform()) {
+            let said = match why {
+                Some(why) => format!(
+                    "{} would not take a message for this conversation: {why}",
+                    platform.name
+                ),
+                None => format!(
+                    "{} was not reached in time for a message for this conversation",
+                    platform.name
+                ),
+            };
+            self.in_talk(talking::Whose::One(id), |talk| talk.note(&said));
+        }
+    }
+
     /// Lets the threads that would not open be asked for again.
     pub(in crate::app) fn threads_may_open_again(&mut self) {
         self.mirror.unopened.clear();

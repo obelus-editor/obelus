@@ -161,6 +161,13 @@ pub enum Down {
         /// Whether it was let go of rather than refused.
         waited: bool,
     },
+    /// Something for a thread of this window's will not arrive in it.
+    Unsaid {
+        /// Which thread.
+        thread: String,
+        /// The platform's words, or `None` where it was let go of waiting.
+        why: Option<String>,
+    },
     /// A question's card was not taken, and was said in words instead.
     Unasked {
         /// The number this window asked with.
@@ -220,6 +227,7 @@ impl Down {
                 link,
             },
             Self::Unopened { asked, waited } => Event::Unopened { asked, waited },
+            Self::Unsaid { thread, why } => Event::Unsaid { thread, why },
             Self::Unasked { asked } => Event::Unasked { asked },
             Self::Answered {
                 from,
@@ -883,6 +891,21 @@ mod tests {
         let read: Down =
             serde_json::from_str(&serde_json::to_string(&down).expect("written")).expect("read");
         assert_eq!(read, down);
+        for down in [
+            Down::Unsaid {
+                thread: "T1".to_string(),
+                why: Some("msg_too_long".to_string()),
+            },
+            Down::Unsaid {
+                thread: "T1".to_string(),
+                why: None,
+            },
+        ] {
+            let read: Down = serde_json::from_str(&serde_json::to_string(&down).expect("written"))
+                .expect("read");
+            assert_eq!(read, down);
+            assert!(matches!(down.heard(), Event::Unsaid { thread, .. } if thread == "T1"));
+        }
         let door = Door {
             address: "127.0.0.1:4100".parse().expect("an address"),
             key: "k".to_string(),

@@ -44,6 +44,8 @@ use tokio_tungstenite::tungstenite::Message;
 use crate::{
     Event, State,
     model::{Head, Out, Question, Turning, Where},
+    sending::{Failed, Failure, PAUSES, Saying, Stopped, tried},
+    waiting::Waiting,
 };
 
 /// Where the open API is, by the domain the reader chose.
@@ -73,9 +75,11 @@ pub fn start(
             .build()
             .unwrap_or_default(),
         base: base(domain),
+        pauses: &PAUSES,
         app_id,
         app_secret,
         token: tokio::sync::Mutex::new(None),
+        socket: std::sync::Mutex::new((State::Connecting, None)),
     };
     obelus_runtime::handle().spawn(run(Arc::new(api), sink, said));
     out
@@ -85,12 +89,18 @@ pub fn start(
 struct Api {
     http: reqwest::Client,
     base: &'static str,
+    /// How long between tries: [`PAUSES`], and none at all in a test.
+    pauses: &'static [Duration],
     app_id: String,
     app_secret: String,
     /// The tenant's token and when it stops working. Asked for again a
     /// little before then: a token Feishu has just let lapse is a message
     /// that does not go.
     token: tokio::sync::Mutex<Option<(String, std::time::Instant)>>,
+    /// Where the long connection last said it had got to, and why: what the
+    /// row goes back to once the API answers again, since the two are one
+    /// connection on the row and the long connection may have gone with it.
+    socket: std::sync::Mutex<(State, Option<String>)>,
 }
 
 /// Why the API would not do something.
@@ -159,14 +169,37 @@ impl Api {
         Ok(token)
     }
 
+    /// Says where the long connection has got to, and keeps it.
+    fn socket_is(&self, state: State, why: Option<String>, sink: &Arc<dyn Sink<Event>>) {
+        *self
+            .socket
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = (state, why.clone());
+        let _ = sink.send(Event::connection(state, why));
+    }
+
+    /// Where the long connection last said it had got to.
+    fn socket(&self) -> (State, Option<String>) {
+        self.socket
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    /// The token let go of, so that the next asking for one asks Feishu:
+    /// which is how a connection that stopped answering is found to be back.
+    async fn forget_token(&self) {
+        *self.token.lock().await = None;
+    }
+
     /// Calls the open API with the tenant's token, and hands back `data`.
     async fn call(
         &self,
         method: reqwest::Method,
         path: &str,
         body: Option<Value>,
-    ) -> Result<Value, Refusal> {
-        let token = self.token().await?;
+    ) -> Result<Value, Failure> {
+        let token = self.token().await.map_err(Failure::again)?;
         let mut asked = self
             .http
             .request(method, format!("{}{path}", self.base))
@@ -179,23 +212,38 @@ impl Api {
                 )
                 .body(body.to_string());
         }
-        let answer: Value = asked
-            .send()
-            .await
-            .map_err(|error| Refusal::Other(error.to_string()))
-            .map(read)?
-            .await?;
-        match answer["code"].as_i64() {
-            Some(0) => Ok(answer["data"].clone()),
-            // With Feishu's own id for the request, which is what its
-            // troubleshooting asks for.
-            _ => Err(Refusal::Other(format!(
-                "{} ({}, log {})",
-                answer["msg"].as_str().unwrap_or("refused"),
-                answer["code"],
-                answer["error"]["log_id"].as_str().unwrap_or("none")
-            ))),
+        let response = asked.send().await.map_err(Failure::again)?;
+        let status = response.status();
+        // How long until the limit that was hit lets go, where Feishu says.
+        let reset = response
+            .headers()
+            .get("x-ogw-ratelimit-reset")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.trim().parse().ok())
+            .map(Duration::from_secs);
+        let bytes = response.bytes().await.map_err(Failure::again)?;
+        let answer: Option<Value> = serde_json::from_slice(&bytes).ok();
+        if answer
+            .as_ref()
+            .and_then(|answer| answer["code"].as_i64())
+            .is_some_and(|code| STALE.contains(&code))
+        {
+            self.forget_token().await;
         }
+        answered(status, reset, answer)
+    }
+
+    /// [`Self::call`], asked again while Feishu does not answer.
+    async fn tried(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        body: Option<Value>,
+    ) -> Result<Value, Failed> {
+        tried(self.pauses, |_| {
+            self.call(method.clone(), path, body.clone())
+        })
+        .await
     }
 
     /// Where the long connection is, and how often to ping on it.
@@ -249,6 +297,54 @@ async fn read(response: reqwest::Response) -> Result<Value, Refusal> {
         .await
         .map_err(|error| Refusal::Other(error.to_string()))?;
     serde_json::from_slice(&bytes).map_err(|error| Refusal::Other(error.to_string()))
+}
+
+/// Codes Feishu answers with that say ask again later: its limits on how
+/// fast, and its own trouble -- from its table of codes common to every
+/// call, and the one the message calls add.
+const AGAIN: &[i64] = &[
+    99_991_400, 1_000_004, 1_000_005, 11_247, 11_232, 11_233, 230_020, 2_200, 1_500, 5_000, 55_001,
+    1_050_008,
+];
+
+/// Codes that say the token it was asked with is no good: one Feishu let
+/// lapse early, or revoked. Asked again with a new one.
+const STALE: &[i64] = &[99_991_663, 99_991_665, 99_991_661, 20_013, 4_001];
+
+/// What an answer from the open API comes to: its `data`, or why not and
+/// whether to ask again. By Feishu's code where there is one, because it
+/// says a limit with a 400 as often as with a 429; by the status where the
+/// answer was not Feishu's at all -- a proxy's page, a gateway's error.
+fn answered(
+    status: reqwest::StatusCode,
+    reset: Option<Duration>,
+    answer: Option<Value>,
+) -> Result<Value, Failure> {
+    let Some(answer) = answer.filter(|answer| answer["code"].is_i64()) else {
+        let why = format!("answered {status}");
+        return match status.is_server_error()
+            || status == reqwest::StatusCode::TOO_MANY_REQUESTS
+            || status.is_success()
+        {
+            true => Err(Failure::later(why, reset)),
+            false => Err(Failure::Refused(why)),
+        };
+    };
+    let code = answer["code"].as_i64().unwrap_or_default();
+    if code == 0 {
+        return Ok(answer["data"].clone());
+    }
+    // With Feishu's own id for the request, which is what its
+    // troubleshooting asks for.
+    let why = format!(
+        "{} ({code}, log {})",
+        answer["msg"].as_str().unwrap_or("refused"),
+        answer["error"]["log_id"].as_str().unwrap_or("none")
+    );
+    match AGAIN.contains(&code) || STALE.contains(&code) {
+        true => Err(Failure::later(why, reset)),
+        false => Err(Failure::Refused(why)),
+    }
 }
 
 /// Text in markdown, as a rich-text message's content: one paragraph that
@@ -394,17 +490,71 @@ async fn run(
     mut said: tokio::sync::mpsc::UnboundedReceiver<Out>,
 ) {
     let _ = sink.send(Event::connection(State::Connecting, None));
-    // The id and secret first, by asking for a token: the long connection
-    // would refuse them too, but in words that do not say which. Asked
-    // again until they are taken, a refusal less often: a machine started
-    // before its network is a machine that would otherwise never connect,
-    // and what Feishu calls a refusal includes being busy. What is to be
-    // said meanwhile waits, in order -- as much of it as is kept -- and a
-    // window letting go ends it.
-    let mut waiting = crate::waiting::Waiting::default();
+    let mut waiting = Waiting::default();
+    // The long connection, on a task of its own once the API has answered,
+    // and made again whenever it drops: what it hears goes straight to the
+    // sink.
+    let mut listening = None;
+    // Each question's card, by Obelus's number for it: the message, and
+    // what it was about, to draw it closed with.
+    let mut cards: HashMap<u64, (String, String)> = HashMap::new();
+    'connected: loop {
+        if !up(&api, &sink, &mut said, &mut waiting).await {
+            break;
+        }
+        match listening {
+            None => {
+                listening = Some(obelus_runtime::handle().spawn(listen(api.clone(), sink.clone())));
+            }
+            // Back after the API stopped answering: the row goes back to
+            // where the long connection is, which may be on its way up
+            // again itself -- it says when that changes, and not before.
+            Some(_) => {
+                let (state, why) = api.socket();
+                let _ = sink.send(Event::connection(state, why));
+            }
+        }
+        loop {
+            let saying = match waiting.next() {
+                Some(saying) => saying,
+                None => match said.recv().await {
+                    Some(out) => Saying::from(out),
+                    None => break 'connected,
+                },
+            };
+            if let Err(stopped) = say(&api, &sink, &mut cards, &mut waiting, saying).await {
+                let why = stopped.why.clone();
+                tracing::warn!(%why, "Feishu stopped answering; what is to be said waits for it");
+                if let Some(Out::Settle { asked, .. }) = waiting.stopped(stopped, &sink) {
+                    cards.remove(&asked);
+                }
+                let _ = sink.send(Event::connection(State::Unreachable, Some(why)));
+                api.forget_token().await;
+                continue 'connected;
+            }
+        }
+    }
+    if let Some(listening) = listening {
+        listening.abort();
+    }
+}
+
+/// Asks for a token until one comes, which is the id and secret checked:
+/// the long connection would refuse them too, but in words that do not say
+/// which. Asked again until they are taken, a refusal less often: a machine
+/// started before its network is a machine that would otherwise never
+/// connect, and what Feishu calls a refusal includes being busy. What is to
+/// be said meanwhile waits, in order -- as much of it as is kept -- and a
+/// window letting go ends it, which is the `false`.
+async fn up(
+    api: &Api,
+    sink: &Arc<dyn Sink<Event>>,
+    said: &mut tokio::sync::mpsc::UnboundedReceiver<Out>,
+    waiting: &mut Waiting,
+) -> bool {
     loop {
         let (state, why, again) = match api.token().await {
-            Ok(_) => break,
+            Ok(_) => return true,
             Err(Refusal::Credentials(why)) => {
                 tracing::warn!(%why, "Feishu refused the app's id or secret");
                 (State::Refused, why, 60)
@@ -421,39 +571,37 @@ async fn run(
             tokio::select! {
                 () = &mut pause => break,
                 out = said.recv() => match out {
-                    Some(out) => waiting.keep(out, &sink),
-                    None => return,
+                    Some(out) => waiting.keep(Saying::from(out), sink),
+                    None => return false,
                 },
             }
         }
     }
-    // The long connection, on a task of its own, and made again whenever it
-    // drops: what it hears goes straight to the sink.
-    let listening = obelus_runtime::handle().spawn(listen(api.clone(), sink.clone()));
-    // Each question's card, by Obelus's number for it: the message, and
-    // what it was about, to draw it closed with.
-    let mut cards: HashMap<u64, (String, String)> = HashMap::new();
-    for out in waiting.drain() {
-        if let Err(why) = say(&api, &sink, &mut cards, out).await {
-            tracing::warn!(%why, "Feishu would not take a message");
-        }
-    }
-    while let Some(out) = said.recv().await {
-        if let Err(why) = say(&api, &sink, &mut cards, out).await {
-            tracing::warn!(%why, "Feishu would not take a message");
-        }
-    }
-    listening.abort();
 }
 
-/// Does one thing Obelus asked for.
+/// Does one thing Obelus asked for: done, refused and said so, or handed
+/// back to be done once Feishu answers again.
+///
+/// Everything that posts a message posts it under the saying's id as
+/// Feishu's `uuid`, which it keeps an hour: a try that timed out after
+/// Feishu took it is answered by the next with the message already there,
+/// rather than with a second one. A message that waits out a longer
+/// outage than that may arrive twice, which is the lesser loss: the other
+/// way to keep the hour is to let it go.
 async fn say(
     api: &Api,
     sink: &Arc<dyn Sink<Event>>,
     cards: &mut HashMap<u64, (String, String)>,
-    out: Out,
-) -> Result<(), Refusal> {
-    match out {
+    waiting: &mut Waiting,
+    saying: Saying,
+) -> Result<(), Stopped> {
+    let id = &saying.id;
+    let stopped = |why: String, answered: bool, out: Out| Stopped {
+        why,
+        answered,
+        again: Box::new(saying.again(out)),
+    };
+    match saying.out.clone() {
         Out::Ask {
             room,
             thread,
@@ -462,13 +610,14 @@ async fn say(
             question,
         } => {
             let posted = api
-                .call(
+                .tried(
                     reqwest::Method::POST,
                     &format!("/open-apis/im/v1/messages/{thread}/reply"),
                     Some(json!({
                         "msg_type": "interactive",
                         "content": asking(asked, &question, &to),
                         "reply_in_thread": true,
+                        "uuid": id,
                     })),
                 )
                 .await;
@@ -479,23 +628,38 @@ async fn say(
                         cards.insert(asked, (message.to_string(), question.about));
                     }
                 }
+                Err(Failed::Down { why, answered }) => {
+                    return Err(stopped(
+                        why,
+                        answered,
+                        Out::Ask {
+                            room,
+                            thread,
+                            to,
+                            asked,
+                            question,
+                        },
+                    ));
+                }
                 // Said in words rather than not at all: the reader away from
                 // the machine is otherwise left with an agent waiting on a
-                // question they never see.
-                Err(why) => {
+                // question they never see. Under an id of its own, since it
+                // is another message.
+                Err(Failed::Refused(why)) => {
                     tracing::warn!(thread, asked, %why, "a question not put");
                     let _ = sink.send(Event::Unasked { asked });
                     Box::pin(say(
                         api,
                         sink,
                         cards,
-                        Out::Say {
+                        waiting,
+                        saying.instead(Out::Say {
                             room,
                             thread,
                             to,
                             text: question.in_words(),
                             notify: true,
-                        },
+                        }),
                     ))
                     .await?;
                 }
@@ -507,15 +671,37 @@ async fn say(
             to,
             asked,
             said,
-        } => match cards.remove(&asked) {
+        } => match cards.get(&asked).cloned() {
             Some((message, about)) => {
-                api.call(
-                    reqwest::Method::PATCH,
-                    &format!("/open-apis/im/v1/messages/{message}"),
-                    Some(json!({ "content": settled(&about, &said) })),
-                )
-                .await
-                .inspect_err(|why| tracing::warn!(message, %why, "a question's card not closed"))?;
+                let closed = api
+                    .tried(
+                        reqwest::Method::PATCH,
+                        &format!("/open-apis/im/v1/messages/{message}"),
+                        Some(json!({ "content": settled(&about, &said) })),
+                    )
+                    .await;
+                match closed {
+                    Ok(_) => {
+                        cards.remove(&asked);
+                    }
+                    Err(Failed::Refused(why)) => {
+                        tracing::warn!(message, %why, "a question's card not closed");
+                        cards.remove(&asked);
+                    }
+                    Err(Failed::Down { why, answered }) => {
+                        return Err(stopped(
+                            why,
+                            answered,
+                            Out::Settle {
+                                room,
+                                thread,
+                                to,
+                                asked,
+                                said,
+                            },
+                        ));
+                    }
+                }
             }
             // A card that never went up -- or went up on a connection
             // since let go, which kept the message -- is said in words.
@@ -524,24 +710,27 @@ async fn say(
                     api,
                     sink,
                     cards,
-                    Out::Settle {
-                        room,
-                        thread,
-                        to,
-                        asked,
-                        said,
-                    }
-                    .in_words(),
+                    waiting,
+                    saying.again(
+                        Out::Settle {
+                            room,
+                            thread,
+                            to,
+                            asked,
+                            said,
+                        }
+                        .in_words(),
+                    ),
                 ))
                 .await?;
             }
         },
         Out::Say {
+            room,
             thread,
             to,
             text,
             notify,
-            ..
         } => {
             // Which thread and what was said, either way: a refusal on its
             // own was a line that could not say which conversation lost
@@ -554,40 +743,61 @@ async fn say(
                 .take(60)
                 .collect();
             let replied = api
-                .call(
+                .tried(
                     reqwest::Method::POST,
                     &format!("/open-apis/im/v1/messages/{thread}/reply"),
                     Some(json!({
                         "msg_type": "post",
-                        "content": rich(&text, notify.then_some(to.as_str())),
+                        "content": rich(
+                            &waiting.prefaced(&thread, &text),
+                            notify.then_some(to.as_str()),
+                        ),
                         "reply_in_thread": true,
+                        "uuid": id,
                     })),
                 )
                 .await;
-            match &replied {
-                Ok(data) => tracing::info!(
-                    thread,
-                    notify,
-                    opening,
-                    message = data["message_id"].as_str(),
-                    root = data["root_id"].as_str(),
-                    "said in a thread"
-                ),
-                Err(why) => {
+            match replied {
+                Ok(data) => {
+                    tracing::info!(
+                        thread,
+                        notify,
+                        opening,
+                        message = data["message_id"].as_str(),
+                        root = data["root_id"].as_str(),
+                        "said in a thread"
+                    );
+                    waiting.said_in(&thread);
+                }
+                Err(Failed::Refused(why)) => {
                     tracing::warn!(thread, notify, opening, %why, "not said in a thread");
+                    waiting.refused(&thread, &why, sink);
+                }
+                Err(Failed::Down { why, answered }) => {
+                    return Err(stopped(
+                        why,
+                        answered,
+                        Out::Say {
+                            room,
+                            thread,
+                            to,
+                            text,
+                            notify,
+                        },
+                    ));
                 }
             }
-            replied?;
         }
         Out::Open { asked, room, head } => {
             let opened = api
-                .call(
+                .tried(
                     reqwest::Method::POST,
                     "/open-apis/im/v1/messages?receive_id_type=chat_id",
                     Some(json!({
                         "receive_id": room,
                         "msg_type": "interactive",
                         "content": card(&head),
+                        "uuid": id,
                     })),
                 )
                 .await
@@ -601,40 +811,59 @@ async fn say(
                         link: None,
                     });
                 }
+                Err(Failed::Down { why, answered }) => {
+                    return Err(stopped(why, answered, Out::Open { asked, room, head }));
+                }
                 failed => {
+                    if let Err(Failed::Refused(why)) = failed {
+                        tracing::warn!(asked, %why, "a thread not opened");
+                    }
                     let _ = sink.send(Event::Unopened {
                         asked,
                         waited: false,
                     });
-                    failed?;
                 }
             }
         }
         // A card's content replaced whole: the head is the card.
-        Out::Retitle { thread, head, .. } => {
-            api.call(
-                reqwest::Method::PATCH,
-                &format!("/open-apis/im/v1/messages/{thread}"),
-                Some(json!({ "content": card(&head) })),
-            )
-            .await
-            .inspect_err(|why| tracing::warn!(thread, %why, "a thread's head not said again"))?;
+        Out::Retitle { room, thread, head } => {
+            let retitled = api
+                .tried(
+                    reqwest::Method::PATCH,
+                    &format!("/open-apis/im/v1/messages/{thread}"),
+                    Some(json!({ "content": card(&head) })),
+                )
+                .await;
+            match retitled {
+                Ok(_) => {}
+                Err(Failed::Refused(why)) => {
+                    tracing::warn!(thread, %why, "a thread's head not said again");
+                }
+                Err(Failed::Down { why, answered }) => {
+                    return Err(stopped(why, answered, Out::Retitle { room, thread, head }));
+                }
+            }
         }
-        Out::Name { id } => {
+        Out::Name { id: who } => {
             // The name where the app may read it, and the id where it may
             // not: a person on the list by an id is still on the list.
-            let name = api
-                .call(
+            let name = match api
+                .tried(
                     reqwest::Method::GET,
-                    &format!("/open-apis/contact/v3/users/{id}?user_id_type=open_id"),
+                    &format!("/open-apis/contact/v3/users/{who}?user_id_type=open_id"),
                     None,
                 )
                 .await
-                .ok()
-                .and_then(|data| data["user"]["name"].as_str().map(str::to_string))
-                .filter(|name| !name.is_empty())
-                .unwrap_or_else(|| id.clone());
-            let _ = sink.send(Event::Named { id, name });
+            {
+                Ok(data) => data["user"]["name"].as_str().map(str::to_string),
+                Err(Failed::Refused(_)) => None,
+                Err(Failed::Down { why, answered }) => {
+                    return Err(stopped(why, answered, Out::Name { id: who }));
+                }
+            }
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| who.clone());
+            let _ = sink.send(Event::Named { id: who, name });
         }
     }
     Ok(())
@@ -652,7 +881,7 @@ async fn listen(api: Arc<Api>, sink: Arc<dyn Sink<Event>>) {
         // never opened is not on its way back, and saying it was turned
         // the mark for as long as Feishu went on refusing it.
         let (state, why, again) = match api.endpoint().await {
-            Ok((url, ping)) => match connected(&url, ping, &mut seen, &sink).await {
+            Ok((url, ping)) => match connected(&api, &url, ping, &mut seen, &sink).await {
                 Lost::Dropped(why) => {
                     tracing::warn!(%why, "the long connection to Feishu dropped");
                     (State::Connecting, None, 5)
@@ -671,7 +900,7 @@ async fn listen(api: Arc<Api>, sink: Arc<dyn Sink<Event>>) {
                 (State::Unreachable, Some(why.to_string()), 5)
             }
         };
-        let _ = sink.send(Event::connection(state, why));
+        api.socket_is(state, why, &sink);
         tokio::time::sleep(Duration::from_secs(again)).await;
     }
 }
@@ -686,6 +915,7 @@ enum Lost {
 
 /// One long connection, until it drops.
 async fn connected(
+    api: &Api,
     url: &str,
     ping: Duration,
     seen: &mut std::collections::VecDeque<String>,
@@ -710,7 +940,7 @@ async fn connected(
         Err(_) => return Lost::Unmade("no answer".to_string()),
     };
     let (mut out, mut heard) = socket.split();
-    let _ = sink.send(Event::connection(State::Connected, None));
+    api.socket_is(State::Connected, None, sink);
     match listened(&mut out, &mut heard, service, ping, seen, sink).await {
         Ok(()) => Lost::Dropped("closed".to_string()),
         Err(why) => Lost::Dropped(why),
@@ -1047,6 +1277,8 @@ fn words_of(kind: &str, content: &Value) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
     use super::*;
 
     /// What a frame carries arrives whole whether it came in one piece or
@@ -1416,6 +1648,271 @@ mod tests {
         assert!(
             matches!(&heard[..], [Event::Cancelled { from, asked: 10 }] if from == "ou_1"),
             "{heard:?}"
+        );
+    }
+
+    /// What Feishu answers is read by its code where it gave one -- a
+    /// limit or its own trouble asked again, anything else a no -- and by
+    /// the status where the answer was not Feishu's.
+    ///
+    /// Broken deliberately three ways. Reading by the status alone: the
+    /// rate limit, which Feishu sends with a 400, was taken as a no. Asking
+    /// every code again: a message too long was asked four times and then
+    /// held up everything behind it. And taking a gateway's 502 page as a
+    /// no: the message was lost to a moment's trouble in front of Feishu.
+    #[test]
+    fn what_feishu_answers_is_asked_again_or_refused() {
+        use reqwest::StatusCode;
+        let coded = |code: i64| json!({ "code": code, "msg": "m", "data": { "x": 1 } });
+        assert_eq!(
+            answered(StatusCode::OK, None, Some(coded(0))).ok(),
+            Some(json!({ "x": 1 }))
+        );
+        assert!(matches!(
+            answered(StatusCode::BAD_REQUEST, Some(Duration::from_secs(3)), Some(coded(99_991_400))),
+            Err(Failure::Again { after: Some(after), .. }) if after == Duration::from_secs(3)
+        ));
+        assert!(matches!(
+            answered(StatusCode::BAD_REQUEST, None, Some(coded(230_020))),
+            Err(Failure::Again { .. })
+        ));
+        assert!(matches!(
+            answered(StatusCode::OK, None, Some(coded(99_991_663))),
+            Err(Failure::Again { .. })
+        ));
+        assert!(matches!(
+            answered(StatusCode::BAD_REQUEST, None, Some(coded(230_025))),
+            Err(Failure::Refused(why)) if why.contains("230025")
+        ));
+        assert!(matches!(
+            answered(StatusCode::BAD_GATEWAY, None, None),
+            Err(Failure::Again { .. })
+        ));
+        assert!(matches!(
+            answered(StatusCode::NOT_FOUND, None, None),
+            Err(Failure::Refused(_))
+        ));
+    }
+
+    /// A Feishu on the loopback that answers a token, no long connection,
+    /// and replies by what they say: "flaky" with a gateway's 502 four
+    /// times and then taken, "stuck" with a 502 every time, anything else
+    /// taken. Every reply asked for is written down, in order.
+    async fn a_feishu(listener: tokio::net::TcpListener, replies: Arc<Mutex<Vec<Value>>>) {
+        use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+        loop {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                return;
+            };
+            let replies = replies.clone();
+            tokio::spawn(async move {
+                let mut read = Vec::new();
+                loop {
+                    let mut chunk = [0_u8; 4096];
+                    let Some(end) = read.windows(4).position(|four| four == b"\r\n\r\n") else {
+                        match socket.read(&mut chunk).await {
+                            Ok(0) | Err(_) => return,
+                            Ok(n) => read.extend_from_slice(&chunk[..n]),
+                        }
+                        continue;
+                    };
+                    let head = String::from_utf8_lossy(&read[..end]).to_string();
+                    let length = head
+                        .lines()
+                        .find_map(|line| {
+                            let (name, value) = line.split_once(':')?;
+                            name.eq_ignore_ascii_case("content-length")
+                                .then(|| value.trim().parse::<usize>().ok())?
+                        })
+                        .unwrap_or(0);
+                    while read.len() < end + 4 + length {
+                        match socket.read(&mut chunk).await {
+                            Ok(0) | Err(_) => return,
+                            Ok(n) => read.extend_from_slice(&chunk[..n]),
+                        }
+                    }
+                    let body: Value = serde_json::from_slice(&read[end + 4..end + 4 + length])
+                        .unwrap_or(Value::Null);
+                    read.drain(..end + 4 + length);
+                    let path = head
+                        .split_whitespace()
+                        .nth(1)
+                        .unwrap_or_default()
+                        .to_string();
+                    let (status, answer) = if path.contains("tenant_access_token") {
+                        (
+                            200,
+                            json!({ "code": 0, "tenant_access_token": "t", "expire": 7200 }),
+                        )
+                    } else if path.contains("/callback/ws/endpoint") {
+                        (
+                            200,
+                            json!({ "code": 1_000_040_350, "msg": "no long connection here" }),
+                        )
+                    } else {
+                        let content = body["content"].as_str().unwrap_or_default().to_string();
+                        let before = {
+                            let mut replies = replies.lock().unwrap();
+                            let before = replies
+                                .iter()
+                                .filter(|reply| reply["uuid"] == body["uuid"])
+                                .count();
+                            replies.push(body.clone());
+                            before
+                        };
+                        if content.contains("stuck") || (content.contains("flaky") && before < 4) {
+                            (502, Value::Null)
+                        } else {
+                            (
+                                200,
+                                json!({ "code": 0, "data": { "message_id": "m", "root_id": "T1" } }),
+                            )
+                        }
+                    };
+                    let answer = match answer {
+                        Value::Null => "bad gateway".to_string(),
+                        answer => answer.to_string(),
+                    };
+                    let written = format!(
+                        "HTTP/1.1 {status} X\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{answer}",
+                        answer.len()
+                    );
+                    if socket.write_all(written.as_bytes()).await.is_err() {
+                        return;
+                    }
+                }
+            });
+        }
+    }
+
+    /// What Feishu does not answer waits for it, in order, and goes once it
+    /// answers again -- under one id however often it is asked -- while a
+    /// message that stops every connection goes as refused, is said not to
+    /// have arrived, and lets what is behind it be said.
+    ///
+    /// Broken deliberately three ways. Letting go of what stopped rather
+    /// than keeping it: "flaky" was asked four times and was gone. Never
+    /// counting the rounds: "stuck" was asked for until the test gave up,
+    /// and "two" never went. And giving it a new id each time it went back:
+    /// Feishu could not have told a retried "flaky" from a second one.
+    /// And, since, saying `Connected` whenever the API answered again: the
+    /// row said so of a long connection that never opened. Where it goes
+    /// back to is `waiting`'s own test: here nothing else is waiting when
+    /// it does.
+    #[test]
+    fn what_feishu_does_not_answer_waits_for_it_in_order() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("a runtime");
+        let listener = runtime
+            .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
+            .expect("a port");
+        let address = listener.local_addr().expect("an address");
+        let replies = Arc::new(Mutex::new(Vec::new()));
+        runtime.spawn(a_feishu(listener, replies.clone()));
+        let api = Api {
+            http: reqwest::Client::new(),
+            base: Box::leak(format!("http://{address}").into_boxed_str()),
+            pauses: &[Duration::ZERO; 3],
+            app_id: "a".to_string(),
+            app_secret: "s".to_string(),
+            token: tokio::sync::Mutex::new(None),
+            socket: std::sync::Mutex::new((State::Connecting, None)),
+        };
+        let (sender, heard) = std::sync::mpsc::channel::<Event>();
+        let sink: Arc<dyn Sink<Event>> = Arc::new(sender);
+        let (out, said) = tokio::sync::mpsc::unbounded_channel();
+        for text in ["flaky", "stuck", "two"] {
+            out.send(Out::Say {
+                room: "C".to_string(),
+                thread: "T1".to_string(),
+                to: "U".to_string(),
+                text: text.to_string(),
+                notify: false,
+            })
+            .expect("sent");
+        }
+        let running = runtime.spawn(run(Arc::new(api), sink, said));
+        let until = std::time::Instant::now() + Duration::from_secs(60);
+        let said_of = |reply: &Value| reply["content"].as_str().unwrap_or_default().to_string();
+        while !replies
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|reply| said_of(reply).contains("two"))
+        {
+            assert!(std::time::Instant::now() < until, "\"two\" was never said");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        drop(out);
+        let _ = runtime.block_on(running);
+
+        let replies = replies.lock().unwrap().clone();
+        let which = |reply: &Value| {
+            let said = said_of(reply);
+            ["flaky", "stuck", "two"]
+                .into_iter()
+                .find(|text| said.contains(text))
+                .unwrap_or("?")
+        };
+        let mut runs: Vec<(&str, usize, std::collections::BTreeSet<String>)> = Vec::new();
+        for reply in &replies {
+            let uuid = reply["uuid"].as_str().unwrap_or_default().to_string();
+            match runs.last_mut() {
+                Some((text, count, uuids)) if *text == which(reply) => {
+                    *count += 1;
+                    uuids.insert(uuid);
+                }
+                _ => runs.push((which(reply), 1, [uuid].into())),
+            }
+        }
+        let shape: Vec<(&str, usize, usize)> = runs
+            .iter()
+            .map(|(text, count, uuids)| (*text, *count, uuids.len()))
+            .collect();
+        let tries = PAUSES.len() + 1;
+        assert_eq!(
+            shape,
+            [
+                ("flaky", tries + 1, 1),
+                ("stuck", tries * crate::sending::ROUNDS as usize, 1),
+                ("two", 1, 1),
+            ],
+            "asked in the wrong order, number or ids"
+        );
+        let last = said_of(replies.last().expect("two"));
+        assert!(
+            last.contains("1 message before this one did not arrive."),
+            "the thread was not told: {last}"
+        );
+        let events: Vec<Event> = heard.try_iter().collect();
+        assert!(
+            events.iter().any(|event| matches!(
+                event,
+                Event::Unsaid { thread, why: Some(why) } if thread == "T1" && why.contains("502")
+            )),
+            "the conversation was not told"
+        );
+        assert!(
+            events.iter().any(|event| matches!(
+                event,
+                Event::Connection {
+                    state: State::Unreachable,
+                    ..
+                }
+            )),
+            "nothing said Feishu had stopped answering"
+        );
+        assert!(
+            !events.iter().any(|event| matches!(
+                event,
+                Event::Connection {
+                    state: State::Connected,
+                    ..
+                }
+            )),
+            "the API answering again was said as a long connection that never opened"
         );
     }
 }
