@@ -782,7 +782,7 @@ impl App {
                 true
             }
             TodoOutcome::Paste => {
-                match obelus_clipboard::paste() {
+                match self.desk().paste() {
                     Some(what) => self.paste_into_notes(&what),
                     None => self.wrong("Nothing to paste".to_string()),
                 }

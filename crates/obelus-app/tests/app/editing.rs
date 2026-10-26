@@ -3250,6 +3250,70 @@ mod by_the_word_and_the_line {
         assert_eq!(text(&app), "one\ntwo\nthree\n");
     }
 
+    /// A clipboard that is somebody else's, kept.
+    #[derive(Debug, Default)]
+    struct TheirDesk(std::sync::Mutex<Option<String>>);
+
+    impl obelus_app::app::desk::Desk for TheirDesk {
+        fn copy(&self, text: &str) -> std::io::Result<()> {
+            *self.0.lock().expect("their clipboard") = Some(text.to_string());
+            Ok(())
+        }
+
+        fn paste(&self) -> Option<String> {
+            self.0.lock().expect("their clipboard").clone()
+        }
+
+        fn picture(&self) -> Option<(String, Vec<u8>)> {
+            None
+        }
+
+        fn holds_a_picture(&self) -> bool {
+            false
+        }
+
+        fn open(&self, _url: &str) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// Drawn on a front end that has a clipboard of its own, what is copied
+    /// goes there and what is pasted comes from there -- not the clipboard
+    /// of the machine Obelus runs on, which is not the reader's.
+    ///
+    /// Broken deliberately by `App::desk` answering the machine's own
+    /// whatever the front end said: the line went to the clipboard here,
+    /// and what came back was what had been on it.
+    #[test]
+    fn a_front_ends_own_clipboard_is_the_one_copied_to_and_pasted_from() {
+        let _turn = support::clipboard_turn();
+        obelus_clipboard::use_provider_for_test(obelus_clipboard::Provider::Kept);
+        obelus_clipboard::copy("on the machine\n").expect("the machine's clipboard");
+        let (_scratch, mut app) = editing("their-clipboard", "one\ntwo\nthree\n");
+        let theirs = std::sync::Arc::new(TheirDesk::default());
+        app.desked_by(
+            std::sync::Arc::clone(&theirs) as std::sync::Arc<dyn obelus_app::app::desk::Desk>
+        );
+        support::press(&mut app, KeyCode::Down);
+        dispatch::dispatch(&mut app, Command::SelectionCopy);
+        assert_eq!(
+            theirs.0.lock().expect("their clipboard").as_deref(),
+            Some("two\n")
+        );
+        assert_eq!(
+            obelus_clipboard::paste().as_deref(),
+            Some("on the machine\n"),
+            "the machine's own clipboard was written"
+        );
+        *theirs.0.lock().expect("their clipboard") = Some("from afar\n".to_string());
+        dispatch::dispatch(&mut app, Command::Paste);
+        assert!(
+            text(&app).contains("from afar"),
+            "what was pasted was not theirs: {}",
+            text(&app)
+        );
+    }
+
     /// The last line of a file has no line break after it to take.
     #[test]
     fn cutting_the_last_line_takes_what_there_is() {

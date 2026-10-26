@@ -31,6 +31,7 @@
 //! it.
 mod animation;
 mod chat;
+pub mod desk;
 pub mod dispatch;
 pub mod document;
 mod editor;
@@ -381,6 +382,9 @@ pub struct App {
     ///
     /// `None` in a terminal, which is told nothing: see [`App::drawn_by`].
     drawing: Option<std::sync::Arc<dyn Drawing>>,
+    /// The reader's own machine: its clipboard and its browser -- see
+    /// [`desk`].
+    desk: std::sync::Arc<dyn desk::Desk>,
     /// The tabs the drawing was last told about -- see [`Drawing::tabs`].
     ///
     /// Kept so that it is told again only when they change: worked out on
@@ -634,6 +638,7 @@ impl App {
             names: None,
             replacing: false,
             drawing: None,
+            desk: std::sync::Arc::new(desk::Here),
             told_tabs: Vec::new(),
             prompt: None,
 

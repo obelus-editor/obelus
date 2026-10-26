@@ -773,7 +773,7 @@ impl App {
                 match &platform.setup {
                     Setup::Copy { what, text, .. } => self.copied(&text(), what),
                     Setup::Steps { url, .. } => {
-                        if let Err(error) = obelus_clipboard::links::open(url) {
+                        if let Err(error) = self.desk().open(url) {
                             tracing::warn!(%error, url, "the steps would not open");
                             self.wrong(format!("Could not open {url}"));
                         }

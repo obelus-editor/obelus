@@ -2634,7 +2634,7 @@ impl App {
     /// Hands a web address to whatever on this machine opens them, and
     /// says in the conversation when nothing does.
     pub(in crate::app) fn open_link(&mut self, url: &str) {
-        if let Err(error) = obelus_clipboard::links::open(url) {
+        if let Err(error) = self.desk().open(url) {
             tracing::warn!(%error, "the link was not opened");
             if let Some(talk) = self.conversation_mut() {
                 talk.chat.note("Nothing here opens links");
@@ -3236,7 +3236,7 @@ impl App {
             let _ = going.answer.send(false);
             return;
         }
-        if let Err(error) = obelus_clipboard::links::open(&going.url) {
+        if let Err(error) = self.desk().open(&going.url) {
             tracing::warn!(%error, "the link was not opened");
             // Not an answer: nothing was opened, so the reader has not been
             // sent anywhere. The card stays, with the URL still on it --
