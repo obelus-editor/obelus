@@ -1225,14 +1225,6 @@ impl ApplicationHandler<Waking> for Showing {
         let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
             let _ = proxy.send_event(Waking::Frame(Instant::now()));
         });
-        let cells = Cells::new(
-            frames.clone(),
-            Arc::clone(&wake),
-            Arc::clone(&self.measured),
-        );
-        // And the other direction: what the settings say about the window,
-        // which the application sends when they change and nobody else can
-        // answer.
         // The screen it opened on, which is as large as a picture under the
         // page is ever drawn; a window moved to a larger one later draws
         // the picture a little soft rather than keeping one this large in
@@ -1241,15 +1233,17 @@ impl ApplicationHandler<Waking> for Showing {
             let size = monitor.size();
             [size.width, size.height]
         });
-        app.drawn_by(Arc::new(crate::grid::Telling::new(
-            frames.clone(),
-            Arc::clone(&wake),
-            screen,
-        )));
+        let here: Arc<dyn obelus_front::Showing> =
+            Arc::new(crate::grid::Here::new(frames, wake, screen));
+        let cells = Cells::new(Arc::clone(&here), Arc::clone(&self.measured));
+        // And the other direction: what the settings say about the window,
+        // which the application sends when they change and nobody else can
+        // answer.
+        app.drawn_by(Arc::new(obelus_front::Telling::new(Arc::clone(&here))));
         // And the marks, which a window draws itself. A terminal is asked
         // what it can show and mostly cannot; there is nothing to ask
         // here, because the pixels are the window's own.
-        let marking = Marking::new(frames);
+        let marking = Marking::new(here);
         // And what a run of cells *is*, which a window can draw the shape
         // of: said once, because who is drawing is a fact about the
         // process rather than about a frame.
@@ -1394,7 +1388,7 @@ impl ApplicationHandler<Waking> for Showing {
                             });
                         }
                         Update::Recoloured => {}
-                        Update::Wallpaper { number, hung } => {
+                        Update::Picture((number, hung)) => {
                             if number > self.hung
                                 && let Some(painter) = self.painter.as_mut()
                             {

@@ -49,6 +49,7 @@ obelus-download = { path = "crates/obelus-download" }
 obelus-editing = { path = "crates/obelus-editing" }
 obelus-encoding = { path = "crates/obelus-encoding" }
 obelus-font = { path = "crates/obelus-font" }
+obelus-front = { path = "crates/obelus-front" }
 obelus-git = { path = "crates/obelus-git" }
 obelus-github = { path = "crates/obelus-github" }
 obelus-icons = { path = "crates/obelus-icons" }

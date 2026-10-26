@@ -171,7 +171,17 @@ impl Anchor {
 ///
 /// When the file cannot be read, or is not a picture this can decode.
 pub fn decode(file: &Path) -> image::ImageResult<image::RgbaImage> {
-    Ok(image::ImageReader::open(file)?
+    decode_bytes(&std::fs::read(file)?)
+}
+
+/// The same reading, of a picture's bytes already read -- by Obelus on the
+/// machine the theme is on, for a window that may be on another.
+///
+/// # Errors
+///
+/// When they are not a picture this can decode.
+pub fn decode_bytes(bytes: &[u8]) -> image::ImageResult<image::RgbaImage> {
+    Ok(image::ImageReader::new(std::io::Cursor::new(bytes))
         .with_guessed_format()?
         .decode()?
         .into_rgba8())

@@ -1,0 +1,19 @@
+[package]
+name = "obelus-front"
+description = "What Obelus says to whatever draws it, and the parts of Obelus that say it"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Cargo inherits nothing here on its own; every member says it.
+[lints]
+workspace = true
+
+[dependencies]
+obelus-app.workspace = true
+# For `Layer` alone: the caret says which of them owns it.
+obelus-component.workspace = true
+obelus-theme.workspace = true
+obelus-ui.workspace = true
+ratatui.workspace = true
+tracing.workspace = true

@@ -4676,6 +4676,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "obelus-front"
+version = "0.17.1"
+dependencies = [
+ "obelus-app",
+ "obelus-component",
+ "obelus-theme",
+ "obelus-ui",
+ "ratatui",
+ "tracing",
+]
+
+[[package]]
 name = "obelus-git"
 version = "0.17.1"
 dependencies = [
@@ -4716,6 +4728,7 @@ dependencies = [
  "obelus-component",
  "obelus-config",
  "obelus-font",
+ "obelus-front",
  "obelus-icons",
  "obelus-keymap",
  "obelus-logging",
@@ -5032,7 +5045,7 @@ dependencies = [
 
 [[package]]
 name = "obelus-wire"
-version = "0.17.0"
+version = "0.17.1"
 dependencies = [
  "obelus-runtime",
  "postcard",

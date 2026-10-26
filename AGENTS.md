@@ -39,7 +39,7 @@ ignores them, and mixing the two makes the formatting oscillate. **Always
 Clippy must be silent. The lints are the workspace's, in the root
 `Cargo.toml` -- `missing_docs`, `unreachable_pub`, `private_interfaces` --
 because a `#![deny(..)]` in one crate root would silently stop applying to
-the other thirty-eight. Every member opts in with a `[lints] workspace = true`
+the other forty. Every member opts in with a `[lints] workspace = true`
 of its own, which Cargo does not inherit for it, and every public item needs
 a doc comment.
 
@@ -944,6 +944,12 @@ crates/
                     · the same reading the editor does and nothing of its
                       own, only Obelus's own rules, a binary of its own and
                       not in a release (main)
+  obelus-front/     what Obelus says to whatever draws it -- the frames as
+                    updates, what the settings tell a window, what a run of
+                    cells is, the marks -- and the parts of Obelus that say
+                    it, wherever the window that hears it is
+                    · a picture crosses as its bytes, and the window decodes
+                      it (lib)
   obelus-gui/       the `obg` binary, and the window: what a screenful of
                     cells becomes when it is not a terminal -- the grid on
                     its way over, the glyphs, the quads, and the one clock
