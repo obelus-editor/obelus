@@ -1,9 +1,9 @@
-//! The words between a window and the machine its project is on, as bytes.
+//! The words between a window and the Obelus it draws, as bytes.
 //!
 //! **A frame is a length and a message.** Four bytes, little-endian, saying
 //! how many follow, and then that many of postcard: compact, and the same
 //! bytes on every platform, which is the whole of what is asked of it. What a
-//! message *is* belongs to whoever sends it -- `obelus_host` -- and this
+//! message *is* belongs to whoever sends it -- `obelus_front::link` -- and this
 //! knows only how one is carried.
 //!
 //! **No field may be left out of the bytes.** Postcard writes every field in

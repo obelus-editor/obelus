@@ -1108,6 +1108,7 @@ mod tests {
                 signed: [4; 32],
                 front: link::Front::Window {
                     screen: [2560, 1440],
+                    command_is_control: false,
                 },
                 size: [120, 40, 1440, 960],
                 path: None,
@@ -1151,6 +1152,24 @@ mod tests {
             },
         ] {
             bytes.extend(obelus_wire::framed(&up).expect("framed"));
+        }
+        for told in [
+            link::ToChild::Open {
+                front: link::Front::Terminal {
+                    pictures: None,
+                    keyboard: false,
+                },
+                size: [80, 24, 0, 0],
+                path: Some("/p".to_string()),
+            },
+            link::ToChild::Up(link::Up::Input(Input::Closed)),
+            link::ToChild::Attached {
+                size: [100, 30, 0, 0],
+            },
+            link::ToChild::Detached,
+            link::ToChild::Leave,
+        ] {
+            bytes.extend(obelus_wire::framed(&told).expect("framed"));
         }
         let written: String = bytes
             .chunks(32)

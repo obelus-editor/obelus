@@ -11,6 +11,9 @@ use anyhow::Result;
 use clap::Parser;
 use obelus_app::{app, event, startup};
 
+mod serve;
+mod server;
+
 /// A code editor in a terminal, with the agent built in.
 #[derive(Parser)]
 // Named rather than left to the package: clap takes the name from
@@ -43,6 +46,24 @@ struct Arguments {
     /// stderr where it has to stop on its own.
     #[arg(long)]
     headless: bool,
+
+    /// Draw nothing here, and let in windows on other machines: `ob
+    /// --connect` and `obg --connect`, each with an Obelus of its own on
+    /// this one.
+    ///
+    /// Listens on every address, port 7787, unless told where. Prints the
+    /// key a window gets in with, which is made the first time and kept.
+    #[arg(long)]
+    server: bool,
+
+    /// Where `--server` listens, as an address and a port.
+    #[arg(long, requires = "server")]
+    listen: Option<std::net::SocketAddr>,
+
+    /// One window's Obelus, which `--server` starts and nothing else does:
+    /// its standard input and output are the window's connection.
+    #[arg(long, hide = true)]
+    serve_one: bool,
 }
 
 fn main() -> Result<ExitCode> {
@@ -55,7 +76,16 @@ fn main() -> Result<ExitCode> {
     // log as well.
     obelus_logging::catch_panics();
 
-    // Before anything about the terminal, which it does not touch.
+    // Before anything about the terminal, which neither of these touches.
+    if arguments.server {
+        let at = arguments
+            .listen
+            .unwrap_or_else(|| std::net::SocketAddr::from(([0, 0, 0, 0], server::PORT)));
+        return server::serve(at);
+    }
+    if arguments.serve_one {
+        return serve::one();
+    }
     if arguments.headless {
         let outcome = app::run_headless(&arguments.paths, env!("OBELUS_BUILD"));
         // Which says why on stderr, where a headless Obelus logs: an `Err`

@@ -503,6 +503,9 @@ as `w/crlf`, and `nothing_in_the_working_tree_ends_its_lines_in_crlf` fails.
 
 **Nothing writes to stdout.** stdout is the drawing surface; `tracing` goes to
 a file. A stray `println!` lands in the middle of a frame and stays there.
+Two processes draw nothing and are the exceptions: `ob --server` prints where
+it listens and its key, and the `ob --serve-one` it starts for each window
+writes the window's frames there, because its stdout is the connection.
 
 **The main loop is threads and one channel, not a runtime.** One
 `std::sync::mpsc` channel, one producer thread per event source (keyboard, file
@@ -935,10 +938,16 @@ crates/
                       there is nothing to own, so a terminal offers Obelus's
                       own shape too (native); what is taken for a picture is
                       a file that is one (dropped)
-  obelus-cli/       the `ob` binary: Obelus drawn on a terminal
+  obelus-cli/       the `ob` binary: Obelus drawn on a terminal, and Obelus
+                    for windows on other machines (`--server`), one Obelus
+                    of its own for each (serve)
                     · two keys need the terminal's permission, and the
                       editors' `ctrl+shift` chords are the only others that
-                      depend on the protocol (main)
+                      depend on the protocol (main); one Obelus for each
+                      window, a key and a knock signed with it, and a window
+                      that goes is waited for (server); its standard input
+                      and output are the connection, and it goes on while
+                      nobody is watching (serve)
   obelus-check-theme/ whether Obelus can read a theme, for the themes
                     registry, and in no release
                     · the same reading the editor does and nothing of its
@@ -949,7 +958,14 @@ crates/
                     cells is, the marks -- and the parts of Obelus that say
                     it, wherever the window that hears it is
                     · a picture crosses as its bytes, and the window decodes
-                      it (lib)
+                      it (lib); a connection is a knock first, what is said
+                      after it is not hidden, and a window is named so that
+                      it can be found again (link); a window that comes back
+                      has nothing (replay); Obelus's own spelling and not
+                      ratatui's (wire)
+  obelus-wire/      a frame is a length and a message, no field may be left
+                    out of the bytes, and both ends say which words they
+                    speak first
   obelus-gui/       the `obg` binary, and the window: what a screenful of
                     cells becomes when it is not a terminal -- the grid on
                     its way over, the glyphs, the quads, and the one clock

@@ -17,14 +17,27 @@ workspace = true
 
 [dependencies]
 obelus-app.workspace = true
+obelus-config.workspace = true
+# What `ob --serve-one` says to a window on another machine, and how a
+# window there gets in.
+obelus-front.workspace = true
+obelus-keymap.workspace = true
 obelus-logging.workspace = true
 obelus-ui.workspace = true
+obelus-wire.workspace = true
+getrandom.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 crossterm.workspace = true
 image.workspace = true
 ratatui.workspace = true
+# How a terminal at the other end draws a picture, as ratatui names it.
+ratatui-image.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+obelus-front.workspace = true
+obelus-wire.workspace = true
 
 # What `cargo deb` and `cargo generate-rpm` make of this crate, which is the
 # `.deb` and the `.rpm` on a release. The package is named for the program

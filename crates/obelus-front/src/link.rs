@@ -31,6 +31,10 @@ pub enum Front {
     Window {
         /// The screen it opened on, in pixels.
         screen: [u32; 2],
+        /// Whether command is control there and drawn so, which is a fact
+        /// about the reader's machine and not this one -- see
+        /// `obelus_keymap::draw_control_as_command`.
+        command_is_control: bool,
     },
     /// A terminal: `ob`.
     Terminal {
@@ -136,6 +140,34 @@ pub enum Up {
         /// Whether.
         picture: bool,
     },
+}
+
+/// What `ob --server` tells the Obelus it started for a window, on that
+/// Obelus's standard input.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ToChild {
+    /// What to be, first and once: what is drawing, the size it has, and
+    /// what to open.
+    Open {
+        /// What is drawing.
+        front: Front,
+        /// Columns, rows, and pixels across and down.
+        size: [u16; 4],
+        /// What to open.
+        path: Option<String>,
+    },
+    /// What the window said.
+    Up(Up),
+    /// A window has come in under this one's name, this size: tell it the
+    /// whole screen.
+    Attached {
+        /// Columns, rows, and pixels across and down.
+        size: [u16; 4],
+    },
+    /// The window's connection went, and nobody is reading.
+    Detached,
+    /// Nobody came back in time: stop.
+    Leave,
 }
 
 /// A challenge signed with `key`, which is what a knock carries.

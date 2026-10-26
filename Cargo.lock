@@ -4568,11 +4568,17 @@ dependencies = [
  "anyhow",
  "clap",
  "crossterm",
+ "getrandom 0.3.4",
  "image",
  "obelus-app",
+ "obelus-config",
+ "obelus-front",
+ "obelus-keymap",
  "obelus-logging",
  "obelus-ui",
+ "obelus-wire",
  "ratatui",
+ "ratatui-image",
  "tracing",
 ]
 
