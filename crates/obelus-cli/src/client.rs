@@ -16,12 +16,12 @@ use std::sync::mpsc::{Receiver, Sender};
 
 use anyhow::{Context as _, Result};
 use obelus_app::{
-    app::{self, App, Going},
+    app::{self, App},
     event::Event,
 };
 use obelus_front::{
     Closed, Measured, Showing, Update,
-    client::{Afar, Left},
+    client::{Afar, Left, Next},
     link::Front,
 };
 use ratatui::{buffer::Buffer, layout::Rect};
@@ -70,6 +70,8 @@ pub(crate) fn drawing(
         .as_ref()
         .and_then(obelus_ui::image::Images::of_the_terminal);
     let mut next = start;
+    // What waits for a machine that went, while the page saying so is up.
+    let mut waiting: Option<std::sync::Arc<std::sync::atomic::AtomicBool>> = None;
     loop {
         next = match next {
             Start::Here(mut app) => {
@@ -89,28 +91,30 @@ pub(crate) fn drawing(
                 app.use_images(images);
                 app.ctrl_enter_arrives(found.ctrl_enter);
                 app.start(found.nudge.clone());
-                app::run(terminal, &mut app, found.events)?;
-                let Some(Going::To { at, key }) = app.goes_to().cloned() else {
+                let ran = app::run(terminal, &mut app, found.events);
+                if let Some(waiting) = waiting.take() {
+                    waiting.store(true, std::sync::atomic::Ordering::Release);
+                }
+                ran?;
+                let Some(afar) = obelus_front::client::from_here(&app, env!("OBELUS_BUILD"))?
+                else {
                     return Ok(());
                 };
                 // Let go of before the other is drawn: its servers, its
                 // agent and its claims go with it.
                 drop(app);
-                let key = obelus_front::client::key(&at, Some(key))?;
-                Start::Afar(Afar {
-                    at,
-                    key,
-                    path: None,
-                    build: env!("OBELUS_BUILD"),
-                })
+                Start::Afar(afar)
             }
-            Start::Afar(afar) => match afar_drawn(&afar, terminal, &found)? {
-                Left::Finished => return Ok(()),
-                Left::Home => Start::Here(Box::new(obelus_app::startup::start(
-                    &[],
-                    env!("OBELUS_BUILD"),
-                )?)),
-            },
+            Start::Afar(afar) => {
+                let left = afar_drawn(&afar, terminal, &found)?;
+                match obelus_front::client::after(&afar, left, found.nudge)? {
+                    Next::Done => return Ok(()),
+                    Next::Here(app, wait) => {
+                        waiting = wait;
+                        Start::Here(app)
+                    }
+                }
+            }
         };
         terminal.clear()?;
     }

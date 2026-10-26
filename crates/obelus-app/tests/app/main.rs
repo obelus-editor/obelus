@@ -40,6 +40,7 @@ mod hint;
 mod hover;
 mod inviting;
 mod layers;
+mod machine_gone;
 mod making_files;
 mod markdown;
 mod names;

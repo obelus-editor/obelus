@@ -296,6 +296,9 @@ pub enum Event {
     /// The kernel would not take the lock at all for the thread waiting on
     /// it, for this asking: no waiting is going on any more.
     NotHeld(u64),
+    /// The machine of this name answers again, which the page saying it
+    /// went is waiting for.
+    Reachable(String),
 }
 
 impl Event {
@@ -330,6 +333,7 @@ impl Event {
             Self::Spelling(..) => "Spelling",
             Self::Dropped(_) => "Dropped",
             Self::Tick => "Tick",
+            Self::Reachable(_) => "Reachable",
             Self::NotesSettled => "NotesSettled",
             Self::StoppedWriting(_) => "StoppedWriting",
             Self::SyntaxSettled => "SyntaxSettled",

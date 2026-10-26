@@ -394,6 +394,9 @@ pub struct App {
     /// reader asked for somewhere rather than for leaving -- see
     /// [`App::goes_to`].
     going: Option<Going>,
+    /// The machine this window could not reach, while the page saying so
+    /// is up -- see [`App::the_machine_has_gone`].
+    machine_gone: Option<MachineGone>,
     /// The tabs the drawing was last told about -- see [`Drawing::tabs`].
     ///
     /// Kept so that it is told again only when they change: worked out on
@@ -650,6 +653,7 @@ impl App {
             desk: std::sync::Arc::new(desk::Here),
             afar: false,
             going: None,
+            machine_gone: None,
             told_tabs: Vec::new(),
             prompt: None,
 
@@ -1618,6 +1622,22 @@ pub enum Caret {
     Block,
 }
 
+/// A machine whose Obelus this window was drawing, and could not reach.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MachineGone {
+    /// The machine.
+    pub at: String,
+    /// The key its server printed.
+    pub key: String,
+    /// The window there this was, to take up where the machine answers.
+    pub window: Option<String>,
+    /// Why it could not be reached, in words for the reader.
+    pub why: String,
+    /// Whether it is being asked again, a moment at a time: not where it
+    /// answered and would not let the window in.
+    pub trying: bool,
+}
+
 /// Where a front end goes once the Obelus it drew has ended.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Going {
@@ -1627,6 +1647,9 @@ pub enum Going {
         at: String,
         /// The key its server printed.
         key: String,
+        /// The window there this was, where it is going back to one whose
+        /// connection went -- taken up as it was, rather than started.
+        window: Option<String>,
     },
     /// Back to the reader's own machine, from one at the other end of a
     /// connection.

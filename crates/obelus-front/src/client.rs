@@ -41,6 +41,47 @@ use crate::{
 /// The longest wait between two knocks on a server that has gone quiet.
 const LONGEST: Duration = Duration::from_secs(10);
 
+/// How long a connection that went is knocked on before the reader is
+/// told: long enough for a network that blinked, short enough that a
+/// screen gone still is not mistaken for a slow one.
+const WHILE_IT_BLINKS: Duration = Duration::from_secs(2);
+
+/// Asks whether the machine at `afar` answers, a moment at a time and each
+/// moment longer, and says so on `nudge` as `Event::Reachable` once it
+/// does -- for a page waiting on it. Stops when `stop` says to, which is
+/// the page having gone: nothing else could say the machine is back.
+pub fn wait_for(afar: &Afar, nudge: std::sync::mpsc::Sender<Event>) -> std::sync::Arc<AtomicBool> {
+    let stop = std::sync::Arc::new(AtomicBool::new(false));
+    let stopped = std::sync::Arc::clone(&stop);
+    let asked = Afar {
+        at: afar.at.clone(),
+        key: Vec::new(),
+        path: None,
+        build: afar.build,
+        window: None,
+    };
+    let started = std::thread::Builder::new()
+        .name("obelus waiting for a machine".to_string())
+        .spawn(move || {
+            let mut wait = Duration::from_secs(1);
+            while !stopped.load(Ordering::Acquire) {
+                std::thread::sleep(wait);
+                if stopped.load(Ordering::Acquire) {
+                    return;
+                }
+                if asked.answers() {
+                    let _ = nudge.send(Event::Reachable(asked.at));
+                    return;
+                }
+                wait = (wait * 2).min(LONGEST);
+            }
+        });
+    if let Err(error) = started {
+        tracing::warn!(%error, "nothing to wait for the machine on");
+    }
+    stop
+}
+
 /// Where a server listens when the reader names only the machine.
 const PORT: u16 = 7787;
 
@@ -55,9 +96,31 @@ pub struct Afar {
     pub path: Option<String>,
     /// Which build of Obelus this is, for the hello.
     pub build: &'static str,
+    /// The window there this is, where it is one whose connection went --
+    /// taken up as it was, rather than started.
+    pub window: Option<String>,
 }
 
 impl Afar {
+    /// The key, as the letters the server printed.
+    #[must_use]
+    pub fn letters(&self) -> String {
+        hex(&self.key)
+    }
+
+    /// Whether the machine answers on the server's port at all, which is
+    /// all a page waiting for it needs to know before knocking.
+    #[must_use]
+    pub fn answers(&self) -> bool {
+        use std::net::ToSocketAddrs as _;
+        let Ok(addresses) = self.address().to_socket_addrs() else {
+            return false;
+        };
+        addresses
+            .into_iter()
+            .any(|address| TcpStream::connect_timeout(&address, Duration::from_secs(2)).is_ok())
+    }
+
     /// Where to connect: the port the reader gave, or the server's own.
     fn address(&self) -> String {
         match self.at.rsplit_once(':') {
@@ -135,12 +198,22 @@ fn knock(
 }
 
 /// Why there is no more connection to have.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Left {
     /// The Obelus there ended, or the reader left with nobody there to ask.
     Finished,
     /// The reader asked to come back to this machine.
     Home,
+    /// The machine could not be reached, or would not let the window in.
+    Lost {
+        /// The window there this was, to take up where it answers again.
+        window: Option<String>,
+        /// Why, in words for the reader.
+        why: String,
+        /// Whether it is worth asking again: not of a server that answered
+        /// and said no.
+        again: bool,
+    },
 }
 
 /// Draws the Obelus at `afar` for a front end that is `front`, until there
@@ -155,7 +228,7 @@ pub enum Left {
 ///
 /// # Errors
 ///
-/// Where there was never a connection, or the server would not let it in.
+/// Where there is no thread to keep the connection on.
 pub fn run(
     afar: &Afar,
     front: &Front,
@@ -211,6 +284,67 @@ pub fn run(
     })
 }
 
+/// What a front end draws once the Obelus at the other end has ended.
+pub enum Next {
+    /// Nothing: the reader has left.
+    Done,
+    /// An Obelus of this machine's -- and, where it shows a machine that
+    /// went and is waiting for it, what stops the waiting.
+    Here(
+        Box<obelus_app::app::App>,
+        Option<std::sync::Arc<AtomicBool>>,
+    ),
+}
+
+/// What a front end draws once the Obelus at `afar` has ended as `left`:
+/// nothing, a new one of this machine's, or one saying the machine went --
+/// waiting for it, on `nudge`, where it is worth waiting for.
+///
+/// # Errors
+///
+/// Where an Obelus of this machine's would not start.
+pub fn after(afar: &Afar, left: Left, nudge: &std::sync::mpsc::Sender<Event>) -> Result<Next> {
+    match left {
+        Left::Finished => Ok(Next::Done),
+        Left::Home => Ok(Next::Here(
+            Box::new(obelus_app::startup::start(&[], afar.build)?),
+            None,
+        )),
+        Left::Lost { window, why, again } => {
+            let mut app = obelus_app::startup::start(&[], afar.build)?;
+            app.the_machine_has_gone(obelus_app::app::MachineGone {
+                at: afar.at.clone(),
+                key: afar.letters(),
+                window,
+                why,
+                trying: again,
+            });
+            let waiting = again.then(|| wait_for(afar, nudge.clone()));
+            Ok(Next::Here(Box::new(app), waiting))
+        }
+    }
+}
+
+/// Where a front end goes once this machine's Obelus has ended: to the
+/// Obelus on another machine the reader asked for, or nowhere.
+///
+/// # Errors
+///
+/// Where the key the reader gave is not one a server prints.
+pub fn from_here(app: &obelus_app::app::App, build: &'static str) -> Result<Option<Afar>> {
+    let Some(obelus_app::app::Going::To { at, key, window }) = app.goes_to().cloned() else {
+        return Ok(None);
+    };
+    let key = self::key(&at, Some(key))?;
+    Ok(Some(Afar {
+        at,
+        key,
+        path: None,
+        build,
+        window,
+    }))
+}
+
 /// Knocks, hears, and knocks again when the connection goes, until there
 /// is none to have.
 fn connection(
@@ -221,7 +355,9 @@ fn connection(
     writing: &Mutex<Option<TcpStream>>,
     leaving: &AtomicBool,
 ) -> Result<Left> {
-    let mut window: Option<String> = None;
+    let mut window: Option<String> = afar.window.clone();
+    // Since when the connection has been gone, for a window that was in.
+    let mut gone_since: Option<std::time::Instant> = None;
     let mut wait = Duration::from_millis(250);
     loop {
         if leaving.load(Ordering::Acquire) {
@@ -246,15 +382,30 @@ fn connection(
                 wait = Duration::from_millis(250);
                 stream
             }
-            Ok((_, Answered::Refused(why))) => anyhow::bail!(why),
-            // Never in at all: the machine or the port is wrong, and saying
-            // so beats a window waiting on nothing.
-            Err(error) if window.is_none() => return Err(error),
-            Err(error) => {
+            Ok((_, Answered::Refused(why))) => {
+                return Ok(Left::Lost {
+                    window,
+                    why,
+                    again: false,
+                });
+            }
+            // A connection that only blinked is knocked on again for a
+            // moment before the reader is told anything: most come back
+            // before a page could have been read.
+            Err(error) if gone_since.is_some_and(|since| since.elapsed() < WHILE_IT_BLINKS) => {
                 tracing::info!(%error, ?wait, "the server is not answering yet");
                 std::thread::sleep(wait);
                 wait = (wait * 2).min(LONGEST);
                 continue;
+            }
+            // Never in at all, or gone for longer than a blink: the reader
+            // is told, and the page that tells them waits for the machine.
+            Err(error) => {
+                return Ok(Left::Lost {
+                    window,
+                    why: format!("{error:#}"),
+                    again: true,
+                });
             }
         };
         if let (Ok(mut writing), Ok(clone)) = (writing.lock(), stream.try_clone()) {
@@ -268,6 +419,7 @@ fn connection(
             return Ok(left);
         }
         tracing::info!("the connection to the server went; knocking again");
+        gone_since = Some(std::time::Instant::now());
     }
 }
 
@@ -355,6 +507,81 @@ mod tests {
         }
     }
 
+    /// A port nothing listens on, found by listening on one and letting it
+    /// go.
+    fn nothing_there() -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("loopback");
+        let at = listener.local_addr().expect("an address");
+        drop(listener);
+        at.to_string()
+    }
+
+    /// A machine that cannot be reached at all is said to be lost, worth
+    /// asking again, and with no window there to take up.
+    ///
+    /// Broken deliberately by giving up on it for good (`again: false` for
+    /// an error knocking): the page would never have waited for it.
+    #[test]
+    fn a_machine_nobody_answers_on_is_lost_and_worth_asking_again() {
+        let afar = Afar {
+            at: nothing_there(),
+            key: vec![1],
+            path: None,
+            build: "the test",
+            window: None,
+        };
+        let (nudge, done) = std::sync::mpsc::channel();
+        let left = run(
+            &afar,
+            &Front::Window {
+                screen: [1, 1],
+                command_is_control: false,
+            },
+            &Kept::default(),
+            &Measured::default(),
+            &done,
+            &nudge,
+            &|_| {},
+        )
+        .expect("ran");
+        assert!(
+            matches!(
+                left,
+                Left::Lost {
+                    window: None,
+                    again: true,
+                    ..
+                }
+            ),
+            "{left:?}"
+        );
+    }
+
+    /// Waiting for a machine says so once it answers.
+    ///
+    /// Broken deliberately by waiting without asking (`answers` left out
+    /// of `wait_for`'s loop): nothing was ever said.
+    #[test]
+    fn a_machine_waited_for_is_said_to_answer_once_it_does() {
+        let at = nothing_there();
+        let afar = Afar {
+            at: at.clone(),
+            key: Vec::new(),
+            path: None,
+            build: "the test",
+            window: None,
+        };
+        let (nudge, heard) = std::sync::mpsc::channel();
+        let stop = wait_for(&afar, nudge);
+        let listener = std::net::TcpListener::bind(&at).expect("the machine back");
+        let said = heard
+            .recv_timeout(Duration::from_secs(20))
+            .expect("nothing said the machine answers");
+        assert!(matches!(said, Event::Reachable(ref named) if *named == at));
+        stop.store(true, Ordering::Release);
+        drop(listener);
+    }
+
     /// A machine named alone is reached at the server's own port, and one
     /// named with a port at that one.
     ///
@@ -367,6 +594,7 @@ mod tests {
             key: Vec::new(),
             path: None,
             build: "the test",
+            window: None,
         };
         assert_eq!(at("devbox").address(), "devbox:7787");
         assert_eq!(at("devbox:9000").address(), "devbox:9000");

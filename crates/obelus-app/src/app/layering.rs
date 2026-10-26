@@ -55,7 +55,7 @@ impl App {
             layers::Layer::Picker => self.picker.is_some(),
             layers::Layer::Palette => self.palette.is_some(),
             layers::Layer::Prompt => self.prompt.is_some(),
-            layers::Layer::Gone => self.gone,
+            layers::Layer::Gone => self.gone || self.machine_gone.is_some(),
         })
     }
 

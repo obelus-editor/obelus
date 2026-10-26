@@ -502,4 +502,7 @@ pub trait Screen {
     fn head(&self) -> Option<&obelus_git::Head>;
     /// Whether that tree has gone from disk.
     fn tree_has_gone(&self) -> bool;
+    /// The machine the window could not reach, why, and whether it is being
+    /// tried again -- while the page saying so is up.
+    fn machine_gone(&self) -> Option<(&str, &str, bool)>;
 }

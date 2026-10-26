@@ -214,7 +214,11 @@ impl crate::app::App {
             return;
         }
         match key_for(&at) {
-            Some(key) => self.leave_for(crate::app::Going::To { at, key }),
+            Some(key) => self.leave_for(crate::app::Going::To {
+                at,
+                key,
+                window: None,
+            }),
             None => self.ask_on_the_status_row(Prompt::new(PromptKind::ServerKey { at })),
         }
     }
@@ -231,7 +235,11 @@ impl crate::app::App {
         if key.is_empty() {
             return;
         }
-        self.leave_for(crate::app::Going::To { at, key });
+        self.leave_for(crate::app::Going::To {
+            at,
+            key,
+            window: None,
+        });
     }
 }
 

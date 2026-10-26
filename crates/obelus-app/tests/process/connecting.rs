@@ -75,6 +75,7 @@ fn the_list_offers_a_new_machine_first_and_the_ones_there_have_been_after() {
         Some(&Going::To {
             at: "devbox:9000".to_string(),
             key: "00ff".to_string(),
+            window: None,
         })
     );
     assert!(
@@ -128,6 +129,7 @@ fn a_new_machine_is_asked_for_where_and_then_for_its_key() {
         Some(&Going::To {
             at: "fresh:9000".to_string(),
             key: "abcdef12".to_string(),
+            window: None,
         })
     );
 }

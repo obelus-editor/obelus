@@ -897,7 +897,8 @@ crates/
                       anything owns the status row (status); asking which
                       project is a page of its own, and the welcome screen
                       comes after (projects); the project going is said over
-                      the whole screen, in the middle of it (gone); a
+                      the whole screen, in the middle of it, and one page
+                      says both a project and a machine gone (gone); a
                       window draws the marks itself, and the view does not
                       know the difference (image); a view says
                       what a region *is* and the front end says what that looks

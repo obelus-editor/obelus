@@ -2534,6 +2534,8 @@ fn drawing(drawing: Drawing<'_>) -> Result<()> {
         terminal,
     } = drawing;
     let mut next = start;
+    // What waits for a machine that went, while the page saying so is up.
+    let mut waiting: Option<Arc<std::sync::atomic::AtomicBool>> = None;
     loop {
         next = match next {
             Start::Here(mut app) => {
@@ -2560,25 +2562,24 @@ fn drawing(drawing: Drawing<'_>) -> Result<()> {
                 // is what starts the watcher, the servers and the walk of
                 // the project.
                 app.start(doing.clone());
-                app::run(terminal, &mut app, done)?;
-                let Some(obelus_app::app::Going::To { at, key }) = app.goes_to().cloned() else {
+                let ran = app::run(terminal, &mut app, done);
+                if let Some(waiting) = waiting.take() {
+                    waiting.store(true, std::sync::atomic::Ordering::Release);
+                }
+                ran?;
+                let Some(afar) = obelus_front::client::from_here(&app, env!("OBELUS_BUILD"))?
+                else {
                     return Ok(());
                 };
                 // Let go of before the other is drawn: its servers, its
                 // agent and its claims go with it.
                 drop(app);
-                let key = obelus_front::client::key(&at, Some(key))?;
-                Start::Afar(obelus_front::client::Afar {
-                    at,
-                    key,
-                    path: None,
-                    build: env!("OBELUS_BUILD"),
-                })
+                Start::Afar(afar)
             }
             // Nothing of Obelus here: what it draws arrives on the
             // connection, and what the window hears goes back on it.
             Start::Afar(afar) => {
-                match obelus_front::client::run(
+                let left = obelus_front::client::run(
                     &afar,
                     front,
                     &**here,
@@ -2586,11 +2587,12 @@ fn drawing(drawing: Drawing<'_>) -> Result<()> {
                     done,
                     doing,
                     &|_| {},
-                )? {
-                    obelus_front::client::Left::Finished => return Ok(()),
-                    obelus_front::client::Left::Home => {
-                        let app = obelus_app::startup::start(&[], env!("OBELUS_BUILD"))?;
-                        Start::Here(Box::new(app))
+                )?;
+                match obelus_front::client::after(&afar, left, doing)? {
+                    obelus_front::client::Next::Done => return Ok(()),
+                    obelus_front::client::Next::Here(app, wait) => {
+                        waiting = wait;
+                        Start::Here(app)
                     }
                 }
             }

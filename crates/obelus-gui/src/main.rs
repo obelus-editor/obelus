@@ -150,6 +150,7 @@ fn main() -> Result<()> {
             key,
             path,
             build: env!("OBELUS_BUILD"),
+            window: None,
         }));
     }
 

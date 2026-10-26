@@ -129,6 +129,7 @@ fn main() -> Result<ExitCode> {
                 key,
                 path,
                 build: env!("OBELUS_BUILD"),
+                window: None,
             })
         }
         None => {

@@ -41,6 +41,7 @@ impl App {
             }
             Event::Terminal(heard) => self.heard_from_a_terminal(heard),
             Event::Summoned(token) => self.summoned(token),
+            Event::Reachable(at) => self.reachable(&at),
             Event::Bot(event) => self.bot_event(event),
             Event::BotReached(number, event) => self.reached_event(number, event),
             Event::Held(number, lock) => self.held_the_bot(number, lock),
