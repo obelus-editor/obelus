@@ -261,6 +261,15 @@ pub fn run(
                 break;
             }
             heard(&event);
+            // A file dropped goes as what it holds, not where it is.
+            if let Event::Dropped(path) = &event {
+                if let Ok(mut writing) = writing.lock()
+                    && let Some(stream) = writing.as_mut()
+                {
+                    let _ = obelus_wire::write(stream, &dropped(path));
+                }
+                continue;
+            }
             let closed = matches!(event, Event::Closed);
             let Some(input) = Input::of(event, measured) else {
                 continue;
@@ -343,6 +352,30 @@ pub fn from_here(app: &obelus_app::app::App, build: &'static str) -> Result<Opti
         build,
         window,
     }))
+}
+
+/// The largest file dropped on a window that is sent to the machine
+/// Obelus is on: well under what one frame may carry, and far more than a
+/// picture or a log an agent is shown.
+const DROPPED_MOST: u64 = 32 << 20;
+
+/// A file dropped on the window, as it crosses: what it holds, or why it
+/// does not go -- a folder, a file too large, one that will not read.
+fn dropped(path: &std::path::Path) -> Up {
+    let name = path.file_name().map_or_else(
+        || "dropped".to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    );
+    let file = match std::fs::metadata(path) {
+        Ok(found) if found.is_dir() => Err(format!("A folder cannot be sent: {name}")),
+        Ok(found) if found.len() > DROPPED_MOST => Err(format!(
+            "Larger than {} MiB, so not sent: {name}",
+            DROPPED_MOST >> 20
+        )),
+        Ok(_) => std::fs::read(path).map_err(|error| format!("Would not read {name}: {error}")),
+        Err(error) => Err(format!("Would not read {name}: {error}")),
+    };
+    Up::Dropped { name, file }
 }
 
 /// Knocks, hears, and knocks again when the connection goes, until there
@@ -555,6 +588,37 @@ mod tests {
             ),
             "{left:?}"
         );
+    }
+
+    /// A file dropped crosses as what it holds, under its own name; a
+    /// folder, and a file that is not there, cross as why not.
+    ///
+    /// Broken deliberately by sending a folder as if it were a file (the
+    /// `is_dir` arm left out): it crossed as a read that failed, with no
+    /// word for the reader about what they had dropped.
+    #[test]
+    fn a_dropped_file_crosses_as_what_it_holds() {
+        let directory =
+            std::env::temp_dir().join(format!("obelus-dropping-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).expect("a directory");
+        let file = directory.join("shot.png");
+        std::fs::write(&file, b"pixels").expect("the file");
+        assert_eq!(
+            dropped(&file),
+            Up::Dropped {
+                name: "shot.png".to_string(),
+                file: Ok(b"pixels".to_vec()),
+            }
+        );
+        assert!(matches!(
+            dropped(&directory),
+            Up::Dropped { file: Err(why), .. } if why.starts_with("A folder")
+        ));
+        assert!(matches!(
+            dropped(&directory.join("not-there")),
+            Up::Dropped { file: Err(_), .. }
+        ));
+        let _ = std::fs::remove_dir_all(&directory);
     }
 
     /// Waiting for a machine says so once it answers.

@@ -1056,7 +1056,6 @@ mod tests {
             },
             Input::Paste("words".to_string()),
             Input::Spelling("にほ".to_string(), Some(1)),
-            Input::Dropped(std::path::PathBuf::from("/tmp/a.png")),
             Input::Summoned(Some("token".to_string())),
         ]
     }
@@ -1151,6 +1150,10 @@ mod tests {
             link::Up::Holds {
                 number: 3,
                 picture: true,
+            },
+            link::Up::Dropped {
+                name: "a.png".to_string(),
+                file: Ok(vec![1, 2]),
             },
         ] {
             bytes.extend(obelus_wire::framed(&up).expect("framed"));

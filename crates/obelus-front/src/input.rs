@@ -13,8 +13,6 @@
 //! size goes with the event and is written down on arrival, before the loop
 //! is told to look.
 
-use std::path::PathBuf;
-
 use crossterm::event::KeyEvent;
 use obelus_app::event::{Event, Pointer};
 use obelus_buffer::DocumentId;
@@ -83,8 +81,6 @@ pub enum Input {
     Paste(String),
     /// What an input method is still spelling, and where its caret is.
     Spelling(String, Option<u64>),
-    /// A file was dropped on the window.
-    Dropped(PathBuf),
     /// Another Obelus asked for this one to come forward.
     Summoned(Option<String>),
 }
@@ -133,7 +129,9 @@ impl Input {
             Event::Spelling(spelling, caret) => {
                 Self::Spelling(spelling, caret.and_then(|caret| u64::try_from(caret).ok()))
             }
-            Event::Dropped(path) => Self::Dropped(path),
+            // Not a path: a path here means nothing on the machine Obelus
+            // is on, so a file dropped crosses whole (`client`).
+            Event::Dropped(_) => return None,
             Event::Summoned(token) => Self::Summoned(token),
             _ => return None,
         })
@@ -179,7 +177,6 @@ impl Input {
                 spelling,
                 caret.and_then(|caret| usize::try_from(caret).ok()),
             ),
-            Self::Dropped(path) => Event::Dropped(path),
             Self::Summoned(token) => Event::Summoned(token),
         }
     }

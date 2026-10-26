@@ -274,6 +274,19 @@ pub(crate) fn one() -> Result<ExitCode> {
                             Up::Pasted { number, .. }
                             | Up::Pictured { number, .. }
                             | Up::Holds { number, .. } => *number,
+                            Up::Dropped { name, file } => {
+                                let heard = match file {
+                                    Ok(bytes) => match kept(&dropped_here(), name, bytes) {
+                                        Ok(path) => Event::Dropped(path),
+                                        Err(why) => Event::Amiss(why),
+                                    },
+                                    Err(why) => Event::Amiss(why.clone()),
+                                };
+                                if hearing.send(heard).is_err() {
+                                    return;
+                                }
+                                continue;
+                            }
                             Up::Input(_) => continue,
                         };
                         afar.answered(number, up);
@@ -332,5 +345,101 @@ const fn protocol(pictures: obelus_front::link::Pictures) -> ratatui_image::pick
         Pictures::Kitty => ProtocolType::Kitty,
         Pictures::Iterm2 => ProtocolType::Iterm2,
         Pictures::Sixel => ProtocolType::Sixel,
+    }
+}
+
+/// Where a file dropped on a window at the other end is kept on this
+/// machine: beside the machine's other passing things, and not in the
+/// project, whose history it is no part of. Not taken away when the window
+/// goes -- a conversation taken up tomorrow may still be about it -- which
+/// is the machine's own clearing of its temporary files to do.
+fn dropped_here() -> std::path::PathBuf {
+    std::env::temp_dir().join("obelus-dropped")
+}
+
+/// Keeps a dropped file in `directory` under its own name, or under that
+/// name with `-1`, `-2` before its extension where the name is taken, and
+/// says where.
+///
+/// The name is the last part of what came and nothing else: a name with a
+/// directory in it is somebody else's idea of where on this machine to
+/// write.
+fn kept(
+    directory: &std::path::Path,
+    name: &str,
+    bytes: &[u8],
+) -> Result<std::path::PathBuf, String> {
+    let named = std::path::Path::new(name)
+        .file_name()
+        .filter(|named| *named != "." && *named != "..")
+        .ok_or_else(|| format!("Not a file's name: {name}"))?;
+    std::fs::create_dir_all(directory)
+        .map_err(|error| format!("Nowhere to keep {name}: {error}"))?;
+    let named = std::path::Path::new(named);
+    let stem = named
+        .file_stem()
+        .map_or_else(String::new, |stem| stem.to_string_lossy().into_owned());
+    let extension = named
+        .extension()
+        .map(|extension| extension.to_string_lossy().into_owned());
+    for again in 0_u32.. {
+        let called = match (again, &extension) {
+            (0, _) => named.to_string_lossy().into_owned(),
+            (again, Some(extension)) => format!("{stem}-{again}.{extension}"),
+            (again, None) => format!("{stem}-{again}"),
+        };
+        let path = directory.join(called);
+        // Made new or not at all, so two windows dropping one name at once
+        // keep two files rather than one over the other.
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(mut file) => {
+                return file
+                    .write_all(bytes)
+                    .map(|()| path)
+                    .map_err(|error| format!("Could not keep {name}: {error}"));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(format!("Could not keep {name}: {error}")),
+        }
+    }
+    Err(format!("Could not keep {name}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A dropped file is kept under its own name, and a second of the same
+    /// name beside it with a number before its extension -- never over it,
+    /// and never anywhere but the directory.
+    ///
+    /// Broken deliberately by writing over a name that is taken
+    /// (`create_new` left out): the second file took the first one's place.
+    #[test]
+    fn a_dropped_file_is_kept_beside_any_of_the_same_name() {
+        let directory = std::env::temp_dir().join(format!("obelus-kept-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        let first = kept(&directory, "a.png", b"one").expect("kept");
+        let second = kept(&directory, "a.png", b"two").expect("kept");
+        let third = kept(&directory, "notes", b"three").expect("kept");
+        let fourth = kept(&directory, "notes", b"four").expect("kept");
+        assert_eq!(first, directory.join("a.png"));
+        assert_eq!(second, directory.join("a-1.png"));
+        assert_eq!(third, directory.join("notes"));
+        assert_eq!(fourth, directory.join("notes-1"));
+        assert_eq!(std::fs::read(&first).expect("read"), b"one");
+        assert_eq!(std::fs::read(&second).expect("read"), b"two");
+        let escaped = kept(&directory, "../../escaped", b"x").expect("kept");
+        assert_eq!(
+            escaped,
+            directory.join("escaped"),
+            "a name wrote outside its directory"
+        );
+        assert!(kept(&directory, "..", b"x").is_err());
+        let _ = std::fs::remove_dir_all(&directory);
     }
 }

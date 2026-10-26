@@ -136,6 +136,14 @@ pub enum Up {
         /// What shape it is in and the picture, or nothing.
         picture: Option<(String, Vec<u8>)>,
     },
+    /// A file dropped on the window, sent whole: there is no path on the
+    /// window's machine that means anything on Obelus's.
+    Dropped {
+        /// What it is called.
+        name: String,
+        /// What it holds, or why it is not sent.
+        file: Result<Vec<u8>, String>,
+    },
     /// Whether it holds a picture, to the question of that number.
     Holds {
         /// The number.

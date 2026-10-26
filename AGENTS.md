@@ -952,8 +952,9 @@ crates/
                       depend on the protocol (main); one Obelus for each
                       window, a key and a knock signed with it, and a window
                       that goes is waited for (server); its standard input
-                      and output are the connection, and it goes on while
-                      nobody is watching (serve)
+                      and output are the connection, it goes on while
+                      nobody is watching, and a file dropped on the window
+                      is kept where this machine keeps what passes (serve)
   obelus-check-theme/ whether Obelus can read a theme, for the themes
                     registry, and in no release
                     · the same reading the editor does and nothing of its

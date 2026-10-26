@@ -302,3 +302,45 @@ fn a_reader_going_home_is_told_so() {
     )));
     assert_eq!(window.end(), Down::Home);
 }
+
+/// A file dropped on the window crosses whole and is kept on the server's
+/// machine, where the Obelus there can be handed it.
+///
+/// Broken deliberately by keeping nothing of what arrived (`kept` left
+/// out of the `Up::Dropped` arm in `serve::one`): there was no file on
+/// this machine to hand on.
+#[test]
+fn a_dropped_file_is_kept_on_the_server_machine() {
+    let server = a_server("dropped");
+    let files = Scratch::new("dropped-files");
+    let path = a_file(&files);
+    let (mut window, answered) = Window::knock(&server, &server.key, &path, None);
+    assert!(
+        matches!(answered, Answered::Open { .. }),
+        "not let in: {answered:?}"
+    );
+    assert!(window.until("the file", |window| {
+        window.text().contains("hello from the server")
+    }));
+    let name = format!("dropped-by-the-test-{}.txt", std::process::id());
+    let kept = std::env::temp_dir().join("obelus-dropped").join(&name);
+    let _ = std::fs::remove_file(&kept);
+    obelus_wire::write(
+        &mut window.stream,
+        &Up::Dropped {
+            name: name.clone(),
+            file: Ok(b"from the window".to_vec()),
+        },
+    )
+    .expect("dropped");
+    let deadline = Instant::now() + PATIENCE;
+    while std::fs::read(&kept).ok().as_deref() != Some(b"from the window".as_slice()) {
+        assert!(
+            Instant::now() < deadline,
+            "the dropped file was never kept at {}",
+            kept.display()
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let _ = std::fs::remove_file(&kept);
+}

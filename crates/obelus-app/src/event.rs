@@ -299,6 +299,10 @@ pub enum Event {
     /// The machine of this name answers again, which the page saying it
     /// went is waiting for.
     Reachable(String),
+    /// Something the reader did came to nothing for a reason only the
+    /// front end knows -- a file dropped that could not go -- said on the
+    /// status row.
+    Amiss(String),
 }
 
 impl Event {
@@ -334,6 +338,7 @@ impl Event {
             Self::Dropped(_) => "Dropped",
             Self::Tick => "Tick",
             Self::Reachable(_) => "Reachable",
+            Self::Amiss(_) => "Amiss",
             Self::NotesSettled => "NotesSettled",
             Self::StoppedWriting(_) => "StoppedWriting",
             Self::SyntaxSettled => "SyntaxSettled",
