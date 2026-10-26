@@ -51,6 +51,8 @@ obelus-text.workspace = true
 # draws.
 obelus-theme.workspace = true
 obelus-ui.workspace = true
+# The frames a window on another machine's Obelus is sent.
+obelus-wire.workspace = true
 anyhow.workspace = true
 bytemuck.workspace = true
 clap.workspace = true

@@ -113,7 +113,7 @@ pub(crate) enum Waking {
 }
 
 /// Runs Obelus in a window until the reader leaves.
-pub(crate) fn show(app: App) -> Result<()> {
+pub(crate) fn show(start: Start) -> Result<()> {
     let mut events = EventLoop::<Waking>::with_user_event();
     // No menu, because the one winit puts up quits on `cmd+q` without
     // asking about unwritten files -- see `keys::Asked`.
@@ -125,7 +125,7 @@ pub(crate) fn show(app: App) -> Result<()> {
     let events = events
         .build()
         .context("no window system to open a window on")?;
-    let mut showing = Showing::new(app, events.create_proxy());
+    let mut showing = Showing::new(start, events.create_proxy());
     events.run_app(&mut showing).context("the window stopped")?;
     let outcome = showing.outcome();
     // Written down as well as returned: a start from a menu has no console
@@ -314,11 +314,19 @@ impl Rolling {
     }
 }
 
+/// What a window draws: Obelus on this machine, or one on another.
+pub(crate) enum Start {
+    /// This process's own.
+    Here(Box<App>),
+    /// One at the other end of a connection.
+    Afar(crate::afar::Afar),
+}
+
 /// Everything the window has, and Obelus on the other side of it.
 struct Showing {
     /// Held until there is a window to run it against, which is the first
     /// moment the number of columns is known.
-    starting: Option<App>,
+    starting: Option<Start>,
     window: Option<Arc<Window>>,
     painter: Option<crate::paint::Painter>,
     fonts: Option<Fonts>,
@@ -562,18 +570,23 @@ struct Showing {
 }
 
 impl Showing {
-    fn new(app: App, proxy: EventLoopProxy<Waking>) -> Self {
+    fn new(start: Start, proxy: EventLoopProxy<Waking>) -> Self {
         // Read before the application is put on its own thread, because
         // this is what the first window is built at: afterwards the size
         // arrives down the frames channel like every other change to what
-        // is drawn.
+        // is drawn. An Obelus on another machine says its own on the
+        // first frame, and the window is built at the one there would be.
+        let font_size = match &start {
+            Start::Here(app) => app.config().font_size,
+            Start::Afar(_) => obelus_config::Config::default().font_size,
+        };
         #[expect(
             clippy::cast_precision_loss,
             reason = "a size in points, which is two digits"
         )]
-        let points = app.config().font_size as f32;
+        let points = font_size as f32;
         Self {
-            starting: Some(app),
+            starting: Some(start),
             window: None,
             painter: None,
             fonts: None,
@@ -1135,7 +1148,7 @@ impl ApplicationHandler<Waking> for Showing {
     fn resumed(&mut self, events: &ActiveEventLoop) {
         // Once. A platform that suspends and resumes says so again, and the
         // window it is about is the one already here.
-        let Some(mut app) = self.starting.take() else {
+        let Some(start) = self.starting.take() else {
             return;
         };
         // With the permission to come forward, where another Obelus started
@@ -1180,10 +1193,13 @@ impl ApplicationHandler<Waking> for Showing {
         // And the other windows, for the same reason: what brings one
         // forward is asked on this display.
         let here = crate::elsewhere::Here::take(events);
-        app.windowed_by(Arc::new(crate::elsewhere::Elsewhere::new(
-            self.proxy.clone(),
-            here.can_bring(),
-        )));
+        let mut start = start;
+        if let Start::Here(app) = &mut start {
+            app.windowed_by(Arc::new(crate::elsewhere::Elsewhere::new(
+                self.proxy.clone(),
+                here.can_bring(),
+            )));
+        }
         self.here = Some(here);
         // And Obelus opened again from Finder, which is this process's to
         // answer, once there is a window to come forward with.
@@ -1233,8 +1249,29 @@ impl ApplicationHandler<Waking> for Showing {
             let size = monitor.size();
             [size.width, size.height]
         });
-        let here: Arc<dyn obelus_front::Showing> =
-            Arc::new(crate::grid::Here::new(frames, wake, screen));
+        let showing = Arc::new(crate::grid::Here::new(frames, wake, screen));
+        let mut app = match start {
+            Start::Here(app) => app,
+            // Nothing of Obelus here: what it draws arrives on the
+            // connection, and what the window hears goes back on it.
+            Start::Afar(afar) => {
+                let started = crate::afar::start(
+                    afar,
+                    showing,
+                    Arc::clone(&self.measured),
+                    done,
+                    self.proxy.clone(),
+                    Arc::clone(&self.outcome),
+                    screen,
+                );
+                if let Err(error) = started {
+                    tracing::error!(%error, "no thread for the connection");
+                    events.exit();
+                }
+                return;
+            }
+        };
+        let here: Arc<dyn obelus_front::Showing> = showing;
         let cells = Cells::new(Arc::clone(&here), Arc::clone(&self.measured));
         // And the other direction: what the settings say about the window,
         // which the application sends when they change and nobody else can
@@ -2482,7 +2519,7 @@ impl ApplicationHandler<Waking> for Showing {
 /// A guard rather than a line at the end of the thread: a panic in the loop
 /// unwinds past that line, and a window left waiting for a frame that is
 /// never coming is a window that cannot even be closed.
-struct Finished(EventLoopProxy<Waking>);
+pub(crate) struct Finished(pub(crate) EventLoopProxy<Waking>);
 
 impl Drop for Finished {
     fn drop(&mut self) {

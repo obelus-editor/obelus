@@ -969,9 +969,12 @@ crates/
   obelus-gui/       the `obg` binary, and the window: what a screenful of
                     cells becomes when it is not a terminal -- the grid on
                     its way over, the glyphs, the quads, and the one clock
-                    the window keeps
+                    the window keeps -- and a window on an Obelus running on
+                    another machine (`--connect`)
                     · Obelus is drawn on two things and the loop knows neither
-                      (main); a window started from a terminal gives the
+                      (main); the window is the same window, what only this
+                      machine can do is done here, and a connection that goes
+                      is knocked on again (afar); a window started from a terminal gives the
                       terminal back (leaving); `App` crosses a thread and
                       stays there, and what an input method is spelling is
                       written in, the way Zed does it (window); closing the
