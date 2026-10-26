@@ -98,13 +98,6 @@ fn main() -> Result<ExitCode> {
     if arguments.serve_one {
         return serve::one();
     }
-    if let Some(at) = arguments.connect {
-        let path = arguments
-            .paths
-            .first()
-            .map(|path| path.display().to_string());
-        return client::connect(at, arguments.key, path);
-    }
     if arguments.headless {
         let outcome = app::run_headless(&arguments.paths, env!("OBELUS_BUILD"));
         // Which says why on stderr, where a headless Obelus logs: an `Err`
@@ -118,14 +111,37 @@ fn main() -> Result<ExitCode> {
 
     // Opened before the terminal is taken over, so a bad path reports
     // itself on a normal screen rather than flashing past inside an
-    // alternate one. The order inside is argued where it lives.
-    let mut app = startup::start(&arguments.paths, env!("OBELUS_BUILD"))?;
-    if arguments.connect_bot {
-        tracing::info!("--connect-remote is called --connect-to-chat now");
-    }
-    if arguments.connect_to_chat || arguments.connect_bot {
-        app.bot_at_start();
-    }
+    // alternate one. The order inside is argued where it lives. An Obelus on
+    // another machine has nothing to open here: what is named is that
+    // machine's.
+    let start = match arguments.connect {
+        Some(at) => {
+            let key = obelus_front::client::key(
+                &at,
+                arguments.key.or_else(|| std::env::var("OBELUS_KEY").ok()),
+            )?;
+            let path = arguments
+                .paths
+                .first()
+                .map(|path| path.display().to_string());
+            client::Start::Afar(obelus_front::client::Afar {
+                at,
+                key,
+                path,
+                build: env!("OBELUS_BUILD"),
+            })
+        }
+        None => {
+            let mut app = startup::start(&arguments.paths, env!("OBELUS_BUILD"))?;
+            if arguments.connect_bot {
+                tracing::info!("--connect-remote is called --connect-to-chat now");
+            }
+            if arguments.connect_to_chat || arguments.connect_bot {
+                app.bot_at_start();
+            }
+            client::Start::Here(Box::new(app))
+        }
+    };
     // The terminal's half of the line `startup::start` just wrote: what was
     // drawing Obelus, which a log read a week later has no other way to
     // learn, and which is the first thing to suspect when a key or a colour
@@ -163,32 +179,38 @@ fn main() -> Result<ExitCode> {
     // everywhere). That is a real loss for a reader, and it buys the one
     // thing a reader does with a mouse far more often.
     let mouse = enable_mouse();
-    if !mouse {
-        // The one thing that goes wrong here and stays wrong: the wheel
-        // keeps sending arrow keys, and nothing on screen would otherwise
-        // say why.
-        app.amiss("The wheel will not be reported, so it moves the cursor");
-    }
     // And what the terminal pastes, wrapped so it can be told from typing.
-    if !enable_paste() {
-        app.amiss("Pasting will arrive a character at a time, not in one go");
-    }
+    let paste = enable_paste();
     // And the keyboard, for the one key Obelus needs that a terminal
     // cannot otherwise report.
     let keyboard = enable_keyboard();
-    app.use_images(images);
-    app.ctrl_enter_arrives(ctrl_enter);
 
     // The channel is made here, and the thread that fills it with what the
     // terminal says is started here, because that thread is the terminal's
     // half of the loop and this file is where the terminal lives. The loop
     // itself is handed the far end and does not know which front end it is
-    // waiting on.
+    // waiting on -- nor whether the Obelus it draws is this machine's.
     let (sender, events) = event::channel();
     event::spawn_terminal_reader(sender.clone());
-    app.start(sender);
-
-    let outcome = app::run(&mut terminal, &mut app, events);
+    let pictures = images
+        .of_the_terminal()
+        .and_then(|(protocol, cell)| Some((client::pictures(protocol)?, cell)));
+    let outcome = client::drawing(
+        start,
+        &mut terminal,
+        client::Terminal {
+            mouse,
+            paste,
+            ctrl_enter,
+            images: Some(images),
+            front: obelus_front::link::Front::Terminal {
+                pictures,
+                keyboard: ctrl_enter,
+            },
+            events: &events,
+            nudge: &sender,
+        },
+    );
     startup::finish(&outcome);
 
     give_back(mouse, keyboard);

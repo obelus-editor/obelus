@@ -1193,13 +1193,7 @@ impl ApplicationHandler<Waking> for Showing {
         // And the other windows, for the same reason: what brings one
         // forward is asked on this display.
         let here = crate::elsewhere::Here::take(events);
-        let mut start = start;
-        if let Start::Here(app) = &mut start {
-            app.windowed_by(Arc::new(crate::elsewhere::Elsewhere::new(
-                self.proxy.clone(),
-                here.can_bring(),
-            )));
-        }
+        let can_bring = here.can_bring();
         self.here = Some(here);
         // And Obelus opened again from Finder, which is this process's to
         // answer, once there is a window to come forward with.
@@ -1249,64 +1243,21 @@ impl ApplicationHandler<Waking> for Showing {
             let size = monitor.size();
             [size.width, size.height]
         });
-        let showing = Arc::new(crate::grid::Here::new(frames, wake, screen));
-        let mut app = match start {
-            Start::Here(app) => app,
-            // Nothing of Obelus here: what it draws arrives on the
-            // connection, and what the window hears goes back on it.
-            Start::Afar(afar) => {
-                let (proxy, outcome) = (self.proxy.clone(), Arc::clone(&self.outcome));
-                let started = obelus_front::client::start(
-                    afar,
-                    obelus_front::link::Front::Window {
-                        screen,
-                        command_is_control: crate::keys::COMMAND_IS_CONTROL,
-                    },
-                    showing,
-                    Arc::clone(&self.measured),
-                    done,
-                    Box::new(move |ended| {
-                        *outcome
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(ended);
-                        let _ = proxy.send_event(Waking::Finished);
-                    }),
-                );
-                if let Err(error) = started {
-                    tracing::error!(%error, "no thread for the connection");
-                    events.exit();
-                }
-                return;
-            }
+        let here: Arc<crate::grid::Here> = Arc::new(crate::grid::Here::new(frames, wake, screen));
+        let front = obelus_front::link::Front::Window {
+            screen,
+            command_is_control: crate::keys::COMMAND_IS_CONTROL,
         };
-        let here: Arc<dyn obelus_front::Showing> = showing;
-        let cells = Cells::new(Arc::clone(&here), Arc::clone(&self.measured));
-        // And the other direction: what the settings say about the window,
-        // which the application sends when they change and nobody else can
-        // answer.
-        app.drawn_by(Arc::new(obelus_front::Telling::new(Arc::clone(&here))));
-        // And the marks, which a window draws itself. A terminal is asked
-        // what it can show and mostly cannot; there is nothing to ask
-        // here, because the pixels are the window's own.
-        let marking = Marking::new(here);
-        // And what a run of cells *is*, which a window can draw the shape
-        // of: said once, because who is drawing is a fact about the
-        // process rather than about a frame.
-        obelus_ui::shapes::drawn_by(Arc::new(marking.clone()));
-        app.use_images(obelus_ui::image::Images::drawn_by(Arc::new(marking)));
-        // The one place Obelus is told where its events go, which is what
-        // starts the watcher, the servers and the walk of the project.
-        app.start(doing);
-
-        let proxy = self.proxy.clone();
-        let outcome = Arc::clone(&self.outcome);
+        let (proxy, outcome) = (self.proxy.clone(), Arc::clone(&self.outcome));
+        let measured = Arc::clone(&self.measured);
         let started = std::thread::Builder::new()
             .name("obelus".to_string())
             .spawn(move || {
                 // Whatever happens to the loop -- returning, or panicking
                 // on the way -- the window is told, or it waits for a frame
                 // that is never coming.
-                let _finished = Finished(proxy);
+                let _finished = Finished(proxy.clone());
+                let cells = Cells::new(here.clone(), Arc::clone(&measured));
                 let mut terminal = match ratatui::Terminal::new(cells) {
                     Ok(terminal) => terminal,
                     Err(error) => {
@@ -1315,8 +1266,18 @@ impl ApplicationHandler<Waking> for Showing {
                         return;
                     }
                 };
-                let ran = app::run(&mut terminal, &mut app, done);
-                *outcome.lock().expect("the outcome") = Some(ran);
+                let ended = drawing(Drawing {
+                    start,
+                    here: &here,
+                    front: &front,
+                    measured: &measured,
+                    done: &done,
+                    doing: &doing,
+                    proxy: &proxy,
+                    can_bring,
+                    terminal: &mut terminal,
+                });
+                *outcome.lock().expect("the outcome") = Some(ended);
             });
         if let Err(error) = started {
             tracing::error!(%error, "Obelus could not be started behind the window");
@@ -2532,6 +2493,109 @@ pub(crate) struct Finished(pub(crate) EventLoopProxy<Waking>);
 impl Drop for Finished {
     fn drop(&mut self) {
         let _ = self.0.send_event(Waking::Finished);
+    }
+}
+
+/// What the window's own thread draws with: the window's door, what it
+/// is, and the channels into and out of it.
+struct Drawing<'a> {
+    /// What to draw first.
+    start: Start,
+    here: &'a Arc<crate::grid::Here>,
+    front: &'a obelus_front::link::Front,
+    measured: &'a Arc<obelus_front::Measured>,
+    done: &'a std::sync::mpsc::Receiver<Event>,
+    doing: &'a std::sync::mpsc::Sender<Event>,
+    proxy: &'a EventLoopProxy<Waking>,
+    /// Whether this window may bring another forward -- see `elsewhere`.
+    can_bring: bool,
+    terminal: &'a mut ratatui::Terminal<Cells>,
+}
+
+/// Draws Obelus in the window -- this machine's, or one on another -- and
+/// whichever the reader goes to from it, until the reader leaves.
+///
+/// **A window can change which Obelus it draws.** `connect-to-server` ends
+/// this machine's and the window draws the one there; `disconnect-from-
+/// server` ends that one and the window draws a new one of this machine's.
+/// The same window, the same channels and the same grid throughout: the
+/// screen is cleared at each change, because what the one before left on
+/// it is nothing to do with the next.
+fn drawing(drawing: Drawing<'_>) -> Result<()> {
+    let Drawing {
+        start,
+        here,
+        front,
+        measured,
+        done,
+        doing,
+        proxy,
+        can_bring,
+        terminal,
+    } = drawing;
+    let mut next = start;
+    loop {
+        next = match next {
+            Start::Here(mut app) => {
+                let showing: Arc<dyn obelus_front::Showing> = here.clone();
+                // What the settings say about the window, which the
+                // application sends when they change and nobody else can
+                // answer.
+                app.drawn_by(Arc::new(obelus_front::Telling::new(Arc::clone(&showing))));
+                // And the marks, which a window draws itself. A terminal is
+                // asked what it can show and mostly cannot; there is
+                // nothing to ask here, because the pixels are the window's
+                // own.
+                let marking = Marking::new(showing);
+                // And what a run of cells *is*, which a window can draw the
+                // shape of: said once, because who is drawing is a fact
+                // about the process rather than about a frame.
+                obelus_ui::shapes::drawn_by(Arc::new(marking.clone()));
+                app.use_images(obelus_ui::image::Images::drawn_by(Arc::new(marking)));
+                app.windowed_by(Arc::new(crate::elsewhere::Elsewhere::new(
+                    proxy.clone(),
+                    can_bring,
+                )));
+                // The one place Obelus is told where its events go, which
+                // is what starts the watcher, the servers and the walk of
+                // the project.
+                app.start(doing.clone());
+                app::run(terminal, &mut app, done)?;
+                let Some(obelus_app::app::Going::To { at, key }) = app.goes_to().cloned() else {
+                    return Ok(());
+                };
+                // Let go of before the other is drawn: its servers, its
+                // agent and its claims go with it.
+                drop(app);
+                let key = obelus_front::client::key(&at, Some(key))?;
+                Start::Afar(obelus_front::client::Afar {
+                    at,
+                    key,
+                    path: None,
+                    build: env!("OBELUS_BUILD"),
+                })
+            }
+            // Nothing of Obelus here: what it draws arrives on the
+            // connection, and what the window hears goes back on it.
+            Start::Afar(afar) => {
+                match obelus_front::client::run(
+                    &afar,
+                    front,
+                    &**here,
+                    measured,
+                    done,
+                    doing,
+                    &|_| {},
+                )? {
+                    obelus_front::client::Left::Finished => return Ok(()),
+                    obelus_front::client::Left::Home => {
+                        let app = obelus_app::startup::start(&[], env!("OBELUS_BUILD"))?;
+                        Start::Here(Box::new(app))
+                    }
+                }
+            }
+        };
+        terminal.clear()?;
     }
 }
 

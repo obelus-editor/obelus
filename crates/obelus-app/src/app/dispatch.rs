@@ -81,6 +81,8 @@ pub fn dispatch(app: &mut App, command: Command) {
         Command::TodoAdd => app.add_todo(),
         Command::ConfigOpen => app.open_settings(),
         Command::BotConnect => app.connect_bot(),
+        Command::ServerConnect => app.open_servers(),
+        Command::ServerDisconnect => app.go_home(),
         Command::BotDisconnect => app.disconnect_bot(),
         Command::ConfigProject => app.open_project_settings(),
         Command::ConfigFile => app.open_config_file(),

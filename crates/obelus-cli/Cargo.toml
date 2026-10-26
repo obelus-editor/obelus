@@ -36,6 +36,7 @@ ratatui-image.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+crossterm.workspace = true
 obelus-front.workspace = true
 obelus-wire.workspace = true
 

@@ -100,6 +100,7 @@ use obelus_theme::{Theme, Worn, builtin};
 use obelus_ui::{Previewed, Screen, image::Images};
 use obelus_watch::Watcher;
 use previewing::Preview;
+pub use project::servers;
 use project::{preferences, releases, reopening};
 use ratatui::{
     Terminal,
@@ -385,6 +386,14 @@ pub struct App {
     /// The reader's own machine: its clipboard and its browser -- see
     /// [`desk`].
     desk: std::sync::Arc<dyn desk::Desk>,
+    /// Whether this Obelus is drawn on a front end at the other end of a
+    /// connection, which is where the key that goes back to the reader's
+    /// own machine means something.
+    afar: bool,
+    /// Where the front end is to go once this Obelus has ended, where the
+    /// reader asked for somewhere rather than for leaving -- see
+    /// [`App::goes_to`].
+    going: Option<Going>,
     /// The tabs the drawing was last told about -- see [`Drawing::tabs`].
     ///
     /// Kept so that it is told again only when they change: worked out on
@@ -639,6 +648,8 @@ impl App {
             replacing: false,
             drawing: None,
             desk: std::sync::Arc::new(desk::Here),
+            afar: false,
+            going: None,
             told_tabs: Vec::new(),
             prompt: None,
 
@@ -707,6 +718,41 @@ impl App {
 
     /// Asks the loop to stop after this iteration.
     pub fn request_quit(&mut self) {
+        // Leaving, and not going anywhere: a reader who asked to go to
+        // another machine and then said not on the question that asked
+        // about what is unwritten has not asked to go there for ever.
+        self.going = None;
+        self.quit_asking();
+    }
+
+    /// Ends this Obelus so that its front end can go `going`, asking first
+    /// what leaving asks.
+    pub(in crate::app) fn leave_for(&mut self, going: Going) {
+        self.quit_asking();
+        self.going = Some(going);
+    }
+
+    /// Where the front end is to go now that this Obelus has ended, where
+    /// the reader asked for somewhere: read once the loop has returned.
+    #[must_use]
+    pub const fn goes_to(&self) -> Option<&Going> {
+        self.going.as_ref()
+    }
+
+    /// Says this Obelus is drawn on a front end at the other end of a
+    /// connection, which offers the way back to the reader's own machine.
+    pub const fn drawn_afar(&mut self) {
+        self.afar = true;
+    }
+
+    /// Whether this Obelus is drawn at the other end of a connection.
+    #[must_use]
+    pub const fn is_drawn_afar(&self) -> bool {
+        self.afar
+    }
+
+    /// Leaves, asking about what is unwritten and what is still running.
+    fn quit_asking(&mut self) {
         // Nothing is asked once the project has gone: what is unwritten
         // has nowhere to be written, and neither have the notes.
         if self.gone {
@@ -1572,6 +1618,21 @@ pub enum Caret {
     Block,
 }
 
+/// Where a front end goes once the Obelus it drew has ended.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Going {
+    /// To an Obelus on another machine, `ob --server`'s there.
+    To {
+        /// The machine, and its port where one was given.
+        at: String,
+        /// The key its server printed.
+        key: String,
+    },
+    /// Back to the reader's own machine, from one at the other end of a
+    /// connection.
+    Home,
+}
+
 /// What the thing drawing Obelus can be told.
 ///
 /// One method, and the shape is deliberate: this is not a way for the
@@ -1907,7 +1968,7 @@ fn absolute(path: &Path) -> PathBuf {
 pub fn run<B>(
     terminal: &mut Terminal<B>,
     app: &mut App,
-    events: std::sync::mpsc::Receiver<Event>,
+    events: &std::sync::mpsc::Receiver<Event>,
 ) -> Result<()>
 where
     B: Backend,

@@ -405,6 +405,9 @@ pub fn for_command(command: obelus_command::Command) -> char {
         // this window and the chat. Not the plugs the server's mark is
         // drawn with, which say something else on the same row.
         Command::BotConnect => '\u{f0337}',
+        // nf-md-lan_connect and nf-md-lan_disconnect.
+        Command::ServerConnect => '\u{f0318}',
+        Command::ServerDisconnect => '\u{f0319}',
         Command::BotDisconnect => '\u{f0338}',
         // A folder with a cog on it: the same settings, belonging to the
         // tree rather than to the reader -- the folder is what says which.

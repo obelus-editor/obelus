@@ -639,7 +639,11 @@ crates/
                       when it is chosen on the page that asks, and only a
                       worktree, and what a start with nothing to go on asks,
                       and going from that list is going to a worktree
-                      (app/project/projects); what was open is kept by the tree,
+                      (app/project/projects); the machines an Obelus was
+                      drawn on are kept by the machine the reader sits at,
+                      and the list offers a new one first, then the ones
+                      there have been, by the day (app/project/servers);
+                      what was open is kept by the tree,
                       and the last window to change it wins (app/project/reopening);
                       what an agent offers is asked of it,
                       not remembered (app/chat/agents); a note that has gone takes

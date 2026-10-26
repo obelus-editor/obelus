@@ -1134,6 +1134,7 @@ mod tests {
             link::Down::HoldsAPicture(3),
             link::Down::Open("u".to_string()),
             link::Down::Finished,
+            link::Down::Home,
         ] {
             bytes.extend(obelus_wire::framed(&down).expect("framed"));
         }

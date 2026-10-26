@@ -928,6 +928,8 @@ impl App {
             | PickerValue::Action(_)
             | PickerValue::Theme(_)
             | PickerValue::Encoding(_)
+            | PickerValue::NewServer
+            | PickerValue::Server(_)
             | PickerValue::MoreThemes
             // A question about the keys, answered over the page that lists
             // them: there is nothing to show beside it.

@@ -112,6 +112,9 @@ pub enum Down {
     Open(String),
     /// Obelus has ended: the reader left, and the window goes with it.
     Finished,
+    /// Obelus has ended because the reader asked to come back to their own
+    /// machine: the window stays, and draws that.
+    Home,
 }
 
 /// What a front end says, once the knock is answered.

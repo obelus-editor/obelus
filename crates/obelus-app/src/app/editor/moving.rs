@@ -1322,6 +1322,9 @@ impl App {
             PromptKind::NewPath => self.make_file(std::path::Path::new(text.trim())),
             // What one of a chat's fields is, from the chat page.
             PromptKind::Told(field) => self.tell_the_bot(field, Some(text)),
+            // Where to draw an Obelus, and then its key where none is kept.
+            PromptKind::Server => self.connect_to(text.to_string()),
+            PromptKind::ServerKey { at } => self.connect_with(at, text),
             // A variable the reader is adding to the agent's environment:
             // its name, and then what it holds.
             PromptKind::VariableName { agent, .. } => self.name_a_variable(&agent, text.trim()),

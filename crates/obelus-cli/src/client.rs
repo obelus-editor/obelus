@@ -1,5 +1,5 @@
-//! `ob --connect`: this terminal drawing an Obelus that runs on another
-//! machine.
+//! This terminal drawing an Obelus that runs on another machine: `ob
+//! --connect`, and `connect-to-server` from `ob`.
 //!
 //! The terminal is taken over the way `ob` takes it over, and what it can
 //! do is asked the same way -- pictures, the keyboard -- and said to the
@@ -7,31 +7,129 @@
 //! cells, kept here in a screen of the terminal's own size and drawn at the
 //! end of every frame; what the reader does goes back as `ob`'s loop would
 //! have heard it (`obelus_front::client`).
+//!
+//! **A terminal can change which Obelus it draws**, the way a window can:
+//! [`drawing`] goes from this machine's to one on another and back, on the
+//! one terminal and the one thread that reads it.
 
-use std::{
-    process::ExitCode,
-    sync::{Arc, mpsc::Sender},
-};
+use std::sync::mpsc::{Receiver, Sender};
 
 use anyhow::{Context as _, Result};
-use obelus_app::event::Event;
-use obelus_front::{Closed, Measured, Showing, Update, link::Front};
+use obelus_app::{
+    app::{self, App, Going},
+    event::Event,
+};
+use obelus_front::{
+    Closed, Measured, Showing, Update,
+    client::{Afar, Left},
+    link::Front,
+};
 use ratatui::{buffer::Buffer, layout::Rect};
 
-/// What the terminal's own thread is told: what arrived, and when it ends.
+/// What a terminal draws: Obelus on this machine, or one on another.
+pub(crate) enum Start {
+    /// This process's own.
+    Here(Box<App>),
+    /// One at the other end of a connection.
+    Afar(Afar),
+}
+
+/// What the terminal was found able to do, and what it is.
+pub(crate) struct Terminal<'a> {
+    /// Whether the wheel is reported.
+    pub(crate) mouse: bool,
+    /// Whether a paste arrives in one go.
+    pub(crate) paste: bool,
+    /// Whether `ctrl+enter` arrives as itself.
+    pub(crate) ctrl_enter: bool,
+    /// What it draws pictures with, which the first of this machine's
+    /// Obelus is handed as asked and every one after is told.
+    pub(crate) images: Option<obelus_ui::image::Images>,
+    /// What it is, to an Obelus on another machine.
+    pub(crate) front: Front,
+    /// What it hears.
+    pub(crate) events: &'a Receiver<Event>,
+    /// A way into what it hears.
+    pub(crate) nudge: &'a Sender<Event>,
+}
+
+/// Draws `start` on the terminal, and whichever Obelus the reader goes to
+/// from it, until the reader leaves.
+///
+/// # Errors
+///
+/// Where an Obelus would not start or would not draw, or a server would
+/// not let the terminal in.
+pub(crate) fn drawing(
+    start: Start,
+    terminal: &mut ratatui::DefaultTerminal,
+    mut found: Terminal<'_>,
+) -> Result<()> {
+    let told = found
+        .images
+        .as_ref()
+        .and_then(obelus_ui::image::Images::of_the_terminal);
+    let mut next = start;
+    loop {
+        next = match next {
+            Start::Here(mut app) => {
+                if !found.mouse {
+                    // The one thing that goes wrong here and stays wrong:
+                    // the wheel keeps sending arrow keys, and nothing on
+                    // screen would otherwise say why.
+                    app.amiss("The wheel will not be reported, so it moves the cursor");
+                }
+                if !found.paste {
+                    app.amiss("Pasting will arrive a character at a time, not in one go");
+                }
+                let images = found.images.take().unwrap_or_else(|| match told {
+                    Some((protocol, cell)) => obelus_ui::image::Images::told(protocol, cell),
+                    None => obelus_ui::image::Images::none(),
+                });
+                app.use_images(images);
+                app.ctrl_enter_arrives(found.ctrl_enter);
+                app.start(found.nudge.clone());
+                app::run(terminal, &mut app, found.events)?;
+                let Some(Going::To { at, key }) = app.goes_to().cloned() else {
+                    return Ok(());
+                };
+                // Let go of before the other is drawn: its servers, its
+                // agent and its claims go with it.
+                drop(app);
+                let key = obelus_front::client::key(&at, Some(key))?;
+                Start::Afar(Afar {
+                    at,
+                    key,
+                    path: None,
+                    build: env!("OBELUS_BUILD"),
+                })
+            }
+            Start::Afar(afar) => match afar_drawn(&afar, terminal, &found)? {
+                Left::Finished => return Ok(()),
+                Left::Home => Start::Here(Box::new(obelus_app::startup::start(
+                    &[],
+                    env!("OBELUS_BUILD"),
+                )?)),
+            },
+        };
+        terminal.clear()?;
+    }
+}
+
+/// What the drawing thread is told: what arrived, and when it ends.
 enum Told {
     /// Something on the screen.
     Update(Box<Update>),
     /// The terminal is this size now.
     Resized,
-    /// There is no more connection, and why.
-    Ended(Result<()>),
+    /// There is no more connection.
+    Ended,
 }
 
-/// Where what arrives is handed to the terminal's thread.
-struct Terminal(Sender<Told>);
+/// Where what arrives is handed to the drawing thread.
+struct Arriving(Sender<Told>);
 
-impl Showing for Terminal {
+impl Showing for Arriving {
     fn show(&self, update: Update) -> Result<(), Closed> {
         self.0
             .send(Told::Update(Box::new(update)))
@@ -43,76 +141,51 @@ impl Showing for Terminal {
     fn wake(&self) {}
 }
 
-/// Draws an Obelus on another machine on this terminal, until it ends or
-/// the reader leaves.
-///
-/// # Errors
-///
-/// Where there is no key, no terminal, or the server would not let it in.
-pub(crate) fn connect(at: String, key: Option<String>, path: Option<String>) -> Result<ExitCode> {
-    let key = obelus_front::client::key(&at, key.or_else(|| std::env::var("OBELUS_KEY").ok()))?;
-    // Asked of this terminal before it is taken over, the way `ob` asks.
-    let images = obelus_ui::image::Images::detect(obelus_app::event::over_a_network());
-    let pictures = images
-        .of_the_terminal()
-        .and_then(|(protocol, cell)| Some((pictures(protocol)?, cell)));
-    let keyboard = crate::ctrl_enter_arrives();
-
-    let mut terminal = ratatui::try_init()?;
-    let mouse = crate::enable_mouse();
-    if !crate::enable_paste() {
-        tracing::warn!("pasting will arrive a character at a time");
-    }
-    let protocol = crate::enable_keyboard();
-
+/// Draws the Obelus at `afar` until there is no more connection, and says
+/// why.
+fn afar_drawn(
+    afar: &Afar,
+    terminal: &mut ratatui::DefaultTerminal,
+    found: &Terminal<'_>,
+) -> Result<Left> {
     let size = terminal.size()?;
-    let measured = Arc::new(Measured::default());
+    let measured = Measured::default();
     measured.resized(size.width, size.height, 0, 0);
-
     let (told, telling) = std::sync::mpsc::channel::<Told>();
-    // What the terminal says, measured first where it is a resize: the
-    // size goes with the event, and the screen here is remade at it.
-    let (heard, hearing) = obelus_app::event::channel();
-    obelus_app::event::spawn_terminal_reader(heard);
-    let (done_to, done) = std::sync::mpsc::channel::<Event>();
-    let (sizing, resized) = (Arc::clone(&measured), told.clone());
-    std::thread::Builder::new()
-        .name("obelus terminal to server".to_string())
-        .spawn(move || {
-            while let Ok(event) = hearing.recv() {
+    let sizing = &measured;
+    std::thread::scope(|scope| {
+        // The channel moves to the drawing thread, which is the one that
+        // reads it.
+        let drawn = std::thread::Builder::new()
+            .name("obelus terminal".to_string())
+            .spawn_scoped(scope, move || draw(terminal, sizing, &telling))
+            .context("a thread to draw on")?;
+        let resized = told.clone();
+        let left = obelus_front::client::run(
+            afar,
+            &found.front,
+            &Arriving(told.clone()),
+            &measured,
+            found.events,
+            found.nudge,
+            // Measured as it is heard, so the size goes with the resize and
+            // the screen here is remade at it.
+            &|event| {
                 if matches!(event, Event::Resize)
                     && let Ok((columns, rows)) = crossterm::terminal::size()
                 {
-                    sizing.resized(columns, rows, 0, 0);
+                    measured.resized(columns, rows, 0, 0);
                     let _ = resized.send(Told::Resized);
                 }
-                if done_to.send(event).is_err() {
-                    return;
-                }
-            }
-        })
-        .context("a thread to hear the terminal on")?;
-
-    let ending = told.clone();
-    obelus_front::client::start(
-        obelus_front::client::Afar {
-            at,
-            key,
-            path,
-            build: env!("OBELUS_BUILD"),
-        },
-        Front::Terminal { pictures, keyboard },
-        Arc::new(Terminal(told)),
-        Arc::clone(&measured),
-        done,
-        Box::new(move |ended| {
-            let _ = ending.send(Told::Ended(ended));
-        }),
-    )?;
-
-    let outcome = draw(&mut terminal, &measured, &telling);
-    crate::give_back(mouse, protocol);
-    outcome.map(|()| ExitCode::SUCCESS)
+            },
+        );
+        let _ = told.send(Told::Ended);
+        let drew = drawn
+            .join()
+            .unwrap_or_else(|_| Err(anyhow::anyhow!("the drawing stopped")));
+        drew?;
+        left
+    })
 }
 
 /// Keeps the screen as what arrives says it is, and draws it at the end of
@@ -120,7 +193,7 @@ pub(crate) fn connect(at: String, key: Option<String>, path: Option<String>) -> 
 fn draw<B>(
     terminal: &mut ratatui::Terminal<B>,
     measured: &Measured,
-    telling: &std::sync::mpsc::Receiver<Told>,
+    telling: &Receiver<Told>,
 ) -> Result<()>
 where
     B: ratatui::backend::Backend,
@@ -164,7 +237,7 @@ where
                 _ => {}
             },
             Told::Resized => screen = Buffer::empty(area(measured)),
-            Told::Ended(ended) => return ended,
+            Told::Ended => return Ok(()),
         }
     }
     Ok(())
@@ -172,7 +245,7 @@ where
 
 /// How this terminal draws a picture, in the words that cross -- or
 /// nothing for the way that is not one (`Halfblocks`).
-const fn pictures(
+pub(crate) const fn pictures(
     protocol: ratatui_image::picker::ProtocolType,
 ) -> Option<obelus_front::link::Pictures> {
     use obelus_front::link::Pictures;
@@ -215,7 +288,7 @@ mod tests {
         ] {
             told.send(Told::Update(Box::new(update))).expect("told");
         }
-        told.send(Told::Ended(Ok(()))).expect("told");
+        told.send(Told::Ended).expect("told");
         draw(&mut terminal, &measured, &telling).expect("drawn");
         let buffer = terminal.backend().buffer();
         assert_eq!(buffer[(1, 1)].symbol(), "a", "what arrived was not drawn");

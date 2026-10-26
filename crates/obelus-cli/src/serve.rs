@@ -253,6 +253,7 @@ pub(crate) fn one() -> Result<ExitCode> {
         waiting: Mutex::new(HashMap::new()),
     });
     app.desked_by(Arc::clone(&afar) as Arc<dyn app::desk::Desk>);
+    app.drawn_afar();
 
     let (sender, events) = obelus_app::event::channel();
     let hearing = sender.clone();
@@ -312,9 +313,13 @@ pub(crate) fn one() -> Result<ExitCode> {
 
     let cells = obelus_front::Cells::new(showing, measured);
     let mut terminal = ratatui::Terminal::new(cells).context("a screen to draw on")?;
-    let outcome = app::run(&mut terminal, &mut app, events);
+    let outcome = app::run(&mut terminal, &mut app, &events);
     startup::finish(&outcome);
-    let _ = out.say(&Down::Finished);
+    let last = match app.goes_to() {
+        Some(app::Going::Home) => Down::Home,
+        _ => Down::Finished,
+    };
+    let _ = out.say(&last);
     out.flush();
     outcome.map(|()| ExitCode::SUCCESS)
 }

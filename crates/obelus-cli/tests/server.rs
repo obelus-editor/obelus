@@ -167,6 +167,28 @@ impl Window {
         true
     }
 
+    /// Reads what Obelus says until it ends, and says how.
+    fn end(&mut self) -> Down {
+        loop {
+            match obelus_wire::read::<_, Down>(&mut self.stream) {
+                Ok(Some(down @ (Down::Finished | Down::Home))) => return down,
+                Ok(Some(_)) => {}
+                Ok(None) => panic!("the connection went before Obelus said how it ended"),
+                Err(error) => panic!("the connection broke waiting for the end: {error}"),
+            }
+        }
+    }
+
+    /// Types `words` a key at a time.
+    fn type_text(&mut self, words: &str) {
+        for character in words.chars() {
+            self.say(Input::Key(crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Char(character),
+                crossterm::event::KeyModifiers::NONE,
+            )));
+        }
+    }
+
     fn say(&mut self, input: Input) {
         obelus_wire::write(&mut self.stream, &Up::Input(input)).expect("said");
     }
@@ -247,4 +269,36 @@ fn a_knock_with_the_wrong_key_is_refused() {
         matches!(answered, Answered::Refused(_)),
         "the wrong key got in: {answered:?}"
     );
+}
+
+/// The reader asking to come back to their own machine, from the Obelus
+/// on this one, is told so -- not that Obelus there ended -- so the window
+/// draws one of its own rather than going.
+///
+/// Broken deliberately by ending every Obelus the same way (`Down::Finished`
+/// whatever `goes_to` says, in `serve::one`): the window was told it was
+/// over, and went.
+#[test]
+fn a_reader_going_home_is_told_so() {
+    let server = a_server("home");
+    let files = Scratch::new("home-files");
+    let path = a_file(&files);
+    let (mut window, answered) = Window::knock(&server, &server.key, &path, None);
+    assert!(
+        matches!(answered, Answered::Open { .. }),
+        "not let in: {answered:?}"
+    );
+    assert!(window.until("the file", |window| {
+        window.text().contains("hello from the server")
+    }));
+    window.say(Input::Key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    )));
+    window.type_text("disconnect-from-server");
+    window.say(Input::Key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Enter,
+        crossterm::event::KeyModifiers::NONE,
+    )));
+    assert_eq!(window.end(), Down::Home);
 }

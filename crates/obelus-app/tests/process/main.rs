@@ -18,6 +18,7 @@ mod support;
 
 mod bot;
 mod choosing_a_project;
+mod connecting;
 mod glyphs;
 mod headless;
 mod reopening;

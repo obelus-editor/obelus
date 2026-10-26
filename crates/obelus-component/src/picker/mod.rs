@@ -130,6 +130,10 @@ pub enum PickerValue {
     /// Read the file being read in this encoding, or write it in it, by the
     /// name the encoding answers to.
     Encoding(String),
+    /// The row that asks which machine to draw an Obelus on.
+    NewServer,
+    /// A machine an Obelus has been drawn on before, by its name.
+    Server(String),
     /// Put every command back on the keys its layout gives it: the row a
     /// reader confirms that with.
     KeysBack,

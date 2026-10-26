@@ -23,7 +23,7 @@
 use std::{
     net::TcpStream,
     sync::{
-        Arc, Mutex,
+        Mutex,
         atomic::{AtomicBool, Ordering},
         mpsc::Receiver,
     },
@@ -67,53 +67,35 @@ impl Afar {
     }
 }
 
-/// The key for a server: the one the reader gave, kept for next time, or
-/// the one kept from last time.
+/// The key for a server: the one the reader gave, or the one kept from the
+/// last time a window got in there (`obelus_app::app::servers`).
 ///
 /// # Errors
 ///
 /// Where there is none, or it is not the letters a server prints.
 pub fn key(at: &str, given: Option<String>) -> Result<Vec<u8>> {
-    let kept = obelus_logging::state_directory().map(|directory| {
-        let file: String = at
-            .chars()
-            .map(|c| {
-                if c.is_ascii_alphanumeric() || c == '.' {
-                    c
-                } else {
-                    '_'
-                }
-            })
-            .collect();
-        directory.join("servers").join(file)
-    });
     let letters = match given {
-        Some(given) => {
-            if let Some(kept) = &kept {
-                if let Some(parent) = kept.parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-                if let Err(error) = std::fs::write(kept, given.trim()) {
-                    tracing::warn!(%error, "the key was not kept for next time");
-                }
-            }
-            given
-        }
-        None => kept
-            .and_then(|kept| std::fs::read_to_string(kept).ok())
+        Some(given) => given,
+        None => obelus_app::app::servers::key_for(at)
             .context("no key: give the one the server printed with --key")?,
     };
-    let letters = letters.trim();
+    unhex(letters.trim()).context("that key is not one a server prints")
+}
+
+/// The letters a server prints, as the key they are.
+fn unhex(letters: &str) -> Option<Vec<u8>> {
+    if letters.is_empty() || !letters.len().is_multiple_of(2) {
+        return None;
+    }
     (0..letters.len())
         .step_by(2)
-        .map(|at| {
-            letters
-                .get(at..at + 2)
-                .and_then(|pair| u8::from_str_radix(pair, 16).ok())
-        })
-        .collect::<Option<Vec<u8>>>()
-        .filter(|key| !key.is_empty() && letters.len().is_multiple_of(2))
-        .context("that key is not one a server prints")
+        .map(|at| u8::from_str_radix(letters.get(at..at + 2)?, 16).ok())
+        .collect()
+}
+
+/// The key as the letters a server prints.
+fn hex(key: &[u8]) -> String {
+    key.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 /// Knocks on the server, and says what it answered and the connection.
@@ -152,149 +134,151 @@ fn knock(
     Ok((stream, answered))
 }
 
-/// What becomes of the front end when there is no more connection: told
-/// once, with why -- `Ok` for an Obelus that ended because the reader left
-/// it, or that was never there to ask.
-pub type Ended = Box<dyn FnOnce(Result<()>) + Send>;
-
-/// Says how the connection ended, once, however its thread ends -- a
-/// panic included, because a front end waiting for an end that never comes
-/// is one that cannot even be closed.
-struct Ending(Mutex<Option<Ended>>);
-
-impl Ending {
-    fn with(&self, outcome: Result<()>) {
-        let ended = self
-            .0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take();
-        if let Some(ended) = ended {
-            ended(outcome);
-        }
-    }
+/// Why there is no more connection to have.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Left {
+    /// The Obelus there ended, or the reader left with nobody there to ask.
+    Finished,
+    /// The reader asked to come back to this machine.
+    Home,
 }
 
-impl Drop for Ending {
-    fn drop(&mut self) {
-        self.with(Err(anyhow::anyhow!("the connection's thread stopped")));
-    }
-}
-
-/// Starts a front end's connection to `afar`, saying it is `front` --
-/// with what arrives going to `here`, and what the front end says arriving
-/// on `done` as `measured` measures it.
+/// Draws the Obelus at `afar` for a front end that is `front`, until there
+/// is no more connection to have -- with what arrives going to `here`, and
+/// what the front end says arriving on `done` as `measured` measures it.
 ///
-/// `ended` is told when there is no more connection to have: Obelus there
-/// ended, or would not let it in, or the reader left with nobody there to
-/// ask.
+/// `done` is lent and given back, because after this the front end may be
+/// drawing an Obelus of its own on the same channel; `nudge` is a way into
+/// it, which is how what was reading it is told to stop. `heard` sees each
+/// thing the front end says before it goes, which is where a terminal
+/// measures itself on a resize.
 ///
 /// # Errors
 ///
-/// Where there is no thread to keep the connection on.
-pub fn start(
-    afar: Afar,
-    front: Front,
-    here: Arc<dyn Showing>,
-    measured: Arc<Measured>,
-    done: Receiver<Event>,
-    ended: Ended,
-) -> std::io::Result<()> {
-    let ending = Arc::new(Ending(Mutex::new(Some(ended))));
-    let writing: Arc<Mutex<Option<TcpStream>>> = Arc::default();
-    let leaving = Arc::new(AtomicBool::new(false));
-
-    // What the front end says, to whichever connection there is now.
-    let (said_to, said_size, said_leaving) = (
-        Arc::clone(&writing),
-        Arc::clone(&measured),
-        Arc::clone(&leaving),
-    );
-    let left = Arc::clone(&ending);
-    std::thread::Builder::new()
-        .name("obelus front end to server".to_string())
-        .spawn(move || {
-            while let Ok(event) = done.recv() {
-                let closed = matches!(event, Event::Closed);
-                let Some(input) = Input::of(event, &said_size) else {
-                    continue;
-                };
-                let mut writing = said_to
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                let sent = writing
-                    .as_mut()
-                    .is_some_and(|stream| obelus_wire::write(stream, &Up::Input(input)).is_ok());
-                // Closed with nobody to ask: there is no Obelus to say
-                // whether anything is unwritten, so the front end goes.
-                if closed && !sent {
-                    said_leaving.store(true, Ordering::Release);
-                    left.with(Ok(()));
-                    return;
-                }
+/// Where there was never a connection, or the server would not let it in.
+pub fn run(
+    afar: &Afar,
+    front: &Front,
+    here: &dyn Showing,
+    measured: &Measured,
+    done: &Receiver<Event>,
+    nudge: &std::sync::mpsc::Sender<Event>,
+    heard: &dyn Fn(&Event),
+) -> Result<Left> {
+    let writing: Mutex<Option<TcpStream>> = Mutex::default();
+    let leaving = AtomicBool::new(false);
+    let over = AtomicBool::new(false);
+    std::thread::scope(|scope| {
+        // The connection on a thread of its own, and what the front end
+        // says read here: the channel is this thread's to read and no
+        // other's.
+        let connecting = std::thread::Builder::new()
+            .name("obelus server to front end".to_string())
+            .spawn_scoped(scope, || {
+                let left = connection(afar, front, here, measured, &writing, &leaving);
+                // And what is reading the front end, which is waiting on
+                // it: told to stop, and woken to hear it.
+                over.store(true, Ordering::Release);
+                let _ = nudge.send(Event::Tick);
+                left
+            })
+            .map_err(anyhow::Error::from)?;
+        while let Ok(event) = done.recv() {
+            if over.load(Ordering::Acquire) {
+                break;
             }
-        })?;
-
-    std::thread::Builder::new()
-        .name("obelus server to front end".to_string())
-        .spawn(move || {
-            let mut window: Option<String> = None;
-            let mut wait = Duration::from_millis(250);
-            loop {
-                if leaving.load(Ordering::Acquire) {
-                    return;
-                }
-                let knocked = knock(&afar, &front, &measured, window.as_deref());
-                let mut stream = match knocked {
-                    Ok((
-                        stream,
-                        Answered::Open {
-                            window: name,
-                            again,
-                        },
-                    )) => {
-                        tracing::info!(name, again, at = afar.address(), "let in");
-                        window = Some(name);
-                        wait = Duration::from_millis(250);
-                        stream
-                    }
-                    Ok((_, Answered::Refused(why))) => {
-                        ending.with(Err(anyhow::anyhow!(why)));
-                        return;
-                    }
-                    // Never in at all: the machine or the port is wrong,
-                    // and saying so beats a window waiting on nothing.
-                    Err(error) if window.is_none() => {
-                        ending.with(Err(error));
-                        return;
-                    }
-                    Err(error) => {
-                        tracing::info!(%error, ?wait, "the server is not answering yet");
-                        std::thread::sleep(wait);
-                        wait = (wait * 2).min(LONGEST);
-                        continue;
-                    }
-                };
-                if let (Ok(mut writing), Ok(clone)) = (writing.lock(), stream.try_clone()) {
-                    *writing = Some(clone);
-                }
-                let finished = hear(&mut stream, &*here, &writing);
-                if let Ok(mut writing) = writing.lock() {
-                    *writing = None;
-                }
-                if finished {
-                    ending.with(Ok(()));
-                    return;
-                }
-                tracing::info!("the connection to the server went; knocking again");
+            heard(&event);
+            let closed = matches!(event, Event::Closed);
+            let Some(input) = Input::of(event, measured) else {
+                continue;
+            };
+            let mut writing = writing
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let sent = writing
+                .as_mut()
+                .is_some_and(|stream| obelus_wire::write(stream, &Up::Input(input)).is_ok());
+            // Closed with nobody to ask: there is no Obelus to say whether
+            // anything is unwritten, so the front end goes -- once the
+            // connection has stopped knocking.
+            if closed && !sent {
+                leaving.store(true, Ordering::Release);
             }
-        })?;
-    Ok(())
+        }
+        connecting
+            .join()
+            .unwrap_or_else(|_| Err(anyhow::anyhow!("the connection's thread stopped")))
+    })
 }
 
-/// Hears what the server says until the connection goes, and says whether
-/// it went because Obelus there ended.
-fn hear(stream: &mut TcpStream, here: &dyn Showing, writing: &Mutex<Option<TcpStream>>) -> bool {
+/// Knocks, hears, and knocks again when the connection goes, until there
+/// is none to have.
+fn connection(
+    afar: &Afar,
+    front: &Front,
+    here: &dyn Showing,
+    measured: &Measured,
+    writing: &Mutex<Option<TcpStream>>,
+    leaving: &AtomicBool,
+) -> Result<Left> {
+    let mut window: Option<String> = None;
+    let mut wait = Duration::from_millis(250);
+    loop {
+        if leaving.load(Ordering::Acquire) {
+            return Ok(Left::Finished);
+        }
+        let mut stream = match knock(afar, front, measured, window.as_deref()) {
+            Ok((
+                stream,
+                Answered::Open {
+                    window: name,
+                    again,
+                },
+            )) => {
+                tracing::info!(name, again, at = afar.address(), "let in");
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |since| {
+                        i64::try_from(since.as_secs()).unwrap_or(i64::MAX)
+                    });
+                obelus_app::app::servers::remember(&afar.at, &hex(&afar.key), now);
+                window = Some(name);
+                wait = Duration::from_millis(250);
+                stream
+            }
+            Ok((_, Answered::Refused(why))) => anyhow::bail!(why),
+            // Never in at all: the machine or the port is wrong, and saying
+            // so beats a window waiting on nothing.
+            Err(error) if window.is_none() => return Err(error),
+            Err(error) => {
+                tracing::info!(%error, ?wait, "the server is not answering yet");
+                std::thread::sleep(wait);
+                wait = (wait * 2).min(LONGEST);
+                continue;
+            }
+        };
+        if let (Ok(mut writing), Ok(clone)) = (writing.lock(), stream.try_clone()) {
+            *writing = Some(clone);
+        }
+        let heard = hear(&mut stream, here, writing);
+        if let Ok(mut writing) = writing.lock() {
+            *writing = None;
+        }
+        if let Some(left) = heard {
+            return Ok(left);
+        }
+        tracing::info!("the connection to the server went; knocking again");
+    }
+}
+
+/// Hears what the server says until the connection goes, and says why
+/// where it went because Obelus there ended -- nothing for a connection
+/// that only went.
+fn hear(
+    stream: &mut TcpStream,
+    here: &dyn Showing,
+    writing: &Mutex<Option<TcpStream>>,
+) -> Option<Left> {
     let answer = |up: &Up| {
         if let Ok(mut writing) = writing.lock()
             && let Some(stream) = writing.as_mut()
@@ -310,7 +294,7 @@ fn hear(stream: &mut TcpStream, here: &dyn Showing, writing: &Mutex<Option<TcpSt
                 // picture's reader make it look on this machine.
                 let looks = matches!(update, Update::Frame | Update::Picture(_));
                 if here.show(update).is_err() {
-                    return true;
+                    return Some(Left::Finished);
                 }
                 if looks {
                     here.wake();
@@ -338,11 +322,12 @@ fn hear(stream: &mut TcpStream, here: &dyn Showing, writing: &Mutex<Option<TcpSt
                     tracing::warn!(%error, url, "opening a link for the server");
                 }
             }
-            Ok(Some(Down::Finished)) => return true,
-            Ok(None) => return false,
+            Ok(Some(Down::Finished)) => return Some(Left::Finished),
+            Ok(Some(Down::Home)) => return Some(Left::Home),
+            Ok(None) => return None,
             Err(error) => {
                 tracing::info!(%error, "the connection to the server broke");
-                return false;
+                return None;
             }
         }
     }
@@ -427,8 +412,9 @@ mod tests {
         let mut stream = TcpStream::connect(at).expect("connected");
         let writing = Mutex::new(Some(stream.try_clone().expect("both halves")));
         let here = Kept::default();
-        assert!(
+        assert_eq!(
             hear(&mut stream, &here, &writing),
+            Some(Left::Finished),
             "the end was not heard as one"
         );
         assert_eq!(

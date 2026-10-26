@@ -607,7 +607,7 @@ fn leave(app: &mut App) {
         .expect("sending the key");
     let mut terminal =
         ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).expect("a terminal");
-    obelus_app::app::run(&mut terminal, app, events).expect("running");
+    obelus_app::app::run(&mut terminal, app, &events).expect("running");
 }
 
 /// A conversation about nothing in particular, put back from last time, is

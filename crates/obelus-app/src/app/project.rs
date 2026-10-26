@@ -8,6 +8,7 @@ pub(super) mod preferences;
 pub(super) mod projects;
 pub(super) mod releases;
 pub(super) mod reopening;
+pub mod servers;
 pub(super) mod themes;
 
 /// The page that asks which project, while it is up: the two boxes, the list of

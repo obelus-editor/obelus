@@ -167,6 +167,10 @@ pub enum Command {
     BotConnect,
     /// Stop this window talking to the chat.
     BotDisconnect,
+    /// Draw an Obelus on another machine in this window instead.
+    ServerConnect,
+    /// Leave the Obelus on another machine, for this one's own.
+    ServerDisconnect,
     /// Open the settings this project carries of its own.
     ConfigProject,
     /// Open the file Obelus logs to.
@@ -403,6 +407,12 @@ pub enum Requires {
     ABot,
     /// This window has to be the one the chat talks to, or be asking to be.
     TheBot,
+    /// Obelus has to be drawn on the machine it runs on, which is where
+    /// there is anywhere else to go.
+    ThisMachine,
+    /// Obelus has to be drawn at the other end of a connection, which is
+    /// where there is a machine of the reader's own to go back to.
+    AnotherMachine,
 }
 
 /// A command's name and description, for the palette to list and match on.
@@ -789,6 +799,16 @@ pub const ALL: &[CommandSpec] = &[
         title: "Stop talking to the chat from this window",
     },
     CommandSpec {
+        command: Command::ServerConnect,
+        name: "connect-to-server",
+        title: "Draw an Obelus on another machine in this window",
+    },
+    CommandSpec {
+        command: Command::ServerDisconnect,
+        name: "disconnect-from-server",
+        title: "Leave the other machine, and come back to this one",
+    },
+    CommandSpec {
         command: Command::ConfigProject,
         // The word Obelus uses everywhere, and the word every other
         // program has taught a reader to type for this: a name is typed,
@@ -910,6 +930,8 @@ impl Command {
             | Self::ConfigOpen
             | Self::BotConnect
             | Self::BotDisconnect
+            | Self::ServerConnect
+            | Self::ServerDisconnect
             | Self::ConfigProject
             | Self::LogOpen
             | Self::LogServers
@@ -1020,6 +1042,8 @@ impl Command {
             | Self::ConfigFile
             | Self::BotConnect
             | Self::BotDisconnect
+            | Self::ServerConnect
+            | Self::ServerDisconnect
             | Self::LogOpen
             | Self::LogServers
             | Self::LspRestart
@@ -1117,6 +1141,8 @@ impl Command {
             | Self::ConfigFile
             | Self::BotConnect
             | Self::BotDisconnect
+            | Self::ServerConnect
+            | Self::ServerDisconnect
             | Self::LogOpen
             | Self::LogServers
             | Self::LspRestart
@@ -1213,6 +1239,8 @@ impl Command {
             | Self::ConfigFile
             | Self::BotConnect
             | Self::BotDisconnect
+            | Self::ServerConnect
+            | Self::ServerDisconnect
             | Self::LogOpen
             | Self::LogServers
             | Self::ThemeSelect
@@ -1419,6 +1447,8 @@ impl Command {
             Self::WorktreeList => Requires::AnotherWorktree,
             Self::BotConnect => Requires::ABot,
             Self::BotDisconnect => Requires::TheBot,
+            Self::ServerConnect => Requires::ThisMachine,
+            Self::ServerDisconnect => Requires::AnotherMachine,
         }
     }
 
@@ -1499,6 +1529,8 @@ mod tests {
             Command::WorktreeList,
             Command::BotConnect,
             Command::BotDisconnect,
+            Command::ServerConnect,
+            Command::ServerDisconnect,
             Command::DocumentClose,
             Command::DocumentCloseOthers,
             Command::ProjectClose,
