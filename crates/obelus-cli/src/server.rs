@@ -27,7 +27,10 @@ use std::{
     io::Write as _,
     net::{SocketAddr, TcpListener, TcpStream},
     process::{ChildStdin, ExitCode, Stdio},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::Duration,
 };
 
@@ -41,12 +44,34 @@ const GRACE: Duration = Duration::from_secs(3 * 60 * 60);
 /// Where a server listens when it is not told.
 pub(crate) const PORT: u16 = 7787;
 
+/// How long a connection is given to say who it is before it is let go of.
+const KNOCKING: Duration = Duration::from_secs(10);
+
+/// The most a connection may say in one frame before it has shown it has
+/// the key: a hello and a knock are a few dozen bytes and a path.
+const KNOCK_MOST: usize = 64 << 10;
+
+/// How many connections may be knocking at once. Anybody on the network
+/// can knock, and each one is a thread until it has been answered.
+const KNOCKERS: usize = 32;
+
+/// How long a frame waits for a window that has stopped reading before its
+/// connection is let go of -- the Obelus behind it waiting all that time,
+/// since nothing reads what it says while a frame is stuck.
+const STALLED: Duration = Duration::from_secs(10);
+
+/// The connection a window's frames go to.
+#[derive(Clone)]
+struct Reader {
+    stream: Arc<TcpStream>,
+}
+
 /// One window's Obelus, and whoever is reading it now.
 struct Window {
     /// What is written to it.
     input: Arc<Mutex<ChildStdin>>,
     /// The connection its frames go to, while one is there.
-    reading: Arc<Mutex<Option<TcpStream>>>,
+    reading: Arc<Mutex<Option<Reader>>>,
     /// How many times a connection has come to it, so that a wait for one
     /// that went knows whether another has come since.
     comings: u64,
@@ -61,13 +86,34 @@ struct Entered {
     /// What is written to its Obelus.
     input: Arc<Mutex<ChildStdin>>,
     /// Where its Obelus's frames go.
-    reading: Arc<Mutex<Option<TcpStream>>>,
+    reading: Arc<Mutex<Option<Reader>>>,
     /// Which coming of a connection to it this is.
     coming: u64,
 }
 
 /// Every window's Obelus, by the window's name.
 type Windows = Arc<Mutex<HashMap<String, Window>>>;
+
+/// One of the [`KNOCKERS`], given back however its knock ends.
+struct Knocking(Arc<AtomicUsize>);
+
+impl Knocking {
+    /// A place among the knockers, where there is one.
+    fn taken(knockers: &Arc<AtomicUsize>) -> Option<Self> {
+        knockers
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |now| {
+                (now < KNOCKERS).then_some(now + 1)
+            })
+            .ok()
+            .map(|_| Self(Arc::clone(knockers)))
+    }
+}
+
+impl Drop for Knocking {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
+}
 
 /// Listens on `at` until stopped, letting in every window that knocks with
 /// the key.
@@ -86,20 +132,33 @@ pub(crate) fn serve(at: SocketAddr) -> Result<ExitCode> {
     println!("A window gets in with the key {}.", hex(&key));
     tracing::info!(%at, "a server for windows on other machines");
     let windows: Windows = Arc::default();
+    let knockers = Arc::new(AtomicUsize::new(0));
     for stream in listener.incoming() {
         let stream = match stream {
             Ok(stream) => stream,
             Err(error) => {
                 tracing::warn!(%error, "a connection that did not arrive");
+                // Out of descriptors, most often, and then every accept
+                // fails at once with the connection still waiting: a
+                // moment before the next, or this is a loop doing nothing
+                // else. Not a poll -- the next accept is still what wakes
+                // it.
+                std::thread::sleep(Duration::from_millis(100));
                 continue;
             }
+        };
+        // Refused before a thread is made for it, which is the thing
+        // anybody could otherwise have made as many of as they liked.
+        let Some(knocking) = Knocking::taken(&knockers) else {
+            tracing::warn!("too many connections knocking at once, so one was let go of");
+            continue;
         };
         let (key, windows) = (key.clone(), Arc::clone(&windows));
         let started = std::thread::Builder::new()
             .name("obelus server connection".to_string())
             .spawn(move || {
                 let from = stream.peer_addr().ok();
-                if let Err(error) = let_in(stream, &key, &windows) {
+                if let Err(error) = let_in(stream, &key, &windows, knocking) {
                     tracing::info!(?from, %error, "a connection ended");
                 }
             });
@@ -112,12 +171,15 @@ pub(crate) fn serve(at: SocketAddr) -> Result<ExitCode> {
 
 /// Answers one connection: the knock, and then the window's frames until
 /// it goes.
-fn let_in(mut stream: TcpStream, key: &[u8], windows: &Windows) -> Result<()> {
+fn let_in(mut stream: TcpStream, key: &[u8], windows: &Windows, knocking: Knocking) -> Result<()> {
     stream.set_nodelay(true)?;
+    // Until it has shown it has the key, a connection is anybody's: it is
+    // given a moment and a few bytes, and no more.
+    stream.set_read_timeout(Some(KNOCKING))?;
     let ours = obelus_wire::Hello::here(env!("OBELUS_BUILD"));
     obelus_wire::write(&mut stream, &ours)?;
-    let theirs: obelus_wire::Hello =
-        obelus_wire::read(&mut stream)?.context("the window went before it said hello")?;
+    let theirs: obelus_wire::Hello = obelus_wire::read_at_most(&mut stream, KNOCK_MOST)?
+        .context("the window went before it said hello")?;
     if let Some(why) = ours.refused(&theirs) {
         anyhow::bail!(why);
     }
@@ -125,8 +187,8 @@ fn let_in(mut stream: TcpStream, key: &[u8], windows: &Windows) -> Result<()> {
     getrandom::fill(&mut number).map_err(|error| anyhow::anyhow!("{error}"))?;
     let challenge = Challenge(number);
     obelus_wire::write(&mut stream, &challenge)?;
-    let knock: Knock =
-        obelus_wire::read(&mut stream)?.context("the window went before it knocked")?;
+    let knock: Knock = obelus_wire::read_at_most(&mut stream, KNOCK_MOST)?
+        .context("the window went before it knocked")?;
     if !obelus_front::link::signed_by(key, &challenge, &knock.signed) {
         obelus_wire::write(
             &mut stream,
@@ -134,6 +196,13 @@ fn let_in(mut stream: TcpStream, key: &[u8], windows: &Windows) -> Result<()> {
         )?;
         anyhow::bail!("a knock not signed with the key");
     }
+    drop(knocking);
+    // A window now: it may be quiet for as long as the reader is, and what
+    // says it went without a word is the kernel's knocking, not a clock of
+    // this one's.
+    stream.set_read_timeout(None)?;
+    stream.set_write_timeout(Some(STALLED))?;
+    obelus_front::link::kept_alive(&stream)?;
 
     let Entered {
         name,
@@ -145,17 +214,28 @@ fn let_in(mut stream: TcpStream, key: &[u8], windows: &Windows) -> Result<()> {
         Some(found) => found,
         None => started(&knock, windows)?,
     };
-    obelus_wire::write(
+    if let Err(error) = obelus_wire::write(
         &mut stream,
         &Answered::Open {
             window: name.clone(),
             again,
         },
-    )?;
+    ) {
+        if again {
+            went(&name, coming, windows);
+        } else {
+            // Nobody was told its name, so nobody can come back for it.
+            tell(&input, &ToChild::Leave);
+        }
+        return Err(error.into());
+    }
+    let stream = Arc::new(stream);
     // Only now, after the answer, so that nothing of the Obelus's reaches
     // the window ahead of it.
     if let Ok(mut reading) = reading.lock() {
-        *reading = Some(stream.try_clone()?);
+        *reading = Some(Reader {
+            stream: Arc::clone(&stream),
+        });
     }
     if again {
         tell(&input, &ToChild::Attached { size: knock.size });
@@ -163,7 +243,7 @@ fn let_in(mut stream: TcpStream, key: &[u8], windows: &Windows) -> Result<()> {
     tracing::info!(name, again, "a window came in");
 
     let heard = loop {
-        match obelus_wire::read::<_, Up>(&mut stream) {
+        match obelus_wire::read::<_, Up>(&mut &*stream) {
             Ok(Some(up)) => tell(&input, &ToChild::Up(up)),
             Ok(None) => break "the window went".to_string(),
             Err(error) => break error.to_string(),
@@ -173,16 +253,22 @@ fn let_in(mut stream: TcpStream, key: &[u8], windows: &Windows) -> Result<()> {
     anyhow::bail!(heard)
 }
 
-/// The Obelus of a window that knocks with the name of one whose
-/// connection went, where there is one nobody else has taken up since.
+/// The Obelus of a window that knocks with the name of one it has had.
+///
+/// Even where the connection that window had is still thought to be here:
+/// a knock with the key and the name *is* that window, come back over a
+/// connection the old one did not know had gone -- a laptop on another
+/// network, say. The old one is let go of rather than this one turned away,
+/// which would start an Obelus with nothing in it and leave the reader's
+/// running where nobody can reach it.
 fn taken_up(knock: &Knock, windows: &Windows) -> Option<Entered> {
     let name = knock.window.clone()?;
     let mut windows = windows.lock().ok()?;
     let window = windows.get_mut(&name)?;
-    // A name already being read is somebody else's window: two windows
-    // cannot be the same one.
-    if window.reading.lock().ok()?.is_some() {
-        return None;
+    if let Some(old) = window.reading.lock().ok()?.take() {
+        // Its read ends with this, and what it says when it ends is about a
+        // coming that is no longer the window's -- so it says nothing.
+        let _ = old.stream.shutdown(std::net::Shutdown::Both);
     }
     window.comings += 1;
     Some(Entered {
@@ -216,7 +302,7 @@ fn started(knock: &Knock, windows: &Windows) -> Result<Entered> {
             path: knock.path.clone(),
         },
     );
-    let reading: Arc<Mutex<Option<TcpStream>>> = Arc::default();
+    let reading: Arc<Mutex<Option<Reader>>> = Arc::default();
     let carried = Arc::clone(&reading);
     let gone = Arc::clone(windows);
     let whose = name.clone();
@@ -227,13 +313,16 @@ fn started(knock: &Knock, windows: &Windows) -> Result<Entered> {
             // nobody while nobody is: the Obelus says everything again to
             // the next window that comes.
             while let Some(frame) = framed(&mut output) {
-                let Ok(mut reading) = carried.lock() else {
-                    break;
+                // Written with nothing held: a window that has stopped
+                // reading holds up this one write, and not a knock from
+                // that window coming back or from any other.
+                let Some(reader) = carried.lock().ok().and_then(|reading| reading.clone()) else {
+                    continue;
                 };
-                if let Some(stream) = reading.as_mut()
-                    && stream.write_all(&frame).is_err()
-                {
-                    *reading = None;
+                if (&*reader.stream).write_all(&frame).is_err() {
+                    // Gone, or stalled past `STALLED`: let go of, which ends
+                    // its read, and that is what says it went.
+                    let _ = reader.stream.shutdown(std::net::Shutdown::Both);
                 }
             }
             // Its Obelus has ended, and with it the window and its name.
@@ -241,9 +330,9 @@ fn started(knock: &Knock, windows: &Windows) -> Result<Entered> {
                 gone.remove(&whose);
             }
             if let Ok(mut reading) = carried.lock()
-                && let Some(stream) = reading.take()
+                && let Some(reader) = reading.take()
             {
-                let _ = stream.shutdown(std::net::Shutdown::Both);
+                let _ = reader.stream.shutdown(std::net::Shutdown::Both);
             }
             let _ = child.wait();
             tracing::info!(whose, "a window's Obelus ended");
@@ -270,7 +359,7 @@ fn started(knock: &Knock, windows: &Windows) -> Result<Entered> {
 /// A window's connection went: its Obelus is told nobody is reading, and is
 /// stopped if nobody has come back for it by the time the grace is up.
 fn went(name: &str, coming: u64, windows: &Windows) {
-    let input = {
+    {
         let Ok(windows) = windows.lock() else {
             return;
         };
@@ -283,26 +372,28 @@ fn went(name: &str, coming: u64, windows: &Windows) {
         if let Ok(mut reading) = window.reading.lock() {
             *reading = None;
         }
-        Arc::clone(&window.input)
-    };
-    tell(&input, &ToChild::Detached);
+        // Said with the windows held, so that a window coming back -- which
+        // has to hold them to come -- is told it is attached after this and
+        // never before.
+        tell(&window.input, &ToChild::Detached);
+    }
     tracing::info!(name, "a window went, and is waited for");
     let (name, windows) = (name.to_string(), Arc::clone(windows));
-    // One moment, waited for once: nothing else could say the grace is up.
-    let _ = std::thread::Builder::new()
-        .name("obelus server grace".to_string())
-        .spawn(move || {
-            std::thread::sleep(GRACE);
-            let still = windows.lock().ok().and_then(|windows| {
-                let window = windows.get(&name)?;
-                let nobody = window.reading.lock().ok()?.is_none();
-                (window.comings == coming && nobody).then(|| Arc::clone(&window.input))
-            });
-            if let Some(input) = still {
-                tracing::info!(name, "nobody came back for a window, so it stops");
-                tell(&input, &ToChild::Leave);
-            }
+    // One moment, waited for once on the runtime the waiting is done on:
+    // nothing else could say the grace is up, and a window going and coming
+    // back a hundred times is a hundred sleeping tasks rather than threads.
+    obelus_runtime::handle().spawn(async move {
+        tokio::time::sleep(GRACE).await;
+        let still = windows.lock().ok().and_then(|windows| {
+            let window = windows.get(&name)?;
+            let nobody = window.reading.lock().ok()?.is_none();
+            (window.comings == coming && nobody).then(|| Arc::clone(&window.input))
         });
+        if let Some(input) = still {
+            tracing::info!(name, "nobody came back for a window, so it stops");
+            tell(&input, &ToChild::Leave);
+        }
+    });
 }
 
 /// Says something to a window's Obelus.

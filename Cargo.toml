@@ -328,6 +328,11 @@ sha2 = "0.11.0"
 hmac = "0.13.0"
 # The numbers and keys a knock is made of.
 getrandom = "0.3"
+# A connection to `ob --server` that goes without a word -- a network
+# changed under a laptop -- found out by the kernel: see
+# `obelus_front::link::kept_alive`. `all` for how many unanswered probes
+# end it, which is the only part std has no call for at all.
+socket2 = { version = "0.6.5", features = ["all"] }
 # Unpacking what was downloaded: `.tar.gz` is what nearly every agent ships,
 # `.zip` is most of the rest, and `.tar.bz2` -- four entries -- says so rather
 # than pretending.

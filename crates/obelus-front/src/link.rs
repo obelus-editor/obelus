@@ -18,10 +18,43 @@
 //! answers with goes back in the next knock from the same window, and a
 //! window whose connection went is taken up where it was rather than
 //! started again.
+//!
+//! **A connection that went without a word is found out by the kernel.**
+//! A network changed under a laptop, or a NAT that forgot it, ends a
+//! connection with nothing said: the end still waiting to read would wait
+//! for ever, and the end still writing for the minutes a retransmission
+//! takes. Both ends ask the kernel to knock now and then while nothing
+//! else crosses ([`kept_alive`]), which is the one thing that can tell
+//! them -- and is not a poll, because nothing here asks.
+
+use std::time::Duration;
 
 use hmac::{KeyInit as _, Mac as _};
 
 use crate::{Input, Update};
+
+/// How long a connection may say nothing before the kernel knocks.
+const QUIET: Duration = Duration::from_secs(10);
+
+/// How long after one knock the kernel knocks again.
+const AGAIN: Duration = Duration::from_secs(5);
+
+/// How many knocks go unanswered before the connection is taken to have
+/// gone: so a connection that went is found out in about half a minute.
+const UNANSWERED: u32 = 3;
+
+/// Has the kernel find out when `stream` went without a word.
+///
+/// # Errors
+///
+/// Where the kernel would not be asked.
+pub fn kept_alive(stream: &std::net::TcpStream) -> std::io::Result<()> {
+    let knocking = socket2::TcpKeepalive::new()
+        .with_time(QUIET)
+        .with_interval(AGAIN)
+        .with_retries(UNANSWERED);
+    socket2::SockRef::from(stream).set_tcp_keepalive(&knocking)
+}
 
 /// What is drawing, which decides what Obelus is at the far end: the same
 /// grid either way, and a window told the things only a window draws.
@@ -206,6 +239,22 @@ pub fn signed_by(key: &[u8], challenge: &Challenge, signed: &[u8; 32]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A connection kept alive has the kernel knocking on it.
+    ///
+    /// Broken deliberately by asking the kernel nothing in `kept_alive`
+    /// (an `Ok(())` and no call): the connection had no knocking on it, and
+    /// one that went without a word would have been waited on for ever.
+    #[test]
+    fn a_connection_kept_alive_is_knocked_on() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a port");
+        let stream =
+            std::net::TcpStream::connect(listener.local_addr().expect("where")).expect("connected");
+        let asked = socket2::SockRef::from(&stream);
+        assert!(!asked.keepalive().expect("asked"), "knocked on already");
+        kept_alive(&stream).expect("kept alive");
+        assert!(asked.keepalive().expect("asked"), "not knocked on");
+    }
 
     /// A challenge signed with the key is taken, and one signed with any
     /// other key, or a different challenge, is not.

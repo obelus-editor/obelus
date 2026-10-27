@@ -24,6 +24,10 @@ obelus-front.workspace = true
 obelus-keymap.workspace = true
 obelus-logging.workspace = true
 obelus-private.workspace = true
+# The grace a window that went is waited for, as one sleep on the runtime
+# the waiting is done on -- see `server::went`.
+obelus-runtime.workspace = true
+tokio.workspace = true
 obelus-ui.workspace = true
 obelus-wire.workspace = true
 getrandom.workspace = true

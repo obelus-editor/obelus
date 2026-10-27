@@ -124,13 +124,13 @@ fn a_long_reason_is_said_whole() {
         at: "devbox".to_string(),
         key: "00ff".to_string(),
         window: None,
-        why: "connecting to devbox:7787: No connection could be made because the target \
-              machine actively refused it."
+        why: "No connection could be made because the target machine actively refused it. \
+              (os error 10061)"
             .to_string(),
         trying: false,
     });
     let screen = support::render(&mut app, 60, 24);
-    for said in ["connecting to devbox:7787", "actively refused it."] {
+    for said in ["No connection could be made", "(os error 10061)"] {
         assert!(
             screen.contains(said),
             "the page does not say {said:?}:\n{screen}"

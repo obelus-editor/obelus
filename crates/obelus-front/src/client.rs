@@ -46,6 +46,10 @@ const LONGEST: Duration = Duration::from_secs(10);
 /// screen gone still is not mistaken for a slow one.
 const WHILE_IT_BLINKS: Duration = Duration::from_secs(2);
 
+/// How long a server that took the connection is given to answer each
+/// step of the knock.
+const KNOCKING: Duration = Duration::from_secs(10);
+
 /// Asks whether the machine at `afar` answers, a moment at a time and each
 /// moment longer, and says so on `nudge` as `Event::Reachable` once it
 /// does -- for a page waiting on it. Stops when `stop` says to, which is
@@ -171,15 +175,20 @@ fn knock(
     let mut stream = TcpStream::connect(afar.address())
         .with_context(|| format!("connecting to {}", afar.address()))?;
     stream.set_nodelay(true)?;
+    // A server that took the connection and then said nothing is a page
+    // saying so in a moment, not a window frozen for as long as the
+    // kernel would wait.
+    stream.set_read_timeout(Some(KNOCKING))?;
+    crate::link::kept_alive(&stream)?;
     let ours = obelus_wire::Hello::here(afar.build);
     obelus_wire::write(&mut stream, &ours)?;
     let theirs: obelus_wire::Hello =
-        obelus_wire::read(&mut stream)?.context("the server went before it said hello")?;
+        obelus_wire::read(&mut stream)?.context("The server went before it said hello")?;
     if let Some(why) = ours.refused(&theirs) {
         anyhow::bail!(why);
     }
     let challenge: Challenge =
-        obelus_wire::read(&mut stream)?.context("the server went before it asked for the key")?;
+        obelus_wire::read(&mut stream)?.context("The server went before it asked for the key")?;
     let size = measured.size();
     let pixels = measured.pixels();
     obelus_wire::write(
@@ -193,7 +202,10 @@ fn knock(
         },
     )?;
     let answered: Answered =
-        obelus_wire::read(&mut stream)?.context("the server went before it answered")?;
+        obelus_wire::read(&mut stream)?.context("The server went before it answered")?;
+    // In now, and quiet for as long as the reader is: what says the
+    // connection went without a word from here on is the kernel's knocking.
+    stream.set_read_timeout(None)?;
     Ok((stream, answered))
 }
 
@@ -433,10 +445,14 @@ fn connection(
             }
             // Never in at all, or gone for longer than a blink: the reader
             // is told, and the page that tells them waits for the machine.
+            // On the page, what was in the way and nothing of what Obelus
+            // was doing: the page already says which machine. The words
+            // Obelus put round it are for the log.
             Err(error) => {
+                tracing::info!(error = format!("{error:#}"), "the server cannot be reached");
                 return Ok(Left::Lost {
                     window,
-                    why: format!("{error:#}"),
+                    why: error.root_cause().to_string(),
                     again: true,
                 });
             }

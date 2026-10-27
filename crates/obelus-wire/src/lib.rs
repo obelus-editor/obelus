@@ -36,7 +36,8 @@ pub const WIRE_VERSION: u32 = 1;
 /// A length is read before what it measures, so a length that is nonsense
 /// -- a stream that is not this one, half a frame from before a reconnect
 /// -- would otherwise be a gigabyte allocated on its say-so. Larger than
-/// anything sent in one piece: a file bigger than this goes in pieces.
+/// anything Obelus sends: a file dropped on a window larger than half of
+/// this is refused before it is sent.
 pub const MOST: usize = 64 << 20;
 
 /// The first thing either end says.
@@ -103,9 +104,9 @@ pub fn unframed<T: DeserializeOwned>(body: &[u8]) -> std::io::Result<T> {
 }
 
 /// How long the frame a length says is, where it is one a frame may be.
-fn length_of(length: [u8; 4]) -> std::io::Result<usize> {
+fn length_of(length: [u8; 4], most: usize) -> std::io::Result<usize> {
     let length = usize::try_from(u32::from_le_bytes(length)).map_err(std::io::Error::other)?;
-    if length > MOST {
+    if length > most {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             format!("a frame says it is {length} bytes, which no frame is"),
@@ -131,13 +132,29 @@ pub fn write<W: Write, T: Serialize>(writer: &mut W, message: &T) -> std::io::Re
 ///
 /// Where the stream ends inside a frame, or what is in one is not a message.
 pub fn read<R: Read, T: DeserializeOwned>(reader: &mut R) -> std::io::Result<Option<T>> {
+    read_at_most(reader, MOST)
+}
+
+/// [`read`], of a frame no longer than `most`.
+///
+/// For what is said before the other end has shown who it is: a few dozen
+/// bytes, from anybody at all on the network, who could otherwise have
+/// [`MOST`] made for each connection on their say-so.
+///
+/// # Errors
+///
+/// The same as [`read`]'s, and a frame that says it is longer than `most`.
+pub fn read_at_most<R: Read, T: DeserializeOwned>(
+    reader: &mut R,
+    most: usize,
+) -> std::io::Result<Option<T>> {
     let mut length = [0_u8; 4];
     match reader.read_exact(&mut length) {
         Ok(()) => {}
         Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
         Err(error) => return Err(error),
     }
-    let mut body = vec![0_u8; length_of(length)?];
+    let mut body = vec![0_u8; length_of(length, most)?];
     reader.read_exact(&mut body)?;
     unframed(&body).map(Some)
 }
@@ -172,7 +189,7 @@ where
         Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
         Err(error) => return Err(error),
     }
-    let mut body = vec![0_u8; length_of(length)?];
+    let mut body = vec![0_u8; length_of(length, MOST)?];
     reader.read_exact(&mut body).await?;
     unframed(&body).map(Some)
 }
@@ -245,6 +262,25 @@ mod tests {
         let mut stream: &[u8] = &[0xff, 0xff, 0xff, 0xff, 0];
         let error = read::<_, Said>(&mut stream).expect_err("refused");
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    /// A frame longer than a reader asked for at most is refused, and one
+    /// as long as that is read.
+    ///
+    /// Broken deliberately by measuring every frame against [`MOST`] in
+    /// `read_at_most`: a frame of a kilobyte got past a reader that would
+    /// take sixteen bytes.
+    #[test]
+    fn a_frame_longer_than_was_asked_for_is_refused() {
+        let said = Said::Words("x".repeat(1024));
+        let mut long: &[u8] = &framed(&said).expect("framed");
+        let error = read_at_most::<_, Said>(&mut long, 16).expect_err("refused");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        let mut taken: &[u8] = &framed(&said).expect("framed");
+        assert_eq!(
+            read_at_most::<_, Said>(&mut taken, 2048).expect("read"),
+            Some(said)
+        );
     }
 
     /// The same, the other way: on a connection the runtime waits on.

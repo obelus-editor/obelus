@@ -4577,10 +4577,12 @@ dependencies = [
  "obelus-keymap",
  "obelus-logging",
  "obelus-private",
+ "obelus-runtime",
  "obelus-ui",
  "obelus-wire",
  "ratatui",
  "ratatui-image",
+ "tokio",
  "tracing",
 ]
 
@@ -4709,6 +4711,7 @@ dependencies = [
  "ratatui-core",
  "serde",
  "sha2 0.11.0",
+ "socket2",
  "tracing",
 ]
 

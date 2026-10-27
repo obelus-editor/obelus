@@ -360,3 +360,81 @@ fn the_key_is_nobody_else_s() {
         "anybody may read the key"
     );
 }
+
+/// A window that comes back while its old connection is still thought to
+/// be here -- a laptop on another network, whose old connection went
+/// without a word -- is taken up where it was, and the old connection is
+/// let go of.
+///
+/// Broken deliberately by turning such a knock away again (`taken_up`
+/// answering nothing while `reading` holds a connection): the window was
+/// answered `again: false`, in a new Obelus with nothing in it.
+#[test]
+fn a_window_back_before_its_old_connection_went_is_taken_up() {
+    let server = a_server("half-open");
+    let files = Scratch::new("half-open-files");
+    let path = a_file(&files);
+
+    let (mut old, answered) = Window::knock(&server, &server.key, &path, None);
+    let Answered::Open { window: name, .. } = answered else {
+        panic!("not let in: {answered:?}");
+    };
+    assert!(old.until("the file", |window| {
+        window.text().contains("hello from the server")
+    }));
+
+    // The old one is not dropped: as far as the server can tell, it is
+    // still there.
+    let (mut back, answered) = Window::knock(&server, &server.key, &path, Some(&name));
+    assert_eq!(
+        answered,
+        Answered::Open {
+            window: name,
+            again: true
+        },
+        "the window was not taken up"
+    );
+    assert!(back.until("the screen again", |window| {
+        window.text().contains("hello from the server")
+    }));
+    assert!(
+        !old.until("the old connection to be let go of", |_| false),
+        "the old connection was not let go of"
+    );
+}
+
+/// What a connection says before it has shown it has the key is a few
+/// bytes or nothing: a frame claiming to be a megabyte ends the
+/// connection at once, rather than having the megabyte made and waited
+/// for.
+///
+/// Broken deliberately by reading the hello as any frame is read
+/// (`obelus_wire::read` for `read_at_most` in `let_in`): the server made
+/// room for the megabyte and waited for it, and the connection was still
+/// open when the test stopped waiting.
+#[test]
+fn a_long_frame_before_the_knock_ends_the_connection() {
+    use std::io::{Read as _, Write as _};
+
+    let server = a_server("long-hello");
+    let mut stream = TcpStream::connect(&server.at).expect("connected");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .expect("a timeout");
+    let _: obelus_wire::Hello = obelus_wire::read(&mut stream)
+        .expect("read")
+        .expect("hello");
+    stream
+        .write_all(&(1_u32 << 20).to_le_bytes())
+        .expect("a length");
+    let mut rest = [0_u8; 1];
+    match stream.read(&mut rest) {
+        Ok(0) => {}
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted
+            ) => {}
+        other => panic!("the connection was not ended: {other:?}"),
+    }
+}
