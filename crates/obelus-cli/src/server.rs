@@ -425,10 +425,25 @@ fn key() -> Result<Vec<u8>> {
     let directory = obelus_logging::state_directory().context("no state directory")?;
     std::fs::create_dir_all(&directory)?;
     let path = directory.join("server.key");
-    if let Ok(kept) = std::fs::read_to_string(&path)
-        && let Some(key) = unhex(kept.trim())
-    {
-        return Ok(key);
+    // Made only where there is none. A key that is there and will not read
+    // -- another account's, or written over by hand -- is not replaced:
+    // every window that kept the old one would be turned away with nothing
+    // to say why, so the server says so and does not start.
+    match std::fs::read_to_string(&path) {
+        Ok(kept) => {
+            return unhex(kept.trim())
+                .filter(|key| !key.is_empty())
+                .with_context(|| {
+                    format!(
+                        "{} does not hold a key; take it away and a new one is made",
+                        path.display()
+                    )
+                });
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(error).with_context(|| format!("reading the key in {}", path.display()));
+        }
     }
     let mut key = vec![0_u8; 32];
     getrandom::fill(&mut key).map_err(|error| anyhow::anyhow!("{error}"))?;

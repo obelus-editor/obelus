@@ -189,6 +189,12 @@ pub fn is_private(path: &Path) -> io::Result<bool> {
                 i32::try_from(asked).unwrap_or(i32::MAX),
             ));
         }
+        // No list at all is everybody allowed everything -- and nothing
+        // to ask the size of.
+        if list.is_null() {
+            LocalFree(descriptor);
+            return Ok(false);
+        }
         let (mut control, mut revision) = (0, 0);
         GetSecurityDescriptorControl(descriptor, &raw mut control, &raw mut revision);
         let mut size: ACL_SIZE_INFORMATION = std::mem::zeroed();

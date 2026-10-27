@@ -438,3 +438,44 @@ fn a_long_frame_before_the_knock_ends_the_connection() {
         other => panic!("the connection was not ended: {other:?}"),
     }
 }
+
+/// A key that is there and will not read is not replaced: the server says
+/// so and does not start, and the file is left as it was -- every window
+/// that kept the old key would otherwise be turned away with nothing to
+/// say why.
+///
+/// Broken deliberately by making a new key wherever the old will not read
+/// (`key` as it was, any error and any contents a reason to write one):
+/// the server started with a key nobody had, over the file.
+#[test]
+fn a_key_that_will_not_read_is_not_replaced() {
+    let state = Scratch::new("unreadable-key");
+    let kept = state.0.join("obelus");
+    std::fs::create_dir_all(&kept).expect("the state directory");
+    std::fs::write(kept.join("server.key"), "not a key").expect("the key");
+    let mut server = Command::new(env!("CARGO_BIN_EXE_ob"))
+        .args(["--server", "--listen", "127.0.0.1:0"])
+        .env("XDG_STATE_HOME", &state.0)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("ob --server");
+    // Read until it ends or prints a key, so that a server that did start
+    // fails here rather than being waited on for ever.
+    let lines = std::io::BufReader::new(server.stdout.take().expect("what it prints")).lines();
+    for line in lines {
+        if line.expect("a line").contains("gets in with the key") {
+            let _ = server.kill();
+            let _ = server.wait();
+            panic!("the server started, with a key nobody had");
+        }
+    }
+    assert!(
+        !server.wait().expect("it ended").success(),
+        "the server ended as if all was well"
+    );
+    assert_eq!(
+        std::fs::read_to_string(kept.join("server.key")).expect("still there"),
+        "not a key"
+    );
+}
