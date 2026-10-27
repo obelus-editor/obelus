@@ -58,11 +58,21 @@ impl Drop for Scratch {
 
 /// Starts `ob --server` on a port of loopback's choosing, and reads off
 /// where it listens and its key from what it prints.
+///
+/// Everything the Obelus it starts for each window reads from home is the
+/// test's own: the layout under the reader's settings could have the
+/// palette on another key, and their agent or theme start with it. Except
+/// on Windows, where the settings are where the system says and no
+/// variable moves them -- there the reader's own still apply.
 fn a_server(name: &str) -> Server {
     let state = Scratch::new(name);
     let mut child = Command::new(env!("CARGO_BIN_EXE_ob"))
         .args(["--server", "--listen", "127.0.0.1:0"])
         .env("XDG_STATE_HOME", &state.0)
+        .env("HOME", state.0.join("home"))
+        .env("XDG_CONFIG_HOME", state.0.join("config"))
+        .env("XDG_DATA_HOME", state.0.join("data"))
+        .env("XDG_CACHE_HOME", state.0.join("cache"))
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
@@ -210,7 +220,10 @@ fn a_file(scratch: &Scratch) -> String {
 /// window coming back told nothing until something changed (`Screen`'s
 /// replay left out of `Out::attach`): its screen stayed empty. And a
 /// connection that went taking its Obelus with it (`ToChild::Leave` for
-/// `Detached`): there was nothing to come back to.
+/// `Detached`): there was nothing to come back to. And by ending the
+/// connection without a word when the Obelus ends (no `Down::Finished` in
+/// `serve::one`): the window could not tell leaving from a network that
+/// went.
 #[test]
 fn a_window_is_drawn_comes_back_and_leaves() {
     let server = a_server("drawn");
@@ -250,9 +263,10 @@ fn a_window_is_drawn_comes_back_and_leaves() {
         "the window that came back was not told the screen"
     );
 
-    // Nothing is unwritten, so leaving asks nothing and Obelus ends.
+    // Nothing is unwritten, so leaving asks nothing and Obelus ends -- and
+    // says so, rather than the connection just going.
     window.say(Input::Closed);
-    let _ = window.until("Obelus to end", |_| false);
+    assert_eq!(window.end(), Down::Finished);
 }
 
 /// A knock signed with any other key is refused, and nothing is drawn.
