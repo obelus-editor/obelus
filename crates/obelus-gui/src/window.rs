@@ -332,7 +332,7 @@ struct Showing {
     fonts: Option<Fonts>,
     page: Page,
     /// The frames Obelus has drawn, waiting to be applied.
-    frames: Option<Receiver<Update>>,
+    frames: Option<Receiver<crate::grid::Sent>>,
     /// And what the reader did, on its way to Obelus.
     doing: Option<Sender<Event>>,
     measured: Arc<Measured>,
@@ -1340,7 +1340,7 @@ impl ApplicationHandler<Waking> for Showing {
                 // it was being decoded while the frames went by -- so it
                 // asks for the screen to be drawn again by itself.
                 let mut rehung = false;
-                while let Ok(update) = frames.try_recv() {
+                for update in std::iter::from_fn(|| frames.try_recv().ok()).flatten() {
                     match update {
                         // Not cells, so the page never sees them.
                         Update::TextSize(points) => sized = Some(points),

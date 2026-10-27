@@ -53,10 +53,15 @@ pub(crate) type Picture = (u64, Option<Arc<crate::wallpaper::Hung>>);
 /// said, with its picture decoded.
 pub(crate) type Update = obelus_front::Update<Picture>;
 
+/// What crosses to the window's thread at once: one update, or every cell a
+/// frame changed -- a send for each of those was thousands of them for a
+/// page scrolled.
+pub(crate) type Sent = Vec<Update>;
+
 /// The window's end of what Obelus says: the window's own channel, and the
 /// decoder that turns the bytes of a picture into one.
 pub(crate) struct Here {
-    frames: Sender<Update>,
+    frames: Sender<Sent>,
     wake: Arc<dyn Fn() + Send + Sync>,
     decoder: Arc<crate::wallpaper::Decoder>,
 }
@@ -66,14 +71,14 @@ impl Here {
     /// for a window that opened on `screen` -- as large as a picture fitted
     /// to it is ever drawn.
     pub(crate) fn new(
-        frames: Sender<Update>,
+        frames: Sender<Sent>,
         wake: Arc<dyn Fn() + Send + Sync>,
         screen: [u32; 2],
     ) -> Self {
         let decoder = {
             let (frames, wake) = (frames.clone(), Arc::clone(&wake));
             crate::wallpaper::Decoder::new(screen, move |number, hung| {
-                if frames.send(Update::Picture((number, hung))).is_ok() {
+                if frames.send(vec![Update::Picture((number, hung))]).is_ok() {
                     wake();
                 }
             })
@@ -88,19 +93,29 @@ impl Here {
 
 impl obelus_front::Showing for Here {
     fn show(&self, update: obelus_front::Update) -> Result<(), Closed> {
-        match update.apart() {
-            Ok(update) => self.frames.send(update).map_err(|_| Closed),
-            // The page lets go of its picture at once where it is not the
-            // one wanted -- see `Decoder::ask` -- and that none is numbered
-            // like any picture, so one still decoding cannot arrive after it.
-            Err(hanging) => match self.decoder.ask(hanging) {
-                Some(number) => self
-                    .frames
-                    .send(Update::Picture((number, None)))
-                    .map_err(|_| Closed),
-                None => Ok(()),
-            },
+        self.show_all(vec![update])
+    }
+
+    fn show_all(&self, updates: Vec<obelus_front::Update>) -> Result<(), Closed> {
+        let mut sent = Vec::with_capacity(updates.len());
+        for update in updates {
+            match update.apart() {
+                Ok(update) => sent.push(update),
+                // The page lets go of its picture at once where it is not
+                // the one wanted -- see `Decoder::ask` -- and that none is
+                // numbered like any picture, so one still decoding cannot
+                // arrive after it.
+                Err(hanging) => {
+                    if let Some(number) = self.decoder.ask(hanging) {
+                        sent.push(Update::Picture((number, None)));
+                    }
+                }
+            }
         }
+        if sent.is_empty() {
+            return Ok(());
+        }
+        self.frames.send(sent).map_err(|_| Closed)
     }
 
     fn wake(&self) {
@@ -1386,6 +1401,33 @@ impl Page {
 mod tests {
     use super::*;
 
+    /// Updates shown together cross to the window's thread as one send.
+    ///
+    /// Broken deliberately by sending each on its own (a `send` for each in
+    /// `Here::show_all`): a frame of cells was as many sends.
+    #[test]
+    fn updates_shown_together_cross_as_one() {
+        use obelus_front::Showing as _;
+
+        let (updates, frames) = std::sync::mpsc::channel();
+        let here = Here::new(updates, Arc::new(|| {}), [1920, 1080]);
+        let mut cell = Cell::default();
+        cell.set_symbol("x");
+        here.show_all(
+            (0..50)
+                .map(|x| obelus_front::Update::Cell {
+                    x,
+                    y: 0,
+                    cell: Box::new(cell.clone()),
+                })
+                .collect(),
+        )
+        .expect("shown");
+        let sent: Vec<Sent> = std::iter::from_fn(|| frames.try_recv().ok()).collect();
+        assert_eq!(sent.len(), 1, "not one send");
+        assert_eq!(sent[0].len(), 50);
+    }
+
     /// Rows of text written into a page, one character to a cell.
     fn written(rows: &[&str]) -> Page {
         let mut page = Page::default();
@@ -1517,14 +1559,14 @@ mod tests {
                 .expect("a frame");
         };
         draw(&mut terminal, "abcd");
-        while let Ok(update) = frames.try_recv() {
+        for update in std::iter::from_fn(|| frames.try_recv().ok()).flatten() {
             page.apply(update);
         }
         assert_eq!(page.look(1, 0).text, "b");
         measured.resized(6, 1, 60, 10);
         page.resized(6, 1);
         draw(&mut terminal, "x");
-        while let Ok(update) = frames.try_recv() {
+        for update in std::iter::from_fn(|| frames.try_recv().ok()).flatten() {
             page.apply(update);
         }
         assert_eq!(page.look(0, 0).text, "x");
