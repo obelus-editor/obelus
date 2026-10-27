@@ -108,3 +108,32 @@ fn the_machine_answering_takes_the_window_back() {
     refused.handle(Event::Reachable("devbox".to_string()));
     assert_eq!(refused.goes_to(), None);
 }
+
+/// A reason longer than the page is wide is said whole, over the rows it
+/// takes -- both what was being done, at its head, and what the system
+/// answered, at its tail.
+///
+/// Broken deliberately by cutting it to one row from the left, as it was
+/// (`truncate_from_left(why, room)` for the wrapping in `GoneView`): the
+/// head went, and the page said only the end of a sentence.
+#[test]
+fn a_long_reason_is_said_whole() {
+    let mut app = App::new(Vec::new());
+    support::lay_out(&mut app, 60, 24);
+    app.the_machine_has_gone(MachineGone {
+        at: "devbox".to_string(),
+        key: "00ff".to_string(),
+        window: None,
+        why: "connecting to devbox:7787: No connection could be made because the target \
+              machine actively refused it."
+            .to_string(),
+        trying: false,
+    });
+    let screen = support::render(&mut app, 60, 24);
+    for said in ["connecting to devbox:7787", "actively refused it."] {
+        assert!(
+            screen.contains(said),
+            "the page does not say {said:?}:\n{screen}"
+        );
+    }
+}

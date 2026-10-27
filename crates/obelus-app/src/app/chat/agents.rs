@@ -357,6 +357,13 @@ impl App {
         drawing.animates(self.settled.config.animation);
         drawing.bar_tabs(self.settled.config.bar_tabs);
         drawing.picture_strength(self.settled.config.picture_strength);
+        // Told even when nothing is open: a window handed over may still
+        // show the tabs another Obelus told it -- the one on the machine it
+        // was drawing before it came home -- and `tell_the_tabs` only says
+        // what moved since this one last spoke.
+        let tabs = self.tabs();
+        drawing.tabs(&tabs);
+        self.told_tabs = tabs;
         self.drawing = Some(drawing);
         self.say_the_colours();
         self.say_the_wallpaper();

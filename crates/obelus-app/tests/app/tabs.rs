@@ -227,6 +227,20 @@ fn a_project_let_go_of_takes_its_tabs() {
     );
 }
 
+/// A window handed to an application with nothing open is told so at once,
+/// because it may still be showing another Obelus's tabs -- the one on the
+/// machine it was drawing before it came home.
+///
+/// Deliberate break: leave the telling out of `App::drawn_by`. Nothing open
+/// is what the new application takes for having been told, so it says
+/// nothing, and the remote's tabs stay on the bar over the local welcome.
+#[test]
+fn a_window_handed_over_is_told_what_is_open_even_nothing() {
+    let (mut app, told) = open(&[]);
+    support::lay_out(&mut app, 60, 12);
+    assert_eq!(told.said(), [Vec::<Tab>::new()], "the window was not told");
+}
+
 /// Two files with one name say which directory each is in; a file whose
 /// name is its own says only that.
 ///

@@ -30,6 +30,9 @@ use crate::{Hint, Screen, fill, write};
 /// The key that tries a machine that went again, at once.
 pub const AGAIN: char = 'r';
 
+/// The most rows the reason a machine went is given.
+const WHY_ROWS: usize = 3;
+
 /// What has gone.
 enum Gone {
     /// The project, which was here.
@@ -129,7 +132,11 @@ impl Widget for GoneView<'_> {
             }
             // The machine's name mid-sentence, where it keeps its own
             // spelling; and what went wrong as the connection said it,
-            // which is not Obelus's to capitalise.
+            // which is not Obelus's to capitalise. That is a sentence and not
+            // a path, so it is wrapped rather than cut: its head says what
+            // was being done and its tail what the system answered, and
+            // cutting either loses half the answer. Somebody else's text,
+            // so a few rows of it at most, the last cut where it ends.
             Gone::Machine { at, why, trying } => {
                 let lead = "Obelus cannot reach ";
                 let room_for_at = room.saturating_sub(obelus_text::text_width(lead));
@@ -139,8 +146,13 @@ impl Widget for GoneView<'_> {
                         self.theme.foreground,
                     ),
                     (String::new(), self.theme.foreground),
-                    (crate::truncate_from_left(why, room), self.theme.gutter),
                 ];
+                let mut said = obelus_text::wrapped(why, u16::try_from(room).unwrap_or(u16::MAX));
+                if said.len() > WHY_ROWS {
+                    let rest = said.split_off(WHY_ROWS - 1).join(" ");
+                    said.push(crate::truncate_from_right(&rest, room));
+                }
+                lines.extend(said.into_iter().map(|row| (row, self.theme.gutter)));
                 if *trying {
                     lines.push(("Trying again".to_string(), self.theme.gutter));
                 }
