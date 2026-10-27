@@ -520,3 +520,52 @@ fn dropped_directory() -> std::path::PathBuf {
         std::env::temp_dir().join("obelus-dropped")
     }
 }
+
+/// What the server does is said on the terminal it was started from, as
+/// well as in the log: the reader who started it has nothing else to watch.
+///
+/// Broken deliberately by logging to the files alone (`install(false)` in
+/// `main`): the terminal said where it listened and its key, and nothing
+/// after.
+#[test]
+fn the_server_says_what_it_does_on_its_terminal() {
+    let state = Scratch::new("stderr");
+    let mut server = Command::new(env!("CARGO_BIN_EXE_ob"))
+        .args(["--server", "--listen", "127.0.0.1:0"])
+        .env("XDG_STATE_HOME", &state.0)
+        .env("HOME", state.0.join("home"))
+        .env("XDG_CONFIG_HOME", state.0.join("config"))
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("ob --server");
+    // Read on a thread of its own and waited for here: a server that says
+    // nothing on its terminal is one whose stderr never ends while it runs.
+    let said = server.stderr.take().expect("what it says");
+    let (heard, hearing) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for line in std::io::BufReader::new(said).lines() {
+            let Ok(line) = line else {
+                return;
+            };
+            if heard.send(line).is_err() {
+                return;
+            }
+        }
+    });
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let mut line = String::new();
+    while !line.contains("a server for windows on other machines") {
+        let left = deadline.saturating_duration_since(Instant::now());
+        match hearing.recv_timeout(left) {
+            Ok(next) => line = next,
+            Err(_) => break,
+        }
+    }
+    let _ = server.kill();
+    let _ = server.wait();
+    assert!(
+        line.contains("a server for windows on other machines"),
+        "nothing said on its terminal: {line:?}"
+    );
+}

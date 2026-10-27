@@ -150,8 +150,16 @@ fn ours_at_info() -> EnvFilter {
 ///
 /// Verbosity comes from `RUST_LOG`, which is `tracing-subscriber`'s own
 /// convention rather than a setting Obelus invents.
+///
+/// `on_stderr` is for `ob --server`, which draws nothing and whose terminal
+/// is the one place anybody watching it looks: Obelus's own lines go to
+/// stderr as well, through the same filter, so `RUST_LOG` moves both --
+/// a window coming in, going, and being given up on are what the reader
+/// started it to see. Not the servers', which are the volume the second
+/// file is there to keep out of the first. And still there where the files
+/// cannot be made.
 #[must_use]
-pub fn install() -> Option<(WorkerGuard, WorkerGuard)> {
+pub fn install(on_stderr: bool) -> Option<(WorkerGuard, WorkerGuard)> {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| ours_at_info());
 
     let mut layers = Vec::new();
@@ -186,6 +194,19 @@ pub fn install() -> Option<(WorkerGuard, WorkerGuard)> {
         );
         guards
     });
+    if on_stderr {
+        // Unmarked: one process's stderr has nobody else's lines in it --
+        // the Obelus it starts for each window writes its own to the file.
+        layers.push(
+            tracing_subscriber::fmt::layer()
+                .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stderr()))
+                .with_writer(std::io::stderr)
+                .with_filter(tracing_subscriber::filter::filter_fn(|event| {
+                    !is_server(event.target())
+                }))
+                .boxed(),
+        );
+    }
     tracing_subscriber::registry()
         .with(layers)
         .with(filter)
