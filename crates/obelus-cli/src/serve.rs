@@ -43,6 +43,13 @@ use obelus_front::{
 /// not coming.
 const PATIENCE: Duration = Duration::from_secs(1);
 
+/// How long the picture on the reader's clipboard is waited for, which
+/// crosses whole: a screenshot is megabytes, and a second is not long
+/// enough for one on a network that is merely ordinary. Waited for only
+/// when a picture is what is being pasted, the way a paste here waits for
+/// the clipboard to hand one over.
+const PICTURE_PATIENCE: Duration = Duration::from_secs(10);
+
 /// What `ob --serve-one` writes to, and whether a window is there to read
 /// it.
 struct Out {
@@ -121,8 +128,8 @@ impl std::fmt::Debug for Afar {
 }
 
 impl Afar {
-    /// Asks the reader's machine something, and waits a moment for it.
-    fn ask(&self, question: impl FnOnce(u64) -> Down) -> Option<Up> {
+    /// Asks the reader's machine something, and waits `patience` for it.
+    fn ask(&self, question: impl FnOnce(u64) -> Down, patience: Duration) -> Option<Up> {
         if !self.out.attached.load(Ordering::Acquire) {
             return None;
         }
@@ -133,7 +140,7 @@ impl Afar {
         self.out.flush();
         let heard = asked
             .ok()
-            .and_then(|()| answered.recv_timeout(PATIENCE).ok());
+            .and_then(|()| answered.recv_timeout(patience).ok());
         if heard.is_none() {
             tracing::info!(number, "the reader's machine did not answer in time");
         }
@@ -166,14 +173,14 @@ impl app::desk::Desk for Afar {
     }
 
     fn paste(&self) -> Option<String> {
-        match self.ask(Down::Paste)? {
+        match self.ask(Down::Paste, PATIENCE)? {
             Up::Pasted { words, .. } => words,
             _ => None,
         }
     }
 
     fn picture(&self) -> Option<(String, Vec<u8>)> {
-        match self.ask(Down::Picture)? {
+        match self.ask(Down::Picture, PICTURE_PATIENCE)? {
             Up::Pictured { picture, .. } => picture,
             _ => None,
         }
@@ -181,7 +188,7 @@ impl app::desk::Desk for Afar {
 
     fn holds_a_picture(&self) -> bool {
         matches!(
-            self.ask(Down::HoldsAPicture),
+            self.ask(Down::HoldsAPicture, PATIENCE),
             Some(Up::Holds { picture: true, .. })
         )
     }
