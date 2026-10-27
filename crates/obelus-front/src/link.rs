@@ -130,8 +130,12 @@ pub enum Answered {
 /// What Obelus says, once the knock is answered.
 #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Down {
-    /// Something on the screen.
-    Update(Update),
+    /// What changed on the screen, a frame's worth at a time: every cell a
+    /// frame changed and whatever was said about the window with it, as one
+    /// message rather than one each -- a page scrolled is thousands of
+    /// cells, and a message for each was thousands of reads and writes and
+    /// packets for one frame.
+    Updates(Vec<Update>),
     /// Words for the reader's clipboard.
     Copy(String),
     /// What is on the reader's clipboard, asked under this number.

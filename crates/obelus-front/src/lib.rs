@@ -1168,7 +1168,7 @@ mod tests {
             bytes.extend(obelus_wire::framed(&answered).expect("framed"));
         }
         for down in [
-            link::Down::Update(Update::Frame),
+            link::Down::Updates(vec![Update::Cleared, Update::Frame]),
             link::Down::Copy("c".to_string()),
             link::Down::Paste(1),
             link::Down::Picture(2),

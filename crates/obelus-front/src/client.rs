@@ -487,15 +487,23 @@ fn hear(
             let _ = obelus_wire::write(stream, up);
         }
     };
+    // Read through a buffer: a frame is one message, but each message is
+    // still a length and then a body, and two reads of the socket for each
+    // is two more than there need be.
+    let mut reading = std::io::BufReader::new(&*stream);
     loop {
-        match obelus_wire::read::<_, Down>(stream) {
-            Ok(Some(Down::Update(update))) => {
+        match obelus_wire::read::<_, Down>(&mut reading) {
+            Ok(Some(Down::Updates(updates))) => {
                 // What ends a frame, or arrives with none behind it, is
                 // what makes the front end look -- as `Cells` and the
-                // picture's reader make it look on this machine.
-                let looks = matches!(update, Update::Frame | Update::Picture(_));
-                if here.show(update).is_err() {
-                    return Some(Left::Finished);
+                // picture's reader make it look on this machine. Once for
+                // the lot, after the lot.
+                let mut looks = false;
+                for update in updates {
+                    looks |= matches!(update, Update::Frame | Update::Picture(_));
+                    if here.show(update).is_err() {
+                        return Some(Left::Finished);
+                    }
                 }
                 if looks {
                     here.wake();
@@ -698,12 +706,14 @@ mod tests {
             let mut cell = ratatui::buffer::Cell::default();
             cell.set_symbol("z");
             for down in [
-                Down::Update(Update::Cell {
-                    x: 1,
-                    y: 2,
-                    cell: Box::new(cell),
-                }),
-                Down::Update(Update::Frame),
+                Down::Updates(vec![
+                    Update::Cell {
+                        x: 1,
+                        y: 2,
+                        cell: Box::new(cell),
+                    },
+                    Update::Frame,
+                ]),
                 Down::Paste(5),
             ] {
                 obelus_wire::write(&mut stream, &down).expect("said");

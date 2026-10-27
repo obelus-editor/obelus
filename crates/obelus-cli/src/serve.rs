@@ -50,30 +50,86 @@ const PATIENCE: Duration = Duration::from_secs(1);
 /// the clipboard to hand one over.
 const PICTURE_PATIENCE: Duration = Duration::from_secs(10);
 
+/// The most updates kept for one message, which a frame that never ends --
+/// nothing a front end says without a wake after it -- would otherwise
+/// grow without end.
+const KEPT_MOST: usize = 1 << 16;
+
 /// What `ob --serve-one` writes to, and whether a window is there to read
 /// it.
+///
+/// **A frame is one message.** What the screen is told is kept until the
+/// front end is woken -- which is the end of a frame, or of something said
+/// with nothing after it -- and goes then as one [`Down::Updates`]. Said a
+/// cell at a time it was a message per cell: a page scrolled was thousands
+/// of writes to the pipe, and the server's thousands of packets after them.
 struct Out {
-    writing: Mutex<std::io::BufWriter<std::io::Stdout>>,
+    writing: Mutex<Said>,
     /// Whether a window is attached, which is when anything is written.
     attached: AtomicBool,
     /// The screen as everything said leaves it, for a window that comes.
     screen: Mutex<Screen>,
 }
 
+/// Where what is said goes, and what is kept for the next message.
+struct Said {
+    writer: std::io::BufWriter<Box<dyn std::io::Write + Send>>,
+    kept: Vec<Update>,
+}
+
+impl Said {
+    /// Writes what is kept, as one message, where anything is.
+    fn out(&mut self) -> Result<(), Closed> {
+        if self.kept.is_empty() {
+            return Ok(());
+        }
+        let updates = std::mem::take(&mut self.kept);
+        obelus_wire::write(&mut self.writer, &Down::Updates(updates)).map_err(|_| Closed)
+    }
+}
+
 impl Out {
-    /// Writes one thing for the window, where there is one.
+    /// What writes to `writer`, with a window already reading.
+    fn new(writer: Box<dyn std::io::Write + Send>) -> Self {
+        Self {
+            writing: Mutex::new(Said {
+                writer: std::io::BufWriter::new(writer),
+                kept: Vec::new(),
+            }),
+            attached: AtomicBool::new(true),
+            screen: Mutex::new(Screen::default()),
+        }
+    }
+
+    /// Keeps something for the screen, to go with the rest of its frame.
+    fn keep(&self, update: Update) -> Result<(), Closed> {
+        if !self.attached.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        let mut said = self.writing.lock().map_err(|_| Closed)?;
+        said.kept.push(update);
+        if said.kept.len() >= KEPT_MOST {
+            said.out()?;
+        }
+        Ok(())
+    }
+
+    /// Writes one thing for the window, where there is one -- after what is
+    /// kept for the screen, so that the two arrive in the order said.
     fn say(&self, down: &Down) -> Result<(), Closed> {
         if !self.attached.load(Ordering::Acquire) {
             return Ok(());
         }
-        let mut writing = self.writing.lock().map_err(|_| Closed)?;
-        obelus_wire::write(&mut *writing, down).map_err(|_| Closed)
+        let mut said = self.writing.lock().map_err(|_| Closed)?;
+        said.out()?;
+        obelus_wire::write(&mut said.writer, down).map_err(|_| Closed)
     }
 
-    /// Sends what was written.
+    /// Sends what is kept, and what was written.
     fn flush(&self) {
-        if let Ok(mut writing) = self.writing.lock() {
-            let _ = writing.flush();
+        if let Ok(mut said) = self.writing.lock() {
+            let _ = said.out();
+            let _ = said.writer.flush();
         }
     }
 
@@ -87,9 +143,14 @@ impl Out {
         let Ok(screen) = self.screen.lock() else {
             return;
         };
+        if let Ok(mut said) = self.writing.lock() {
+            // Kept for a window that has gone since: the screen says all
+            // of it again.
+            said.kept.clear();
+        }
         self.attached.store(true, Ordering::Release);
         for update in screen.again() {
-            let _ = self.say(&Down::Update(update));
+            let _ = self.keep(update);
         }
         drop(screen);
         self.flush();
@@ -102,7 +163,7 @@ impl Showing for Out {
         // between is told it once.
         let mut screen = self.screen.lock().map_err(|_| Closed)?;
         screen.saw(&update);
-        let said = self.say(&Down::Update(update));
+        let said = self.keep(update);
         drop(screen);
         said
     }
@@ -232,11 +293,7 @@ pub(crate) fn one() -> Result<ExitCode> {
         "drawn on a front end at the other end of a connection"
     );
 
-    let out = Arc::new(Out {
-        writing: Mutex::new(std::io::BufWriter::new(std::io::stdout())),
-        attached: AtomicBool::new(true),
-        screen: Mutex::new(Screen::default()),
-    });
+    let out = Arc::new(Out::new(Box::new(std::io::stdout())));
     let showing: Arc<dyn Showing> = out.clone();
     let measured = Arc::new(Measured::default());
     measured.resized(size[0], size[1], u32::from(size[2]), u32::from(size[3]));
@@ -457,6 +514,72 @@ fn kept(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Where a test's `Out` writes, kept to be read back.
+    #[derive(Clone, Default)]
+    struct Written(Arc<Mutex<Vec<u8>>>);
+
+    impl std::io::Write for Written {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0
+                .lock()
+                .expect("what was written")
+                .extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl Written {
+        /// Every message written, in order.
+        fn messages(&self) -> Vec<Down> {
+            let bytes = self.0.lock().expect("what was written").clone();
+            let mut reading = bytes.as_slice();
+            std::iter::from_fn(|| obelus_wire::read::<_, Down>(&mut reading).expect("a message"))
+                .collect()
+        }
+    }
+
+    /// A frame is one message however many cells it changed, and what is
+    /// said beside the screen goes after what came before it.
+    ///
+    /// Broken deliberately by writing each update as it is kept (`out()`
+    /// at the end of `keep`): a frame of a thousand cells went as a
+    /// thousand and one messages.
+    #[test]
+    fn a_frame_goes_as_one_message() {
+        let written = Written::default();
+        let out = Out::new(Box::new(written.clone()));
+        let mut cell = ratatui::buffer::Cell::default();
+        cell.set_symbol("x");
+        for x in 0..1000 {
+            out.show(Update::Cell {
+                x,
+                y: 0,
+                cell: Box::new(cell.clone()),
+            })
+            .expect("shown");
+        }
+        out.show(Update::Frame).expect("shown");
+        assert!(
+            written.messages().is_empty(),
+            "said before the frame was done"
+        );
+        out.wake();
+        out.say(&Down::Open("u".to_string())).expect("said");
+
+        let messages = written.messages();
+        assert_eq!(messages.len(), 2, "not one message for the frame");
+        let Down::Updates(updates) = &messages[0] else {
+            panic!("the frame was not first: {:?}", messages[0]);
+        };
+        assert_eq!(updates.len(), 1001);
+        assert_eq!(updates.last(), Some(&Update::Frame));
+        assert_eq!(messages[1], Down::Open("u".to_string()));
+    }
 
     /// A dropped file is kept under its own name, and a second of the same
     /// name beside it with a number before its extension -- never over it,
