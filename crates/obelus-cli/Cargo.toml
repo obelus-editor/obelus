@@ -40,6 +40,11 @@ ratatui.workspace = true
 ratatui-image.workspace = true
 tracing.workspace = true
 
+# Who this process is, which names the directory a file dropped on a window
+# at the other end is kept in -- see `serve::dropped_in`.
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
 [dev-dependencies]
 crossterm.workspace = true
 obelus-front.workspace = true

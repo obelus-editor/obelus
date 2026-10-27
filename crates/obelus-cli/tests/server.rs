@@ -323,7 +323,7 @@ fn a_dropped_file_is_kept_on_the_server_machine() {
         window.text().contains("hello from the server")
     }));
     let name = format!("dropped-by-the-test-{}.txt", std::process::id());
-    let kept = std::env::temp_dir().join("obelus-dropped").join(&name);
+    let kept = dropped_directory().join(&name);
     let _ = std::fs::remove_file(&kept);
     obelus_wire::write(
         &mut window.stream,
@@ -478,4 +478,24 @@ fn a_key_that_will_not_read_is_not_replaced() {
         std::fs::read_to_string(kept.join("server.key")).expect("still there"),
         "not a key"
     );
+}
+
+/// Where the server keeps a file dropped on a window: the reader's own
+/// directory in the temporary one, by their number on unix.
+fn dropped_directory() -> std::path::PathBuf {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+
+        // Who this is, read off a file this process made.
+        let probe = std::env::temp_dir().join(format!("obelus-who-{}", std::process::id()));
+        std::fs::write(&probe, "").expect("a file of this process's own");
+        let whose = std::fs::metadata(&probe).expect("there").uid();
+        let _ = std::fs::remove_file(&probe);
+        std::env::temp_dir().join(format!("obelus-dropped-{whose}"))
+    }
+    #[cfg(not(unix))]
+    {
+        std::env::temp_dir().join("obelus-dropped")
+    }
 }

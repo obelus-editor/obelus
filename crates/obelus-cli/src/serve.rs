@@ -276,7 +276,9 @@ pub(crate) fn one() -> Result<ExitCode> {
                             | Up::Holds { number, .. } => *number,
                             Up::Dropped { name, file } => {
                                 let heard = match file {
-                                    Ok(bytes) => match kept(&dropped_here(), name, bytes) {
+                                    Ok(bytes) => match dropped_in(&std::env::temp_dir())
+                                        .and_then(|directory| kept(&directory, name, bytes))
+                                    {
                                         Ok(path) => Event::Dropped(path),
                                         Err(why) => Event::Amiss(why),
                                     },
@@ -349,12 +351,48 @@ const fn protocol(pictures: obelus_front::link::Pictures) -> ratatui_image::pick
 }
 
 /// Where a file dropped on a window at the other end is kept on this
-/// machine: beside the machine's other passing things, and not in the
-/// project, whose history it is no part of. Not taken away when the window
-/// goes -- a conversation taken up tomorrow may still be about it -- which
-/// is the machine's own clearing of its temporary files to do.
-fn dropped_here() -> std::path::PathBuf {
-    std::env::temp_dir().join("obelus-dropped")
+/// machine, in `temporary`: beside the machine's other passing things, and
+/// not in the project, whose history it is no part of. Not taken away when
+/// the window goes -- a conversation taken up tomorrow may still be about
+/// it -- which is the machine's own clearing of its temporary files to do.
+///
+/// The reader's alone. A temporary directory on unix is every account's,
+/// so the directory is this one's by its number, made for nobody else --
+/// and one of that name made by somebody else first, or opened to anybody
+/// since, is not used: whoever owns it could read what is dropped, or
+/// change it before the agent reads it. On Windows the temporary directory
+/// is already the reader's own.
+#[cfg(unix)]
+fn dropped_in(temporary: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    use std::os::unix::fs::{DirBuilderExt as _, MetadataExt as _, PermissionsExt as _};
+
+    // Safety: asks the process who it is, and nothing else.
+    let whose = unsafe { libc::getuid() };
+    let directory = temporary.join(format!("obelus-dropped-{whose}"));
+    match std::fs::DirBuilder::new().mode(0o700).create(&directory) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(error) => return Err(format!("Nowhere to keep what was dropped: {error}")),
+    }
+    let found = std::fs::symlink_metadata(&directory)
+        .map_err(|error| format!("Nowhere to keep what was dropped: {error}"))?;
+    if !found.is_dir() || found.uid() != whose || found.permissions().mode() & 0o077 != 0 {
+        return Err(format!(
+            "Nothing was kept, because {} is not yours alone",
+            directory.display()
+        ));
+    }
+    Ok(directory)
+}
+
+/// The same, where the temporary directory is the reader's already.
+#[cfg(not(unix))]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "the same answer as the platform that can refuse"
+)]
+fn dropped_in(temporary: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    Ok(temporary.join("obelus-dropped"))
 }
 
 /// Keeps a dropped file in `directory` under its own name, or under that
@@ -441,5 +479,36 @@ mod tests {
         );
         assert!(kept(&directory, "..", b"x").is_err());
         let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// The directory dropped files are kept in is made for the reader
+    /// alone, and one opened to anybody else is not used.
+    ///
+    /// Broken deliberately by taking any directory of the name (the owner
+    /// and mode left unasked in `dropped_in`): a directory everybody could
+    /// read was used for what the reader dropped.
+    #[cfg(unix)]
+    #[test]
+    fn what_is_dropped_is_kept_where_only_the_reader_can_read_it() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let temporary =
+            std::env::temp_dir().join(format!("obelus-dropped-parent-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temporary);
+        std::fs::create_dir_all(&temporary).expect("a temporary directory");
+        let directory = dropped_in(&temporary).expect("made");
+        let mode = std::fs::metadata(&directory)
+            .expect("there")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o700, "made for others too");
+
+        std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o755))
+            .expect("opened up");
+        assert!(
+            dropped_in(&temporary).is_err(),
+            "a directory anybody can read was used"
+        );
+        let _ = std::fs::remove_dir_all(&temporary);
     }
 }

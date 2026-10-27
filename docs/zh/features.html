@@ -503,7 +503,7 @@
         <li>每个窗口在那边都有一个自己的 Obelus，就像你在那台机器上又开了一个</li>
         <li>连接断了——网络、合上的笔记本——那边的 Obelus 照常运行，agent 也是，保留三个小时；窗口连回来时接着原来的样子</li>
         <li>连不上那台机器时，会有一页盖住整个窗口说明这件事，并在后台一直重试：<kbd>r</kbd> 马上再试，<kbd>Enter</kbd> 改在这台机器上工作并问你开哪个项目，<kbd>Ctrl+q</kbd> 退出</li>
-        <li>剪贴板和链接用的是你这台机器的。拖进对话输入框的文件（<code>obg</code> 里）会传过去，最大 32 MiB，存在那台机器临时目录下的 <code>obelus-dropped</code> 里</li>
+        <li>剪贴板和链接用的是你这台机器的。拖进对话输入框的文件（<code>obg</code> 里）会传过去，最大 32 MiB，存在那台机器的临时目录里：Windows 上是 <code>obelus-dropped</code>，其他系统上是 <code>obelus-dropped-</code> 加你的用户编号，只有你能读</li>
         <li><code>obg --connect</code> 画成窗口，带着只有窗口才画得出的那些东西；<code>ob --connect</code> 画在终端里</li>
       </ul>
       <p>密钥校验时不会被发出去，但之后的内容都没有加密：只在你信任的网络里用，或者走 ssh 隧道。</p>

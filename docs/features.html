@@ -503,7 +503,7 @@
         <li>Each window gets an Obelus of its own over there, as if you had opened another one at that machine</li>
         <li>If the connection drops — the network, a closed laptop — the Obelus over there keeps going, agent and all, for three hours, and the window picks up where it was when it gets back</li>
         <li>If the machine can't be reached, a page over the whole window says so and keeps trying: <kbd>r</kbd> tries now, <kbd>Enter</kbd> works on this machine instead and asks which project, <kbd>Ctrl+q</kbd> quits</li>
-        <li>The clipboard and links are your machine's. A file dropped into a conversation's box (in <code>obg</code>) is sent across, up to 32 MiB, and kept in the other machine's temporary directory under <code>obelus-dropped</code></li>
+        <li>The clipboard and links are your machine's. A file dropped into a conversation's box (in <code>obg</code>) is sent across, up to 32 MiB, and kept in the other machine's temporary directory, under <code>obelus-dropped</code> on Windows and <code>obelus-dropped-</code> and your user number elsewhere, where only you can read it</li>
         <li><code>obg --connect</code> is drawn as a window, with everything only a window draws, and <code>ob --connect</code> in a terminal</li>
       </ul>
       <p>The key is checked without being sent, but nothing after it is encrypted: use it on a network you trust, or through an ssh tunnel.</p>

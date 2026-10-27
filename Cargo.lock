@@ -4571,6 +4571,7 @@ dependencies = [
  "crossterm",
  "getrandom 0.3.4",
  "image",
+ "libc",
  "obelus-app",
  "obelus-config",
  "obelus-front",
