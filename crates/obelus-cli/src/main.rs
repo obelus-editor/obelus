@@ -51,9 +51,15 @@ struct Arguments {
     #[arg(long)]
     server: bool,
 
-    /// Where `--server` listens, as an address and a port.
-    #[arg(long, requires = "server")]
-    listen: Option<std::net::SocketAddr>,
+    /// Where `--server` listens: a port, on every network this machine is
+    /// on, or an address and a port.
+    #[arg(
+        long,
+        requires = "server",
+        value_parser = server::listening,
+        default_value_t = server::everywhere(server::PORT),
+    )]
+    listen: std::net::SocketAddr,
 
     /// Draw an Obelus on another machine, started there with `ob --server`:
     /// the machine, and its port where it is not the server's own. What to
@@ -84,10 +90,7 @@ fn main() -> Result<ExitCode> {
 
     // Before anything about the terminal, which neither of these touches.
     if arguments.server {
-        let at = arguments
-            .listen
-            .unwrap_or_else(|| std::net::SocketAddr::from(([0, 0, 0, 0], server::PORT)));
-        return server::serve(at);
+        return server::serve(arguments.listen);
     }
     if arguments.serve_one {
         return serve::one();
@@ -338,5 +341,42 @@ fn give_back(mouse: bool, keyboard: bool) {
     }
     if let Err(error) = ratatui::try_restore() {
         tracing::warn!(%error, "the terminal was not put back");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Where `ob --server` listens: every network on its own port unless
+    /// told, a port alone on every network, and an address as given -- and
+    /// `--listen` without `--server` is refused, though it has a default.
+    ///
+    /// Broken deliberately by reading only an address and a port (the port
+    /// alone left out of `server::listening`): `--listen 9000` was refused.
+    /// The last two hold clap to what this leans on: a default is not a
+    /// flag given, so `requires` refuses `--listen` without `--server` and
+    /// does not refuse `ob` alone.
+    #[test]
+    fn a_server_listens_where_it_is_told_or_everywhere_on_its_port() {
+        let listening = |said: &[&str]| {
+            Arguments::try_parse_from(std::iter::once("ob").chain(said.iter().copied()))
+                .map(|arguments| arguments.listen.to_string())
+        };
+        assert_eq!(listening(&["--server"]).expect("parsed"), "0.0.0.0:7787");
+        assert_eq!(
+            listening(&["--server", "--listen", "9000"]).expect("parsed"),
+            "0.0.0.0:9000"
+        );
+        assert_eq!(
+            listening(&["--server", "--listen", "127.0.0.1:7790"]).expect("parsed"),
+            "127.0.0.1:7790"
+        );
+        assert!(listening(&["--server", "--listen", "somewhere"]).is_err());
+        assert!(
+            listening(&["--listen", "9000"]).is_err(),
+            "listening without serving"
+        );
+        assert!(listening(&[]).is_ok(), "ob alone was refused");
     }
 }
