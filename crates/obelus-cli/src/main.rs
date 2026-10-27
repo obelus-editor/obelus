@@ -33,12 +33,6 @@ struct Arguments {
     #[arg(long)]
     connect_to_chat: bool,
 
-    /// What `--connect-to-chat` was called before the word *remote* went
-    /// to working on another machine: still heard, so a shortcut written
-    /// for it keeps working, and said in the log.
-    #[arg(long, hide = true)]
-    connect_bot: bool,
-
     /// Draw nothing and take over no terminal: an Obelus there only to be
     /// reached from the chat set in the settings, which it connects to.
     ///
@@ -134,10 +128,7 @@ fn main() -> Result<ExitCode> {
         }
         None => {
             let mut app = startup::start(&arguments.paths, env!("OBELUS_BUILD"))?;
-            if arguments.connect_bot {
-                tracing::info!("--connect-remote is called --connect-to-chat now");
-            }
-            if arguments.connect_to_chat || arguments.connect_bot {
+            if arguments.connect_to_chat {
                 app.bot_at_start();
             }
             client::Start::Here(Box::new(app))

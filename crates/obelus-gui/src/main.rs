@@ -72,12 +72,6 @@ struct Arguments {
     #[arg(long)]
     connect_to_chat: bool,
 
-    /// What `--connect-to-chat` was called before the word *remote* went
-    /// to working on another machine: still heard, so a shortcut written
-    /// for it keeps working, and said in the log.
-    #[arg(long, hide = true)]
-    connect_bot: bool,
-
     /// Draw an Obelus on another machine, started there with `ob --server`:
     /// the machine, and its port where it is not the server's own. What to
     /// open is said the way it is to `obg`, as it is named on that machine.
@@ -159,10 +153,7 @@ fn main() -> Result<()> {
     // inside a window that is about to close. The order inside is argued
     // where it lives.
     let mut app = startup::start(&arguments.paths, env!("OBELUS_BUILD"))?;
-    if arguments.connect_bot {
-        tracing::info!("--connect-remote is called --connect-to-chat now");
-    }
-    if arguments.connect_to_chat || arguments.connect_bot {
+    if arguments.connect_to_chat {
         app.bot_at_start();
     }
     // The window's half of the line `startup::start` just wrote, which is
