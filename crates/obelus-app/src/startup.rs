@@ -49,7 +49,7 @@ pub fn start(paths: &[PathBuf], built: &'static str) -> Result<App> {
 pub fn start_headless(paths: &[PathBuf], built: &'static str) -> Result<App> {
     let mut app = build(paths, built, true)?;
     app.ready_to_be_reached().map_err(anyhow::Error::msg)?;
-    app.remote_at_start();
+    app.bot_at_start();
     Ok(app)
 }
 

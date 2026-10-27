@@ -55,10 +55,10 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use obelus_agent::{Listed as Agent, Status, acp::Setting as Offer};
+use obelus_bot::platform::{Description, Field as Told, Setup};
 use obelus_command::Command;
 use obelus_config::{Config, Group, Kind, Setting, Value, Whose};
 use obelus_keymap::{KeyChord, Keymap};
-use obelus_remote::platform::{Description, Field as Told, Setup};
 use obelus_themes::Card as ThemeCard;
 
 use crate::{
@@ -142,8 +142,8 @@ pub enum SettingsOutcome {
     /// out. Here what is left is not a default of Obelus's but the agent's
     /// own answer, which is the third state every one of these rows has.
     UnsetForAgent(String),
-    /// Something on the remote page wants doing.
-    Remote(Reaching),
+    /// Something on the chat page wants doing.
+    Bot(Reaching),
     /// One of the active agent's variables wants a new value, by its name.
     EditVariable(String),
     /// The reader is adding a variable to the active agent's environment.
@@ -154,7 +154,7 @@ pub enum SettingsOutcome {
     Cancelled,
 }
 
-/// What a row of the remote page asks for.
+/// What a row of the chat page asks for.
 ///
 /// Asked, not done: what each of these means -- a keyring to write, a code
 /// to make, a list to open -- is the application's, and the page only knows
@@ -175,9 +175,9 @@ pub enum Reaching {
     Setup,
 }
 
-/// One row of the remote page.
+/// One row of the chat page.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RemoteRow {
+pub enum BotRow {
     /// Which chat, or none.
     Platform,
     /// One of the platform's fields.
@@ -190,7 +190,7 @@ pub enum RemoteRow {
     Setup(&'static Setup),
 }
 
-/// What the remote page shows, as the application knows it.
+/// What the chat page shows, as the application knows it.
 ///
 /// Handed in, the way the agent's offering is: whether a token is kept, who
 /// is paired and whether a code is waiting are the application's to know,
@@ -204,7 +204,7 @@ pub struct Reached {
     /// Which chat is set, where one is.
     pub platform: Option<&'static Description>,
     /// Where this machine stands with it.
-    pub state: obelus_remote::State,
+    pub state: obelus_bot::State,
     /// Why, in the platform's words, where it said something was wrong.
     pub why: Option<String>,
     /// What each field's control says, by the field's key: the start and
@@ -292,7 +292,7 @@ pub enum Page {
     /// The agents Obelus can install.
     Agents,
     /// Which chat a note can be worked on from.
-    Remote,
+    Bot,
     /// The themes the registry lists, and the ones taken from it.
     Themes,
 }
@@ -302,7 +302,7 @@ impl Page {
     pub const ALL: [Self; 5] = [
         Self::Settings,
         Self::Keys,
-        Self::Remote,
+        Self::Bot,
         Self::Themes,
         Self::Agents,
     ];
@@ -336,7 +336,7 @@ impl Page {
             Self::Settings => "Settings",
             Self::Keys => "Keys",
             Self::Agents => "Agents",
-            Self::Remote => "Remote",
+            Self::Bot => "Chat",
             Self::Themes => "Themes",
         }
     }
@@ -422,10 +422,10 @@ pub enum Shown<'a> {
         /// Which agent it is, by the name the heading uses.
         agent: &'a str,
     },
-    /// One row of the remote page.
-    Remote {
+    /// One row of the chat page.
+    Bot {
         /// Which.
-        row: RemoteRow,
+        row: BotRow,
         /// The heading it opens -- the platform's name, or Obelus's word for
         /// none -- where it is the first row.
         opens: Option<&'static str>,
@@ -475,7 +475,7 @@ impl Shown<'_> {
             Self::Obelus { setting, .. } => Some(*setting),
             Self::Agent { .. }
             | Self::Silent { .. }
-            | Self::Remote { .. }
+            | Self::Bot { .. }
             | Self::Variable { .. }
             | Self::AddVariable { .. } => None,
         }
@@ -490,12 +490,12 @@ impl Shown<'_> {
             Self::Variable { name, .. } => name,
             Self::AddVariable { .. } => "Add a variable",
             Self::Silent { .. } => "",
-            Self::Remote { row, .. } => match row {
-                RemoteRow::Platform => "Platform",
-                RemoteRow::Field(field) => field.name,
-                RemoteRow::People => "People",
-                RemoteRow::Pair => "Pair",
-                RemoteRow::Setup(setup) => setup.name(),
+            Self::Bot { row, .. } => match row {
+                BotRow::Platform => "Platform",
+                BotRow::Field(field) => field.name,
+                BotRow::People => "People",
+                BotRow::Pair => "Pair",
+                BotRow::Setup(setup) => setup.name(),
             },
         }
     }
@@ -513,12 +513,12 @@ impl Shown<'_> {
             Self::Variable { value, .. } => value,
             Self::AddVariable { .. } => "A name and then what it holds",
             Self::Silent { saying, .. } => saying,
-            Self::Remote { row, .. } => match row {
-                RemoteRow::Platform => "Which chat a note can be worked on from",
-                RemoteRow::Field(field) => field.about,
-                RemoteRow::People => "Who may talk to this machine through it",
-                RemoteRow::Pair => "A code to send in the group you put the bot in",
-                RemoteRow::Setup(setup) => setup.about(),
+            Self::Bot { row, .. } => match row {
+                BotRow::Platform => "Which chat a note can be worked on from",
+                BotRow::Field(field) => field.about,
+                BotRow::People => "Who may talk to this machine through it",
+                BotRow::Pair => "A code to send in the group you put the bot in",
+                BotRow::Setup(setup) => setup.about(),
             },
         }
     }
@@ -538,7 +538,7 @@ impl Shown<'_> {
         match self {
             Self::Obelus { .. }
             | Self::Silent { .. }
-            | Self::Remote { .. }
+            | Self::Bot { .. }
             | Self::Variable { .. }
             | Self::AddVariable { .. } => None,
             // A choice the agent has stopped offering is a line in the
@@ -708,7 +708,7 @@ pub struct Settings {
     /// this page scroll the way they do: by the least that puts the focused
     /// row back on screen, and no further.
     window: Window,
-    /// What the remote page shows -- see [`Reached`].
+    /// What the chat page shows -- see [`Reached`].
     reached: Reached,
 }
 
@@ -803,7 +803,7 @@ impl Settings {
         Some(match self.page() {
             Page::Keys => "Filter keys",
             Page::Agents => "Filter agents",
-            Page::Remote => "Filter remote settings",
+            Page::Bot => "Filter chat settings",
             Page::Settings => "Filter settings",
             Page::Themes => "Filter themes",
         })
@@ -833,32 +833,32 @@ impl Settings {
         self.on_agents() || self.on_themes()
     }
 
-    /// Whether the page showing is the remote one.
+    /// Whether the page showing is the chat one.
     #[must_use]
-    pub fn on_remote(&self) -> bool {
-        self.page() == Page::Remote
+    pub fn on_bot(&self) -> bool {
+        self.page() == Page::Bot
     }
 
-    /// What the remote page shows.
+    /// What the chat page shows.
     #[must_use]
     pub const fn reached(&self) -> &Reached {
         &self.reached
     }
 
-    /// Hands it a new account of the remote page, keeping the focus on a
+    /// Hands it a new account of the chat page, keeping the focus on a
     /// row that is still there.
     pub fn reach(&mut self, reached: Reached) {
         if reached == self.reached {
             return;
         }
         self.reached = reached;
-        if self.on_remote() {
+        if self.on_bot() {
             self.window.set_count(self.row_count(None));
         }
     }
 
     /// What is wrong with a row, where something is: the row's own answer,
-    /// or for one of the remote page's fields what the application said
+    /// or for one of the chat page's fields what the application said
     /// about it.
     ///
     /// Asked here by the page and by the window both, for the reason
@@ -878,36 +878,33 @@ impl Settings {
             // the chat's own row, in the platform's words. The status row
             // says it once and moves on, and a reader who comes here to find
             // out why was otherwise told nothing.
-            Shown::Remote {
-                row: RemoteRow::Platform,
+            Shown::Bot {
+                row: BotRow::Platform,
                 ..
             } => match self.reached.state {
-                obelus_remote::State::Declined | obelus_remote::State::Unreachable => {
+                obelus_bot::State::Declined | obelus_bot::State::Unreachable => {
                     self.reached.why.clone()
                 }
                 _ => None,
             },
-            Shown::Remote {
-                row: RemoteRow::Field(field),
+            Shown::Bot {
+                row: BotRow::Field(field),
                 ..
             } => {
-                let secret = matches!(
-                    field.kind,
-                    obelus_remote::platform::FieldKind::Secret { .. }
-                );
+                let secret = matches!(field.kind, obelus_bot::platform::FieldKind::Secret { .. });
                 let name = self
                     .reached
                     .platform
                     .map_or("The chat", |platform| platform.name);
                 match self.reached.state {
-                    obelus_remote::State::Refused if secret => Some(format!("Refused by {name}")),
-                    obelus_remote::State::Locked if secret => {
+                    obelus_bot::State::Refused if secret => Some(format!("Refused by {name}")),
+                    obelus_bot::State::Locked if secret => {
                         Some("The keyring is locked".to_string())
                     }
-                    obelus_remote::State::NoKeyring if secret => {
+                    obelus_bot::State::NoKeyring if secret => {
                         Some("No keyring on this machine".to_string())
                     }
-                    obelus_remote::State::Unread if secret => {
+                    obelus_bot::State::Unread if secret => {
                         Some("The keyring would not answer".to_string())
                     }
                     _ => None,
@@ -917,24 +914,20 @@ impl Settings {
         }
     }
 
-    /// The rows of the remote page: which chat, and -- where one is set --
+    /// The rows of the chat page: which chat, and -- where one is set --
     /// what it has to be told, who may talk, pairing, and how its side is
     /// made, in the order a reader setting it up for the first time goes
     /// down them.
-    fn remote_rows(&self) -> Vec<Shown<'static>> {
+    fn bot_rows(&self) -> Vec<Shown<'static>> {
         let opens = Some(
             self.reached
                 .platform
-                .map_or("Remote", |platform| platform.name),
+                .map_or("Chat", |platform| platform.name),
         );
-        let mut rows = vec![RemoteRow::Platform];
+        let mut rows = vec![BotRow::Platform];
         if let Some(platform) = self.reached.platform {
-            rows.extend(platform.fields.iter().map(RemoteRow::Field));
-            rows.extend([
-                RemoteRow::People,
-                RemoteRow::Pair,
-                RemoteRow::Setup(&platform.setup),
-            ]);
+            rows.extend(platform.fields.iter().map(BotRow::Field));
+            rows.extend([BotRow::People, BotRow::Pair, BotRow::Setup(&platform.setup)]);
         }
         // By name, the way the settings are narrowed, and each row opens the
         // heading only if it is the first left.
@@ -943,7 +936,7 @@ impl Settings {
         rows.into_iter()
             .filter(|row| {
                 query.is_empty()
-                    || Shown::Remote {
+                    || Shown::Bot {
                         row: *row,
                         opens: None,
                     }
@@ -951,7 +944,7 @@ impl Settings {
                     .to_lowercase()
                     .contains(&query)
             })
-            .map(|row| Shown::Remote {
+            .map(|row| Shown::Bot {
                 row,
                 opens: opens.take(),
             })
@@ -1308,8 +1301,8 @@ impl Settings {
         if self.on_cards() || self.on_keys() {
             return Vec::new();
         }
-        if self.on_remote() {
-            return self.remote_rows();
+        if self.on_bot() {
+            return self.bot_rows();
         }
         let query = self.query.said().to_lowercase();
         let mut rows = Vec::new();
@@ -1899,15 +1892,15 @@ impl Settings {
                 Some((KeyRow::Key { .. }, None)) => SettingsOutcome::Consumed,
                 None => SettingsOutcome::Consumed,
             },
-            // A row of the remote page asks for what it is about, and the
+            // A row of the chat page asks for what it is about, and the
             // application does it.
-            KeyCode::Enter if bare && self.on_remote() => match rows.get(self.window.focus()) {
-                Some(Shown::Remote { row, .. }) => SettingsOutcome::Remote(match row {
-                    RemoteRow::Platform => Reaching::Platform,
-                    RemoteRow::Field(field) => Reaching::Edit(field),
-                    RemoteRow::People => Reaching::People,
-                    RemoteRow::Pair => Reaching::Pair,
-                    RemoteRow::Setup(_) => Reaching::Setup,
+            KeyCode::Enter if bare && self.on_bot() => match rows.get(self.window.focus()) {
+                Some(Shown::Bot { row, .. }) => SettingsOutcome::Bot(match row {
+                    BotRow::Platform => Reaching::Platform,
+                    BotRow::Field(field) => Reaching::Edit(field),
+                    BotRow::People => Reaching::People,
+                    BotRow::Pair => Reaching::Pair,
+                    BotRow::Setup(_) => Reaching::Setup,
                 }),
                 _ => SettingsOutcome::Consumed,
             },
@@ -1983,13 +1976,13 @@ impl Settings {
             // everywhere else on this page.
             KeyCode::Delete | KeyCode::Backspace
                 if self.query.leaves_to_the_row(key)
-                    && let Some(Shown::Remote {
-                        row: RemoteRow::Field(field),
+                    && let Some(Shown::Bot {
+                        row: BotRow::Field(field),
                         ..
                     }) = rows.get(self.window.focus()) =>
             {
                 match self.reached.kept.contains_key(field.key) {
-                    true => SettingsOutcome::Remote(Reaching::Forget(field)),
+                    true => SettingsOutcome::Bot(Reaching::Forget(field)),
                     false => SettingsOutcome::Consumed,
                 }
             }
@@ -2282,7 +2275,7 @@ impl Settings {
             Shown::Variable { opens, .. } | Shown::AddVariable { opens } => {
                 u16::from(opens.is_some()) * HEADING_ROWS
             }
-            Shown::Remote { opens, .. } => u16::from(opens.is_some()) * 2,
+            Shown::Bot { opens, .. } => u16::from(opens.is_some()) * 2,
         };
         // A row with no name is its prose and the blank after it: there is
         // nothing to put a name on.

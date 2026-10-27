@@ -47,8 +47,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use obelus_agent::chats::ChatId;
+use obelus_bot::model::{Head, Out, Question, Turning};
 use obelus_component::composer::Part;
-use obelus_remote::model::{Head, Out, Question, Turning};
 
 use crate::{
     app::*,
@@ -233,7 +233,7 @@ fn chat_of(talk: &Conversation) -> Option<ChatId> {
 fn table_for(platform: &str) -> Option<std::path::PathBuf> {
     Some(
         obelus_logging::state_directory()?
-            .join("remote")
+            .join(crate::app::bot::KEPT_UNDER)
             .join(platform)
             .join("threads.toml"),
     )
@@ -331,7 +331,7 @@ fn write_the_table(platform: &str, threads: &BTreeMap<String, Thread>) {
 fn room_file(platform: &str) -> Option<std::path::PathBuf> {
     Some(
         obelus_logging::state_directory()?
-            .join("remote")
+            .join(crate::app::bot::KEPT_UNDER)
             .join(platform)
             .join("room.toml"),
     )
@@ -370,7 +370,7 @@ impl App {
         let platform = self.platform()?;
         Some(
             self.config()
-                .remote_of(platform.key)?
+                .chat_of(platform.key)?
                 .people
                 .first()?
                 .id

@@ -785,7 +785,7 @@ impl App {
     pub(in crate::app) fn move_to_tree(&mut self, tree: &Path) {
         tracing::info!(tree = %tree.display(), "putting this window on another worktree");
         // Asked before the letting go, which takes the chat with it.
-        let reached = self.has_the_remote();
+        let reached = self.has_the_bot();
         self.write_down_what_is_open_on_leaving();
         self.let_go_of_the_project();
         self.settle(tree.to_path_buf(), &[]);
@@ -796,7 +796,7 @@ impl App {
         // a start that was told to connects -- what the chat's threads were
         // about was the tree that has gone.
         if reached {
-            self.connect_remote();
+            self.connect_bot();
         }
     }
 

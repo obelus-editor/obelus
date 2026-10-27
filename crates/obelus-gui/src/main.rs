@@ -68,9 +68,20 @@ struct Arguments {
     paths: Vec<PathBuf>,
 
     /// Connect to the chat set in the settings once started, as
-    /// `connect-remote` does.
+    /// `connect-to-chat` does.
     #[arg(long)]
-    connect_remote: bool,
+    connect_to_chat: bool,
+
+    /// Draw an Obelus on another machine, started there with `ob --server`:
+    /// the machine, and its port where it is not the server's own. What to
+    /// open is said the way it is to `obg`, as it is named on that machine.
+    #[arg(long, value_name = "MACHINE[:PORT]")]
+    connect: Option<String>,
+
+    /// The key that server printed, needed the first time and kept after.
+    /// `OBELUS_KEY` says it as well.
+    #[arg(long, requires = "connect")]
+    key: Option<String>,
 }
 
 fn main() -> Result<()> {
@@ -116,13 +127,34 @@ fn main() -> Result<()> {
     // command -- both halves from the one constant.
     obelus_keymap::draw_control_as_command(keys::COMMAND_IS_CONTROL);
 
+    // Nothing to open here: what is named is the other machine's, and the
+    // settings that say how a window is drawn are the reader's there.
+    if let Some(at) = arguments.connect {
+        let key = obelus_front::client::key(
+            &at,
+            arguments.key.or_else(|| std::env::var("OBELUS_KEY").ok()),
+        )?;
+        let path = arguments
+            .paths
+            .first()
+            .map(|path| path.display().to_string());
+        tracing::info!(at, "drawing an Obelus on another machine");
+        return window::show(window::Start::Afar(obelus_front::client::Afar {
+            at,
+            key,
+            path,
+            build: env!("OBELUS_BUILD"),
+            window: None,
+        }));
+    }
+
     // Opened before there is a window, so that a bad path reports itself on
     // the console the reader started Obelus from rather than flashing past
     // inside a window that is about to close. The order inside is argued
     // where it lives.
     let mut app = startup::start(&arguments.paths, env!("OBELUS_BUILD"))?;
-    if arguments.connect_remote {
-        app.remote_at_start();
+    if arguments.connect_to_chat {
+        app.bot_at_start();
     }
     // The window's half of the line `startup::start` just wrote, which is
     // the first thing to suspect when a key or a colour did not do what it
@@ -132,7 +164,7 @@ fn main() -> Result<()> {
         "drawn in a window"
     );
 
-    window::show(app)
+    window::show(window::Start::Here(Box::new(app)))
 }
 
 /// Where the environment `obg` runs with came from.

@@ -235,6 +235,37 @@ impl Images {
         }
     }
 
+    /// What a terminal at the other end of a connection said it can do --
+    /// asked there, before its own screen was taken over, and told here.
+    #[must_use]
+    pub fn told(protocol: ProtocolType, cell: [u16; 2]) -> Self {
+        #[expect(
+            deprecated,
+            reason = "the size of a cell is the terminal's at the other end, which only it can ask"
+        )]
+        let mut picker = Picker::from_fontsize(ratatui_image::FontSize {
+            width: cell[0],
+            height: cell[1],
+        });
+        picker.set_protocol_type(protocol);
+        Self {
+            picker: Some(picker),
+            marks: None,
+            told: std::collections::HashSet::new(),
+            encoded: HashMap::new(),
+            palette: None,
+        }
+    }
+
+    /// What the terminal can draw a picture with, and how large a cell is
+    /// in pixels -- for telling Obelus at the other end of a connection.
+    #[must_use]
+    pub fn of_the_terminal(&self) -> Option<(ProtocolType, [u16; 2])> {
+        let picker = self.picker.as_ref()?;
+        let size = picker.font_size();
+        Some((picker.protocol_type(), [size.width, size.height]))
+    }
+
     /// Whether there is any point preparing a picture.
     ///
     /// Either end counts. It used to be the terminal's protocol alone,

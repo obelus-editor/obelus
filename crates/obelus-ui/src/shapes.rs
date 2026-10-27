@@ -48,7 +48,7 @@ use ratatui::{
 /// other end *is* an edge, so it keeps its corners. And a pane arrives
 /// from the side it is joined to, which is the only side it could come
 /// from without crossing the page.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Joined {
     /// Hanging from the row above it: a page's whole region taken over.
     Above,
@@ -101,7 +101,7 @@ pub enum Joined {
 /// reason [`Bar::thumb`] is said rather than worked out: a front end that
 /// joined the rows up itself would be reading the grid back to find out
 /// what it means.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Stroke {
     /// The rows it covers, in the one column it is in.
     pub area: Rect,
@@ -119,7 +119,7 @@ pub struct Stroke {
 /// page's edge, away from the box beside it. So which edge is not
 /// something a front end can work out. It depends on which column the
 /// stroke is in, and the column is all the front end has.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Side {
     /// The left-hand edge of the cell: the map's, away from the bar, and
     /// the notes'.
@@ -129,7 +129,7 @@ pub enum Side {
 }
 
 /// What a stroke is about.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum About {
     /// The rows themselves, which are there and differ.
     Rows,
@@ -156,7 +156,7 @@ pub enum About {
 /// sets out from a place a row's rounding away from where it was last
 /// drawn -- which on screen is a mark that steps back before it goes on.
 /// Between two rows it was drawn on there is nothing to disagree about.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Bar {
     /// The column or columns it takes.
     pub area: Rect,
@@ -434,7 +434,9 @@ pub trait Shapes: Send + Sync {
 /// page scrolled and a match the search moved to are the same cells
 /// somewhere else. So it is where the match is in what it is a match of,
 /// which a scroll does not change.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub struct Found {
     /// Which page: a file, by its path and which commit it is, or which of
     /// the views that lay their own rows out. Hashed, because all it is for
@@ -473,7 +475,9 @@ impl Found {
 /// let an agent write above it, and it is a byte further on while being
 /// the pair it was. The version is what tells the two apart -- a pair
 /// that moved while the text changed was moved by the change.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub struct Pair {
     /// Which document: its path and which commit it is, because two
     /// buffers can wear one path. Hashed, because all it is for is

@@ -467,7 +467,7 @@ impl App {
     /// a note is written in say the same thing about it or a reader learns
     /// that one of them is lying.
     pub(in crate::app) fn copied(&mut self, text: &str, what: &str) {
-        match obelus_clipboard::copy(text) {
+        match self.desk().copy(text) {
             Ok(()) => self.say(format!("Copied {what}")),
             Err(error) => {
                 tracing::warn!(%error, what, "copying failed");
@@ -483,7 +483,7 @@ impl App {
     /// way, and a reader told only that the copy failed would go looking
     /// for it where it no longer is.
     pub(in crate::app) fn cut_away(&mut self, text: &str, what: &str) {
-        match obelus_clipboard::copy(text) {
+        match self.desk().copy(text) {
             Ok(()) => self.say(format!("Cut {what}")),
             Err(error) => {
                 tracing::warn!(%error, what, "copying the cut failed");
@@ -625,7 +625,7 @@ impl App {
         // offered rather than after it fails, and where the answer is no
         // the words on the clipboard are pasted as they always were.
         if self.can_take_a_picture()
-            && let Some((mime, bytes)) = obelus_clipboard::picture()
+            && let Some((mime, bytes)) = self.desk().picture()
         {
             // The width the box wraps to, taken from the same function the
             // view lays itself out with -- see `App::chat_key`.
@@ -637,7 +637,7 @@ impl App {
             }
             return;
         }
-        let Some(what) = obelus_clipboard::paste() else {
+        let Some(what) = self.desk().paste() else {
             // A picture and nowhere for it is not nothing, and what is
             // said is which of the two ways to fix it this is: the agent
             // said a prompt to it cannot carry one, or the box is not what
@@ -645,7 +645,7 @@ impl App {
             // each of which the reader fixes by getting to the box. "Nothing
             // to paste" sent a reader to look at their clipboard, which is
             // the one place the answer is not.
-            if obelus_clipboard::holds_a_picture() {
+            if self.desk().holds_a_picture() {
                 self.wrong(match self.box_takes_a_picture() {
                     // Only reachable once the agent has said so: while
                     // nobody has asked it, a picture is taken.
@@ -1320,8 +1320,11 @@ impl App {
             // is consumed and this is never reached with nothing in it. A
             // second answer here would be an unreachable one.
             PromptKind::NewPath => self.make_file(std::path::Path::new(text.trim())),
-            // What one of a chat's fields is, from the remote page.
-            PromptKind::Told(field) => self.tell_the_remote(field, Some(text)),
+            // What one of a chat's fields is, from the chat page.
+            PromptKind::Told(field) => self.tell_the_bot(field, Some(text)),
+            // Where to draw an Obelus, and then its key where none is kept.
+            PromptKind::Server => self.connect_to(text.to_string()),
+            PromptKind::ServerKey { at } => self.connect_with(at, text),
             // A variable the reader is adding to the agent's environment:
             // its name, and then what it holds.
             PromptKind::VariableName { agent, .. } => self.name_a_variable(&agent, text.trim()),

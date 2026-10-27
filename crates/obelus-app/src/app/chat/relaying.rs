@@ -1,7 +1,7 @@
 //! Every window heard in the chat, through the one that talks to it.
 //!
 //! **One window talks to the chat, and every window is heard in it.** The
-//! window holding the chat opens a door ([`obelus_remote::relay`]) and writes
+//! window holding the chat opens a door ([`obelus_bot::relay`]) and writes
 //! where it is beside the lock; every other window on the machine with the
 //! same chat set joins it, says which threads its conversations are, and
 //! sends through it what it would have said to the platform. What the
@@ -42,7 +42,7 @@ use std::{
     sync::Arc,
 };
 
-use obelus_remote::{
+use obelus_bot::{
     model::{Out, Question, Where},
     relay::{Asker, Door, Down, Listening, Numbers, Over, Place, Up, Window},
 };
@@ -142,7 +142,7 @@ struct Choosing {
 
 /// The file that says where the relay's door is.
 fn the_door() -> Option<PathBuf> {
-    Some(crate::app::remote::remote_directory(Path::new(""))?.join("door"))
+    Some(crate::app::bot::bot_directory(Path::new(""))?.join("door"))
 }
 
 /// The door, as its file says, where it says one.
@@ -197,7 +197,7 @@ impl App {
         let Some(events) = self.events.clone() else {
             return;
         };
-        match obelus_remote::relay::listen(Arc::new(events)) {
+        match obelus_bot::relay::listen(Arc::new(events)) {
             Ok(listening) => {
                 write_the_door(listening.door());
                 self.relaying.listening = Some(listening);
@@ -277,11 +277,7 @@ impl App {
     }
 
     /// Where the connection has got to, for every window heard through it.
-    pub(in crate::app) fn relay_connection(
-        &self,
-        state: obelus_remote::State,
-        why: Option<String>,
-    ) {
+    pub(in crate::app) fn relay_connection(&self, state: obelus_bot::State, why: Option<String>) {
         self.to_every_window(&Down::Connection { state, why });
     }
 
@@ -346,9 +342,9 @@ impl App {
     /// where it was this one's. Anything else is this window's to hear.
     pub(in crate::app) fn whose_is_it(
         &mut self,
-        event: obelus_remote::Event,
-    ) -> Option<obelus_remote::Event> {
-        use obelus_remote::Event as E;
+        event: obelus_bot::Event,
+    ) -> Option<obelus_bot::Event> {
+        use obelus_bot::Event as E;
         // On the same question as the numbering on the way out: a window
         // with no door, where the loopback would not be listened on, still
         // numbers what it asks the relay's way.
@@ -808,7 +804,7 @@ impl App {
     /// file is read only when it has moved, or when this window starts
     /// wanting it -- a watch says what happens next, not what was there.
     pub(in crate::app) fn settle_the_relay(&mut self) {
-        let wanted = self.platform().is_some() && !self.has_the_remote();
+        let wanted = self.platform().is_some() && !self.has_the_bot();
         if !wanted {
             if self.relaying.joined.is_some() {
                 self.leave_the_relay();
@@ -850,7 +846,7 @@ impl App {
             return;
         };
         tracing::info!(address = %door.address, "joining the window that has the chat");
-        self.relaying.joined = Some(obelus_remote::relay::join(door.clone(), sink));
+        self.relaying.joined = Some(obelus_bot::relay::join(door.clone(), sink));
         self.relaying.door = Some(door);
     }
 

@@ -340,6 +340,12 @@ fn a_project(directory: &Path) -> bool {
 
 /// Writes the list, whole.
 fn write(path: &Path, projects: &[Project]) -> bool {
+    written_beside(path, &to_toml(projects))
+}
+
+/// Writes `text` to `path` whole, beside it and renamed over it -- which
+/// the list of servers writes the same way, for the same reasons.
+pub(in crate::app) fn written_beside(path: &Path, text: &str) -> bool {
     if let Some(directory) = path.parent()
         && let Err(error) = std::fs::create_dir_all(directory)
     {
@@ -361,8 +367,7 @@ fn write(path: &Path, projects: &[Project]) -> bool {
         std::process::id(),
         WRITES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
-    if let Err(error) =
-        std::fs::write(&beside, to_toml(projects)).and_then(|()| std::fs::rename(&beside, path))
+    if let Err(error) = std::fs::write(&beside, text).and_then(|()| std::fs::rename(&beside, path))
     {
         tracing::warn!(%error, path = %path.display(), "the list of projects was not written");
         // And not left behind: the name is this process's own, so nobody
@@ -616,10 +621,10 @@ impl crate::app::App {
         // connected again once there is a project, as going to another
         // worktree does (`App::move_to_tree`): the reader who reached this
         // window from the chat did not say "for this project".
-        let reached = self.has_the_remote();
+        let reached = self.has_the_bot();
         self.write_down_what_is_open_on_leaving();
         self.let_go_of_the_project();
-        self.remote_at_start = reached;
+        self.bot_at_start = reached;
         // Kept by `let_go_of_the_project`, which is the process's door, and
         // with it the claim on the tree -- which a window asking which
         // project no longer has.
@@ -1096,8 +1101,8 @@ impl crate::app::App {
         self.offer_the_tools();
         self.watch_the_project();
         self.say_where_this_window_is();
-        if self.remote_at_start {
-            self.connect_remote_at_start(false);
+        if self.bot_at_start {
+            self.connect_bot_at_start(false);
         }
         for file in files {
             self.open(file);

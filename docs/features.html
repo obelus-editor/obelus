@@ -67,6 +67,7 @@
       <li><a href="#agent"><span>The agent</span></a></li>
       <li><a href="#remote"><span>From a chat</span></a></li>
       <li><a href="#worktrees"><span>Worktrees &amp; windows</span></a></li>
+      <li><a href="#machines"><span>Another machine</span></a></li>
       <li><a href="#terminal"><span>Terminal</span></a></li>
       <li><a href="#editing"><span>Editing</span></a></li>
       <li><a href="#settings"><span>Keys &amp; settings</span></a></li>
@@ -169,6 +170,13 @@
             <li><a href="#worktrees">Every worktree, one key away</a></li>
             <li><a href="#windows">Several windows on one project</a></li>
             <li><a href="#jobs">Build jobs shared between them</a></li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4><a href="#machines">Another machine</a></h4>
+          <ul>
+            <li><a href="#machines">Drawn here, running there</a></li>
+            <li><a href="#switching-machines">Switching machines</a></li>
           </ul>
         </div>
         <div class="card">
@@ -449,10 +457,10 @@
         <li>To pair, Obelus shows a six-character code that lasts five minutes; send it in a group the app is in, and that group and you are let in. Nobody else is answered</li>
         <li>One window talks to the chat at a time, the one you tell to, and its status row says how the connection is</li>
       </ul>
-      <p class="how"><span>Commands</span><code>connect-remote</code> <code>disconnect-remote</code></p>
+      <p class="how"><span>Commands</span><code>connect-to-chat</code> <code>disconnect-from-chat</code></p>
 
       <h3 id="headless">Obelus with no screen</h3>
-      <p><code>ob --headless</code> runs Obelus on a project with nothing drawn and no terminal taken over, there only to be reached from the chat — on a machine you leave running. <code>--connect-remote</code> connects an ordinary window to the chat as it starts.</p>
+      <p><code>ob --headless</code> runs Obelus on a project with nothing drawn and no terminal taken over, there only to be reached from the chat — on a machine you leave running. <code>--connect-to-chat</code> connects an ordinary window to the chat as it starts.</p>
     </section>
 
     <section id="worktrees">
@@ -486,8 +494,28 @@
       <p class="how"><span>Setting</span><code>build_jobs</code></p>
     </section>
 
+    <section id="machines">
+      <h2><span class="num">10</span><span>Another machine</span></h2>
+
+      <p>Obelus can run on one machine and be drawn on another: <code>ob --server</code> on the machine with the code, and the window on the one in front of you. Everything happens over there — the files, the language servers, the agent, the terminals, the notes — and your machine draws what it is sent and sends your keys back, so the screen is the one you would see sitting at the other machine. It is made for a local network, where a key's round trip is under a millisecond.</p>
+      <ul>
+        <li><code>ob --server</code> prints where it listens (port 7787, unless <code>--listen</code> says otherwise) and its key. The first time, the window needs the key — <code>obg --connect host --key KEY</code>, or <code>OBELUS_KEY</code> — and after that it is remembered</li>
+        <li>Each window gets an Obelus of its own over there, as if you had opened another one at that machine</li>
+        <li>If the connection drops — the network, a closed laptop — the Obelus over there keeps going, agent and all, for three hours, and the window picks up where it was when it gets back</li>
+        <li>If the machine can't be reached, a page over the whole window says so and keeps trying — unless it was the key that was refused: <kbd>r</kbd> tries now, <kbd>Enter</kbd> works on this machine instead and asks which project, <kbd>Ctrl+q</kbd> quits</li>
+        <li>The clipboard and links are your machine's. A file dropped into a conversation's box (in <code>obg</code>) is sent across, up to 32 MiB, and kept in the other machine's temporary directory, under <code>obelus-dropped</code> on Windows and <code>obelus-dropped-</code> and your user number elsewhere, where only you can read it</li>
+        <li><code>obg --connect</code> is drawn as a window, with everything only a window draws, and <code>ob --connect</code> in a terminal</li>
+      </ul>
+      <p>The key is checked without being sent, but nothing after it is encrypted: use it on a network you trust, or through an ssh tunnel.</p>
+      <p class="how"><span>Flags</span><code>ob --server</code> <code>--connect</code> <code>--key</code></p>
+
+      <h3 id="switching-machines">Switching machines</h3>
+      <p>From the palette, <code>connect-to-server</code> opens a short list: <strong>New connection</strong> first, which asks for the address and then the key if it doesn't know it, and under it the machines you have been on, by day. The window goes there in place. <code>disconnect-from-server</code>, which only the Obelus over there offers, brings the window back to this machine.</p>
+      <p class="how"><span>Commands</span><code>connect-to-server</code> <code>disconnect-from-server</code></p>
+    </section>
+
     <section id="terminal">
-      <h2><span class="num">10</span><span>Terminal</span></h2>
+      <h2><span class="num">11</span><span>Terminal</span></h2>
 
       <p>Your shell, in the project, as a document of its own in the <a href="#documents">open list</a>. While a program runs it gets every key, <kbd>Esc</kbd> and <kbd>Ctrl+c</kbd> included, except the few Obelus keeps: the function keys, <kbd>Ctrl+p</kbd>, <kbd>Ctrl+w</kbd> to close it, <kbd>Ctrl+q</kbd> to quit, and paste.</p>
       <ul>
@@ -500,7 +528,7 @@
     </section>
 
     <section id="editing">
-      <h2><span class="num">11</span><span>Editing</span></h2>
+      <h2><span class="num">12</span><span>Editing</span></h2>
 
       <p>There are no modes. Every key does what it does whenever you press it, the way VS Code and Emacs work and vim and helix don't: arrow keys move, <kbd>Shift</kbd> with them selects, <kbd>Ctrl+z</kbd> undoes, and typing types. Undo goes back by what you were doing — a run of typing, a run of deleting — rather than by the character. The rest is what fixing a line or two needs and no more: brackets and quotes typed in pairs, grow the selection by syntax (<kbd>Alt+w</kbd>), move lines (<kbd>Alt+↑</kbd> <kbd>Alt+↓</kbd>), comment them out (<kbd>Alt+c</kbd>), type over (<kbd>Insert</kbd>). No multiple cursors, no macros: big edits are the agent's job.</p>
 
@@ -513,7 +541,7 @@
     </section>
 
     <section id="settings">
-      <h2><span class="num">12</span><span>Keys and settings</span></h2>
+      <h2><span class="num">13</span><span>Keys and settings</span></h2>
 
       <h3 id="palette">The command palette</h3>
       <p>Every command, by name, sorted into six tabs: files, search, code, edit, Git, and Obelus itself. Names start with what they do — <code>open-file</code>, <code>show-calls</code> — so you type the verb first. A command that can't do anything where you are is dim, and its key does nothing either. At the foot of a list with keys of its own, the ones that work right now.</p>

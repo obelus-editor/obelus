@@ -1,4 +1,4 @@
-//! The remote page: which chat this machine can be reached from, and what is
+//! The chat page: which chat this machine can be reached from, and what is
 //! kept for it.
 //!
 //! Not in the application's binary because the secrets are kept in one
@@ -41,12 +41,12 @@ fn turn() -> std::sync::MutexGuard<'static, ()> {
 fn secrets_of_its_own() {
     let directory = std::env::temp_dir().join(format!("obelus-secrets-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&directory);
-    obelus_remote::secrets::secrets_for_test(directory);
+    obelus_bot::secrets::secrets_for_test(directory);
 }
 
 /// The settings, open on the remote tab, with a settings file of the test's
 /// own and a channel the keyring's answers come back on.
-fn on_the_remote_page(scratch: &support::Scratch) -> (App, std::sync::mpsc::Receiver<Event>) {
+fn on_the_bot_page(scratch: &support::Scratch) -> (App, std::sync::mpsc::Receiver<Event>) {
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     app.config_file_for_test(scratch.join("config.toml"));
     let events = support::drive(&mut app);
@@ -55,8 +55,8 @@ fn on_the_remote_page(scratch: &support::Scratch) -> (App, std::sync::mpsc::Rece
     support::press(&mut app, KeyCode::Tab);
     support::press(&mut app, KeyCode::Tab);
     assert!(
-        app.settings().expect("the settings").on_remote(),
-        "not on the remote page"
+        app.settings().expect("the settings").on_bot(),
+        "not on the chat page"
     );
     (app, events)
 }
@@ -90,7 +90,7 @@ fn choose_slack(app: &mut App) {
     support::type_text(app, "Slack");
     support::press(app, KeyCode::Enter);
     assert_eq!(
-        app.config().remote.as_deref(),
+        app.config().chat.as_deref(),
         Some("slack"),
         "Slack was not chosen"
     );
@@ -119,9 +119,9 @@ fn to_the_row(app: &mut App, name: &str) {
 #[test]
 fn with_no_chat_the_page_is_one_row() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-off");
-    let (mut app, _events) = on_the_remote_page(&scratch);
-    support::check("remote_off_66x20", &support::render(&mut app, 66, 20));
+    let scratch = support::Scratch::new("bot-off");
+    let (mut app, _events) = on_the_bot_page(&scratch);
+    support::check("bot_off_66x20", &support::render(&mut app, 66, 20));
 }
 
 /// Choosing a chat writes it to the reader's file and puts what it has to
@@ -133,17 +133,17 @@ fn with_no_chat_the_page_is_one_row() {
 #[test]
 fn choosing_a_chat_shows_what_it_has_to_be_told() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-chosen");
-    let (mut app, events) = on_the_remote_page(&scratch);
+    let scratch = support::Scratch::new("bot-chosen");
+    let (mut app, events) = on_the_bot_page(&scratch);
     choose_slack(&mut app);
     let written = std::fs::read_to_string(scratch.join("config.toml")).expect("the file");
-    assert!(written.contains("remote = \"slack\""), "{written}");
+    assert!(written.contains("chat = \"slack\""), "{written}");
 
     until(&mut app, &events, "the keyring to be asked", |app| {
         app.settings()
-            .is_some_and(|settings| settings.reached().state == obelus_remote::State::Unready)
+            .is_some_and(|settings| settings.reached().state == obelus_bot::State::Unready)
     });
-    support::check("remote_unset_66x20", &support::render(&mut app, 66, 20));
+    support::check("bot_unset_66x20", &support::render(&mut app, 66, 20));
 }
 
 /// A token goes to the keyring, is drawn by its ends, and is forgotten with
@@ -157,8 +157,8 @@ fn choosing_a_chat_shows_what_it_has_to_be_told() {
 #[test]
 fn a_token_is_kept_drawn_by_its_ends_and_forgotten() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-token");
-    let (mut app, events) = on_the_remote_page(&scratch);
+    let scratch = support::Scratch::new("bot-token");
+    let (mut app, events) = on_the_bot_page(&scratch);
     choose_slack(&mut app);
     to_the_row(&mut app, "App token");
 
@@ -172,7 +172,7 @@ fn a_token_is_kept_drawn_by_its_ends_and_forgotten() {
     );
     assert_eq!(app.note(), Some("App token starts with xapp-"));
     assert_eq!(
-        obelus_remote::secrets::read("slack", "app_token"),
+        obelus_bot::secrets::read("slack", "app_token"),
         Ok(None),
         "the wrong token was kept"
     );
@@ -196,7 +196,7 @@ fn a_token_is_kept_drawn_by_its_ends_and_forgotten() {
         })
     });
     assert_eq!(
-        obelus_remote::secrets::read("slack", "app_token"),
+        obelus_bot::secrets::read("slack", "app_token"),
         Ok(Some("xapp-1-A0B1C2D3E4-9f2a".to_string()))
     );
     let written = std::fs::read_to_string(scratch.join("config.toml")).expect("the file");
@@ -235,7 +235,7 @@ fn a_token_is_kept_drawn_by_its_ends_and_forgotten() {
         app.settings()
             .is_some_and(|settings| !settings.reached().kept.contains_key("app_token"))
     });
-    assert_eq!(obelus_remote::secrets::read("slack", "app_token"), Ok(None));
+    assert_eq!(obelus_bot::secrets::read("slack", "app_token"), Ok(None));
 }
 
 /// The manifest row copies the manifest, and says so.
@@ -247,8 +247,8 @@ fn the_manifest_is_copied() {
     let _turn = turn();
     let _clipboard = support::clipboard_turn();
     obelus_clipboard::use_provider_for_test(obelus_clipboard::Provider::Kept);
-    let scratch = support::Scratch::new("remote-manifest");
-    let (mut app, _events) = on_the_remote_page(&scratch);
+    let scratch = support::Scratch::new("bot-manifest");
+    let (mut app, _events) = on_the_bot_page(&scratch);
     choose_slack(&mut app);
     to_the_row(&mut app, "Manifest");
     support::press(&mut app, KeyCode::Enter);
@@ -265,14 +265,14 @@ fn the_manifest_is_copied() {
 #[test]
 fn pairing_waits_for_a_chat_that_could_be_reached() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-pair");
-    let (mut app, events) = on_the_remote_page(&scratch);
+    let scratch = support::Scratch::new("bot-pair");
+    let (mut app, events) = on_the_bot_page(&scratch);
     choose_slack(&mut app);
     until(
         &mut app,
         &events,
         "the keyring to say there are no tokens",
-        |app| app.remote_state_for_test() == obelus_remote::State::Unready,
+        |app| app.bot_state_for_test() == obelus_bot::State::Unready,
     );
     to_the_row(&mut app, "Pair");
     let dump = support::render(&mut app, 66, 20);
@@ -284,7 +284,7 @@ fn pairing_waits_for_a_chat_that_could_be_reached() {
 
 /// Pairing in a window the chat is not in yet takes the chat, and the code
 /// comes once it has connected -- one press, not one to find
-/// `connect-remote` and another to press again.
+/// `connect-to-chat` and another to press again.
 ///
 /// Broken deliberately twice. Offering it only once connected: the foot
 /// did not offer `Pair`. And taking the chat without keeping what was
@@ -292,15 +292,15 @@ fn pairing_waits_for_a_chat_that_could_be_reached() {
 #[test]
 fn pairing_takes_the_chat_and_then_makes_the_code() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-pair-takes");
-    obelus_remote::platform::connect_for_test(fake_connect);
+    let scratch = support::Scratch::new("bot-pair-takes");
+    obelus_bot::platform::connect_for_test(fake_connect);
     *FAKED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-    std::fs::write(scratch.join("config.toml"), "remote = \"slack\"\n").expect("the settings");
-    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
-    obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
-    let (mut app, events) = on_the_remote_page(&scratch);
+    std::fs::write(scratch.join("config.toml"), "chat = \"slack\"\n").expect("the settings");
+    obelus_bot::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_bot::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    let (mut app, events) = on_the_bot_page(&scratch);
     until(&mut app, &events, "the tokens to be read", |app| {
         app.settings()
             .is_some_and(|settings| settings.reached().state.may_connect())
@@ -316,7 +316,7 @@ fn pairing_takes_the_chat_and_then_makes_the_code() {
         app.settings()
             .is_some_and(|settings| settings.reached().pairing.is_some())
     });
-    assert!(app.holds_the_remote_for_test(), "the chat is not here");
+    assert!(app.holds_the_bot_for_test(), "the chat is not here");
 }
 
 /// Pairing in a window while another has the chat takes it from that one,
@@ -328,7 +328,7 @@ fn pairing_takes_the_chat_and_then_makes_the_code() {
 #[test]
 fn pairing_takes_the_chat_from_another_window() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-pair-from-another");
+    let scratch = support::Scratch::new("bot-pair-from-another");
     set_up_for_two(&scratch);
     let watched = |scratch: &support::Scratch| {
         let mut app = App::new(Vec::new());
@@ -339,9 +339,9 @@ fn pairing_takes_the_chat_from_another_window() {
         (app, events)
     };
     let (mut first, firsts) = watched(&scratch);
-    dispatch::dispatch(&mut first, Command::RemoteConnect);
+    dispatch::dispatch(&mut first, Command::BotConnect);
     until(&mut first, &firsts, "the first to connect", |app| {
-        app.remote_state_for_test() == obelus_remote::State::Connected
+        app.bot_state_for_test() == obelus_bot::State::Connected
     });
 
     let (mut second, seconds) = watched(&scratch);
@@ -370,7 +370,7 @@ fn pairing_takes_the_chat_from_another_window() {
         &seconds,
         "the chat to move and a code to come",
         |first, second| {
-            !first.holds_the_remote_for_test()
+            !first.holds_the_bot_for_test()
                 && second
                     .settings()
                     .is_some_and(|settings| settings.reached().pairing.is_some())
@@ -381,18 +381,18 @@ fn pairing_takes_the_chat_from_another_window() {
 /// What the fake platform was handed: where it reports what it hears, and
 /// what Obelus asked it to say.
 struct Faked {
-    told: obelus_remote::platform::Told,
-    sink: std::sync::Arc<dyn obelus_sink::Sink<obelus_remote::Event>>,
-    said: tokio::sync::mpsc::UnboundedReceiver<obelus_remote::model::Out>,
+    told: obelus_bot::platform::Told,
+    sink: std::sync::Arc<dyn obelus_sink::Sink<obelus_bot::Event>>,
+    said: tokio::sync::mpsc::UnboundedReceiver<obelus_bot::model::Out>,
 }
 
 static FAKED: std::sync::Mutex<Option<Faked>> = std::sync::Mutex::new(None);
 
 /// A platform that connects at once and keeps what it is asked to say.
 fn fake_connect(
-    told: obelus_remote::platform::Told,
-    sink: std::sync::Arc<dyn obelus_sink::Sink<obelus_remote::Event>>,
-) -> tokio::sync::mpsc::UnboundedSender<obelus_remote::model::Out> {
+    told: obelus_bot::platform::Told,
+    sink: std::sync::Arc<dyn obelus_sink::Sink<obelus_bot::Event>>,
+) -> tokio::sync::mpsc::UnboundedSender<obelus_bot::model::Out> {
     let (out, said) = tokio::sync::mpsc::unbounded_channel();
     // Kept before it says it is connected, never after: a test waits for
     // the connection and then speaks for the platform, and this runs on a
@@ -404,15 +404,15 @@ fn fake_connect(
     *FAKED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Faked { told, sink, said });
-    let _ = connected.send(obelus_remote::Event::connection(
-        obelus_remote::State::Connected,
+    let _ = connected.send(obelus_bot::Event::connection(
+        obelus_bot::State::Connected,
         None,
     ));
     out
 }
 
 /// What the fake platform has been asked to say since the last look.
-fn said_since() -> Vec<obelus_remote::model::Out> {
+fn said_since() -> Vec<obelus_bot::model::Out> {
     let mut faked = FAKED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -432,10 +432,10 @@ fn somebody_says(from: &str, room: &str, text: &str) {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let faked = faked.as_ref().expect("connected");
-    let _ = faked.sink.send(obelus_remote::Event::Heard {
+    let _ = faked.sink.send(obelus_bot::Event::Heard {
         from: from.to_string(),
         room: room.to_string(),
-        at: obelus_remote::model::Where::Fresh(format!("M-{text}")),
+        at: obelus_bot::model::Where::Fresh(format!("M-{text}")),
         text: text.to_string(),
     });
 }
@@ -455,47 +455,47 @@ fn a_room_kept_on(platform: &str) {
 
 /// A window set to Slack with both tokens kept, connected to the fake.
 fn connected(scratch: &support::Scratch) -> (App, std::sync::mpsc::Receiver<Event>) {
-    obelus_remote::platform::connect_for_test(fake_connect);
+    obelus_bot::platform::connect_for_test(fake_connect);
     *FAKED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-    std::fs::write(scratch.join("config.toml"), "remote = \"slack\"\n").expect("the settings");
-    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
-    obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
-    let (mut app, events) = on_the_remote_page(scratch);
-    dispatch::dispatch(&mut app, Command::RemoteConnect);
+    std::fs::write(scratch.join("config.toml"), "chat = \"slack\"\n").expect("the settings");
+    obelus_bot::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_bot::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    let (mut app, events) = on_the_bot_page(scratch);
+    dispatch::dispatch(&mut app, Command::BotConnect);
     until(&mut app, &events, "the connection", |app| {
         app.settings()
-            .is_some_and(|settings| settings.reached().state == obelus_remote::State::Connected)
+            .is_some_and(|settings| settings.reached().state == obelus_bot::State::Connected)
     });
     (app, events)
 }
 
 /// Asked to on the command line, a window connects to the chat as it
-/// starts, the way `connect-remote` would.
+/// starts, the way `connect-to-chat` would.
 ///
 /// Broken deliberately by never reading the flag in `App::start`: nothing
 /// connected.
 #[test]
 fn a_chat_is_connected_to_from_the_start_when_asked() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-at-start");
-    obelus_remote::platform::connect_for_test(fake_connect);
+    let scratch = support::Scratch::new("bot-at-start");
+    obelus_bot::platform::connect_for_test(fake_connect);
     *FAKED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-    std::fs::write(scratch.join("config.toml"), "remote = \"slack\"\n").expect("the settings");
-    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
-    obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    std::fs::write(scratch.join("config.toml"), "chat = \"slack\"\n").expect("the settings");
+    obelus_bot::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_bot::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     app.config_file_for_test(scratch.join("config.toml"));
-    app.remote_at_start();
+    app.bot_at_start();
     let (sender, events) = obelus_app::event::channel();
     app.start(sender);
     until(&mut app, &events, "the connection", |app| {
-        app.remote_state_for_test() == obelus_remote::State::Connected
+        app.bot_state_for_test() == obelus_bot::State::Connected
     });
-    assert!(app.holds_the_remote_for_test(), "the chat is not here");
+    assert!(app.holds_the_bot_for_test(), "the chat is not here");
 }
 
 /// Asked to connect on the command line with no chat set, a window says so
@@ -503,20 +503,20 @@ fn a_chat_is_connected_to_from_the_start_when_asked() {
 /// that dimmed it. Over the welcome screen with what else went wrong, and on
 /// the status row over a file, which the list is never put over.
 ///
-/// Broken deliberately by calling `connect_remote` alone: nothing was said
+/// Broken deliberately by calling `connect_bot` alone: nothing was said
 /// on either. And by saying it only with what went wrong: a file named on
 /// the command line drew nothing.
 #[test]
 fn no_chat_to_connect_to_from_the_start_is_said() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-at-start-none");
+    let scratch = support::Scratch::new("bot-at-start-none");
     std::fs::write(scratch.join("config.toml"), "").expect("the settings");
     for files in [Vec::new(), vec![support::open_fixture("sample.rs")]] {
         let reading = !files.is_empty();
         let mut app = App::new(files);
         app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
         app.config_file_for_test(scratch.join("config.toml"));
-        app.remote_at_start();
+        app.bot_at_start();
         let (sender, _events) = obelus_app::event::channel();
         app.start(sender);
         let dump = support::render(&mut app, 76, 26);
@@ -539,24 +539,24 @@ fn no_chat_to_connect_to_from_the_start_is_said() {
 fn a_chat_asked_for_at_the_start_waits_for_a_project() {
     use obelus_ui::Screen as _;
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-at-start-project");
-    obelus_remote::platform::connect_for_test(fake_connect);
+    let scratch = support::Scratch::new("bot-at-start-project");
+    obelus_bot::platform::connect_for_test(fake_connect);
     *FAKED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-    std::fs::write(scratch.join("config.toml"), "remote = \"slack\"\n").expect("the settings");
-    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
-    obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    std::fs::write(scratch.join("config.toml"), "chat = \"slack\"\n").expect("the settings");
+    obelus_bot::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_bot::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
     let mut app = App::new(Vec::new());
     app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
     app.ask_about_these_projects_for_test(Vec::new());
     app.config_file_for_test(scratch.join("config.toml"));
-    app.remote_at_start();
+    app.bot_at_start();
     let (sender, events) = obelus_app::event::channel();
     app.start(sender);
     assert!(app.choosing().is_some(), "not asking which project");
     assert!(
-        !app.holds_the_remote_for_test(),
+        !app.holds_the_bot_for_test(),
         "the chat came before there was a project"
     );
 
@@ -567,9 +567,9 @@ fn a_chat_asked_for_at_the_start_waits_for_a_project() {
     support::press(&mut app, KeyCode::Enter);
     assert!(app.choosing().is_none(), "it is still asking");
     until(&mut app, &events, "the connection", |app| {
-        app.remote_state_for_test() == obelus_remote::State::Connected
+        app.bot_state_for_test() == obelus_bot::State::Connected
     });
-    assert!(app.holds_the_remote_for_test(), "the chat is not here");
+    assert!(app.holds_the_bot_for_test(), "the chat is not here");
 }
 
 /// With nobody at the screen a chat has to be set, and paired: a code to
@@ -584,7 +584,7 @@ fn a_chat_asked_for_at_the_start_waits_for_a_project() {
 #[test]
 fn headless_needs_a_chat_and_a_pairing() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-headless-ready");
+    let scratch = support::Scratch::new("bot-headless-ready");
     let agents = scratch.join("agents");
     let ready = |settings: &str| {
         std::fs::write(scratch.join("config.toml"), settings).expect("the settings");
@@ -594,7 +594,7 @@ fn headless_needs_a_chat_and_a_pairing() {
         app.config_file_for_test(scratch.join("config.toml"));
         app.ready_to_be_reached()
     };
-    let chat = "remote = \"slack\"\nagent = \"fake\"\n";
+    let chat = "chat = \"slack\"\nagent = \"fake\"\n";
     assert_eq!(
         ready(""),
         Err("No chat is set in the settings to connect to".to_string())
@@ -605,7 +605,7 @@ fn headless_needs_a_chat_and_a_pairing() {
     );
     a_room_kept();
     assert_eq!(
-        ready("remote = \"slack\"\nagent = \"\"\n"),
+        ready("chat = \"slack\"\nagent = \"\"\n"),
         Err("No agent is set in the settings to talk to".to_string())
     );
     assert_eq!(
@@ -637,24 +637,24 @@ fn headless_needs_a_chat_and_a_pairing() {
 #[test]
 fn headless_gives_up_on_what_the_reader_has_to_mend() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-headless-gives-up");
-    obelus_remote::platform::connect_for_test(fake_connect);
+    let scratch = support::Scratch::new("bot-headless-gives-up");
+    obelus_bot::platform::connect_for_test(fake_connect);
     *FAKED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-    std::fs::write(scratch.join("config.toml"), "remote = \"slack\"\n").expect("the settings");
-    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
-    obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    std::fs::write(scratch.join("config.toml"), "chat = \"slack\"\n").expect("the settings");
+    obelus_bot::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_bot::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
     a_room_kept();
     let mut app = App::new(Vec::new());
     app.headless();
     app.working_directory_for_test(scratch.path().to_path_buf());
     app.config_file_for_test(scratch.join("config.toml"));
-    app.remote_at_start();
+    app.bot_at_start();
     let (sender, events) = obelus_app::event::channel();
     app.start(sender);
     until(&mut app, &events, "the connection", |app| {
-        app.remote_state_for_test() == obelus_remote::State::Connected
+        app.bot_state_for_test() == obelus_bot::State::Connected
     });
     let say = |app: &mut App, state, why: &str| {
         let sink = FAKED
@@ -663,23 +663,16 @@ fn headless_gives_up_on_what_the_reader_has_to_mend() {
             .as_ref()
             .map(|faked| std::sync::Arc::clone(&faked.sink))
             .expect("connected");
-        let _ = sink.send(obelus_remote::Event::connection(
-            state,
-            Some(why.to_string()),
-        ));
+        let _ = sink.send(obelus_bot::Event::connection(state, Some(why.to_string())));
         until(app, &events, "the chat to say so", |app| {
-            app.remote_state_for_test() == state
+            app.bot_state_for_test() == state
         });
     };
 
-    say(
-        &mut app,
-        obelus_remote::State::Unreachable,
-        "the network went",
-    );
+    say(&mut app, obelus_bot::State::Unreachable, "the network went");
     assert!(!app.should_quit(), "a dropped network ended it");
-    say(&mut app, obelus_remote::State::Connected, "back");
-    say(&mut app, obelus_remote::State::Refused, "invalid_auth");
+    say(&mut app, obelus_bot::State::Connected, "back");
+    say(&mut app, obelus_bot::State::Refused, "invalid_auth");
     assert!(app.should_quit(), "a refused token left it waiting");
     assert_eq!(
         app.why_it_stopped(),
@@ -702,9 +695,9 @@ fn headless_gives_up_on_what_the_reader_has_to_mend() {
 #[test]
 fn headless_gives_up_on_a_keyring_that_will_not_answer() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-headless-keyring");
-    obelus_remote::platform::connect_for_test(fake_connect);
-    std::fs::write(scratch.join("config.toml"), "remote = \"slack\"\n").expect("the settings");
+    let scratch = support::Scratch::new("bot-headless-keyring");
+    obelus_bot::platform::connect_for_test(fake_connect);
+    std::fs::write(scratch.join("config.toml"), "chat = \"slack\"\n").expect("the settings");
     let kept = std::env::temp_dir().join(format!("obelus-secrets-{}", std::process::id()));
     std::fs::create_dir_all(&kept).expect("the secrets' directory");
     std::fs::write(kept.join("secrets.toml"), "not = [a table").expect("a file that will not read");
@@ -713,11 +706,11 @@ fn headless_gives_up_on_a_keyring_that_will_not_answer() {
     app.headless();
     app.working_directory_for_test(scratch.path().to_path_buf());
     app.config_file_for_test(scratch.join("config.toml"));
-    app.remote_at_start();
+    app.bot_at_start();
     let (sender, events) = obelus_app::event::channel();
     app.start(sender);
     until(&mut app, &events, "the keyring to fail", |app| {
-        app.remote_state_for_test() != obelus_remote::State::Connecting
+        app.bot_state_for_test() != obelus_bot::State::Connecting
     });
     assert!(app.should_quit(), "it went on with no chat");
     assert!(
@@ -742,15 +735,15 @@ fn headless_gives_up_on_a_keyring_that_will_not_answer() {
 #[test]
 fn a_chat_that_is_set_is_connected_to_when_told() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-connects");
-    obelus_remote::platform::connect_for_test(fake_connect);
+    let scratch = support::Scratch::new("bot-connects");
+    obelus_bot::platform::connect_for_test(fake_connect);
     *FAKED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-    std::fs::write(scratch.join("config.toml"), "remote = \"slack\"\n").expect("the settings");
-    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
-    obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
-    let (mut app, events) = on_the_remote_page(&scratch);
+    std::fs::write(scratch.join("config.toml"), "chat = \"slack\"\n").expect("the settings");
+    obelus_bot::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_bot::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    let (mut app, events) = on_the_bot_page(&scratch);
     let status = |app: &mut App| {
         let dump = support::render(app, 66, 20);
         support::text_block(&dump)
@@ -778,9 +771,9 @@ fn a_chat_that_is_set_is_connected_to_when_told() {
         "the status row spoke of a chat this window does not talk to"
     );
 
-    dispatch::dispatch(&mut app, Command::RemoteConnect);
+    dispatch::dispatch(&mut app, Command::BotConnect);
     until(&mut app, &events, "the connection", |app| {
-        app.remote_state_for_test() == obelus_remote::State::Connected
+        app.bot_state_for_test() == obelus_bot::State::Connected
     });
     let faked = FAKED
         .lock()
@@ -826,7 +819,7 @@ fn a_chat_that_is_set_is_connected_to_when_told() {
 #[test]
 fn pairing_lets_in_whoever_sends_the_code() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-pairs");
+    let scratch = support::Scratch::new("bot-pairs");
     let (mut app, events) = connected(&scratch);
     to_the_row(&mut app, "Pair");
     support::press(&mut app, KeyCode::Enter);
@@ -874,7 +867,7 @@ fn pairing_lets_in_whoever_sends_the_code() {
     );
     assert_eq!(
         said_since(),
-        [obelus_remote::model::Out::Name {
+        [obelus_bot::model::Out::Name {
             id: "U04ABCDEF".to_string()
         }]
     );
@@ -883,13 +876,13 @@ fn pairing_lets_in_whoever_sends_the_code() {
         .ok()
         .and_then(|faked| faked.as_ref().map(|faked| faked.sink.clone()))
         .expect("connected");
-    let _ = sink.send(obelus_remote::Event::Named {
+    let _ = sink.send(obelus_bot::Event::Named {
         id: "U04ABCDEF".to_string(),
         name: "Sunli".to_string(),
     });
     until(&mut app, &events, "them to be let in", |app| {
         app.config()
-            .remote_of("slack")
+            .chat_of("slack")
             .is_some_and(|remote| remote.people.iter().any(|person| person.name == "Sunli"))
     });
     assert_eq!(app.note(), Some("Paired Sunli"));
@@ -898,9 +891,9 @@ fn pairing_lets_in_whoever_sends_the_code() {
     assert!(
         matches!(
             said.as_slice(),
-            [obelus_remote::model::Out::Say { room, thread, to, text, .. }]
+            [obelus_bot::model::Out::Say { room, thread, to, text, .. }]
                 if room == "C7" && *thread == code_thread && to == "U04ABCDEF"
-                    && text.contains(obelus_remote::slack::DESCRIPTION.begin)
+                    && text.contains(obelus_bot::slack::DESCRIPTION.begin)
         ),
         "they were not told, or not told what there is to say: {said:#?}"
     );
@@ -924,8 +917,8 @@ fn said_until(
     app: &mut App,
     events: &std::sync::mpsc::Receiver<Event>,
     what: &str,
-    done: impl Fn(&[obelus_remote::model::Out]) -> bool,
-) -> Vec<obelus_remote::model::Out> {
+    done: impl Fn(&[obelus_bot::model::Out]) -> bool,
+) -> Vec<obelus_bot::model::Out> {
     let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
     let mut said = Vec::new();
     loop {
@@ -946,11 +939,11 @@ fn said_until(
 /// Whether something was said in this thread with these words in it --
 /// what became of a question among them, which is said there where its card
 /// never went up, and the fake puts up no cards.
-fn in_thread(said: &[obelus_remote::model::Out], thread: &str, words: &str) -> bool {
+fn in_thread(said: &[obelus_bot::model::Out], thread: &str, words: &str) -> bool {
     said.iter().any(|out| {
         matches!(
             out.clone().in_words(),
-            obelus_remote::model::Out::Say { thread: at, text, .. }
+            obelus_bot::model::Out::Say { thread: at, text, .. }
                 if at == thread && text.contains(words)
         )
     })
@@ -958,9 +951,9 @@ fn in_thread(said: &[obelus_remote::model::Out], thread: &str, words: &str) -> b
 
 /// The number of the question put to this thread offering this answer, if
 /// one has been.
-fn asked_with(said: &[obelus_remote::model::Out], thread: &str, answer: &str) -> Option<u64> {
+fn asked_with(said: &[obelus_bot::model::Out], thread: &str, answer: &str) -> Option<u64> {
     said.iter().find_map(|out| match out {
-        obelus_remote::model::Out::Ask {
+        obelus_bot::model::Out::Ask {
             thread: at,
             asked,
             question,
@@ -974,12 +967,12 @@ fn asked_with(said: &[obelus_remote::model::Out], thread: &str, answer: &str) ->
 
 /// Every question put to this thread, in order: its number and what it is.
 fn asks_in(
-    said: &[obelus_remote::model::Out],
+    said: &[obelus_bot::model::Out],
     thread: &str,
-) -> Vec<(u64, obelus_remote::model::Question)> {
+) -> Vec<(u64, obelus_bot::model::Question)> {
     said.iter()
         .filter_map(|out| match out {
-            obelus_remote::model::Out::Ask {
+            obelus_bot::model::Out::Ask {
                 thread: at,
                 asked,
                 question,
@@ -991,8 +984,8 @@ fn asks_in(
 }
 
 /// The reader on the list pressing one answer on a question's card.
-fn pressed(asked: u64, chosen: &str) -> obelus_remote::Event {
-    obelus_remote::Event::Answered {
+fn pressed(asked: u64, chosen: &str) -> obelus_bot::Event {
+    obelus_bot::Event::Answered {
         from: "U1".to_string(),
         asked,
         chosen: vec![chosen.to_string()],
@@ -1020,19 +1013,19 @@ fn pressed(asked: u64, chosen: &str) -> obelus_remote::Event {
 #[test]
 fn a_conversation_and_its_thread_say_the_same_things() {
     let _turn = turn();
-    obelus_remote::platform::connect_for_test(fake_connect);
+    obelus_bot::platform::connect_for_test(fake_connect);
     *FAKED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-    let scratch = support::Scratch::new("remote-mirror");
+    let scratch = support::Scratch::new("bot-mirror");
     std::fs::write(
         scratch.join("config.toml"),
-        "remote = \"slack\"\n[remotes.slack]\npeople = [{ id = \"U1\", name = \"Sunli\" }]\n",
+        "chat = \"slack\"\n[chats.slack]\npeople = [{ id = \"U1\", name = \"Sunli\" }]\n",
     )
     .expect("the settings");
     a_room_kept();
-    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
-    obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    obelus_bot::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_bot::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
 
     let log = scratch.join("asked.log");
     let mut app = App::new(Vec::new());
@@ -1040,7 +1033,7 @@ fn a_conversation_and_its_thread_say_the_same_things() {
     let events = support::drive(&mut app);
     app.agents_root_for_test(scratch.join("agents"));
     support::lay_out(&mut app, 76, 24);
-    dispatch::dispatch(&mut app, Command::RemoteConnect);
+    dispatch::dispatch(&mut app, Command::BotConnect);
     app.talk_to(
         "fake",
         std::path::Path::new(support::sh()),
@@ -1056,12 +1049,12 @@ fn a_conversation_and_its_thread_say_the_same_things() {
     // A thread for the conversation, in the reader's direct message.
     let said = said_until(&mut app, &events, "a thread to be asked for", |said| {
         said.iter()
-            .any(|out| matches!(out, obelus_remote::model::Out::Open { .. }))
+            .any(|out| matches!(out, obelus_bot::model::Out::Open { .. }))
     });
     let asked = said
         .iter()
         .find_map(|out| match out {
-            obelus_remote::model::Out::Open { asked, room, .. } if room == "C1" => Some(*asked),
+            obelus_bot::model::Out::Open { asked, room, .. } if room == "C1" => Some(*asked),
             _ => None,
         })
         .expect("a thread asked for in the room");
@@ -1070,7 +1063,7 @@ fn a_conversation_and_its_thread_say_the_same_things() {
         .ok()
         .and_then(|faked| faked.as_ref().map(|faked| faked.sink.clone()))
         .expect("connected");
-    let _ = sink.send(obelus_remote::Event::Opened {
+    let _ = sink.send(obelus_bot::Event::Opened {
         asked,
         thread: "T1".to_string(),
         link: None,
@@ -1097,7 +1090,7 @@ fn a_conversation_and_its_thread_say_the_same_things() {
     let words: Vec<(&str, bool)> = said
         .iter()
         .filter_map(|out| match out {
-            obelus_remote::model::Out::Say {
+            obelus_bot::model::Out::Say {
                 thread,
                 text,
                 notify,
@@ -1119,20 +1112,20 @@ fn a_conversation_and_its_thread_say_the_same_things() {
     assert!(
         said.iter().any(|out| matches!(
             out,
-            obelus_remote::model::Out::Ask { to, .. } if to == "U1"
+            obelus_bot::model::Out::Ask { to, .. } if to == "U1"
         )),
         "the question did not call the reader: {said:#?}"
     );
     // And the head says it is waiting on them.
-    let state = |said: &[obelus_remote::model::Out]| {
+    let state = |said: &[obelus_bot::model::Out]| {
         said.iter().rev().find_map(|out| match out {
-            obelus_remote::model::Out::Retitle { head, .. } => head.state,
+            obelus_bot::model::Out::Retitle { head, .. } => head.state,
             _ => None,
         })
     };
     assert_eq!(
         state(&said),
-        Some(obelus_remote::model::Turning::Waiting),
+        Some(obelus_bot::model::Turning::Waiting),
         "the head does not say it is waiting: {said:#?}"
     );
 
@@ -1146,22 +1139,22 @@ fn a_conversation_and_its_thread_say_the_same_things() {
     );
     assert_eq!(
         state(&said),
-        Some(obelus_remote::model::Turning::Done),
+        Some(obelus_bot::model::Turning::Done),
         "the head does not say the turn is over: {said:#?}"
     );
     assert!(
         said.iter()
-            .filter(|out| matches!(out, obelus_remote::model::Out::Say { .. }))
+            .filter(|out| matches!(out, obelus_bot::model::Out::Say { .. }))
             .count()
             == 1,
         "the turn went out in pieces: {said:#?}"
     );
 
     // Words from the chat go to the agent with a line saying where from.
-    let _ = sink.send(obelus_remote::Event::Heard {
+    let _ = sink.send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Thread("T1".to_string()),
+        at: obelus_bot::model::Where::Thread("T1".to_string()),
         text: "and now?".to_string(),
     });
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
@@ -1195,25 +1188,25 @@ fn a_conversation_and_its_thread_say_the_same_things() {
 #[test]
 fn the_name_an_agent_gives_is_the_threads() {
     let _turn = turn();
-    obelus_remote::platform::connect_for_test(fake_connect);
+    obelus_bot::platform::connect_for_test(fake_connect);
     *FAKED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-    let scratch = support::Scratch::new("remote-titled");
+    let scratch = support::Scratch::new("bot-titled");
     std::fs::write(
         scratch.join("config.toml"),
-        "remote = \"slack\"\n[remotes.slack]\npeople = [{ id = \"U1\", name = \"Sunli\" }]\n",
+        "chat = \"slack\"\n[chats.slack]\npeople = [{ id = \"U1\", name = \"Sunli\" }]\n",
     )
     .expect("the settings");
     a_room_kept();
-    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
-    obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    obelus_bot::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_bot::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
     let mut app = App::new(Vec::new());
     app.config_file_for_test(scratch.join("config.toml"));
     let events = support::drive(&mut app);
     app.agents_root_for_test(scratch.join("agents"));
     support::lay_out(&mut app, 76, 24);
-    dispatch::dispatch(&mut app, Command::RemoteConnect);
+    dispatch::dispatch(&mut app, Command::BotConnect);
     app.talk_to(
         "fake",
         std::path::Path::new(support::sh()),
@@ -1223,12 +1216,12 @@ fn the_name_an_agent_gives_is_the_threads() {
     app.open_a_session_for_test();
     let said = said_until(&mut app, &events, "a thread to be asked for", |said| {
         said.iter()
-            .any(|out| matches!(out, obelus_remote::model::Out::Open { .. }))
+            .any(|out| matches!(out, obelus_bot::model::Out::Open { .. }))
     });
     let asked = said
         .iter()
         .find_map(|out| match out {
-            obelus_remote::model::Out::Open { asked, .. } => Some(*asked),
+            obelus_bot::model::Out::Open { asked, .. } => Some(*asked),
             _ => None,
         })
         .expect("asked for");
@@ -1237,7 +1230,7 @@ fn the_name_an_agent_gives_is_the_threads() {
         .ok()
         .and_then(|faked| faked.as_ref().map(|faked| faked.sink.clone()))
         .expect("connected");
-    let _ = sink.send(obelus_remote::Event::Opened {
+    let _ = sink.send(obelus_bot::Event::Opened {
         asked,
         thread: "T1".to_string(),
         link: None,
@@ -1248,8 +1241,8 @@ fn the_name_an_agent_gives_is_the_threads() {
         said.iter().any(|out| {
             matches!(
                 out,
-                obelus_remote::model::Out::Retitle { head, .. }
-                    if head.state == Some(obelus_remote::model::Turning::Done)
+                obelus_bot::model::Out::Retitle { head, .. }
+                    if head.state == Some(obelus_bot::model::Turning::Done)
             )
         })
     });
@@ -1259,10 +1252,10 @@ fn the_name_an_agent_gives_is_the_threads() {
     assert!(
         said.iter().any(|out| matches!(
             out,
-            obelus_remote::model::Out::Retitle { thread, head, .. }
+            obelus_bot::model::Out::Retitle { thread, head, .. }
                 if thread == "T1"
                     && head.title == "Renamed by the agent"
-                    && head.state == Some(obelus_remote::model::Turning::Working)
+                    && head.state == Some(obelus_bot::model::Turning::Working)
         )),
         "the thread was not renamed when the agent named it: {said:#?}"
     );
@@ -1271,9 +1264,9 @@ fn the_name_an_agent_gives_is_the_threads() {
     assert!(
         said.iter().any(|out| matches!(
             out,
-            obelus_remote::model::Out::Retitle { head, .. }
+            obelus_bot::model::Out::Retitle { head, .. }
                 if head.title == "/titled"
-                    && head.state == Some(obelus_remote::model::Turning::Working)
+                    && head.state == Some(obelus_bot::model::Turning::Working)
         )),
         "the head moved before the thread was there, and the thread never heard: {said:#?}"
     );
@@ -1290,15 +1283,15 @@ fn the_name_an_agent_gives_is_the_threads() {
 #[test]
 fn feishu_is_set_up_from_what_it_declares() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-feishu");
-    let (mut app, events) = on_the_remote_page(&scratch);
+    let scratch = support::Scratch::new("bot-feishu");
+    let (mut app, events) = on_the_bot_page(&scratch);
     support::press(&mut app, KeyCode::Enter);
     support::type_text(&mut app, "Feishu");
     support::press(&mut app, KeyCode::Enter);
-    assert_eq!(app.config().remote.as_deref(), Some("feishu"));
+    assert_eq!(app.config().chat.as_deref(), Some("feishu"));
     until(&mut app, &events, "the keyring to be asked", |app| {
         app.settings()
-            .is_some_and(|settings| settings.reached().state == obelus_remote::State::Unready)
+            .is_some_and(|settings| settings.reached().state == obelus_bot::State::Unready)
     });
     assert_eq!(
         app.settings()
@@ -1307,7 +1300,7 @@ fn feishu_is_set_up_from_what_it_declares() {
         Some("feishu"),
         "a choice nobody made is not its first word"
     );
-    support::check("remote_feishu_66x24", &support::render(&mut app, 66, 24));
+    support::check("bot_feishu_66x24", &support::render(&mut app, 66, 24));
 
     to_the_row(&mut app, "App ID");
     support::press(&mut app, KeyCode::Enter);
@@ -1318,7 +1311,7 @@ fn feishu_is_set_up_from_what_it_declares() {
 
     to_the_row(&mut app, "Domain");
     support::press(&mut app, KeyCode::Enter);
-    assert_eq!(app.config().remote_value("feishu", "domain"), Some("lark"));
+    assert_eq!(app.config().chat_value("feishu", "domain"), Some("lark"));
 }
 
 /// A window set to Slack, with the reader on its list and the fake agent
@@ -1326,8 +1319,8 @@ fn feishu_is_set_up_from_what_it_declares() {
 fn paired_with_an_agent(
     scratch: &support::Scratch,
 ) -> (App, std::sync::mpsc::Receiver<Event>, std::path::PathBuf) {
-    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
-    obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    obelus_bot::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_bot::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
     paired_with_an_agent_on(scratch, "slack", "")
 }
 
@@ -1336,7 +1329,7 @@ fn paired_with_an_agent(
 fn paired_on_feishu_with_an_agent(
     scratch: &support::Scratch,
 ) -> (App, std::sync::mpsc::Receiver<Event>, std::path::PathBuf) {
-    obelus_remote::secrets::write("feishu", "app_secret", "secret").expect("kept");
+    obelus_bot::secrets::write("feishu", "app_secret", "secret").expect("kept");
     paired_with_an_agent_on(scratch, "feishu", "app_id = \"cli_1\"\n")
 }
 
@@ -1347,14 +1340,14 @@ fn paired_with_an_agent_on(
     platform: &str,
     told: &str,
 ) -> (App, std::sync::mpsc::Receiver<Event>, std::path::PathBuf) {
-    obelus_remote::platform::connect_for_test(fake_connect);
+    obelus_bot::platform::connect_for_test(fake_connect);
     *FAKED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
     std::fs::write(
         scratch.join("config.toml"),
         format!(
-            "remote = \"{platform}\"\n[remotes.{platform}]\n{told}people = [{{ id = \"U1\", name = \"Sunli\" }}]\n"
+            "chat = \"{platform}\"\n[chats.{platform}]\n{told}people = [{{ id = \"U1\", name = \"Sunli\" }}]\n"
         ),
     )
     .expect("the settings");
@@ -1374,15 +1367,15 @@ fn paired_with_an_agent_on(
             "prompts".to_string(),
         ],
     );
-    dispatch::dispatch(&mut app, Command::RemoteConnect);
+    dispatch::dispatch(&mut app, Command::BotConnect);
     until(&mut app, &events, "the connection", |app| {
-        app.remote_state_for_test() == obelus_remote::State::Connected
+        app.bot_state_for_test() == obelus_bot::State::Connected
     });
     (app, events, log)
 }
 
 /// The platform's sink, for saying something from its side.
-fn the_platform() -> std::sync::Arc<dyn obelus_sink::Sink<obelus_remote::Event>> {
+fn the_platform() -> std::sync::Arc<dyn obelus_sink::Sink<obelus_bot::Event>> {
     FAKED
         .lock()
         .ok()
@@ -1403,12 +1396,12 @@ fn the_platform() -> std::sync::Arc<dyn obelus_sink::Sink<obelus_remote::Event>>
 #[test]
 fn a_thread_the_reader_starts_is_a_conversation() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-fresh");
+    let scratch = support::Scratch::new("bot-fresh");
     let (mut app, events, log) = paired_with_an_agent(&scratch);
-    let _ = the_platform().send(obelus_remote::Event::Heard {
+    let _ = the_platform().send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        at: obelus_bot::model::Where::Fresh("F1".to_string()),
         text: "what is in here".to_string(),
     });
     let said = said_until(&mut app, &events, "the question in the thread", |said| {
@@ -1422,7 +1415,7 @@ fn a_thread_the_reader_starts_is_a_conversation() {
     assert!(
         !said.iter().any(|out| matches!(
             out,
-            obelus_remote::model::Out::Open { .. } | obelus_remote::model::Out::Retitle { .. }
+            obelus_bot::model::Out::Open { .. } | obelus_bot::model::Out::Retitle { .. }
         )),
         "a thread was asked for, or a head said, over the reader's own: {said:#?}"
     );
@@ -1440,7 +1433,7 @@ fn a_thread_the_reader_starts_is_a_conversation() {
 #[test]
 fn headless_a_sign_in_is_said_in_the_thread() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-headless-sign-in");
+    let scratch = support::Scratch::new("bot-headless-sign-in");
     let (mut app, events, _log) = paired_with_an_agent(&scratch);
     app.headless();
     let marker = scratch.join("signed-in");
@@ -1452,10 +1445,10 @@ fn headless_a_sign_in_is_said_in_the_thread() {
             marker.display().to_string(),
         ],
     );
-    let _ = the_platform().send(obelus_remote::Event::Heard {
+    let _ = the_platform().send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        at: obelus_bot::model::Where::Fresh("F1".to_string()),
         text: "hello".to_string(),
     });
     let said = said_until(&mut app, &events, "where to sign in", |said| {
@@ -1477,13 +1470,13 @@ fn headless_a_sign_in_is_said_in_the_thread() {
 #[test]
 fn headless_somewhere_to_go_is_said_in_the_thread() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-headless-going");
+    let scratch = support::Scratch::new("bot-headless-going");
     let (mut app, events, _log) = paired_with_an_agent(&scratch);
     app.headless();
-    let _ = the_platform().send(obelus_remote::Event::Heard {
+    let _ = the_platform().send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        at: obelus_bot::model::Where::Fresh("F1".to_string()),
         text: "/signin".to_string(),
     });
     let said = said_until(&mut app, &events, "the agent told no", |said| {
@@ -1509,12 +1502,12 @@ fn headless_somewhere_to_go_is_said_in_the_thread() {
 #[test]
 fn what_is_said_before_a_call_goes_at_once() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-pausing");
+    let scratch = support::Scratch::new("bot-pausing");
     let (mut app, events, _log) = paired_with_an_agent(&scratch);
-    let _ = the_platform().send(obelus_remote::Event::Heard {
+    let _ = the_platform().send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        at: obelus_bot::model::Where::Fresh("F1".to_string()),
         text: "/pausing".to_string(),
     });
     let said = said_until(&mut app, &events, "the words before the call", |said| {
@@ -1523,7 +1516,7 @@ fn what_is_said_before_a_call_goes_at_once() {
     assert!(
         said.iter().any(|out| matches!(
             out,
-            obelus_remote::model::Out::Say { text, notify: false, .. } if text == "looking at it first"
+            obelus_bot::model::Out::Say { text, notify: false, .. } if text == "looking at it first"
         )),
         "the words went out calling the reader: {said:#?}"
     );
@@ -1540,12 +1533,12 @@ fn what_is_said_before_a_call_goes_at_once() {
 #[test]
 fn a_plan_is_said_when_its_steps_change() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-plan");
+    let scratch = support::Scratch::new("bot-plan");
     let (mut app, events, _log) = paired_with_an_agent(&scratch);
-    let _ = the_platform().send(obelus_remote::Event::Heard {
+    let _ = the_platform().send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        at: obelus_bot::model::Where::Fresh("F1".to_string()),
         text: "/replanning".to_string(),
     });
     let said = said_until(&mut app, &events, "the end of the turn", |said| {
@@ -1554,7 +1547,7 @@ fn a_plan_is_said_when_its_steps_change() {
     let words: Vec<(&str, bool)> = said
         .iter()
         .filter_map(|out| match out {
-            obelus_remote::model::Out::Say {
+            obelus_bot::model::Out::Say {
                 thread,
                 text,
                 notify,
@@ -1595,10 +1588,10 @@ fn a_plan_is_said_when_its_steps_change() {
 
 /// Every plan said in this thread, in order, and whether it called the
 /// reader.
-fn plans_in<'a>(said: &'a [obelus_remote::model::Out], thread: &str) -> Vec<(&'a str, bool)> {
+fn plans_in<'a>(said: &'a [obelus_bot::model::Out], thread: &str) -> Vec<(&'a str, bool)> {
     said.iter()
         .filter_map(|out| match out {
-            obelus_remote::model::Out::Say {
+            obelus_bot::model::Out::Say {
                 thread: at,
                 text,
                 notify,
@@ -1619,13 +1612,13 @@ fn plans_in<'a>(said: &'a [obelus_remote::model::Out], thread: &str) -> Vec<(&'a
 #[test]
 fn a_plan_made_again_is_said_again() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-plan-again");
+    let scratch = support::Scratch::new("bot-plan-again");
     let (mut app, events, _log) = paired_with_an_agent(&scratch);
     let platform = the_platform();
-    let _ = platform.send(obelus_remote::Event::Heard {
+    let _ = platform.send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        at: obelus_bot::model::Where::Fresh("F1".to_string()),
         text: "/sameplan".to_string(),
     });
     let mut said = said_until(&mut app, &events, "the first turn's end", |said| {
@@ -1636,10 +1629,10 @@ fn a_plan_made_again_is_said_again() {
         2,
         "a plan cleared and made again was not said again: {said:#?}"
     );
-    let _ = platform.send(obelus_remote::Event::Heard {
+    let _ = platform.send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Thread("F1".to_string()),
+        at: obelus_bot::model::Where::Thread("F1".to_string()),
         text: "/sameplan".to_string(),
     });
     said.extend(said_until(
@@ -1666,7 +1659,7 @@ fn a_plan_made_again_is_said_again() {
 #[test]
 fn a_conversation_taken_up_again_is_not_said_again() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-taken-up");
+    let scratch = support::Scratch::new("bot-taken-up");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
         obelus_todo::path(scratch.path()).expect("a tree that is there"),
@@ -1694,27 +1687,27 @@ fn a_conversation_taken_up_again_is_not_said_again() {
             );
         },
     );
-    obelus_remote::platform::connect_for_test(fake_connect);
+    obelus_bot::platform::connect_for_test(fake_connect);
     *FAKED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
     std::fs::write(
         scratch.join("config.toml"),
-        "remote = \"slack\"\n[remotes.slack]\npeople = [{ id = \"U1\", name = \"Sunli\" }]\n",
+        "chat = \"slack\"\n[chats.slack]\npeople = [{ id = \"U1\", name = \"Sunli\" }]\n",
     )
     .expect("the settings");
     a_room_kept();
-    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
-    obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    obelus_bot::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_bot::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
     let mut app = App::new(Vec::new());
     app.working_directory_for_test(scratch.path().to_path_buf());
     app.config_file_for_test(scratch.join("config.toml"));
     let events = support::drive(&mut app);
     app.agents_root_for_test(scratch.join("agents"));
     support::lay_out(&mut app, 76, 24);
-    dispatch::dispatch(&mut app, Command::RemoteConnect);
+    dispatch::dispatch(&mut app, Command::BotConnect);
     until(&mut app, &events, "the connection", |app| {
-        app.remote_state_for_test() == obelus_remote::State::Connected
+        app.bot_state_for_test() == obelus_bot::State::Connected
     });
     app.talk_to(
         "fake",
@@ -1731,16 +1724,16 @@ fn a_conversation_taken_up_again_is_not_said_again() {
     app.open_a_session_for_test();
     let mut said = said_until(&mut app, &events, "a thread to be asked for", |said| {
         said.iter()
-            .any(|out| matches!(out, obelus_remote::model::Out::Open { .. }))
+            .any(|out| matches!(out, obelus_bot::model::Out::Open { .. }))
     });
     let asked = said
         .iter()
         .find_map(|out| match out {
-            obelus_remote::model::Out::Open { asked, .. } => Some(*asked),
+            obelus_bot::model::Out::Open { asked, .. } => Some(*asked),
             _ => None,
         })
         .expect("asked for");
-    let _ = the_platform().send(obelus_remote::Event::Opened {
+    let _ = the_platform().send(obelus_bot::Event::Opened {
         asked,
         thread: "T1".to_string(),
         link: None,
@@ -1778,7 +1771,7 @@ fn a_conversation_taken_up_again_is_not_said_again() {
 #[test]
 fn words_outside_the_room_are_not_heard() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-outside");
+    let scratch = support::Scratch::new("bot-outside");
     let (mut app, events, log) = paired_with_an_agent(&scratch);
     somebody_says("U1", "C2", "what is in here");
     for _ in 0..20 {
@@ -1808,13 +1801,13 @@ fn words_outside_the_room_are_not_heard() {
 #[test]
 fn a_question_is_answered_in_its_own_conversation() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-answer-elsewhere");
+    let scratch = support::Scratch::new("bot-answer-elsewhere");
     let (mut app, events, _log) = paired_with_an_agent(&scratch);
     let platform = the_platform();
-    let _ = platform.send(obelus_remote::Event::Heard {
+    let _ = platform.send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        at: obelus_bot::model::Where::Fresh("F1".to_string()),
         text: "what is in here".to_string(),
     });
     let said = said_until(&mut app, &events, "the question in the thread", |said| {
@@ -1839,18 +1832,18 @@ fn a_question_is_answered_in_its_own_conversation() {
 #[test]
 fn a_question_is_a_card_and_the_card_is_the_answer() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-card");
+    let scratch = support::Scratch::new("bot-card");
     let (mut app, events, _log) = paired_on_feishu_with_an_agent(&scratch);
     let platform = the_platform();
-    let _ = platform.send(obelus_remote::Event::Heard {
+    let _ = platform.send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        at: obelus_bot::model::Where::Fresh("F1".to_string()),
         text: "what is in here".to_string(),
     });
-    let asked_in = |said: &[obelus_remote::model::Out]| {
+    let asked_in = |said: &[obelus_bot::model::Out]| {
         said.iter().find_map(|out| match out {
-            obelus_remote::model::Out::Ask {
+            obelus_bot::model::Out::Ask {
                 thread,
                 asked,
                 question,
@@ -1870,18 +1863,18 @@ fn a_question_is_a_card_and_the_card_is_the_answer() {
         "the card does not carry the agent's own answers: {question:#?}"
     );
 
-    let press = |from: &str| obelus_remote::Event::Answered {
+    let press = |from: &str| obelus_bot::Event::Answered {
         from: from.to_string(),
         asked,
         chosen: vec!["once".to_string()],
         words: None,
     };
     let _ = platform.send(press("U9STRANGER"));
-    let settled = |said: &[obelus_remote::model::Out]| {
+    let settled = |said: &[obelus_bot::model::Out]| {
         said.iter().any(|out| {
             matches!(
                 out,
-                obelus_remote::model::Out::Settle { asked: closed, said, .. }
+                obelus_bot::model::Out::Settle { asked: closed, said, .. }
                     if *closed == asked && said.contains("Allow once")
             )
         })
@@ -1919,13 +1912,13 @@ fn a_question_is_a_card_and_the_card_is_the_answer() {
 #[test]
 fn words_while_a_card_is_up_cancel_it_and_are_said() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-words-over-card");
+    let scratch = support::Scratch::new("bot-words-over-card");
     let (mut app, events, log) = paired_on_feishu_with_an_agent(&scratch);
     let platform = the_platform();
-    let _ = platform.send(obelus_remote::Event::Heard {
+    let _ = platform.send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        at: obelus_bot::model::Where::Fresh("F1".to_string()),
         text: "what is in here".to_string(),
     });
     let said = said_until(&mut app, &events, "the question as a card", |said| {
@@ -1933,10 +1926,10 @@ fn words_while_a_card_is_up_cancel_it_and_are_said() {
     });
     let asked = asked_with(&said, "F1", "Allow once").expect("asked");
 
-    let _ = platform.send(obelus_remote::Event::Heard {
+    let _ = platform.send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Thread("F1".to_string()),
+        at: obelus_bot::model::Where::Thread("F1".to_string()),
         text: "1 -- no, read the README instead".to_string(),
     });
     let reached = || {
@@ -1948,7 +1941,7 @@ fn words_while_a_card_is_up_cancel_it_and_are_said() {
     assert!(
         said.iter().any(|out| matches!(
             out,
-            obelus_remote::model::Out::Settle { asked: closed, said, .. }
+            obelus_bot::model::Out::Settle { asked: closed, said, .. }
                 if *closed == asked && said.contains("Not answered")
         )),
         "the card was not closed as not answered: {said:#?}"
@@ -1968,13 +1961,13 @@ fn words_while_a_card_is_up_cancel_it_and_are_said() {
 #[test]
 fn words_over_a_question_take_the_ones_behind_it_too() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-words-over-two");
+    let scratch = support::Scratch::new("bot-words-over-two");
     let (mut app, events, log) = paired_with_an_agent(&scratch);
     let platform = the_platform();
-    let _ = platform.send(obelus_remote::Event::Heard {
+    let _ = platform.send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        at: obelus_bot::model::Where::Fresh("F1".to_string()),
         text: "/pair".to_string(),
     });
     said_until(&mut app, &events, "the first question", |said| {
@@ -1982,10 +1975,10 @@ fn words_over_a_question_take_the_ones_behind_it_too() {
     });
     // A turn that answers with nothing, so that no question of its own
     // comes to be counted.
-    let _ = platform.send(obelus_remote::Event::Heard {
+    let _ = platform.send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Thread("F1".to_string()),
+        at: obelus_bot::model::Where::Thread("F1".to_string()),
         text: "neither, go slowly".to_string(),
     });
     let mut said = said_until(&mut app, &events, "the words at the agent", |_| {
@@ -2015,13 +2008,13 @@ fn words_over_a_question_take_the_ones_behind_it_too() {
 #[test]
 fn words_into_a_running_turn_stop_it() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-words-stop");
+    let scratch = support::Scratch::new("bot-words-stop");
     let (mut app, events, log) = paired_with_an_agent(&scratch);
     let platform = the_platform();
-    let _ = platform.send(obelus_remote::Event::Heard {
+    let _ = platform.send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        at: obelus_bot::model::Where::Fresh("F1".to_string()),
         text: "take this slowly".to_string(),
     });
     let logged =
@@ -2030,10 +2023,10 @@ fn words_into_a_running_turn_stop_it() {
         logged("take this slowly")
     });
 
-    let _ = platform.send(obelus_remote::Event::Heard {
+    let _ = platform.send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Thread("F1".to_string()),
+        at: obelus_bot::model::Where::Thread("F1".to_string()),
         text: "something else first".to_string(),
     });
     said_until(&mut app, &events, "the words at the agent", |_| {
@@ -2061,17 +2054,17 @@ fn words_into_a_running_turn_stop_it() {
 #[test]
 fn a_form_is_answered_on_its_cards_in_its_own_conversation() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-form-cards");
+    let scratch = support::Scratch::new("bot-form-cards");
     let (mut app, events, _log) = paired_with_an_agent(&scratch);
     let platform = the_platform();
-    let _ = platform.send(obelus_remote::Event::Heard {
+    let _ = platform.send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        at: obelus_bot::model::Where::Fresh("F1".to_string()),
         text: "/ask".to_string(),
     });
     let press =
-        |asked: u64, chosen: Option<&str>, words: Option<&str>| obelus_remote::Event::Answered {
+        |asked: u64, chosen: Option<&str>, words: Option<&str>| obelus_bot::Event::Answered {
             from: "U1".to_string(),
             asked,
             chosen: chosen.map(str::to_string).into_iter().collect(),
@@ -2091,9 +2084,9 @@ fn a_form_is_answered_on_its_cards_in_its_own_conversation() {
         asks_in(said, "F1").len() == 1
     }));
     let times = asks_in(&said, "F1")[2].0;
-    let closed = |said: &[obelus_remote::model::Out], which: u64| {
+    let closed = |said: &[obelus_bot::model::Out], which: u64| {
         said.iter().any(
-            |out| matches!(out, obelus_remote::model::Out::Settle { asked, .. } if *asked == which),
+            |out| matches!(out, obelus_bot::model::Out::Settle { asked, .. } if *asked == which),
         )
     };
     assert!(
@@ -2130,20 +2123,20 @@ fn a_form_is_answered_on_its_cards_in_its_own_conversation() {
 #[test]
 fn cancel_on_a_card_gives_up_on_the_question() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-cancel-card");
+    let scratch = support::Scratch::new("bot-cancel-card");
     let (mut app, events, _log) = paired_with_an_agent(&scratch);
     let platform = the_platform();
-    let _ = platform.send(obelus_remote::Event::Heard {
+    let _ = platform.send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        at: obelus_bot::model::Where::Fresh("F1".to_string()),
         text: "/ask".to_string(),
     });
     let said = said_until(&mut app, &events, "how", |said| {
         asks_in(said, "F1").len() == 1
     });
     let how = asks_in(&said, "F1")[0].0;
-    let cancel = |from: &str| obelus_remote::Event::Cancelled {
+    let cancel = |from: &str| obelus_bot::Event::Cancelled {
         from: from.to_string(),
         asked: how,
     };
@@ -2170,7 +2163,7 @@ fn cancel_on_a_card_gives_up_on_the_question() {
     assert!(
         said.iter().any(|out| matches!(
             out,
-            obelus_remote::model::Out::Settle { asked, said, .. }
+            obelus_bot::model::Out::Settle { asked, said, .. }
                 if *asked == how && said.contains("Not answered")
         )),
         "the card was not closed: {said:#?}"
@@ -2187,13 +2180,13 @@ fn cancel_on_a_card_gives_up_on_the_question() {
 #[test]
 fn a_question_the_chat_was_never_given_is_said_to_be_the_machines() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-only-here");
+    let scratch = support::Scratch::new("bot-only-here");
     let (mut app, events, log) = paired_with_an_agent(&scratch);
     let platform = the_platform();
-    let _ = platform.send(obelus_remote::Event::Heard {
+    let _ = platform.send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        at: obelus_bot::model::Where::Fresh("F1".to_string()),
         text: "/signin".to_string(),
     });
     // Until the page to open is up here, which the thread is never told.
@@ -2208,10 +2201,10 @@ fn a_question_the_chat_was_never_given_is_said_to_be_the_machines() {
         }
         support::lay_out(&mut app, 76, 24);
     }
-    let _ = platform.send(obelus_remote::Event::Heard {
+    let _ = platform.send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Thread("F1".to_string()),
+        at: obelus_bot::model::Where::Thread("F1".to_string()),
         text: "never mind signing in".to_string(),
     });
     passed_by(&mut app, &events, &log, "never mind signing in");
@@ -2234,7 +2227,7 @@ fn passed_by(
         !in_thread(&said, "F1", "card above")
             && !said
                 .iter()
-                .any(|out| matches!(out, obelus_remote::model::Out::Settle { .. })),
+                .any(|out| matches!(out, obelus_bot::model::Out::Settle { .. })),
         "the thread was pointed at a card it never had: {said:#?}"
     );
 }
@@ -2248,24 +2241,24 @@ fn passed_by(
 #[test]
 fn a_card_the_platform_refused_is_not_pointed_at() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-refused-card");
+    let scratch = support::Scratch::new("bot-refused-card");
     let (mut app, events, log) = paired_with_an_agent(&scratch);
     let platform = the_platform();
-    let _ = platform.send(obelus_remote::Event::Heard {
+    let _ = platform.send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        at: obelus_bot::model::Where::Fresh("F1".to_string()),
         text: "what is in here".to_string(),
     });
     let said = said_until(&mut app, &events, "the question", |said| {
         asked_with(said, "F1", "Allow once").is_some()
     });
     let asked = asked_with(&said, "F1", "Allow once").expect("asked");
-    let _ = platform.send(obelus_remote::Event::Unasked { asked });
-    let _ = platform.send(obelus_remote::Event::Heard {
+    let _ = platform.send(obelus_bot::Event::Unasked { asked });
+    let _ = platform.send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Thread("F1".to_string()),
+        at: obelus_bot::model::Where::Thread("F1".to_string()),
         text: "look somewhere else".to_string(),
     });
     passed_by(&mut app, &events, &log, "look somewhere else");
@@ -2280,21 +2273,21 @@ fn a_card_the_platform_refused_is_not_pointed_at() {
 #[test]
 fn a_card_closes_when_nothing_waits_on_it() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-card-closes");
+    let scratch = support::Scratch::new("bot-card-closes");
     let (mut app, events, _log) = paired_with_an_agent(&scratch);
     let platform = the_platform();
-    let closed = |said: &[obelus_remote::model::Out], which: u64, words: &str| {
+    let closed = |said: &[obelus_bot::model::Out], which: u64, words: &str| {
         said.iter().any(|out| {
-            matches!(out, obelus_remote::model::Out::Settle { asked, said, .. }
+            matches!(out, obelus_bot::model::Out::Settle { asked, said, .. }
                 if *asked == which && said.contains(words))
         })
     };
 
     // A conversation closed here with a question up.
-    let _ = platform.send(obelus_remote::Event::Heard {
+    let _ = platform.send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        at: obelus_bot::model::Where::Fresh("F1".to_string()),
         text: "what is in here".to_string(),
     });
     let said = said_until(&mut app, &events, "the first question", |said| {
@@ -2315,20 +2308,20 @@ fn a_card_closes_when_nothing_waits_on_it() {
     // And the agent gone, with a question up in another conversation:
     // a third, begun from the chat, tells it to die. Last, because what
     // starts again after it is the agent the settings name, not the fake.
-    let _ = platform.send(obelus_remote::Event::Heard {
+    let _ = platform.send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Fresh("F2".to_string()),
+        at: obelus_bot::model::Where::Fresh("F2".to_string()),
         text: "what is in here".to_string(),
     });
     let said = said_until(&mut app, &events, "the next question", |said| {
         asked_with(said, "F2", "Allow once").is_some()
     });
     let next = asked_with(&said, "F2", "Allow once").expect("asked");
-    let _ = platform.send(obelus_remote::Event::Heard {
+    let _ = platform.send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Fresh("F3".to_string()),
+        at: obelus_bot::model::Where::Fresh("F3".to_string()),
         text: "/die".to_string(),
     });
     said_until(
@@ -2348,17 +2341,17 @@ fn a_card_closes_when_nothing_waits_on_it() {
 #[test]
 fn what_is_said_while_reconnecting_still_goes() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-reconnecting");
+    let scratch = support::Scratch::new("bot-reconnecting");
     let (mut app, events, _log) = paired_with_an_agent(&scratch);
     let platform = the_platform();
-    let _ = platform.send(obelus_remote::Event::connection(
-        obelus_remote::State::Connecting,
+    let _ = platform.send(obelus_bot::Event::connection(
+        obelus_bot::State::Connecting,
         None,
     ));
-    let _ = platform.send(obelus_remote::Event::Heard {
+    let _ = platform.send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        at: obelus_bot::model::Where::Fresh("F1".to_string()),
         text: "what is in here".to_string(),
     });
     said_until(&mut app, &events, "the question in the thread", |said| {
@@ -2381,23 +2374,23 @@ fn what_is_said_while_reconnecting_still_goes() {
 #[test]
 fn a_thread_that_would_not_open_is_asked_for_on_the_next_connection() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-unopened");
+    let scratch = support::Scratch::new("bot-unopened");
     let (mut app, events, _log) = paired_with_an_agent(&scratch);
     app.new_conversation();
     app.open_a_session_for_test();
     let said = said_until(&mut app, &events, "a thread to be asked for", |said| {
         said.iter()
-            .any(|out| matches!(out, obelus_remote::model::Out::Open { .. }))
+            .any(|out| matches!(out, obelus_bot::model::Out::Open { .. }))
     });
     let asked = said
         .iter()
         .find_map(|out| match out {
-            obelus_remote::model::Out::Open { asked, .. } => Some(*asked),
+            obelus_bot::model::Out::Open { asked, .. } => Some(*asked),
             _ => None,
         })
         .expect("asked for");
     let platform = the_platform();
-    let _ = platform.send(obelus_remote::Event::Unopened {
+    let _ = platform.send(obelus_bot::Event::Unopened {
         asked,
         waited: false,
     });
@@ -2410,19 +2403,19 @@ fn a_thread_that_would_not_open_is_asked_for_on_the_next_connection() {
     assert!(
         !said_since()
             .iter()
-            .any(|out| matches!(out, obelus_remote::model::Out::Open { .. })),
+            .any(|out| matches!(out, obelus_bot::model::Out::Open { .. })),
         "a thread that would not open was asked for again at once"
     );
     // Asked for again once the connection says it is up -- a socket made
     // again inside one connection, which is when a request that timed out
     // is worth making again.
-    let _ = platform.send(obelus_remote::Event::connection(
-        obelus_remote::State::Connected,
+    let _ = platform.send(obelus_bot::Event::connection(
+        obelus_bot::State::Connected,
         None,
     ));
     let said = said_until(&mut app, &events, "the thread asked for again", |said| {
         said.iter()
-            .any(|out| matches!(out, obelus_remote::model::Out::Open { .. }))
+            .any(|out| matches!(out, obelus_bot::model::Out::Open { .. }))
     });
     // And the conversation says so, where the reader is.
     let dump = support::render(&mut app, 76, 24);
@@ -2435,11 +2428,11 @@ fn a_thread_that_would_not_open_is_asked_for_on_the_next_connection() {
     let again = said
         .iter()
         .find_map(|out| match out {
-            obelus_remote::model::Out::Open { asked, .. } => Some(*asked),
+            obelus_bot::model::Out::Open { asked, .. } => Some(*asked),
             _ => None,
         })
         .expect("asked for again");
-    let _ = platform.send(obelus_remote::Event::Unopened {
+    let _ = platform.send(obelus_bot::Event::Unopened {
         asked: again,
         waited: true,
     });
@@ -2456,13 +2449,13 @@ fn a_thread_that_would_not_open_is_asked_for_on_the_next_connection() {
     );
 
     let (out, mut heard) = tokio::sync::mpsc::unbounded_channel();
-    let _ = platform.send(obelus_remote::Event::Started {
+    let _ = platform.send(obelus_bot::Event::Started {
         platform: "slack",
         out,
     });
     let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
     loop {
-        if let Ok(obelus_remote::model::Out::Open { .. }) = heard.try_recv() {
+        if let Ok(obelus_bot::model::Out::Open { .. }) = heard.try_recv() {
             break;
         }
         assert!(
@@ -2486,7 +2479,7 @@ fn a_thread_that_would_not_open_is_asked_for_on_the_next_connection() {
 #[test]
 fn a_connection_let_go_is_not_heard() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-let-go");
+    let scratch = support::Scratch::new("bot-let-go");
     let (mut app, events) = connected(&scratch);
     let old = the_platform();
     to_the_row(&mut app, "Platform");
@@ -2495,12 +2488,12 @@ fn a_connection_let_go_is_not_heard() {
     support::press(&mut app, KeyCode::Enter);
     support::lay_out(&mut app, 66, 20);
     choose_slack(&mut app);
-    dispatch::dispatch(&mut app, Command::RemoteConnect);
+    dispatch::dispatch(&mut app, Command::BotConnect);
     until(&mut app, &events, "the new connection", |app| {
-        app.remote_state_for_test() == obelus_remote::State::Connected
+        app.bot_state_for_test() == obelus_bot::State::Connected
     });
-    let _ = old.send(obelus_remote::Event::connection(
-        obelus_remote::State::Refused,
+    let _ = old.send(obelus_bot::Event::connection(
+        obelus_bot::State::Refused,
         None,
     ));
     for _ in 0..10 {
@@ -2510,8 +2503,8 @@ fn a_connection_let_go_is_not_heard() {
         support::lay_out(&mut app, 66, 20);
     }
     assert_eq!(
-        app.remote_state_for_test(),
-        obelus_remote::State::Connected,
+        app.bot_state_for_test(),
+        obelus_bot::State::Connected,
         "the old connection's word was taken as the new one's"
     );
 }
@@ -2526,10 +2519,10 @@ fn a_connection_let_go_is_not_heard() {
 #[test]
 fn a_thread_finds_its_conversation_while_its_agent_is_gone() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-agent-gone");
+    let scratch = support::Scratch::new("bot-agent-gone");
     // Installed and named in the settings, the way a reader's is, because
     // starting it *again* goes through that.
-    obelus_remote::platform::connect_for_test(fake_connect);
+    obelus_bot::platform::connect_for_test(fake_connect);
     *FAKED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
@@ -2549,26 +2542,26 @@ fn a_thread_finds_its_conversation_while_its_agent_is_gone() {
     .expect("writing what was installed");
     std::fs::write(
         scratch.join("config.toml"),
-        "agent = \"fake\"\nremote = \"slack\"\n[remotes.slack]\npeople = [{ id = \"U1\", name = \"Sunli\" }]\n",
+        "agent = \"fake\"\nchat = \"slack\"\n[chats.slack]\npeople = [{ id = \"U1\", name = \"Sunli\" }]\n",
     )
     .expect("the settings");
     a_room_kept();
-    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
-    obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    obelus_bot::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_bot::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
     let mut app = App::new(Vec::new());
     app.agents_root_for_test(root);
     app.config_file_for_test(scratch.join("config.toml"));
     let events = support::drive(&mut app);
     support::lay_out(&mut app, 76, 24);
-    dispatch::dispatch(&mut app, Command::RemoteConnect);
+    dispatch::dispatch(&mut app, Command::BotConnect);
     until(&mut app, &events, "the connection", |app| {
-        app.remote_state_for_test() == obelus_remote::State::Connected
+        app.bot_state_for_test() == obelus_bot::State::Connected
     });
     let platform = the_platform();
-    let _ = platform.send(obelus_remote::Event::Heard {
+    let _ = platform.send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        at: obelus_bot::model::Where::Fresh("F1".to_string()),
         text: "/die".to_string(),
     });
     let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
@@ -2591,10 +2584,10 @@ fn a_thread_finds_its_conversation_while_its_agent_is_gone() {
         }
         support::lay_out(&mut app, 76, 24);
     }
-    let _ = platform.send(obelus_remote::Event::Heard {
+    let _ = platform.send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Thread("F1".to_string()),
+        at: obelus_bot::model::Where::Thread("F1".to_string()),
         text: "what is in here".to_string(),
     });
     let said = said_until(&mut app, &events, "the question in the thread", |said| {
@@ -2618,13 +2611,13 @@ fn a_thread_finds_its_conversation_while_its_agent_is_gone() {
 #[test]
 fn words_from_the_chat_taken_back_here_are_the_readers() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-taken-back");
+    let scratch = support::Scratch::new("bot-taken-back");
     let (mut app, events, log) = paired_with_an_agent(&scratch);
     let platform = the_platform();
-    let _ = platform.send(obelus_remote::Event::Heard {
+    let _ = platform.send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        at: obelus_bot::model::Where::Fresh("F1".to_string()),
         text: "/pausing".to_string(),
     });
     said_until(&mut app, &events, "the words before the call", |said| {
@@ -2636,10 +2629,10 @@ fn words_from_the_chat_taken_back_here_are_the_readers() {
     // Handed straight in, and escape pressed before anything else is heard:
     // words from the chat stop the turn the moment they arrive, so the one
     // moment they wait to be taken back is between the stop and its end.
-    app.handle(Event::Remote(obelus_remote::Event::Heard {
+    app.handle(Event::Bot(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Thread("F1".to_string()),
+        at: obelus_bot::model::Where::Thread("F1".to_string()),
         text: "and later".to_string(),
     }));
     support::press(&mut app, KeyCode::Esc);
@@ -2687,13 +2680,13 @@ fn words_from_the_chat_taken_back_here_are_the_readers() {
 #[test]
 fn words_from_here_and_from_the_chat_go_together() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-mixed");
+    let scratch = support::Scratch::new("bot-mixed");
     let (mut app, events, log) = paired_with_an_agent(&scratch);
     let platform = the_platform();
-    let _ = platform.send(obelus_remote::Event::Heard {
+    let _ = platform.send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        at: obelus_bot::model::Where::Fresh("F1".to_string()),
         text: "/later".to_string(),
     });
     until(&mut app, &events, "the turn to start", |_| {
@@ -2701,10 +2694,10 @@ fn words_from_here_and_from_the_chat_go_together() {
             .unwrap_or_default()
             .contains("/later")
     });
-    let _ = platform.send(obelus_remote::Event::Heard {
+    let _ = platform.send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Thread("F1".to_string()),
+        at: obelus_bot::model::Where::Thread("F1".to_string()),
         text: "from the phone".to_string(),
     });
     app.go_to_document_for_test(obelus_buffer::DocumentId::new(
@@ -2752,7 +2745,7 @@ fn words_from_here_and_from_the_chat_go_together() {
 #[test]
 fn somebody_not_on_the_list_is_not_heard_in_the_room() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-stranger");
+    let scratch = support::Scratch::new("bot-stranger");
     let (mut app, events, log) = paired_with_an_agent(&scratch);
     somebody_says("U0STRANGER", "C1", "what is in here");
     for _ in 0..20 {
@@ -2807,18 +2800,18 @@ fn both_until(
 
 /// Settings, secrets and a room for two windows to share.
 fn set_up_for_two(scratch: &support::Scratch) {
-    obelus_remote::platform::connect_for_test(fake_connect);
+    obelus_bot::platform::connect_for_test(fake_connect);
     *FAKED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
     std::fs::write(
         scratch.join("config.toml"),
-        "remote = \"slack\"\n[remotes.slack]\npeople = [{ id = \"U1\", name = \"Sunli\" }]\n",
+        "chat = \"slack\"\n[chats.slack]\npeople = [{ id = \"U1\", name = \"Sunli\" }]\n",
     )
     .expect("the settings");
     a_room_kept();
-    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
-    obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    obelus_bot::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_bot::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
 }
 
 /// A headless Obelus whose chat goes to a window the reader asked for it
@@ -2827,19 +2820,19 @@ fn set_up_for_two(scratch: &support::Scratch) {
 /// does one whose settings stop naming a chat.
 ///
 /// Broken deliberately twice, by taking `leave_unseen` out of
-/// `somebody_wants_the_remote` and then out of `settle_the_connection`:
+/// `somebody_wants_the_bot` and then out of `settle_the_connection`:
 /// each went on running, holding nothing.
 #[test]
 fn headless_leaves_when_it_has_no_chat_to_hold() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-headless-leaves");
+    let scratch = support::Scratch::new("bot-headless-leaves");
     set_up_for_two(&scratch);
     let unseen = |scratch: &support::Scratch| {
         let mut app = App::new(Vec::new());
         app.headless();
         app.working_directory_for_test(scratch.path().to_path_buf());
         app.config_file_for_test(scratch.join("config.toml"));
-        app.remote_at_start();
+        app.bot_at_start();
         let (sender, events) = obelus_app::event::channel();
         app.start(sender);
         support::lay_out(&mut app, 76, 24);
@@ -2848,28 +2841,28 @@ fn headless_leaves_when_it_has_no_chat_to_hold() {
 
     let (mut first, firsts) = unseen(&scratch);
     until(&mut first, &firsts, "the headless one to connect", |app| {
-        app.remote_state_for_test() == obelus_remote::State::Connected
+        app.bot_state_for_test() == obelus_bot::State::Connected
     });
     let mut second = App::new(Vec::new());
     second.config_file_for_test(scratch.join("config.toml"));
     let (sender, seconds) = obelus_app::event::channel();
     second.start(sender);
     support::lay_out(&mut second, 76, 24);
-    dispatch::dispatch(&mut second, Command::RemoteConnect);
+    dispatch::dispatch(&mut second, Command::BotConnect);
     both_until(
         &mut first,
         &firsts,
         &mut second,
         &seconds,
         "the window to have the chat",
-        |first, second| first.should_quit() && second.holds_the_remote_for_test(),
+        |first, second| first.should_quit() && second.holds_the_bot_for_test(),
     );
     assert_eq!(first.why_it_stopped(), None, "handing the chat over failed");
     drop(second);
 
     let (mut again, agains) = unseen(&scratch);
     until(&mut again, &agains, "it to connect again", |app| {
-        app.remote_state_for_test() == obelus_remote::State::Connected
+        app.bot_state_for_test() == obelus_bot::State::Connected
     });
     std::fs::write(scratch.join("config.toml"), "").expect("no chat");
     until(&mut again, &agains, "it to hear the settings", |app| {
@@ -2888,7 +2881,7 @@ fn headless_leaves_when_it_has_no_chat_to_hold() {
 #[test]
 fn connecting_in_another_window_takes_the_chat_over() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-take-over");
+    let scratch = support::Scratch::new("bot-take-over");
     set_up_for_two(&scratch);
     // The first with a watcher of its own, which is how it hears.
     let mut first = App::new(Vec::new());
@@ -2896,15 +2889,15 @@ fn connecting_in_another_window_takes_the_chat_over() {
     let (sender, firsts) = obelus_app::event::channel();
     first.start(sender);
     support::lay_out(&mut first, 76, 24);
-    dispatch::dispatch(&mut first, Command::RemoteConnect);
+    dispatch::dispatch(&mut first, Command::BotConnect);
     until(&mut first, &firsts, "the first to connect", |app| {
-        app.remote_state_for_test() == obelus_remote::State::Connected
+        app.bot_state_for_test() == obelus_bot::State::Connected
     });
 
     let (mut second, seconds) = a_window(&scratch);
-    dispatch::dispatch(&mut second, Command::RemoteConnect);
+    dispatch::dispatch(&mut second, Command::BotConnect);
     assert!(
-        !second.holds_the_remote_for_test(),
+        !second.holds_the_bot_for_test(),
         "the second took the chat while the first had it"
     );
     both_until(
@@ -2913,11 +2906,11 @@ fn connecting_in_another_window_takes_the_chat_over() {
         &mut second,
         &seconds,
         "the chat to move",
-        |first, second| !first.holds_the_remote_for_test() && second.holds_the_remote_for_test(),
+        |first, second| !first.holds_the_bot_for_test() && second.holds_the_bot_for_test(),
     );
     assert_eq!(first.note(), Some("Slack went to another window"));
     until(&mut second, &seconds, "the second to connect", |app| {
-        app.remote_state_for_test() == obelus_remote::State::Connected
+        app.bot_state_for_test() == obelus_bot::State::Connected
     });
 }
 
@@ -2931,16 +2924,16 @@ fn connecting_in_another_window_takes_the_chat_over() {
 #[test]
 fn a_window_that_will_not_let_go_is_given_up_on() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-not-let-go");
+    let scratch = support::Scratch::new("bot-not-let-go");
     set_up_for_two(&scratch);
     // Without a watcher, so it never hears the asking.
     let (mut first, firsts) = a_window(&scratch);
-    dispatch::dispatch(&mut first, Command::RemoteConnect);
+    dispatch::dispatch(&mut first, Command::BotConnect);
     until(&mut first, &firsts, "the first to connect", |app| {
-        app.remote_state_for_test() == obelus_remote::State::Connected
+        app.bot_state_for_test() == obelus_bot::State::Connected
     });
     let (mut second, seconds) = a_window(&scratch);
-    dispatch::dispatch(&mut second, Command::RemoteConnect);
+    dispatch::dispatch(&mut second, Command::BotConnect);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
     while second.note() != Some("Another window would not let Slack go") {
         assert!(
@@ -2952,15 +2945,15 @@ fn a_window_that_will_not_let_go_is_given_up_on() {
         }
         support::lay_out(&mut second, 76, 24);
     }
-    assert!(first.holds_the_remote_for_test());
-    assert!(!second.holds_the_remote_for_test());
+    assert!(first.holds_the_bot_for_test());
+    assert!(!second.holds_the_bot_for_test());
 
     // And the first letting go after all -- here by being told to, the way
     // one that heard late would -- leaves the chat with the window that
     // asked, rather than with nobody.
-    dispatch::dispatch(&mut first, Command::RemoteDisconnect);
+    dispatch::dispatch(&mut first, Command::BotDisconnect);
     until(&mut second, &seconds, "the second to have it", |app| {
-        app.holds_the_remote_for_test()
+        app.holds_the_bot_for_test()
     });
 }
 
@@ -2972,22 +2965,22 @@ fn a_window_that_will_not_let_go_is_given_up_on() {
 #[test]
 fn a_window_that_goes_leaves_the_chat_to_the_one_waiting() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-goes");
+    let scratch = support::Scratch::new("bot-goes");
     set_up_for_two(&scratch);
     let (mut first, firsts) = a_window(&scratch);
-    dispatch::dispatch(&mut first, Command::RemoteConnect);
+    dispatch::dispatch(&mut first, Command::BotConnect);
     until(&mut first, &firsts, "the first to connect", |app| {
-        app.remote_state_for_test() == obelus_remote::State::Connected
+        app.bot_state_for_test() == obelus_bot::State::Connected
     });
     let (mut second, seconds) = a_window(&scratch);
-    dispatch::dispatch(&mut second, Command::RemoteConnect);
+    dispatch::dispatch(&mut second, Command::BotConnect);
     drop(first);
     until(&mut second, &seconds, "the second to have it", |app| {
-        app.holds_the_remote_for_test()
+        app.holds_the_bot_for_test()
     });
 }
 
-/// `disconnect-remote` lets the chat go: the status row stops saying it,
+/// `disconnect-from-chat` lets the chat go: the status row stops saying it,
 /// and another window has it at once, without asking.
 ///
 /// Broken deliberately by not letting go of the lock: the second window
@@ -2995,15 +2988,15 @@ fn a_window_that_goes_leaves_the_chat_to_the_one_waiting() {
 #[test]
 fn disconnecting_leaves_the_chat_to_no_window() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-disconnect");
+    let scratch = support::Scratch::new("bot-disconnect");
     set_up_for_two(&scratch);
     let (mut first, firsts) = a_window(&scratch);
-    dispatch::dispatch(&mut first, Command::RemoteConnect);
+    dispatch::dispatch(&mut first, Command::BotConnect);
     until(&mut first, &firsts, "the first to connect", |app| {
-        app.remote_state_for_test() == obelus_remote::State::Connected
+        app.bot_state_for_test() == obelus_bot::State::Connected
     });
-    dispatch::dispatch(&mut first, Command::RemoteDisconnect);
-    assert!(!first.holds_the_remote_for_test());
+    dispatch::dispatch(&mut first, Command::BotDisconnect);
+    assert!(!first.holds_the_bot_for_test());
     let dump = support::render(&mut first, 76, 24);
     let status = support::text_block(&dump)
         .lines()
@@ -3015,9 +3008,9 @@ fn disconnecting_leaves_the_chat_to_no_window() {
         "the status row still says it: {status}"
     );
     let (mut second, _seconds) = a_window(&scratch);
-    dispatch::dispatch(&mut second, Command::RemoteConnect);
+    dispatch::dispatch(&mut second, Command::BotConnect);
     assert!(
-        second.holds_the_remote_for_test(),
+        second.holds_the_bot_for_test(),
         "the second had to wait for a chat nobody had"
     );
 }
@@ -3031,49 +3024,49 @@ fn disconnecting_leaves_the_chat_to_no_window() {
 #[test]
 fn a_refused_token_is_said_on_its_row() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-refused");
+    let scratch = support::Scratch::new("bot-refused");
     let (mut app, events) = connected(&scratch);
-    let _ = the_platform().send(obelus_remote::Event::connection(
-        obelus_remote::State::Refused,
+    let _ = the_platform().send(obelus_bot::Event::connection(
+        obelus_bot::State::Refused,
         None,
     ));
     until(&mut app, &events, "the refusal", |app| {
-        app.remote_state_for_test() == obelus_remote::State::Refused
+        app.bot_state_for_test() == obelus_bot::State::Refused
     });
     let dump = support::render(&mut app, 66, 30);
     assert!(dump.contains("Refused by Slack"), "{dump}");
 }
 
-/// An asking can be taken back with `disconnect-remote`, while
-/// `connect-remote` -- which would only wait behind it -- is dim; and an
+/// An asking can be taken back with `disconnect-from-chat`, while
+/// `connect-to-chat` -- which would only wait behind it -- is dim; and an
 /// asking taken back is withdrawn, so the chat stays where it was.
 ///
-/// Broken deliberately three ways. Offering `connect-remote` while asking:
-/// it was lit and did nothing. Not offering `disconnect-remote`: there was
+/// Broken deliberately three ways. Offering `connect-to-chat` while asking:
+/// it was lit and did nothing. Not offering `disconnect-from-chat`: there was
 /// no way to stop asking. And taking the lock when it came anyway: the
 /// window had the chat the reader had told it not to.
 #[test]
 fn an_asking_can_be_taken_back() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-take-back");
+    let scratch = support::Scratch::new("bot-take-back");
     set_up_for_two(&scratch);
     let (mut first, firsts) = a_window(&scratch);
-    dispatch::dispatch(&mut first, Command::RemoteConnect);
+    dispatch::dispatch(&mut first, Command::BotConnect);
     until(&mut first, &firsts, "the first to connect", |app| {
-        app.remote_state_for_test() == obelus_remote::State::Connected
+        app.bot_state_for_test() == obelus_bot::State::Connected
     });
     let (mut second, seconds) = a_window(&scratch);
-    dispatch::dispatch(&mut second, Command::RemoteConnect);
+    dispatch::dispatch(&mut second, Command::BotConnect);
     assert!(
-        !second.offers(Command::RemoteConnect),
+        !second.offers(Command::BotConnect),
         "asking again was offered"
     );
     assert!(
-        second.offers(Command::RemoteDisconnect),
+        second.offers(Command::BotDisconnect),
         "stopping was not offered"
     );
-    dispatch::dispatch(&mut second, Command::RemoteDisconnect);
-    dispatch::dispatch(&mut first, Command::RemoteDisconnect);
+    dispatch::dispatch(&mut second, Command::BotDisconnect);
+    dispatch::dispatch(&mut first, Command::BotDisconnect);
     for _ in 0..20 {
         if let Ok(event) = seconds.recv_timeout(std::time::Duration::from_millis(30)) {
             second.handle(event);
@@ -3081,7 +3074,7 @@ fn an_asking_can_be_taken_back() {
         support::lay_out(&mut second, 76, 24);
     }
     assert!(
-        !second.holds_the_remote_for_test(),
+        !second.holds_the_bot_for_test(),
         "a window took the chat after being told to stop asking"
     );
 }
@@ -3095,7 +3088,7 @@ fn an_asking_can_be_taken_back() {
 #[test]
 fn an_asking_the_moment_the_chat_is_had_is_heard() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-first-frame");
+    let scratch = support::Scratch::new("bot-first-frame");
     set_up_for_two(&scratch);
     let mut first = App::new(Vec::new());
     first.config_file_for_test(scratch.join("config.toml"));
@@ -3104,15 +3097,15 @@ fn an_asking_the_moment_the_chat_is_had_is_heard() {
     support::lay_out(&mut first, 76, 24);
     let (mut second, seconds) = a_window(&scratch);
     // No frame between the first having it and the second asking.
-    dispatch::dispatch(&mut first, Command::RemoteConnect);
-    dispatch::dispatch(&mut second, Command::RemoteConnect);
+    dispatch::dispatch(&mut first, Command::BotConnect);
+    dispatch::dispatch(&mut second, Command::BotConnect);
     both_until(
         &mut first,
         &firsts,
         &mut second,
         &seconds,
         "the chat to move",
-        |first, second| !first.holds_the_remote_for_test() && second.holds_the_remote_for_test(),
+        |first, second| !first.holds_the_bot_for_test() && second.holds_the_bot_for_test(),
     );
 }
 
@@ -3125,16 +3118,16 @@ fn an_asking_the_moment_the_chat_is_had_is_heard() {
 #[test]
 fn asking_again_waits_on_the_same_thread() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-ask-again");
+    let scratch = support::Scratch::new("bot-ask-again");
     set_up_for_two(&scratch);
     // Without a watcher, so it never hears the asking.
     let (mut first, firsts) = a_window(&scratch);
-    dispatch::dispatch(&mut first, Command::RemoteConnect);
+    dispatch::dispatch(&mut first, Command::BotConnect);
     until(&mut first, &firsts, "the first to connect", |app| {
-        app.remote_state_for_test() == obelus_remote::State::Connected
+        app.bot_state_for_test() == obelus_bot::State::Connected
     });
     let (mut second, seconds) = a_window(&scratch);
-    dispatch::dispatch(&mut second, Command::RemoteConnect);
+    dispatch::dispatch(&mut second, Command::BotConnect);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
     while second.note() != Some("Another window would not let Slack go") {
         assert!(
@@ -3146,15 +3139,15 @@ fn asking_again_waits_on_the_same_thread() {
         }
         support::lay_out(&mut second, 76, 24);
     }
-    dispatch::dispatch(&mut second, Command::RemoteConnect);
+    dispatch::dispatch(&mut second, Command::BotConnect);
     assert_eq!(
         second.waiters_for_test(),
         1,
         "asking again set another thread waiting"
     );
-    dispatch::dispatch(&mut first, Command::RemoteDisconnect);
+    dispatch::dispatch(&mut first, Command::BotDisconnect);
     until(&mut second, &seconds, "the second to have it", |app| {
-        app.holds_the_remote_for_test()
+        app.holds_the_bot_for_test()
     });
 }
 
@@ -3168,16 +3161,16 @@ fn asking_again_waits_on_the_same_thread() {
 #[test]
 fn a_clock_from_an_asking_taken_back_gives_up_on_nothing() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-old-clock");
+    let scratch = support::Scratch::new("bot-old-clock");
     set_up_for_two(&scratch);
     // Without a watcher, so it never hears the asking.
     let (mut first, firsts) = a_window(&scratch);
-    dispatch::dispatch(&mut first, Command::RemoteConnect);
+    dispatch::dispatch(&mut first, Command::BotConnect);
     until(&mut first, &firsts, "the first to connect", |app| {
-        app.remote_state_for_test() == obelus_remote::State::Connected
+        app.bot_state_for_test() == obelus_bot::State::Connected
     });
     let (mut second, seconds) = a_window(&scratch);
-    dispatch::dispatch(&mut second, Command::RemoteConnect);
+    dispatch::dispatch(&mut second, Command::BotConnect);
     // The clock's word, caught on its way rather than heard.
     let ran_out = loop {
         match seconds.recv_timeout(std::time::Duration::from_secs(15)) {
@@ -3186,8 +3179,8 @@ fn a_clock_from_an_asking_taken_back_gives_up_on_nothing() {
             Err(_) => panic!("the clock never ran out"),
         }
     };
-    dispatch::dispatch(&mut second, Command::RemoteDisconnect);
-    dispatch::dispatch(&mut second, Command::RemoteConnect);
+    dispatch::dispatch(&mut second, Command::BotDisconnect);
+    dispatch::dispatch(&mut second, Command::BotConnect);
     second.handle(ran_out);
     assert_ne!(
         second.note(),
@@ -3195,7 +3188,7 @@ fn a_clock_from_an_asking_taken_back_gives_up_on_nothing() {
         "the new asking was given up on by the old clock"
     );
     assert!(
-        second.offers(Command::RemoteDisconnect),
+        second.offers(Command::BotDisconnect),
         "the new asking is not going on"
     );
 }
@@ -3208,7 +3201,7 @@ fn a_clock_from_an_asking_taken_back_gives_up_on_nothing() {
 #[test]
 fn a_window_set_to_no_chat_lets_go_of_it() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-set-off");
+    let scratch = support::Scratch::new("bot-set-off");
     set_up_for_two(&scratch);
     // The first with a settings file of its own, so that setting its chat
     // to nothing leaves the second's alone.
@@ -3217,9 +3210,9 @@ fn a_window_set_to_no_chat_lets_go_of_it() {
     first.config_file_for_test(scratch.join("first.toml"));
     let firsts = support::drive(&mut first);
     support::lay_out(&mut first, 66, 20);
-    dispatch::dispatch(&mut first, Command::RemoteConnect);
+    dispatch::dispatch(&mut first, Command::BotConnect);
     until(&mut first, &firsts, "the first to connect", |app| {
-        app.remote_state_for_test() == obelus_remote::State::Connected
+        app.bot_state_for_test() == obelus_bot::State::Connected
     });
     dispatch::dispatch(&mut first, Command::ConfigOpen);
     support::press(&mut first, KeyCode::Tab);
@@ -3228,16 +3221,12 @@ fn a_window_set_to_no_chat_lets_go_of_it() {
     support::press(&mut first, KeyCode::Enter);
     support::type_text(&mut first, "Off");
     support::press(&mut first, KeyCode::Enter);
-    assert_eq!(
-        first.config().remote,
-        None,
-        "the chat was not set to nothing"
-    );
+    assert_eq!(first.config().chat, None, "the chat was not set to nothing");
     support::lay_out(&mut first, 66, 20);
     let (mut second, _seconds) = a_window(&scratch);
-    dispatch::dispatch(&mut second, Command::RemoteConnect);
+    dispatch::dispatch(&mut second, Command::BotConnect);
     assert!(
-        second.holds_the_remote_for_test(),
+        second.holds_the_bot_for_test(),
         "the second had to ask a window with no chat"
     );
 }
@@ -3251,16 +3240,16 @@ fn a_window_set_to_no_chat_lets_go_of_it() {
 #[test]
 fn an_asking_taken_back_after_giving_up_stays_taken_back() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-take-back-again");
+    let scratch = support::Scratch::new("bot-take-back-again");
     set_up_for_two(&scratch);
     // Without a watcher, so it never hears the asking.
     let (mut first, firsts) = a_window(&scratch);
-    dispatch::dispatch(&mut first, Command::RemoteConnect);
+    dispatch::dispatch(&mut first, Command::BotConnect);
     until(&mut first, &firsts, "the first to connect", |app| {
-        app.remote_state_for_test() == obelus_remote::State::Connected
+        app.bot_state_for_test() == obelus_bot::State::Connected
     });
     let (mut second, seconds) = a_window(&scratch);
-    dispatch::dispatch(&mut second, Command::RemoteConnect);
+    dispatch::dispatch(&mut second, Command::BotConnect);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
     while second.note() != Some("Another window would not let Slack go") {
         assert!(
@@ -3272,9 +3261,9 @@ fn an_asking_taken_back_after_giving_up_stays_taken_back() {
         }
         support::lay_out(&mut second, 76, 24);
     }
-    dispatch::dispatch(&mut second, Command::RemoteConnect);
-    dispatch::dispatch(&mut second, Command::RemoteDisconnect);
-    dispatch::dispatch(&mut first, Command::RemoteDisconnect);
+    dispatch::dispatch(&mut second, Command::BotConnect);
+    dispatch::dispatch(&mut second, Command::BotDisconnect);
+    dispatch::dispatch(&mut first, Command::BotDisconnect);
     for _ in 0..20 {
         if let Ok(event) = seconds.recv_timeout(std::time::Duration::from_millis(30)) {
             second.handle(event);
@@ -3282,7 +3271,7 @@ fn an_asking_taken_back_after_giving_up_stays_taken_back() {
         support::lay_out(&mut second, 76, 24);
     }
     assert!(
-        !second.holds_the_remote_for_test(),
+        !second.holds_the_bot_for_test(),
         "a window took the chat after being told to stop asking"
     );
 }
@@ -3310,21 +3299,21 @@ fn settle(app: &mut App, events: &std::sync::mpsc::Receiver<Event>) {
 /// A window with no file open -- the welcome screen -- set to Slack with
 /// both tokens kept and connected to the fake.
 fn connected_on_nothing(scratch: &support::Scratch) -> (App, std::sync::mpsc::Receiver<Event>) {
-    obelus_remote::platform::connect_for_test(fake_connect);
+    obelus_bot::platform::connect_for_test(fake_connect);
     *FAKED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-    std::fs::write(scratch.join("config.toml"), "remote = \"slack\"\n").expect("the settings");
-    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
-    obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    std::fs::write(scratch.join("config.toml"), "chat = \"slack\"\n").expect("the settings");
+    obelus_bot::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_bot::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
     let mut app = App::new(Vec::new());
     app.config_file_for_test(scratch.join("config.toml"));
     let events = support::drive(&mut app);
     support::lay_out(&mut app, 76, 24);
-    dispatch::dispatch(&mut app, Command::RemoteConnect);
+    dispatch::dispatch(&mut app, Command::BotConnect);
     // And the fake's sink kept, which it does after saying it is connected.
     until(&mut app, &events, "the connection", |app| {
-        app.remote_state_for_test() == obelus_remote::State::Connected
+        app.bot_state_for_test() == obelus_bot::State::Connected
             && FAKED
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -3345,7 +3334,7 @@ fn connected_on_nothing(scratch: &support::Scratch) -> (App, std::sync::mpsc::Re
 #[test]
 fn the_chat_is_marked_on_every_status_row() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-every-row");
+    let scratch = support::Scratch::new("bot-every-row");
     let (mut app, _events) = connected_on_nothing(&scratch);
     // A key, to take away what connecting said: with words on it, the row
     // is the words' and not the welcome screen's.
@@ -3359,7 +3348,7 @@ fn the_chat_is_marked_on_every_status_row() {
     assert!(line.contains("● Slack"), "the notes' row: {line}");
     drop(app);
 
-    let scratch = support::Scratch::new("remote-every-row-chat");
+    let scratch = support::Scratch::new("bot-every-row-chat");
     let (mut app, _events, _log) = paired_with_an_agent(&scratch);
     dispatch::dispatch(&mut app, Command::ConversationNew);
     assert!(app.chat().is_some(), "no conversation on screen");
@@ -3383,11 +3372,11 @@ fn the_chat_is_marked_on_every_status_row() {
 #[test]
 fn a_chat_that_goes_wrong_says_why_once() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-says-why");
+    let scratch = support::Scratch::new("bot-says-why");
     let (mut app, events) = connected_on_nothing(&scratch);
     let unreachable = || {
-        the_platform().send(obelus_remote::Event::connection(
-            obelus_remote::State::Unreachable,
+        the_platform().send(obelus_bot::Event::connection(
+            obelus_bot::State::Unreachable,
             Some("dns error".to_string()),
         ))
     };
@@ -3406,8 +3395,8 @@ fn a_chat_that_goes_wrong_says_why_once() {
     assert_eq!(app.note(), None, "said again for the same thing");
     assert!(status_row(&mut app).contains("✕ Slack"));
 
-    let _ = the_platform().send(obelus_remote::Event::connection(
-        obelus_remote::State::Declined,
+    let _ = the_platform().send(obelus_bot::Event::connection(
+        obelus_bot::State::Declined,
         Some("the app has no long connection".to_string()),
     ));
     until(&mut app, &events, "the second words", |app| {
@@ -3418,8 +3407,8 @@ fn a_chat_that_goes_wrong_says_why_once() {
     support::press(&mut app, KeyCode::Tab);
     support::press(&mut app, KeyCode::Tab);
     assert!(
-        app.settings().expect("the settings").on_remote(),
-        "not on the remote page"
+        app.settings().expect("the settings").on_bot(),
+        "not on the chat page"
     );
     let dump = support::render(&mut app, 76, 24);
     assert!(dump.contains("the app has no long connection"), "{dump}");
@@ -3433,15 +3422,15 @@ fn a_chat_that_goes_wrong_says_why_once() {
 #[test]
 fn a_chat_with_something_untold_says_what() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-untold");
-    obelus_remote::platform::connect_for_test(fake_connect);
-    std::fs::write(scratch.join("config.toml"), "remote = \"slack\"\n").expect("the settings");
-    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    let scratch = support::Scratch::new("bot-untold");
+    obelus_bot::platform::connect_for_test(fake_connect);
+    std::fs::write(scratch.join("config.toml"), "chat = \"slack\"\n").expect("the settings");
+    obelus_bot::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
     let mut app = App::new(Vec::new());
     app.config_file_for_test(scratch.join("config.toml"));
     let events = support::drive(&mut app);
     support::lay_out(&mut app, 76, 24);
-    dispatch::dispatch(&mut app, Command::RemoteConnect);
+    dispatch::dispatch(&mut app, Command::BotConnect);
     until(&mut app, &events, "the words", |app| {
         app.note() == Some("Not connected to Slack: no Bot token is set")
     });
@@ -3459,7 +3448,7 @@ fn a_chat_with_something_untold_says_what() {
 #[test]
 fn the_chat_goes_with_a_window_to_another_worktree() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-worktree");
+    let scratch = support::Scratch::new("bot-worktree");
     let git = |directory: &std::path::Path, arguments: &[&str]| {
         let outcome = support::git()
             .arg("-C")
@@ -3492,21 +3481,21 @@ fn the_chat_goes_with_a_window_to_another_worktree() {
         ],
     );
 
-    obelus_remote::platform::connect_for_test(fake_connect);
+    obelus_bot::platform::connect_for_test(fake_connect);
     *FAKED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-    std::fs::write(scratch.join("config.toml"), "remote = \"slack\"\n").expect("the settings");
-    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
-    obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    std::fs::write(scratch.join("config.toml"), "chat = \"slack\"\n").expect("the settings");
+    obelus_bot::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_bot::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
     let mut app = App::new(Vec::new());
     app.config_file_for_test(scratch.join("config.toml"));
     app.working_directory_for_test(main);
     let (sender, events) = obelus_app::event::channel();
     app.start(sender);
-    dispatch::dispatch(&mut app, Command::RemoteConnect);
+    dispatch::dispatch(&mut app, Command::BotConnect);
     until(&mut app, &events, "the connection", |app| {
-        app.remote_state_for_test() == obelus_remote::State::Connected
+        app.bot_state_for_test() == obelus_bot::State::Connected
     });
 
     dispatch::dispatch(&mut app, Command::WorktreeList);
@@ -3529,8 +3518,7 @@ fn the_chat_goes_with_a_window_to_another_worktree() {
         "the window did not go to feature"
     );
     until(&mut app, &events, "the connection again", |app| {
-        app.holds_the_remote_for_test()
-            && app.remote_state_for_test() == obelus_remote::State::Connected
+        app.holds_the_bot_for_test() && app.bot_state_for_test() == obelus_bot::State::Connected
     });
 }
 
@@ -3542,26 +3530,26 @@ fn the_chat_goes_with_a_window_to_another_worktree() {
 #[test]
 fn the_chat_comes_back_once_a_closed_project_is_chosen_again() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-closed");
+    let scratch = support::Scratch::new("bot-closed");
     let project = scratch.join("project");
     std::fs::create_dir_all(&project).expect("the project");
     std::fs::write(project.join("file.rs"), "fn main() {}\n").expect("a file");
 
-    obelus_remote::platform::connect_for_test(fake_connect);
+    obelus_bot::platform::connect_for_test(fake_connect);
     *FAKED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-    std::fs::write(scratch.join("config.toml"), "remote = \"slack\"\n").expect("the settings");
-    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
-    obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    std::fs::write(scratch.join("config.toml"), "chat = \"slack\"\n").expect("the settings");
+    obelus_bot::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_bot::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
     let mut app = App::new(Vec::new());
     app.config_file_for_test(scratch.join("config.toml"));
     app.working_directory_for_test(project.clone());
     let (sender, events) = obelus_app::event::channel();
     app.start(sender);
-    dispatch::dispatch(&mut app, Command::RemoteConnect);
+    dispatch::dispatch(&mut app, Command::BotConnect);
     until(&mut app, &events, "the connection", |app| {
-        app.remote_state_for_test() == obelus_remote::State::Connected
+        app.bot_state_for_test() == obelus_bot::State::Connected
     });
 
     dispatch::dispatch(&mut app, Command::ProjectClose);
@@ -3574,8 +3562,7 @@ fn the_chat_comes_back_once_a_closed_project_is_chosen_again() {
     support::press(&mut app, KeyCode::Enter);
     assert!(app.has_a_project(), "it is still asking which project");
     until(&mut app, &events, "the connection again", |app| {
-        app.holds_the_remote_for_test()
-            && app.remote_state_for_test() == obelus_remote::State::Connected
+        app.holds_the_bot_for_test() && app.bot_state_for_test() == obelus_bot::State::Connected
     });
 }
 
@@ -3587,8 +3574,8 @@ fn both_said_until(
     second: &mut App,
     seconds: &std::sync::mpsc::Receiver<Event>,
     what: &str,
-    done: impl Fn(&[obelus_remote::model::Out]) -> bool,
-) -> Vec<obelus_remote::model::Out> {
+    done: impl Fn(&[obelus_bot::model::Out]) -> bool,
+) -> Vec<obelus_bot::model::Out> {
     let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
     let mut said = Vec::new();
     loop {
@@ -3649,9 +3636,9 @@ fn the_first_with_the_chat(
 ) {
     set_up_for_two(scratch);
     let (mut first, firsts) = a_window_on(scratch, "one", &scratch.join("one.log"));
-    dispatch::dispatch(&mut first, Command::RemoteConnect);
+    dispatch::dispatch(&mut first, Command::BotConnect);
     until(&mut first, &firsts, "the first to connect", |app| {
-        app.remote_state_for_test() == obelus_remote::State::Connected
+        app.bot_state_for_test() == obelus_bot::State::Connected
     });
     // Started after the first has the chat, so that its first frame reads
     // the door the first wrote: a window with no watcher hears nothing
@@ -3664,8 +3651,8 @@ fn the_first_with_the_chat(
         &seconds,
         "the second to be heard through the first",
         |_, second| {
-            !second.holds_the_remote_for_test()
-                && second.remote_state_for_test() == obelus_remote::State::Connected
+            !second.holds_the_bot_for_test()
+                && second.bot_state_for_test() == obelus_bot::State::Connected
         },
     );
     ((first, firsts), (second, seconds))
@@ -3685,7 +3672,7 @@ fn the_first_with_the_chat(
 #[test]
 fn a_window_without_the_chat_is_heard_in_it_through_the_one_with_it() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-relayed");
+    let scratch = support::Scratch::new("bot-relayed");
     let ((mut first, firsts), (mut second, seconds)) = the_first_with_the_chat(&scratch);
     // Its key read by nobody else on the machine: anybody with it is heard
     // in the chat as the bot.
@@ -3722,25 +3709,25 @@ fn a_window_without_the_chat_is_heard_in_it_through_the_one_with_it() {
         "the second's conversation to ask for a thread",
         |said| {
             said.iter()
-                .any(|out| matches!(out, obelus_remote::model::Out::Open { .. }))
+                .any(|out| matches!(out, obelus_bot::model::Out::Open { .. }))
         },
     );
     let asked = said
         .iter()
         .find_map(|out| match out {
-            obelus_remote::model::Out::Open { asked, .. } => Some(*asked),
+            obelus_bot::model::Out::Open { asked, .. } => Some(*asked),
             _ => None,
         })
         .expect("a thread asked for");
-    let _ = the_platform().send(obelus_remote::Event::Opened {
+    let _ = the_platform().send(obelus_bot::Event::Opened {
         asked,
         thread: "T2".to_string(),
         link: None,
     });
-    let _ = the_platform().send(obelus_remote::Event::Heard {
+    let _ = the_platform().send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Thread("T2".to_string()),
+        at: obelus_bot::model::Where::Thread("T2".to_string()),
         text: "what is in here".to_string(),
     });
     let log = scratch.join("two.log");
@@ -3776,7 +3763,7 @@ fn a_window_without_the_chat_is_heard_in_it_through_the_one_with_it() {
 #[test]
 fn a_thread_begun_in_the_chat_goes_to_the_project_chosen() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-which");
+    let scratch = support::Scratch::new("bot-which");
     let ((mut first, firsts), (mut second, seconds)) = the_first_with_the_chat(&scratch);
     // A thread of the first window's, written down after the second has
     // read the table.
@@ -3790,17 +3777,17 @@ fn a_thread_begun_in_the_chat_goes_to_the_project_chosen() {
         "the first's conversation to ask for a thread",
         |said| {
             said.iter()
-                .any(|out| matches!(out, obelus_remote::model::Out::Open { .. }))
+                .any(|out| matches!(out, obelus_bot::model::Out::Open { .. }))
         },
     );
     let asked = said
         .iter()
         .find_map(|out| match out {
-            obelus_remote::model::Out::Open { asked, .. } => Some(*asked),
+            obelus_bot::model::Out::Open { asked, .. } => Some(*asked),
             _ => None,
         })
         .expect("a thread asked for");
-    let _ = the_platform().send(obelus_remote::Event::Opened {
+    let _ = the_platform().send(obelus_bot::Event::Opened {
         asked,
         thread: "T1".to_string(),
         link: None,
@@ -3826,10 +3813,10 @@ fn a_thread_begun_in_the_chat_goes_to_the_project_chosen() {
         "the second to say where it is",
         |first, _| first.windows_placed_for_test() == 1,
     );
-    let _ = the_platform().send(obelus_remote::Event::Heard {
+    let _ = the_platform().send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        at: obelus_bot::model::Where::Fresh("F1".to_string()),
         text: "what is in here".to_string(),
     });
     let said = both_said_until(
@@ -3848,10 +3835,10 @@ fn a_thread_begun_in_the_chat_goes_to_the_project_chosen() {
         .collect();
     assert_eq!(names, ["one", "two"], "{question:#?}");
 
-    let _ = the_platform().send(obelus_remote::Event::Heard {
+    let _ = the_platform().send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Thread("F1".to_string()),
+        at: obelus_bot::model::Where::Thread("F1".to_string()),
         text: "hello?".to_string(),
     });
     both_said_until(
@@ -3911,7 +3898,7 @@ fn a_thread_begun_in_the_chat_goes_to_the_project_chosen() {
 #[test]
 fn a_chat_its_window_did_not_let_go_of_is_taken_up() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-relayed-taken-over");
+    let scratch = support::Scratch::new("bot-relayed-taken-over");
     let ((first, _firsts), (mut second, seconds)) = the_first_with_the_chat(&scratch);
     drop(first);
     until(
@@ -3919,8 +3906,7 @@ fn a_chat_its_window_did_not_let_go_of_is_taken_up() {
         &seconds,
         "the second to take the chat up",
         |app| {
-            app.holds_the_remote_for_test()
-                && app.remote_state_for_test() == obelus_remote::State::Connected
+            app.holds_the_bot_for_test() && app.bot_state_for_test() == obelus_bot::State::Connected
         },
     );
 }
@@ -3934,9 +3920,9 @@ fn a_chat_its_window_did_not_let_go_of_is_taken_up() {
 #[test]
 fn a_chat_let_go_of_is_not_taken_up() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-relayed-given-up");
+    let scratch = support::Scratch::new("bot-relayed-given-up");
     let ((mut first, _firsts), (mut second, seconds)) = the_first_with_the_chat(&scratch);
-    dispatch::dispatch(&mut first, Command::RemoteDisconnect);
+    dispatch::dispatch(&mut first, Command::BotDisconnect);
     until(
         &mut second,
         &seconds,
@@ -3945,7 +3931,7 @@ fn a_chat_let_go_of_is_not_taken_up() {
     );
     settle(&mut second, &seconds);
     assert!(
-        !second.holds_the_remote_for_test(),
+        !second.holds_the_bot_for_test(),
         "the second took up a chat the reader let go of"
     );
 }
@@ -3961,7 +3947,7 @@ fn a_chat_let_go_of_is_not_taken_up() {
 #[test]
 fn a_chat_handed_on_is_heard_through_the_window_it_went_to() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-handed-on");
+    let scratch = support::Scratch::new("bot-handed-on");
     set_up_for_two(&scratch);
     // Each with a watcher of its own: the first hears the asking, and the
     // third hears where the chat went.
@@ -3974,9 +3960,9 @@ fn a_chat_handed_on_is_heard_through_the_window_it_went_to() {
         (app, events)
     };
     let (mut first, firsts) = started(&scratch);
-    dispatch::dispatch(&mut first, Command::RemoteConnect);
+    dispatch::dispatch(&mut first, Command::BotConnect);
     until(&mut first, &firsts, "the first to connect", |app| {
-        app.remote_state_for_test() == obelus_remote::State::Connected
+        app.bot_state_for_test() == obelus_bot::State::Connected
     });
     let (mut third, thirds) = started(&scratch);
     both_until(
@@ -3990,9 +3976,9 @@ fn a_chat_handed_on_is_heard_through_the_window_it_went_to() {
         },
     );
     let (mut second, seconds) = a_window(&scratch);
-    dispatch::dispatch(&mut second, Command::RemoteConnect);
+    dispatch::dispatch(&mut second, Command::BotConnect);
     until(&mut first, &firsts, "the first to let go", |app| {
-        !app.holds_the_remote_for_test()
+        !app.holds_the_bot_for_test()
     });
     // The third hears the chat was handed on before the second has it, so
     // the door it reads then is nobody's: it is the door's file moving that
@@ -4004,12 +3990,11 @@ fn a_chat_handed_on_is_heard_through_the_window_it_went_to() {
         |app| app.joined_for_test().is_none(),
     );
     assert!(
-        !third.holds_the_remote_for_test(),
+        !third.holds_the_bot_for_test(),
         "the third took up a chat that was handed on"
     );
     until(&mut second, &seconds, "the second to connect", |app| {
-        app.holds_the_remote_for_test()
-            && app.remote_state_for_test() == obelus_remote::State::Connected
+        app.holds_the_bot_for_test() && app.bot_state_for_test() == obelus_bot::State::Connected
     });
     both_until(
         &mut second,
@@ -4020,11 +4005,11 @@ fn a_chat_handed_on_is_heard_through_the_window_it_went_to() {
         |second, third| {
             second.door_for_test().is_some()
                 && third.joined_for_test() == second.door_for_test()
-                && third.remote_state_for_test() == obelus_remote::State::Connected
+                && third.bot_state_for_test() == obelus_bot::State::Connected
         },
     );
-    assert!(second.holds_the_remote_for_test());
-    assert!(!third.holds_the_remote_for_test());
+    assert!(second.holds_the_bot_for_test());
+    assert!(!third.holds_the_bot_for_test());
 }
 
 /// A table of threads that will not read is not written over: the window
@@ -4036,7 +4021,7 @@ fn a_chat_handed_on_is_heard_through_the_window_it_went_to() {
 #[test]
 fn a_table_of_threads_that_will_not_read_is_not_written_over() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-table-unread");
+    let scratch = support::Scratch::new("bot-table-unread");
     let (mut app, events, log) = paired_with_an_agent(&scratch);
     let table = obelus_logging::state_directory()
         .expect("a state directory")
@@ -4049,24 +4034,24 @@ fn a_table_of_threads_that_will_not_read_is_not_written_over() {
     app.open_a_session_for_test();
     let said = said_until(&mut app, &events, "a thread to be asked for", |said| {
         said.iter()
-            .any(|out| matches!(out, obelus_remote::model::Out::Open { .. }))
+            .any(|out| matches!(out, obelus_bot::model::Out::Open { .. }))
     });
     let asked = said
         .iter()
         .find_map(|out| match out {
-            obelus_remote::model::Out::Open { asked, .. } => Some(*asked),
+            obelus_bot::model::Out::Open { asked, .. } => Some(*asked),
             _ => None,
         })
         .expect("a thread asked for");
-    let _ = the_platform().send(obelus_remote::Event::Opened {
+    let _ = the_platform().send(obelus_bot::Event::Opened {
         asked,
         thread: "T1".to_string(),
         link: None,
     });
-    let _ = the_platform().send(obelus_remote::Event::Heard {
+    let _ = the_platform().send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Thread("T1".to_string()),
+        at: obelus_bot::model::Where::Thread("T1".to_string()),
         text: "what is in here".to_string(),
     });
     until(
@@ -4091,7 +4076,7 @@ fn a_table_of_threads_that_will_not_read_is_not_written_over() {
 #[test]
 fn of_the_windows_left_one_takes_the_chat_up() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-one-takes-up");
+    let scratch = support::Scratch::new("bot-one-takes-up");
     set_up_for_two(&scratch);
     // With watchers, so that the one that does not take it up hears where
     // it went.
@@ -4104,9 +4089,9 @@ fn of_the_windows_left_one_takes_the_chat_up() {
         (app, events)
     };
     let (mut first, firsts) = started(&scratch);
-    dispatch::dispatch(&mut first, Command::RemoteConnect);
+    dispatch::dispatch(&mut first, Command::BotConnect);
     until(&mut first, &firsts, "the first to connect", |app| {
-        app.remote_state_for_test() == obelus_remote::State::Connected
+        app.bot_state_for_test() == obelus_bot::State::Connected
     });
     let (mut second, seconds) = started(&scratch);
     let (mut third, thirds) = started(&scratch);
@@ -4115,7 +4100,7 @@ fn of_the_windows_left_one_takes_the_chat_up() {
     let until = std::time::Instant::now() + std::time::Duration::from_secs(15);
     while [&second, &third]
         .iter()
-        .any(|app| app.remote_state_for_test() != obelus_remote::State::Connected)
+        .any(|app| app.bot_state_for_test() != obelus_bot::State::Connected)
     {
         assert!(
             std::time::Instant::now() < until,
@@ -4145,7 +4130,7 @@ fn of_the_windows_left_one_takes_the_chat_up() {
         "one to take it up and the other to join it",
         |second, third| {
             let joined = |holder: &App, other: &App| {
-                holder.holds_the_remote_for_test()
+                holder.holds_the_bot_for_test()
                     && holder.door_for_test().is_some()
                     && other.joined_for_test() == holder.door_for_test()
             };
@@ -4153,7 +4138,7 @@ fn of_the_windows_left_one_takes_the_chat_up() {
         },
     );
     assert!(
-        !(second.holds_the_remote_for_test() && third.holds_the_remote_for_test()),
+        !(second.holds_the_bot_for_test() && third.holds_the_bot_for_test()),
         "two windows hold the chat"
     );
 }
@@ -4168,7 +4153,7 @@ fn of_the_windows_left_one_takes_the_chat_up() {
 #[test]
 fn a_cancel_goes_to_the_window_whose_question_it_is() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-relayed-cancel");
+    let scratch = support::Scratch::new("bot-relayed-cancel");
     let ((mut first, firsts), (mut second, seconds)) = the_first_with_the_chat(&scratch);
     both_until(
         &mut first,
@@ -4178,10 +4163,10 @@ fn a_cancel_goes_to_the_window_whose_question_it_is() {
         "the second to say where it is",
         |first, _| first.windows_placed_for_test() == 1,
     );
-    let _ = the_platform().send(obelus_remote::Event::Heard {
+    let _ = the_platform().send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        at: obelus_bot::model::Where::Fresh("F1".to_string()),
         text: "/ask".to_string(),
     });
     let said = both_said_until(
@@ -4209,7 +4194,7 @@ fn a_cancel_goes_to_the_window_whose_question_it_is() {
         |said| !asks_in(said, "F1").is_empty(),
     );
     let how = asks_in(&said, "F1")[0].0;
-    let _ = the_platform().send(obelus_remote::Event::Cancelled {
+    let _ = the_platform().send(obelus_bot::Event::Cancelled {
         from: "U1".to_string(),
         asked: how,
     });
@@ -4224,7 +4209,7 @@ fn a_cancel_goes_to_the_window_whose_question_it_is() {
     assert!(
         said.iter().any(|out| matches!(
             out,
-            obelus_remote::model::Out::Settle { asked, said, .. }
+            obelus_bot::model::Out::Settle { asked, said, .. }
                 if *asked == how && said.contains("Not answered")
         )),
         "the card was not closed: {said:#?}"
@@ -4239,7 +4224,7 @@ fn a_cancel_goes_to_the_window_whose_question_it_is() {
 #[test]
 fn cancel_on_which_project_begins_nothing() {
     let _turn = turn();
-    let scratch = support::Scratch::new("remote-which-cancel");
+    let scratch = support::Scratch::new("bot-which-cancel");
     let ((mut first, firsts), (mut second, seconds)) = the_first_with_the_chat(&scratch);
     both_until(
         &mut first,
@@ -4249,10 +4234,10 @@ fn cancel_on_which_project_begins_nothing() {
         "the second to say where it is",
         |first, _| first.windows_placed_for_test() == 1,
     );
-    let _ = the_platform().send(obelus_remote::Event::Heard {
+    let _ = the_platform().send(obelus_bot::Event::Heard {
         from: "U1".to_string(),
         room: "C1".to_string(),
-        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        at: obelus_bot::model::Where::Fresh("F1".to_string()),
         text: "what is in here".to_string(),
     });
     let said = both_said_until(
@@ -4264,7 +4249,7 @@ fn cancel_on_which_project_begins_nothing() {
         |said| !asks_in(said, "F1").is_empty(),
     );
     let which = asks_in(&said, "F1")[0].0;
-    let _ = the_platform().send(obelus_remote::Event::Cancelled {
+    let _ = the_platform().send(obelus_bot::Event::Cancelled {
         from: "U1".to_string(),
         asked: which,
     });
@@ -4278,7 +4263,7 @@ fn cancel_on_which_project_begins_nothing() {
             said.iter().any(|out| {
                 matches!(
                     out,
-                    obelus_remote::model::Out::Settle { asked, said, .. }
+                    obelus_bot::model::Out::Settle { asked, said, .. }
                         if *asked == which && said.contains("Not answered")
                 )
             })
@@ -4310,22 +4295,22 @@ fn what_a_thread_was_not_told_is_said_in_its_conversation() {
     app.open_a_session_for_test();
     let said = said_until(&mut app, &events, "a thread to be asked for", |said| {
         said.iter()
-            .any(|out| matches!(out, obelus_remote::model::Out::Open { .. }))
+            .any(|out| matches!(out, obelus_bot::model::Out::Open { .. }))
     });
     let asked = said
         .iter()
         .find_map(|out| match out {
-            obelus_remote::model::Out::Open { asked, .. } => Some(*asked),
+            obelus_bot::model::Out::Open { asked, .. } => Some(*asked),
             _ => None,
         })
         .expect("asked for");
     let platform = the_platform();
-    let _ = platform.send(obelus_remote::Event::Opened {
+    let _ = platform.send(obelus_bot::Event::Opened {
         asked,
         thread: "T-unsaid".to_string(),
         link: None,
     });
-    let _ = platform.send(obelus_remote::Event::Unsaid {
+    let _ = platform.send(obelus_bot::Event::Unsaid {
         thread: "T-unsaid".to_string(),
         why: Some("message too long".to_string()),
     });
@@ -4340,7 +4325,7 @@ fn what_a_thread_was_not_told_is_said_in_its_conversation() {
         dump.contains("Slack would not take a message for this conversation: message too long"),
         "the conversation said nothing:\n{dump}"
     );
-    let _ = platform.send(obelus_remote::Event::Unsaid {
+    let _ = platform.send(obelus_bot::Event::Unsaid {
         thread: "T-unsaid".to_string(),
         why: None,
     });
@@ -4381,22 +4366,22 @@ fn what_a_joined_window_s_thread_was_not_told_is_said_there() {
         "the second's conversation to ask for a thread",
         |said| {
             said.iter()
-                .any(|out| matches!(out, obelus_remote::model::Out::Open { .. }))
+                .any(|out| matches!(out, obelus_bot::model::Out::Open { .. }))
         },
     );
     let asked = said
         .iter()
         .find_map(|out| match out {
-            obelus_remote::model::Out::Open { asked, .. } => Some(*asked),
+            obelus_bot::model::Out::Open { asked, .. } => Some(*asked),
             _ => None,
         })
         .expect("a thread asked for");
-    let _ = the_platform().send(obelus_remote::Event::Opened {
+    let _ = the_platform().send(obelus_bot::Event::Opened {
         asked,
         thread: "T2".to_string(),
         link: None,
     });
-    let _ = the_platform().send(obelus_remote::Event::Unsaid {
+    let _ = the_platform().send(obelus_bot::Event::Unsaid {
         thread: "T2".to_string(),
         why: Some("msg_too_long".to_string()),
     });

@@ -27,7 +27,7 @@ use obelus_keymap::Context;
 /// answer for it -- what it covers, where it is drawn, whether a key reaches
 /// past it -- which is the one thing eight hand-kept predicates could not
 /// do.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Layer {
     /// How much code is here.
     Counts,

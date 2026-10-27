@@ -778,7 +778,7 @@ pub struct ChatView<'a> {
     /// The chat this window can be reached from, and where it stands: the
     /// same mark a file's row carries, since this row is the one a reader
     /// working from a chat is most often on.
-    remote: Option<(&'static str, obelus_remote::State)>,
+    bot: Option<(&'static str, obelus_bot::State)>,
     /// How many of the region's rows, from its top, the reader can see:
     /// a list on the status bar is drawn over the foot of a conversation
     /// rather than taking room from it, and the bar stops above the list,
@@ -814,7 +814,7 @@ impl<'a> ChatView<'a> {
             note_is_wrong: app.note_is_wrong(),
             usage: app.agent_usage(),
             tasks: app.background_tasks(),
-            remote: app.remote(),
+            bot: app.bot(),
             seen: None,
         })
     }
@@ -1715,7 +1715,7 @@ impl ChatView<'_> {
         let room = over.saturating_sub(used.as_ref().map_or(0, |(said, _)| text_width(said) + GAP));
         // The chat's mark beside the memory, and for the same reason: it
         // stays put while the settings scroll.
-        let room = match self.remote_on_row(room) {
+        let room = match self.bot_on_row(room) {
             Some((mark, ink, wide)) => {
                 let at = 1 + room - text_width(&mark);
                 if let Ok(offset) = u16::try_from(at) {
@@ -2029,7 +2029,7 @@ impl ChatView<'_> {
             .and_then(used_up)
             .filter(|(said, _)| over > text_width(said) + GAP + LEAST_SETTINGS);
         let room = over.saturating_sub(used.as_ref().map_or(0, |(said, _)| text_width(said) + GAP));
-        room - self.remote_on_row(room).map_or(0, |(_, _, wide)| wide)
+        room - self.bot_on_row(room).map_or(0, |(_, _, wide)| wide)
     }
 
     /// The chat's mark, where what the row has left holds it and still
@@ -2037,8 +2037,8 @@ impl ChatView<'_> {
     ///
     /// Asked by the drawing and by `status_room` both, so the settings and
     /// a press on them are measured against the row that is there.
-    fn remote_on_row(&self, room: usize) -> Option<(String, Color, usize)> {
-        let (mark, ink) = crate::status::remote_mark(self.remote, self.phase, self.theme)?;
+    fn bot_on_row(&self, room: usize) -> Option<(String, Color, usize)> {
+        let (mark, ink) = crate::status::bot_mark(self.bot, self.phase, self.theme)?;
         let wide = text_width(&mark) + GAP;
         (room > wide + LEAST_SETTINGS).then_some((mark, ink, wide))
     }
@@ -2495,7 +2495,7 @@ mod tests {
             note_is_wrong: false,
             usage: None,
             tasks: None,
-            remote: None,
+            bot: None,
             seen: Some(seen),
         };
         let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -2541,7 +2541,7 @@ mod tests {
             note_is_wrong: false,
             usage: None,
             tasks: Some((2, 0)),
-            remote: None,
+            bot: None,
             seen: None,
         };
         let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -2587,7 +2587,7 @@ mod tests {
             note_is_wrong: false,
             usage: None,
             tasks: None,
-            remote: None,
+            bot: None,
             seen: None,
         };
         let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -2638,7 +2638,7 @@ mod tests {
                 note_is_wrong: false,
                 usage: None,
                 tasks: None,
-                remote: None,
+                bot: None,
                 seen: None,
             };
             let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -2819,7 +2819,7 @@ mod tests {
                 note_is_wrong: false,
                 usage: None,
                 tasks: None,
-                remote: None,
+                bot: None,
                 seen: None,
             };
             let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -2894,7 +2894,7 @@ mod tests {
                 note_is_wrong: false,
                 usage: None,
                 tasks: None,
-                remote: None,
+                bot: None,
                 seen: None,
             };
             let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -2957,7 +2957,7 @@ mod tests {
                 note_is_wrong: false,
                 usage: None,
                 tasks: None,
-                remote: None,
+                bot: None,
                 seen: None,
             };
             let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -3067,7 +3067,7 @@ mod caret {
             note_is_wrong: false,
             usage: None,
             tasks: None,
-            remote: None,
+            bot: None,
             seen: None,
         }
     }
@@ -3166,7 +3166,7 @@ mod caret {
                         note_is_wrong: false,
                         usage: None,
                         tasks: None,
-                        remote: None,
+                        bot: None,
                         seen: None,
                     };
                     let mut cells = ratatui::buffer::Buffer::empty(area);

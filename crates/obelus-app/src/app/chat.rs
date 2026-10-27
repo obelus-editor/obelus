@@ -4,12 +4,12 @@
 use super::*;
 
 pub mod agents;
+pub(super) mod bot;
 pub(super) mod conversations;
 pub(super) mod headless;
 pub(super) mod mirroring;
 pub(super) mod opening;
 pub(super) mod relaying;
-pub(super) mod remote;
 pub mod talking;
 
 /// The agent this window talks to: the connection, the tools Obelus offers it

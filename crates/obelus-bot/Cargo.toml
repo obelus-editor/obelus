@@ -1,5 +1,5 @@
 [package]
-name = "obelus-remote"
+name = "obelus-bot"
 description = "Working on notes from a chat: the platforms, their secrets, and the relay"
 version.workspace = true
 edition.workspace = true

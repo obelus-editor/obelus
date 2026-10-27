@@ -1,8 +1,10 @@
-//! The picture under the page: reading it, and where it lands.
+//! The picture under the page: decoding it, and where it lands.
 //!
-//! The application says which file and how it is fitted; what that comes
-//! to on a window of some size is worked out here, because the window is
-//! the one that knows its size and a terminal has no pixels to put it in.
+//! The application says which file and how it is fitted, and hands over
+//! what the file holds -- read where the theme is, which may be another
+//! machine (`obelus_front::Hanging`); what that comes to on a window of
+//! some size is worked out here, because the window is the one that knows
+//! its size and a terminal has no pixels to put it in.
 //!
 //! **A picture is decoded on a thread of its own and only the newest is
 //! drawn.** A photograph takes tens of milliseconds to decode, which is not
@@ -31,7 +33,8 @@ use std::{
     time::SystemTime,
 };
 
-use obelus_theme::wallpaper::{Anchor, Edge, Fit, Wallpaper};
+use obelus_front::Hanging;
+use obelus_theme::wallpaper::{Anchor, Edge, Fit};
 
 /// A picture decoded, with what the theme said about laying it.
 pub(crate) struct Hung {
@@ -126,10 +129,10 @@ impl Decoder {
     /// a page blinking with each save is worse than a picture a moment
     /// late. The none is numbered below the picture asked for after it, so
     /// the window takes both, in that order.
-    pub(crate) fn ask(self: &Arc<Self>, wallpaper: Option<Wallpaper>) -> Option<u64> {
+    pub(crate) fn ask(self: &Arc<Self>, wallpaper: Option<Hanging>) -> Option<u64> {
         let picture = wallpaper
             .as_ref()
-            .map(|wallpaper| (wallpaper.file.clone(), wallpaper.modified));
+            .map(|hanging| (hanging.wallpaper.file.clone(), hanging.wallpaper.modified));
         let mut asked = self.asked.lock().unwrap_or_else(PoisonError::into_inner);
         let another = wallpaper.is_none() || *asked != picture;
         *asked = picture;
@@ -191,7 +194,7 @@ impl Decoder {
     }
 
     /// The next picture to decode, waiting for one.
-    fn next(&self) -> (u64, Wallpaper) {
+    fn next(&self) -> (u64, Hanging) {
         let mut waiting = self.waiting.lock().unwrap_or_else(PoisonError::into_inner);
         loop {
             if let Some(next) = waiting.take() {
@@ -207,17 +210,17 @@ impl Decoder {
 
 /// The one picture waiting to be decoded, if any.
 #[derive(Debug, Default)]
-struct Waiting(Option<(u64, Wallpaper)>);
+struct Waiting(Option<(u64, Hanging)>);
 
 impl Waiting {
     /// An ask, which takes the place of whatever was waiting -- and an ask
     /// for none leaves nothing waiting.
-    fn ask(&mut self, number: u64, wallpaper: Option<Wallpaper>) {
+    fn ask(&mut self, number: u64, wallpaper: Option<Hanging>) {
         self.0 = wallpaper.map(|wallpaper| (number, wallpaper));
     }
 
     /// What is waiting, which is then no longer.
-    const fn take(&mut self) -> Option<(u64, Wallpaper)> {
+    const fn take(&mut self) -> Option<(u64, Hanging)> {
         self.0.take()
     }
 }
@@ -227,8 +230,9 @@ impl Waiting {
 /// Nothing where it will not decode, with a word in the log: the theme's
 /// file named a picture that was there when it was read -- that much is
 /// marked on the file -- so what is left to go wrong is the picture itself.
-fn decoded(wallpaper: &Wallpaper, screen: [u32; 2]) -> Option<Hung> {
-    let pixels = match obelus_theme::wallpaper::decode(&wallpaper.file) {
+fn decoded(hanging: &Hanging, screen: [u32; 2]) -> Option<Hung> {
+    let wallpaper = &hanging.wallpaper;
+    let pixels = match obelus_theme::wallpaper::decode_bytes(&hanging.bytes) {
         Ok(pixels) => pixels,
         Err(error) => {
             tracing::warn!(%error, file = %wallpaper.file.display(), "a wallpaper that would not decode");
@@ -404,13 +408,17 @@ mod tests {
 
     use super::{LARGEST, laid, wanted};
 
-    fn somewhere(name: &str) -> obelus_theme::Wallpaper {
-        obelus_theme::Wallpaper {
-            file: std::env::temp_dir().join(format!("obelus-no-such-picture-{name}.jpg")),
-            opacity: 80,
-            fit: Fit::Cover,
-            anchor: Anchor::default(),
-            modified: None,
+    /// A picture whose bytes are not one, which decodes to nothing at once.
+    fn somewhere(name: &str) -> obelus_front::Hanging {
+        obelus_front::Hanging {
+            wallpaper: obelus_theme::Wallpaper {
+                file: std::env::temp_dir().join(format!("obelus-no-such-picture-{name}.jpg")),
+                opacity: 80,
+                fit: Fit::Cover,
+                anchor: Anchor::default(),
+                modified: None,
+            },
+            bytes: Vec::new(),
         }
     }
 
@@ -513,7 +521,7 @@ mod tests {
         );
 
         let mut quieter = somewhere("before");
-        quieter.opacity = 95;
+        quieter.wallpaper.opacity = 95;
         assert_eq!(
             decoder.ask(Some(quieter)),
             None,

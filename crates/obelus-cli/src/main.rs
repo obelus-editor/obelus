@@ -11,6 +11,10 @@ use anyhow::Result;
 use clap::Parser;
 use obelus_app::{app, event, startup};
 
+mod client;
+mod serve;
+mod server;
+
 /// A code editor in a terminal, with the agent built in.
 #[derive(Parser)]
 // Named rather than left to the package: clap takes the name from
@@ -25,9 +29,9 @@ struct Arguments {
     paths: Vec<PathBuf>,
 
     /// Connect to the chat set in the settings once started, as
-    /// `connect-remote` does.
+    /// `connect-to-chat` does.
     #[arg(long)]
-    connect_remote: bool,
+    connect_to_chat: bool,
 
     /// Draw nothing and take over no terminal: an Obelus there only to be
     /// reached from the chat set in the settings, which it connects to.
@@ -37,6 +41,35 @@ struct Arguments {
     /// stderr where it has to stop on its own.
     #[arg(long)]
     headless: bool,
+
+    /// Draw nothing here, and let in windows on other machines: `ob
+    /// --connect` and `obg --connect`, each with an Obelus of its own on
+    /// this one.
+    ///
+    /// Listens on every address, port 7787, unless told where. Prints the
+    /// key a window gets in with, which is made the first time and kept.
+    #[arg(long)]
+    server: bool,
+
+    /// Where `--server` listens, as an address and a port.
+    #[arg(long, requires = "server")]
+    listen: Option<std::net::SocketAddr>,
+
+    /// Draw an Obelus on another machine, started there with `ob --server`:
+    /// the machine, and its port where it is not the server's own. What to
+    /// open is said the way it is to `ob`, as it is named on that machine.
+    #[arg(long, value_name = "MACHINE[:PORT]")]
+    connect: Option<String>,
+
+    /// The key that server printed, needed the first time and kept after.
+    /// `OBELUS_KEY` says it as well.
+    #[arg(long, requires = "connect")]
+    key: Option<String>,
+
+    /// One window's Obelus, which `--server` starts and nothing else does:
+    /// its standard input and output are the window's connection.
+    #[arg(long, hide = true)]
+    serve_one: bool,
 }
 
 fn main() -> Result<ExitCode> {
@@ -49,7 +82,16 @@ fn main() -> Result<ExitCode> {
     // log as well.
     obelus_logging::catch_panics();
 
-    // Before anything about the terminal, which it does not touch.
+    // Before anything about the terminal, which neither of these touches.
+    if arguments.server {
+        let at = arguments
+            .listen
+            .unwrap_or_else(|| std::net::SocketAddr::from(([0, 0, 0, 0], server::PORT)));
+        return server::serve(at);
+    }
+    if arguments.serve_one {
+        return serve::one();
+    }
     if arguments.headless {
         let outcome = app::run_headless(&arguments.paths, env!("OBELUS_BUILD"));
         // Which says why on stderr, where a headless Obelus logs: an `Err`
@@ -63,11 +105,35 @@ fn main() -> Result<ExitCode> {
 
     // Opened before the terminal is taken over, so a bad path reports
     // itself on a normal screen rather than flashing past inside an
-    // alternate one. The order inside is argued where it lives.
-    let mut app = startup::start(&arguments.paths, env!("OBELUS_BUILD"))?;
-    if arguments.connect_remote {
-        app.remote_at_start();
-    }
+    // alternate one. The order inside is argued where it lives. An Obelus on
+    // another machine has nothing to open here: what is named is that
+    // machine's.
+    let start = match arguments.connect {
+        Some(at) => {
+            let key = obelus_front::client::key(
+                &at,
+                arguments.key.or_else(|| std::env::var("OBELUS_KEY").ok()),
+            )?;
+            let path = arguments
+                .paths
+                .first()
+                .map(|path| path.display().to_string());
+            client::Start::Afar(obelus_front::client::Afar {
+                at,
+                key,
+                path,
+                build: env!("OBELUS_BUILD"),
+                window: None,
+            })
+        }
+        None => {
+            let mut app = startup::start(&arguments.paths, env!("OBELUS_BUILD"))?;
+            if arguments.connect_to_chat {
+                app.bot_at_start();
+            }
+            client::Start::Here(Box::new(app))
+        }
+    };
     // The terminal's half of the line `startup::start` just wrote: what was
     // drawing Obelus, which a log read a week later has no other way to
     // learn, and which is the first thing to suspect when a key or a colour
@@ -82,7 +148,7 @@ fn main() -> Result<ExitCode> {
     // asking means writing an escape sequence to the terminal and reading
     // what it writes back. A terminal that answers can draw an agent's own
     // mark on the agents page; one that does not gets a glyph.
-    let images = obelus_ui::image::Images::detect(obelus_app::event::remote());
+    let images = obelus_ui::image::Images::detect(obelus_app::event::over_a_network());
     // And whether `ctrl+enter` will arrive as itself, which the box offers
     // only where it will.
     let ctrl_enter = ctrl_enter_arrives();
@@ -105,45 +171,47 @@ fn main() -> Result<ExitCode> {
     // everywhere). That is a real loss for a reader, and it buys the one
     // thing a reader does with a mouse far more often.
     let mouse = enable_mouse();
-    if !mouse {
-        // The one thing that goes wrong here and stays wrong: the wheel
-        // keeps sending arrow keys, and nothing on screen would otherwise
-        // say why.
-        app.amiss("The wheel will not be reported, so it moves the cursor");
-    }
     // And what the terminal pastes, wrapped so it can be told from typing.
-    enable_paste(&mut app);
+    let paste = enable_paste();
     // And the keyboard, for the one key Obelus needs that a terminal
     // cannot otherwise report.
     let keyboard = enable_keyboard();
-    app.use_images(images);
-    app.ctrl_enter_arrives(ctrl_enter);
 
     // The channel is made here, and the thread that fills it with what the
     // terminal says is started here, because that thread is the terminal's
     // half of the loop and this file is where the terminal lives. The loop
     // itself is handed the far end and does not know which front end it is
-    // waiting on.
+    // waiting on -- nor whether the Obelus it draws is this machine's.
     let (sender, events) = event::channel();
     event::spawn_terminal_reader(sender.clone());
-    app.start(sender);
-
-    let outcome = app::run(&mut terminal, &mut app, events);
+    let pictures = images
+        .of_the_terminal()
+        .and_then(|(protocol, cell)| Some((client::pictures(protocol)?, cell)));
+    let mut kept = None;
+    let outcome = client::drawing(
+        start,
+        &mut terminal,
+        client::Terminal {
+            mouse,
+            paste,
+            ctrl_enter,
+            images: Some(images),
+            front: obelus_front::link::Front::Terminal {
+                pictures,
+                keyboard: ctrl_enter,
+            },
+            events: &events,
+            nudge: &sender,
+        },
+        &mut kept,
+    );
     startup::finish(&outcome);
 
-    if mouse {
-        let _ = crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture);
-    }
-    let _ = crossterm::execute!(std::io::stdout(), crossterm::event::DisableBracketedPaste);
-    if keyboard {
-        let _ = crossterm::execute!(
-            std::io::stdout(),
-            crossterm::event::PopKeyboardEnhancementFlags
-        );
-    }
-    if let Err(error) = ratatui::try_restore() {
-        tracing::warn!(%error, "the terminal was not put back");
-    }
+    give_back(mouse, keyboard);
+    // After the terminal is the reader's again: letting go of an Obelus
+    // stops its language servers, and each is given a moment to write
+    // what it keeps.
+    drop(kept);
 
     outcome.map(|()| ExitCode::SUCCESS)
 }
@@ -230,12 +298,13 @@ fn enable_keyboard() -> bool {
 ///
 /// Best effort, like the mouse: a terminal that does not know the mode says
 /// nothing and pastes the old way.
-fn enable_paste(app: &mut obelus_app::app::App) {
-    if let Err(error) =
-        crossterm::execute!(std::io::stdout(), crossterm::event::EnableBracketedPaste)
-    {
-        tracing::warn!(%error, "no bracketed paste");
-        app.amiss("Pasting will arrive a character at a time, not in one go");
+fn enable_paste() -> bool {
+    match crossterm::execute!(std::io::stdout(), crossterm::event::EnableBracketedPaste) {
+        Ok(()) => true,
+        Err(error) => {
+            tracing::warn!(%error, "no bracketed paste");
+            false
+        }
     }
 }
 
@@ -251,5 +320,23 @@ fn enable_mouse() -> bool {
             tracing::warn!(%error, "no mouse reporting");
             false
         }
+    }
+}
+
+/// Hands the terminal back the way it was found: the mouse, pasting and
+/// the keyboard as they were, and the screen it had.
+fn give_back(mouse: bool, keyboard: bool) {
+    if mouse {
+        let _ = crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture);
+    }
+    let _ = crossterm::execute!(std::io::stdout(), crossterm::event::DisableBracketedPaste);
+    if keyboard {
+        let _ = crossterm::execute!(
+            std::io::stdout(),
+            crossterm::event::PopKeyboardEnhancementFlags
+        );
+    }
+    if let Err(error) = ratatui::try_restore() {
+        tracing::warn!(%error, "the terminal was not put back");
     }
 }

@@ -17,14 +17,39 @@ workspace = true
 
 [dependencies]
 obelus-app.workspace = true
+obelus-config.workspace = true
+# What `ob --serve-one` says to a window on another machine, and how a
+# window there gets in.
+obelus-front.workspace = true
+obelus-keymap.workspace = true
 obelus-logging.workspace = true
+obelus-private.workspace = true
+# The grace a window that went is waited for, as one sleep on the runtime
+# the waiting is done on -- see `server::went`.
+obelus-runtime.workspace = true
+tokio.workspace = true
 obelus-ui.workspace = true
+obelus-wire.workspace = true
+getrandom.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 crossterm.workspace = true
 image.workspace = true
 ratatui.workspace = true
+# How a terminal at the other end draws a picture, as ratatui names it.
+ratatui-image.workspace = true
 tracing.workspace = true
+
+# Who this process is, which names the directory a file dropped on a window
+# at the other end is kept in -- see `serve::dropped_in`.
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+[dev-dependencies]
+crossterm.workspace = true
+obelus-front.workspace = true
+obelus-private.workspace = true
+obelus-wire.workspace = true
 
 # What `cargo deb` and `cargo generate-rpm` make of this crate, which is the
 # `.deb` and the `.rpm` on a release. The package is named for the program

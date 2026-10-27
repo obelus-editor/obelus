@@ -29,286 +29,83 @@
 //! own buffer holds there -- the page saying to itself what the diff did
 //! not.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicU16, AtomicU32, Ordering},
-    mpsc::Sender,
-};
+use std::sync::{Arc, mpsc::Sender};
 
 use obelus_app::app::Caret;
 use obelus_component::layers::Layer;
-use obelus_ui::{
-    image::Palette,
-    shapes::{About, Bar, Joined, Pair, Side, Stroke},
-};
+use obelus_front::Closed;
+pub(crate) use obelus_front::{Cells, Marking, Measured};
+use obelus_ui::shapes::{About, Bar, Joined, Pair, Side, Stroke};
 use ratatui::{
-    backend::{Backend, ClearType, WindowSize},
     buffer::Cell,
-    layout::{Position, Rect, Size},
+    layout::{Position, Rect},
     style::Color,
 };
 
-/// One change to what is on the screen.
+/// A picture under the page as the window holds it: which asking it
+/// answers, and the pixels or that there are none.
 ///
-/// Ordered, and applied in the order it was sent: a cell written and then
-/// written again is two updates, and the second one is the one that counts.
-#[derive(Debug)]
-pub(crate) enum Update {
-    /// A cell, at a place.
-    Cell {
-        /// The column.
-        x: u16,
-        /// The row.
-        y: u16,
-        /// What is in it.
-        cell: Box<Cell>,
-    },
-    /// Everything, gone.
-    Cleared,
-    /// Where the caret is, or that it has been put away.
-    Caret(Option<Position>),
-    /// The end of a frame: what came before it is what to draw.
-    Frame,
-    /// How big the text is, in points.
-    ///
-    /// A setting, so it arrives the way every other change to what is on
-    /// the screen arrives: down this channel, in order, from the thread
-    /// that knows what the settings say.
-    TextSize(usize),
-    /// Which faces to draw in, tried in this order.
-    ///
-    /// The same journey as the size, for the same reason.
-    Fonts(Vec<String>),
-    /// Whether things arrive where they are going, or are simply there.
-    ///
-    /// The same journey again: a setting the application cannot act on
-    /// because there is nothing in a terminal for it to mean.
-    Animates(bool),
-    /// Whether the title bar holds a tab for each open document.
-    ///
-    /// The same journey again, and the window's alone: it decides how tall
-    /// the bar is, and so where the page starts.
-    BarTabs(bool),
-    /// How much of the picture under the page shows, as a share of what
-    /// the theme lets through.
-    ///
-    /// The same journey again, and apart from the picture: a share is not
-    /// a picture to read and decode again.
-    PictureStrength(usize),
-    /// What the page is drawn on, for the margin round the grid.
-    ///
-    /// The same journey once more. A terminal never asks: there the cells
-    /// are the whole of the screen, and it is only a window that has a
-    /// strip outside them to put a colour in.
-    Ground(Color),
-    /// Which two colours mean the reader has hold of something: a run of
-    /// characters, and the row their keys are on.
-    ///
-    /// The same journey again, and a fact about the theme rather than
-    /// about a frame. What the window does with it is find the runs in
-    /// the cells and draw them as something better than a square -- see
-    /// `paint::holdings`.
-    Holding {
-        /// Behind the characters the reader is holding.
-        held: Color,
-        /// Behind the row their keys are on.
-        row: Color,
-    },
-    /// The picture under the page, decoded, or that there is none.
-    ///
-    /// The same journey as the ground, a moment later: the application
-    /// says which file, and it arrives here once a thread has read it --
-    /// see `wallpaper`.
-    Wallpaper {
-        /// Which asking this answers. Only one newer than the last drawn
-        /// is drawn, so two pictures decoded in the wrong order cannot put
-        /// the older one back.
-        number: u64,
-        /// The picture, or nothing.
-        hung: Option<Arc<crate::wallpaper::Hung>>,
-    },
-    /// What is open, for the tabs along the title bar -- see
-    /// `Drawing::tabs`.
-    ///
-    /// Down the same wire as the frame it changed with, so the tab that
-    /// says what is being read changes with the page that shows it.
-    Tabs(Vec<obelus_app::app::Tab>),
-    /// The theme is changing, and what is on the screen is in the one it
-    /// was in -- see `Drawing::recoloured`.
-    ///
-    /// The same journey as the ground, and ahead of it: what the window
-    /// keeps of the screen going is drawn in the ground it has until then.
-    Recoloured,
-    /// What colour the caret is drawn in.
-    ///
-    /// The theme's, said with the ground and at the same moments, and kept
-    /// by the page rather than the window because it is the page that is
-    /// kept when the theme goes -- see `Drawing::recoloured` -- and the
-    /// screen going is in the caret it had.
-    CaretInk(Color),
-    /// What shape the caret is, and whose it is.
-    ///
-    /// Which is a fact about the frame it arrives with -- both depend on
-    /// where the caret ended up -- so it travels with the frame rather
-    /// than beside it.
-    CaretIs {
-        /// A bar or a block.
-        shape: Caret,
-        /// What it belongs to, and `None` for the document's own.
-        whose: Option<Layer>,
-        /// Whether a character typed now goes into any text.
-        typing: bool,
-    },
-    /// A mark the window may be asked to draw, and what it is drawn from.
-    ///
-    /// Once per mark and palette: the drawing is a few kilobytes of text,
-    /// and what it becomes -- pixels at the size a cell is now -- is the
-    /// window's business.
-    Mark {
-        /// Which agent's mark it is.
-        id: String,
-        /// Whether this is the one the reader is on, which is drawn on
-        /// another colour.
-        focused: bool,
-        /// The drawing itself.
-        svg: String,
-        /// The colours to ink it in.
-        palette: Palette,
-    },
-    /// And that mark goes here, in the frame being laid out.
-    Marked {
-        /// Which mark.
-        id: String,
-        /// In which of its two colourings.
-        focused: bool,
-        /// The column its left edge sits at.
-        x: u16,
-        /// And the row.
-        y: u16,
-    },
-    /// These cells are a key in a cap of its own.
-    ///
-    /// What a terminal draws as a run of cells a shade off the page, and
-    /// a window draws as the shape it is. The colours travel with it
-    /// because the window has no theme -- see `obelus_ui::shapes`.
-    Capped {
-        /// The key in it, which is what says the cap is still about these
-        /// cells.
-        keys: String,
-        /// Which cells it is.
-        area: Rect,
-        /// The ground the key sits on.
-        cap: Color,
-        /// What is behind the cap, which shows through its corners.
-        page: Color,
-        /// What draws its outline.
-        edge: Color,
-    },
-    /// A column that is a bar, and how much of it is the mark.
-    ///
-    /// What a terminal draws as a column of full blocks with a brighter
-    /// run in it, and a window draws as the shape it is. No colours: they
-    /// are the foreground and background of those very cells, which the
-    /// view has already written -- see `obelus_ui::shapes`.
-    Barred {
-        /// Where it is, how much of it is the mark and where the mark
-        /// starts.
-        bar: Bar,
-    },
-    /// A run of rows in a one-cell column that is marked.
-    ///
-    /// What a terminal draws as half a block per row, and a window draws
-    /// as one shape however many rows it covers. No colours, for a bar's
-    /// reason -- see `obelus_ui::shapes`.
-    Stroked {
-        /// Which rows, which edge of the column, and what it is about.
-        stroke: Stroke,
-    },
-    /// A cell that is a switch, and which way it is set.
-    Ticked {
-        /// Which cell it is.
-        area: Rect,
-        /// Whether it is set.
-        on: bool,
-    },
-    /// A cell that is the mark that turns while something is happening.
-    Spun {
-        /// Which cell it is.
-        area: Rect,
-    },
-    /// A row that is a line between two things.
-    Ruled {
-        /// Which cells it is.
-        area: Rect,
-    },
-    /// A row that begins something new, with no row between it and what
-    /// it is parted from.
-    Parted {
-        /// The run the line covers.
-        area: Rect,
-    },
-    /// Half of the pair of brackets the cursor is on or inside.
-    Paired {
-        /// Which cell it is.
-        area: Rect,
-        /// Which pair, as numbers to compare -- see
-        /// `obelus_ui::shapes::Pair`.
-        pair: Pair,
-    },
-    /// What a search found, in the page that is its preview.
-    Found {
-        /// Which cells, on one row.
-        area: Rect,
-        /// Which match, as numbers to compare -- see
-        /// `obelus_ui::shapes::Found`.
-        found: obelus_ui::shapes::Found,
-    },
-    /// The words of a link, on one row.
-    Linked {
-        /// Which cells they are.
-        area: Rect,
-    },
-    /// What an input method is still spelling, a cell or a character at a
-    /// time.
-    Spelled {
-        /// Which cells they are.
-        area: Rect,
-    },
-    /// The mark with the light on it, and the two colours it runs between.
-    Sheened {
-        /// Which cells it is.
-        area: Rect,
-        /// What it rests at.
-        from: Color,
-        /// And what the light carries it to.
-        to: Color,
-    },
-    /// A band of rows, and which row of its list it starts at.
-    Scrolled {
-        /// Which cells it is.
-        area: Rect,
-        /// The row of the list its first row holds.
-        top: i64,
-        /// The bar beside it, where it has one.
-        bar: Option<Bar>,
-    },
-    /// What is behind a pane, in the frame being laid out.
-    ///
-    /// The whole region, not a diff: it is said in the moment between the
-    /// page being drawn and the pane going over it, and what was there a
-    /// frame ago is exactly what it must not be -- see
-    /// `obelus_ui::shapes::Shapes::behind`.
-    Behind {
-        /// Which cells it is.
-        area: Rect,
-        /// Which edge it is joined to, which is also the side it arrives
-        /// from.
-        joined: Joined,
-        /// The pane's own colour, which is where the glass is.
-        ground: Color,
-        /// Row-major, `area.width` to a row.
-        cells: Vec<Cell>,
-    },
+/// Only one newer than the last drawn is drawn, so two pictures decoded in
+/// the wrong order cannot put the older one back.
+pub(crate) type Picture = (u64, Option<Arc<crate::wallpaper::Hung>>);
+
+/// One change to what is on the screen, as the window holds it: what Obelus
+/// said, with its picture decoded.
+pub(crate) type Update = obelus_front::Update<Picture>;
+
+/// The window's end of what Obelus says: the window's own channel, and the
+/// decoder that turns the bytes of a picture into one.
+pub(crate) struct Here {
+    frames: Sender<Update>,
+    wake: Arc<dyn Fn() + Send + Sync>,
+    decoder: Arc<crate::wallpaper::Decoder>,
+}
+
+impl Here {
+    /// What says to the window down `frames`, and wakes it with `wake`,
+    /// for a window that opened on `screen` -- as large as a picture fitted
+    /// to it is ever drawn.
+    pub(crate) fn new(
+        frames: Sender<Update>,
+        wake: Arc<dyn Fn() + Send + Sync>,
+        screen: [u32; 2],
+    ) -> Self {
+        let decoder = {
+            let (frames, wake) = (frames.clone(), Arc::clone(&wake));
+            crate::wallpaper::Decoder::new(screen, move |number, hung| {
+                if frames.send(Update::Picture((number, hung))).is_ok() {
+                    wake();
+                }
+            })
+        };
+        Self {
+            frames,
+            wake,
+            decoder,
+        }
+    }
+}
+
+impl obelus_front::Showing for Here {
+    fn show(&self, update: obelus_front::Update) -> Result<(), Closed> {
+        match update.apart() {
+            Ok(update) => self.frames.send(update).map_err(|_| Closed),
+            // The page lets go of its picture at once where it is not the
+            // one wanted -- see `Decoder::ask` -- and that none is numbered
+            // like any picture, so one still decoding cannot arrive after it.
+            Err(hanging) => match self.decoder.ask(hanging) {
+                Some(number) => self
+                    .frames
+                    .send(Update::Picture((number, None)))
+                    .map_err(|_| Closed),
+                None => Ok(()),
+            },
+        }
+    }
+
+    fn wake(&self) {
+        (self.wake)();
+    }
 }
 
 /// What a view said about the frame beyond the cells in it.
@@ -1136,29 +933,6 @@ impl Marked {
     }
 }
 
-/// The window's end of what a view says about marks.
-///
-/// Down the same channel as the cells, because a mark is part of the frame
-/// being laid out: one that arrived after the frame it belongs to would be
-/// a picture drawn over the screen that replaced it.
-#[derive(Clone)]
-pub(crate) struct Marking {
-    updates: Sender<Update>,
-}
-
-impl std::fmt::Debug for Marking {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("Marking")
-    }
-}
-
-impl Marking {
-    /// Says where a view's marks go.
-    pub(crate) const fn new(updates: Sender<Update>) -> Self {
-        Self { updates }
-    }
-}
-
 impl Capped {
     /// Whether the page still says what this cap was said about.
     ///
@@ -1202,413 +976,6 @@ impl Capped {
             said.push_str(text(self.area.x.saturating_add(at), self.area.y));
         }
         said.trim_end() == self.keys
-    }
-}
-
-impl obelus_ui::shapes::Shapes for Marking {
-    fn ticked(&self, area: Rect, on: bool) {
-        let _ = self.updates.send(Update::Ticked { area, on });
-    }
-
-    fn spun(&self, area: Rect) {
-        let _ = self.updates.send(Update::Spun { area });
-    }
-
-    fn scrolled(&self, area: Rect, top: i64, bar: Option<Bar>) {
-        let _ = self.updates.send(Update::Scrolled { area, top, bar });
-    }
-
-    fn barred(&self, bar: Bar) {
-        let _ = self.updates.send(Update::Barred { bar });
-    }
-
-    fn stroked(&self, stroke: Stroke) {
-        let _ = self.updates.send(Update::Stroked { stroke });
-    }
-
-    fn behind(&self, area: Rect, joined: Joined, ground: Color, cells: &[Cell]) {
-        let _ = self.updates.send(Update::Behind {
-            area,
-            joined,
-            ground,
-            cells: cells.to_vec(),
-        });
-    }
-
-    fn parted(&self, area: Rect) {
-        let _ = self.updates.send(Update::Parted { area });
-    }
-
-    fn sheened(&self, area: Rect, from: Color, to: Color) {
-        let _ = self.updates.send(Update::Sheened { area, from, to });
-    }
-
-    fn ruled(&self, area: Rect) {
-        let _ = self.updates.send(Update::Ruled { area });
-    }
-
-    fn linked(&self, area: Rect) {
-        let _ = self.updates.send(Update::Linked { area });
-    }
-
-    fn spelled(&self, area: Rect) {
-        let _ = self.updates.send(Update::Spelled { area });
-    }
-
-    fn paired(&self, area: Rect, pair: Pair) {
-        let _ = self.updates.send(Update::Paired { area, pair });
-    }
-
-    fn found(&self, area: Rect, found: obelus_ui::shapes::Found) {
-        let _ = self.updates.send(Update::Found { area, found });
-    }
-
-    fn capped(&self, keys: &str, area: Rect, cap: Color, page: Color, edge: Color) {
-        // No wake, the same as a mark's placement: this is said while a
-        // frame is being laid out, and the frame's own end wakes the
-        // window a moment later.
-        let _ = self.updates.send(Update::Capped {
-            keys: keys.to_string(),
-            area,
-            cap,
-            page,
-            edge,
-        });
-    }
-}
-
-impl obelus_ui::image::Marks for Marking {
-    fn carries(&self, id: &str, svg: &str, focused: bool, palette: Palette) {
-        let _ = self.updates.send(Update::Mark {
-            id: id.to_string(),
-            focused,
-            svg: svg.to_string(),
-            palette,
-        });
-    }
-
-    fn draws(&self, id: &str, focused: bool, x: u16, y: u16) {
-        // No wake, the same as the caret's shape: this is said while a
-        // frame is being laid out, and the frame's own end wakes the
-        // window a moment later.
-        let _ = self.updates.send(Update::Marked {
-            id: id.to_string(),
-            focused,
-            x,
-            y,
-        });
-    }
-}
-
-/// How the window is told the things only the application knows.
-///
-/// The other direction on the same wire: how big the text should be, and
-/// what shape the caret is. Neither is a cell, so the window takes them out
-/// of the queue before the page sees them -- but they go down the same
-/// channel as the cells, because they are about the same frame and
-/// anything else could arrive in the wrong order.
-#[derive(Clone)]
-pub(crate) struct Telling {
-    updates: Sender<Update>,
-    wake: Arc<dyn Fn() + Send + Sync>,
-    /// What decodes the picture under the page -- see `wallpaper`.
-    decoder: Arc<crate::wallpaper::Decoder>,
-}
-
-impl std::fmt::Debug for Telling {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("Telling")
-    }
-}
-
-impl Telling {
-    /// Says where to send what the application works out about the window,
-    /// and how large the screen it opened on is: as large as a picture
-    /// fitted to the window is ever drawn.
-    pub(crate) fn new(
-        updates: Sender<Update>,
-        wake: Arc<dyn Fn() + Send + Sync>,
-        screen: [u32; 2],
-    ) -> Self {
-        let decoder = {
-            let (updates, wake) = (updates.clone(), Arc::clone(&wake));
-            crate::wallpaper::Decoder::new(screen, move |number, hung| {
-                if updates.send(Update::Wallpaper { number, hung }).is_ok() {
-                    wake();
-                }
-            })
-        };
-        Self {
-            updates,
-            wake,
-            decoder,
-        }
-    }
-}
-
-impl obelus_app::app::Drawing for Telling {
-    fn text_size(&self, points: usize) {
-        // A window that has gone is a send that fails, and the application
-        // is about to find that out for itself on its next frame.
-        if self.updates.send(Update::TextSize(points)).is_ok() {
-            (self.wake)();
-        }
-    }
-
-    fn use_fonts(&self, names: &[String]) {
-        if self.updates.send(Update::Fonts(names.to_vec())).is_ok() {
-            (self.wake)();
-        }
-    }
-
-    fn drawn_on(&self, ground: Color) {
-        if self.updates.send(Update::Ground(ground)).is_ok() {
-            (self.wake)();
-        }
-    }
-
-    fn holding(&self, held: Color, row: Color) {
-        if self.updates.send(Update::Holding { held, row }).is_ok() {
-            (self.wake)();
-        }
-    }
-
-    fn animates(&self, on: bool) {
-        let _ = self.updates.send(Update::Animates(on));
-        (self.wake)();
-    }
-
-    fn bar_tabs(&self, on: bool) {
-        let _ = self.updates.send(Update::BarTabs(on));
-        (self.wake)();
-    }
-
-    fn picture_strength(&self, share: usize) {
-        if self.updates.send(Update::PictureStrength(share)).is_ok() {
-            (self.wake)();
-        }
-    }
-
-    fn hang(&self, wallpaper: Option<&obelus_theme::Wallpaper>) {
-        // The page lets go of its picture at once where it is not the one
-        // wanted -- see `Decoder::ask` -- and that none is numbered like
-        // any picture, so one still decoding cannot arrive after it.
-        if let Some(number) = self.decoder.ask(wallpaper.cloned())
-            && (self.updates.send(Update::Wallpaper { number, hung: None })).is_ok()
-        {
-            (self.wake)();
-        }
-    }
-
-    fn recoloured(&self) {
-        if self.updates.send(Update::Recoloured).is_ok() {
-            (self.wake)();
-        }
-    }
-
-    fn tabs(&self, tabs: &[obelus_app::app::Tab]) {
-        // No wake, the same as the caret's shape: said while a frame is
-        // being laid out, whose own end wakes the window.
-        let _ = self.updates.send(Update::Tabs(tabs.to_vec()));
-    }
-
-    fn caret_in(&self, colour: Color) {
-        if self.updates.send(Update::CaretInk(colour)).is_ok() {
-            (self.wake)();
-        }
-    }
-
-    fn caret_is(&self, caret: Caret, whose: Option<Layer>, typing: bool) {
-        // No wake: this arrives while a frame is being laid out, and the
-        // frame's own end wakes the window a moment later. Waking here as
-        // well would be a second wake for one screen.
-        let _ = self.updates.send(Update::CaretIs {
-            shape: caret,
-            whose,
-            typing,
-        });
-    }
-}
-
-/// The window is gone, so there is nowhere for a frame to go.
-///
-/// Which ends Obelus's loop, by the same route a terminal whose input thread
-/// died ends it: the error travels up out of `app::run` and the thread
-/// finishes.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Closed;
-
-impl std::fmt::Display for Closed {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("the window is gone")
-    }
-}
-
-impl std::error::Error for Closed {}
-
-/// How big the screen is, as both sides measure it.
-///
-/// Written by the window when it is resized and read by Obelus's loop on
-/// the next frame, which is a frame away rather than a lock away: a resize
-/// arrives as an event too, so the loop reads this immediately afterwards
-/// and never at a moment when nothing told it to look.
-#[derive(Debug, Default)]
-pub(crate) struct Measured {
-    columns: AtomicU16,
-    rows: AtomicU16,
-    /// The window, in pixels, packed as width in the high half and height
-    /// in the low one so that the two are read as one fact.
-    pixels: AtomicU32,
-}
-
-impl Measured {
-    /// Says how big the screen has become.
-    pub(crate) fn resized(&self, columns: u16, rows: u16, width: u32, height: u32) {
-        self.columns.store(columns, Ordering::Relaxed);
-        self.rows.store(rows, Ordering::Relaxed);
-        // Clamped rather than wrapped: a window wider than 65535 pixels is
-        // not a thing to be wrong about quietly.
-        let packed = (width.min(u32::from(u16::MAX)) << 16) | height.min(u32::from(u16::MAX));
-        self.pixels.store(packed, Ordering::Relaxed);
-    }
-
-    /// How many columns and rows there are room for.
-    fn size(&self) -> Size {
-        Size::new(
-            self.columns.load(Ordering::Relaxed),
-            self.rows.load(Ordering::Relaxed),
-        )
-    }
-
-    /// And how many pixels that is.
-    fn pixels(&self) -> Size {
-        let packed = self.pixels.load(Ordering::Relaxed);
-        // Both halves were clamped to a `u16` on the way in.
-        Size::new((packed >> 16) as u16, (packed & 0xffff) as u16)
-    }
-}
-
-/// Where Obelus's frames go.
-pub(crate) struct Cells {
-    updates: Sender<Update>,
-    /// What makes the window look. Sending alone does not: its loop is
-    /// asleep in the platform's own wait, and the one way to reach a thread
-    /// parked there is to post an event to it.
-    wake: Arc<dyn Fn() + Send + Sync>,
-    measured: Arc<Measured>,
-    caret: Position,
-    /// Whether the caret is being shown, so that moving it while it is put
-    /// away does not put it back.
-    shown: bool,
-}
-
-impl std::fmt::Debug for Cells {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("Cells")
-            .field("caret", &self.caret)
-            .field("shown", &self.shown)
-            .finish_non_exhaustive()
-    }
-}
-
-impl Cells {
-    /// The backend Obelus's loop draws into.
-    pub(crate) fn new(
-        updates: Sender<Update>,
-        wake: Arc<dyn Fn() + Send + Sync>,
-        measured: Arc<Measured>,
-    ) -> Self {
-        Self {
-            updates,
-            wake,
-            measured,
-            caret: Position::ORIGIN,
-            shown: false,
-        }
-    }
-
-    /// Puts one update on its way, or says the window has gone.
-    fn send(&self, update: Update) -> Result<(), Closed> {
-        self.updates.send(update).map_err(|_| Closed)
-    }
-}
-
-impl Backend for Cells {
-    type Error = Closed;
-
-    fn draw<'a, I>(&mut self, content: I) -> Result<(), Closed>
-    where
-        I: Iterator<Item = (u16, u16, &'a Cell)>,
-    {
-        for (x, y, cell) in content {
-            self.send(Update::Cell {
-                x,
-                y,
-                cell: Box::new(cell.clone()),
-            })?;
-        }
-        Ok(())
-    }
-
-    fn hide_cursor(&mut self) -> Result<(), Closed> {
-        self.shown = false;
-        self.send(Update::Caret(None))
-    }
-
-    fn show_cursor(&mut self) -> Result<(), Closed> {
-        self.shown = true;
-        self.send(Update::Caret(Some(self.caret)))
-    }
-
-    fn get_cursor_position(&mut self) -> Result<Position, Closed> {
-        Ok(self.caret)
-    }
-
-    fn set_cursor_position<P: Into<Position>>(&mut self, position: P) -> Result<(), Closed> {
-        self.caret = position.into();
-        match self.shown {
-            true => self.send(Update::Caret(Some(self.caret))),
-            // Where it will be when it comes back, which is what the
-            // terminal does with the same call: a caret that is put away is
-            // still somewhere.
-            false => Ok(()),
-        }
-    }
-
-    fn clear(&mut self) -> Result<(), Closed> {
-        self.send(Update::Cleared)
-    }
-
-    fn clear_region(&mut self, clear_type: ClearType) -> Result<(), Closed> {
-        match clear_type {
-            ClearType::All => self.clear(),
-            // The rest are a terminal's: they clear from the caret to
-            // somewhere, which only means anything where the caret is a
-            // place a stream of bytes has reached. Obelus draws a whole
-            // screen every frame and asks for none of them.
-            other => {
-                tracing::warn!(?other, "a window clears the whole screen or nothing");
-                Ok(())
-            }
-        }
-    }
-
-    fn size(&self) -> Result<Size, Closed> {
-        Ok(self.measured.size())
-    }
-
-    fn window_size(&mut self) -> Result<WindowSize, Closed> {
-        Ok(WindowSize {
-            columns_rows: self.measured.size(),
-            pixels: self.measured.pixels(),
-        })
-    }
-
-    fn flush(&mut self) -> Result<(), Closed> {
-        self.send(Update::Frame)?;
-        (self.wake)();
-        Ok(())
     }
 }
 
@@ -1968,7 +1335,7 @@ impl Page {
                 tracing::warn!("a hold's colours reached the page");
                 false
             }
-            Update::Wallpaper { .. } => {
+            Update::Picture(_) => {
                 tracing::warn!("a wallpaper reached the page");
                 false
             }
@@ -2135,7 +1502,8 @@ mod tests {
         let (updates, frames) = std::sync::mpsc::channel();
         let measured = Arc::new(Measured::default());
         measured.resized(4, 1, 40, 10);
-        let cells = Cells::new(updates, Arc::new(|| {}), Arc::clone(&measured));
+        let here = Arc::new(Here::new(updates, Arc::new(|| {}), [1920, 1080]));
+        let cells = Cells::new(here, Arc::clone(&measured));
         let mut terminal = ratatui::Terminal::new(cells).expect("a terminal");
         let mut page = Page::default();
         page.resized(4, 1);

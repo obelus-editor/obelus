@@ -1267,12 +1267,7 @@ impl App {
         // heard only while it has it. Not the project's, and not given up
         // with it.
         let chat = self.platform().is_some();
-        self.settle_a_watch(
-            REMOTE,
-            chat,
-            How::Directory,
-            crate::app::remote::remote_directory,
-        );
+        self.settle_a_watch(REMOTE, chat, How::Directory, crate::app::bot::bot_directory);
     }
 
     /// Takes or gives up one of them, so that what is watched matches what

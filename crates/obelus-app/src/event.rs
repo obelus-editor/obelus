@@ -283,9 +283,9 @@ pub enum Event {
     /// what that window was given to let it come forward.
     Summoned(Option<String>),
     /// Something about the chat this machine can be reached from.
-    Remote(obelus_remote::Event),
+    Bot(obelus_bot::Event),
     /// Something one connection to it said, by the connection's number.
-    Reached(u64, obelus_remote::Event),
+    BotReached(u64, obelus_bot::Event),
     /// The lock that makes this the window the chat talks to, come back
     /// from the window that had it, for the asking with this number.
     Held(u64, std::fs::File),
@@ -296,6 +296,13 @@ pub enum Event {
     /// The kernel would not take the lock at all for the thread waiting on
     /// it, for this asking: no waiting is going on any more.
     NotHeld(u64),
+    /// The machine of this name answers again, which the page saying it
+    /// went is waiting for.
+    Reachable(String),
+    /// Something the reader did came to nothing for a reason only the
+    /// front end knows -- a file dropped that could not go -- said on the
+    /// status row.
+    Amiss(String),
 }
 
 impl Event {
@@ -330,6 +337,8 @@ impl Event {
             Self::Spelling(..) => "Spelling",
             Self::Dropped(_) => "Dropped",
             Self::Tick => "Tick",
+            Self::Reachable(_) => "Reachable",
+            Self::Amiss(_) => "Amiss",
             Self::NotesSettled => "NotesSettled",
             Self::StoppedWriting(_) => "StoppedWriting",
             Self::SyntaxSettled => "SyntaxSettled",
@@ -355,8 +364,8 @@ impl Event {
             Self::PullRequestDiscussion { .. } => "PullRequestDiscussion",
             Self::PullRequestFile { .. } => "PullRequestFile",
             Self::Summoned(_) => "Summoned",
-            Self::Remote(_) => "Remote",
-            Self::Reached(..) => "Reached",
+            Self::Bot(_) => "Bot",
+            Self::BotReached(..) => "BotReached",
             Self::Held(..) => "Held",
             Self::NotLetGo(_) => "NotLetGo",
             Self::NotHeld(_) => "NotHeld",
@@ -390,14 +399,14 @@ from_worker! {
     obelus_themes::Event => Themes,
     obelus_lsp::Message => Lsp,
     obelus_mcp::Asked => Tools,
-    obelus_remote::Event => Remote,
+    obelus_bot::Event => Bot,
     Box<obelus_search::counts::Counted> => Counted,
     obelus_watch::Changed => Watched,
     obelus_terminal::Heard => Terminal,
 }
 
 /// What the pointer's button did.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Pointer {
     /// Moved with nothing held down.
     ///
@@ -554,8 +563,8 @@ pub fn stop_when_told(sender: Sender<Event>) {
 /// without ssh, a serial console, a container's exec). Those keep the
 /// animation, which is a wasted redraw and not a broken screen.
 #[must_use]
-pub fn remote() -> bool {
-    remote_by(|name| std::env::var_os(name))
+pub fn over_a_network() -> bool {
+    over_a_network_by(|name| std::env::var_os(name))
 }
 
 /// The same, asking `lookup` instead of the environment.
@@ -563,7 +572,7 @@ pub fn remote() -> bool {
 /// Split out so the rule can be tested: setting an environment variable is
 /// `unsafe` in this edition and a data race against every other thread in the
 /// test binary, which is a high price for four lines of logic.
-fn remote_by(mut lookup: impl FnMut(&str) -> Option<std::ffi::OsString>) -> bool {
+fn over_a_network_by(mut lookup: impl FnMut(&str) -> Option<std::ffi::OsString>) -> bool {
     ["SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"]
         .iter()
         // Set but empty counts as unset: a shell that exports a variable
@@ -597,8 +606,8 @@ impl Ticker {
     /// trips is not one.
     #[must_use]
     pub fn start(sender: Sender<Event>) -> Option<Self> {
-        if remote() {
-            tracing::info!("a remote session, so no animation");
+        if over_a_network() {
+            tracing::info!("a session over a network, so no animation");
             return None;
         }
         let beating = obelus_runtime::handle().spawn(async move {
@@ -718,23 +727,28 @@ mod tests {
 
     /// What decides whether the animation runs at all.
     #[test]
-    fn an_ssh_session_is_remote_and_an_empty_variable_says_nothing() {
-        assert!(!remote_by(|_| None), "a local session read as remote");
+    fn an_ssh_session_is_over_a_network_and_an_empty_variable_says_nothing() {
+        assert!(
+            !over_a_network_by(|_| None),
+            "a local session read as one over a network"
+        );
 
         for name in ["SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"] {
             assert!(
-                remote_by(|asked| (asked == name).then(|| OsString::from("10.0.0.1 1 10.0.0.2 22"))),
+                over_a_network_by(
+                    |asked| (asked == name).then(|| OsString::from("10.0.0.1 1 10.0.0.2 22"))
+                ),
                 "{name} did not count"
             );
             // Exported with no value, which several shells do.
             assert!(
-                !remote_by(|asked| (asked == name).then(OsString::new)),
+                !over_a_network_by(|asked| (asked == name).then(OsString::new)),
                 "{name} counted while empty"
             );
         }
 
         // A variable that is not one of the three says nothing either.
-        assert!(!remote_by(
+        assert!(!over_a_network_by(
             |asked| (asked == "TERM").then(|| OsString::from("foot"))
         ));
     }

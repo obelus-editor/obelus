@@ -37,6 +37,7 @@ private_interfaces = "deny"
 # member's manifest is a list of names and nothing else.
 obelus-agent = { path = "crates/obelus-agent" }
 obelus-app = { path = "crates/obelus-app" }
+obelus-bot = { path = "crates/obelus-bot" }
 obelus-buffer = { path = "crates/obelus-buffer" }
 obelus-claim = { path = "crates/obelus-claim" }
 obelus-cli = { path = "crates/obelus-cli" }
@@ -48,6 +49,7 @@ obelus-download = { path = "crates/obelus-download" }
 obelus-editing = { path = "crates/obelus-editing" }
 obelus-encoding = { path = "crates/obelus-encoding" }
 obelus-font = { path = "crates/obelus-font" }
+obelus-front = { path = "crates/obelus-front" }
 obelus-git = { path = "crates/obelus-git" }
 obelus-github = { path = "crates/obelus-github" }
 obelus-icons = { path = "crates/obelus-icons" }
@@ -57,9 +59,9 @@ obelus-logging = { path = "crates/obelus-logging" }
 obelus-lsp = { path = "crates/obelus-lsp" }
 obelus-markdown = { path = "crates/obelus-markdown" }
 obelus-mcp = { path = "crates/obelus-mcp" }
+obelus-private = { path = "crates/obelus-private" }
 obelus-program = { path = "crates/obelus-program" }
 obelus-reading = { path = "crates/obelus-reading" }
-obelus-remote = { path = "crates/obelus-remote" }
 obelus-row = { path = "crates/obelus-row" }
 obelus-runtime = { path = "crates/obelus-runtime" }
 obelus-search = { path = "crates/obelus-search" }
@@ -72,12 +74,15 @@ obelus-ui = { path = "crates/obelus-ui" }
 obelus-theme = { path = "crates/obelus-theme" }
 obelus-themes = { path = "crates/obelus-themes" }
 obelus-watch = { path = "crates/obelus-watch" }
+obelus-wire = { path = "crates/obelus-wire" }
 
 # 0.30 split the backends into separate crates (ratatui-crossterm and friends).
 # `crossterm_0_29` pins the backend to the same crossterm we depend on directly
 # below: the tree must contain exactly one crossterm, or `KeyEvent` is two
 # unrelated types and the mismatch surfaces as an unreadable trait error.
 ratatui = { version = "0.30", features = ["crossterm_0_29"] }
+# The types ratatui is made of, for `serde` on them alone.
+ratatui-core = "0.1"
 
 # Declared directly, not taken from ratatui's re-export, so the version this
 # crate compiles against is stated in one place next to the feature that pins
@@ -90,6 +95,9 @@ clap = { version = "4", features = ["derive"] }
 # with a lot of chances to get a JSON shape subtly wrong.
 lsp-types = "0.97"
 serde = { version = "1", features = ["derive"] }
+# The bytes between a window and the machine its project is on: compact, and
+# the same on every platform (`obelus-wire`).
+postcard = { version = "1.1", default-features = false, features = ["use-std"] }
 serde_json = "1"
 
 # Fuzzy matching. `nucleo-matcher` rather than `nucleo`: the latter adds a
@@ -316,6 +324,15 @@ reqwest = { version = "0.12", default-features = false, features = [
 # Checking an archive against the checksum the registry gave for it. Half the
 # registry's entries carry one; those get verified before anything is unpacked.
 sha2 = "0.11.0"
+# Signing the number a knock at `ob --server` answers -- see `obelus_front::link`.
+hmac = "0.13.0"
+# The numbers and keys a knock is made of.
+getrandom = "0.3"
+# A connection to `ob --server` that goes without a word -- a network
+# changed under a laptop -- found out by the kernel: see
+# `obelus_front::link::kept_alive`. `all` for how many unanswered probes
+# end it, which is the only part std has no call for at all.
+socket2 = { version = "0.6.5", features = ["all"] }
 # Unpacking what was downloaded: `.tar.gz` is what nearly every agent ships,
 # `.zip` is most of the rest, and `.tar.bz2` -- four entries -- says so rather
 # than pretending.
@@ -464,6 +481,8 @@ libc = "0.2.189"
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
     "Win32_Security",
+    # And who may read a file, said outright: see `obelus-private`.
+    "Win32_Security_Authorization",
     "Win32_Storage_FileSystem",
     "Win32_System_IO",
     # And a job, which is how a command an agent asked for is stopped with

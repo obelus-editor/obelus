@@ -175,7 +175,7 @@ fn the_settings_page_says_which_of_its_lists_is_filtered() {
     assert_eq!(row(&mut app), "> Filter themes");
 
     support::press(&mut app, KeyCode::BackTab);
-    assert_eq!(row(&mut app), "> Filter remote settings");
+    assert_eq!(row(&mut app), "> Filter chat settings");
 
     support::press(&mut app, KeyCode::BackTab);
     assert_eq!(row(&mut app), "> Filter keys");

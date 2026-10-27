@@ -29,6 +29,8 @@ obelus-clipboard.workspace = true
 obelus-config.workspace = true
 # The faces, the size of a cell, and where a glyph's pixels come from.
 obelus-font.workspace = true
+# What Obelus says to the window, and the parts of Obelus that say it.
+obelus-front.workspace = true
 obelus-icons.workspace = true
 obelus-keymap.workspace = true
 obelus-logging.workspace = true
@@ -49,6 +51,8 @@ obelus-text.workspace = true
 # draws.
 obelus-theme.workspace = true
 obelus-ui.workspace = true
+# The frames a window on another machine's Obelus is sent.
+obelus-wire.workspace = true
 anyhow.workspace = true
 bytemuck.workspace = true
 clap.workspace = true

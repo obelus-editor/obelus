@@ -64,7 +64,7 @@ pub struct StatusView<'a> {
     /// whole window that stays true while the reader reads, and the
     /// question it answers -- will a reply from my phone get here -- is
     /// asked when one has not.
-    remote: Option<(&'static str, obelus_remote::State)>,
+    bot: Option<(&'static str, obelus_bot::State)>,
     /// When a question is being asked, the row is the question.
     ///
     /// The one dialog that is still kept here, because it is the one whose
@@ -138,7 +138,7 @@ impl<'a> StatusView<'a> {
             server: app.server_state(),
             busy: app.server_busy(),
             phase: app.phase(),
-            remote: app.remote(),
+            bot: app.bot(),
             troubles: app.troubles(),
             prompt: app.prompt(),
             making_in: app.making_in(),
@@ -258,7 +258,7 @@ impl Widget for StatusView<'_> {
                         // alone on the row it is the row. Truncated rather
                         // than dropped, for the same reason -- there is
                         // nothing here it could be crowding.
-                        let end = self.remote_at_end(area, cells, style);
+                        let end = self.bot_at_end(area, cells, style);
                         write(
                             cells,
                             area.x + 1,
@@ -361,14 +361,14 @@ fn server_badge(server: Option<(&'static str, ServerState)>, busy: Option<u32>) 
 /// words once, as it goes wrong, and the settings page says it for as long
 /// as it stays wrong -- this is the one cell that says to go and look.
 #[must_use]
-fn remote_badge(remote: Option<(&'static str, obelus_remote::State)>, phase: u32) -> String {
-    let Some((name, state)) = remote else {
+fn bot_badge(bot: Option<(&'static str, obelus_bot::State)>, phase: u32) -> String {
+    let Some((name, state)) = bot else {
         return String::new();
     };
     let mark = match state {
         state if state.connected() => '\u{25cf}',
         state if state.wrong() => '\u{2715}',
-        obelus_remote::State::Connecting => crate::spinning(phase),
+        obelus_bot::State::Connecting => crate::spinning(phase),
         _ => '\u{25cb}',
     };
     format!("{mark} {name}  ")
@@ -383,18 +383,18 @@ fn remote_badge(remote: Option<(&'static str, obelus_remote::State)>, phase: u32
 /// never saw -- and those are where a reader working from a chat spends
 /// their time.
 #[must_use]
-pub(crate) fn remote_mark(
-    remote: Option<(&'static str, obelus_remote::State)>,
+pub(crate) fn bot_mark(
+    bot: Option<(&'static str, obelus_bot::State)>,
     phase: u32,
     theme: &Theme,
 ) -> Option<(String, Color)> {
-    let (_, state) = remote?;
+    let (_, state) = bot?;
     let ink = match state {
         state if state.connected() => theme.status_foreground,
         state if state.wrong() => theme.status_stale,
         _ => theme.gutter,
     };
-    Some((remote_badge(remote, phase).trim_end().to_string(), ink))
+    Some((bot_badge(bot, phase).trim_end().to_string(), ink))
 }
 
 /// How many things are wrong with the file, by kind.
@@ -1188,8 +1188,8 @@ impl StatusView<'_> {
 
         let badge = server_badge(self.server, self.busy.then_some(self.phase));
         let badge_width = text_width(&badge);
-        let remote = remote_badge(self.remote, self.phase);
-        let remote_width = text_width(&remote);
+        let remote = bot_badge(self.bot, self.phase);
+        let bot_width = text_width(&remote);
 
         // What is wrong with the file, as a count of each kind: a reader
         // who has not looked at the list still has to know there is one.
@@ -1235,7 +1235,7 @@ impl StatusView<'_> {
             .saturating_add(marker_width)
             .saturating_add(working_width)
             .saturating_add(badge_width)
-            .saturating_add(remote_width)
+            .saturating_add(bot_width)
             .saturating_add(wrong_width);
         // The file's own glyph, the same one the pickers give it, so a row in
         // a list and the file on screen are recognizably the same thing.
@@ -1331,16 +1331,16 @@ impl StatusView<'_> {
 
         // The chat beside the server, and for the same reason: both say
         // whether something outside this window is listening.
-        let remote_start = badge_start.saturating_sub(remote_width);
-        if let Some((remote, ink)) = remote_mark(self.remote, self.phase, self.theme)
-            && let Ok(offset) = u16::try_from(remote_start)
-            && remote_start > after_path + marker_width
+        let bot_start = badge_start.saturating_sub(bot_width);
+        if let Some((remote, ink)) = bot_mark(self.bot, self.phase, self.theme)
+            && let Ok(offset) = u16::try_from(bot_start)
+            && bot_start > after_path + marker_width
         {
             write(cells, area.x + offset, area.y, &remote, style.fg(ink));
             crate::turning_at(area.x + offset, area.y, &remote);
         }
 
-        let wrong_start = remote_start.saturating_sub(wrong_width);
+        let wrong_start = bot_start.saturating_sub(wrong_width);
         if !wrong.is_empty()
             && let Ok(offset) = u16::try_from(wrong_start)
             && wrong_start > after_path + marker_width
@@ -1494,9 +1494,9 @@ impl StatusView<'_> {
     /// window; these rows have only the one, so it takes the end. Dropped
     /// whole from a row with less than half to spare, which leaves what
     /// the row is about the room it needs.
-    fn remote_at_end(&self, area: Rect, cells: &mut CellBuffer, style: Style) -> usize {
+    fn bot_at_end(&self, area: Rect, cells: &mut CellBuffer, style: Style) -> usize {
         let width = usize::from(area.width);
-        let Some((mark, ink)) = remote_mark(self.remote, self.phase, self.theme) else {
+        let Some((mark, ink)) = bot_mark(self.bot, self.phase, self.theme) else {
             return width.saturating_sub(1);
         };
         let start = width.saturating_sub(text_width(&mark) + 1);
@@ -1521,7 +1521,7 @@ impl StatusView<'_> {
             style.fg(self.theme.gutter),
         );
         let after = u16::try_from(text_width(label)).unwrap_or(0) + LABEL_GAP;
-        let end = self.remote_at_end(area, cells, style);
+        let end = self.bot_at_end(area, cells, style);
         let room = end.saturating_sub(usize::from(after) + 1);
         write(
             cells,
@@ -1639,7 +1639,7 @@ impl StatusView<'_> {
             false => format!("{what} #{}", page.number()),
         };
         write(cells, area.x + 1, area.y, &name, style);
-        let end = self.remote_at_end(area, cells, style);
+        let end = self.bot_at_end(area, cells, style);
         // Where another Obelus has the review, which is why the key that
         // takes it up does nothing here: a refused claim is drawn, never
         // said, and this is the row the notes draw theirs on. In the room
@@ -1684,7 +1684,7 @@ impl StatusView<'_> {
         };
         write(cells, area.x + 1, area.y, &name, style);
 
-        let end = self.remote_at_end(area, cells, style);
+        let end = self.bot_at_end(area, cells, style);
         let left = notes.todo().notes.iter().filter(|note| !note.done).count();
         let said = (left > 0).then(|| format!("{left} to come back to"));
         let count_at = said
@@ -1747,7 +1747,7 @@ impl StatusView<'_> {
         cells: &mut CellBuffer,
         style: Style,
     ) {
-        let end = self.remote_at_end(area, cells, style);
+        let end = self.bot_at_end(area, cells, style);
         let state = match terminal.ended() {
             Some(ended) => Some(crate::terminal::how_it_ended(ended)),
             None => match terminal.scrolled() {
@@ -1882,29 +1882,28 @@ mod tests {
     /// waits have: the mark said nothing was happening while it connected.
     #[test]
     fn the_chat_mark_turns_while_it_connects() {
-        assert_eq!(remote_badge(None, 0), "");
-        let connecting = remote_badge(Some(("Feishu", obelus_remote::State::Connecting)), 3);
+        assert_eq!(bot_badge(None, 0), "");
+        let connecting = bot_badge(Some(("Feishu", obelus_bot::State::Connecting)), 3);
         assert!(connecting.starts_with(crate::spinning(3)), "{connecting:?}");
         assert_ne!(
-            remote_badge(Some(("Feishu", obelus_remote::State::Connecting)), 4),
+            bot_badge(Some(("Feishu", obelus_bot::State::Connecting)), 4),
             connecting,
             "the mark did not move from one frame to the next"
         );
         assert!(
-            remote_badge(Some(("Feishu", obelus_remote::State::Connected)), 3)
-                .starts_with('\u{25cf}')
+            bot_badge(Some(("Feishu", obelus_bot::State::Connected)), 3).starts_with('\u{25cf}')
         );
         // A field nobody filled in, and an app the platform will not let
         // connect, are as wrong as a refused token. Broken deliberately by
         // leaving `Unready` out of `wrong`: it drew the ring a chat that is
         // switched off draws, after the reader had asked it to connect.
         for state in [
-            obelus_remote::State::Refused,
-            obelus_remote::State::Unready,
-            obelus_remote::State::Declined,
+            obelus_bot::State::Refused,
+            obelus_bot::State::Unready,
+            obelus_bot::State::Declined,
         ] {
             assert!(
-                remote_badge(Some(("Feishu", state)), 3).starts_with('\u{2715}'),
+                bot_badge(Some(("Feishu", state)), 3).starts_with('\u{2715}'),
                 "{state:?}"
             );
         }

@@ -6,7 +6,7 @@
 //! a process shares this one.
 //!
 //! What cannot is elsewhere and says why at its top. The settings apply the
-//! glyph switch and the tab width, the remote page keeps its secrets in one
+//! glyph switch and the tab width, the chat page keeps its secrets in one
 //! directory for the process, and a start applies whatever settings it
 //! reads -- the machine's own among them; a test here drawing a screen
 //! while one of those ran would draw it wrong. Those share `process/`,
@@ -40,6 +40,7 @@ mod hint;
 mod hover;
 mod inviting;
 mod layers;
+mod machine_gone;
 mod making_files;
 mod markdown;
 mod names;

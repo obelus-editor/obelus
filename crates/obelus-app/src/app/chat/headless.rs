@@ -143,7 +143,7 @@ pub fn run_headless(paths: &[PathBuf], built: &'static str) -> Result<()> {
     app.start(sender);
     let mut nothing =
         ratatui::Terminal::new(ratatui::backend::TestBackend::new(UNSEEN.0, UNSEEN.1))?;
-    crate::app::run(&mut nothing, &mut app, events)?;
+    crate::app::run(&mut nothing, &mut app, &events)?;
     match app.why_it_stopped() {
         Some(why) => anyhow::bail!("{why}"),
         None => Ok(()),

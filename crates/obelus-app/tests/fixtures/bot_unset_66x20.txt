@@ -1,6 +1,6 @@
 screen 66x20  editor 66x18  status 66x1
 -- text --
- 0|  Settings  Keys  Remote  Themes  Agents                      ⇤ ⇥ 
+ 0|  Settings  Keys  Chat  Themes  Agents                        ⇤ ⇥ 
  1|──────────────────────────────────────────────────────────────────
  2| Slack                                                           █
  3|                                                                 █
@@ -19,9 +19,9 @@ screen 66x20  editor 66x18  status 66x1
 16|   Pair                                    Make a code ▸          
 17|     A code to send in the group you put the bot in               
 18|──────────────────────────────────────────────────────────────────
-19| > Filter remote settings     Ctrl+p  More                        
+19| > Filter chat settings     Ctrl+p  More                          
 -- style --
- 0|aaaaaaaaaaaaaaaaabbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 0|aaaaaaaaaaaaaaaaabbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  2|cdddddccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
  3|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
@@ -40,7 +40,7 @@ screen 66x20  editor 66x18  status 66x1
 16|cccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaacacccccccccc
 17|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccccc
 18|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-19|dddaaaaaaaaaaaaaaaaaaaaaaddddggggggggdaaaadddddddddddddddddddddddd
+19|dddaaaaaaaaaaaaaaaaaaaaddddggggggggdaaaadddddddddddddddddddddddddd
 -- legend --
 a fg=#52525b bg=#18181b
 b fg=#e4e4e7 bg=#27272a

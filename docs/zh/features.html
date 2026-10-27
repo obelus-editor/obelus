@@ -67,6 +67,7 @@
       <li><a href="#agent"><span>Agent</span></a></li>
       <li><a href="#remote"><span>从聊天里用</span></a></li>
       <li><a href="#worktrees"><span>Worktree 与多窗口</span></a></li>
+      <li><a href="#machines"><span>另一台机器</span></a></li>
       <li><a href="#terminal"><span>终端</span></a></li>
       <li><a href="#editing"><span>编辑</span></a></li>
       <li><a href="#settings"><span>按键与设置</span></a></li>
@@ -169,6 +170,13 @@
             <li><a href="#worktrees">每个 worktree，一个键就到</a></li>
             <li><a href="#windows">一个项目开好几个窗口</a></li>
             <li><a href="#jobs">窗口之间共享编译任务数</a></li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4><a href="#machines">另一台机器</a></h4>
+          <ul>
+            <li><a href="#machines">画在这边，跑在那边</a></li>
+            <li><a href="#switching-machines">切换机器</a></li>
           </ul>
         </div>
         <div class="card">
@@ -449,10 +457,10 @@
         <li>配对时，Obelus 给出一个六位的码，五分钟有效；在应用所在的群里发这个码，那个群和你就算接入了。别人说话它不理</li>
         <li>同一时间只有一个窗口连着聊天，就是你让它连的那个，它的状态行显示连接情况</li>
       </ul>
-      <p class="how"><span>命令</span><code>connect-remote</code> <code>disconnect-remote</code></p>
+      <p class="how"><span>命令</span><code>connect-to-chat</code> <code>disconnect-from-chat</code></p>
 
       <h3 id="headless">没有界面的 Obelus</h3>
-      <p><code>ob --headless</code> 在一个项目上跑 Obelus，什么都不画，也不占终端，只为从聊天里找到它——放在一台一直开着的机器上。<code>--connect-remote</code> 让一个普通窗口启动时就连上聊天。</p>
+      <p><code>ob --headless</code> 在一个项目上跑 Obelus，什么都不画，也不占终端，只为从聊天里找到它——放在一台一直开着的机器上。<code>--connect-to-chat</code> 让一个普通窗口启动时就连上聊天。</p>
     </section>
 
     <section id="worktrees">
@@ -486,8 +494,28 @@
       <p class="how"><span>设置</span><code>build_jobs</code></p>
     </section>
 
+    <section id="machines">
+      <h2><span class="num">10</span><span>另一台机器</span></h2>
+
+      <p>Obelus 可以跑在一台机器上，画在另一台上：代码所在的机器上跑 <code>ob --server</code>，窗口开在你面前这台。一切都发生在那边——文件、语言服务器、agent、终端、笔记——你这台只画它发来的画面，再把你按的键发回去，所以屏幕上看到的，就是你坐在那台机器前会看到的。它是为局域网做的，一个键来回不到一毫秒。</p>
+      <ul>
+        <li><code>ob --server</code> 会打印它监听的地址（默认端口 7787，可用 <code>--listen</code> 指定）和它的密钥。第一次连接时窗口要给密钥——<code>obg --connect 主机 --key 密钥</code>，或者环境变量 <code>OBELUS_KEY</code>——之后就记住了</li>
+        <li>每个窗口在那边都有一个自己的 Obelus，就像你在那台机器上又开了一个</li>
+        <li>连接断了——网络、合上的笔记本——那边的 Obelus 照常运行，agent 也是，保留三个小时；窗口连回来时接着原来的样子</li>
+        <li>连不上那台机器时，会有一页盖住整个窗口说明这件事，并在后台一直重试（密钥被拒绝时除外）：<kbd>r</kbd> 马上再试，<kbd>Enter</kbd> 改在这台机器上工作并问你开哪个项目，<kbd>Ctrl+q</kbd> 退出</li>
+        <li>剪贴板和链接用的是你这台机器的。拖进对话输入框的文件（<code>obg</code> 里）会传过去，最大 32 MiB，存在那台机器的临时目录里：Windows 上是 <code>obelus-dropped</code>，其他系统上是 <code>obelus-dropped-</code> 加你的用户编号，只有你能读</li>
+        <li><code>obg --connect</code> 画成窗口，带着只有窗口才画得出的那些东西；<code>ob --connect</code> 画在终端里</li>
+      </ul>
+      <p>密钥校验时不会被发出去，但之后的内容都没有加密：只在你信任的网络里用，或者走 ssh 隧道。</p>
+      <p class="how"><span>参数</span><code>ob --server</code> <code>--connect</code> <code>--key</code></p>
+
+      <h3 id="switching-machines">切换机器</h3>
+      <p>在命令面板里，<code>connect-to-server</code> 打开一个简短的列表：第一行是 <strong>New connection</strong>，先问地址，不知道密钥时再问密钥；下面是你连过的机器，按日期分组。窗口就地切过去。<code>disconnect-from-server</code> 只在那边的 Obelus 里有，它让窗口回到这台机器。</p>
+      <p class="how"><span>命令</span><code>connect-to-server</code> <code>disconnect-from-server</code></p>
+    </section>
+
     <section id="terminal">
-      <h2><span class="num">10</span><span>终端</span></h2>
+      <h2><span class="num">11</span><span>终端</span></h2>
 
       <p>你的 shell，开在项目里，在<a href="#documents">打开着的东西</a>里是一个单独的文档。有程序在跑时，所有键都给它，<kbd>Esc</kbd> 和 <kbd>Ctrl+c</kbd> 也一样，只有 Obelus 留着的几个除外：功能键、<kbd>Ctrl+p</kbd>、关掉它的 <kbd>Ctrl+w</kbd>、退出的 <kbd>Ctrl+q</kbd>，以及粘贴。</p>
       <ul>
@@ -500,7 +528,7 @@
     </section>
 
     <section id="editing">
-      <h2><span class="num">11</span><span>编辑</span></h2>
+      <h2><span class="num">12</span><span>编辑</span></h2>
 
       <p>没有模式。每个键什么时候按都是同一个意思，像 VS Code 和 Emacs，不像 vim 和 helix：方向键移动，加 <kbd>Shift</kbd> 就是选择，<kbd>Ctrl+z</kbd> 撤销，打字就是打字。撤销按你在做的事退——一串打字、一串删除——而不是一个字一个字地退。其余的只够改一两行用：括号和引号成对打出，按语法扩大选区（<kbd>Alt+w</kbd>），挪行（<kbd>Alt+↑</kbd> <kbd>Alt+↓</kbd>），注释掉（<kbd>Alt+c</kbd>），改写（<kbd>Insert</kbd>）。没有多光标，没有宏：大改动是 agent 的活。</p>
 
@@ -513,7 +541,7 @@
     </section>
 
     <section id="settings">
-      <h2><span class="num">12</span><span>按键与设置</span></h2>
+      <h2><span class="num">13</span><span>按键与设置</span></h2>
 
       <h3 id="palette">命令面板</h3>
       <p>所有命令，按名字，分成六个标签页：文件、搜索、代码、编辑、Git、Obelus 自己。名字以它做的事开头——<code>open-file</code>、<code>show-calls</code>——所以先打动词。在当前位置做不了事的命令是灰的，它的键也不起作用。有自己按键的列表，底部是此刻能用的那些。</p>

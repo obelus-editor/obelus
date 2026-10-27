@@ -84,6 +84,7 @@ pub const OURS: &[&str] = &[
     "obg",
     "obelus_agent",
     "obelus_app",
+    "obelus_bot",
     "obelus_buffer",
     "obelus_check_theme",
     "obelus_claim",
@@ -95,6 +96,7 @@ pub const OURS: &[&str] = &[
     "obelus_editing",
     "obelus_encoding",
     "obelus_font",
+    "obelus_front",
     "obelus_git",
     "obelus_github",
     "obelus_icons",
@@ -104,9 +106,9 @@ pub const OURS: &[&str] = &[
     "obelus_lsp",
     "obelus_markdown",
     "obelus_mcp",
+    "obelus_private",
     "obelus_program",
     "obelus_reading",
-    "obelus_remote",
     "obelus_row",
     "obelus_runtime",
     "obelus_search",
@@ -119,6 +121,7 @@ pub const OURS: &[&str] = &[
     "obelus_todo",
     "obelus_ui",
     "obelus_watch",
+    "obelus_wire",
 ];
 
 /// What is logged when `RUST_LOG` says nothing.

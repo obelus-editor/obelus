@@ -13,7 +13,7 @@
 //!
 //! **A platform declares; Obelus keeps.** What one has to be told is a list
 //! of fields ([`platform`]), and where each is kept -- a secret in the
-//! keyring ([`secrets`]), anything else in `[remotes.<platform>]` -- is
+//! keyring ([`secrets`]), anything else in `[chats.<platform>]` -- is
 //! decided here once, for all of them.
 //!
 //! **One window talks to the chat, and every window is heard in it.** The

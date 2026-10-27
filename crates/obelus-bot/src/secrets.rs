@@ -49,6 +49,10 @@ impl std::fmt::Display for Trouble {
 }
 
 /// What a platform's field is kept as, by whichever store is keeping it.
+///
+/// Under `remote`, the word the chat had before it went to working on
+/// another machine, and kept so: a secret is something a reader typed in
+/// once, and a new name would ask them to pair every platform again.
 fn account(platform: &str, field: &str) -> String {
     format!("remote.{platform}.{field}")
 }
@@ -296,7 +300,7 @@ mod tests {
     ///
     /// Ignored, because it writes to the keyring of whoever runs it: one
     /// entry, under an account no setting uses, taken out again before it
-    /// returns. Run with `cargo test -p obelus-remote -- --ignored`.
+    /// returns. Run with `cargo test -p obelus-bot -- --ignored`.
     #[test]
     #[ignore = "writes to the keyring of whoever runs it"]
     fn the_keyring_keeps_a_secret() {

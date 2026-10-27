@@ -473,8 +473,10 @@ impl App {
             Requires::AnotherWorktree => self.another_worktree(),
             // Asking counts as having: a second asking would wait behind
             // the first, and the way to stop asking is the other command.
-            Requires::ARemote => self.platform().is_some() && !self.has_the_remote(),
-            Requires::TheRemote => self.has_the_remote(),
+            Requires::ABot => self.platform().is_some() && !self.has_the_bot(),
+            Requires::TheBot => self.has_the_bot(),
+            Requires::ThisMachine => !self.is_drawn_afar(),
+            Requires::AnotherMachine => self.is_drawn_afar(),
             Requires::AFileOpen => buffer.is_some(),
             Requires::AFileOnDisk => buffer.is_some_and(|buffer| buffer.content().is_file()),
             // A file, or a box a reader is typing into. The same places a
@@ -1005,6 +1007,8 @@ impl App {
             }
             PickerValue::Theme(name) => self.choose_theme(&name),
             PickerValue::Encoding(name) => self.choose_encoding(&name),
+            PickerValue::NewServer => self.ask_where_to_connect(),
+            PickerValue::Server(at) => self.connect_to(at),
             PickerValue::Place {
                 path,
                 line,

@@ -168,8 +168,8 @@ impl Screen for App {
         App::server_state(self)
     }
 
-    fn remote(&self) -> Option<(&'static str, obelus_remote::State)> {
-        App::remote_badge(self)
+    fn bot(&self) -> Option<(&'static str, obelus_bot::State)> {
+        App::bot_badge(self)
     }
 
     fn server_busy(&self) -> bool {
@@ -223,6 +223,9 @@ impl Screen for App {
     }
     fn tree_has_gone(&self) -> bool {
         App::tree_has_gone(self)
+    }
+    fn machine_gone(&self) -> Option<(&str, &str, bool)> {
+        App::machine_gone(self).map(|gone| (gone.at.as_str(), gone.why.as_str(), gone.trying))
     }
     fn working_directory(&self) -> &Path {
         App::working_directory(self)

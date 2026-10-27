@@ -1195,7 +1195,7 @@ impl App {
             && obelus_ui::welcome::site_at(self.editor_area, &*self)
                 .is_some_and(|at| at.contains(ratatui::layout::Position { x, y }))
         {
-            if let Err(error) = obelus_clipboard::links::open(obelus_ui::welcome::SITE) {
+            if let Err(error) = self.desk().open(obelus_ui::welcome::SITE) {
                 tracing::warn!(%error, "the website was not opened");
                 self.say("Nothing here opens links");
             }

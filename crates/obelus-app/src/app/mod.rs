@@ -31,6 +31,7 @@
 //! it.
 mod animation;
 mod chat;
+pub mod desk;
 pub mod dispatch;
 pub mod document;
 mod editor;
@@ -55,7 +56,7 @@ use std::{
 
 use anyhow::Result;
 pub use chat::{agents, talking};
-use chat::{conversations, headless, mirroring, opening, relaying, remote};
+use chat::{bot, conversations, headless, mirroring, opening, relaying};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use document::Document;
 use documents::Rendered;
@@ -99,6 +100,7 @@ use obelus_theme::{Theme, Worn, builtin};
 use obelus_ui::{Previewed, Screen, image::Images};
 use obelus_watch::Watcher;
 use previewing::Preview;
+pub use project::servers;
 use project::{preferences, releases, reopening};
 use ratatui::{
     Terminal,
@@ -381,6 +383,20 @@ pub struct App {
     ///
     /// `None` in a terminal, which is told nothing: see [`App::drawn_by`].
     drawing: Option<std::sync::Arc<dyn Drawing>>,
+    /// The reader's own machine: its clipboard and its browser -- see
+    /// [`desk`].
+    desk: std::sync::Arc<dyn desk::Desk>,
+    /// Whether this Obelus is drawn on a front end at the other end of a
+    /// connection, which is where the key that goes back to the reader's
+    /// own machine means something.
+    afar: bool,
+    /// Where the front end is to go once this Obelus has ended, where the
+    /// reader asked for somewhere rather than for leaving -- see
+    /// [`App::goes_to`].
+    going: Option<Going>,
+    /// The machine this window could not reach, while the page saying so
+    /// is up -- see [`App::the_machine_has_gone`].
+    machine_gone: Option<MachineGone>,
     /// The tabs the drawing was last told about -- see [`Drawing::tabs`].
     ///
     /// Kept so that it is told again only when they change: worked out on
@@ -535,17 +551,17 @@ pub struct App {
     /// list of worktrees while it is showing.
     worktrees: worktrees::Worktrees,
     /// What this window knows about the chat it can be reached from.
-    remote: remote::Remote,
+    bot: bot::Bot,
     /// Which of its conversations is which thread in that chat.
     mirror: mirroring::Mirror,
     /// The other windows heard in that chat through this one, or the one
     /// this one is heard through.
     relaying: relaying::Relaying,
-    /// Whether to connect to the chat once started, as `connect-remote`
+    /// Whether to connect to the chat once started, as `connect-to-chat`
     /// would. A flag rather than a connection made on the spot, because
     /// connecting waits on the loop's channel and there is no channel until
     /// [`App::start`].
-    remote_at_start: bool,
+    bot_at_start: bool,
     /// Whether nobody is at the screen: `ob --headless` (`headless`).
     headless: bool,
     /// Why a headless Obelus gave up, where it did.
@@ -634,6 +650,10 @@ impl App {
             names: None,
             replacing: false,
             drawing: None,
+            desk: std::sync::Arc::new(desk::Here),
+            afar: false,
+            going: None,
+            machine_gone: None,
             told_tabs: Vec::new(),
             prompt: None,
 
@@ -683,10 +703,10 @@ impl App {
             head: None,
             gone: false,
             worktrees: worktrees::Worktrees::default(),
-            remote: remote::Remote::default(),
+            bot: bot::Bot::default(),
             mirror: mirroring::Mirror::default(),
             relaying: relaying::Relaying::default(),
-            remote_at_start: false,
+            bot_at_start: false,
             headless: false,
             stopped_because: None,
             by_command: false,
@@ -702,6 +722,41 @@ impl App {
 
     /// Asks the loop to stop after this iteration.
     pub fn request_quit(&mut self) {
+        // Leaving, and not going anywhere: a reader who asked to go to
+        // another machine and then said not on the question that asked
+        // about what is unwritten has not asked to go there for ever.
+        self.going = None;
+        self.quit_asking();
+    }
+
+    /// Ends this Obelus so that its front end can go `going`, asking first
+    /// what leaving asks.
+    pub(in crate::app) fn leave_for(&mut self, going: Going) {
+        self.quit_asking();
+        self.going = Some(going);
+    }
+
+    /// Where the front end is to go now that this Obelus has ended, where
+    /// the reader asked for somewhere: read once the loop has returned.
+    #[must_use]
+    pub const fn goes_to(&self) -> Option<&Going> {
+        self.going.as_ref()
+    }
+
+    /// Says this Obelus is drawn on a front end at the other end of a
+    /// connection, which offers the way back to the reader's own machine.
+    pub const fn drawn_afar(&mut self) {
+        self.afar = true;
+    }
+
+    /// Whether this Obelus is drawn at the other end of a connection.
+    #[must_use]
+    pub const fn is_drawn_afar(&self) -> bool {
+        self.afar
+    }
+
+    /// Leaves, asking about what is unwritten and what is still running.
+    fn quit_asking(&mut self) {
         // Nothing is asked once the project has gone: what is unwritten
         // has nowhere to be written, and neither have the notes.
         if self.gone {
@@ -951,8 +1006,8 @@ impl App {
     }
 
     /// Says to connect to the chat once started.
-    pub fn remote_at_start(&mut self) {
-        self.remote_at_start = true;
+    pub fn bot_at_start(&mut self) {
+        self.bot_at_start = true;
     }
 
     /// One of what is open, by its id.
@@ -1559,12 +1614,46 @@ struct Complaint {
 /// what is there, or go over it. A terminal has four of these and the
 /// reader has chosen one of them for their terminal; a window draws its own
 /// and so has to be told which.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Caret {
     /// Between two characters: what is typed goes in.
     Bar,
     /// On one: what is typed takes its place.
     Block,
+}
+
+/// A machine whose Obelus this window was drawing, and could not reach.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MachineGone {
+    /// The machine.
+    pub at: String,
+    /// The key its server printed.
+    pub key: String,
+    /// The window there this was, to take up where the machine answers.
+    pub window: Option<String>,
+    /// Why it could not be reached, in words for the reader.
+    pub why: String,
+    /// Whether it is being asked again, a moment at a time: not where it
+    /// answered and would not let the window in.
+    pub trying: bool,
+}
+
+/// Where a front end goes once the Obelus it drew has ended.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Going {
+    /// To an Obelus on another machine, `ob --server`'s there.
+    To {
+        /// The machine, and its port where one was given.
+        at: String,
+        /// The key its server printed.
+        key: String,
+        /// The window there this was, where it is going back to one whose
+        /// connection went -- taken up as it was, rather than started.
+        window: Option<String>,
+    },
+    /// Back to the reader's own machine, from one at the other end of a
+    /// connection.
+    Home,
 }
 
 /// What the thing drawing Obelus can be told.
@@ -1718,7 +1807,7 @@ pub trait Drawing: std::fmt::Debug + Send + Sync {
 }
 
 /// One open document, as a row of tabs says it.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Tab {
     /// Which document, for choosing it again -- see `Event::Chose`.
     pub document: DocumentId,
@@ -1902,7 +1991,7 @@ fn absolute(path: &Path) -> PathBuf {
 pub fn run<B>(
     terminal: &mut Terminal<B>,
     app: &mut App,
-    events: std::sync::mpsc::Receiver<Event>,
+    events: &std::sync::mpsc::Receiver<Event>,
 ) -> Result<()>
 where
     B: Backend,

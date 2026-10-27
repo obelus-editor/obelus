@@ -4,7 +4,7 @@
 //! two tokens for Slack, an id, a secret and which of two servers for
 //! Feishu -- is a list of [`Field`]s, and where each one is kept is decided
 //! once, here, for all of them: a secret in the keyring, anything else in the
-//! reader's settings file under `[remotes.<platform>]`. The settings page lays
+//! reader's settings file under `[chats.<platform>]`. The settings page lays
 //! its rows out from the same list, so a platform added later is a
 //! description and an adapter, and not a page of its own.
 //!
@@ -33,7 +33,7 @@ pub type Connect = fn(Told, Arc<dyn Sink<Event>>) -> tokio::sync::mpsc::Unbounde
 /// One platform, as the settings page and the relay know it.
 #[derive(Debug)]
 pub struct Description {
-    /// Its key: what `remote = "…"` names, the table its settings are kept
+    /// Its key: what `chat = "…"` names, the table its settings are kept
     /// under, and the directory its relay keeps its state in.
     pub key: &'static str,
     /// What it is called, which is a name and keeps its own spelling.

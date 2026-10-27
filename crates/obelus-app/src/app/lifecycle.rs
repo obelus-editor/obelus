@@ -33,7 +33,56 @@ impl App {
     /// which is what a requirement has to be.
     #[must_use]
     pub fn has_a_project(&self) -> bool {
-        self.which_project.chooser.is_none() && !self.gone
+        self.which_project.chooser.is_none() && !self.gone && self.machine_gone.is_none()
+    }
+
+    /// The machine this window could not reach, while the page saying so
+    /// is up.
+    #[must_use]
+    pub const fn machine_gone(&self) -> Option<&super::MachineGone> {
+        self.machine_gone.as_ref()
+    }
+
+    /// The machine this window was drawing an Obelus on could not be
+    /// reached, or would not let it in.
+    ///
+    /// The page the project going puts up, saying this instead (`ui::gone`):
+    /// over the whole screen, with the keys to work on this machine, to try
+    /// the other again at once, and to leave. Where it is being tried
+    /// again a moment at a time, what answers takes the window back to the
+    /// Obelus it was on (`App::reachable`).
+    pub fn the_machine_has_gone(&mut self, gone: super::MachineGone) {
+        tracing::warn!(
+            at = gone.at,
+            why = gone.why,
+            "a machine this window was on cannot be reached"
+        );
+        self.make_room(layers::Room::Screen);
+        self.machine_gone = Some(gone);
+    }
+
+    /// The machine answers again, where the page is waiting for it: the
+    /// window goes back to it.
+    pub(super) fn reachable(&mut self, at: &str) {
+        if self
+            .machine_gone
+            .as_ref()
+            .is_some_and(|gone| gone.trying && gone.at == at)
+        {
+            self.try_the_machine_again();
+        }
+    }
+
+    /// Goes back to the machine the page is about, now.
+    fn try_the_machine_again(&mut self) {
+        let Some(gone) = self.machine_gone.take() else {
+            return;
+        };
+        self.leave_for(super::Going::To {
+            at: gone.at,
+            key: gone.key,
+            window: gone.window,
+        });
     }
 
     /// Whether the tree Obelus was put on has gone from disk.
@@ -76,6 +125,20 @@ impl App {
     /// nothing else hears the key either: what is under the page is about
     /// a project that is not there.
     pub(super) fn the_page_saying_it_has_gone(&mut self, key: &KeyEvent) -> bool {
+        if self.machine_gone.is_some() {
+            let bare = key.modifiers == KeyModifiers::NONE;
+            if key.code == KeyCode::Enter && bare {
+                // Here, then: the other machine is let go of, and this one
+                // asks which project, as it would have from a start.
+                self.machine_gone = None;
+                self.ask_which_project();
+            } else if key.code == KeyCode::Char(obelus_ui::gone::AGAIN) && bare {
+                self.try_the_machine_again();
+            } else if self.keymap.lookup(key, Context::Dialog) == Some(Command::Quit) {
+                self.request_quit();
+            }
+            return true;
+        }
         if key.code == KeyCode::Enter && key.modifiers == KeyModifiers::NONE {
             self.let_go_of_the_project();
             self.ask_which_project();
@@ -224,8 +287,8 @@ impl App {
         // connect to is one of. And not before there is a project, like
         // the tools above: a conversation begun from the chat would be
         // rooted at wherever the process began. `settle_on` connects.
-        if self.remote_at_start && self.which_project.chooser.is_none() {
-            self.connect_remote_at_start(self.reading_nothing());
+        if self.bot_at_start && self.which_project.chooser.is_none() {
+            self.connect_bot_at_start(self.reading_nothing());
         }
         // What went wrong on the way up, over whatever the first screen is,
         // and last of all so that everything that could go wrong has.

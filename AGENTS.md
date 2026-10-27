@@ -39,7 +39,7 @@ ignores them, and mixing the two makes the formatting oscillate. **Always
 Clippy must be silent. The lints are the workspace's, in the root
 `Cargo.toml` -- `missing_docs`, `unreachable_pub`, `private_interfaces` --
 because a `#![deny(..)]` in one crate root would silently stop applying to
-the other thirty-eight. Every member opts in with a `[lints] workspace = true`
+the other forty-one. Every member opts in with a `[lints] workspace = true`
 of its own, which Cargo does not inherit for it, and every public item needs
 a doc comment.
 
@@ -503,6 +503,9 @@ as `w/crlf`, and `nothing_in_the_working_tree_ends_its_lines_in_crlf` fails.
 
 **Nothing writes to stdout.** stdout is the drawing surface; `tracing` goes to
 a file. A stray `println!` lands in the middle of a frame and stays there.
+Two processes draw nothing and are the exceptions: `ob --server` prints where
+it listens and its key, and the `ob --serve-one` it starts for each window
+writes the window's frames there, because its stdout is the connection.
 
 **The main loop is threads and one channel, not a runtime.** One
 `std::sync::mpsc` channel, one producer thread per event source (keyboard, file
@@ -636,7 +639,13 @@ crates/
                       when it is chosen on the page that asks, and only a
                       worktree, and what a start with nothing to go on asks,
                       and going from that list is going to a worktree
-                      (app/project/projects); what was open is kept by the tree,
+                      (app/project/projects); the machines an Obelus was
+                      drawn on are kept by the machine the reader sits at,
+                      and the list offers a new one first, then the ones
+                      there have been, by the day (app/project/servers);
+                      the reader's machine is not always the one Obelus
+                      runs on (app/desk);
+                      what was open is kept by the tree,
                       and the last window to change it wins (app/project/reopening);
                       what an agent offers is asked of it,
                       not remembered (app/chat/agents); a note that has gone takes
@@ -853,7 +862,12 @@ crates/
                     · a claim is held by a writer and looked at through a
                       read, and the other platform's lock is a byte past the
                       end (lib)
-  obelus-remote/    working on notes from a chat: what a platform declares
+  obelus-private/   a file only the person running Obelus can read: the key
+                    a server lets windows in with, and the keys a window
+                    keeps for the machines it has been drawn from
+                    · private from the moment it has a name, and its owner's
+                      alone on Windows too (lib)
+  obelus-bot/    working on notes from a chat: what a platform declares
                     (platform), where its secrets are kept (secrets), a
                     connection to each (slack/, feishu/), the words between
                     them and the loop (model), what waits while one is down
@@ -890,7 +904,8 @@ crates/
                       anything owns the status row (status); asking which
                       project is a page of its own, and the welcome screen
                       comes after (projects); the project going is said over
-                      the whole screen, in the middle of it (gone); a
+                      the whole screen, in the middle of it, and one page
+                      says both a project and a machine gone (gone); a
                       window draws the marks itself, and the view does not
                       know the difference (image); a view says
                       what a region *is* and the front end says what that looks
@@ -935,19 +950,50 @@ crates/
                       there is nothing to own, so a terminal offers Obelus's
                       own shape too (native); what is taken for a picture is
                       a file that is one (dropped)
-  obelus-cli/       the `ob` binary: Obelus drawn on a terminal
+  obelus-cli/       the `ob` binary: Obelus drawn on a terminal, Obelus for
+                    windows on other machines (`--server`), one Obelus of
+                    its own for each (serve), and this terminal drawing one
+                    on another machine (`--connect`, client)
                     · two keys need the terminal's permission, and the
                       editors' `ctrl+shift` chords are the only others that
-                      depend on the protocol (main)
+                      depend on the protocol (main); one Obelus for each
+                      window, a key and a knock signed with it, a window
+                      that goes is waited for, and a knock with a window's
+                      name is that window (server); its standard input
+                      and output are the connection, it goes on while
+                      nobody is watching, and a file dropped on the window
+                      is kept where this machine keeps what passes (serve);
+                      a terminal can change which Obelus it draws (client)
   obelus-check-theme/ whether Obelus can read a theme, for the themes
                     registry, and in no release
                     · the same reading the editor does and nothing of its
                       own, only Obelus's own rules, a binary of its own and
                       not in a release (main)
+  obelus-front/     what Obelus says to whatever draws it -- the frames as
+                    updates, what the settings tell a window, what a run of
+                    cells is, the marks -- and the parts of Obelus that say
+                    it, wherever the window that hears it is
+                    · here and not in the window, because the window may
+                      be somewhere else, and a picture crosses as its bytes,
+                      and the window decodes it (lib); a resize carries the
+                      size (input); the front end is the same front end, what
+                      only this machine can do is done here, and a
+                      connection that goes is knocked on again (client); a
+                      connection is a knock first, what is said
+                      after it is not hidden, a window is named so that
+                      it can be found again, and a connection that went
+                      without a word is found out by the kernel (link); a
+                      window that comes back
+                      has nothing (replay); Obelus's own spelling and not
+                      ratatui's (wire)
+  obelus-wire/      a frame is a length and a message, no field may be left
+                    out of the bytes, and both ends say which words they
+                    speak first
   obelus-gui/       the `obg` binary, and the window: what a screenful of
                     cells becomes when it is not a terminal -- the grid on
                     its way over, the glyphs, the quads, and the one clock
-                    the window keeps
+                    the window keeps -- and a window on an Obelus running on
+                    another machine (`--connect`)
                     · Obelus is drawn on two things and the loop knows neither
                       (main); a window started from a terminal gives the
                       terminal back (leaving); `App` crosses a thread and

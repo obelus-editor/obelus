@@ -45,7 +45,7 @@ pub enum PromptKind {
     /// says which token was pasted into which row -- the commonest way to
     /// get this wrong -- and the end says whether it was the one meant; the
     /// rest is the part a reader sharing their screen would not want shown.
-    Told(&'static obelus_remote::platform::Field),
+    Told(&'static obelus_bot::platform::Field),
     /// What one of Obelus's own settings is, where it is typed rather than
     /// chosen: by the setting's key.
     Setting(&'static str),
@@ -62,6 +62,14 @@ pub enum PromptKind {
         /// with a digit -- said in the question, because the status row is
         /// the question's while it is open and a note would never be seen.
         again: bool,
+    },
+    /// Which machine to draw an Obelus on: its name, and its port where
+    /// that is not the server's own.
+    Server,
+    /// The key that machine's server printed, where none is kept for it.
+    ServerKey {
+        /// The machine.
+        at: String,
     },
     /// What one of an agent's variables is, by the agent's id and the
     /// variable's name.
@@ -94,6 +102,8 @@ impl PromptKind {
                 return format!("{name}: ").into();
             }
             Self::Line => "Line: ",
+            Self::Server => "Connect to: ",
+            Self::ServerKey { .. } => "Key: ",
             Self::Name => "Rename to: ",
             // Not "Rename to: ", which is what a symbol's prompt says:
             // two prompts with the same words on the same row are one
@@ -131,8 +141,9 @@ impl PromptKind {
             // making a mistake. Only the key that answers is refused.
             Self::Path | Self::NewPath => character != '\n' && character != '\r',
             // A token or an id is one word, and a paste that brought a
-            // newline or a space along with it should not keep them.
-            Self::Told(_) => !character.is_whitespace(),
+            // newline or a space along with it should not keep them. A
+            // machine's name and a key are each one word too.
+            Self::Told(_) | Self::Server | Self::ServerKey { .. } => !character.is_whitespace(),
             // A name may have a blank in it -- a reader may well want the
             // agent to be "the assistant" -- and only the key that answers
             // is refused.
@@ -157,7 +168,9 @@ impl PromptKind {
             Self::Line => |character| character.is_ascii_digit(),
             Self::Name => |character| !character.is_whitespace(),
             Self::Path | Self::NewPath => |character| character != '\n' && character != '\r',
-            Self::Told(_) => |character| !character.is_whitespace(),
+            Self::Told(_) | Self::Server | Self::ServerKey { .. } => {
+                |character| !character.is_whitespace()
+            }
             Self::Setting(_) | Self::Variable { .. } => {
                 |character| character != '\n' && character != '\r'
             }
@@ -313,10 +326,15 @@ impl Prompt {
     #[must_use]
     pub fn shown(&self) -> String {
         let said = self.text.said();
+        // A server's key is the one thing that lets a connection run
+        // anything on that machine, and it has no prefix worth showing.
+        if let PromptKind::ServerKey { .. } = &self.kind {
+            return hidden(&said, "");
+        }
         let PromptKind::Told(field) = &self.kind else {
             return said;
         };
-        let obelus_remote::platform::FieldKind::Secret { looks_like } = field.kind else {
+        let obelus_bot::platform::FieldKind::Secret { looks_like } = field.kind else {
             return said;
         };
         hidden(&said, looks_like)

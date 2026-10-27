@@ -1,6 +1,6 @@
 screen 66x24  editor 66x22  status 66x1
 -- text --
- 0|  Settings  Keys  Remote  Themes  Agents                      ⇤ ⇥ 
+ 0|  Settings  Keys  Chat  Themes  Agents                        ⇤ ⇥ 
  1|──────────────────────────────────────────────────────────────────
  2| Feishu                                                          █
  3|                                                                 █
@@ -23,9 +23,9 @@ screen 66x24  editor 66x22  status 66x1
 20|     A code to send in the group you put the bot in               
 21|                                                                  
 22|──────────────────────────────────────────────────────────────────
-23| > Filter remote settings     Ctrl+p  More                        
+23| > Filter chat settings     Ctrl+p  More                          
 -- style --
- 0|aaaaaaaaaaaaaaaaabbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 0|aaaaaaaaaaaaaaaaabbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  2|cddddddcccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
  3|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
@@ -48,7 +48,7 @@ screen 66x24  editor 66x22  status 66x1
 20|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccccc
 21|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 22|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-23|dddaaaaaaaaaaaaaaaaaaaaaaddddggggggggdaaaadddddddddddddddddddddddd
+23|dddaaaaaaaaaaaaaaaaaaaaddddggggggggdaaaadddddddddddddddddddddddddd
 -- legend --
 a fg=#52525b bg=#18181b
 b fg=#e4e4e7 bg=#27272a
