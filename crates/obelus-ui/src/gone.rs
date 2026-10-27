@@ -49,8 +49,9 @@ enum Gone {
 /// The keys the foot says.
 ///
 /// Leaving is said, as it is on the page that asks which project: escape
-/// cannot leave this one either, because there is nothing behind it to go
-/// back to.
+/// cannot leave either page, because there is nothing behind it to go back
+/// to. On the machine's, escape is what gives up on that machine -- the
+/// nearest thing, which is the going there -- and works on this one.
 fn hints(keymap: &Keymap, gone: &Gone) -> Vec<Hint> {
     let mut hints = match gone {
         Gone::Project(_) => vec![Hint::new(
@@ -69,7 +70,7 @@ fn hints(keymap: &Keymap, gone: &Gone) -> Vec<Hint> {
             })
             .into_iter()
             .chain([Hint::new(
-                KeyChord::new(KeyCode::Enter, KeyModifiers::NONE),
+                KeyChord::new(KeyCode::Esc, KeyModifiers::NONE),
                 "Work on this machine",
             )])
             .collect(),

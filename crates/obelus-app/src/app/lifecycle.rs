@@ -133,9 +133,11 @@ impl App {
     pub(super) fn the_page_saying_it_has_gone(&mut self, key: &KeyEvent) -> bool {
         if self.machine_gone.is_some() {
             let bare = key.modifiers == KeyModifiers::NONE;
-            if key.code == KeyCode::Enter && bare {
-                // Here, then: the other machine is let go of, and this one
-                // asks which project, as it would have from a start.
+            if key.code == KeyCode::Esc && bare {
+                // Here, then: the other machine is given up on -- escape
+                // gives up on the nearest thing, and that is the going
+                // there -- and this one asks which project, as it would
+                // have from a start.
                 self.machine_gone = None;
                 self.ask_which_project();
             } else if key.code == KeyCode::Char(obelus_ui::gone::AGAIN)

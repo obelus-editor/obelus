@@ -70,15 +70,20 @@ fn trying_again_goes_back_to_the_window_it_was() {
     assert!(app.should_quit());
 }
 
-/// Working on this machine lets the other go and asks which project, as a
-/// start with nothing to go on does.
+/// Escape gives up on the other machine and asks which project here, as a
+/// start with nothing to go on does -- and enter, which this page once
+/// took for it, does nothing.
 ///
-/// Broken deliberately by leaving the machine where it was on enter (no
-/// `machine_gone = None`): the page stayed up over the question.
+/// Broken deliberately by leaving the machine where it was on escape (no
+/// `machine_gone = None`): the page stayed up over the question. And by
+/// hearing enter for it again (`KeyCode::Enter` for `Esc` in
+/// `the_page_saying_it_has_gone`): enter let go of the machine.
 #[test]
 fn working_here_asks_which_project() {
     let mut app = gone(true);
     support::press(&mut app, KeyCode::Enter);
+    assert!(app.machine_gone().is_some(), "enter gave up on the machine");
+    support::press(&mut app, KeyCode::Esc);
     assert!(app.machine_gone().is_none(), "the page stayed up");
     assert!(!app.has_a_project(), "nothing asked which project");
     assert_eq!(app.goes_to(), None);
