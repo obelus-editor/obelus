@@ -3235,6 +3235,27 @@ fn asking_which_project_does_not_wake() {
     );
 }
 
+/// The welcome screen drawn at the other end of a connection does not
+/// wake to move its sheen: every frame of it would cross the network.
+///
+/// Deliberate break: leaving `self.afar` out of `wants_animating`. The
+/// welcome screen's clock ran, twelve screens a second over the
+/// connection, for as long as the reader looked at it -- and on, with
+/// nobody looking, while the window was away.
+#[test]
+fn the_welcome_screen_drawn_afar_does_not_wake() {
+    let mut app = App::new(Vec::new());
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    assert!(app.is_waking(), "the welcome screen does not wake here");
+    let mut afar = App::new(Vec::new());
+    afar.drawn_afar();
+    support::lay_out(&mut afar, WIDTH, HEIGHT);
+    assert!(
+        !afar.is_waking(),
+        "the welcome screen wakes over the connection"
+    );
+}
+
 /// Naming a path puts a list of what could finish it over the welcome
 /// screen.
 ///
