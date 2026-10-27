@@ -54,7 +54,8 @@ pub(crate) struct Terminal<'a> {
 }
 
 /// Draws `start` on the terminal, and whichever Obelus the reader goes to
-/// from it, until the reader leaves.
+/// from it, until the reader leaves -- leaving the last of this machine's
+/// in `kept`, for the caller to let go of once the terminal is back.
 ///
 /// # Errors
 ///
@@ -64,6 +65,7 @@ pub(crate) fn drawing(
     start: Start,
     terminal: &mut ratatui::DefaultTerminal,
     mut found: Terminal<'_>,
+    kept: &mut Option<Box<App>>,
 ) -> Result<()> {
     let told = found
         .images
@@ -95,10 +97,17 @@ pub(crate) fn drawing(
                 if let Some(waiting) = waiting.take() {
                     waiting.store(true, std::sync::atomic::Ordering::Release);
                 }
-                ran?;
-                let Some(afar) = obelus_front::client::from_here(&app, env!("OBELUS_BUILD"))?
-                else {
-                    return Ok(());
+                // What was drawn last is handed out rather than let go of
+                // here: letting go of it stops its servers, each of which
+                // may take a moment, and the terminal is given back goes first.
+                let leaving =
+                    ran.and_then(|()| obelus_front::client::from_here(&app, env!("OBELUS_BUILD")));
+                let afar = match leaving {
+                    Ok(Some(afar)) => afar,
+                    left => {
+                        *kept = Some(app);
+                        return left.map(|_| ());
+                    }
                 };
                 // Let go of before the other is drawn: its servers, its
                 // agent and its claims go with it.

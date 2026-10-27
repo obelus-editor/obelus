@@ -187,6 +187,7 @@ fn main() -> Result<ExitCode> {
     let pictures = images
         .of_the_terminal()
         .and_then(|(protocol, cell)| Some((client::pictures(protocol)?, cell)));
+    let mut kept = None;
     let outcome = client::drawing(
         start,
         &mut terminal,
@@ -202,10 +203,15 @@ fn main() -> Result<ExitCode> {
             events: &events,
             nudge: &sender,
         },
+        &mut kept,
     );
     startup::finish(&outcome);
 
     give_back(mouse, keyboard);
+    // After the terminal is the reader's again: letting go of an Obelus
+    // stops its language servers, and each is given a moment to write
+    // what it keeps.
+    drop(kept);
 
     outcome.map(|()| ExitCode::SUCCESS)
 }

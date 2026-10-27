@@ -1256,7 +1256,8 @@ impl ApplicationHandler<Waking> for Showing {
                 // Whatever happens to the loop -- returning, or panicking
                 // on the way -- the window is told, or it waits for a frame
                 // that is never coming.
-                let _finished = Finished(proxy.clone());
+                let finished = Finished(proxy.clone());
+                let mut kept = None;
                 let cells = Cells::new(here.clone(), Arc::clone(&measured));
                 let mut terminal = match ratatui::Terminal::new(cells) {
                     Ok(terminal) => terminal,
@@ -1276,8 +1277,14 @@ impl ApplicationHandler<Waking> for Showing {
                     proxy: &proxy,
                     can_bring,
                     terminal: &mut terminal,
+                    kept: &mut kept,
                 });
                 *outcome.lock().expect("the outcome") = Some(ended);
+                // The window goes first, and then this machine's Obelus:
+                // letting go of it stops its language servers, and each is
+                // given a moment to write what it keeps.
+                drop(finished);
+                drop(kept);
             });
         if let Err(error) = started {
             tracing::error!(%error, "Obelus could not be started behind the window");
@@ -2510,6 +2517,9 @@ struct Drawing<'a> {
     /// Whether this window may bring another forward -- see `elsewhere`.
     can_bring: bool,
     terminal: &'a mut ratatui::Terminal<Cells>,
+    /// The last of this machine's Obelus drawn, let go of once the window
+    /// has gone.
+    kept: &'a mut Option<Box<App>>,
 }
 
 /// Draws Obelus in the window -- this machine's, or one on another -- and
@@ -2532,6 +2542,7 @@ fn drawing(drawing: Drawing<'_>) -> Result<()> {
         proxy,
         can_bring,
         terminal,
+        kept,
     } = drawing;
     let mut next = start;
     // What waits for a machine that went, while the page saying so is up.
@@ -2566,10 +2577,17 @@ fn drawing(drawing: Drawing<'_>) -> Result<()> {
                 if let Some(waiting) = waiting.take() {
                     waiting.store(true, std::sync::atomic::Ordering::Release);
                 }
-                ran?;
-                let Some(afar) = obelus_front::client::from_here(&app, env!("OBELUS_BUILD"))?
-                else {
-                    return Ok(());
+                // What was drawn last is handed out rather than let go of
+                // here: letting go of it stops its servers, each of which
+                // may take a moment, and the window goes first.
+                let leaving =
+                    ran.and_then(|()| obelus_front::client::from_here(&app, env!("OBELUS_BUILD")));
+                let afar = match leaving {
+                    Ok(Some(afar)) => afar,
+                    left => {
+                        *kept = Some(app);
+                        return left.map(|_| ());
+                    }
                 };
                 // Let go of before the other is drawn: its servers, its
                 // agent and its claims go with it.
