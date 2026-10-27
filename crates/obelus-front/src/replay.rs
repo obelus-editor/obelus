@@ -25,8 +25,10 @@ use crate::Update;
 #[derive(Debug, Default)]
 pub struct Screen {
     /// Every cell written since the screen was last cleared, by row and
-    /// column so that they are said again in order.
-    cells: BTreeMap<(u16, u16), Cell>,
+    /// then column so that they are said again in order -- a grid rather
+    /// than a map, because every cell of a frame comes through here and a
+    /// page scrolled is all of them.
+    cells: Vec<Vec<Option<Cell>>>,
     /// Where the caret is, where anything has said.
     caret: Option<Option<Position>>,
     /// The last word on each thing the settings tell a window, by what it
@@ -45,7 +47,15 @@ impl Screen {
     pub fn saw(&mut self, update: &Update) {
         match update {
             Update::Cell { x, y, cell } => {
-                self.cells.insert((*y, *x), (**cell).clone());
+                let (x, y) = (usize::from(*x), usize::from(*y));
+                if self.cells.len() <= y {
+                    self.cells.resize_with(y + 1, Vec::new);
+                }
+                let row = &mut self.cells[y];
+                if row.len() <= x {
+                    row.resize_with(x + 1, || None);
+                }
+                row[x] = Some((**cell).clone());
             }
             Update::Cleared => self.cells.clear(),
             Update::Caret(caret) => self.caret = Some(*caret),
@@ -96,11 +106,17 @@ impl Screen {
         let mut said: Vec<Update> = self.settled.values().cloned().collect();
         said.extend(self.marks.values().cloned());
         said.push(Update::Cleared);
-        said.extend(self.cells.iter().map(|(&(y, x), cell)| Update::Cell {
-            x,
-            y,
-            cell: Box::new(cell.clone()),
-        }));
+        for (y, row) in (0_u16..).zip(&self.cells) {
+            for (x, cell) in (0_u16..).zip(row) {
+                if let Some(cell) = cell {
+                    said.push(Update::Cell {
+                        x,
+                        y,
+                        cell: Box::new(cell.clone()),
+                    });
+                }
+            }
+        }
         if let Some(caret) = self.caret {
             said.push(Update::Caret(caret));
         }

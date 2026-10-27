@@ -1169,6 +1169,30 @@ mod tests {
         }
         for down in [
             link::Down::Updates(vec![Update::Cleared, Update::Frame]),
+            // A run, a cell that breaks it, and a cell that cannot be in one.
+            link::Down::Updates(vec![
+                Update::Cell {
+                    x: 0,
+                    y: 1,
+                    cell: Box::new(ratatui::buffer::Cell::new("a")),
+                },
+                Update::Cell {
+                    x: 1,
+                    y: 1,
+                    cell: Box::new(ratatui::buffer::Cell::new("b")),
+                },
+                Update::Cell {
+                    x: 2,
+                    y: 1,
+                    cell: Box::new(styled("c")),
+                },
+                Update::Cell {
+                    x: 3,
+                    y: 1,
+                    cell: Box::new(ratatui::buffer::Cell::new("e\u{301}")),
+                },
+                Update::Frame,
+            ]),
             link::Down::Copy("c".to_string()),
             link::Down::Paste(1),
             link::Down::Picture(2),
