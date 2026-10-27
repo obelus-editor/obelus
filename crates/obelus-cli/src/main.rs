@@ -9,7 +9,7 @@ use std::{path::PathBuf, process::ExitCode};
 
 use anyhow::Result;
 use clap::Parser;
-use obelus_app::{app, event, startup};
+use obelus_app::{event, startup};
 
 mod client;
 mod serve;
@@ -27,20 +27,6 @@ struct Arguments {
     /// A file names the tree it is in and is opened. A directory is the
     /// tree itself, and Obelus opens on the welcome screen.
     paths: Vec<PathBuf>,
-
-    /// Connect to the chat set in the settings once started, as
-    /// `connect-to-chat` does.
-    #[arg(long)]
-    connect_to_chat: bool,
-
-    /// Draw nothing and take over no terminal: an Obelus there only to be
-    /// reached from the chat set in the settings, which it connects to.
-    ///
-    /// Works on a project -- the directory named, or the one it is started
-    /// in -- and opens no file. Stops on ctrl+c or a kill, and says why on
-    /// stderr where it has to stop on its own.
-    #[arg(long)]
-    headless: bool,
 
     /// Draw nothing here, and let in windows on other machines: `ob
     /// --connect` and `obg --connect`, each with an Obelus of its own on
@@ -67,9 +53,12 @@ struct Arguments {
     #[arg(long, value_name = "MACHINE[:PORT]")]
     connect: Option<String>,
 
-    /// The key that server printed, needed the first time and kept after.
-    /// `OBELUS_KEY` says it as well.
-    #[arg(long, requires = "connect")]
+    /// The key that server printed, for `--connect`: needed the first time
+    /// and kept after.
+    // Not tied to `--connect` with `requires`: a key in the environment is
+    // there for every start, and `ob` alone would be refused for it. And its
+    // value is not shown in the help, which would be a key on the screen.
+    #[arg(long, env = "OBELUS_KEY", hide_env_values = true)]
     key: Option<String>,
 
     /// One window's Obelus, which `--server` starts and nothing else does:
@@ -83,7 +72,7 @@ fn main() -> Result<ExitCode> {
 
     // Held until main returns, so buffered log lines are flushed on the way
     // out.
-    let _log_guard = obelus_logging::install(arguments.headless);
+    let _log_guard = obelus_logging::install();
     // Before anything that can panic, so a panic on the way up is in the
     // log as well.
     obelus_logging::catch_panics();
@@ -95,16 +84,6 @@ fn main() -> Result<ExitCode> {
     if arguments.serve_one {
         return serve::one();
     }
-    if arguments.headless {
-        let outcome = app::run_headless(&arguments.paths, env!("OBELUS_BUILD"));
-        // Which says why on stderr, where a headless Obelus logs: an `Err`
-        // handed back as well would be said twice.
-        startup::finish(&outcome);
-        return Ok(match outcome {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(_) => ExitCode::FAILURE,
-        });
-    }
 
     // Opened before the terminal is taken over, so a bad path reports
     // itself on a normal screen rather than flashing past inside an
@@ -113,10 +92,7 @@ fn main() -> Result<ExitCode> {
     // machine's.
     let start = match arguments.connect {
         Some(at) => {
-            let key = obelus_front::client::key(
-                &at,
-                arguments.key.or_else(|| std::env::var("OBELUS_KEY").ok()),
-            )?;
+            let key = obelus_front::client::key(&at, arguments.key)?;
             let path = arguments
                 .paths
                 .first()
@@ -130,10 +106,7 @@ fn main() -> Result<ExitCode> {
             })
         }
         None => {
-            let mut app = startup::start(&arguments.paths, env!("OBELUS_BUILD"))?;
-            if arguments.connect_to_chat {
-                app.bot_at_start();
-            }
+            let app = startup::start(&arguments.paths, env!("OBELUS_BUILD"))?;
             client::Start::Here(Box::new(app))
         }
     };
@@ -378,5 +351,17 @@ mod tests {
             "listening without serving"
         );
         assert!(listening(&[]).is_ok(), "ob alone was refused");
+    }
+
+    /// A key given with nothing to connect to is not refused: `OBELUS_KEY`
+    /// is the same flag, and a reader who keeps it in their environment
+    /// starts `ob` alone with it there.
+    ///
+    /// Broken deliberately by tying the key to `--connect` again
+    /// (`requires = "connect"` on `key`): `ob --key k` was refused, and so
+    /// would `ob` have been with the key in the environment.
+    #[test]
+    fn a_key_with_nothing_to_connect_to_is_not_refused() {
+        assert!(Arguments::try_parse_from(["ob", "--key", "k"]).is_ok());
     }
 }

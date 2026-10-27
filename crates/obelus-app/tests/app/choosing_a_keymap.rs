@@ -319,18 +319,6 @@ fn a_start_that_told_does_not_ask_later() {
     assert_ne!(asked(&app).as_deref(), Some(ASKED), "it asked after all");
 }
 
-/// Nobody is at the screen of a headless Obelus to answer.
-///
-/// Deliberate break: taking `is_headless` out of `ask_for_a_keymap`.
-#[test]
-fn headless_does_not_ask() {
-    let scratch = support::Scratch::new("keymap-headless");
-    let mut app = on(&scratch, None);
-    app.headless();
-    start(&mut app);
-    assert!(app.picker().is_none(), "a headless start put a list up");
-}
-
 /// A file named on the command line is still asked over, and escape is
 /// the way back to it.
 ///

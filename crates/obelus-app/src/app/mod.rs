@@ -56,14 +56,13 @@ use std::{
 
 use anyhow::Result;
 pub use chat::{agents, talking};
-use chat::{bot, conversations, headless, mirroring, opening, relaying};
+use chat::{bot, conversations, mirroring, opening, relaying};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use document::Document;
 use documents::Rendered;
 use editor::{documents, keys, previewing};
 pub use git::pulls;
 use git::{history, history_view, worktrees};
-pub use headless::run_headless;
 use history::Changed;
 pub use history_view::About;
 use lsp::semantics;
@@ -557,15 +556,10 @@ pub struct App {
     /// The other windows heard in that chat through this one, or the one
     /// this one is heard through.
     relaying: relaying::Relaying,
-    /// Whether to connect to the chat once started, as `connect-to-chat`
-    /// would. A flag rather than a connection made on the spot, because
-    /// connecting waits on the loop's channel and there is no channel until
-    /// [`App::start`].
-    bot_at_start: bool,
-    /// Whether nobody is at the screen: `ob --headless` (`headless`).
-    headless: bool,
-    /// Why a headless Obelus gave up, where it did.
-    stopped_because: Option<String>,
+    /// Whether to connect to the chat again once there is a project: this
+    /// window had it when the project it was on was let go of -- see
+    /// [`App::leave_the_project`].
+    bot_again: bool,
     /// Whether the key being handled was pressed with command
     /// (`Event::Command`), which only a terminal asks.
     by_command: bool,
@@ -706,9 +700,7 @@ impl App {
             bot: bot::Bot::default(),
             mirror: mirroring::Mirror::default(),
             relaying: relaying::Relaying::default(),
-            bot_at_start: false,
-            headless: false,
-            stopped_because: None,
+            bot_again: false,
             by_command: false,
             should_quit: false,
         }
@@ -1005,11 +997,6 @@ impl App {
         &self.working_directory
     }
 
-    /// Says to connect to the chat once started.
-    pub fn bot_at_start(&mut self) {
-        self.bot_at_start = true;
-    }
-
     /// One of what is open, by its id.
     ///
     /// Four doors rather than forty-odd repetitions of
@@ -1280,17 +1267,6 @@ impl App {
     /// Not where the first screen is a file, which was asked for by name
     /// and is what the reader came to read.
     pub(super) fn tell_what_went_wrong(&mut self) -> bool {
-        // Into the log where nobody is at the screen, and nothing put up to
-        // wait for a key that will not come.
-        if self.headless {
-            for row in self.what_went_wrong() {
-                match row.detail {
-                    Some(at) => tracing::warn!("{at}: {}", row.label),
-                    None => tracing::warn!("{}", row.label),
-                }
-            }
-            return false;
-        }
         if !self.reading_nothing() {
             return false;
         }
@@ -1442,12 +1418,7 @@ impl App {
 
     /// Says what happened, or what is happening.
     pub(crate) fn say(&mut self, said: impl Into<String>) {
-        let said = said.into();
-        // Where nobody is at the screen the log is the status row.
-        if self.headless {
-            tracing::info!("{said}");
-        }
-        self.note = Some(saying::Note::said(said));
+        self.note = Some(saying::Note::said(said.into()));
     }
 
     /// Says something on the status row, for a test about how a note is
@@ -1464,11 +1435,7 @@ impl App {
     /// Which of these a note went through is the whole of how it says
     /// which it is.
     pub(crate) fn wrong(&mut self, said: impl Into<String>) {
-        let said = said.into();
-        if self.headless {
-            tracing::warn!("{said}");
-        }
-        self.note = Some(saying::Note::wrong(said));
+        self.note = Some(saying::Note::wrong(said.into()));
     }
 
     /// Takes back whatever was said.

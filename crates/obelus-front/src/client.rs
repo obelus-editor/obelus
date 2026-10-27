@@ -146,18 +146,7 @@ pub fn key(at: &str, given: Option<String>) -> Result<Vec<u8>> {
         None => obelus_app::app::servers::key_for(at)
             .context("no key: give the one the server printed with --key")?,
     };
-    unhex(letters.trim()).context("that key is not one a server prints")
-}
-
-/// The letters a server prints, as the key they are.
-fn unhex(letters: &str) -> Option<Vec<u8>> {
-    if letters.is_empty() || !letters.len().is_multiple_of(2) {
-        return None;
-    }
-    (0..letters.len())
-        .step_by(2)
-        .map(|at| u8::from_str_radix(letters.get(at..at + 2)?, 16).ok())
-        .collect()
+    obelus_app::app::servers::as_a_key(&letters).context("that key is not one a server prints")
 }
 
 /// The key as the letters a server prints.

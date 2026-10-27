@@ -109,12 +109,6 @@ impl App {
     /// and a page covers what shares its room.
     pub(super) fn the_tree_has_gone(&mut self) {
         tracing::warn!(tree = %self.working_directory.display(), "the tree Obelus is on has gone");
-        if self.give_up_unseen(format!(
-            "The tree Obelus was on has gone: {}",
-            self.working_directory.display()
-        )) {
-            return;
-        }
         self.make_room(layers::Room::Screen);
         self.gone = true;
         self.head = None;
@@ -283,13 +277,6 @@ impl App {
         // same question wherever this one was started, so it is asked
         // whether or not the reader has said where they work.
         self.ask_about_releases();
-        // Before what went wrong, which a chat that is not there to
-        // connect to is one of. And not before there is a project, like
-        // the tools above: a conversation begun from the chat would be
-        // rooted at wherever the process began. `settle_on` connects.
-        if self.bot_at_start && self.which_project.chooser.is_none() {
-            self.connect_bot_at_start(self.reading_nothing());
-        }
         // What went wrong on the way up, over whatever the first screen is,
         // and last of all so that everything that could go wrong has.
         let told = self.tell_what_went_wrong();

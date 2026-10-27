@@ -700,11 +700,11 @@ impl App {
     /// asks again, and any answer writes the file, `obelus` included, so
     /// no start after it does.
     ///
-    /// Not where nobody is at the screen, and not over the page asking
-    /// which project: that page is the whole screen and the more pressing
-    /// question, so this waits for the answer (`App::settle_on`).
+    /// Not over the page asking which project: that page is the whole
+    /// screen and the more pressing question, so this waits for the answer
+    /// (`App::settle_on`).
     pub(in crate::app) fn ask_for_a_keymap(&mut self) {
-        if !self.settled.unchosen || self.is_headless() || self.which_project.chooser.is_some() {
+        if !self.settled.unchosen || self.which_project.chooser.is_some() {
             return;
         }
         self.settled.unchosen = false;
