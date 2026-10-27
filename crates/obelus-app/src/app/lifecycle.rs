@@ -52,11 +52,10 @@ impl App {
     /// again a moment at a time, what answers takes the window back to the
     /// Obelus it was on (`App::reachable`).
     pub fn the_machine_has_gone(&mut self, gone: super::MachineGone) {
-        tracing::warn!(
-            at = gone.at,
-            why = gone.why,
-            "a machine this window was on cannot be reached"
-        );
+        match &gone.why {
+            Some(why) => tracing::warn!(at = gone.at, why, "a machine cannot be reached"),
+            None => tracing::info!(at = gone.at, "connecting to a machine"),
+        }
         self.make_room(layers::Room::Screen);
         self.machine_gone = Some(gone);
     }
@@ -70,6 +69,19 @@ impl App {
             .is_some_and(|gone| gone.trying && gone.at == at)
         {
             self.try_the_machine_again();
+        }
+    }
+
+    /// A try at the machine the page is about came to nothing: what it
+    /// says now, where it said it was connecting -- or that it is still
+    /// not answering, and why.
+    pub(super) fn unreachable(&mut self, at: &str, why: String) {
+        if let Some(gone) = self
+            .machine_gone
+            .as_mut()
+            .filter(|gone| gone.trying && gone.at == at)
+        {
+            gone.why = Some(why);
         }
     }
 
@@ -126,7 +138,12 @@ impl App {
                 // asks which project, as it would have from a start.
                 self.machine_gone = None;
                 self.ask_which_project();
-            } else if key.code == KeyCode::Char(obelus_ui::gone::AGAIN) && bare {
+            } else if key.code == KeyCode::Char(obelus_ui::gone::AGAIN)
+                && bare
+                // Not while the first try is still under way: there is
+                // nothing yet to try again, and the page offers no key.
+                && self.machine_gone.as_ref().is_some_and(|gone| gone.why.is_some())
+            {
                 self.try_the_machine_again();
             } else if self.keymap.lookup(key, Context::Dialog) == Some(Command::Quit) {
                 self.request_quit();

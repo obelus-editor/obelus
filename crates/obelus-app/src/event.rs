@@ -299,6 +299,15 @@ pub enum Event {
     /// The machine of this name answers again, which the page saying it
     /// went is waiting for.
     Reachable(String),
+    /// A try at the machine of this name came to nothing, for this reason:
+    /// what the page waiting on it says, where it was still saying that it
+    /// is connecting.
+    Unreachable {
+        /// The machine.
+        at: String,
+        /// Why, as the connection said it.
+        why: String,
+    },
     /// Something the reader did came to nothing for a reason only the
     /// front end knows -- a file dropped that could not go -- said on the
     /// status row.
@@ -338,6 +347,7 @@ impl Event {
             Self::Dropped(_) => "Dropped",
             Self::Tick => "Tick",
             Self::Reachable(_) => "Reachable",
+            Self::Unreachable { .. } => "Unreachable",
             Self::Amiss(_) => "Amiss",
             Self::NotesSettled => "NotesSettled",
             Self::StoppedWriting(_) => "StoppedWriting",

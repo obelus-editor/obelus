@@ -115,6 +115,19 @@ pub(crate) fn drawing(
                 Start::Afar(afar)
             }
             Start::Afar(afar) => {
+                // Not a screen with nothing on it while a machine that is
+                // not there is waited on: the page saying so, at once.
+                if let Some(page) = obelus_front::client::first(&afar, found.nudge)? {
+                    match page {
+                        Next::Done => return Ok(()),
+                        Next::Here(app, wait) => {
+                            waiting = wait;
+                            next = Start::Here(app);
+                            terminal.clear()?;
+                            continue;
+                        }
+                    }
+                }
                 let left = afar_drawn(&afar, terminal, &found)?;
                 match obelus_front::client::after(&afar, left, found.nudge)? {
                     Next::Done => return Ok(()),

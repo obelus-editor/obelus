@@ -50,11 +50,30 @@ const WHILE_IT_BLINKS: Duration = Duration::from_secs(2);
 /// step of the knock.
 const KNOCKING: Duration = Duration::from_secs(10);
 
+/// How long a machine is given to take a connection. A name nobody is at
+/// otherwise waits on the system's own patience, which is twenty seconds
+/// on Windows and two minutes elsewhere -- and the window has nothing to
+/// draw meanwhile.
+const CONNECTING: Duration = Duration::from_secs(3);
+
+/// How long a first connection is waited for before the page saying it is
+/// connecting goes up: less than a reader notices, so a machine that
+/// answers puts up no page, and one that does not leaves no blank window.
+const AT_ONCE: Duration = Duration::from_millis(300);
+
 /// Asks whether the machine at `afar` answers, a moment at a time and each
 /// moment longer, and says so on `nudge` as `Event::Reachable` once it
 /// does -- for a page waiting on it. Stops when `stop` says to, which is
 /// the page having gone: nothing else could say the machine is back.
-pub fn wait_for(afar: &Afar, nudge: std::sync::mpsc::Sender<Event>) -> std::sync::Arc<AtomicBool> {
+///
+/// Each try that comes to nothing says why, as `Event::Unreachable`: the
+/// page that said it was connecting says why it cannot instead. The first
+/// try is `first` from now.
+pub fn wait_for(
+    afar: &Afar,
+    nudge: std::sync::mpsc::Sender<Event>,
+    first: Duration,
+) -> std::sync::Arc<AtomicBool> {
     let stop = std::sync::Arc::new(AtomicBool::new(false));
     let stopped = std::sync::Arc::clone(&stop);
     let asked = Afar {
@@ -67,17 +86,27 @@ pub fn wait_for(afar: &Afar, nudge: std::sync::mpsc::Sender<Event>) -> std::sync
     let started = std::thread::Builder::new()
         .name("obelus waiting for a machine".to_string())
         .spawn(move || {
-            let mut wait = Duration::from_secs(1);
+            let mut wait = first;
+            let mut then = Duration::from_secs(1);
             while !stopped.load(Ordering::Acquire) {
                 std::thread::sleep(wait);
                 if stopped.load(Ordering::Acquire) {
                     return;
                 }
-                if asked.answers() {
-                    let _ = nudge.send(Event::Reachable(asked.at));
-                    return;
+                match asked.reached() {
+                    Ok(()) => {
+                        let _ = nudge.send(Event::Reachable(asked.at));
+                        return;
+                    }
+                    Err(why) => {
+                        let _ = nudge.send(Event::Unreachable {
+                            at: asked.at.clone(),
+                            why,
+                        });
+                    }
                 }
-                wait = (wait * 2).min(LONGEST);
+                wait = then;
+                then = (then * 2).min(LONGEST);
             }
         });
     if let Err(error) = started {
@@ -113,16 +142,16 @@ impl Afar {
     }
 
     /// Whether the machine answers on the server's port at all, which is
-    /// all a page waiting for it needs to know before knocking.
-    #[must_use]
-    pub fn answers(&self) -> bool {
-        use std::net::ToSocketAddrs as _;
-        let Ok(addresses) = self.address().to_socket_addrs() else {
-            return false;
-        };
-        addresses
-            .into_iter()
-            .any(|address| TcpStream::connect_timeout(&address, Duration::from_secs(2)).is_ok())
+    /// all a page waiting for it needs to know before knocking -- or why
+    /// not, as the connection said it.
+    ///
+    /// # Errors
+    ///
+    /// Why the machine did not take the connection.
+    pub fn reached(&self) -> Result<(), String> {
+        connected(&self.address())
+            .map(drop)
+            .map_err(|error| error.to_string())
     }
 
     /// Where to connect: the port the reader gave, or the server's own.
@@ -154,6 +183,84 @@ fn hex(key: &[u8]) -> String {
     key.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
+/// A connection to `address`, given [`CONNECTING`] to be taken at each of
+/// the places the name is -- or why there is none.
+fn connected(address: &str) -> std::io::Result<TcpStream> {
+    use std::net::ToSocketAddrs as _;
+    let mut last = std::io::Error::new(std::io::ErrorKind::NotFound, "Nothing is at that name");
+    for at in address.to_socket_addrs()? {
+        match TcpStream::connect_timeout(&at, CONNECTING) {
+            Ok(stream) => return Ok(stream),
+            Err(error) => last = error,
+        }
+    }
+    Err(last)
+}
+
+/// What a front end draws before it knocks on `afar`: nothing, where the
+/// machine takes the connection in a moment -- and otherwise the page that
+/// says so, rather than a window with nothing in it while the system
+/// decides. Connecting, with the machine asked again behind it, where the
+/// first try has said nothing yet; that it cannot be reached and why,
+/// where it already has.
+///
+/// # Errors
+///
+/// Where an Obelus of this machine's would not start, to draw the page.
+pub fn first(afar: &Afar, nudge: &std::sync::mpsc::Sender<Event>) -> Result<Option<Next>> {
+    first_within(afar, nudge, AT_ONCE)
+}
+
+/// [`first`], waiting `moment` for the first try.
+fn first_within(
+    afar: &Afar,
+    nudge: &std::sync::mpsc::Sender<Event>,
+    moment: Duration,
+) -> Result<Option<Next>> {
+    let (said, heard) = std::sync::mpsc::channel();
+    let address = afar.address();
+    // On a thread of its own, which goes on after the moment is up: what
+    // it says then is nobody's, and the page asks again for itself.
+    let started = std::thread::Builder::new()
+        .name("obelus connecting".to_string())
+        .spawn(move || {
+            let _ = said.send(
+                connected(&address)
+                    .map(drop)
+                    .map_err(|error| error.to_string()),
+            );
+        });
+    if let Err(error) = started {
+        tracing::warn!(%error, "no thread to connect on, so the knock waits");
+        return Ok(None);
+    }
+    match heard.recv_timeout(moment) {
+        Ok(Ok(())) => Ok(None),
+        Ok(Err(why)) => after(
+            afar,
+            Left::Lost {
+                window: afar.window.clone(),
+                why,
+                again: true,
+            },
+            nudge,
+        )
+        .map(Some),
+        Err(_) => {
+            let mut app = obelus_app::startup::start(&[], afar.build)?;
+            app.the_machine_has_gone(obelus_app::app::MachineGone {
+                at: afar.at.clone(),
+                key: afar.letters(),
+                window: afar.window.clone(),
+                why: None,
+                trying: true,
+            });
+            let waiting = wait_for(afar, nudge.clone(), Duration::ZERO);
+            Ok(Some(Next::Here(Box::new(app), Some(waiting))))
+        }
+    }
+}
+
 /// Knocks on the server, and says what it answered and the connection.
 fn knock(
     afar: &Afar,
@@ -161,8 +268,8 @@ fn knock(
     measured: &Measured,
     window: Option<&str>,
 ) -> Result<(TcpStream, Answered)> {
-    let mut stream = TcpStream::connect(afar.address())
-        .with_context(|| format!("connecting to {}", afar.address()))?;
+    let mut stream =
+        connected(&afar.address()).with_context(|| format!("connecting to {}", afar.address()))?;
     stream.set_nodelay(true)?;
     // A server that took the connection and then said nothing is a page
     // saying so in a moment, not a window frozen for as long as the
@@ -326,10 +433,10 @@ pub fn after(afar: &Afar, left: Left, nudge: &std::sync::mpsc::Sender<Event>) ->
                 at: afar.at.clone(),
                 key: afar.letters(),
                 window,
-                why,
+                why: Some(why),
                 trying: again,
             });
-            let waiting = again.then(|| wait_for(afar, nudge.clone()));
+            let waiting = again.then(|| wait_for(afar, nudge.clone(), Duration::from_secs(1)));
             Ok(Next::Here(Box::new(app), waiting))
         }
     }
@@ -562,6 +669,57 @@ mod tests {
         at.to_string()
     }
 
+    /// What a front end draws before it knocks: nothing where the machine
+    /// takes the connection, the page saying it cannot be reached where it
+    /// said no at once, and the page saying it is connecting where it has
+    /// said nothing yet.
+    ///
+    /// Broken deliberately by knocking whatever the first try says (`first`
+    /// answering nothing): no page went up for a machine nobody is at. And
+    /// by waiting out the first try however long it takes (`recv` for
+    /// `recv_timeout` in `first_within`): the moment passed with nothing
+    /// drawn, which is the blank window this is for.
+    #[test]
+    fn before_knocking_a_machine_is_drawn_as_what_it_has_said() {
+        let afar = |at: String| Afar {
+            at,
+            key: vec![1],
+            path: None,
+            build: "the test",
+            window: None,
+        };
+        let page = |next: Option<Next>| match next {
+            Some(Next::Here(app, waiting)) => {
+                if let Some(waiting) = waiting {
+                    waiting.store(true, Ordering::Release);
+                }
+                app.machine_gone().map(|gone| gone.why.clone())
+            }
+            _ => None,
+        };
+        let (nudge, _heard) = std::sync::mpsc::channel();
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("loopback");
+        let there = afar(listener.local_addr().expect("an address").to_string());
+        assert!(
+            first_within(&there, &nudge, Duration::from_secs(10))
+                .expect("asked")
+                .is_none(),
+            "a page went up for a machine that is there"
+        );
+
+        let refused = page(
+            first_within(&afar(nothing_there()), &nudge, Duration::from_secs(10)).expect("asked"),
+        );
+        assert!(
+            matches!(refused, Some(Some(_))),
+            "a machine that said no was not said to be gone: {refused:?}"
+        );
+
+        let still = page(first_within(&there, &nudge, Duration::ZERO).expect("asked"));
+        assert_eq!(still, Some(None), "the page did not say it was connecting");
+    }
+
     /// A machine that cannot be reached at all is said to be lost, worth
     /// asking again, and with no window there to take up.
     ///
@@ -649,7 +807,7 @@ mod tests {
             window: None,
         };
         let (nudge, heard) = std::sync::mpsc::channel();
-        let stop = wait_for(&afar, nudge);
+        let stop = wait_for(&afar, nudge, Duration::from_secs(1));
         let listener = std::net::TcpListener::bind(&at).expect("the machine back");
         let said = heard
             .recv_timeout(Duration::from_secs(20))
@@ -657,6 +815,35 @@ mod tests {
         assert!(matches!(said, Event::Reachable(ref named) if *named == at));
         stop.store(true, Ordering::Release);
         drop(listener);
+    }
+
+    /// A try at a machine waited for that comes to nothing says why, for
+    /// the page that said it was connecting -- and says it at once where
+    /// asked to.
+    ///
+    /// Broken deliberately by keeping quiet about a try that failed (no
+    /// `Event::Unreachable` in `wait_for`): nothing was heard, and the page
+    /// said it was connecting to a machine that had already said no.
+    #[test]
+    fn a_try_at_a_machine_waited_for_says_why_it_came_to_nothing() {
+        let at = nothing_there();
+        let afar = Afar {
+            at: at.clone(),
+            key: Vec::new(),
+            path: None,
+            build: "the test",
+            window: None,
+        };
+        let (nudge, heard) = std::sync::mpsc::channel();
+        let stop = wait_for(&afar, nudge, Duration::ZERO);
+        let said = heard
+            .recv_timeout(Duration::from_secs(10))
+            .expect("nothing said why");
+        stop.store(true, Ordering::Release);
+        assert!(
+            matches!(said, Event::Unreachable { at: ref named, ref why } if *named == at && !why.is_empty()),
+            "{said:?}"
+        );
     }
 
     /// A machine named alone is reached at the server's own port, and one

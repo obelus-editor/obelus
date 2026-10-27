@@ -93,6 +93,9 @@ impl App {
             || self.server_busy()
             // And the chat's mark, while the window it talks to connects.
             || self.bot_turning()
+            // And the page saying a machine is being connected to, for as
+            // long as the first try at it has said nothing either way.
+            || self.machine_gone.as_ref().is_some_and(|gone| gone.why.is_none())
             // And a list being matched somewhere else, or still being
             // filled. The same rule once more: the row that says so turns,
             // and a mark drawn once and never again is a mark saying

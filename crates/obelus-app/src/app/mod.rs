@@ -1598,8 +1598,10 @@ pub struct MachineGone {
     pub key: String,
     /// The window there this was, to take up where the machine answers.
     pub window: Option<String>,
-    /// Why it could not be reached, in words for the reader.
-    pub why: String,
+    /// Why it could not be reached, in words for the reader -- or nothing
+    /// yet, while the first try at it is still under way, and the page
+    /// says it is connecting.
+    pub why: Option<String>,
     /// Whether it is being asked again, a moment at a time: not where it
     /// answered and would not let the window in.
     pub trying: bool,

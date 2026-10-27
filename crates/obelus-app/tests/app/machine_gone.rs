@@ -17,7 +17,7 @@ fn gone(trying: bool) -> App {
         at: "devbox".to_string(),
         key: "00ff".to_string(),
         window: Some("w1".to_string()),
-        why: "connection refused".to_string(),
+        why: Some("connection refused".to_string()),
         trying,
     });
     app
@@ -124,9 +124,11 @@ fn a_long_reason_is_said_whole() {
         at: "devbox".to_string(),
         key: "00ff".to_string(),
         window: None,
-        why: "No connection could be made because the target machine actively refused it. \
+        why: Some(
+            "No connection could be made because the target machine actively refused it. \
               (os error 10061)"
-            .to_string(),
+                .to_string(),
+        ),
         trying: false,
     });
     let screen = support::render(&mut app, 60, 24);
@@ -134,6 +136,59 @@ fn a_long_reason_is_said_whole() {
         assert!(
             screen.contains(said),
             "the page does not say {said:?}:\n{screen}"
+        );
+    }
+}
+
+/// A machine still being connected to says so, with a mark that turns and
+/// no key to try again -- there is nothing yet to try again -- and becomes
+/// the page saying it cannot be reached once a try says why.
+///
+/// Broken deliberately twice. By not hearing what the try said
+/// (`Event::Unreachable` handled as nothing): the page said it was
+/// connecting for ever. And by trying again on the key while connecting
+/// (the `why.is_some()` guard left out of the page's keys): `r` let go of
+/// the window to start the try that was already under way again.
+#[test]
+fn a_machine_being_connected_to_says_so_until_a_try_says_why_not() {
+    let mut app = App::new(Vec::new());
+    support::lay_out(&mut app, 80, 24);
+    app.the_machine_has_gone(MachineGone {
+        at: "devbox".to_string(),
+        key: "00ff".to_string(),
+        window: None,
+        why: None,
+        trying: true,
+    });
+    let screen = support::render(&mut app, 80, 24);
+    let connecting = format!("{} Connecting to devbox", obelus_ui::spinning(app.phase()));
+    assert!(
+        screen.contains(&connecting),
+        "the page does not say it is connecting:
+{screen}"
+    );
+    assert!(
+        !screen.contains("Try again"),
+        "a key to try again while trying:
+{screen}"
+    );
+    support::press(&mut app, KeyCode::Char(obelus_ui::gone::AGAIN));
+    assert_eq!(app.goes_to(), None, "the key started the try again");
+
+    app.handle(Event::Unreachable {
+        at: "devbox".to_string(),
+        why: "connection refused".to_string(),
+    });
+    let screen = support::render(&mut app, 80, 24);
+    for said in [
+        "Obelus cannot reach devbox",
+        "connection refused",
+        "Try again",
+    ] {
+        assert!(
+            screen.contains(said),
+            "the page does not say {said:?}:
+{screen}"
         );
     }
 }
