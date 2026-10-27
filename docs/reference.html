@@ -243,7 +243,7 @@
           </tr>
           <tr>
             <td>Obelus</td>
-            <td><code>choose-theme</code> <code>new-conversation</code> <code>choose-conversation</code> <code>open-terminal</code> <code>open-settings</code> <code>connect-to-chat</code> <code>disconnect-from-chat</code> <code>open-project-settings</code> <code>open-settings-file</code> <code>open-log</code> <code>open-server-log</code> <code>restart-server</code> <code>stop-server</code> <code>quit</code></td>
+            <td><code>choose-theme</code> <code>new-conversation</code> <code>choose-conversation</code> <code>open-terminal</code> <code>open-settings</code> <code>connect-to-chat</code> <code>disconnect-from-chat</code> <code>connect-to-server</code> <code>disconnect-from-server</code> <code>open-project-settings</code> <code>open-settings-file</code> <code>open-log</code> <code>open-server-log</code> <code>restart-server</code> <code>stop-server</code> <code>quit</code></td>
           </tr>
         </tbody>
       </table>
@@ -363,6 +363,7 @@ anchor = "center"     # what stays put: top-left, top, top-right, left,
         <li>If the worktree a window is on is removed, from your shell or with <code>git worktree remove</code>, a page over the whole window says so. <kbd>Enter</kbd> lets go of everything that was open there (there is nowhere left to save it) and asks which project to open next; <kbd>Ctrl+q</kbd> quits.</li>
         <li>In the worktree list (<kbd>F2</kbd>, then <kbd>Tab</kbd>), a tree next to the main checkout is shown by its own name, one inside it by the path down to it, and anything else by its full path. A tree deleted without telling Git says <code>Missing</code> and can't be chosen.</li>
         <li>Each window runs its own language server and its own agent. Three windows on one Rust project means three rust-analyzers.</li>
+        <li>A window on <a href="features.html#machines">another machine</a> is an Obelus of its own over there, and the same holds there: two windows on that machine's project are two Obelus processes on it, sharing its notes and its build jobs.</li>
       </ul>
     </section>
 

@@ -243,7 +243,7 @@
           </tr>
           <tr>
             <td>Obelus</td>
-            <td><code>choose-theme</code> <code>new-conversation</code> <code>choose-conversation</code> <code>open-terminal</code> <code>open-settings</code> <code>connect-to-chat</code> <code>disconnect-from-chat</code> <code>open-project-settings</code> <code>open-settings-file</code> <code>open-log</code> <code>open-server-log</code> <code>restart-server</code> <code>stop-server</code> <code>quit</code></td>
+            <td><code>choose-theme</code> <code>new-conversation</code> <code>choose-conversation</code> <code>open-terminal</code> <code>open-settings</code> <code>connect-to-chat</code> <code>disconnect-from-chat</code> <code>connect-to-server</code> <code>disconnect-from-server</code> <code>open-project-settings</code> <code>open-settings-file</code> <code>open-log</code> <code>open-server-log</code> <code>restart-server</code> <code>stop-server</code> <code>quit</code></td>
           </tr>
         </tbody>
       </table>
@@ -362,6 +362,7 @@ anchor = "center"     # 哪一处不动：top-left、top、top-right、left、
         <li>在一个窗口里改了设置，或者直接改了设置文件，所有窗口都会跟着变。</li>
         <li>窗口所在的 worktree 被删掉了（在 shell 里删的，或者 <code>git worktree remove</code>），整个窗口会弹出一页说明这件事。按 <kbd>Enter</kbd> 放下这个项目里打开的一切（已经没有地方可存了），再选下一个要打开的项目；按 <kbd>Ctrl+q</kbd> 退出。</li>
         <li>worktree 列表里（按 <kbd>F2</kbd> 再按 <kbd>Tab</kbd>），和主 checkout 并排的 worktree 显示它自己的名字，在主 checkout 里面的显示往下的路径，别处的显示完整路径。没通过 Git 就被删掉的 worktree 显示 <code>Missing</code>，选不了。</li>
+        <li>连到<a href="features.html#machines">另一台机器</a>的窗口，在那边是一个单独的 Obelus，上面这些在那边同样成立：那台机器的项目上开两个窗口，就是那边的两个 Obelus 进程，共用那边的笔记和编译任务池。</li>
         <li>每个窗口有自己的语言服务器和自己的 agent。同一个 Rust 项目开三个窗口，就是三个 rust-analyzer。</li>
       </ul>
     </section>
