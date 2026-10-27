@@ -341,16 +341,7 @@ fn key() -> Result<Vec<u8>> {
     }
     let mut key = vec![0_u8; 32];
     getrandom::fill(&mut key).map_err(|error| anyhow::anyhow!("{error}"))?;
-    let mut file = std::fs::OpenOptions::new();
-    file.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt as _;
-        // Its owner's alone: the key is the whole of what stands between a
-        // connection and running anything here.
-        file.mode(0o600);
-    }
-    file.open(&path)?.write_all(hex(&key).as_bytes())?;
+    obelus_private::write(&path, hex(&key).as_bytes())?;
     Ok(key)
 }
 

@@ -1,0 +1,15 @@
+[package]
+name = "obelus-private"
+description = "A file only the person running Obelus can read"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Cargo inherits nothing here on its own; every member says it.
+[lints]
+workspace = true
+
+# Who may read a file is a mode on one platform and a list of who may on
+# the other, and neither is made to carry the other's.
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true

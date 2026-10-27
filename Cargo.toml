@@ -59,6 +59,7 @@ obelus-logging = { path = "crates/obelus-logging" }
 obelus-lsp = { path = "crates/obelus-lsp" }
 obelus-markdown = { path = "crates/obelus-markdown" }
 obelus-mcp = { path = "crates/obelus-mcp" }
+obelus-private = { path = "crates/obelus-private" }
 obelus-program = { path = "crates/obelus-program" }
 obelus-reading = { path = "crates/obelus-reading" }
 obelus-row = { path = "crates/obelus-row" }
@@ -475,6 +476,8 @@ libc = "0.2.189"
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
     "Win32_Security",
+    # And who may read a file, said outright: see `obelus-private`.
+    "Win32_Security_Authorization",
     "Win32_Storage_FileSystem",
     "Win32_System_IO",
     # And a job, which is how a command an agent asked for is stopped with

@@ -344,3 +344,19 @@ fn a_dropped_file_is_kept_on_the_server_machine() {
     }
     let _ = std::fs::remove_file(&kept);
 }
+
+/// The key a server makes is its owner's alone: it is the whole of what
+/// stands between a connection and running anything here.
+///
+/// Broken deliberately by writing it the ordinary way (`std::fs::write` for
+/// `obelus_private::write` in `server::key`): anybody on the machine could
+/// read the key and get in.
+#[test]
+fn the_key_is_nobody_else_s() {
+    let server = a_server("private");
+    let path = server._state.0.join("obelus").join("server.key");
+    assert!(
+        obelus_private::is_private(&path).expect("asked"),
+        "anybody may read the key"
+    );
+}

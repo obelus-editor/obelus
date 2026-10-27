@@ -4475,6 +4475,7 @@ dependencies = [
  "obelus-lsp",
  "obelus-markdown",
  "obelus-mcp",
+ "obelus-private",
  "obelus-program",
  "obelus-reading",
  "obelus-row",
@@ -4575,6 +4576,7 @@ dependencies = [
  "obelus-front",
  "obelus-keymap",
  "obelus-logging",
+ "obelus-private",
  "obelus-ui",
  "obelus-wire",
  "ratatui",
@@ -4867,6 +4869,13 @@ dependencies = [
  "serde",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "obelus-private"
+version = "0.17.1"
+dependencies = [
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

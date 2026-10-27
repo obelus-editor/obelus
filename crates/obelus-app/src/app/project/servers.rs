@@ -7,7 +7,8 @@
 //! machine's state and read by both the front end that connects (the key)
 //! and the Obelus that offers the list (the rows). The key is kept beside
 //! the machine's name so that a server is a row and not a question: the
-//! first connection asks for it, and none after does.
+//! first connection asks for it, and none after does -- which makes the file as
+//! private as the key on the server is (`obelus_private`).
 //!
 //! **A new one first, then the ones there have been, by the day.** The list
 //! opens on the row that asks where, and the machines after it are in the
@@ -133,7 +134,21 @@ pub fn remember(at: &str, key: &str, now: i64) -> bool {
             last: Some(now),
         },
     );
-    super::projects::written_beside(&path, &to_toml(&servers))
+    // Not beside the projects' way: the keys are in it, and each is the
+    // whole of what lets a window in to run anything on its machine.
+    if let Some(directory) = path.parent()
+        && let Err(error) = std::fs::create_dir_all(directory)
+    {
+        tracing::warn!(%error, path = %path.display(), "nowhere to remember servers");
+        return false;
+    }
+    match obelus_private::write(&path, to_toml(&servers).as_bytes()) {
+        Ok(()) => true,
+        Err(error) => {
+            tracing::warn!(%error, path = %path.display(), "the list of servers was not written");
+            false
+        }
+    }
 }
 
 impl crate::app::App {

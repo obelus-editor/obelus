@@ -170,3 +170,31 @@ fn the_way_back_is_offered_only_on_another_machine() {
     obelus_app::app::dispatch::dispatch(&mut app, Command::ServerDisconnect);
     assert_eq!(app.goes_to(), Some(&Going::Home));
 }
+
+/// The list a machine is remembered in holds its key, so nobody else on
+/// this machine may read it -- and what was there before is kept with it.
+///
+/// Broken deliberately by writing the list the ordinary way (`std::fs::write`
+/// for `obelus_private::write` in `servers::remember`): every key a window
+/// had been let in with was readable by anybody here.
+#[test]
+fn the_keys_remembered_are_nobody_else_s() {
+    let _turn = crate::turn();
+    keep_servers("[[server]]\nat = \"old\"\nkey = \"aa\"\nlast = 0\n");
+    assert!(obelus_app::app::servers::remember("devbox", "00ff", 1));
+    let path = obelus_logging::state_directory()
+        .expect("somewhere to keep them")
+        .join("servers.toml");
+    assert!(
+        obelus_private::is_private(&path).expect("asked"),
+        "anybody may read the keys"
+    );
+    assert_eq!(
+        obelus_app::app::servers::key_for("old").as_deref(),
+        Some("aa")
+    );
+    assert_eq!(
+        obelus_app::app::servers::key_for("devbox").as_deref(),
+        Some("00ff")
+    );
+}

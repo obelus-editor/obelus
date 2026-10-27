@@ -23,6 +23,7 @@ obelus-config.workspace = true
 obelus-front.workspace = true
 obelus-keymap.workspace = true
 obelus-logging.workspace = true
+obelus-private.workspace = true
 obelus-ui.workspace = true
 obelus-wire.workspace = true
 getrandom.workspace = true
@@ -38,6 +39,7 @@ tracing.workspace = true
 [dev-dependencies]
 crossterm.workspace = true
 obelus-front.workspace = true
+obelus-private.workspace = true
 obelus-wire.workspace = true
 
 # What `cargo deb` and `cargo generate-rpm` make of this crate, which is the

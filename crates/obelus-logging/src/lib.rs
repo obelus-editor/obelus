@@ -106,6 +106,7 @@ pub const OURS: &[&str] = &[
     "obelus_lsp",
     "obelus_markdown",
     "obelus_mcp",
+    "obelus_private",
     "obelus_program",
     "obelus_reading",
     "obelus_row",
