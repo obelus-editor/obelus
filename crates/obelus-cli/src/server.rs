@@ -249,8 +249,9 @@ fn let_in(mut stream: TcpStream, key: &[u8], windows: &Windows, knocking: Knocki
     }
     tracing::info!(name, again, "a window came in");
 
+    let mut hearing = std::io::BufReader::new(&*stream);
     let heard = loop {
-        match obelus_wire::read::<_, Up>(&mut &*stream) {
+        match obelus_wire::read::<_, Up>(&mut hearing) {
             Ok(Some(up)) => tell(&input, &ToChild::Up(up)),
             Ok(None) => break "the window went".to_string(),
             Err(error) => break error.to_string(),
@@ -300,7 +301,9 @@ fn started(knock: &Knock, windows: &Windows) -> Result<Entered> {
         .spawn()
         .context("an Obelus for the window")?;
     let input = Arc::new(Mutex::new(child.stdin.take().context("its input")?));
-    let mut output = child.stdout.take().context("its output")?;
+    // Read through a buffer, which is what lets a frame be read with one
+    // read of the pipe rather than two.
+    let mut output = std::io::BufReader::new(child.stdout.take().context("its output")?);
     tell(
         &input,
         &ToChild::Open {

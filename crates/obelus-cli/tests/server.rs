@@ -164,10 +164,17 @@ impl Window {
         while !until(self) {
             assert!(Instant::now() < deadline, "gave up waiting for {what}");
             match obelus_wire::read::<_, Down>(&mut self.stream) {
-                Ok(Some(Down::Update(Update::Cell { x, y, cell }))) => {
-                    self.cells.insert((y, x), cell.symbol().to_string());
+                Ok(Some(Down::Updates(updates))) => {
+                    for update in updates {
+                        match update {
+                            Update::Cell { x, y, cell } => {
+                                self.cells.insert((y, x), cell.symbol().to_string());
+                            }
+                            Update::Cleared => self.cells.clear(),
+                            _ => {}
+                        }
+                    }
                 }
-                Ok(Some(Down::Update(Update::Cleared))) => self.cells.clear(),
                 Ok(Some(Down::Finished)) => return false,
                 Ok(Some(_)) => {}
                 Ok(None) => return false,
