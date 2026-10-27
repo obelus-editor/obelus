@@ -560,7 +560,11 @@ impl obelus_ui::image::Marks for Marking {
 pub struct Telling {
     showing: Arc<dyn Showing>,
     /// What reads the picture under the page, a picture at a time.
-    reading: std::sync::mpsc::Sender<Option<obelus_theme::Wallpaper>>,
+    reading: std::sync::mpsc::Sender<(u64, obelus_theme::Wallpaper)>,
+    /// The newest picture asked for, by number -- held while one is said,
+    /// so that a picture read for a theme the reader has already left is
+    /// never said after what replaced it.
+    newest: Arc<std::sync::Mutex<u64>>,
 }
 
 impl std::fmt::Debug for Telling {
@@ -573,24 +577,47 @@ impl Telling {
     /// Says where to send what the application works out about the window.
     #[must_use]
     pub fn new(showing: Arc<dyn Showing>) -> Self {
-        let (reading, asked) = std::sync::mpsc::channel::<Option<obelus_theme::Wallpaper>>();
+        Self::reading_with(showing, |file| std::fs::read(file))
+    }
+
+    /// The same, reading a picture's file with `read`: what a test holds
+    /// up, to ask for another while one is being read.
+    fn reading_with(
+        showing: Arc<dyn Showing>,
+        read: impl Fn(&std::path::Path) -> std::io::Result<Vec<u8>> + Send + 'static,
+    ) -> Self {
+        let (reading, asked) = std::sync::mpsc::channel::<(u64, obelus_theme::Wallpaper)>();
         let shown = Arc::clone(&showing);
-        // One thread, in the order the pictures were asked for: the window
-        // takes the newest by the order they arrive in, so two read side by
-        // side could hand it the older one last. It ends with the last of
+        let newest: Arc<std::sync::Mutex<u64>> = Arc::default();
+        let now = Arc::clone(&newest);
+        // One thread, which reads only the newest of what is waiting: moving
+        // through the themes asks for a picture at every step, and the
+        // reader wants the one they stopped on. It ends with the last of
         // what asks it, which is the application going.
         let started = std::thread::Builder::new()
             .name("obelus wallpaper reader".to_string())
             .spawn(move || {
-                while let Ok(wallpaper) = asked.recv() {
-                    let hanging = wallpaper.map(|wallpaper| {
-                        let bytes = std::fs::read(&wallpaper.file).unwrap_or_else(|error| {
-                            tracing::warn!(%error, file = %wallpaper.file.display(), "a wallpaper that would not read");
-                            Vec::new()
-                        });
-                        Hanging { wallpaper, bytes }
+                while let Ok(mut asked_for) = asked.recv() {
+                    while let Ok(newer) = asked.try_recv() {
+                        asked_for = newer;
+                    }
+                    let (number, wallpaper) = asked_for;
+                    let bytes = read(&wallpaper.file).unwrap_or_else(|error| {
+                        tracing::warn!(%error, file = %wallpaper.file.display(), "a wallpaper that would not read");
+                        Vec::new()
                     });
-                    if shown.show(Update::Picture(hanging)).is_err() {
+                    let Ok(newest) = now.lock() else {
+                        return;
+                    };
+                    // Another asked for while this one was read: that one
+                    // has already taken this one's place on the page.
+                    if *newest != number {
+                        continue;
+                    }
+                    if shown
+                        .show(Update::Picture(Some(Hanging { wallpaper, bytes })))
+                        .is_err()
+                    {
                         return;
                     }
                     shown.wake();
@@ -599,7 +626,11 @@ impl Telling {
         if let Err(error) = started {
             tracing::warn!(%error, "no thread to read the wallpaper on, so there is none");
         }
-        Self { showing, reading }
+        Self {
+            showing,
+            reading,
+            newest,
+        }
     }
 }
 
@@ -647,10 +678,21 @@ impl obelus_app::app::Drawing for Telling {
     }
 
     fn hang(&self, wallpaper: Option<&obelus_theme::Wallpaper>) {
-        // Through the reader even for none, which has nothing to read: a
-        // none said at once would overtake a picture still being read, and
-        // the picture would arrive after it.
-        let _ = self.reading.send(wallpaper.cloned());
+        let Ok(mut newest) = self.newest.lock() else {
+            return;
+        };
+        *newest += 1;
+        // The old picture goes at once, with the colours it was chosen for:
+        // a new theme's colours over the old theme's picture, for as long
+        // as the new one takes to read, is the one thing this must not do.
+        // Said holding the number, so a picture still being read for the
+        // old theme cannot come after it.
+        if self.showing.show(Update::Picture(None)).is_ok() {
+            self.showing.wake();
+        }
+        if let Some(wallpaper) = wallpaper {
+            let _ = self.reading.send((*newest, wallpaper.clone()));
+        }
     }
 
     fn recoloured(&self) {
@@ -1213,14 +1255,23 @@ mod tests {
         assert_eq!(there.pixels(), Size::new(800, 480));
     }
 
-    /// A picture under the page is handed on as what its file holds, and
-    /// the pictures -- and the none between them -- in the order they were
-    /// asked for.
+    /// A picture under the page is handed on as what its file holds; the
+    /// one before goes at once each time another is asked for; and once
+    /// the last is asked for, nothing read for one asked before it comes
+    /// after.
     ///
-    /// Broken deliberately by handing on nothing read (`bytes` left
-    /// empty): the window had no picture to decode.
+    /// The first read is held until the others have been asked for, which
+    /// is a reader moving through the themes while a large picture is read.
+    ///
+    /// Broken deliberately twice. By saying the old picture goes only once
+    /// the new one is read (no `Update::Picture(None)` in `hang`): the page
+    /// was not cleared at each ask, and kept the old theme's picture under
+    /// the new one's colours. And by handing on every picture read
+    /// (`*newest != number` left out of the reader): the first picture,
+    /// read while the others were asked for, arrived after the none that
+    /// had already replaced it.
     #[test]
-    fn a_picture_is_handed_on_as_its_bytes_in_the_order_asked() {
+    fn a_picture_is_handed_on_as_its_bytes_and_the_newest_wins() {
         let directory = std::env::temp_dir().join(format!("obelus-front-{}", std::process::id()));
         std::fs::create_dir_all(&directory).expect("somewhere to write");
         let picture = |name: &str, bytes: &[u8]| {
@@ -1238,15 +1289,24 @@ mod tests {
         let second = picture("second.png", b"second");
 
         let kept = Arc::new(Kept::default());
-        let telling = Telling::new(Arc::clone(&kept) as Arc<dyn Showing>);
+        let (reading, read) = std::sync::mpsc::channel::<()>();
+        let (go_on, held) = std::sync::mpsc::channel::<()>();
+        let held = Mutex::new(held);
+        let telling = Telling::reading_with(Arc::clone(&kept) as Arc<dyn Showing>, move |file| {
+            let _ = reading.send(());
+            if file.ends_with("first.png") {
+                let _ = held.lock().expect("the hold").recv();
+            }
+            std::fs::read(file)
+        });
         telling.hang(Some(&first));
+        read.recv().expect("the first picture being read");
         telling.hang(None);
         telling.hang(Some(&second));
+        go_on.send(()).expect("let go of");
 
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-        let shown = loop {
-            let shown: Vec<Option<Vec<u8>>> = kept
-                .0
+        let pictures = || -> Vec<Option<Vec<u8>>> {
+            kept.0
                 .lock()
                 .expect("the kept updates")
                 .iter()
@@ -1256,15 +1316,30 @@ mod tests {
                     }
                     _ => None,
                 })
-                .collect();
-            if shown.len() == 3 || std::time::Instant::now() > deadline {
-                break shown;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(10));
+                .collect()
         };
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !pictures().contains(&Some(b"second".to_vec())) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the second picture never came: {:?}",
+                pictures()
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        // Anything still being read has had its moment.
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let shown = pictures();
+        let cleared = shown.iter().filter(|picture| picture.is_none()).count();
         assert_eq!(
-            shown,
-            vec![Some(b"first".to_vec()), None, Some(b"second".to_vec())]
+            cleared, 3,
+            "the page was not cleared at each ask: {shown:?}"
+        );
+        let last_cleared = shown.iter().rposition(Option::is_none).expect("cleared");
+        assert_eq!(
+            shown[last_cleared + 1..],
+            [Some(b"second".to_vec())],
+            "something asked for before the last came after it"
         );
         let _ = std::fs::remove_dir_all(&directory);
     }
