@@ -21,6 +21,13 @@
 //! [`GRACE`] is stopped, the way a kill stops one. A window the reader
 //! closed is not waiting for anybody: its Obelus ends with it, and so does
 //! its name.
+//!
+//! **A knock with a window's name is that window.** Even while the
+//! connection it had is still thought to be here: a laptop that changed
+//! networks knocks again long before anything says its old connection
+//! went, and turning it away would start an Obelus with nothing in it and
+//! leave the reader's where nobody can reach it. The old connection is let
+//! go of instead.
 
 use std::{
     collections::HashMap,

@@ -2414,9 +2414,15 @@ fn said_as<'a>(table: &toml::Table, now: &'a str, was: &'a str) -> &'a str {
 ///
 /// Whole, so that what this version does not read in a platform's table
 /// goes with it: rebuilding the table under the new name from what was read
-/// would take that out. Where a file has both names the old lines are left
-/// alone -- the new ones are the ones read, and the old ones are somebody
-/// else's to tidy, perhaps an older Obelus still running beside this one.
+/// would take that out.
+///
+/// Moved, and not copied, where the file has only the old names: the
+/// rename is a step a settings file takes once, and an older Obelus still
+/// running beside this one reads no chat from it after this one has saved.
+/// Where a file has both names the old lines are left alone -- something
+/// wrote the new ones while the old ones were there, which is an older
+/// Obelus and a newer one sharing the file, and the older one's lines are
+/// not this one's to take away.
 fn call_the_chat_by_its_name(document: &mut toml_edit::DocumentMut) {
     for (was, now) in [("remote", "chat"), ("remotes", "chats")] {
         if document.contains_key(now) {
@@ -3650,8 +3656,10 @@ mod tests {
     /// Where a file says a line under both names, the new one is read and
     /// the old one is left where it is -- for each of the two on its own.
     ///
-    /// An Obelus from before the rename running beside this one reads only
-    /// the old one, and tidying it away would switch its chat off.
+    /// A file with both was written by both an Obelus from before the
+    /// rename and one after it, and the older one reads only the old lines:
+    /// tidying them away would switch its chat off. A file with only the
+    /// old names is moved instead, once -- see `call_the_chat_by_its_name`.
     ///
     /// Broken deliberately by reading the old names first in `said_as`: the
     /// chat was the old one. And by moving the old lines over the new ones

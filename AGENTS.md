@@ -643,6 +643,8 @@ crates/
                       drawn on are kept by the machine the reader sits at,
                       and the list offers a new one first, then the ones
                       there have been, by the day (app/project/servers);
+                      the reader's machine is not always the one Obelus
+                      runs on (app/desk);
                       what was open is kept by the tree,
                       and the last window to change it wins (app/project/reopening);
                       what an agent offers is asked of it,
@@ -955,11 +957,13 @@ crates/
                     · two keys need the terminal's permission, and the
                       editors' `ctrl+shift` chords are the only others that
                       depend on the protocol (main); one Obelus for each
-                      window, a key and a knock signed with it, and a window
-                      that goes is waited for (server); its standard input
+                      window, a key and a knock signed with it, a window
+                      that goes is waited for, and a knock with a window's
+                      name is that window (server); its standard input
                       and output are the connection, it goes on while
                       nobody is watching, and a file dropped on the window
-                      is kept where this machine keeps what passes (serve)
+                      is kept where this machine keeps what passes (serve);
+                      a terminal can change which Obelus it draws (client)
   obelus-check-theme/ whether Obelus can read a theme, for the themes
                     registry, and in no release
                     · the same reading the editor does and nothing of its
@@ -969,13 +973,17 @@ crates/
                     updates, what the settings tell a window, what a run of
                     cells is, the marks -- and the parts of Obelus that say
                     it, wherever the window that hears it is
-                    · a picture crosses as its bytes, and the window decodes
-                      it (lib); the front end is the same front end, what
+                    · here and not in the window, because the window may
+                      be somewhere else, and a picture crosses as its bytes,
+                      and the window decodes it (lib); a resize carries the
+                      size (input); the front end is the same front end, what
                       only this machine can do is done here, and a
                       connection that goes is knocked on again (client); a
                       connection is a knock first, what is said
-                      after it is not hidden, and a window is named so that
-                      it can be found again (link); a window that comes back
+                      after it is not hidden, a window is named so that
+                      it can be found again, and a connection that went
+                      without a word is found out by the kernel (link); a
+                      window that comes back
                       has nothing (replay); Obelus's own spelling and not
                       ratatui's (wire)
   obelus-wire/      a frame is a length and a message, no field may be left
