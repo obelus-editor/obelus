@@ -30,7 +30,8 @@ use crate::{
 /// The status region.
 pub struct StatusView<'a> {
     buffer: Option<&'a Buffer>,
-    /// Something Obelus has to tell the reader, until their next key.
+    /// Something Obelus has to tell the reader, until their next key --
+    /// and while it is there it is the whole row (`render_said`).
     ///
     /// What a language server says it is doing used to share this. It is
     /// not the same kind of thing: a note is a sentence about something
@@ -224,6 +225,8 @@ impl Widget for StatusView<'_> {
                     self.render_landing(&line, area, cells, style);
                 }
             }
+            // What Obelus has just said, alone: see `render_said`.
+            _ if self.middle.is_some() => self.render_said(area, cells, style),
             // Nothing over what is being read, so the row is about that.
             //
             // Which is every case left. A dialog draws the row at its own
@@ -1309,16 +1312,6 @@ impl StatusView<'_> {
         let marker = marker.as_str();
         let marker_width = encoding_width + text_width(marker);
 
-        // What the server is doing, between the file and the position. It is
-        // there so that an empty answer during indexing can be told from an
-        // empty answer about a symbol with no definition: on the wire they
-        // are the same message, and this is the only thing that says which.
-        let working = self
-            .middle
-            .map(|what| format!("{what} "))
-            .unwrap_or_default();
-        let working_width = text_width(&working);
-
         // What is wrong with the file, as a count of each kind: a reader
         // who has not looked at the list still has to know there is one.
         // Left of the position, because it is about the file and the
@@ -1375,7 +1368,6 @@ impl StatusView<'_> {
             .saturating_sub(right_start)
             .saturating_add(2)
             .saturating_add(marker_width)
-            .saturating_add(working_width)
             .saturating_add(wrong_width);
         // The file's own glyph, the same one the pickers give it, so a row in
         // a list and the file on screen are recognizably the same thing.
@@ -1462,20 +1454,6 @@ impl StatusView<'_> {
         {
             let colour = self.theme.colour_for(Some(worst(self.troubles).kind()));
             write(cells, area.x + offset, area.y, &wrong, style.fg(colour));
-        }
-
-        let working_start = wrong_start.saturating_sub(working_width);
-        if !working.is_empty()
-            && let Ok(offset) = u16::try_from(working_start)
-            && working_start > after_path + marker_width
-        {
-            write(
-                cells,
-                area.x + offset,
-                area.y,
-                &working,
-                style.fg(self.wrong_ink().unwrap_or(self.theme.gutter)),
-            );
         }
 
         if let Ok(offset) = u16::try_from(right_start) {
@@ -1617,55 +1595,38 @@ impl StatusView<'_> {
         )
     }
 
-    /// What Obelus has just said, at the right of what is left of the row:
-    /// ending before `end`, and starting no nearer the row's own words than
-    /// `from`. Where it began, where it was said.
+    /// What Obelus has just said, and nothing else on the row.
     ///
-    /// **On every row, and in one place on every row.** The row the reader
-    /// is on when Obelus says something is whichever they happen to be on,
-    /// and the notes, a terminal and a pull request's page each once drew a
-    /// row with no room for it. Then each that had room put it somewhere of
-    /// its own -- after the path on one, after the name on another, over
-    /// the mode on a third -- so the same sentence had to be looked for.
-    /// It goes where a file's row has always put it: at the right, beside
-    /// the row's own fact at that end and against the surroundings, so the
-    /// eye goes to one place for it, and the row's name keeps its room.
+    /// **While a note is there it is the whole row**, on every row: a
+    /// file's, a conversation's, the notes', a terminal's, a page's. It is
+    /// the answer to the key just pressed, it goes at the next one, and a
+    /// row that kept everything else beside it had to choose where it went
+    /// and what it might crowd -- after the path on one row, against the
+    /// position on another, over the mode on a third, and dropped whole
+    /// where it did not fit. Alone it is in one place, and only the row's
+    /// width cuts it.
     ///
-    /// In the dim ink, because it is said beside something: an aside, which
-    /// goes when the next key is pressed. Dropped whole where it does not
-    /// fit, the rule the file's row follows -- half a sentence is worse
-    /// than none, and what the row is about is never the part that goes.
-    fn aside(
-        &self,
-        cells: &mut CellBuffer,
-        area: Rect,
-        from: usize,
-        end: usize,
-        style: Style,
-    ) -> Option<usize> {
-        let note = self.middle?;
-        let start = end.checked_sub(text_width(note))?;
-        if start < from {
-            return None;
-        }
-        let offset = u16::try_from(start).ok()?;
+    /// What goes for that moment comes back at the next key, which is the
+    /// key a reader presses to look at it: the server's mark is the one
+    /// thing that was ever argued to be needed *after* a disappointing
+    /// answer (`server`), and the note saying the answer was empty is read
+    /// first.
+    ///
+    /// In the row's own ink, because alone it is not an aside; in the red
+    /// everything that would not go is written in, where it would not.
+    fn render_said(&self, area: Rect, cells: &mut CellBuffer, style: Style) {
+        let Some(note) = self.middle else {
+            return;
+        };
         write(
             cells,
-            area.x + offset,
+            area.x + 1,
             area.y,
-            note,
-            style.fg(self.wrong_ink().unwrap_or(self.theme.gutter)),
+            &truncate_from_right(note, usize::from(area.width).saturating_sub(2)),
+            self.wrong_ink().map_or(style, |ink| style.fg(ink)),
         );
-        Some(start)
     }
 
-    /// Which project the welcome screen's keys are about, where nothing is
-    /// open, with what Obelus has just said at the right of it.
-    ///
-    /// The note used to take the whole row here, alone and in the bright
-    /// ink. It is at the right now as on every row, and the project stays:
-    /// a reader told something on the welcome screen is still in that
-    /// project.
     fn render_project(&self, area: Rect, cells: &mut CellBuffer, style: Style) {
         let said = crate::with_home_as_tilde(self.working_directory);
         let label = "Project";
@@ -1676,23 +1637,18 @@ impl StatusView<'_> {
             label,
             style.fg(self.theme.gutter),
         );
-        let after = text_width(label) + usize::from(LABEL_GAP);
+        let after = u16::try_from(text_width(label)).unwrap_or(0) + LABEL_GAP;
         let end = self.surroundings_at_end(area, cells, style);
-        let end = self
-            .aside(cells, area, 1 + after + PATH_AT_LEAST + 2, end, style)
-            .map_or(end, |start| start.saturating_sub(usize::from(LABEL_GAP)));
-        let room = end.saturating_sub(after + 1);
-        if let Ok(after) = u16::try_from(after) {
-            write(
-                cells,
-                area.x + 1 + after,
-                area.y,
-                // From the left, the way a path is cut everywhere it is one:
-                // what says which project it is is at the end.
-                &crate::truncate_from_left(&said, room),
-                style,
-            );
-        }
+        let room = end.saturating_sub(usize::from(after) + 1);
+        write(
+            cells,
+            area.x + 1 + after,
+            area.y,
+            // From the left, the way a path is cut everywhere it is one:
+            // what says which project it is is at the end.
+            &crate::truncate_from_left(&said, room),
+            style,
+        );
     }
 
     /// The box at the foot of the screen that asks which project, which is
@@ -1802,11 +1758,7 @@ impl StatusView<'_> {
         write(cells, area.x + 1, area.y, &name, style);
         let end = self.surroundings_at_end(area, cells, style);
         let first = 1 + text_width(&name) + 2;
-        // Where what follows the name has to stop: before the note, where
-        // there is one.
-        let next = self
-            .aside(cells, area, first, end, style)
-            .unwrap_or(end + 1);
+        let next = end + 1;
         // Where another Obelus has the review, which is why the key that
         // takes it up does nothing here: a refused claim is drawn, never
         // said, and this is the row the notes draw theirs on. In the room
@@ -1862,15 +1814,8 @@ impl StatusView<'_> {
         {
             write(cells, area.x + offset, area.y, said, style);
         }
-        // The note between the name and the count, against the count.
         let first = 1 + text_width(&name) + 2;
-        let note_end = match said {
-            Some(_) => count_at.saturating_sub(usize::from(LABEL_GAP)),
-            None => end,
-        };
-        let next = self
-            .aside(cells, area, first, note_end, style)
-            .unwrap_or(count_at);
+        let next = count_at;
 
         // Where the note the caret is in is being talked about, when that is
         // somewhere else: the lock beside it says the keys will do nothing,
@@ -1956,18 +1901,7 @@ impl StatusView<'_> {
             ),
             false => terminal.said().to_string(),
         };
-        // The note against the state, where the words can spare it the
-        // room: the program is what is on screen, so it keeps a few
-        // columns whatever is said.
-        let note_end = match &state {
-            Some(_) => state_at.saturating_sub(usize::from(LABEL_GAP)),
-            None => end,
-        };
-        let least = text_width(&name).min(PATH_AT_LEAST);
-        let next = self
-            .aside(cells, area, 1 + least + 2, note_end, style)
-            .unwrap_or(state_at);
-        let room = next.saturating_sub(3);
+        let room = state_at.saturating_sub(3);
         let shown = crate::truncate_from_right(&name, room);
         write(cells, area.x + 1, area.y, &shown, style);
     }
