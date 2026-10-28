@@ -1794,6 +1794,9 @@ impl App {
     /// values are a list. A switch never comes here: it has two sides and
     /// is flipped where it stands.
     pub(in crate::app) fn open_agent_setting(&mut self, id: &str) {
+        // Opened from the row under the box unless the palette says
+        // otherwise, after this.
+        self.values_from_the_palette = None;
         let Some(setting) = self
             .agent_settings()
             .iter()

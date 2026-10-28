@@ -211,6 +211,7 @@ impl App {
             (None, None, None) if self.chat().is_some() => settings_as_rows(self.agent_settings()),
             _ => Vec::new(),
         };
+        self.palette_settings = (!session.is_empty()).then(|| said_of(self.agent_settings()));
         let own = usize::from(!here.is_empty() || !session.is_empty());
         let commands = obelus_command::ALL
             .iter()
@@ -279,6 +280,69 @@ impl App {
                 self.palette = Some(picker);
             }
             Some(Layer::Palette | Layer::Prompt | Layer::Gone) | None => self.show_list(picker),
+        }
+    }
+
+    /// The palette again, on the row of `setting` where it has one.
+    fn back_to_the_palette(&mut self, setting: &str) {
+        self.open_command_palette();
+        let Some(list) = self.picker.as_mut() else {
+            return;
+        };
+        let at = (0..list.row_count()).find(|&at| {
+            list.rows_at(at).is_some_and(
+                |row| matches!(&row.value, PickerValue::AgentSetting(id) if id == setting),
+            )
+        });
+        if let Some(at) = at {
+            list.select_item(at);
+        }
+    }
+
+    /// Keeps the palette's rows of the agent's settings saying what they
+    /// are set to.
+    ///
+    /// Asked once a frame, and cheaply: what the rows were written from is
+    /// kept beside them, and a handful of ids is compared with it before a
+    /// row is touched. A change goes to the agent and comes back from it,
+    /// so the rows cannot be written when the key is pressed -- a switch
+    /// flipped in the palette would say its old way until the palette was
+    /// opened again.
+    pub(in crate::app) fn keep_the_palettes_settings(&mut self) {
+        let Some(said) = self.palette_settings.as_ref() else {
+            return;
+        };
+        let open = self
+            .picker
+            .as_ref()
+            .is_some_and(|list| list.opener() == Some(Command::CommandPalette));
+        if !open {
+            self.palette_settings = None;
+            return;
+        }
+        let now = said_of(self.agent_settings());
+        if *said == now {
+            return;
+        }
+        let rows = settings_as_rows(self.agent_settings());
+        self.palette_settings = Some(now);
+        let Some(list) = self.picker.as_mut() else {
+            return;
+        };
+        for at in 0..list.row_count() {
+            let Some(row) = list.row_mut(at) else {
+                continue;
+            };
+            let PickerValue::AgentSetting(id) = &row.value else {
+                continue;
+            };
+            if let Some(fresh) = rows
+                .iter()
+                .find(|fresh| matches!(&fresh.value, PickerValue::AgentSetting(it) if it == id))
+            {
+                row.icon = fresh.icon;
+                row.trailing.clone_from(&fresh.trailing);
+            }
         }
     }
 
@@ -834,6 +898,12 @@ impl App {
             }
             PickerOutcome::Cancelled => {
                 self.leave(Layer::Picker);
+                // A setting's values given up on go back to the palette they
+                // were opened from: escape gives up on the nearest thing,
+                // and the nearest thing was the list, not the palette.
+                if let Some(setting) = self.values_from_the_palette.take() {
+                    self.back_to_the_palette(&setting);
+                }
                 true
             }
             PickerOutcome::Accepted(value) => {
@@ -873,6 +943,30 @@ impl App {
         // is torn down, because the list is what it happens to.
         if let PickerValue::Directory(path) = &value {
             self.open_directory(&path.clone());
+            return;
+        }
+        // One of the agent's settings, from the palette, which stays open:
+        // a reader setting the model is often setting how hard it thinks
+        // next, and a palette that closed on each would have to be opened
+        // and walked to the same place again. A switch flips where it is;
+        // a list of values takes the palette's place and gives it back
+        // once a value is chosen, or given up on.
+        if let PickerValue::AgentSetting(id) = &value {
+            let id = id.clone();
+            let kind = self
+                .agent_settings()
+                .iter()
+                .find(|setting| setting.id == id)
+                .map(|setting| setting.kind);
+            match kind {
+                Some(obelus_agent::acp::Kind::Switch) => self.flip_agent_setting(&id),
+                Some(obelus_agent::acp::Kind::Select) => {
+                    self.open_agent_setting(&id);
+                    self.values_from_the_palette = Some(id);
+                }
+                // Taken away by the agent while the palette was open.
+                None => {}
+            }
             return;
         }
         // A conversation is taken up before the list is torn down, because
@@ -1038,21 +1132,14 @@ impl App {
             PickerValue::Setting { key, word } => {
                 self.change_setting(key, &obelus_config::Value::Choice(word));
             }
-            PickerValue::AgentSetting(id) => {
-                let kind = self
-                    .agent_settings()
-                    .iter()
-                    .find(|setting| setting.id == id)
-                    .map(|setting| setting.kind);
-                match kind {
-                    Some(obelus_agent::acp::Kind::Select) => self.open_agent_setting(&id),
-                    Some(obelus_agent::acp::Kind::Switch) => self.flip_agent_setting(&id),
-                    // Taken away by the agent while the palette was open.
-                    None => {}
-                }
-            }
+            // Dealt with before the list is closed: a setting is changed
+            // from the palette and the palette stays.
+            PickerValue::AgentSetting(_) => {}
             PickerValue::AgentValue { setting, value } => {
                 self.set_agent_setting(&setting, &value);
+                if self.values_from_the_palette.take().is_some() {
+                    self.back_to_the_palette(&setting);
+                }
             }
             // The agent is named on the row rather than asked for now: the
             // list may have been opened before the reader changed agents,
@@ -1095,6 +1182,15 @@ impl App {
 
 /// What the palette's own first tab is called.
 const HERE: &str = "Here";
+
+/// Which value each of the agent's settings is on, by id: what the
+/// palette's rows of them are compared with.
+fn said_of(settings: &[obelus_agent::acp::Setting]) -> Vec<(String, String)> {
+    settings
+        .iter()
+        .map(|setting| (setting.id.clone(), setting.current.clone()))
+        .collect()
+}
 
 /// The agent's settings as rows of the palette's first tab, each saying
 /// what it is set to where a key's row says its key.
