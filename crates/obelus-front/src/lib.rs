@@ -87,6 +87,7 @@ pub struct Hanging {
     pub wallpaper: obelus_theme::Wallpaper,
     /// What the file held, or nothing where it would not read -- which
     /// decodes to no picture, the way a picture that will not decode does.
+    #[serde(with = "crate::wire::bytes")]
     pub bytes: Vec<u8>,
 }
 
@@ -1210,6 +1211,21 @@ mod tests {
                 },
                 Update::Frame,
             ]),
+            link::Down::Hung {
+                number: 7,
+                wallpaper: obelus_theme::Wallpaper {
+                    file: std::path::PathBuf::from("/themes/dusk.jpg"),
+                    opacity: 80,
+                    fit: obelus_theme::wallpaper::Fit::Cover,
+                    anchor: obelus_theme::wallpaper::Anchor::default(),
+                    modified: None,
+                },
+                length: 3,
+            },
+            link::Down::Piece {
+                number: 7,
+                bytes: vec![1, 2, 3],
+            },
             link::Down::Copy("c".to_string()),
             link::Down::Paste(1),
             link::Down::Picture(2),

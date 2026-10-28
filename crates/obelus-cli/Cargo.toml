@@ -47,6 +47,8 @@ libc.workspace = true
 
 [dev-dependencies]
 crossterm.workspace = true
+# For a picture of the theme, in the tests of how one crosses.
+obelus-theme.workspace = true
 obelus-front.workspace = true
 obelus-private.workspace = true
 obelus-wire.workspace = true

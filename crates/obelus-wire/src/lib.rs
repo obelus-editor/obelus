@@ -29,7 +29,7 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 /// Moved whenever what a message is moves: a field, a variant, an order.
 /// The golden bytes beside the messages are what notices one moving without
 /// this.
-pub const WIRE_VERSION: u32 = 1;
+pub const WIRE_VERSION: u32 = 2;
 
 /// The longest a frame may be.
 ///

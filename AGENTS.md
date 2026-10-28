@@ -961,8 +961,10 @@ crates/
                       that goes is waited for, and a knock with a window's
                       name is that window (server); its standard input
                       and output are the connection, it goes on while
-                      nobody is watching, and a file dropped on the window
-                      is kept where this machine keeps what passes (serve);
+                      nobody is watching, a file dropped on the window
+                      is kept where this machine keeps what passes, a frame
+                      is one message, and a picture goes behind the frames,
+                      not among them (serve);
                       a terminal can change which Obelus it draws (client)
   obelus-check-theme/ whether Obelus can read a theme, for the themes
                     registry, and in no release
