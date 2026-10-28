@@ -384,6 +384,12 @@ static ELSEWHERE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 /// they chose. The logs are here, and what Obelus remembers about the
 /// conversations it has had.
 ///
+/// Except two files, kept here because they must not follow the reader to
+/// another machine and must not be in a settings file somebody might
+/// publish: `servers.toml`, with the key each machine printed, and
+/// `secrets.toml`, with a chat's tokens. Deleting those loses what the
+/// reader typed in, and they are asked for again.
+///
 /// `None` is a session that keeps none of it -- no log, and no conversation
 /// to come back to -- which is what a Windows machine got, because the only
 /// answers here were an XDG variable and `HOME`. Where `dirs` is asked at

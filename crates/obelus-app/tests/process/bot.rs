@@ -39,9 +39,14 @@ fn turn() -> std::sync::MutexGuard<'static, ()> {
 /// Where this process keeps its secrets, emptied for the test about to use
 /// it -- never the reader's own secrets, which a test has no business writing.
 fn secrets_of_its_own() {
-    let directory = std::env::temp_dir().join(format!("obelus-secrets-{}", std::process::id()));
+    let directory = the_secrets();
     let _ = std::fs::remove_dir_all(&directory);
     obelus_bot::secrets::secrets_for_test(directory);
+}
+
+/// The directory this process keeps its secrets in.
+fn the_secrets() -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("obelus-secrets-{}", std::process::id()))
 }
 
 /// The settings, open on the remote tab, with a settings file of the test's
@@ -155,7 +160,7 @@ fn choosing_a_chat_shows_what_it_has_to_be_told() {
 #[test]
 fn secrets_that_will_not_read_are_said_on_their_rows() {
     let _turn = turn();
-    let directory = std::env::temp_dir().join(format!("obelus-secrets-{}", std::process::id()));
+    let directory = the_secrets();
     std::fs::create_dir_all(&directory).expect("the directory");
     std::fs::write(directory.join("secrets.toml"), "this is = = not toml").expect("writing");
     let scratch = support::Scratch::new("bot-unread");
@@ -169,8 +174,7 @@ fn secrets_that_will_not_read_are_said_on_their_rows() {
     let screen = support::render(&mut app, 66, 20);
     assert!(
         screen.contains("The tokens would not read"),
-        "the row says nothing about it:
-{screen}"
+        "the row says nothing about it:\n{screen}"
     );
 }
 

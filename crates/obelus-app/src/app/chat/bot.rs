@@ -287,7 +287,6 @@ impl App {
         }
     }
 
-    /// Hears what was read.
     /// What one connection said, heard only while it is the one wanted.
     pub(in crate::app) fn reached_event(&mut self, number: u64, event: obelus_bot::Event) {
         if number != self.bot.number || (self.bot.reaching.is_none() && !self.joined_the_relay()) {
@@ -479,10 +478,12 @@ impl App {
                         self.let_the_chat_go();
                     }
                 }
+                // Said, and not kept as `trouble`: that is about whether the
+                // tokens can be read, and one write that failed has not said
+                // the ones already kept are gone.
                 Err(trouble) => {
                     tracing::warn!(platform, field, %trouble, "a token would not be kept");
                     self.wrong(format!("Not kept: {trouble}"));
-                    self.bot.trouble = Some(trouble);
                 }
             },
         }

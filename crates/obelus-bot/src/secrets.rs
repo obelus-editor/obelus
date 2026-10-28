@@ -59,6 +59,7 @@ pub fn read(platform: &str, field: &str) -> Result<Option<String>, Trouble> {
 /// [`Trouble`] where the file could not be read or written.
 pub fn write(platform: &str, field: &str, value: &str) -> Result<(), Trouble> {
     let path = path()?;
+    let _held = file::hold(&path);
     let mut kept = file::read(&path)?;
     kept.insert(account(platform, field), value.to_string());
     file::write(&path, &kept)
@@ -71,6 +72,7 @@ pub fn write(platform: &str, field: &str, value: &str) -> Result<(), Trouble> {
 /// [`Trouble`] where the file could not be read or written.
 pub fn forget(platform: &str, field: &str) -> Result<(), Trouble> {
     let path = path()?;
+    let _held = file::hold(&path);
     let mut kept = file::read(&path)?;
     if kept.remove(&account(platform, field)).is_some() {
         file::write(&path, &kept)?;
@@ -106,6 +108,23 @@ mod file {
 
     use super::Trouble;
 
+    /// The lock a change is made under, held until it is dropped -- a
+    /// moment, since nothing is done under it but the read and the write.
+    /// Without it two windows keeping two fields at once each read the old
+    /// table, and the second rename takes the first one's token away. `None`
+    /// where no lock can be had, and the change goes ahead without one.
+    pub(super) fn hold(path: &Path) -> Option<std::fs::File> {
+        let lock = path.with_extension("lock");
+        std::fs::create_dir_all(lock.parent()?).ok()?;
+        let file = std::fs::File::options()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .open(lock)
+            .ok()?;
+        obelus_claim::wait_to_hold(&file).then_some(file)
+    }
+
     pub(super) fn read(path: &Path) -> Result<BTreeMap<String, String>, Trouble> {
         let text = match std::fs::read_to_string(path) {
             Ok(text) => text,
@@ -114,9 +133,17 @@ mod file {
             }
             Err(error) => return Err(Trouble(error.to_string())),
         };
-        let table = text
-            .parse::<toml::Table>()
-            .map_err(|error| Trouble(error.to_string()))?;
+        // Where, and never what: the parser's own message quotes the line
+        // it stopped on, and the line is a token.
+        let table = text.parse::<toml::Table>().map_err(|error| {
+            let at = error
+                .span()
+                .map(|span| text[..span.start].matches('\n').count() + 1);
+            Trouble(match at {
+                Some(line) => format!("{} is not TOML at line {line}", path.display()),
+                None => format!("{} is not TOML", path.display()),
+            })
+        })?;
         Ok(table
             .into_iter()
             .filter_map(|(key, value)| Some((key, value.as_str()?.to_string())))
@@ -146,8 +173,7 @@ mod tests {
     /// What is kept is what comes back, and nobody else can read the file.
     ///
     /// Broken deliberately by writing it with `std::fs::write` rather than
-    /// through `obelus_private`: the file came back readable by its group
-    /// and everybody else.
+    /// through `obelus_private`: the file was not private.
     #[test]
     fn a_kept_secret_comes_back_and_is_the_owners_alone() {
         let directory = std::env::temp_dir().join(format!("obelus-secrets-{}", std::process::id()));
@@ -157,19 +183,40 @@ mod tests {
         kept.insert("remote.slack.app_token".to_string(), "xapp-1-x".to_string());
         file::write(&path, &kept).expect("writing");
         assert_eq!(file::read(&path).expect("reading"), kept);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt as _;
-            let mode = std::fs::metadata(&path)
-                .expect("there")
-                .permissions()
-                .mode();
-            assert_eq!(
-                mode & 0o077,
-                0,
-                "the secrets are readable by others: {mode:o}"
-            );
-        }
+        assert!(
+            obelus_private::is_private(&path).expect("asking"),
+            "the secrets are readable by others"
+        );
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// A file that will not parse says where, and not what is there: the
+    /// line it stopped on is a token, and the message goes to the log every
+    /// Obelus on the machine shares and on to the status row.
+    ///
+    /// Broken deliberately by handing on the parser's own message: it quoted
+    /// the line, token and all.
+    #[test]
+    fn a_file_that_will_not_parse_does_not_quote_it() {
+        let directory =
+            std::env::temp_dir().join(format!("obelus-unparsed-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("the directory");
+        let path = directory.join("secrets.toml");
+        std::fs::write(
+            &path,
+            "remote.slack.bot_token = \"xoxb-1\"\nremote.slack.app_token = \"xapp-1-secret\n",
+        )
+        .expect("writing");
+        let trouble = file::read(&path).expect_err("it parsed").to_string();
+        assert!(
+            !trouble.contains("xapp"),
+            "the token is in the message: {trouble}"
+        );
+        assert!(
+            trouble.contains("line 2"),
+            "it does not say where: {trouble}"
+        );
         let _ = std::fs::remove_dir_all(&directory);
     }
 }
