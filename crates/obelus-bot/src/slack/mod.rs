@@ -32,9 +32,9 @@ pub static DESCRIPTION: Description = Description {
         // One app per machine, said where the app is made: Slack hands each
         // event of an app to one of its connections at random, so two
         // machines on one app each hear half of what is said and neither can
-        // tell. The keyring keeps the tokens from following a reader's
-        // settings to another machine; this keeps the reader from putting
-        // them there.
+        // tell. Keeping the tokens in this machine's state keeps them from
+        // following a reader's settings to another machine; this keeps the
+        // reader from putting them there.
         about: "One app per machine: paste it into Create New App → From a manifest",
         what: "the manifest",
         text: manifest,

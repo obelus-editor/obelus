@@ -333,8 +333,8 @@ pub struct Config {
     ///
     /// Every platform's, not only the one in use: switching to another and
     /// back is not a reason to set the first one up again. What is secret
-    /// is not here at all -- a token is in the keyring, and this file is one
-    /// a reader may well keep in a public repository of dotfiles.
+    /// is not here at all -- a token is in this machine's state, and this file
+    /// is one a reader may well keep in a public repository of dotfiles.
     pub chats: std::collections::BTreeMap<String, Chat>,
 }
 

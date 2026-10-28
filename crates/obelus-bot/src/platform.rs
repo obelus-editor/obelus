@@ -3,16 +3,15 @@
 //! **A platform declares; it does not keep.** What it needs to be told --
 //! two tokens for Slack, an id, a secret and which of two servers for
 //! Feishu -- is a list of [`Field`]s, and where each one is kept is decided
-//! once, here, for all of them: a secret in the keyring, anything else in the
-//! reader's settings file under `[chats.<platform>]`. The settings page lays
-//! its rows out from the same list, so a platform added later is a
+//! once, here, for all of them: a secret in a file of its own, anything else in
+//! the reader's settings file under `[chats.<platform>]`. The settings page
+//! lays its rows out from the same list, so a platform added later is a
 //! description and an adapter, and not a page of its own.
 //!
 //! The alternative was each platform storing its own, which is three copies
-//! of the keyring's rules -- where a development build keeps them, that a
-//! test must not touch the reader's keyring, that a project may not set any
-//! of it -- and a settings page that would have to ask every platform what
-//! its values are.
+//! of the secrets' rules -- where they are kept, that a test must not touch
+//! the reader's own, that a project may not set any of it -- and a settings
+//! page that would have to ask every platform what its values are.
 
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -20,8 +19,8 @@ use obelus_sink::Sink;
 
 use crate::{Event, feishu, model::Out, slack};
 
-/// Everything a platform has been told, by field: the secrets read from the
-/// keyring and the rest from the settings, put together only on the way to
+/// Everything a platform has been told, by field: the secrets read from
+/// their file and the rest from the settings, put together only on the way to
 /// connecting.
 pub type Told = BTreeMap<&'static str, String>;
 
@@ -75,7 +74,8 @@ pub struct Field {
 /// What sort of thing a field is.
 #[derive(Debug)]
 pub enum FieldKind {
-    /// Kept in the keyring and never in a file, and never drawn whole.
+    /// Kept in a file of its own and never in the settings, and never drawn
+    /// whole.
     Secret {
         /// What one starts with, where the platform says: a token pasted
         /// into the wrong row is the commonest way to get this wrong, and
@@ -160,11 +160,11 @@ pub fn connect_for_test(connect: Connect) {
 }
 
 /// Reads what a platform has been told and connects to it, on the runtime's
-/// blocking pool -- reading a secret may put up the keyring's own prompt.
+/// blocking pool, because reading a secret is reading a file.
 ///
 /// What comes back comes through the sink: `Event::Started` with where to
 /// send things, or the state that says why not -- a field nobody has filled
-/// in, a keyring that would not open.
+/// in, a file of secrets that would not read.
 pub fn reach(platform: &'static Description, settled: Told, sink: Arc<dyn Sink<Event>>) {
     obelus_runtime::handle().spawn_blocking(move || {
         let mut told = settled;
@@ -186,12 +186,10 @@ pub fn reach(platform: &'static Description, settled: Told, sink: Arc<dyn Sink<E
                     }
                     Ok(None) => {}
                     Err(trouble) => {
-                        let state = match trouble {
-                            crate::secrets::Trouble::NoKeyring => crate::State::NoKeyring,
-                            crate::secrets::Trouble::Locked => crate::State::Locked,
-                            crate::secrets::Trouble::Failed(_) => crate::State::Unread,
-                        };
-                        let _ = sink.send(Event::connection(state, Some(trouble.to_string())));
+                        let _ = sink.send(Event::connection(
+                            crate::State::Unread,
+                            Some(trouble.to_string()),
+                        ));
                         return;
                     }
                 }

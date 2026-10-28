@@ -37,7 +37,7 @@ fn turn() -> std::sync::MutexGuard<'static, ()> {
 }
 
 /// Where this process keeps its secrets, emptied for the test about to use
-/// it -- never the reader's keyring, which a test has no business writing.
+/// it -- never the reader's own secrets, which a test has no business writing.
 fn secrets_of_its_own() {
     let directory = std::env::temp_dir().join(format!("obelus-secrets-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&directory);
@@ -45,7 +45,7 @@ fn secrets_of_its_own() {
 }
 
 /// The settings, open on the remote tab, with a settings file of the test's
-/// own and a channel the keyring's answers come back on.
+/// own and a channel the secrets' answers come back on.
 fn on_the_bot_page(scratch: &support::Scratch) -> (App, std::sync::mpsc::Receiver<Event>) {
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     app.config_file_for_test(scratch.join("config.toml"));
@@ -139,14 +139,42 @@ fn choosing_a_chat_shows_what_it_has_to_be_told() {
     let written = std::fs::read_to_string(scratch.join("config.toml")).expect("the file");
     assert!(written.contains("chat = \"slack\""), "{written}");
 
-    until(&mut app, &events, "the keyring to be asked", |app| {
+    until(&mut app, &events, "the secrets to be read", |app| {
         app.settings()
             .is_some_and(|settings| settings.reached().state == obelus_bot::State::Unready)
     });
     support::check("bot_unset_66x20", &support::render(&mut app, 66, 20));
 }
 
-/// A token goes to the keyring, is drawn by its ends, and is forgotten with
+/// A file of secrets that will not read is said on the rows of the tokens,
+/// not taken for no tokens at all.
+///
+/// Broken deliberately by letting `bot_state` go on to the rows past a
+/// read that failed: the state stayed `Unready` and the test gave up
+/// waiting.
+#[test]
+fn secrets_that_will_not_read_are_said_on_their_rows() {
+    let _turn = turn();
+    let directory = std::env::temp_dir().join(format!("obelus-secrets-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).expect("the directory");
+    std::fs::write(directory.join("secrets.toml"), "this is = = not toml").expect("writing");
+    let scratch = support::Scratch::new("bot-unread");
+    let (mut app, events) = on_the_bot_page(&scratch);
+    choose_slack(&mut app);
+    until(&mut app, &events, "the secrets to fail to read", |app| {
+        app.settings()
+            .is_some_and(|settings| settings.reached().state == obelus_bot::State::Unread)
+    });
+    to_the_row(&mut app, "App token");
+    let screen = support::render(&mut app, 66, 20);
+    assert!(
+        screen.contains("The tokens would not read"),
+        "the row says nothing about it:
+{screen}"
+    );
+}
+
+/// A token goes to its file, is drawn by its ends, and is forgotten with
 /// `delete`; one pasted into the wrong row is refused where it was typed.
 ///
 /// Broken deliberately four ways. Writing the token whole into the row's
@@ -205,7 +233,7 @@ fn a_token_is_kept_drawn_by_its_ends_and_forgotten() {
         "a token went into the settings file:\n{written}"
     );
 
-    // And another window, which has to ask the keyring rather than remember
+    // And another window, which has to read the file rather than remember
     // what it was told, draws it by its ends as well.
     let mut other = App::new(vec![support::open_fixture("sample.rs")]);
     other.config_file_for_test(scratch.join("config.toml"));
@@ -214,7 +242,7 @@ fn a_token_is_kept_drawn_by_its_ends_and_forgotten() {
     dispatch::dispatch(&mut other, Command::ConfigOpen);
     support::press(&mut other, KeyCode::Tab);
     support::press(&mut other, KeyCode::Tab);
-    until(&mut other, &heard, "the keyring to be read", |app| {
+    until(&mut other, &heard, "the secrets to be read", |app| {
         app.settings()
             .is_some_and(|settings| settings.reached().kept.contains_key("app_token"))
     });
@@ -227,7 +255,7 @@ fn a_token_is_kept_drawn_by_its_ends_and_forgotten() {
             .get("app_token")
             .map(String::as_str),
         Some("xapp-…9f2a"),
-        "a token read back from the keyring is drawn whole"
+        "a token read back from its file is drawn whole"
     );
 
     support::press(&mut app, KeyCode::Delete);
@@ -271,7 +299,7 @@ fn pairing_waits_for_a_chat_that_could_be_reached() {
     until(
         &mut app,
         &events,
-        "the keyring to say there are no tokens",
+        "the secrets to say there are no tokens",
         |app| app.bot_state_for_test() == obelus_bot::State::Unready,
     );
     to_the_row(&mut app, "Pair");
@@ -472,7 +500,7 @@ fn connected(scratch: &support::Scratch) -> (App, std::sync::mpsc::Receiver<Even
 }
 
 /// A window set to a chat connects to it only once it is told to, with
-/// what it was told -- the secrets out of the keyring -- and says so on its
+/// what it was told -- the secrets out of their file -- and says so on its
 /// status row and nowhere else: not before, and not on the page, which
 /// holds what the reader set and not where it stands.
 ///
@@ -1023,13 +1051,13 @@ fn the_name_an_agent_gives_is_the_threads() {
 }
 
 /// Feishu's page is made from what Feishu declares: an id written in the
-/// settings file, a secret in the keyring, and a domain that starts on
+/// settings file, a secret in its file, and a domain that starts on
 /// Feishu and goes to Lark with a press -- none of which the page knows the
 /// first thing about.
 ///
 /// Broken deliberately twice. Drawing a choice nobody made as unset: the
 /// domain said `Not set`. And writing a field that is not secret to the
-/// keyring: the id was not in the settings file.
+/// secrets: the id was not in the settings file.
 #[test]
 fn feishu_is_set_up_from_what_it_declares() {
     let _turn = turn();
@@ -1039,7 +1067,7 @@ fn feishu_is_set_up_from_what_it_declares() {
     support::type_text(&mut app, "Feishu");
     support::press(&mut app, KeyCode::Enter);
     assert_eq!(app.config().chat.as_deref(), Some("feishu"));
-    until(&mut app, &events, "the keyring to be asked", |app| {
+    until(&mut app, &events, "the secrets to be read", |app| {
         app.settings()
             .is_some_and(|settings| settings.reached().state == obelus_bot::State::Unready)
     });

@@ -12,8 +12,8 @@
 //! for it, with nothing read out of words.
 //!
 //! **A platform declares; Obelus keeps.** What one has to be told is a list
-//! of fields ([`platform`]), and where each is kept -- a secret in the
-//! keyring ([`secrets`]), anything else in `[chats.<platform>]` -- is
+//! of fields ([`platform`]), and where each is kept -- a secret in a file
+//! of its own ([`secrets`]), anything else in `[chats.<platform>]` -- is
 //! decided here once, for all of them.
 //!
 //! **One window talks to the chat, and every window is heard in it.** The
@@ -31,7 +31,7 @@ mod waiting;
 /// What the work done for a chat comes back with.
 #[derive(Debug)]
 pub enum Event {
-    /// What the keyring keeps for one of a platform's secrets.
+    /// What is kept for one of a platform's secrets.
     Kept {
         /// Which platform it was asked for.
         platform: &'static str,
@@ -48,7 +48,7 @@ pub enum Event {
         /// Which field.
         field: &'static str,
         /// Its ends where one was kept, `None` where it was forgotten, or
-        /// why the keyring would not.
+        /// why it could not be.
         written: Result<Option<String>, secrets::Trouble>,
     },
     /// Where the connection to a platform has got to.
@@ -210,11 +210,7 @@ pub enum State {
     Declined,
     /// The platform could not be reached; Obelus goes on trying.
     Unreachable,
-    /// The keyring would not open.
-    Locked,
-    /// There is no keyring on this machine to keep a token in.
-    NoKeyring,
-    /// The keyring opened and would not say what it keeps. Not
+    /// The file the tokens are kept in would not be read. Not
     /// `Unreachable`: nothing tries again, so a window would say it was
     /// trying for as long as it was open.
     Unread,
@@ -242,13 +238,7 @@ impl State {
         // is then a connection that will never be made.
         matches!(
             self,
-            Self::Unready
-                | Self::Refused
-                | Self::Declined
-                | Self::Unreachable
-                | Self::Locked
-                | Self::NoKeyring
-                | Self::Unread
+            Self::Unready | Self::Refused | Self::Declined | Self::Unreachable | Self::Unread
         )
     }
 }

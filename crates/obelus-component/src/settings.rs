@@ -156,7 +156,7 @@ pub enum SettingsOutcome {
 
 /// What a row of the chat page asks for.
 ///
-/// Asked, not done: what each of these means -- a keyring to write, a code
+/// Asked, not done: what each of these means -- a secret to keep, a code
 /// to make, a list to open -- is the application's, and the page only knows
 /// which row the reader is on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -275,7 +275,7 @@ const MOST_DESCRIPTION_ROWS: usize = 3;
 /// at. The fourth tab is the first shape again, and a tab all the same because
 /// it is somewhere else to go: which chat can reach this machine, and what is
 /// kept for it, is about a place outside Obelus rather than about how Obelus
-/// behaves -- and half of it is in the keyring rather than the file every
+/// behaves -- and half of it is in a file of its own rather than the one every
 /// other row writes to.
 ///
 /// Which group a setting belongs to is a heading down the first of those
@@ -870,7 +870,7 @@ impl Settings {
             // What is wrong with the chat is said on the row whose value
             // it is wrong about: the page holds what the reader set, and
             // whether it is connected is the status row's. A secret
-            // refused, or one the keyring will not give up, is a value the
+            // refused, or one that will not read, is a value the
             // reader can do something about here.
             //
             // What no row's value is about -- an app Feishu will not give a
@@ -898,14 +898,8 @@ impl Settings {
                     .map_or("The chat", |platform| platform.name);
                 match self.reached.state {
                     obelus_bot::State::Refused if secret => Some(format!("Refused by {name}")),
-                    obelus_bot::State::Locked if secret => {
-                        Some("The keyring is locked".to_string())
-                    }
-                    obelus_bot::State::NoKeyring if secret => {
-                        Some("No keyring on this machine".to_string())
-                    }
                     obelus_bot::State::Unread if secret => {
-                        Some("The keyring would not answer".to_string())
+                        Some("The tokens would not read".to_string())
                     }
                     _ => None,
                 }
