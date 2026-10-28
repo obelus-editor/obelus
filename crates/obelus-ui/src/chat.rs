@@ -1676,10 +1676,12 @@ impl ChatView<'_> {
     pub fn status(&self, cells: &mut CellBuffer, area: Rect) {
         // The page's own colour, like every other status row: the rule
         // above it has already said the row is a different subject from
-        // what is above it.
+        // what is above it. And its ink, for the same reason: what is
+        // written in it plainly -- a note, alone on the row -- is written
+        // the way the other rows write it.
         let plain = Style::new()
             .bg(self.theme.background)
-            .fg(self.theme.foreground);
+            .fg(self.theme.status_foreground);
         fill(cells, area, plain);
 
         // What the row says about the window, at the far end where every
