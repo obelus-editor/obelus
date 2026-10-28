@@ -11,11 +11,11 @@ workspace = true
 
 [dependencies]
 obelus-claim.workspace = true
-obelus-config.workspace = true
+obelus-logging.workspace = true
+obelus-private.workspace = true
 obelus-runtime.workspace = true
 obelus-sink.workspace = true
 base64.workspace = true
-keyring-core.workspace = true
 futures.workspace = true
 lark-websocket-protobuf.workspace = true
 prost.workspace = true
@@ -29,15 +29,3 @@ tokio.workspace = true
 toml.workspace = true
 tracing.workspace = true
 
-# The keyring, one store per platform: what each system calls the place a
-# secret is kept. Named here rather than through `keyring`'s own `v1`, which
-# its own documentation says is for programs that do not mind which store
-# they get -- and that would bring the other platforms' along on every one.
-[target.'cfg(target_os = "macos")'.dependencies]
-apple-native-keyring-store.workspace = true
-
-[target.'cfg(windows)'.dependencies]
-windows-native-keyring-store.workspace = true
-
-[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
-zbus-secret-service-keyring-store.workspace = true

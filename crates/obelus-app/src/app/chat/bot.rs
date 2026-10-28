@@ -2,13 +2,12 @@
 //! a reader sets it up on.
 //!
 //! **What a platform has to be told is kept in two places and asked of one.**
-//! A secret is in the keyring and anything else is in the reader's own
+//! A secret is in a file of its own and anything else is in the reader's own
 //! settings file, under `[chats.<platform>]` -- and the page asks neither:
 //! it is handed a [`Reached`] built here, the way the agents' page is handed
-//! the agent's offering. The keyring is asked on the blocking pool when the
-//! page first needs to say whether a token is kept, because asking it is a
-//! D-Bus call that may put up a prompt to unlock it, and a prompt is not
-//! something a keystroke waits for.
+//! the agent's offering. The secrets are read on the blocking pool when the
+//! page first needs to say whether a token is kept, because a read from the
+//! disk is not something a keystroke waits for.
 //!
 //! **A setting the reader turned on is not a reason to refuse them.** A chat
 //! chosen with no tokens is a chat whose rows say so, and waits for them --
@@ -46,16 +45,16 @@ use crate::{app::*, event::Event};
 pub(in crate::app) struct Bot {
     /// What each of the platform's secrets ends in, by field, for the
     /// platform they were read for -- never the secret itself, which stays
-    /// in the keyring until something has to connect with it.
+    /// in its file until something has to connect with it.
     kept: BTreeMap<&'static str, String>,
     /// Which secrets have been asked for and not yet answered, and for
     /// which platform: an answer for a platform the reader has since
     /// switched away from is about rows no longer on the page.
     asking: Option<(&'static str, usize)>,
-    /// Which platform `kept` is about. `None` until the keyring has been
-    /// asked, which is a different thing from having nothing in it.
+    /// Which platform `kept` is about. `None` until the secrets have been
+    /// read, which is a different thing from having nothing in it.
     read_for: Option<&'static str>,
-    /// Why the keyring would not answer, where it would not.
+    /// Why the secrets would not read, where they would not.
     trouble: Option<Trouble>,
     /// The code waiting to be sent to the bot, while there is one.
     pairing: Option<String>,
@@ -155,10 +154,10 @@ impl App {
         {
             return state;
         }
-        match &self.bot.trouble {
-            Some(Trouble::NoKeyring) => return State::NoKeyring,
-            Some(Trouble::Locked) => return State::Locked,
-            Some(Trouble::Failed(_)) | None => {}
+        // Not a reason to go on to the rows: a token that would not read
+        // is not a token nobody gave.
+        if self.bot.trouble.is_some() {
+            return State::Unread;
         }
         if self.bot.read_for != Some(platform.key) {
             return State::Connecting;
@@ -230,8 +229,8 @@ impl App {
         }
     }
 
-    /// Hands the settings page what it shows about the chat, asking the
-    /// keyring first where the page is about to say what it holds.
+    /// Hands the settings page what it shows about the chat, reading the
+    /// secrets first where the page is about to say what is kept.
     ///
     /// Once a frame, from what is true: which platform is set can change
     /// under the page -- another window, the reader's own file -- and a page
@@ -258,7 +257,7 @@ impl App {
         }
     }
 
-    /// Asks the keyring what it keeps for each of a platform's secrets.
+    /// Reads what is kept for each of a platform's secrets.
     fn read_the_secrets(&mut self, platform: &'static Description) {
         let Some(sender) = self.events.clone() else {
             return;
@@ -288,7 +287,6 @@ impl App {
         }
     }
 
-    /// Hears what the keyring said.
     /// What one connection said, heard only while it is the one wanted.
     pub(in crate::app) fn reached_event(&mut self, number: u64, event: obelus_bot::Event) {
         if number != self.bot.number || (self.bot.reaching.is_none() && !self.joined_the_relay()) {
@@ -480,10 +478,12 @@ impl App {
                         self.let_the_chat_go();
                     }
                 }
+                // Said, and not kept as `trouble`: that is about whether the
+                // tokens can be read, and one write that failed has not said
+                // the ones already kept are gone.
                 Err(trouble) => {
-                    tracing::warn!(platform, field, %trouble, "the keyring would not keep a token");
+                    tracing::warn!(platform, field, %trouble, "a token would not be kept");
                     self.wrong(format!("Not kept: {trouble}"));
-                    self.bot.trouble = Some(trouble);
                 }
             },
         }
@@ -690,7 +690,7 @@ impl App {
             }
             Ok(None) => {}
             Err(trouble) => {
-                tracing::warn!(platform, field, %trouble, "the keyring would not say what it keeps");
+                tracing::warn!(platform, field, %trouble, "the secrets would not read");
                 self.bot.trouble = Some(trouble);
             }
         }
@@ -775,7 +775,7 @@ impl App {
     /// Hears what the reader typed for one of the platform's fields, or
     /// with `None` forgets it.
     ///
-    /// A secret goes to the keyring on the blocking pool and the page hears
+    /// A secret goes to its file on the blocking pool and the page hears
     /// back when it is kept; anything else is a line in the settings file,
     /// written the way every setting is.
     pub(in crate::app) fn tell_the_bot(&mut self, field: &'static Field, said: Option<&str>) {

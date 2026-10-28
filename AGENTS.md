@@ -875,11 +875,10 @@ crates/
                     and one window relaying for every other (relay)
                     · words, and a card for a question; a platform declares,
                       Obelus keeps (lib); words, and a question (model); a
-                      platform declares and does not keep (platform); three
-                      places, one question, and every one of these waits
-                      (secrets); kept, and only so much of it, and a thread
-                      that missed something says so with the next thing it
-                      gets (waiting); a platform that did not answer is
+                      platform declares and does not keep (platform); two
+                      places, one question (secrets); kept, and only so much
+                      of it, and a thread that missed something says so with
+                      the next thing it gets (waiting); a platform that did not answer is
                       asked again and one that said no is not, still not
                       answered is the connection and not the message, and
                       said once however many times it was asked (sending); one
