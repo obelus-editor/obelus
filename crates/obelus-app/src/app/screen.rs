@@ -171,6 +171,9 @@ impl Screen for App {
     fn bot(&self) -> Option<(&'static str, obelus_bot::State)> {
         App::bot_badge(self)
     }
+    fn drawn_from(&self) -> Option<&str> {
+        App::drawn_from(self)
+    }
 
     fn server_busy(&self) -> bool {
         App::server_busy(self)

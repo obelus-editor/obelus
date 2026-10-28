@@ -20,7 +20,7 @@ impl App {
         // over a network however this process was started: the same answer
         // `Ticker::start` gives one over ssh, for the same reason, asked of
         // the one thing that knows -- the environment here is the server's.
-        if self.afar {
+        if self.afar.is_some() {
             return false;
         }
         // Nothing open and no page taking its place: the welcome screen's

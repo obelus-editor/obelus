@@ -180,6 +180,11 @@ pub enum PickerValue {
         /// And one past where it ends, counted the same way.
         end: usize,
     },
+    /// One of the agent's settings, by the agent's id for it, as a row of
+    /// the palette opened over a conversation: a list of values opens its
+    /// list, and a switch flips -- what enter on it did when it was on the
+    /// row under the box.
+    AgentSetting(String),
     /// Put one of the agent's settings on one of its values.
     AgentValue {
         /// Which setting, by the agent's id for it.
@@ -519,8 +524,10 @@ pub struct PickerItem {
     /// An index into the picker's own tab names. `None` means every tab,
     /// which is what a picker without tabs gives all of its rows.
     pub tab: Option<usize>,
-    /// The heading of the run of rows this one belongs to, in a list whose
-    /// rows wrap ([`Picker::wraps`]).
+    /// The heading of the run of rows this one belongs to: a name and a
+    /// blank under it in a list whose rows wrap ([`Picker::wraps`]), and a
+    /// rule with the name on it in one whose rows do not
+    /// ([`Picker::is_sectioned`]).
     ///
     /// Drawn where the run starts among the rows that *match*, rather than
     /// being a row of its own: a heading over a run the query has emptied
@@ -1405,6 +1412,27 @@ impl Picker {
         self.wraps.is_some()
     }
 
+    /// Whether this is a list whose rows are one row each and whose runs
+    /// have headings.
+    ///
+    /// A heading here is one row of its own over the run, and no blank
+    /// rows: the palette's first tab is a view's keys and then what the
+    /// agent lets the reader set, and the line between them is the one
+    /// thing that says the second lot are not keys. So a list like this is
+    /// counted by height too -- a heading is a row of the screen and not a
+    /// row of the list, and a window that counted items would put the
+    /// selection under the foot of the list.
+    #[must_use]
+    pub fn is_sectioned(&self) -> bool {
+        self.wraps.is_none() && self.items.iter().any(|item| item.section.is_some())
+    }
+
+    /// Whether the window is counted in rows of the screen rather than in
+    /// rows of the list.
+    fn by_height(&self) -> bool {
+        self.wraps.is_some() || self.is_sectioned()
+    }
+
     /// What stands in front of a row's detail, in a list whose rows wrap.
     #[must_use]
     pub const fn detail_mark(&self) -> Option<char> {
@@ -1458,6 +1486,11 @@ impl Picker {
     /// above it and its words.
     #[must_use]
     pub fn heights(&self, width: u16) -> Vec<u16> {
+        if self.wraps.is_none() {
+            return (0..self.matched.len())
+                .map(|at| 1 + u16::from(self.above(at).headed))
+                .collect();
+        }
         self.matched
             .iter()
             .enumerate()
@@ -1954,6 +1987,12 @@ impl Picker {
                 let heights = self.heights(measured.width);
                 self.window.scroll_rows(rows, &heights);
             }
+            // A heading is one row whatever the width, so there is nothing
+            // to have measured.
+            None if self.is_sectioned() => {
+                let heights = self.heights(0);
+                self.window.scroll_rows(rows, &heights);
+            }
             None => self.window.scroll(rows),
         }
     }
@@ -2192,6 +2231,10 @@ impl Picker {
                 .min(available),
             // All of what it asked for, for a list that said it wants to stay
             // the height it started at.
+            PickerLayout::Compact { rows } if self.is_sectioned() && !self.steady => {
+                let tall: u16 = self.heights(width).iter().sum();
+                tall.clamp(1, rows).saturating_add(above).min(available)
+            }
             PickerLayout::Compact { rows } if self.steady => {
                 rows.saturating_add(above).min(available)
             }
@@ -2444,8 +2487,10 @@ impl Picker {
         // The window first: which rows are about to be drawn is the question
         // the matched characters are worked out for, and the height is only
         // known here.
-        if self.wraps.is_some() {
-            self.measure(width);
+        if self.by_height() {
+            if self.wraps.is_some() {
+                self.measure(width);
+            }
             let heights = self.heights(width);
             self.window.settle_by_height(&heights, height);
             self.shown = self.window.visible_by_height(&heights, height).len();
@@ -2552,9 +2597,9 @@ impl Picker {
         // A page of rows that wrap is the rows that were on screen, which is
         // not how many screen rows there are: moving by that would step
         // several screenfuls at once.
-        let page = match self.wraps {
-            Some(_) => self.shown,
-            None => usize::from(page),
+        let page = match self.by_height() {
+            true => self.shown,
+            false => usize::from(page),
         };
         let page = isize::try_from(page.max(1)).unwrap_or(isize::MAX);
         // A key carrying a modifier this branch does not name falls through,

@@ -49,6 +49,7 @@ crossterm.workspace = true
 dirs.workspace = true
 dunce.workspace = true
 futures.workspace = true
+gethostname.workspace = true
 gix.workspace = true
 image.workspace = true
 jiff.workspace = true

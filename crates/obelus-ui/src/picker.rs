@@ -435,8 +435,30 @@ pub fn row_at(picker: &Picker, region: Rect, x: u16, y: u16) -> Option<(usize, b
         }
         return None;
     }
-    let first = picker.first_visible(list.height);
-    let at = first + usize::from(y - list.y);
+    let at = match picker.is_sectioned() {
+        // Counted down the screen, past each heading, which is a row of the
+        // screen and no row of the list: a press on one is on nothing.
+        true => {
+            let heights = picker.heights(list.width);
+            let mut top = list.y;
+            let mut found = None;
+            for at in picker.window().visible_by_height(&heights, list.height) {
+                if picker.above(at).headed {
+                    if y == top {
+                        return None;
+                    }
+                    top = top.saturating_add(1);
+                }
+                if y == top {
+                    found = Some(at);
+                    break;
+                }
+                top = top.saturating_add(1);
+            }
+            found?
+        }
+        false => picker.first_visible(list.height) + usize::from(y - list.y),
+    };
     let item = picker.matches().nth(at)?;
     // The row's own columns, in the order the drawing spends them: one to
     // stand clear of the edge, two for every level in, and then the arrow.
@@ -583,6 +605,10 @@ impl Widget for PickerView<'_> {
         // marked as theirs -- nor in one something else is over.
         let selected =
             (self.in_front && !self.picker.is_only_read()).then(|| self.picker.selected());
+        if self.picker.is_sectioned() {
+            self.sectioned(cells, list, rows, selected);
+            return;
+        }
         for (row, (index, item)) in self
             .picker
             .matches()
@@ -605,6 +631,53 @@ impl Widget for PickerView<'_> {
 }
 
 impl PickerView<'_> {
+    /// A list whose rows are one row each, with a rule over each run that
+    /// has a heading -- where the run starts among the rows that match, so
+    /// a run the query has emptied has no rule over nothing.
+    fn sectioned(&self, cells: &mut CellBuffer, list: Rect, rows: Rect, selected: Option<usize>) {
+        let heights = self.picker.heights(list.width);
+        let mut y = rows.y;
+        for at in self
+            .picker
+            .window()
+            .visible_by_height(&heights, list.height)
+        {
+            if y >= rows.bottom() {
+                break;
+            }
+            let Some(item) = self.picker.matches().nth(at) else {
+                break;
+            };
+            if self.picker.above(at).headed
+                && let Some(heading) = &item.section
+            {
+                crate::named_rule(
+                    cells,
+                    Rect {
+                        y,
+                        height: 1,
+                        ..rows
+                    },
+                    heading,
+                    self.theme,
+                );
+                y = y.saturating_add(1);
+                if y >= rows.bottom() {
+                    break;
+                }
+            }
+            self.row(
+                cells,
+                rows,
+                y,
+                item,
+                Some(at) == selected,
+                self.picker.indices_at(at),
+            );
+            y = y.saturating_add(1);
+        }
+    }
+
     /// The rows of a list whose rows wrap, and the headings over their runs.
     ///
     /// Laid out by the list itself -- see `obelus_component::picker::wrapped`

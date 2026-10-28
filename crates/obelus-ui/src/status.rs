@@ -65,6 +65,8 @@ pub struct StatusView<'a> {
     /// question it answers -- will a reply from my phone get here -- is
     /// asked when one has not.
     bot: Option<(&'static str, obelus_bot::State)>,
+    /// The machine this Obelus runs on, where it is drawn on another.
+    from: Option<&'a str>,
     /// When a question is being asked, the row is the question.
     ///
     /// The one dialog that is still kept here, because it is the one whose
@@ -139,6 +141,7 @@ impl<'a> StatusView<'a> {
             busy: app.server_busy(),
             phase: app.phase(),
             bot: app.bot(),
+            from: app.drawn_from(),
             troubles: app.troubles(),
             prompt: app.prompt(),
             making_in: app.making_in(),
@@ -258,7 +261,7 @@ impl Widget for StatusView<'_> {
                         // alone on the row it is the row. Truncated rather
                         // than dropped, for the same reason -- there is
                         // nothing here it could be crowding.
-                        let end = self.bot_at_end(area, cells, style);
+                        let end = self.surroundings_at_end(area, cells, style);
                         write(
                             cells,
                             area.x + 1,
@@ -395,6 +398,160 @@ pub(crate) fn bot_mark(
         _ => theme.gutter,
     };
     Some((bot_badge(bot, phase).trim_end().to_string(), ink))
+}
+
+/// What the row says about the window rather than about what is being
+/// read: the language server, the chat, and the machine Obelus runs on.
+///
+/// **One piece draws them, at the far end of every status row.** Each is a
+/// fact that stays true while the reader reads, and each is asked *after*
+/// something disappoints -- a jump that did nothing, a reply from a phone
+/// that never came, a file that is not the one on this machine. A fact
+/// asked that way has to be where the eye already knows to look, which is
+/// the same place on every row: when each row placed its own, the chat's
+/// mark sat beside the server on a file, beside the usage in a
+/// conversation and at the end everywhere else, and the server was on a
+/// file's row alone.
+///
+/// The server is only where a file is being read, because it is the
+/// server *for that file*; the other two are the whole window's.
+///
+/// Ordered so the steadiest is at the end: the machine does not change for
+/// the life of the window, the chat seldom, the server with every file.
+/// Where the row is short they give up their words in that order from the
+/// left, so the machine's name is the last word to go -- working in the
+/// wrong place is the dearest of the three not to notice.
+pub(crate) struct Surroundings<'a> {
+    server: Option<(&'static str, ServerState)>,
+    busy: Option<u32>,
+    bot: Option<(&'static str, obelus_bot::State)>,
+    from: Option<&'a str>,
+    phase: u32,
+}
+
+/// The mark the machine's name is said behind.
+///
+/// Not a Nerd Font glyph: whether a window is on another machine is the
+/// one thing here that must be legible without one.
+const ELSEWHERE: char = '\u{21c4}';
+
+impl<'a> Surroundings<'a> {
+    /// What the row is about to say. `server` is `None` wherever no file
+    /// is being read.
+    pub(crate) const fn new(
+        server: Option<(&'static str, ServerState)>,
+        busy: Option<u32>,
+        bot: Option<(&'static str, obelus_bot::State)>,
+        from: Option<&'a str>,
+        phase: u32,
+    ) -> Self {
+        Self {
+            server,
+            busy,
+            bot,
+            from,
+            phase,
+        }
+    }
+
+    /// The status view's own, with the server where a file is read.
+    fn of(view: &StatusView<'a>, with_server: bool) -> Self {
+        Self::new(
+            view.server.filter(|_| with_server),
+            view.busy.then_some(view.phase),
+            view.bot,
+            view.from,
+            view.phase,
+        )
+    }
+
+    /// Each thing said, in its whole words and in its mark alone, with its
+    /// ink: left to right as drawn.
+    fn things(&self, theme: &Theme) -> Vec<(String, String, Color)> {
+        let mark_of = |whole: &str| whole.chars().next().map(String::from).unwrap_or_default();
+        let mut things = Vec::new();
+        if self.server.is_some() {
+            let whole = server_badge(self.server, self.busy).trim_end().to_string();
+            let mark = mark_of(&whole);
+            things.push((whole, mark, badge_colour(self.server, theme)));
+        }
+        if let Some((whole, ink)) = bot_mark(self.bot, self.phase, theme) {
+            let mark = mark_of(&whole);
+            things.push((whole, mark, ink));
+        }
+        if let Some(from) = self.from {
+            things.push((
+                format!("{ELSEWHERE} {from}"),
+                ELSEWHERE.to_string(),
+                theme.status_foreground,
+            ));
+        }
+        things
+    }
+
+    /// What fits in `room` columns: the words given up from the left, then
+    /// the marks from the left, each thing with its ink.
+    fn laid(&self, room: usize, theme: &Theme) -> Vec<(String, Color)> {
+        let things = self.things(theme);
+        let mut said: Vec<(String, Color)> = things
+            .iter()
+            .map(|(whole, _, ink)| (whole.clone(), *ink))
+            .collect();
+        for (at, (_, mark, _)) in things.iter().enumerate() {
+            if spanned(&said) <= room {
+                return said;
+            }
+            said[at].0.clone_from(mark);
+        }
+        while spanned(&said) > room && !said.is_empty() {
+            said.remove(0);
+        }
+        said
+    }
+
+    /// How many columns they take in `room`, with the gap in front of them
+    /// -- nothing at all where there is nothing to say.
+    pub(crate) fn width(&self, room: usize, theme: &Theme) -> usize {
+        let said = self.laid(room, theme);
+        match said.is_empty() {
+            true => 0,
+            false => spanned(&said) + usize::from(LABEL_GAP),
+        }
+    }
+
+    /// Draws them at the far end of the row, in at most `room` columns,
+    /// and says the column, counted from the row's start, that the rest of
+    /// the row has to stop before.
+    pub(crate) fn draw(
+        &self,
+        cells: &mut CellBuffer,
+        area: Rect,
+        room: usize,
+        style: Style,
+        theme: &Theme,
+    ) -> usize {
+        let last = usize::from(area.width).saturating_sub(1);
+        let said = self.laid(room, theme);
+        if said.is_empty() {
+            return last;
+        }
+        let start = last.saturating_sub(spanned(&said));
+        let mut at = start;
+        for (word, ink) in &said {
+            if let Ok(offset) = u16::try_from(at) {
+                write(cells, area.x + offset, area.y, word, style.fg(*ink));
+                crate::turning_at(area.x + offset, area.y, word);
+            }
+            at += text_width(word) + usize::from(LABEL_GAP);
+        }
+        start.saturating_sub(usize::from(LABEL_GAP))
+    }
+}
+
+/// How wide a run of things said is, with the gaps between them.
+fn spanned(said: &[(String, Color)]) -> usize {
+    said.iter().map(|(word, _)| text_width(word)).sum::<usize>()
+        + usize::from(LABEL_GAP) * said.len().saturating_sub(1)
 }
 
 /// How many things are wrong with the file, by kind.
@@ -1186,17 +1343,14 @@ impl StatusView<'_> {
             .unwrap_or_default();
         let working_width = text_width(&working);
 
-        let badge = server_badge(self.server, self.busy.then_some(self.phase));
-        let badge_width = text_width(&badge);
-        let remote = bot_badge(self.bot, self.phase);
-        let bot_width = text_width(&remote);
-
         // What is wrong with the file, as a count of each kind: a reader
         // who has not looked at the list still has to know there is one.
-        // Left of the server badge, because it is about the file and the
-        // badge is about the thing that said so.
+        // Left of the position, because it is about the file and the
+        // surroundings are about the window.
         let wrong = wrong_badge(self.troubles);
-        let wrong_width = text_width(&wrong);
+        // And a blank between it and the position, where there is a count:
+        // its own trailing one alone runs `E1 12:5` into one word.
+        let wrong_width = text_width(&wrong) + usize::from(!wrong.is_empty());
 
         let cursor = buffer.cursor();
         // One-based, because that is what every other tool reports. The column
@@ -1227,15 +1381,25 @@ impl StatusView<'_> {
         let branch = branch_badge(self.head);
         let branch_width = text_width(&branch);
 
+        // The surroundings first, at the far end, because they are the
+        // same on every row and so in the same place on every row. They
+        // give up their words before the path gives up its last few
+        // columns: a mark still says whether something is listening, and
+        // a path cut to nothing says nothing about which file.
+        let surroundings = Surroundings::of(self, true);
+        let room = usize::from(area.width)
+            .saturating_sub(1 + PATH_AT_LEAST + right_width + 3 + wrong_width);
+        let end = surroundings.draw(cells, area, room, style, self.theme);
+        let right_start = end.saturating_sub(right_width);
+
         // One column of padding at each end, at least one between the two
         // halves, and room for the marker, which is never the part that gets
         // dropped.
-        let reserved = right_width
-            .saturating_add(3)
+        let reserved = usize::from(area.width)
+            .saturating_sub(right_start)
+            .saturating_add(2)
             .saturating_add(marker_width)
             .saturating_add(working_width)
-            .saturating_add(badge_width)
-            .saturating_add(bot_width)
             .saturating_add(wrong_width);
         // The file's own glyph, the same one the pickers give it, so a row in
         // a list and the file on screen are recognizably the same thing.
@@ -1266,10 +1430,6 @@ impl StatusView<'_> {
         };
         let branch_width = text_width(branch);
         let path = truncate_from_left(&path, available);
-
-        let right_start = usize::from(area.width)
-            .saturating_sub(right_width)
-            .saturating_sub(1);
 
         if !branch.is_empty() {
             write(
@@ -1316,31 +1476,10 @@ impl StatusView<'_> {
         }
 
         // Left of the position, which is where the eye already goes for the
-        // state of things. The badge sits nearest it, with whatever passing
-        // word there is to its left, so the part that is always there does
-        // not move when the part that comes and goes appears.
-        let badge_start = right_start.saturating_sub(badge_width);
-        if !badge.is_empty()
-            && let Ok(offset) = u16::try_from(badge_start)
-            && badge_start > after_path + marker_width
-        {
-            let colour = badge_colour(self.server, self.theme);
-            write(cells, area.x + offset, area.y, &badge, style.fg(colour));
-            crate::turning_at(area.x + offset, area.y, &badge);
-        }
-
-        // The chat beside the server, and for the same reason: both say
-        // whether something outside this window is listening.
-        let bot_start = badge_start.saturating_sub(bot_width);
-        if let Some((remote, ink)) = bot_mark(self.bot, self.phase, self.theme)
-            && let Ok(offset) = u16::try_from(bot_start)
-            && bot_start > after_path + marker_width
-        {
-            write(cells, area.x + offset, area.y, &remote, style.fg(ink));
-            crate::turning_at(area.x + offset, area.y, &remote);
-        }
-
-        let wrong_start = bot_start.saturating_sub(wrong_width);
+        // state of the file, with whatever passing word there is to its
+        // left, so the part that is always there does not move when the
+        // part that comes and goes appears.
+        let wrong_start = right_start.saturating_sub(wrong_width);
         if !wrong.is_empty()
             && let Ok(offset) = u16::try_from(wrong_start)
             && wrong_start > after_path + marker_width
@@ -1487,27 +1626,51 @@ impl StatusView<'_> {
     /// Last of the four, so a sentence Obelus has just said still takes
     /// the row: that is news and this is standing information, and the
     /// news goes when the next key is pressed.
-    /// The chat's mark at the end of a row with nothing else there, and the
+    /// The surroundings at the end of a row that is not a file's, and the
     /// column what is left of the row stops short of.
     ///
-    /// A file's row places it among the other things it says about the
-    /// window; these rows have only the one, so it takes the end. Dropped
-    /// whole from a row with less than half to spare, which leaves what
-    /// the row is about the room it needs.
-    fn bot_at_end(&self, area: Rect, cells: &mut CellBuffer, style: Style) -> usize {
-        let width = usize::from(area.width);
-        let Some((mark, ink)) = bot_mark(self.bot, self.phase, self.theme) else {
-            return width.saturating_sub(1);
+    /// No server, because there is no file for one to be about. Half the
+    /// row at most, which leaves what the row is about the room it needs.
+    fn surroundings_at_end(&self, area: Rect, cells: &mut CellBuffer, style: Style) -> usize {
+        Surroundings::of(self, false).draw(
+            cells,
+            area,
+            usize::from(area.width) / 2,
+            style,
+            self.theme,
+        )
+    }
+
+    /// What Obelus has just said, at `at` and stopping before `end`, and
+    /// whether there was anything to say.
+    ///
+    /// On every row, because the row the reader is on when Obelus says
+    /// something is whichever they happen to be on: the notes, a terminal
+    /// and a pull request's page each drew a row with no room for it, and
+    /// a sentence said there reached nobody.
+    fn aside(
+        &self,
+        cells: &mut CellBuffer,
+        area: Rect,
+        at: usize,
+        end: usize,
+        style: Style,
+    ) -> bool {
+        let Some(note) = self.middle else {
+            return false;
         };
-        let start = width.saturating_sub(text_width(&mark) + 1);
-        match u16::try_from(start) {
-            Ok(offset) if start >= width / 2 => {
-                write(cells, area.x + offset, area.y, &mark, style.fg(ink));
-                crate::turning_at(area.x + offset, area.y, &mark);
-                start.saturating_sub(usize::from(LABEL_GAP))
-            }
-            _ => width.saturating_sub(1),
+        if let Ok(offset) = u16::try_from(at)
+            && end > at
+        {
+            write(
+                cells,
+                area.x + offset,
+                area.y,
+                &truncate_from_right(note, end - at),
+                style.fg(self.wrong_ink().unwrap_or(self.theme.gutter)),
+            );
         }
+        true
     }
 
     fn render_project(&self, area: Rect, cells: &mut CellBuffer, style: Style) {
@@ -1521,7 +1684,7 @@ impl StatusView<'_> {
             style.fg(self.theme.gutter),
         );
         let after = u16::try_from(text_width(label)).unwrap_or(0) + LABEL_GAP;
-        let end = self.bot_at_end(area, cells, style);
+        let end = self.surroundings_at_end(area, cells, style);
         let room = end.saturating_sub(usize::from(after) + 1);
         write(
             cells,
@@ -1639,7 +1802,12 @@ impl StatusView<'_> {
             false => format!("{what} #{}", page.number()),
         };
         write(cells, area.x + 1, area.y, &name, style);
-        let end = self.bot_at_end(area, cells, style);
+        let end = self.surroundings_at_end(area, cells, style);
+        // What Obelus has just said, before anything this row says of its
+        // own: that is news, and the rest is standing information.
+        if self.aside(cells, area, 1 + text_width(&name) + 2, end, style) {
+            return;
+        }
         // Where another Obelus has the review, which is why the key that
         // takes it up does nothing here: a refused claim is drawn, never
         // said, and this is the row the notes draw theirs on. In the room
@@ -1684,7 +1852,7 @@ impl StatusView<'_> {
         };
         write(cells, area.x + 1, area.y, &name, style);
 
-        let end = self.bot_at_end(area, cells, style);
+        let end = self.surroundings_at_end(area, cells, style);
         let left = notes.todo().notes.iter().filter(|note| !note.done).count();
         let said = (left > 0).then(|| format!("{left} to come back to"));
         let count_at = said
@@ -1695,6 +1863,16 @@ impl StatusView<'_> {
             && let Ok(offset) = u16::try_from(count_at)
         {
             write(cells, area.x + offset, area.y, said, style);
+        }
+        // News first, in the room between the name and the count.
+        if self.aside(
+            cells,
+            area,
+            1 + text_width(&name) + 2,
+            count_at.saturating_sub(2),
+            style,
+        ) {
+            return;
         }
 
         // Where the note the caret is in is being talked about, when that is
@@ -1747,7 +1925,7 @@ impl StatusView<'_> {
         cells: &mut CellBuffer,
         style: Style,
     ) {
-        let end = self.bot_at_end(area, cells, style);
+        let end = self.surroundings_at_end(area, cells, style);
         let state = match terminal.ended() {
             Some(ended) => Some(crate::terminal::how_it_ended(ended)),
             None => match terminal.scrolled() {
@@ -1785,6 +1963,15 @@ impl StatusView<'_> {
         let room = state_at.saturating_sub(3);
         let shown = crate::truncate_from_right(&name, room);
         write(cells, area.x + 1, area.y, &shown, style);
+        // After the words and before the state, where there is room left;
+        // what the program is comes first because it is what is on screen.
+        self.aside(
+            cells,
+            area,
+            1 + text_width(&shown) + 2,
+            state_at.saturating_sub(2),
+            style,
+        );
     }
 
     /// The list a reader is building, on whatever row it is given.

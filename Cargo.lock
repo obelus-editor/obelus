@@ -4451,6 +4451,7 @@ dependencies = [
  "dunce",
  "encoding_rs",
  "futures",
+ "gethostname",
  "gix",
  "image",
  "jiff",

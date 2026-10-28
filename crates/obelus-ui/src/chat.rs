@@ -573,6 +573,28 @@ fn opens(open: bool) -> String {
 /// What says the row holds more than it had room to draw.
 const MORE: &str = "\u{2026}";
 
+/// Which of the agent's settings the row under the box carries: the mode,
+/// and nothing else.
+///
+/// The mode because it changes what the next message does, and a reader
+/// who cannot see which one they are in finds out by what the agent does
+/// with it; `shift+tab` steps it without a look at anything else. The rest
+/// -- a model, how hard it thinks -- are set once and seldom, and are rows
+/// of the palette's first tab, where a row has room to say what it is
+/// (`App::open_command_palette`). The row had all of them, and on a row
+/// that also carries the keys, the memory and the surroundings, that left
+/// each of them cut to a word.
+///
+/// A slice of the agent's own list, so the place the keys walk and the
+/// place the row draws are the same place.
+#[must_use]
+pub fn on_the_row(settings: &[acp::Setting]) -> &[acp::Setting] {
+    settings
+        .iter()
+        .position(|setting| setting.category == acp::Category::Mode)
+        .map_or(&[], |at| &settings[at..=at])
+}
+
 /// What one setting says on the row, and the tick in front of it if it is
 /// a switch.
 fn said(setting: &acp::Setting) -> (String, Option<bool>) {
@@ -779,6 +801,8 @@ pub struct ChatView<'a> {
     /// same mark a file's row carries, since this row is the one a reader
     /// working from a chat is most often on.
     bot: Option<(&'static str, obelus_bot::State)>,
+    /// The machine this Obelus runs on, where it is drawn on another.
+    from: Option<&'a str>,
     /// How many of the region's rows, from its top, the reader can see:
     /// a list on the status bar is drawn over the foot of a conversation
     /// rather than taking room from it, and the bar stops above the list,
@@ -797,7 +821,7 @@ impl<'a> ChatView<'a> {
             state: app.talking(),
             name: app.agent_name(),
             title: app.what_this_conversation_is_called(),
-            settings: app.agent_settings(),
+            settings: on_the_row(app.agent_settings()),
             focus: app.shown().chat()?.focus(),
             card: app.card(),
             asked: app.asked(),
@@ -815,6 +839,7 @@ impl<'a> ChatView<'a> {
             usage: app.agent_usage(),
             tasks: app.background_tasks(),
             bot: app.bot(),
+            from: app.drawn_from(),
             seen: None,
         })
     }
@@ -1657,6 +1682,18 @@ impl ChatView<'_> {
             .fg(self.theme.foreground);
         fill(cells, area, plain);
 
+        // What the row says about the window, at the far end where every
+        // status row says it (`status::Surroundings`); what is the
+        // conversation's own is laid out in what that leaves.
+        self.surroundings().draw(
+            cells,
+            area,
+            Self::surroundings_room(area),
+            plain.fg(self.theme.status_foreground),
+            self.theme,
+        );
+        let area = self.beside_the_surroundings(area);
+
         // What a key does here, on the right. Two of them at most, and the
         // way back comes first: a conversation about a note is reached from
         // the notes page, and a way out that nothing says exists is the same
@@ -1713,19 +1750,6 @@ impl ChatView<'_> {
         }
 
         let room = over.saturating_sub(used.as_ref().map_or(0, |(said, _)| text_width(said) + GAP));
-        // The chat's mark beside the memory, and for the same reason: it
-        // stays put while the settings scroll.
-        let room = match self.bot_on_row(room) {
-            Some((mark, ink, wide)) => {
-                let at = 1 + room - text_width(&mark);
-                if let Ok(offset) = u16::try_from(at) {
-                    write(cells, area.x + offset, area.y, &mark, plain.fg(ink));
-                    crate::turning_at(area.x + offset, area.y, &mark);
-                }
-                room - wide
-            }
-            None => room,
-        };
         // A note over the settings, for as long as it lasts. The settings
         // are what the session is set to and are still true a moment later;
         // a note is the answer to the key just pressed, and an answer that
@@ -1787,22 +1811,10 @@ impl ChatView<'_> {
     /// thing it is about is its name, so that is what is written, behind
     /// the box every switch in Obelus is drawn as.
     fn settings(&self, cells: &mut CellBuffer, area: Rect, room: usize, plain: Style) {
+        // Nothing where the agent has no mode: what else it lets the reader
+        // change is in the palette, so "nothing to change" would no longer
+        // be true.
         if self.settings.is_empty() {
-            // Only once there is a session: before that the row would be
-            // saying that an agent which has not spoken yet has nothing to
-            // say about itself.
-            // In the room the settings have and no further: the count of
-            // background work is at the end of it, and words written past
-            // the end are written over that.
-            if matches!(self.state, Talking::Ready | Talking::Thinking) {
-                write(
-                    cells,
-                    area.x + 1,
-                    area.y,
-                    &super::truncate_from_right("Nothing to change", room),
-                    plain.fg(self.theme.gutter),
-                );
-            }
             return;
         }
 
@@ -1938,7 +1950,8 @@ impl ChatView<'_> {
     /// with nothing on screen saying where they are.
     #[must_use]
     pub fn shows_tasks(&self, area: Rect) -> bool {
-        self.tasks_placed(area).is_some()
+        self.tasks_placed(self.beside_the_surroundings(area))
+            .is_some()
     }
 
     /// Which setting the row starts at.
@@ -2028,19 +2041,35 @@ impl ChatView<'_> {
             .usage
             .and_then(used_up)
             .filter(|(said, _)| over > text_width(said) + GAP + LEAST_SETTINGS);
-        let room = over.saturating_sub(used.as_ref().map_or(0, |(said, _)| text_width(said) + GAP));
-        room - self.bot_on_row(room).map_or(0, |(_, _, wide)| wide)
+        over.saturating_sub(used.as_ref().map_or(0, |(said, _)| text_width(said) + GAP))
     }
 
-    /// The chat's mark, where what the row has left holds it and still
-    /// leaves the settings some room, with its ink and how much it takes.
+    /// What the row says about the window: the chat and the machine, and
+    /// no server, because a conversation is not a file one is about.
+    fn surroundings(&self) -> crate::status::Surroundings<'_> {
+        crate::status::Surroundings::new(None, None, self.bot, self.from, self.phase)
+    }
+
+    /// How much of the row they may have: a third, which leaves the
+    /// conversation's own the most of it.
+    fn surroundings_room(area: Rect) -> usize {
+        usize::from(area.width) / 3
+    }
+
+    /// The row with the surroundings taken off its end.
     ///
-    /// Asked by the drawing and by `status_room` both, so the settings and
-    /// a press on them are measured against the row that is there.
-    fn bot_on_row(&self, room: usize) -> Option<(String, Color, usize)> {
-        let (mark, ink) = crate::status::bot_mark(self.bot, self.phase, self.theme)?;
-        let wide = text_width(&mark) + GAP;
-        (room > wide + LEAST_SETTINGS).then_some((mark, ink, wide))
+    /// Asked by the drawing and by a press both, so a setting is measured
+    /// against the row that is there.
+    fn beside_the_surroundings(&self, area: Rect) -> Rect {
+        let taken = self
+            .surroundings()
+            .width(Self::surroundings_room(area), self.theme);
+        Rect {
+            width: area
+                .width
+                .saturating_sub(u16::try_from(taken).unwrap_or(u16::MAX)),
+            ..area
+        }
     }
 
     /// Which of the agent's settings a point on the status row is on.
@@ -2055,6 +2084,7 @@ impl ChatView<'_> {
         if y != area.y {
             return None;
         }
+        let area = self.beside_the_surroundings(area);
         if let Some((at, word)) = self.tasks_placed(area) {
             let wide = u16::try_from(text_width(&word)).unwrap_or(0);
             if x >= at && x < at.saturating_add(wide) {
@@ -2496,6 +2526,7 @@ mod tests {
             usage: None,
             tasks: None,
             bot: None,
+            from: None,
             seen: Some(seen),
         };
         let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -2542,6 +2573,7 @@ mod tests {
             usage: None,
             tasks: Some((2, 0)),
             bot: None,
+            from: None,
             seen: None,
         };
         let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -2588,6 +2620,7 @@ mod tests {
             usage: None,
             tasks: None,
             bot: None,
+            from: None,
             seen: None,
         };
         let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -2639,6 +2672,7 @@ mod tests {
                 usage: None,
                 tasks: None,
                 bot: None,
+                from: None,
                 seen: None,
             };
             let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -2820,6 +2854,7 @@ mod tests {
                 usage: None,
                 tasks: None,
                 bot: None,
+                from: None,
                 seen: None,
             };
             let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -2895,6 +2930,7 @@ mod tests {
                 usage: None,
                 tasks: None,
                 bot: None,
+                from: None,
                 seen: None,
             };
             let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -2958,6 +2994,7 @@ mod tests {
                 usage: None,
                 tasks: None,
                 bot: None,
+                from: None,
                 seen: None,
             };
             let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -3068,6 +3105,7 @@ mod caret {
             usage: None,
             tasks: None,
             bot: None,
+            from: None,
             seen: None,
         }
     }
@@ -3167,6 +3205,7 @@ mod caret {
                         usage: None,
                         tasks: None,
                         bot: None,
+                        from: None,
                         seen: None,
                     };
                     let mut cells = ratatui::buffer::Buffer::empty(area);
