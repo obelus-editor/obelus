@@ -245,30 +245,6 @@ impl Widget for StatusView<'_> {
                 | crate::Shown::Nothing => {
                     if let Some(buffer) = self.buffer {
                         self.render_file(buffer, area, cells, style);
-                    } else if let Some(note) = self.middle {
-                        // Nothing open, so the row has nothing else to say --
-                        // and what Obelus has just said still has to reach
-                        // somebody. It was drawn only beside a file's name,
-                        // which left the one reader most likely to be told
-                        // something watching a key do nothing: `ob
-                        // some-directory` opens on the welcome screen, and
-                        // making the first file in a project is a command
-                        // offered right there.
-                        //
-                        // Left of the row and in its own ink, which is what a
-                        // conversation does with the same sentence: beside a
-                        // path it is an aside and goes in the dim one, and
-                        // alone on the row it is the row. Truncated rather
-                        // than dropped, for the same reason -- there is
-                        // nothing here it could be crowding.
-                        let end = self.surroundings_at_end(area, cells, style);
-                        write(
-                            cells,
-                            area.x + 1,
-                            area.y,
-                            &truncate_from_right(note, end.saturating_sub(1)),
-                            self.wrong_ink().map_or(style, |ink| style.fg(ink)),
-                        );
                     } else {
                         self.render_project(area, cells, style);
                     }
@@ -1641,38 +1617,55 @@ impl StatusView<'_> {
         )
     }
 
-    /// What Obelus has just said, at `at` and stopping before `end`, and
-    /// whether there was anything to say.
+    /// What Obelus has just said, at the right of what is left of the row:
+    /// ending before `end`, and starting no nearer the row's own words than
+    /// `from`. Where it began, where it was said.
     ///
-    /// On every row, because the row the reader is on when Obelus says
-    /// something is whichever they happen to be on: the notes, a terminal
-    /// and a pull request's page each drew a row with no room for it, and
-    /// a sentence said there reached nobody.
+    /// **On every row, and in one place on every row.** The row the reader
+    /// is on when Obelus says something is whichever they happen to be on,
+    /// and the notes, a terminal and a pull request's page each once drew a
+    /// row with no room for it. Then each that had room put it somewhere of
+    /// its own -- after the path on one, after the name on another, over
+    /// the mode on a third -- so the same sentence had to be looked for.
+    /// It goes where a file's row has always put it: at the right, beside
+    /// the row's own fact at that end and against the surroundings, so the
+    /// eye goes to one place for it, and the row's name keeps its room.
+    ///
+    /// In the dim ink, because it is said beside something: an aside, which
+    /// goes when the next key is pressed. Dropped whole where it does not
+    /// fit, the rule the file's row follows -- half a sentence is worse
+    /// than none, and what the row is about is never the part that goes.
     fn aside(
         &self,
         cells: &mut CellBuffer,
         area: Rect,
-        at: usize,
+        from: usize,
         end: usize,
         style: Style,
-    ) -> bool {
-        let Some(note) = self.middle else {
-            return false;
-        };
-        if let Ok(offset) = u16::try_from(at)
-            && end > at
-        {
-            write(
-                cells,
-                area.x + offset,
-                area.y,
-                &truncate_from_right(note, end - at),
-                style.fg(self.wrong_ink().unwrap_or(self.theme.gutter)),
-            );
+    ) -> Option<usize> {
+        let note = self.middle?;
+        let start = end.checked_sub(text_width(note))?;
+        if start < from {
+            return None;
         }
-        true
+        let offset = u16::try_from(start).ok()?;
+        write(
+            cells,
+            area.x + offset,
+            area.y,
+            note,
+            style.fg(self.wrong_ink().unwrap_or(self.theme.gutter)),
+        );
+        Some(start)
     }
 
+    /// Which project the welcome screen's keys are about, where nothing is
+    /// open, with what Obelus has just said at the right of it.
+    ///
+    /// The note used to take the whole row here, alone and in the bright
+    /// ink. It is at the right now as on every row, and the project stays:
+    /// a reader told something on the welcome screen is still in that
+    /// project.
     fn render_project(&self, area: Rect, cells: &mut CellBuffer, style: Style) {
         let said = crate::with_home_as_tilde(self.working_directory);
         let label = "Project";
@@ -1683,18 +1676,23 @@ impl StatusView<'_> {
             label,
             style.fg(self.theme.gutter),
         );
-        let after = u16::try_from(text_width(label)).unwrap_or(0) + LABEL_GAP;
+        let after = text_width(label) + usize::from(LABEL_GAP);
         let end = self.surroundings_at_end(area, cells, style);
-        let room = end.saturating_sub(usize::from(after) + 1);
-        write(
-            cells,
-            area.x + 1 + after,
-            area.y,
-            // From the left, the way a path is cut everywhere it is one:
-            // what says which project it is is at the end.
-            &crate::truncate_from_left(&said, room),
-            style,
-        );
+        let end = self
+            .aside(cells, area, 1 + after + PATH_AT_LEAST + 2, end, style)
+            .map_or(end, |start| start.saturating_sub(usize::from(LABEL_GAP)));
+        let room = end.saturating_sub(after + 1);
+        if let Ok(after) = u16::try_from(after) {
+            write(
+                cells,
+                area.x + 1 + after,
+                area.y,
+                // From the left, the way a path is cut everywhere it is one:
+                // what says which project it is is at the end.
+                &crate::truncate_from_left(&said, room),
+                style,
+            );
+        }
     }
 
     /// The box at the foot of the screen that asks which project, which is
@@ -1803,11 +1801,12 @@ impl StatusView<'_> {
         };
         write(cells, area.x + 1, area.y, &name, style);
         let end = self.surroundings_at_end(area, cells, style);
-        // What Obelus has just said, before anything this row says of its
-        // own: that is news, and the rest is standing information.
-        if self.aside(cells, area, 1 + text_width(&name) + 2, end, style) {
-            return;
-        }
+        let first = 1 + text_width(&name) + 2;
+        // Where what follows the name has to stop: before the note, where
+        // there is one.
+        let next = self
+            .aside(cells, area, first, end, style)
+            .unwrap_or(end + 1);
         // Where another Obelus has the review, which is why the key that
         // takes it up does nothing here: a refused claim is drawn, never
         // said, and this is the row the notes draw theirs on. In the room
@@ -1815,15 +1814,14 @@ impl StatusView<'_> {
         // not the news.
         if self.elsewhere {
             let held = "Talked about in another window";
-            let at = 1 + text_width(&name) + 2;
-            if at + text_width(held) + 2 <= end
-                && let Ok(offset) = u16::try_from(at)
+            if first + text_width(held) + 2 <= next
+                && let Ok(offset) = u16::try_from(first)
             {
                 write(cells, area.x + offset, area.y, held, style);
             }
             return;
         }
-        if let (Some(key), Ok(end)) = (&self.palette, u16::try_from(end + 1)) {
+        if let (Some(key), Ok(end)) = (&self.palette, u16::try_from(next)) {
             more(
                 cells,
                 area,
@@ -1864,16 +1862,15 @@ impl StatusView<'_> {
         {
             write(cells, area.x + offset, area.y, said, style);
         }
-        // News first, in the room between the name and the count.
-        if self.aside(
-            cells,
-            area,
-            1 + text_width(&name) + 2,
-            count_at.saturating_sub(2),
-            style,
-        ) {
-            return;
-        }
+        // The note between the name and the count, against the count.
+        let first = 1 + text_width(&name) + 2;
+        let note_end = match said {
+            Some(_) => count_at.saturating_sub(usize::from(LABEL_GAP)),
+            None => end,
+        };
+        let next = self
+            .aside(cells, area, first, note_end, style)
+            .unwrap_or(count_at);
 
         // Where the note the caret is in is being talked about, when that is
         // somewhere else: the lock beside it says the keys will do nothing,
@@ -1885,7 +1882,7 @@ impl StatusView<'_> {
             // Nothing to say about where the note is talked about, so the
             // room after the name is the palette's key: the notes have no
             // box of their own for it to follow.
-            if let (Some(key), Ok(end)) = (&self.palette, u16::try_from(count_at)) {
+            if let (Some(key), Ok(end)) = (&self.palette, u16::try_from(next)) {
                 more(
                     cells,
                     area,
@@ -1903,9 +1900,8 @@ impl StatusView<'_> {
             }
             obelus_component::todo::Holder::Checkout(name) => format!("Talked about in {name}"),
         };
-        let at = 1 + text_width(&name) + 2;
-        if at + text_width(&held) + 2 <= count_at
-            && let Ok(offset) = u16::try_from(at)
+        if first + text_width(&held) + 2 <= next
+            && let Ok(offset) = u16::try_from(first)
         {
             write(cells, area.x + offset, area.y, &held, style);
         }
@@ -1960,18 +1956,20 @@ impl StatusView<'_> {
             ),
             false => terminal.said().to_string(),
         };
-        let room = state_at.saturating_sub(3);
+        // The note against the state, where the words can spare it the
+        // room: the program is what is on screen, so it keeps a few
+        // columns whatever is said.
+        let note_end = match &state {
+            Some(_) => state_at.saturating_sub(usize::from(LABEL_GAP)),
+            None => end,
+        };
+        let least = text_width(&name).min(PATH_AT_LEAST);
+        let next = self
+            .aside(cells, area, 1 + least + 2, note_end, style)
+            .unwrap_or(state_at);
+        let room = next.saturating_sub(3);
         let shown = crate::truncate_from_right(&name, room);
         write(cells, area.x + 1, area.y, &shown, style);
-        // After the words and before the state, where there is room left;
-        // what the program is comes first because it is what is on screen.
-        self.aside(
-            cells,
-            area,
-            1 + text_width(&shown) + 2,
-            state_at.saturating_sub(2),
-            style,
-        );
     }
 
     /// The list a reader is building, on whatever row it is given.

@@ -1751,30 +1751,24 @@ impl ChatView<'_> {
             write(cells, area.x + offset, area.y, said, plain.fg(ink));
         }
 
-        let room = over.saturating_sub(used.as_ref().map_or(0, |(said, _)| text_width(said) + GAP));
-        // A note over the settings, for as long as it lasts. The settings
-        // are what the session is set to and are still true a moment later;
-        // a note is the answer to the key just pressed, and an answer that
-        // waits its turn is an answer nobody reads.
-        if let Some(note) = self.note {
-            // In the red everything that would not go is written in, the
-            // same as the status row's: the words are the same in either
-            // place and a reader glancing at the row has nothing else to
-            // tell a refusal from a report.
+        // What Obelus has just said, at the right of what is left, beside
+        // the memory: where every status row says it (`StatusView::aside`).
+        // It used to be drawn over the settings, so a note took the mode
+        // off the row for as long as it lasted; at the right it takes the
+        // room the settings had to spare, and the mode stays.
+        //
+        // In the red everything that would not go is written in, the same
+        // as the status row's: the words are the same in either place and a
+        // reader glancing at the row has nothing else to tell a refusal
+        // from a report.
+        if let Some((at, note)) = self.note_placed(area) {
             let ink = match self.note_is_wrong {
-                true => plain.fg(self
+                true => self
                     .theme
-                    .colour_for(Some(obelus_text::kind::SyntaxKind::Error))),
-                false => plain,
+                    .colour_for(Some(obelus_text::kind::SyntaxKind::Error)),
+                false => self.theme.gutter,
             };
-            write(
-                cells,
-                area.x + 1,
-                area.y,
-                &super::truncate_from_right(note, room),
-                ink,
-            );
-            return;
+            write(cells, at, area.y, note, plain.fg(ink));
         }
         // The count of background work, beside the memory and for the same
         // reason: it stays put while the settings scroll. At the end of
@@ -2036,6 +2030,31 @@ impl ChatView<'_> {
 
     /// The same, before the count of background work has taken its share.
     fn room_beside_the_marks(&self, area: Rect) -> usize {
+        let room = self.room_before_the_note(area);
+        match self.note_placed(area) {
+            Some((_, note)) => room - text_width(note) - GAP,
+            None => room,
+        }
+    }
+
+    /// Where what Obelus has just said goes, and the words, where it fits
+    /// whole and still leaves the settings some room -- or nowhere: dropped
+    /// whole, the rule every status row follows for it.
+    ///
+    /// Asked by the drawing and by a press both, so the settings and a
+    /// press on them are measured against the row that is there.
+    fn note_placed(&self, area: Rect) -> Option<(u16, &str)> {
+        let note = self.note?;
+        let room = self.room_before_the_note(area);
+        if room <= text_width(note) + GAP + LEAST_SETTINGS {
+            return None;
+        }
+        let at = u16::try_from(1 + room - text_width(note)).ok()?;
+        Some((area.x + at, note))
+    }
+
+    /// The same, before what Obelus has just said has taken its share.
+    fn room_before_the_note(&self, area: Rect) -> usize {
         let hint = self.status_hint();
         let taken = hint.as_deref().map_or(0, |hint| text_width(hint) + 2);
         let over = usize::from(area.width).saturating_sub(taken + 2);
