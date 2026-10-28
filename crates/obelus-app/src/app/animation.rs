@@ -16,11 +16,11 @@ impl App {
     /// from the half-dozen places that change any of it, which is how a
     /// ticker outlives its reason.
     pub(super) fn wants_animating(&self, working: bool) -> bool {
-        // Nor drawn at the other end of a connection, which is a session
+        // Not drawn at the other end of a connection, which is a session
         // over a network however this process was started: the same answer
         // `Ticker::start` gives one over ssh, for the same reason, asked of
         // the one thing that knows -- the environment here is the server's.
-        if self.headless || self.afar {
+        if self.afar {
             return false;
         }
         // Nothing open and no page taking its place: the welcome screen's
@@ -93,6 +93,9 @@ impl App {
             || self.server_busy()
             // And the chat's mark, while the window it talks to connects.
             || self.bot_turning()
+            // And the page saying a machine is being connected to, for as
+            // long as the first try at it has said nothing either way.
+            || self.machine_gone.as_ref().is_some_and(|gone| gone.why.is_none())
             // And a list being matched somewhere else, or still being
             // filled. The same rule once more: the row that says so turns,
             // and a mark drawn once and never again is a mark saying

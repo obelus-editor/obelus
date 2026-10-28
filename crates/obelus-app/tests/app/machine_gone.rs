@@ -17,7 +17,7 @@ fn gone(trying: bool) -> App {
         at: "devbox".to_string(),
         key: "00ff".to_string(),
         window: Some("w1".to_string()),
-        why: "connection refused".to_string(),
+        why: Some("connection refused".to_string()),
         trying,
     });
     app
@@ -70,15 +70,20 @@ fn trying_again_goes_back_to_the_window_it_was() {
     assert!(app.should_quit());
 }
 
-/// Working on this machine lets the other go and asks which project, as a
-/// start with nothing to go on does.
+/// Escape gives up on the other machine and asks which project here, as a
+/// start with nothing to go on does -- and enter, which this page once
+/// took for it, does nothing.
 ///
-/// Broken deliberately by leaving the machine where it was on enter (no
-/// `machine_gone = None`): the page stayed up over the question.
+/// Broken deliberately by leaving the machine where it was on escape (no
+/// `machine_gone = None`): the page stayed up over the question. And by
+/// hearing enter for it again (`KeyCode::Enter` for `Esc` in
+/// `the_page_saying_it_has_gone`): enter let go of the machine.
 #[test]
 fn working_here_asks_which_project() {
     let mut app = gone(true);
     support::press(&mut app, KeyCode::Enter);
+    assert!(app.machine_gone().is_some(), "enter gave up on the machine");
+    support::press(&mut app, KeyCode::Esc);
     assert!(app.machine_gone().is_none(), "the page stayed up");
     assert!(!app.has_a_project(), "nothing asked which project");
     assert_eq!(app.goes_to(), None);
@@ -124,9 +129,11 @@ fn a_long_reason_is_said_whole() {
         at: "devbox".to_string(),
         key: "00ff".to_string(),
         window: None,
-        why: "No connection could be made because the target machine actively refused it. \
+        why: Some(
+            "No connection could be made because the target machine actively refused it. \
               (os error 10061)"
-            .to_string(),
+                .to_string(),
+        ),
         trying: false,
     });
     let screen = support::render(&mut app, 60, 24);
@@ -134,6 +141,59 @@ fn a_long_reason_is_said_whole() {
         assert!(
             screen.contains(said),
             "the page does not say {said:?}:\n{screen}"
+        );
+    }
+}
+
+/// A machine still being connected to says so, with a mark that turns and
+/// no key to try again -- there is nothing yet to try again -- and becomes
+/// the page saying it cannot be reached once a try says why.
+///
+/// Broken deliberately twice. By not hearing what the try said
+/// (`Event::Unreachable` handled as nothing): the page said it was
+/// connecting for ever. And by trying again on the key while connecting
+/// (the `why.is_some()` guard left out of the page's keys): `r` let go of
+/// the window to start the try that was already under way again.
+#[test]
+fn a_machine_being_connected_to_says_so_until_a_try_says_why_not() {
+    let mut app = App::new(Vec::new());
+    support::lay_out(&mut app, 80, 24);
+    app.the_machine_has_gone(MachineGone {
+        at: "devbox".to_string(),
+        key: "00ff".to_string(),
+        window: None,
+        why: None,
+        trying: true,
+    });
+    let screen = support::render(&mut app, 80, 24);
+    let connecting = format!("{} Connecting to devbox", obelus_ui::spinning(app.phase()));
+    assert!(
+        screen.contains(&connecting),
+        "the page does not say it is connecting:
+{screen}"
+    );
+    assert!(
+        !screen.contains("Try again"),
+        "a key to try again while trying:
+{screen}"
+    );
+    support::press(&mut app, KeyCode::Char(obelus_ui::gone::AGAIN));
+    assert_eq!(app.goes_to(), None, "the key started the try again");
+
+    app.handle(Event::Unreachable {
+        at: "devbox".to_string(),
+        why: "connection refused".to_string(),
+    });
+    let screen = support::render(&mut app, 80, 24);
+    for said in [
+        "Obelus cannot reach devbox",
+        "connection refused",
+        "Try again",
+    ] {
+        assert!(
+            screen.contains(said),
+            "the page does not say {said:?}:
+{screen}"
         );
     }
 }

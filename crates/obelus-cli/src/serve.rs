@@ -114,6 +114,19 @@ impl Out {
         Ok(())
     }
 
+    /// Keeps several, under the one lock.
+    fn keep_all(&self, updates: Vec<Update>) -> Result<(), Closed> {
+        if !self.attached.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        let mut said = self.writing.lock().map_err(|_| Closed)?;
+        said.kept.extend(updates);
+        if said.kept.len() >= KEPT_MOST {
+            said.out()?;
+        }
+        Ok(())
+    }
+
     /// Writes one thing for the window, where there is one -- after what is
     /// kept for the screen, so that the two arrive in the order said.
     fn say(&self, down: &Down) -> Result<(), Closed> {
@@ -164,6 +177,18 @@ impl Showing for Out {
         let mut screen = self.screen.lock().map_err(|_| Closed)?;
         screen.saw(&update);
         let said = self.keep(update);
+        drop(screen);
+        said
+    }
+
+    // A frame's cells under one lock of each, rather than two locks a cell:
+    // a page scrolled is thousands of them.
+    fn show_all(&self, updates: Vec<Update>) -> Result<(), Closed> {
+        let mut screen = self.screen.lock().map_err(|_| Closed)?;
+        for update in &updates {
+            screen.saw(update);
+        }
+        let said = self.keep_all(updates);
         drop(screen);
         said
     }
@@ -541,6 +566,45 @@ mod tests {
             std::iter::from_fn(|| obelus_wire::read::<_, Down>(&mut reading).expect("a message"))
                 .collect()
         }
+    }
+
+    /// Cells handed over together are kept for a window that comes back as
+    /// well as said in the frame's one message.
+    ///
+    /// Broken deliberately by leaving the screen out of `Out::show_all`
+    /// (no `screen.saw`): the frame went, and a window coming back was told
+    /// a screen with none of it.
+    #[test]
+    fn cells_handed_over_together_are_kept_and_said() {
+        let written = Written::default();
+        let out = Out::new(Box::new(written.clone()));
+        let mut cell = ratatui::buffer::Cell::default();
+        cell.set_symbol("x");
+        let cells: Vec<Update> = (0..100)
+            .map(|x| Update::Cell {
+                x,
+                y: 0,
+                cell: Box::new(cell.clone()),
+            })
+            .collect();
+        out.show_all(cells).expect("shown");
+        out.show(Update::Frame).expect("shown");
+        out.wake();
+        let messages = written.messages();
+        assert_eq!(messages.len(), 1, "not one message for the frame");
+        let Down::Updates(updates) = &messages[0] else {
+            panic!("not the frame: {:?}", messages[0]);
+        };
+        assert_eq!(updates.len(), 101);
+        let again = out.screen.lock().expect("the screen").again();
+        let kept = again
+            .iter()
+            .filter(|update| matches!(update, Update::Cell { .. }))
+            .count();
+        assert_eq!(
+            kept, 100,
+            "the screen kept for a window coming back has none of it"
+        );
     }
 
     /// A frame is one message however many cells it changed, and what is

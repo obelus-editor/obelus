@@ -134,6 +134,33 @@ fn a_new_machine_is_asked_for_where_and_then_for_its_key() {
     );
 }
 
+/// A key typed that is not one a server prints is turned down at the
+/// question, and the window stays where it is -- rather than letting go of
+/// this machine's Obelus and finding out only then, with nothing left to
+/// draw.
+///
+/// Broken deliberately by going with whatever was typed (the `as_a_key`
+/// check left out of `connect_with`): the window was let go of with a key
+/// nothing could read, and ended.
+#[test]
+fn a_key_that_is_not_one_is_turned_down_at_the_question() {
+    let _turn = crate::turn();
+    keep_servers("");
+    let mut app = connecting();
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "fresh:9000");
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "not a key");
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(app.goes_to(), None, "gone with a key nothing reads");
+    assert!(!app.should_quit(), "the window was let go of");
+    let screen = support::render(&mut app, 100, 24);
+    assert!(
+        screen.contains("Not a key a server prints"),
+        "nothing said why:\n{screen}"
+    );
+}
+
 /// A reader who asked to go to a machine and then asked to leave has asked
 /// to leave.
 ///

@@ -90,7 +90,9 @@ ratatui-core = "0.1"
 crossterm = "0.29"
 
 
-clap = { version = "4", features = ["derive"] }
+# `env` for a flag the environment may say instead -- the key a window
+# connects with, `OBELUS_KEY` -- which clap then names in the help.
+clap = { version = "4", features = ["derive", "env"] }
 # The protocol's data types. Writing them by hand would be a lot of typing
 # with a lot of chances to get a JSON shape subtly wrong.
 lsp-types = "0.97"

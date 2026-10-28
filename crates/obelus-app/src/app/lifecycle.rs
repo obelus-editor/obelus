@@ -52,11 +52,10 @@ impl App {
     /// again a moment at a time, what answers takes the window back to the
     /// Obelus it was on (`App::reachable`).
     pub fn the_machine_has_gone(&mut self, gone: super::MachineGone) {
-        tracing::warn!(
-            at = gone.at,
-            why = gone.why,
-            "a machine this window was on cannot be reached"
-        );
+        match &gone.why {
+            Some(why) => tracing::warn!(at = gone.at, why, "a machine cannot be reached"),
+            None => tracing::info!(at = gone.at, "connecting to a machine"),
+        }
         self.make_room(layers::Room::Screen);
         self.machine_gone = Some(gone);
     }
@@ -70,6 +69,19 @@ impl App {
             .is_some_and(|gone| gone.trying && gone.at == at)
         {
             self.try_the_machine_again();
+        }
+    }
+
+    /// A try at the machine the page is about came to nothing: what it
+    /// says now, where it said it was connecting -- or that it is still
+    /// not answering, and why.
+    pub(super) fn unreachable(&mut self, at: &str, why: String) {
+        if let Some(gone) = self
+            .machine_gone
+            .as_mut()
+            .filter(|gone| gone.trying && gone.at == at)
+        {
+            gone.why = Some(why);
         }
     }
 
@@ -109,12 +121,6 @@ impl App {
     /// and a page covers what shares its room.
     pub(super) fn the_tree_has_gone(&mut self) {
         tracing::warn!(tree = %self.working_directory.display(), "the tree Obelus is on has gone");
-        if self.give_up_unseen(format!(
-            "The tree Obelus was on has gone: {}",
-            self.working_directory.display()
-        )) {
-            return;
-        }
         self.make_room(layers::Room::Screen);
         self.gone = true;
         self.head = None;
@@ -127,12 +133,19 @@ impl App {
     pub(super) fn the_page_saying_it_has_gone(&mut self, key: &KeyEvent) -> bool {
         if self.machine_gone.is_some() {
             let bare = key.modifiers == KeyModifiers::NONE;
-            if key.code == KeyCode::Enter && bare {
-                // Here, then: the other machine is let go of, and this one
-                // asks which project, as it would have from a start.
+            if key.code == KeyCode::Esc && bare {
+                // Here, then: the other machine is given up on -- escape
+                // gives up on the nearest thing, and that is the going
+                // there -- and this one asks which project, as it would
+                // have from a start.
                 self.machine_gone = None;
                 self.ask_which_project();
-            } else if key.code == KeyCode::Char(obelus_ui::gone::AGAIN) && bare {
+            } else if key.code == KeyCode::Char(obelus_ui::gone::AGAIN)
+                && bare
+                // Not while the first try is still under way: there is
+                // nothing yet to try again, and the page offers no key.
+                && self.machine_gone.as_ref().is_some_and(|gone| gone.why.is_some())
+            {
                 self.try_the_machine_again();
             } else if self.keymap.lookup(key, Context::Dialog) == Some(Command::Quit) {
                 self.request_quit();
@@ -283,13 +296,6 @@ impl App {
         // same question wherever this one was started, so it is asked
         // whether or not the reader has said where they work.
         self.ask_about_releases();
-        // Before what went wrong, which a chat that is not there to
-        // connect to is one of. And not before there is a project, like
-        // the tools above: a conversation begun from the chat would be
-        // rooted at wherever the process began. `settle_on` connects.
-        if self.bot_at_start && self.which_project.chooser.is_none() {
-            self.connect_bot_at_start(self.reading_nothing());
-        }
         // What went wrong on the way up, over whatever the first screen is,
         // and last of all so that everything that could go wrong has.
         let told = self.tell_what_went_wrong();

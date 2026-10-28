@@ -42,6 +42,7 @@ impl App {
             Event::Terminal(heard) => self.heard_from_a_terminal(heard),
             Event::Summoned(token) => self.summoned(token),
             Event::Reachable(at) => self.reachable(&at),
+            Event::Unreachable { at, why } => self.unreachable(&at, why),
             Event::Amiss(why) => self.wrong(why),
             Event::Bot(event) => self.bot_event(event),
             Event::BotReached(number, event) => self.reached_event(number, event),

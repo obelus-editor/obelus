@@ -51,6 +51,25 @@ const GRACE: Duration = Duration::from_secs(3 * 60 * 60);
 /// Where a server listens when it is not told.
 pub(crate) const PORT: u16 = 7787;
 
+/// A port on every network this machine is on.
+pub(crate) fn everywhere(port: u16) -> SocketAddr {
+    SocketAddr::from(([0, 0, 0, 0], port))
+}
+
+/// Where `--listen` says to listen: a port alone, which is a port on every
+/// network, or an address and a port.
+///
+/// A port alone because that is nearly always the only part worth
+/// changing, and an address written out to change it is an address the
+/// reader has to know is the one for everywhere.
+pub(crate) fn listening(said: &str) -> Result<SocketAddr, String> {
+    if let Ok(port) = said.parse::<u16>() {
+        return Ok(everywhere(port));
+    }
+    said.parse::<SocketAddr>()
+        .map_err(|_| format!("Not a port, or an address and a port: {said}"))
+}
+
 /// How long a connection is given to say who it is before it is let go of.
 const KNOCKING: Duration = Duration::from_secs(10);
 

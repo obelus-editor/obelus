@@ -51,6 +51,22 @@ pub trait Showing: Send + Sync {
     /// Where whatever drew Obelus has gone.
     fn show(&self, update: Update) -> Result<(), Closed>;
 
+    /// Puts several on their way, in order: every cell a frame changed, which
+    /// [`Cells`] hands over at once. One at a time unless whoever shows them
+    /// can do better -- a page scrolled is thousands of cells, and anything
+    /// that takes a lock or sends on a channel for each does it thousands of
+    /// times.
+    ///
+    /// # Errors
+    ///
+    /// Where whatever drew Obelus has gone.
+    fn show_all(&self, updates: Vec<Update>) -> Result<(), Closed> {
+        for update in updates {
+            self.show(update)?;
+        }
+        Ok(())
+    }
+
     /// Says that what has been put on its way is to be looked at now.
     ///
     /// Apart from [`Self::show`] because sending alone does not: a window's
@@ -830,14 +846,15 @@ impl Backend for Cells {
     where
         I: Iterator<Item = (u16, u16, &'a Cell)>,
     {
-        for (x, y, cell) in content {
-            self.send(Update::Cell {
-                x,
-                y,
-                cell: Box::new(cell.clone()),
-            })?;
-        }
-        Ok(())
+        self.showing.show_all(
+            content
+                .map(|(x, y, cell)| Update::Cell {
+                    x,
+                    y,
+                    cell: Box::new(cell.clone()),
+                })
+                .collect(),
+        )
     }
 
     fn hide_cursor(&mut self) -> Result<(), Closed> {
@@ -1169,6 +1186,30 @@ mod tests {
         }
         for down in [
             link::Down::Updates(vec![Update::Cleared, Update::Frame]),
+            // A run, a cell that breaks it, and a cell that cannot be in one.
+            link::Down::Updates(vec![
+                Update::Cell {
+                    x: 0,
+                    y: 1,
+                    cell: Box::new(ratatui::buffer::Cell::new("a")),
+                },
+                Update::Cell {
+                    x: 1,
+                    y: 1,
+                    cell: Box::new(ratatui::buffer::Cell::new("b")),
+                },
+                Update::Cell {
+                    x: 2,
+                    y: 1,
+                    cell: Box::new(styled("c")),
+                },
+                Update::Cell {
+                    x: 3,
+                    y: 1,
+                    cell: Box::new(ratatui::buffer::Cell::new("e\u{301}")),
+                },
+                Update::Frame,
+            ]),
             link::Down::Copy("c".to_string()),
             link::Down::Paste(1),
             link::Down::Picture(2),
@@ -1235,6 +1276,58 @@ mod tests {
         assert_eq!(
             written, kept,
             "what crosses moved: move WIRE_VERSION, and write these again"
+        );
+    }
+
+    /// A frame's cells are handed over in one go, however many there are.
+    ///
+    /// Broken deliberately by handing them over a cell at a time (the loop
+    /// of `send`s back in `Cells::draw`): a frame of a row of cells was as
+    /// many calls, each a lock or a send on the far side.
+    #[test]
+    fn a_frame_s_cells_are_handed_over_at_once() {
+        #[derive(Default)]
+        struct Counted {
+            one: std::sync::atomic::AtomicUsize,
+            many: std::sync::atomic::AtomicUsize,
+        }
+        impl Showing for Counted {
+            fn show(&self, _: Update) -> Result<(), Closed> {
+                self.one.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                Ok(())
+            }
+
+            fn show_all(&self, _: Vec<Update>) -> Result<(), Closed> {
+                self.many.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                Ok(())
+            }
+
+            fn wake(&self) {}
+        }
+
+        let counted = Arc::new(Counted::default());
+        let measured = Arc::new(Measured::default());
+        measured.resized(40, 1, 400, 10);
+        let mut terminal = ratatui::Terminal::new(Cells::new(
+            Arc::clone(&counted) as Arc<dyn Showing>,
+            measured,
+        ))
+        .expect("a terminal");
+        terminal
+            .draw(|frame| {
+                frame
+                    .buffer_mut()
+                    .set_string(0, 0, "x".repeat(40), ratatui::style::Style::new());
+            })
+            .expect("a frame");
+        assert_eq!(
+            counted.many.load(std::sync::atomic::Ordering::Relaxed),
+            1,
+            "the cells were not handed over at once"
+        );
+        assert!(
+            counted.one.load(std::sync::atomic::Ordering::Relaxed) < 40,
+            "the cells went one at a time"
         );
     }
 

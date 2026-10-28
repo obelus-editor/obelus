@@ -161,7 +161,6 @@
           <h4><a href="#remote">From a chat</a></h4>
           <ul>
             <li><a href="#remote">Slack and Feishu</a></li>
-            <li><a href="#headless">Obelus with no screen</a></li>
           </ul>
         </div>
         <div class="card">
@@ -458,9 +457,6 @@
         <li>One window talks to the chat at a time, the one you tell to, and its status row says how the connection is</li>
       </ul>
       <p class="how"><span>Commands</span><code>connect-to-chat</code> <code>disconnect-from-chat</code></p>
-
-      <h3 id="headless">Obelus with no screen</h3>
-      <p><code>ob --headless</code> runs Obelus on a project with nothing drawn and no terminal taken over, there only to be reached from the chat — on a machine you leave running. <code>--connect-to-chat</code> connects an ordinary window to the chat as it starts.</p>
     </section>
 
     <section id="worktrees">
@@ -499,10 +495,10 @@
 
       <p>Obelus can run on one machine and be drawn on another: <code>ob --server</code> on the machine with the code, and the window on the one in front of you. Everything happens over there — the files, the language servers, the agent, the terminals, the notes — and your machine draws what it is sent and sends your keys back, so the screen is the one you would see sitting at the other machine. It is made for a local network, where a key's round trip is under a millisecond.</p>
       <ul>
-        <li><code>ob --server</code> prints where it listens (port 7787, unless <code>--listen</code> says otherwise) and its key. The first time, the window needs the key — <code>obg --connect host --key KEY</code>, or <code>OBELUS_KEY</code> — and after that it is remembered</li>
+        <li><code>ob --server</code> prints where it listens and its key. It listens on port 7787 on every network the machine is on, unless <code>--listen</code> gives another port (<code>--listen 9000</code>) or an address and a port (<code>--listen 127.0.0.1:7787</code>, this machine only). The first time, the window needs the key — <code>obg --connect host --key KEY</code>, or <code>OBELUS_KEY</code> — and after that it is remembered</li>
         <li>Each window gets an Obelus of its own over there, as if you had opened another one at that machine</li>
         <li>If the connection drops — the network, a closed laptop — the Obelus over there keeps going, agent and all, for three hours, and the window picks up where it was when it gets back</li>
-        <li>If the machine can't be reached, a page over the whole window says so and keeps trying — unless it was the key that was refused: <kbd>r</kbd> tries now, <kbd>Enter</kbd> works on this machine instead and asks which project, <kbd>Ctrl+q</kbd> quits</li>
+        <li>If the machine can't be reached, a page over the whole window says so and keeps trying — unless it was the key that was refused: <kbd>r</kbd> tries now, <kbd>Esc</kbd> works on this machine instead and asks which project, <kbd>Ctrl+q</kbd> quits</li>
         <li>The clipboard and links are your machine's. A file dropped into a conversation's box (in <code>obg</code>) is sent across, up to 32 MiB, and kept in the other machine's temporary directory, under <code>obelus-dropped</code> on Windows and <code>obelus-dropped-</code> and your user number elsewhere, where only you can read it</li>
         <li><code>obg --connect</code> is drawn as a window, with everything only a window draws, and <code>ob --connect</code> in a terminal</li>
       </ul>

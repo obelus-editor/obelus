@@ -8,6 +8,15 @@
 //! shape each, and turned back into ratatui's as they arrive. The rest of
 //! what crosses -- a place, a size, a cell's modifiers and how it is diffed
 //! -- ratatui writes in a way that reads back, and goes as it writes it.
+//!
+//! **A run of cells in one style crosses once.** A frame's cells are mostly
+//! side by side on a row and alike -- a word, a stretch of blank -- and a
+//! cell spelled whole for each was sixteen bytes and two allocations a
+//! cell, a third of a megabyte and milliseconds each way for a page
+//! scrolled. So the cells beside each other on a row that are one character
+//! each, in one style and diffed the ordinary way, cross as where the run
+//! starts, its style once, and its characters ([`updates`]) -- and are
+//! cells again at the other end, so nothing that draws them knows.
 
 use ratatui::{
     buffer::{Cell, CellDiffOption},
@@ -207,6 +216,156 @@ pub mod cells {
     }
 }
 
+/// A frame's updates, with every run of alike cells crossing once:
+/// `#[serde(with = "wire::updates")]`.
+pub mod updates {
+    use super::{
+        Cell, CellDiffOption, Deserialize, Deserializer, Ink, Modifier, Serialize, Serializer,
+    };
+    use crate::Update;
+
+    /// One thing said about the screen, as it crosses -- with the same
+    /// variants in the same order as [`Said`], which is what reads it.
+    #[derive(Serialize)]
+    enum Saying<'a> {
+        Update(&'a Update),
+        Run(Run),
+    }
+
+    /// The same, read.
+    #[derive(Deserialize)]
+    enum Said {
+        Update(Update),
+        Run(Run),
+    }
+
+    /// Cells side by side on a row, in one style: where the first is, the
+    /// style, and a character for each.
+    #[derive(Serialize, Deserialize)]
+    struct Run {
+        x: u16,
+        y: u16,
+        fg: Ink,
+        bg: Ink,
+        underline: Ink,
+        modifier: Modifier,
+        text: String,
+        /// How many cells it is so far, while it is being made: counted as
+        /// it grows, because counting the text at every cell made a row of
+        /// blank a cost of the row's square.
+        #[serde(skip)]
+        cells: usize,
+    }
+
+    impl Run {
+        /// The run a cell starts, where it can be in one: one character,
+        /// diffed the ordinary way. A grapheme of several characters, or a
+        /// cell diffed some other way, crosses as itself.
+        fn of(x: u16, y: u16, cell: &Cell) -> Option<Self> {
+            let lone = lone(cell)?;
+            Some(Self {
+                x,
+                y,
+                fg: cell.fg.into(),
+                bg: cell.bg.into(),
+                underline: cell.underline_color.into(),
+                modifier: cell.modifier,
+                text: lone.to_string(),
+                cells: 1,
+            })
+        }
+
+        /// Takes in the cell at `x`, `y`, where it is the next one along
+        /// and alike, and says whether it did.
+        fn took(&mut self, x: u16, y: u16, cell: &Cell) -> bool {
+            let Some(lone) = lone(cell) else {
+                return false;
+            };
+            let next = usize::from(self.x) + self.cells;
+            let alike = Ink::from(cell.fg) == self.fg
+                && Ink::from(cell.bg) == self.bg
+                && Ink::from(cell.underline_color) == self.underline
+                && cell.modifier == self.modifier;
+            if y != self.y || usize::from(x) != next || !alike {
+                return false;
+            }
+            self.text.push(lone);
+            self.cells += 1;
+            true
+        }
+
+        /// The cells again, onto the end of `updates`.
+        fn cells_onto(self, updates: &mut Vec<Update>) {
+            let (fg, bg, underline) = (self.fg.into(), self.bg.into(), self.underline.into());
+            for (character, x) in self.text.chars().zip(self.x..) {
+                let mut cell = Cell::default();
+                cell.set_char(character);
+                cell.fg = fg;
+                cell.bg = bg;
+                cell.underline_color = underline;
+                cell.modifier = self.modifier;
+                updates.push(Update::Cell {
+                    x,
+                    y: self.y,
+                    cell: Box::new(cell),
+                });
+            }
+        }
+    }
+
+    /// The one character a cell holds, where it holds one and is diffed
+    /// the ordinary way.
+    fn lone(cell: &Cell) -> Option<char> {
+        if cell.diff_option != CellDiffOption::None {
+            return None;
+        }
+        let mut characters = cell.symbol().chars();
+        let lone = characters.next()?;
+        characters.next().is_none().then_some(lone)
+    }
+
+    /// Writes them.
+    ///
+    /// # Errors
+    ///
+    /// The format's.
+    pub fn serialize<S: Serializer>(updates: &[Update], to: S) -> Result<S::Ok, S::Error> {
+        let mut saying: Vec<Saying<'_>> = Vec::with_capacity(updates.len() / 4);
+        for update in updates {
+            if let Update::Cell { x, y, cell } = update {
+                if let Some(Saying::Run(run)) = saying.last_mut()
+                    && run.took(*x, *y, cell)
+                {
+                    continue;
+                }
+                if let Some(run) = Run::of(*x, *y, cell) {
+                    saying.push(Saying::Run(run));
+                    continue;
+                }
+            }
+            saying.push(Saying::Update(update));
+        }
+        saying.serialize(to)
+    }
+
+    /// Reads them.
+    ///
+    /// # Errors
+    ///
+    /// The format's.
+    pub fn deserialize<'de, D: Deserializer<'de>>(from: D) -> Result<Vec<Update>, D::Error> {
+        let said = Vec::<Said>::deserialize(from)?;
+        let mut updates = Vec::with_capacity(said.len() * 4);
+        for said in said {
+            match said {
+                Said::Update(update) => updates.push(update),
+                Said::Run(run) => run.cells_onto(&mut updates),
+            }
+        }
+        Ok(updates)
+    }
+}
+
 /// The colours a mark is inked in: `#[serde(with = "wire::palette")]`.
 pub mod palette {
     use obelus_ui::image::Palette;
@@ -239,5 +398,85 @@ pub mod palette {
             paper: paper.into(),
             selected: selected.into(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::buffer::{Cell, CellDiffOption};
+
+    use crate::{Update, link::Down};
+
+    /// A cell at a place, its symbol and its foreground the given ones.
+    fn cell(x: u16, y: u16, symbol: &str, fg: ratatui::style::Color) -> Update {
+        let mut cell = Cell::default();
+        cell.set_symbol(symbol);
+        cell.fg = fg;
+        Update::Cell {
+            x,
+            y,
+            cell: Box::new(cell),
+        }
+    }
+
+    /// A frame's updates read back as they were written: runs, and every
+    /// way a run is broken -- another style, a gap, another row, a wide
+    /// character, a grapheme of several characters, a cell diffed some
+    /// other way, and something that is not a cell.
+    ///
+    /// Broken deliberately by starting each character of a run where the
+    /// run starts (`zip(self.x..)` for `zip(std::iter::repeat(self.x))` in
+    /// `cells_onto`): every cell of a run landed in its first column.
+    #[test]
+    fn a_frame_reads_back_as_it_was_written() {
+        use ratatui::style::Color;
+
+        let mut skipped = Cell::new("s");
+        skipped.diff_option = CellDiffOption::Skip;
+        let updates = vec![
+            Update::Cleared,
+            cell(0, 0, "a", Color::Red),
+            cell(1, 0, "b", Color::Red),
+            cell(2, 0, "c", Color::Blue),
+            cell(4, 0, "d", Color::Blue),
+            cell(5, 0, "\u{4e2d}", Color::Blue),
+            cell(7, 0, "e", Color::Blue),
+            cell(8, 0, "e\u{301}", Color::Blue),
+            cell(0, 1, "f", Color::Blue),
+            Update::Cell {
+                x: 1,
+                y: 1,
+                cell: Box::new(skipped),
+            },
+            cell(2, 1, "g", Color::Blue),
+            Update::Caret(None),
+            cell(3, 1, "h", Color::Blue),
+            Update::Frame,
+        ];
+        let framed = obelus_wire::framed(&Down::Updates(updates.clone())).expect("framed");
+        let read: Down = obelus_wire::unframed(&framed[4..]).expect("read");
+        assert_eq!(read, Down::Updates(updates));
+    }
+
+    /// A row of cells in one style crosses as far fewer bytes than a cell
+    /// each would.
+    ///
+    /// Broken deliberately by letting no cell into a run (`took` answering
+    /// `false`): every cell crossed as itself, at the size it always had.
+    #[test]
+    fn a_row_in_one_style_crosses_small() {
+        let row: Vec<Update> = (0..200)
+            .map(|x| cell(x, 0, "x", ratatui::style::Color::Rgb(1, 2, 3)))
+            .collect();
+        let together = obelus_wire::framed(&Down::Updates(row.clone())).expect("framed");
+        let alone: usize = row
+            .iter()
+            .map(|update| obelus_wire::framed(update).expect("framed").len())
+            .sum();
+        assert!(
+            together.len() * 8 < alone,
+            "{} bytes together against {alone} alone",
+            together.len()
+        );
     }
 }

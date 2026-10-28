@@ -299,6 +299,15 @@ pub enum Event {
     /// The machine of this name answers again, which the page saying it
     /// went is waiting for.
     Reachable(String),
+    /// A try at the machine of this name came to nothing, for this reason:
+    /// what the page waiting on it says, where it was still saying that it
+    /// is connecting.
+    Unreachable {
+        /// The machine.
+        at: String,
+        /// Why, as the connection said it.
+        why: String,
+    },
     /// Something the reader did came to nothing for a reason only the
     /// front end knows -- a file dropped that could not go -- said on the
     /// status row.
@@ -338,6 +347,7 @@ impl Event {
             Self::Dropped(_) => "Dropped",
             Self::Tick => "Tick",
             Self::Reachable(_) => "Reachable",
+            Self::Unreachable { .. } => "Unreachable",
             Self::Amiss(_) => "Amiss",
             Self::NotesSettled => "NotesSettled",
             Self::StoppedWriting(_) => "StoppedWriting",
@@ -516,39 +526,6 @@ pub fn spawn_terminal_reader(sender: Sender<Event>) {
 /// Twelve frames a second. A colour ramp sliding across five rows of block
 /// elements needs no more than that, and every frame is a whole redraw.
 const TICK: Duration = Duration::from_millis(80);
-
-/// Sends [`Event::Stopped`] when Obelus is told to stop from outside.
-///
-/// Only for `ob --headless`, which has no key to leave by. Anywhere else
-/// `ctrl+c` is a key -- the terminal is in raw mode and sends it as one --
-/// and a `kill` ends the process the way it always has.
-pub fn stop_when_told(sender: Sender<Event>) {
-    let _inside = obelus_runtime::handle().enter();
-    #[cfg(unix)]
-    {
-        use tokio::signal::unix::{SignalKind, signal};
-        for kind in [SignalKind::interrupt(), SignalKind::terminate()] {
-            let mut told = match signal(kind) {
-                Ok(told) => told,
-                Err(error) => {
-                    tracing::warn!(%error, ?kind, "not listening to be told to stop");
-                    continue;
-                }
-            };
-            let sender = sender.clone();
-            obelus_runtime::handle().spawn(async move {
-                told.recv().await;
-                let _ = sender.send(Event::Stopped);
-            });
-        }
-    }
-    #[cfg(not(unix))]
-    obelus_runtime::handle().spawn(async move {
-        if tokio::signal::ctrl_c().await.is_ok() {
-            let _ = sender.send(Event::Stopped);
-        }
-    });
-}
 
 /// Whether this session is being read over a network.
 ///

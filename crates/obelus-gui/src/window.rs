@@ -332,7 +332,7 @@ struct Showing {
     fonts: Option<Fonts>,
     page: Page,
     /// The frames Obelus has drawn, waiting to be applied.
-    frames: Option<Receiver<Update>>,
+    frames: Option<Receiver<crate::grid::Sent>>,
     /// And what the reader did, on its way to Obelus.
     doing: Option<Sender<Event>>,
     measured: Arc<Measured>,
@@ -1340,7 +1340,7 @@ impl ApplicationHandler<Waking> for Showing {
                 // it was being decoded while the frames went by -- so it
                 // asks for the screen to be drawn again by itself.
                 let mut rehung = false;
-                while let Ok(update) = frames.try_recv() {
+                for update in std::iter::from_fn(|| frames.try_recv().ok()).flatten() {
                     match update {
                         // Not cells, so the page never sees them.
                         Update::TextSize(points) => sized = Some(points),
@@ -2597,6 +2597,19 @@ fn drawing(drawing: Drawing<'_>) -> Result<()> {
             // Nothing of Obelus here: what it draws arrives on the
             // connection, and what the window hears goes back on it.
             Start::Afar(afar) => {
+                // Not a window with nothing in it while a machine that is
+                // not there is waited on: the page saying so, at once.
+                if let Some(page) = obelus_front::client::first(&afar, doing)? {
+                    match page {
+                        obelus_front::client::Next::Done => return Ok(()),
+                        obelus_front::client::Next::Here(app, wait) => {
+                            waiting = wait;
+                            next = Start::Here(app);
+                            terminal.clear()?;
+                            continue;
+                        }
+                    }
+                }
                 let left = obelus_front::client::run(
                     &afar,
                     front,

@@ -67,20 +67,18 @@ struct Arguments {
     /// tree itself, and Obelus opens on the welcome screen.
     paths: Vec<PathBuf>,
 
-    /// Connect to the chat set in the settings once started, as
-    /// `connect-to-chat` does.
-    #[arg(long)]
-    connect_to_chat: bool,
-
     /// Draw an Obelus on another machine, started there with `ob --server`:
     /// the machine, and its port where it is not the server's own. What to
     /// open is said the way it is to `obg`, as it is named on that machine.
     #[arg(long, value_name = "MACHINE[:PORT]")]
     connect: Option<String>,
 
-    /// The key that server printed, needed the first time and kept after.
-    /// `OBELUS_KEY` says it as well.
-    #[arg(long, requires = "connect")]
+    /// The key that server printed, for `--connect`: needed the first time
+    /// and kept after.
+    // Not tied to `--connect` with `requires`: a key in the environment is
+    // there for every start, and `ob` alone would be refused for it. And its
+    // value is not shown in the help, which would be a key on the screen.
+    #[arg(long, env = "OBELUS_KEY", hide_env_values = true)]
     key: Option<String>,
 }
 
@@ -130,10 +128,7 @@ fn main() -> Result<()> {
     // Nothing to open here: what is named is the other machine's, and the
     // settings that say how a window is drawn are the reader's there.
     if let Some(at) = arguments.connect {
-        let key = obelus_front::client::key(
-            &at,
-            arguments.key.or_else(|| std::env::var("OBELUS_KEY").ok()),
-        )?;
+        let key = obelus_front::client::key(&at, arguments.key)?;
         let path = arguments
             .paths
             .first()
@@ -152,10 +147,7 @@ fn main() -> Result<()> {
     // the console the reader started Obelus from rather than flashing past
     // inside a window that is about to close. The order inside is argued
     // where it lives.
-    let mut app = startup::start(&arguments.paths, env!("OBELUS_BUILD"))?;
-    if arguments.connect_to_chat {
-        app.bot_at_start();
-    }
+    let app = startup::start(&arguments.paths, env!("OBELUS_BUILD"))?;
     // The window's half of the line `startup::start` just wrote, which is
     // the first thing to suspect when a key or a colour did not do what it
     // should.

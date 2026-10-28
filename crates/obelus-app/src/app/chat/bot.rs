@@ -395,13 +395,7 @@ impl App {
                         Some(why) => format!("Not connected to {}: {why}", platform.name),
                         None => format!("Not connected to {}", platform.name),
                     };
-                    // Except a chat that cannot be reached, which is tried
-                    // again: everything else is the reader's to mend, and
-                    // with nobody at the screen that is the end of it.
-                    let ends = state != State::Unreachable && self.give_up_unseen(said.clone());
-                    if !ends {
-                        self.wrong(said);
-                    }
+                    self.wrong(said);
                 }
                 self.bot.why = why;
                 // Up again -- a socket made again inside one connection is
@@ -511,12 +505,7 @@ impl App {
             if self.bot.holding.is_some() {
                 self.stop_relaying(obelus_bot::relay::Over::Stopped);
             }
-            // And with nobody at the screen, holding nothing is having
-            // nothing to do.
-            if self.bot.holding.take().is_some() && self.is_headless() {
-                tracing::info!("no chat is set in the settings any more");
-                self.leave_unseen();
-            }
+            self.bot.holding = None;
             self.bot.taking = None;
             self.bot.succeeding = None;
         }
@@ -1030,24 +1019,6 @@ impl App {
         self.bot.holding.is_some() || self.bot.taking.is_some()
     }
 
-    /// What `--connect-to-chat` asks for, which is `connect-to-chat` --
-    /// except that no chat to connect to is said rather than passed over.
-    /// The command is quiet about it because the palette had already said
-    /// so, by dimming it; nothing dims a word on the command line.
-    ///
-    /// Said with what else went wrong on the way up where that is put
-    /// over the first screen, and on the status row where it is not: a
-    /// file named on the command line is the first screen, and the list
-    /// is never put over one.
-    pub(in crate::app) fn connect_bot_at_start(&mut self, over_the_first_screen: bool) {
-        const NOTHING: &str = "No chat is set in the settings to connect to";
-        match self.platform() {
-            Some(_) => self.connect_bot(),
-            None if over_the_first_screen => self.amiss(NOTHING),
-            None => self.wrong(NOTHING),
-        }
-    }
-
     /// Makes this the window the chat talks to: at once where no other
     /// window has it, and where one has, by asking it to let go and waiting
     /// for the kernel to say it has.
@@ -1059,10 +1030,7 @@ impl App {
             return;
         };
         let Some(lock) = the_lock() else {
-            let said = format!("Nowhere to hold {} from", platform.name);
-            if !self.give_up_unseen(said.clone()) {
-                self.wrong(said);
-            }
+            self.wrong(format!("Nowhere to hold {} from", platform.name));
             return;
         };
         if !obelus_claim::held_by_somebody_else(&lock) {
@@ -1159,10 +1127,7 @@ impl App {
         if self.bot.taking.as_ref().map(|(asked, _)| *asked) == Some(number) {
             self.bot.taking = None;
             if let Some(platform) = self.platform() {
-                let said = format!("Could not wait for {} to come here", platform.name);
-                if !self.give_up_unseen(said.clone()) {
-                    self.wrong(said);
-                }
+                self.wrong(format!("Could not wait for {} to come here", platform.name));
             }
         }
     }
@@ -1178,10 +1143,7 @@ impl App {
         self.bot.pair_once_connected = false;
         self.bot.given_up = Some(number);
         if let Some(platform) = self.platform() {
-            let said = format!("Another window would not let {} go", platform.name);
-            if !self.give_up_unseen(said.clone()) {
-                self.wrong(said);
-            }
+            self.wrong(format!("Another window would not let {} go", platform.name));
         }
     }
 
@@ -1255,7 +1217,6 @@ impl App {
         if let Some(platform) = self.platform() {
             self.say(format!("{} went to another window", platform.name));
         }
-        self.leave_unseen();
     }
 
     /// The window this one was heard through went without letting the chat

@@ -624,7 +624,7 @@ impl crate::app::App {
         let reached = self.has_the_bot();
         self.write_down_what_is_open_on_leaving();
         self.let_go_of_the_project();
-        self.bot_at_start = reached;
+        self.bot_again = reached;
         // Kept by `let_go_of_the_project`, which is the process's door, and
         // with it the claim on the tree -- which a window asking which
         // project no longer has.
@@ -1101,8 +1101,8 @@ impl crate::app::App {
         self.offer_the_tools();
         self.watch_the_project();
         self.say_where_this_window_is();
-        if self.bot_at_start {
-            self.connect_bot_at_start(false);
+        if self.bot_again {
+            self.connect_bot();
         }
         for file in files {
             self.open(file);

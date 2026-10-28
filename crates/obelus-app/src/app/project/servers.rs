@@ -105,13 +105,34 @@ fn to_toml(servers: &[Server]) -> String {
     out
 }
 
-/// The key kept for a machine, where one is.
+/// The key kept for a machine, where one is that reads as a key: one
+/// written over by hand into something else is asked for again rather than
+/// knocked with.
 #[must_use]
 pub fn key_for(at: &str) -> Option<String> {
     read()?
         .into_iter()
         .find(|server| server.at == at)
         .map(|server| server.key)
+        .filter(|key| as_a_key(key).is_some())
+}
+
+/// The letters a server prints, as the key they are -- or nothing, where
+/// they are not one.
+///
+/// Asked here as well as where the key is used, so that what the reader
+/// typed is turned down while they are still at the question, rather than
+/// once the window has let go of this machine's Obelus to go and knock.
+#[must_use]
+pub fn as_a_key(letters: &str) -> Option<Vec<u8>> {
+    let letters = letters.trim();
+    if letters.is_empty() || !letters.len().is_multiple_of(2) {
+        return None;
+    }
+    (0..letters.len())
+        .step_by(2)
+        .map(|at| u8::from_str_radix(letters.get(at..at + 2)?, 16).ok())
+        .collect()
 }
 
 /// Puts a machine at the top of the list with the key it let a window in
@@ -248,6 +269,12 @@ impl crate::app::App {
     pub(in crate::app) fn connect_with(&mut self, at: String, key: &str) {
         let key = key.trim().to_string();
         if key.is_empty() {
+            return;
+        }
+        if as_a_key(&key).is_none() {
+            self.wrong(
+                "Not a key a server prints: it is the letters after \"gets in with the key\"",
+            );
             return;
         }
         self.leave_for(crate::app::Going::To {

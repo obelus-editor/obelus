@@ -9,7 +9,7 @@ use std::{path::PathBuf, process::ExitCode};
 
 use anyhow::Result;
 use clap::Parser;
-use obelus_app::{app, event, startup};
+use obelus_app::{event, startup};
 
 mod client;
 mod serve;
@@ -28,20 +28,6 @@ struct Arguments {
     /// tree itself, and Obelus opens on the welcome screen.
     paths: Vec<PathBuf>,
 
-    /// Connect to the chat set in the settings once started, as
-    /// `connect-to-chat` does.
-    #[arg(long)]
-    connect_to_chat: bool,
-
-    /// Draw nothing and take over no terminal: an Obelus there only to be
-    /// reached from the chat set in the settings, which it connects to.
-    ///
-    /// Works on a project -- the directory named, or the one it is started
-    /// in -- and opens no file. Stops on ctrl+c or a kill, and says why on
-    /// stderr where it has to stop on its own.
-    #[arg(long)]
-    headless: bool,
-
     /// Draw nothing here, and let in windows on other machines: `ob
     /// --connect` and `obg --connect`, each with an Obelus of its own on
     /// this one.
@@ -51,9 +37,15 @@ struct Arguments {
     #[arg(long)]
     server: bool,
 
-    /// Where `--server` listens, as an address and a port.
-    #[arg(long, requires = "server")]
-    listen: Option<std::net::SocketAddr>,
+    /// Where `--server` listens: a port, on every network this machine is
+    /// on, or an address and a port.
+    #[arg(
+        long,
+        requires = "server",
+        value_parser = server::listening,
+        default_value_t = server::everywhere(server::PORT),
+    )]
+    listen: std::net::SocketAddr,
 
     /// Draw an Obelus on another machine, started there with `ob --server`:
     /// the machine, and its port where it is not the server's own. What to
@@ -61,9 +53,12 @@ struct Arguments {
     #[arg(long, value_name = "MACHINE[:PORT]")]
     connect: Option<String>,
 
-    /// The key that server printed, needed the first time and kept after.
-    /// `OBELUS_KEY` says it as well.
-    #[arg(long, requires = "connect")]
+    /// The key that server printed, for `--connect`: needed the first time
+    /// and kept after.
+    // Not tied to `--connect` with `requires`: a key in the environment is
+    // there for every start, and `ob` alone would be refused for it. And its
+    // value is not shown in the help, which would be a key on the screen.
+    #[arg(long, env = "OBELUS_KEY", hide_env_values = true)]
     key: Option<String>,
 
     /// One window's Obelus, which `--server` starts and nothing else does:
@@ -77,30 +72,17 @@ fn main() -> Result<ExitCode> {
 
     // Held until main returns, so buffered log lines are flushed on the way
     // out.
-    let _log_guard = obelus_logging::install(arguments.headless);
+    let _log_guard = obelus_logging::install(arguments.server);
     // Before anything that can panic, so a panic on the way up is in the
     // log as well.
     obelus_logging::catch_panics();
 
     // Before anything about the terminal, which neither of these touches.
     if arguments.server {
-        let at = arguments
-            .listen
-            .unwrap_or_else(|| std::net::SocketAddr::from(([0, 0, 0, 0], server::PORT)));
-        return server::serve(at);
+        return server::serve(arguments.listen);
     }
     if arguments.serve_one {
         return serve::one();
-    }
-    if arguments.headless {
-        let outcome = app::run_headless(&arguments.paths, env!("OBELUS_BUILD"));
-        // Which says why on stderr, where a headless Obelus logs: an `Err`
-        // handed back as well would be said twice.
-        startup::finish(&outcome);
-        return Ok(match outcome {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(_) => ExitCode::FAILURE,
-        });
     }
 
     // Opened before the terminal is taken over, so a bad path reports
@@ -110,10 +92,7 @@ fn main() -> Result<ExitCode> {
     // machine's.
     let start = match arguments.connect {
         Some(at) => {
-            let key = obelus_front::client::key(
-                &at,
-                arguments.key.or_else(|| std::env::var("OBELUS_KEY").ok()),
-            )?;
+            let key = obelus_front::client::key(&at, arguments.key)?;
             let path = arguments
                 .paths
                 .first()
@@ -127,10 +106,7 @@ fn main() -> Result<ExitCode> {
             })
         }
         None => {
-            let mut app = startup::start(&arguments.paths, env!("OBELUS_BUILD"))?;
-            if arguments.connect_to_chat {
-                app.bot_at_start();
-            }
+            let app = startup::start(&arguments.paths, env!("OBELUS_BUILD"))?;
             client::Start::Here(Box::new(app))
         }
     };
@@ -338,5 +314,54 @@ fn give_back(mouse: bool, keyboard: bool) {
     }
     if let Err(error) = ratatui::try_restore() {
         tracing::warn!(%error, "the terminal was not put back");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Where `ob --server` listens: every network on its own port unless
+    /// told, a port alone on every network, and an address as given -- and
+    /// `--listen` without `--server` is refused, though it has a default.
+    ///
+    /// Broken deliberately by reading only an address and a port (the port
+    /// alone left out of `server::listening`): `--listen 9000` was refused.
+    /// The last two hold clap to what this leans on: a default is not a
+    /// flag given, so `requires` refuses `--listen` without `--server` and
+    /// does not refuse `ob` alone.
+    #[test]
+    fn a_server_listens_where_it_is_told_or_everywhere_on_its_port() {
+        let listening = |said: &[&str]| {
+            Arguments::try_parse_from(std::iter::once("ob").chain(said.iter().copied()))
+                .map(|arguments| arguments.listen.to_string())
+        };
+        assert_eq!(listening(&["--server"]).expect("parsed"), "0.0.0.0:7787");
+        assert_eq!(
+            listening(&["--server", "--listen", "9000"]).expect("parsed"),
+            "0.0.0.0:9000"
+        );
+        assert_eq!(
+            listening(&["--server", "--listen", "127.0.0.1:7790"]).expect("parsed"),
+            "127.0.0.1:7790"
+        );
+        assert!(listening(&["--server", "--listen", "somewhere"]).is_err());
+        assert!(
+            listening(&["--listen", "9000"]).is_err(),
+            "listening without serving"
+        );
+        assert!(listening(&[]).is_ok(), "ob alone was refused");
+    }
+
+    /// A key given with nothing to connect to is not refused: `OBELUS_KEY`
+    /// is the same flag, and a reader who keeps it in their environment
+    /// starts `ob` alone with it there.
+    ///
+    /// Broken deliberately by tying the key to `--connect` again
+    /// (`requires = "connect"` on `key`): `ob --key k` was refused, and so
+    /// would `ob` have been with the key in the environment.
+    #[test]
+    fn a_key_with_nothing_to_connect_to_is_not_refused() {
+        assert!(Arguments::try_parse_from(["ob", "--key", "k"]).is_ok());
     }
 }

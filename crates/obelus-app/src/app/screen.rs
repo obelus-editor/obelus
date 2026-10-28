@@ -224,8 +224,8 @@ impl Screen for App {
     fn tree_has_gone(&self) -> bool {
         App::tree_has_gone(self)
     }
-    fn machine_gone(&self) -> Option<(&str, &str, bool)> {
-        App::machine_gone(self).map(|gone| (gone.at.as_str(), gone.why.as_str(), gone.trying))
+    fn machine_gone(&self) -> Option<(&str, Option<&str>, bool)> {
+        App::machine_gone(self).map(|gone| (gone.at.as_str(), gone.why.as_deref(), gone.trying))
     }
     fn working_directory(&self) -> &Path {
         App::working_directory(self)

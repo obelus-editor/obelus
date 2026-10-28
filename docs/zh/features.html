@@ -161,7 +161,6 @@
           <h4><a href="#remote">从聊天里用</a></h4>
           <ul>
             <li><a href="#remote">Slack 和飞书</a></li>
-            <li><a href="#headless">没有界面的 Obelus</a></li>
           </ul>
         </div>
         <div class="card">
@@ -458,9 +457,6 @@
         <li>同一时间只有一个窗口连着聊天，就是你让它连的那个，它的状态行显示连接情况</li>
       </ul>
       <p class="how"><span>命令</span><code>connect-to-chat</code> <code>disconnect-from-chat</code></p>
-
-      <h3 id="headless">没有界面的 Obelus</h3>
-      <p><code>ob --headless</code> 在一个项目上跑 Obelus，什么都不画，也不占终端，只为从聊天里找到它——放在一台一直开着的机器上。<code>--connect-to-chat</code> 让一个普通窗口启动时就连上聊天。</p>
     </section>
 
     <section id="worktrees">
@@ -499,10 +495,10 @@
 
       <p>Obelus 可以跑在一台机器上，画在另一台上：代码所在的机器上跑 <code>ob --server</code>，窗口开在你面前这台。一切都发生在那边——文件、语言服务器、agent、终端、笔记——你这台只画它发来的画面，再把你按的键发回去，所以屏幕上看到的，就是你坐在那台机器前会看到的。它是为局域网做的，一个键来回不到一毫秒。</p>
       <ul>
-        <li><code>ob --server</code> 会打印它监听的地址（默认端口 7787，可用 <code>--listen</code> 指定）和它的密钥。第一次连接时窗口要给密钥——<code>obg --connect 主机 --key 密钥</code>，或者环境变量 <code>OBELUS_KEY</code>——之后就记住了</li>
+        <li><code>ob --server</code> 会打印它监听的地址和它的密钥。默认在这台机器所有网络上的 7787 端口监听；<code>--listen</code> 可以只给端口（<code>--listen 9000</code>），也可以给地址加端口（<code>--listen 127.0.0.1:7787</code>，只有本机能连）。第一次连接时窗口要给密钥——<code>obg --connect 主机 --key 密钥</code>，或者环境变量 <code>OBELUS_KEY</code>——之后就记住了</li>
         <li>每个窗口在那边都有一个自己的 Obelus，就像你在那台机器上又开了一个</li>
         <li>连接断了——网络、合上的笔记本——那边的 Obelus 照常运行，agent 也是，保留三个小时；窗口连回来时接着原来的样子</li>
-        <li>连不上那台机器时，会有一页盖住整个窗口说明这件事，并在后台一直重试（密钥被拒绝时除外）：<kbd>r</kbd> 马上再试，<kbd>Enter</kbd> 改在这台机器上工作并问你开哪个项目，<kbd>Ctrl+q</kbd> 退出</li>
+        <li>连不上那台机器时，会有一页盖住整个窗口说明这件事，并在后台一直重试（密钥被拒绝时除外）：<kbd>r</kbd> 马上再试，<kbd>Esc</kbd> 改在这台机器上工作并问你开哪个项目，<kbd>Ctrl+q</kbd> 退出</li>
         <li>剪贴板和链接用的是你这台机器的。拖进对话输入框的文件（<code>obg</code> 里）会传过去，最大 32 MiB，存在那台机器的临时目录里：Windows 上是 <code>obelus-dropped</code>，其他系统上是 <code>obelus-dropped-</code> 加你的用户编号，只有你能读</li>
         <li><code>obg --connect</code> 画成窗口，带着只有窗口才画得出的那些东西；<code>ob --connect</code> 画在终端里</li>
       </ul>

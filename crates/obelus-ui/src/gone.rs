@@ -37,10 +37,11 @@ const WHY_ROWS: usize = 3;
 enum Gone {
     /// The project, which was here.
     Project(String),
-    /// The machine at the other end, why, and whether it is being tried.
+    /// The machine at the other end, why -- nothing yet while it is still
+    /// being connected to -- and whether it is being tried.
     Machine {
         at: String,
-        why: String,
+        why: Option<String>,
         trying: bool,
     },
 }
@@ -48,24 +49,31 @@ enum Gone {
 /// The keys the foot says.
 ///
 /// Leaving is said, as it is on the page that asks which project: escape
-/// cannot leave this one either, because there is nothing behind it to go
-/// back to.
+/// cannot leave either page, because there is nothing behind it to go back
+/// to. On the machine's, escape is what gives up on that machine -- the
+/// nearest thing, which is the going there -- and works on this one.
 fn hints(keymap: &Keymap, gone: &Gone) -> Vec<Hint> {
     let mut hints = match gone {
         Gone::Project(_) => vec![Hint::new(
             KeyChord::new(KeyCode::Enter, KeyModifiers::NONE),
             "Open a project",
         )],
-        Gone::Machine { .. } => vec![
-            Hint::new(
-                KeyChord::new(KeyCode::Char(AGAIN), KeyModifiers::NONE),
-                "Try again",
-            ),
-            Hint::new(
-                KeyChord::new(KeyCode::Enter, KeyModifiers::NONE),
+        // Trying again only once a try has come to something: while the
+        // first is under way there is nothing to try again.
+        Gone::Machine { why, .. } => why
+            .is_some()
+            .then(|| {
+                Hint::new(
+                    KeyChord::new(KeyCode::Char(AGAIN), KeyModifiers::NONE),
+                    "Try again",
+                )
+            })
+            .into_iter()
+            .chain([Hint::new(
+                KeyChord::new(KeyCode::Esc, KeyModifiers::NONE),
                 "Work on this machine",
-            ),
-        ],
+            )])
+            .collect(),
     };
     if let Some(chord) = keymap.chord_for(Command::Quit) {
         hints.push(Hint::new(chord, "Leave"));
@@ -78,6 +86,8 @@ pub struct GoneView<'a> {
     gone: Gone,
     keymap: &'a Keymap,
     theme: &'a Theme,
+    /// How far round the mark beside a machine being connected to is.
+    phase: u32,
 }
 
 impl<'a> GoneView<'a> {
@@ -88,7 +98,7 @@ impl<'a> GoneView<'a> {
         let gone = match app.machine_gone() {
             Some((at, why, trying)) => Gone::Machine {
                 at: at.to_string(),
-                why: why.to_string(),
+                why: why.map(str::to_string),
                 trying,
             },
             None if app.tree_has_gone() => {
@@ -100,6 +110,7 @@ impl<'a> GoneView<'a> {
             gone,
             keymap: app.keymap(),
             theme: app.theme(),
+            phase: app.phase(),
         })
     }
 }
@@ -137,7 +148,21 @@ impl Widget for GoneView<'_> {
             // was being done and its tail what the system answered, and
             // cutting either loses half the answer. Somebody else's text,
             // so a few rows of it at most, the last cut where it ends.
-            Gone::Machine { at, why, trying } => {
+            // Still being connected to: the machine, and a mark that turns
+            // beside it for as long as nothing has been said either way.
+            Gone::Machine { at, why: None, .. } => {
+                let lead = format!("{} Connecting to ", crate::spinning(self.phase));
+                let room_for_at = room.saturating_sub(obelus_text::text_width(&lead));
+                vec![(
+                    format!("{lead}{}", crate::truncate_from_left(at, room_for_at)),
+                    self.theme.foreground,
+                )]
+            }
+            Gone::Machine {
+                at,
+                why: Some(why),
+                trying,
+            } => {
                 let lead = "Obelus cannot reach ";
                 let room_for_at = room.saturating_sub(obelus_text::text_width(lead));
                 let mut lines = vec![
@@ -169,6 +194,10 @@ impl Widget for GoneView<'_> {
             let width = u16::try_from(obelus_text::text_width(line)).unwrap_or(u16::MAX);
             let x = page.x + page.width.saturating_sub(width) / 2;
             write(cells, x, y, line, Style::new().fg(*ink));
+            // The mark the line begins with, which a window turns itself.
+            if matches!(self.gone, Gone::Machine { why: None, .. }) && offset == 0 {
+                crate::shapes::spun(x, y);
+            }
         }
         crate::foot(cells, area, &hints, self.theme);
     }

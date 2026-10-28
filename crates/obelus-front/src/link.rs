@@ -134,8 +134,9 @@ pub enum Down {
     /// frame changed and whatever was said about the window with it, as one
     /// message rather than one each -- a page scrolled is thousands of
     /// cells, and a message for each was thousands of reads and writes and
-    /// packets for one frame.
-    Updates(Vec<Update>),
+    /// packets for one frame. A run of alike cells crosses once
+    /// (`wire::updates`).
+    Updates(#[serde(with = "crate::wire::updates")] Vec<Update>),
     /// Words for the reader's clipboard.
     Copy(String),
     /// What is on the reader's clipboard, asked under this number.
