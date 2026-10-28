@@ -538,6 +538,8 @@ fn a_chat_that_is_set_is_connected_to_when_told() {
         Some("xoxb-1-bot")
     );
     drop(faked);
+    // Under the note that says so, which has the row until a key.
+    support::press(&mut app, KeyCode::Down);
     let line = status(&mut app);
     assert!(
         line.contains("● Slack"),
@@ -3006,12 +3008,16 @@ fn a_chat_that_goes_wrong_says_why_once() {
     until(&mut app, &events, "the words", |app| {
         app.note() == Some("Not connected to Slack: dns error")
     });
+    // The words are the row while they last, and the mark is under them.
     let line = status_row(&mut app);
     assert!(line.contains("Not connected to Slack: dns error"), "{line}");
-    assert!(line.contains("✕ Slack"), "{line}");
 
     support::press(&mut app, KeyCode::Down);
     assert_eq!(app.note(), None, "a key did not take the words away");
+    assert!(
+        status_row(&mut app).contains("✕ Slack"),
+        "no mark once they went"
+    );
     let _ = unreachable();
     settle(&mut app, &events);
     assert_eq!(app.note(), None, "said again for the same thing");
@@ -3056,6 +3062,7 @@ fn a_chat_with_something_untold_says_what() {
     until(&mut app, &events, "the words", |app| {
         app.note() == Some("Not connected to Slack: no Bot token is set")
     });
+    support::press(&mut app, KeyCode::Down);
     let line = status_row(&mut app);
     assert!(line.contains("✕ Slack"), "{line}");
 }

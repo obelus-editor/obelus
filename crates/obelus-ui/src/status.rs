@@ -1999,6 +1999,56 @@ mod tests {
     ///
     /// Broken deliberately by giving connecting the still ring the other
     /// waits have: the mark said nothing was happening while it connected.
+    /// Where the row is short the surroundings give up their words from
+    /// the left -- the server's, then the chat's, then the machine's -- and
+    /// then their marks in the same order, so the machine is the last thing
+    /// said: working in the wrong place is the dearest of the three not to
+    /// notice.
+    ///
+    /// Broken by giving up the words from the right: the machine's name
+    /// went first.
+    #[test]
+    fn the_surroundings_give_up_their_words_from_the_left() {
+        let surroundings = Surroundings::new(
+            Some(("rust-analyzer", ServerState::Ready)),
+            None,
+            Some(("Feishu", obelus_bot::State::Connected)),
+            Some("devbox"),
+            0,
+        );
+        let said = |room: usize| -> Vec<String> {
+            surroundings
+                .laid(room, &DARK)
+                .into_iter()
+                .map(|(word, _)| word)
+                .collect()
+        };
+        let whole = said(200);
+        assert_eq!(whole.len(), 3, "{whole:?}");
+        assert!(whole[0].contains("rust-analyzer"), "{whole:?}");
+        assert!(whole[1].contains("Feishu"), "{whole:?}");
+        assert!(whole[2].ends_with("devbox"), "{whole:?}");
+
+        let wide = spanned(&surroundings.laid(200, &DARK));
+        let short = said(wide - 1);
+        assert!(!short[0].contains("rust-analyzer"), "{short:?}");
+        assert!(
+            short[1].contains("Feishu") && short[2].ends_with("devbox"),
+            "{short:?}"
+        );
+
+        // Room for the machine's name and two marks, and no more.
+        let least = text_width("\u{21c4} devbox") + 2 * (1 + usize::from(LABEL_GAP));
+        let shorter = said(least);
+        assert!(
+            shorter[2].ends_with("devbox") && !shorter[1].contains("Feishu"),
+            "{shorter:?}"
+        );
+
+        // And with room for one mark, it is the machine's.
+        assert_eq!(said(1), vec![ELSEWHERE.to_string()]);
+    }
+
     #[test]
     fn the_chat_mark_turns_while_it_connects() {
         assert_eq!(bot_badge(None, 0), "");

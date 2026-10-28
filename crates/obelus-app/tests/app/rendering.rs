@@ -3256,6 +3256,50 @@ fn the_welcome_screen_drawn_afar_does_not_wake() {
     );
 }
 
+/// An Obelus drawn on another machine says which machine it runs on, at
+/// the end of the status row whatever the row is about -- and one drawn
+/// where the reader sits says nothing, and spends no column on it.
+///
+/// A window on another machine is a window on a project somebody can
+/// mistake for the one on their own, and the row is the one thing on
+/// screen the whole time.
+///
+/// Deliberate break: `Surroundings::of` handing on no machine, which leaves
+/// a file's row and the welcome screen's without it.
+#[test]
+fn the_machine_drawn_afar_is_at_the_end_of_the_row() {
+    let last = |app: &mut App| {
+        let dump = support::render(app, 60, HEIGHT);
+        support::text_block(&dump)
+            .lines()
+            .last()
+            .expect("a status row")
+            .trim_end()
+            .to_string()
+    };
+
+    let mut here = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut here, 60, HEIGHT);
+    assert!(
+        !last(&mut here).contains('\u{21c4}'),
+        "a machine said where the reader is sitting at it"
+    );
+
+    for mut afar in [
+        App::new(vec![support::open_fixture("sample.rs")]),
+        App::new(Vec::new()),
+    ] {
+        afar.drawn_afar();
+        let name = afar.drawn_from().expect("a machine").to_string();
+        support::lay_out(&mut afar, 60, HEIGHT);
+        let row = last(&mut afar);
+        assert!(
+            row.ends_with(&format!("\u{21c4} {name}")),
+            "not at the end of the row: {row}"
+        );
+    }
+}
+
 /// Naming a path puts a list of what could finish it over the welcome
 /// screen.
 ///

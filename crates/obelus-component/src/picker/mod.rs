@@ -3479,6 +3479,49 @@ mod tests {
         );
     }
 
+    /// A list of one row an item whose last run has a heading -- the
+    /// palette's first tab, a view's keys and then the agent's settings --
+    /// keeps the row under the reader on screen at its foot: the heading is
+    /// a row of the screen, and a window that counted items left the last
+    /// row drawn below the list.
+    ///
+    /// Broken by settling the window by count again in `refresh_indices`:
+    /// the window ends a row short of the selection.
+    #[test]
+    fn a_heading_in_a_list_of_single_rows_is_a_row_of_the_screen() {
+        let mut items: Vec<PickerItem> = (0..10).map(|at| named(&format!("key {at}"))).collect();
+        items.extend((0..2).map(|at| PickerItem {
+            section: Some("Session".to_string()),
+            ..named(&format!("setting {at}"))
+        }));
+        let mut picker = Picker::new(items, PickerLayout::Compact { rows: 6 });
+        picker.keeps_order(true);
+        assert!(picker.is_sectioned(), "not counted by height");
+        assert_eq!(
+            picker.heights(80)[10],
+            2,
+            "the heading is not a row of the run's first"
+        );
+
+        for _ in 0..11 {
+            picker.move_selection_by(1);
+        }
+        picker.refresh_indices(6, 80);
+        let heights = picker.heights(80);
+        let shown = picker.window().visible_by_height(&heights, 6);
+        assert!(
+            shown.contains(&11),
+            "the last row is under the foot of the list: {shown:?}"
+        );
+
+        // And a query that empties the run takes its heading with it.
+        picker.set_query("key 3");
+        assert!(
+            picker.heights(80).iter().all(|tall| *tall == 1),
+            "a heading over a run with nothing in it"
+        );
+    }
+
     /// A list whose rows wrap, of runs headed by `section`.
     fn wrapping(rows: &[(&str, &str)]) -> Picker {
         let items = rows

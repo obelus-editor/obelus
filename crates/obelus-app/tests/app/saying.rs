@@ -60,8 +60,8 @@ fn wrong_ink() -> Color {
 ///
 /// Deliberate break: have `wrong_ink` in `StatusView` answer `Some` for
 /// every note. `Saved` goes red. Break the other way by having it answer
-/// `None` always, and `Nothing to undo` goes back to the dim ink `Saved`
-/// is in.
+/// `None` always, and `Nothing to undo` goes back to the ink `Saved` is
+/// in.
 #[test]
 fn a_refusal_is_in_the_ink_of_things_that_went_wrong() {
     let (_scratch, mut app) = reading("said-wrong");
@@ -82,7 +82,60 @@ fn a_refusal_is_in_the_ink_of_things_that_went_wrong() {
         wrong_ink(),
         "a report is drawn as though it went wrong"
     );
-    assert_eq!(ink(&mut app), DARK.gutter, "beside a file it is an aside");
+    // In the row's own ink: while it is there it is the whole row, so
+    // there is nothing for it to be an aside to.
+    assert_eq!(
+        ink(&mut app),
+        DARK.status_foreground,
+        "the note is not in the row's ink"
+    );
+}
+
+/// While Obelus has something to say it is the whole row: the file's name,
+/// the position and the surroundings come back at the next key, which is
+/// the one that takes it.
+///
+/// One place for it on every row, and only the row's width to cut it --
+/// where each row once put it somewhere of its own, and dropped it whole
+/// where it did not fit.
+///
+/// Deliberate break: take the arm for `middle` out of `StatusView::render`.
+/// The note goes back beside nothing, and the file's row is drawn without
+/// it.
+#[test]
+fn a_note_is_the_whole_row() {
+    let (_scratch, mut app) = reading("said-whole");
+    app.say_for_test("Saved");
+    let dump = support::render(&mut app, 76, 12);
+    let status = support::text_block(&dump)
+        .lines()
+        .last()
+        .expect("a status row")
+        .to_string();
+    assert!(
+        status.contains("Saved"),
+        "the note is not on the row:
+{dump}"
+    );
+    assert!(
+        !status.contains("hint.rs") && !status.contains("1:1"),
+        "the row says more than the note:
+{dump}"
+    );
+
+    // And gone at the next key, with the row back.
+    support::press(&mut app, crossterm::event::KeyCode::Right);
+    let dump = support::render(&mut app, 76, 12);
+    let status = support::text_block(&dump)
+        .lines()
+        .last()
+        .expect("a status row")
+        .to_string();
+    assert!(
+        status.contains("hint.rs") && !status.contains("Saved"),
+        "the row did not come back:
+{dump}"
+    );
 }
 
 /// With nothing open the row is the note, so a report keeps the row's own
