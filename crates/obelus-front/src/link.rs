@@ -137,6 +137,28 @@ pub enum Down {
     /// packets for one frame. A run of alike cells crosses once
     /// (`wire::updates`).
     Updates(#[serde(with = "crate::wire::updates")] Vec<Update>),
+    /// A picture to lay under the page is on its way, under this number:
+    /// what the theme said about it, and how many bytes it is. The bytes
+    /// follow as [`Down::Piece`]s, a piece at a time between frames -- a
+    /// picture is megabytes, and sent whole among the frames it held up
+    /// every frame behind it for as long as it took to cross, which on a
+    /// network that is merely ordinary is a second.
+    Hung {
+        /// Which picture, for its pieces.
+        number: u64,
+        /// What the theme said about it.
+        wallpaper: obelus_theme::Wallpaper,
+        /// How many bytes it is.
+        length: u64,
+    },
+    /// The next of the bytes of the picture of this number.
+    Piece {
+        /// Which picture.
+        number: u64,
+        /// The bytes.
+        #[serde(with = "crate::wire::bytes")]
+        bytes: Vec<u8>,
+    },
     /// Words for the reader's clipboard.
     Copy(String),
     /// What is on the reader's clipboard, asked under this number.

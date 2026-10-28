@@ -4579,6 +4579,7 @@ dependencies = [
  "obelus-logging",
  "obelus-private",
  "obelus-runtime",
+ "obelus-theme",
  "obelus-ui",
  "obelus-wire",
  "ratatui",

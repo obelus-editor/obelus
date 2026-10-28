@@ -21,7 +21,7 @@ use std::{
     io::Write as _,
     process::ExitCode,
     sync::{
-        Arc, Mutex,
+        Arc, Condvar, Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc::Sender,
     },
@@ -55,6 +55,11 @@ const PICTURE_PATIENCE: Duration = Duration::from_secs(10);
 /// grow without end.
 const KEPT_MOST: usize = 1 << 16;
 
+/// How much of a picture goes at once: the longest a frame waits behind a
+/// picture is one of these crossing, a few milliseconds on a network that
+/// is merely ordinary.
+const PIECE: usize = 64 << 10;
+
 /// What `ob --serve-one` writes to, and whether a window is there to read
 /// it.
 ///
@@ -63,8 +68,17 @@ const KEPT_MOST: usize = 1 << 16;
 /// with nothing after it -- and goes then as one [`Down::Updates`]. Said a
 /// cell at a time it was a message per cell: a page scrolled was thousands
 /// of writes to the pipe, and the server's thousands of packets after them.
+///
+/// **A picture goes behind the frames, not among them.** What it is goes at
+/// once, as [`Down::Hung`], and its bytes go a [`PIECE`] at a time on a
+/// thread of their own, letting go of the writer between pieces -- so the
+/// new theme's colours are drawn the moment they are said and its picture
+/// arrives under them, rather than every frame waiting for megabytes to
+/// cross first.
 struct Out {
     writing: Mutex<Said>,
+    /// What wakes the thread a picture is sent on.
+    pieces: Condvar,
     /// Whether a window is attached, which is when anything is written.
     attached: AtomicBool,
     /// The screen as everything said leaves it, for a window that comes.
@@ -75,9 +89,60 @@ struct Out {
 struct Said {
     writer: std::io::BufWriter<Box<dyn std::io::Write + Send>>,
     kept: Vec<Update>,
+    /// The picture going a piece at a time, where one is.
+    sending: Option<Sending>,
+    /// The last number a picture went under.
+    numbered: u64,
+}
+
+/// A picture on its way, and how much of it has gone.
+struct Sending {
+    number: u64,
+    bytes: Vec<u8>,
+    sent: usize,
 }
 
 impl Said {
+    /// Keeps something for the screen -- or, for a picture, says what it is
+    /// at once and sets its bytes going, and answers whether it did.
+    fn keep(&mut self, update: Update) -> Result<bool, Closed> {
+        match update {
+            Update::Picture(Some(hanging)) => {
+                // What came before it first, so that the window is told
+                // things in the order they were said.
+                self.out()?;
+                self.numbered += 1;
+                let length = u64::try_from(hanging.bytes.len()).unwrap_or(u64::MAX);
+                obelus_wire::write(
+                    &mut self.writer,
+                    &Down::Hung {
+                        number: self.numbered,
+                        wallpaper: hanging.wallpaper,
+                        length,
+                    },
+                )
+                .map_err(|_| Closed)?;
+                self.sending = Some(Sending {
+                    number: self.numbered,
+                    bytes: hanging.bytes,
+                    sent: 0,
+                });
+                return Ok(true);
+            }
+            // A picture let go of is one whose bytes are no longer worth
+            // sending.
+            Update::Picture(None) => {
+                self.sending = None;
+                self.kept.push(update);
+            }
+            update => self.kept.push(update),
+        }
+        if self.kept.len() >= KEPT_MOST {
+            self.out()?;
+        }
+        Ok(false)
+    }
+
     /// Writes what is kept, as one message, where anything is.
     fn out(&mut self) -> Result<(), Closed> {
         if self.kept.is_empty() {
@@ -95,7 +160,10 @@ impl Out {
             writing: Mutex::new(Said {
                 writer: std::io::BufWriter::new(writer),
                 kept: Vec::new(),
+                sending: None,
+                numbered: 0,
             }),
+            pieces: Condvar::new(),
             attached: AtomicBool::new(true),
             screen: Mutex::new(Screen::default()),
         }
@@ -103,15 +171,7 @@ impl Out {
 
     /// Keeps something for the screen, to go with the rest of its frame.
     fn keep(&self, update: Update) -> Result<(), Closed> {
-        if !self.attached.load(Ordering::Acquire) {
-            return Ok(());
-        }
-        let mut said = self.writing.lock().map_err(|_| Closed)?;
-        said.kept.push(update);
-        if said.kept.len() >= KEPT_MOST {
-            said.out()?;
-        }
-        Ok(())
+        self.keep_all(vec![update])
     }
 
     /// Keeps several, under the one lock.
@@ -120,11 +180,66 @@ impl Out {
             return Ok(());
         }
         let mut said = self.writing.lock().map_err(|_| Closed)?;
-        said.kept.extend(updates);
-        if said.kept.len() >= KEPT_MOST {
-            said.out()?;
+        let mut hung = false;
+        for update in updates {
+            hung |= said.keep(update)?;
+        }
+        drop(said);
+        if hung {
+            self.pieces.notify_one();
         }
         Ok(())
+    }
+
+    /// Sends the picture being sent, a piece at a time, for as long as
+    /// there is one -- on a thread of its own, which lets go of the writer
+    /// between pieces so that a frame said meanwhile goes between them.
+    fn send_pictures(out: &Arc<Self>) {
+        let out = Arc::clone(out);
+        let started = std::thread::Builder::new()
+            .name("obelus sending a picture".to_string())
+            .spawn(move || {
+                loop {
+                    let Ok(mut said) = out.writing.lock() else {
+                        return;
+                    };
+                    while said.sending.is_none() {
+                        said = match out.pieces.wait(said) {
+                            Ok(said) => said,
+                            Err(_) => return,
+                        };
+                    }
+                    // Nobody to send it to: the window that comes back is
+                    // told the picture again, from the screen.
+                    if !out.attached.load(Ordering::Acquire) {
+                        said.sending = None;
+                        continue;
+                    }
+                    let Some(sending) = said.sending.as_mut() else {
+                        continue;
+                    };
+                    let end = (sending.sent + PIECE).min(sending.bytes.len());
+                    let piece = Down::Piece {
+                        number: sending.number,
+                        bytes: sending.bytes[sending.sent..end].to_vec(),
+                    };
+                    sending.sent = end;
+                    if end >= sending.bytes.len() {
+                        said.sending = None;
+                    }
+                    if obelus_wire::write(&mut said.writer, &piece).is_err() {
+                        said.sending = None;
+                    }
+                    drop(said);
+                    // The lock is nobody's turn in particular: given back
+                    // this way, a frame waiting on it is the next to have it
+                    // rather than this thread again.
+                    std::thread::yield_now();
+                }
+            });
+        if let Err(error) = started {
+            tracing::warn!(%error, "no thread to send a picture on, so none goes");
+        }
     }
 
     /// Writes one thing for the window, where there is one -- after what is
@@ -158,8 +273,9 @@ impl Out {
         };
         if let Ok(mut said) = self.writing.lock() {
             // Kept for a window that has gone since: the screen says all
-            // of it again.
+            // of it again, the picture with it.
             said.kept.clear();
+            said.sending = None;
         }
         self.attached.store(true, Ordering::Release);
         for update in screen.again() {
@@ -319,6 +435,7 @@ pub(crate) fn one() -> Result<ExitCode> {
     );
 
     let out = Arc::new(Out::new(Box::new(std::io::stdout())));
+    Out::send_pictures(&out);
     let showing: Arc<dyn Showing> = out.clone();
     let measured = Arc::new(Measured::default());
     measured.resized(size[0], size[1], u32::from(size[2]), u32::from(size[3]));
@@ -566,6 +683,114 @@ mod tests {
             std::iter::from_fn(|| obelus_wire::read::<_, Down>(&mut reading).expect("a message"))
                 .collect()
         }
+    }
+
+    /// A picture of the theme, in a served Obelus, what it is said at once
+    /// and its bytes after, in pieces -- never among the frames.
+    ///
+    /// Broken deliberately by keeping it among the frames (`Update::Picture
+    /// (Some(..))` pushed onto `kept` like anything else, in `Said::keep`):
+    /// the picture crossed whole inside the frame's message, and every frame
+    /// behind it waited for it.
+    #[test]
+    fn a_picture_goes_as_what_it_is_and_then_its_pieces() {
+        let written = Written::default();
+        let out = Arc::new(Out::new(Box::new(written.clone())));
+        Out::send_pictures(&out);
+        let bytes: Vec<u8> = (0..200_000_u32).map(|at| (at % 251) as u8).collect();
+        out.show(Update::Picture(Some(obelus_front::Hanging {
+            wallpaper: obelus_theme::Wallpaper {
+                file: std::path::PathBuf::from("dusk.jpg"),
+                opacity: 80,
+                fit: obelus_theme::wallpaper::Fit::Cover,
+                anchor: obelus_theme::wallpaper::Anchor::default(),
+                modified: None,
+            },
+            bytes: bytes.clone(),
+        })))
+        .expect("shown");
+        out.show(Update::Frame).expect("shown");
+        out.wake();
+
+        let pieces = |messages: &[Down]| -> Vec<u8> {
+            messages
+                .iter()
+                .filter_map(|down| match down {
+                    Down::Piece { bytes, .. } => Some(bytes.clone()),
+                    _ => None,
+                })
+                .flatten()
+                .collect()
+        };
+        let deadline = std::time::Instant::now() + Duration::from_secs(20);
+        while pieces(&written.messages()).len() < bytes.len() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the picture never all went"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let messages = written.messages();
+        assert!(
+            !messages.iter().any(|down| matches!(
+                down,
+                Down::Updates(updates)
+                    if updates.iter().any(|update| matches!(update, Update::Picture(Some(_))))
+            )),
+            "the picture went among the frames"
+        );
+        assert!(
+            messages.iter().any(|down| matches!(
+                down,
+                Down::Hung {
+                    length: 200_000,
+                    ..
+                }
+            )),
+            "what the picture is was not said"
+        );
+        assert!(
+            messages
+                .iter()
+                .all(|down| !matches!(down, Down::Piece { bytes, .. } if bytes.len() > PIECE)),
+            "a piece larger than a piece"
+        );
+        assert_eq!(pieces(&messages), bytes, "the pieces are not the picture");
+    }
+
+    /// A picture let go of before its pieces went sends none of them.
+    ///
+    /// Broken deliberately by going on sending it (the `sending = None` for
+    /// `Update::Picture(None)` left out of `Said::keep`): megabytes of an
+    /// old theme's picture went after the page had let go of it.
+    #[test]
+    fn a_picture_let_go_of_sends_none_of_itself() {
+        let written = Written::default();
+        let out = Arc::new(Out::new(Box::new(written.clone())));
+        out.show(Update::Picture(Some(obelus_front::Hanging {
+            wallpaper: obelus_theme::Wallpaper {
+                file: std::path::PathBuf::from("dusk.jpg"),
+                opacity: 80,
+                fit: obelus_theme::wallpaper::Fit::Cover,
+                anchor: obelus_theme::wallpaper::Anchor::default(),
+                modified: None,
+            },
+            bytes: vec![1; 300_000],
+        })))
+        .expect("shown");
+        out.show(Update::Picture(None)).expect("shown");
+        out.wake();
+        // Started only now, so that nothing of it can have gone before the
+        // letting go.
+        Out::send_pictures(&out);
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(
+            !written
+                .messages()
+                .iter()
+                .any(|down| matches!(down, Down::Piece { .. })),
+            "a piece of a picture let go of went"
+        );
     }
 
     /// Cells handed over together are kept for a window that comes back as

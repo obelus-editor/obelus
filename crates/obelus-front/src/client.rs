@@ -305,6 +305,44 @@ fn knock(
     Ok((stream, answered))
 }
 
+/// A picture arriving in pieces: which, what the theme said of it, how
+/// long it is, and what has come.
+struct Arriving {
+    number: u64,
+    wallpaper: obelus_theme::Wallpaper,
+    length: u64,
+    bytes: Vec<u8>,
+}
+
+impl Arriving {
+    /// Takes in a piece of the picture of `number`, and hands the picture
+    /// back once it is whole. A piece of any other is about a picture that
+    /// has been let go of, and goes nowhere.
+    fn took(&mut self, number: u64, piece: &[u8]) -> Option<crate::Hanging> {
+        if number != self.number {
+            return None;
+        }
+        // Room made as the pieces come, rather than for what the other end
+        // said the length would be.
+        self.bytes.extend_from_slice(piece);
+        let had = u64::try_from(self.bytes.len()).unwrap_or(u64::MAX);
+        (had >= self.length).then(|| crate::Hanging {
+            wallpaper: self.wallpaper.clone(),
+            bytes: std::mem::take(&mut self.bytes),
+        })
+    }
+}
+
+/// Hangs a picture that has arrived whole, and answers whether there is
+/// still a front end to hang it on.
+fn hung(here: &dyn Showing, whole: crate::Hanging) -> bool {
+    if here.show(Update::Picture(Some(whole))).is_err() {
+        return false;
+    }
+    here.wake();
+    true
+}
+
 /// Why there is no more connection to have.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Left {
@@ -587,6 +625,8 @@ fn hear(
     // still a length and then a body, and two reads of the socket for each
     // is two more than there need be.
     let mut reading = std::io::BufReader::new(&*stream);
+    // The picture whose pieces are arriving, where one is.
+    let mut arriving: Option<Arriving> = None;
     loop {
         match obelus_wire::read::<_, Down>(&mut reading) {
             Ok(Some(Down::Updates(updates))) => {
@@ -597,12 +637,43 @@ fn hear(
                 let mut looks = false;
                 for update in updates {
                     looks |= matches!(update, Update::Frame | Update::Picture(_));
+                    // A picture let go of is one whose pieces still to come
+                    // are about a page that has gone.
+                    if matches!(update, Update::Picture(None)) {
+                        arriving = None;
+                    }
                     if here.show(update).is_err() {
                         return Some(Left::Finished);
                     }
                 }
                 if looks {
                     here.wake();
+                }
+            }
+            Ok(Some(Down::Hung {
+                number,
+                wallpaper,
+                length,
+            })) => {
+                arriving = Some(Arriving {
+                    number,
+                    wallpaper,
+                    length,
+                    bytes: Vec::new(),
+                });
+                if let Some(whole) = arriving.as_mut().and_then(|now| now.took(number, &[])) {
+                    arriving = None;
+                    if !hung(here, whole) {
+                        return Some(Left::Finished);
+                    }
+                }
+            }
+            Ok(Some(Down::Piece { number, bytes })) => {
+                if let Some(whole) = arriving.as_mut().and_then(|now| now.took(number, &bytes)) {
+                    arriving = None;
+                    if !hung(here, whole) {
+                        return Some(Left::Finished);
+                    }
                 }
             }
             Ok(Some(Down::Copy(words))) => {
@@ -871,6 +942,80 @@ mod tests {
     ///
     /// Broken deliberately by leaving the clipboard's question unanswered
     /// (no `answer` for `Down::Paste`): the server waited for nothing.
+    /// A picture that arrives in pieces is hung once it is whole, and one
+    /// let go of before it was whole is not hung at all -- not even when the
+    /// rest of its pieces come after.
+    ///
+    /// Broken deliberately by keeping the pieces of a picture let go of
+    /// (the `arriving = None` for `Update::Picture(None)` left out of
+    /// `hear`): the first picture was hung, whole, after the page had let
+    /// go of it -- an old theme's picture under the new one's colours.
+    #[test]
+    fn a_picture_arrives_in_pieces_and_one_let_go_of_is_not_hung() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("loopback");
+        let at = listener.local_addr().expect("an address");
+        let wallpaper = obelus_theme::Wallpaper {
+            file: std::path::PathBuf::from("dusk.jpg"),
+            opacity: 80,
+            fit: obelus_theme::wallpaper::Fit::Cover,
+            anchor: obelus_theme::wallpaper::Anchor::default(),
+            modified: None,
+        };
+        let said = wallpaper.clone();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("the window");
+            for down in [
+                Down::Hung {
+                    number: 1,
+                    wallpaper: said.clone(),
+                    length: 6,
+                },
+                Down::Piece {
+                    number: 1,
+                    bytes: vec![1, 2, 3],
+                },
+                Down::Updates(vec![Update::Picture(None)]),
+                Down::Piece {
+                    number: 1,
+                    bytes: vec![4, 5, 6],
+                },
+                Down::Hung {
+                    number: 2,
+                    wallpaper: said,
+                    length: 4,
+                },
+                Down::Piece {
+                    number: 2,
+                    bytes: vec![7, 8],
+                },
+                Down::Piece {
+                    number: 2,
+                    bytes: vec![9, 9],
+                },
+                Down::Finished,
+            ] {
+                obelus_wire::write(&mut stream, &down).expect("said");
+            }
+        });
+        let mut stream = TcpStream::connect(at).expect("connected");
+        let writing = Mutex::new(Some(stream.try_clone().expect("both halves")));
+        let here = Kept::default();
+        assert_eq!(hear(&mut stream, &here, &writing), Some(Left::Finished));
+        server.join().expect("the server");
+        let hung: Vec<Vec<u8>> = here
+            .shown
+            .lock()
+            .expect("what was shown")
+            .iter()
+            .filter_map(|update| match update {
+                Update::Picture(Some(hanging)) => Some(hanging.bytes.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(hung, [vec![7, 8, 9, 9]], "not the one picture, whole");
+        let _ = wallpaper;
+    }
+
     #[test]
     fn what_the_server_says_reaches_the_front_end_and_is_answered() {
         obelus_clipboard::use_provider_for_test(obelus_clipboard::Provider::Kept);

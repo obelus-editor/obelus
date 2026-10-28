@@ -216,6 +216,61 @@ pub mod cells {
     }
 }
 
+/// Bytes, as bytes: `#[serde(with = "wire::bytes")]`.
+///
+/// Not as the sequence of numbers serde makes of a `Vec<u8>` left to
+/// itself, which postcard writes the same way but a call at a time: a
+/// picture of megabytes was as many calls each way -- a third of a second
+/// in a debug build -- for what is one copy.
+pub mod bytes {
+    use super::{Deserializer, Serializer};
+
+    /// Writes them.
+    ///
+    /// # Errors
+    ///
+    /// The format's.
+    pub fn serialize<S: Serializer>(bytes: &[u8], to: S) -> Result<S::Ok, S::Error> {
+        to.serialize_bytes(bytes)
+    }
+
+    /// Reads them.
+    ///
+    /// # Errors
+    ///
+    /// The format's.
+    pub fn deserialize<'de, D: Deserializer<'de>>(from: D) -> Result<Vec<u8>, D::Error> {
+        from.deserialize_byte_buf(Bytes)
+    }
+
+    /// What reads them, whichever way a format hands them over.
+    struct Bytes;
+
+    impl<'de> serde::de::Visitor<'de> for Bytes {
+        type Value = Vec<u8>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("bytes")
+        }
+
+        fn visit_bytes<E: serde::de::Error>(self, bytes: &[u8]) -> Result<Vec<u8>, E> {
+            Ok(bytes.to_vec())
+        }
+
+        fn visit_byte_buf<E: serde::de::Error>(self, bytes: Vec<u8>) -> Result<Vec<u8>, E> {
+            Ok(bytes)
+        }
+
+        fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Vec<u8>, A::Error> {
+            let mut bytes = Vec::with_capacity(seq.size_hint().unwrap_or(0).min(1 << 20));
+            while let Some(byte) = seq.next_element()? {
+                bytes.push(byte);
+            }
+            Ok(bytes)
+        }
+    }
+}
+
 /// A frame's updates, with every run of alike cells crossing once:
 /// `#[serde(with = "wire::updates")]`.
 pub mod updates {
