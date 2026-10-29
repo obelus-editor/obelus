@@ -508,15 +508,19 @@ impl Afar {
     /// with the answer when it comes -- answering the question's number, or
     /// nothing where there is nobody to ask.
     fn asked(&self, question: impl FnOnce(u64) -> Down, then: Answering) -> Option<u64> {
+        // Under the lock a window coming or going takes as well
+        // (`forget_everything`), so that a question is either asked of the
+        // window that is there or let go of with the rest -- never asked of
+        // one that has gone and waited for after everything else was let go.
+        let mut waiting = self.waiting.lock().ok()?;
         if !self.out.attached.load(Ordering::Acquire) {
             return None;
         }
         let number = self.asked.fetch_add(1, Ordering::Relaxed) + 1;
-        self.waiting.lock().ok()?.insert(number, then);
-        if self.out.say(question(number)).is_err() {
-            self.forget(number);
-            return None;
-        }
+        self.out.say(question(number)).ok()?;
+        // After it is said is soon enough: whatever answers takes this lock
+        // first.
+        waiting.insert(number, then);
         Some(number)
     }
 
@@ -545,13 +549,19 @@ impl Afar {
     }
 
     /// Stops waiting for every answer, and tells whatever was waiting: the
-    /// window that was asked has gone.
-    fn forget_everything(&self) {
-        let waiting: Vec<Answering> = self
-            .waiting
-            .lock()
-            .map(|mut waiting| waiting.drain().map(|(_, waiting)| waiting).collect())
-            .unwrap_or_default();
+    /// window that was asked has gone. `meanwhile` is the window going or
+    /// coming, done with nothing able to be asked in between.
+    fn forget_everything(&self, meanwhile: impl FnOnce()) {
+        let waiting: Vec<Answering> = match self.waiting.lock() {
+            Ok(mut waiting) => {
+                meanwhile();
+                waiting.drain().map(|(_, waiting)| waiting).collect()
+            }
+            Err(_) => {
+                meanwhile();
+                Vec::new()
+            }
+        };
         for waiting in waiting {
             waiting(None);
         }
@@ -771,13 +781,13 @@ impl Heard {
                 // known to have gone is never told `Detached`: what the old
                 // one was asked and what it was sending are let go of here
                 // too, or a picture asked for waits for good.
-                self.let_go()?;
-                self.out.attach();
+                let out = Arc::clone(&self.out);
+                self.let_go(|| out.attach())?;
                 self.tell(Event::Resize)
             }
             ToChild::Detached => {
-                self.out.attached.store(false, Ordering::Release);
-                self.let_go()
+                let out = Arc::clone(&self.out);
+                self.let_go(|| out.attached.store(false, Ordering::Release))
             }
             ToChild::Open { .. } => {
                 tracing::warn!("told what to open twice");
@@ -792,9 +802,10 @@ impl Heard {
 
     /// Lets go of everything the window that went was asked and was
     /// sending, and says so: a picture half here is told by what waited for
-    /// it, and a file half here by this.
-    fn let_go(&mut self) -> Result<(), ()> {
-        self.afar.forget_everything();
+    /// it, and a file half here by this. `meanwhile` is the window coming or
+    /// going, which nothing may be asked in the middle of.
+    fn let_go(&mut self, meanwhile: impl FnOnce()) -> Result<(), ()> {
+        self.afar.forget_everything(meanwhile);
         for gone in self.arriving.forget() {
             if let Carrying::Dropped(name) = gone {
                 self.tell(Event::Amiss(format!(
@@ -1456,7 +1467,7 @@ mod tests {
     /// status row said "Bringing the picture across" for good. By letting go
     /// without saying so (`forget_everything` calling nothing): the same.
     /// And by the picture's own answer saying nothing of a window that went
-    /// (its `None` arm in `Desk::picture` sending nothing).
+    /// (its `None` arm in `Desk::picture` sending `Event::Resize` instead).
     #[test]
     fn what_a_window_that_came_back_was_asked_is_said_to_have_gone() {
         use obelus_app::app::desk::Desk as _;
@@ -1536,6 +1547,45 @@ mod tests {
             said.iter()
                 .any(|why| why == "Not all of log.txt came across, so it was not kept"),
             "the file was never said to have gone: {said:?}"
+        );
+    }
+
+    /// A question asked while a window goes is asked of no window: it is
+    /// not let in between the window going and what waits being let go of,
+    /// where nothing would ever answer it.
+    ///
+    /// Broken deliberately by asking whether a window is there before
+    /// taking the lock a window going takes (`attached` loaded ahead of
+    /// `waiting.lock()` in `Afar::asked`, as it was): the question saw the
+    /// window there, waited out its going, and was waited for after
+    /// everything else had been let go of.
+    #[test]
+    fn a_question_asked_as_the_window_goes_is_asked_of_none() {
+        let out = Arc::new(Out::new());
+        Out::write_to(&out, Box::new(Written::default()));
+        let (events, _heard) = std::sync::mpsc::channel();
+        let afar = Arc::new(Afar {
+            out: Arc::clone(&out),
+            asked: AtomicU64::new(0),
+            waiting: Mutex::new(HashMap::new()),
+            events,
+        });
+        let mut asking = None;
+        afar.forget_everything(|| {
+            let afar = Arc::clone(&afar);
+            asking = Some(std::thread::spawn(move || {
+                afar.asked(Down::Picture, Box::new(|_| {}))
+            }));
+            // Long enough for the question to get as far as it can while
+            // the window is going.
+            std::thread::sleep(Duration::from_millis(200));
+            out.attached.store(false, Ordering::Release);
+        });
+        let asked = asking.expect("asked").join().expect("the question");
+        assert_eq!(asked, None, "asked of a window that had gone");
+        assert!(
+            afar.waiting.lock().expect("waiting").is_empty(),
+            "something waits that nothing will answer"
         );
     }
 
