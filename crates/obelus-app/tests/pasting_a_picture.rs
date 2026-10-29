@@ -183,3 +183,63 @@ fn a_picture_pasted_on_a_list_does_not_go_behind_it() {
     );
     assert_eq!(app.note(), Some("A picture goes in a message to an agent"));
 }
+
+/// A clipboard on a machine at the other end of a connection, whose
+/// picture is asked for and arrives after the paste.
+#[derive(Debug)]
+struct Afar;
+
+impl obelus_app::app::desk::Desk for Afar {
+    fn copy(&self, _text: &str) -> std::io::Result<()> {
+        Ok(())
+    }
+
+    fn paste(&self) -> Option<String> {
+        None
+    }
+
+    fn picture(&self) -> Option<(String, Vec<u8>)> {
+        panic!("the paste waited for the picture to cross");
+    }
+
+    fn picture_later(&self) -> Option<bool> {
+        Some(true)
+    }
+
+    fn holds_a_picture(&self) -> bool {
+        true
+    }
+
+    fn open(&self, _url: &str) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// A picture from a clipboard across a connection is asked for and not
+/// waited for, and goes in the box when it arrives -- unless the box has
+/// gone behind something meanwhile.
+///
+/// Deliberate break: `Event::Pictured` handled as nothing (its arm in
+/// `handle` doing nothing) leaves the box empty once the picture arrives.
+#[test]
+fn a_picture_from_afar_goes_in_the_box_when_it_arrives() {
+    let (mut app, _events) = talking();
+    app.desked_by(std::sync::Arc::new(Afar));
+    app.paste();
+    assert_eq!(pictures_in_the_box(&app), 0, "in the box before it arrived");
+    assert_eq!(app.note(), Some("Bringing the picture across"));
+
+    app.handle(Event::Pictured("image/png".to_string(), vec![1, 2, 3]));
+    assert_eq!(pictures_in_the_box(&app), 1, "not in the box once it came");
+    assert_eq!(app.note(), None);
+
+    support::press_control(&mut app, 'p');
+    assert!(app.picker().is_some(), "the palette did not open");
+    app.handle(Event::Pictured("image/png".to_string(), vec![4]));
+    assert_eq!(
+        pictures_in_the_box(&app),
+        1,
+        "it went into the box under the palette"
+    );
+    assert_eq!(app.note(), Some("A picture goes in a message to an agent"));
+}

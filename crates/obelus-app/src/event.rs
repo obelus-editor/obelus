@@ -312,6 +312,10 @@ pub enum Event {
     /// front end knows -- a file dropped that could not go -- said on the
     /// status row.
     Amiss(String),
+    /// The picture on the reader's clipboard, asked for by a paste and
+    /// arriving after it (`Desk::picture_later`): what shape it is in, and
+    /// the picture.
+    Pictured(String, Vec<u8>),
 }
 
 impl Event {
@@ -349,6 +353,7 @@ impl Event {
             Self::Reachable(_) => "Reachable",
             Self::Unreachable { .. } => "Unreachable",
             Self::Amiss(_) => "Amiss",
+            Self::Pictured(..) => "Pictured",
             Self::NotesSettled => "NotesSettled",
             Self::StoppedWriting(_) => "StoppedWriting",
             Self::SyntaxSettled => "SyntaxSettled",

@@ -189,20 +189,31 @@ pub enum Up {
         /// The words, or nothing.
         words: Option<String>,
     },
-    /// The picture on the clipboard, to the question of that number.
+    /// The picture on the clipboard, to the question of that number: what
+    /// shape it is in and how many bytes, with the bytes following as
+    /// [`Up::Piece`]s -- or nothing.
     Pictured {
         /// The number.
         number: u64,
-        /// What shape it is in and the picture, or nothing.
-        picture: Option<(String, Vec<u8>)>,
+        /// What shape it is in, and what is on its way.
+        picture: Option<(String, Carried)>,
     },
-    /// A file dropped on the window, sent whole: there is no path on the
-    /// window's machine that means anything on Obelus's.
+    /// A file dropped on the window: there is no path on the window's
+    /// machine that means anything on Obelus's, so what it holds follows as
+    /// [`Up::Piece`]s.
     Dropped {
         /// What it is called.
         name: String,
-        /// What it holds, or why it is not sent.
-        file: Result<Vec<u8>, String>,
+        /// What is on its way, or why it is not sent.
+        file: Result<Carried, String>,
+    },
+    /// The next of the bytes of what is being carried under this number.
+    Piece {
+        /// Which.
+        carrying: u64,
+        /// The bytes.
+        #[serde(with = "crate::wire::bytes")]
+        bytes: Vec<u8>,
     },
     /// Whether it holds a picture, to the question of that number.
     Holds {
@@ -212,6 +223,23 @@ pub enum Up {
         picture: bool,
     },
 }
+
+/// Something on its way up a [`PIECE`] at a time, behind what the reader
+/// does: a screenshot is megabytes and a file dropped may be tens of them,
+/// and sent whole it held up every key pressed after it for as long as it
+/// took to cross -- seconds, on a network that is merely ordinary.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Carried {
+    /// Which, for its pieces.
+    pub carrying: u64,
+    /// How many bytes it is.
+    pub length: u64,
+}
+
+/// How much goes at once, either way: the longest anything else waits
+/// behind something large is one of these crossing, a few milliseconds on
+/// a network that is merely ordinary.
+pub const PIECE: usize = 64 << 10;
 
 /// What `ob --server` tells the Obelus it started for a window, on that
 /// Obelus's standard input.

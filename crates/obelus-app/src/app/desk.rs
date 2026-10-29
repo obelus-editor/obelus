@@ -33,6 +33,18 @@ pub trait Desk: std::fmt::Debug + Send + Sync {
     /// is one.
     fn picture(&self) -> Option<(String, Vec<u8>)>;
 
+    /// Asks for the picture on the clipboard to arrive later, as
+    /// `Event::Pictured`, and answers whether one is coming -- or nothing,
+    /// where this desk hands one over at once and [`Desk::picture`] is how
+    /// it is asked.
+    ///
+    /// For a clipboard on a machine at the other end of a connection: a
+    /// screenshot is megabytes, and the loop waiting for them to cross was
+    /// a screen that stopped for as long as they took.
+    fn picture_later(&self) -> Option<bool> {
+        None
+    }
+
     /// Whether what is on the clipboard is a picture.
     fn holds_a_picture(&self) -> bool;
 
