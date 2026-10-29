@@ -705,138 +705,25 @@ pub(crate) fn one() -> Result<ExitCode> {
     app.desked_by(Arc::clone(&afar) as Arc<dyn app::desk::Desk>);
     app.drawn_afar();
 
-    let hearing = sender.clone();
-    let heard_size = Arc::clone(&measured);
-    let heard_out = Arc::clone(&out);
-    let heard_afar = Arc::clone(&afar);
+    let mut heard = Heard {
+        events: sender.clone(),
+        size: Arc::clone(&measured),
+        out: Arc::clone(&out),
+        afar: Arc::clone(&afar),
+        arriving: Arriving::default(),
+    };
     std::thread::Builder::new()
         .name("obelus connection".to_string())
         .spawn(move || {
-            let mut arriving = Arriving::<Carrying>::default();
             loop {
-                let up = match obelus_wire::read::<_, ToChild>(&mut reading) {
-                    Ok(Some(ToChild::Up(Up::Input(input)))) => {
-                        if hearing.send(input.into_event(&heard_size)).is_err() {
-                            return;
-                        }
-                        continue;
-                    }
-                    Ok(Some(ToChild::Up(up))) => up,
-                    Ok(Some(ToChild::Attached { size })) => {
-                        heard_size.resized(
-                            size[0],
-                            size[1],
-                            u32::from(size[2]),
-                            u32::from(size[3]),
-                        );
-                        // Let go of when the window went, and said so then.
-                        arriving.forget();
-                        heard_out.attach();
-                        if hearing.send(Event::Resize).is_err() {
-                            return;
-                        }
-                        continue;
-                    }
-                    Ok(Some(ToChild::Detached)) => {
-                        heard_out.attached.store(false, Ordering::Release);
-                        // A picture half here is told by what waited for
-                        // it; a file half here, by this.
-                        heard_afar.forget_everything();
-                        for gone in arriving.forget() {
-                            if let Carrying::Dropped(name) = gone
-                                && hearing
-                                    .send(Event::Amiss(format!(
-                                        "Not all of {name} came across, so it was not kept"
-                                    )))
-                                    .is_err()
-                            {
-                                return;
-                            }
-                        }
-                        continue;
-                    }
-                    Ok(Some(ToChild::Open { .. })) => {
-                        tracing::warn!("told what to open twice");
-                        continue;
-                    }
+                let told = match obelus_wire::read::<_, ToChild>(&mut reading) {
+                    Ok(Some(told)) => told,
                     // `ob --server` has gone, or let this go: nobody can
                     // reach it again, so it stops the way a kill stops one.
-                    Ok(Some(ToChild::Leave) | None) | Err(_) => {
-                        let _ = hearing.send(Event::Stopped);
-                        return;
-                    }
+                    Ok(None) | Err(_) => ToChild::Leave,
                 };
-                let whole = match up {
-                    Up::Pasted { number, words } => {
-                        heard_afar.answered(number, Answer::Words(words));
-                        Ok(None)
-                    }
-                    Up::Holds { number, picture } => {
-                        heard_afar.answered(number, Answer::Holds(picture));
-                        Ok(None)
-                    }
-                    Up::Pictured {
-                        number,
-                        picture: None,
-                    } => {
-                        heard_afar.answered(number, Answer::Picture(None));
-                        Ok(None)
-                    }
-                    Up::Pictured {
-                        number,
-                        picture: Some((shape, carried)),
-                    } => arriving.begin(
-                        carried.carrying,
-                        carried.length,
-                        Carrying::Picture { number, shape },
-                    ),
-                    Up::Dropped {
-                        name,
-                        file: Ok(carried),
-                    } => arriving.begin(carried.carrying, carried.length, Carrying::Dropped(name)),
-                    Up::Dropped { file: Err(why), .. } => {
-                        if hearing.send(Event::Amiss(why)).is_err() {
-                            return;
-                        }
-                        Ok(None)
-                    }
-                    Up::Piece { carrying, bytes } => Ok(arriving.took(carrying, &bytes)),
-                    Up::Input(_) => Ok(None),
-                };
-                match whole {
-                    Err(Carrying::Picture { number, .. }) => {
-                        heard_afar.answered(number, Answer::TooLarge);
-                    }
-                    Err(Carrying::Dropped(name)) => {
-                        let why = format!("Too large to bring across, so not kept: {name}");
-                        if hearing.send(Event::Amiss(why)).is_err() {
-                            return;
-                        }
-                    }
-                    Ok(Some((Carrying::Picture { number, shape }, bytes))) => {
-                        heard_afar.answered(number, Answer::Picture(Some((shape, bytes))));
-                    }
-                    // Written on a thread of its own: tens of megabytes to
-                    // the disk is long enough for the keys behind it to be
-                    // felt waiting.
-                    Ok(Some((Carrying::Dropped(name), bytes))) => {
-                        let hearing = hearing.clone();
-                        let started = std::thread::Builder::new()
-                            .name("obelus keeping what was dropped".to_string())
-                            .spawn(move || {
-                                let heard = match dropped_in(&std::env::temp_dir())
-                                    .and_then(|directory| kept(&directory, &name, &bytes))
-                                {
-                                    Ok(path) => Event::Dropped(path),
-                                    Err(why) => Event::Amiss(why),
-                                };
-                                let _ = hearing.send(heard);
-                            });
-                        if let Err(error) = started {
-                            tracing::warn!(%error, "no thread to keep what was dropped on");
-                        }
-                    }
-                    Ok(None) => {}
+                if heard.heard(told).is_err() {
+                    return;
                 }
             }
         })
@@ -854,6 +741,147 @@ pub(crate) fn one() -> Result<ExitCode> {
     let _ = out.say(last);
     out.drained(LAST_WORDS);
     outcome.map(|()| ExitCode::SUCCESS)
+}
+
+/// What `ob --server` says to this Obelus, heard: the window's keys, its
+/// answers and what it sends a piece at a time, and its coming and going.
+struct Heard {
+    /// The loop.
+    events: std::sync::mpsc::Sender<Event>,
+    size: Arc<Measured>,
+    out: Arc<Out>,
+    afar: Arc<Afar>,
+    arriving: Arriving<Carrying>,
+}
+
+impl Heard {
+    /// Hears one thing, and answers `Err` where the loop has gone or been
+    /// told to stop -- after which nothing more is heard.
+    fn heard(&mut self, told: ToChild) -> Result<(), ()> {
+        match told {
+            ToChild::Up(Up::Input(input)) => self.tell(input.into_event(&self.size)),
+            ToChild::Up(up) => self.answered(up),
+            // A window again, perhaps of another size: the size first, so
+            // that the screen it is told is the one that fits it after the
+            // resize is heard.
+            ToChild::Attached { size } => {
+                self.size
+                    .resized(size[0], size[1], u32::from(size[2]), u32::from(size[3]));
+                // A window that comes back before its old connection was
+                // known to have gone is never told `Detached`: what the old
+                // one was asked and what it was sending are let go of here
+                // too, or a picture asked for waits for good.
+                self.let_go()?;
+                self.out.attach();
+                self.tell(Event::Resize)
+            }
+            ToChild::Detached => {
+                self.out.attached.store(false, Ordering::Release);
+                self.let_go()
+            }
+            ToChild::Open { .. } => {
+                tracing::warn!("told what to open twice");
+                Ok(())
+            }
+            ToChild::Leave => {
+                let _ = self.events.send(Event::Stopped);
+                Err(())
+            }
+        }
+    }
+
+    /// Lets go of everything the window that went was asked and was
+    /// sending, and says so: a picture half here is told by what waited for
+    /// it, and a file half here by this.
+    fn let_go(&mut self) -> Result<(), ()> {
+        self.afar.forget_everything();
+        for gone in self.arriving.forget() {
+            if let Carrying::Dropped(name) = gone {
+                self.tell(Event::Amiss(format!(
+                    "Not all of {name} came across, so it was not kept"
+                )))?;
+            }
+        }
+        Ok(())
+    }
+
+    /// An answer from the window, or a piece of something it is sending.
+    fn answered(&mut self, up: Up) -> Result<(), ()> {
+        let whole = match up {
+            Up::Pasted { number, words } => {
+                self.afar.answered(number, Answer::Words(words));
+                Ok(None)
+            }
+            Up::Holds { number, picture } => {
+                self.afar.answered(number, Answer::Holds(picture));
+                Ok(None)
+            }
+            Up::Pictured {
+                number,
+                picture: None,
+            } => {
+                self.afar.answered(number, Answer::Picture(None));
+                Ok(None)
+            }
+            Up::Pictured {
+                number,
+                picture: Some((shape, carried)),
+            } => self.arriving.begin(
+                carried.carrying,
+                carried.length,
+                Carrying::Picture { number, shape },
+            ),
+            Up::Dropped {
+                name,
+                file: Ok(carried),
+            } => self
+                .arriving
+                .begin(carried.carrying, carried.length, Carrying::Dropped(name)),
+            Up::Dropped { file: Err(why), .. } => return self.tell(Event::Amiss(why)),
+            Up::Piece { carrying, bytes } => Ok(self.arriving.took(carrying, &bytes)),
+            Up::Input(input) => return self.tell(input.into_event(&self.size)),
+        };
+        match whole {
+            Err(Carrying::Picture { number, .. }) => {
+                self.afar.answered(number, Answer::TooLarge);
+                Ok(())
+            }
+            Err(Carrying::Dropped(name)) => self.tell(Event::Amiss(format!(
+                "Too large to bring across, so not kept: {name}"
+            ))),
+            Ok(Some((Carrying::Picture { number, shape }, bytes))) => {
+                self.afar
+                    .answered(number, Answer::Picture(Some((shape, bytes))));
+                Ok(())
+            }
+            // Written on a thread of its own: tens of megabytes to the disk
+            // is long enough for the keys behind it to be felt waiting.
+            Ok(Some((Carrying::Dropped(name), bytes))) => {
+                let events = self.events.clone();
+                let started = std::thread::Builder::new()
+                    .name("obelus keeping what was dropped".to_string())
+                    .spawn(move || {
+                        let heard = match dropped_in(&std::env::temp_dir())
+                            .and_then(|directory| kept(&directory, &name, &bytes))
+                        {
+                            Ok(path) => Event::Dropped(path),
+                            Err(why) => Event::Amiss(why),
+                        };
+                        let _ = events.send(heard);
+                    });
+                if let Err(error) = started {
+                    tracing::warn!(%error, "no thread to keep what was dropped on");
+                }
+                Ok(())
+            }
+            Ok(None) => Ok(()),
+        }
+    }
+
+    /// Tells the loop, and answers `Err` where it has gone.
+    fn tell(&self, event: Event) -> Result<(), ()> {
+        self.events.send(event).map_err(|_| ())
+    }
 }
 
 /// How a terminal at the other end draws a picture, as ratatui names it.
@@ -1355,15 +1383,11 @@ mod tests {
     }
 
     /// A picture asked for arrives in the loop as itself once the window
-    /// has answered, and nothing waits for it meanwhile; one whose window
-    /// went first says so.
+    /// has answered, and nothing waits for it meanwhile.
     ///
-    /// Broken deliberately twice. By answering that none is coming
-    /// (`Desk::picture` answering `Nothing` where it asked): the paste
-    /// went on to paste words, with the picture still to arrive. And by
-    /// forgetting what waits without telling it (`forget_everything`
-    /// calling nothing): the reader was left with "Bringing the picture
-    /// across" for good.
+    /// Broken deliberately by answering that none is coming
+    /// (`Desk::picture` answering `Nothing` where it asked): the paste went
+    /// on to paste words, with the picture still to arrive.
     #[test]
     fn a_picture_asked_for_arrives_in_the_loop() {
         use obelus_app::app::desk::Desk as _;
@@ -1418,23 +1442,100 @@ mod tests {
             Ok(Event::Pictured(shape, bytes)) if shape == "image/png" && bytes == [1, 2, 3]
         ));
 
-        let asked = afar
-            .asked(
-                Down::Picture,
-                Box::new({
-                    let events = afar.events.clone();
-                    move |answer| {
-                        if answer.is_none() {
-                            let _ = events.send(Event::Amiss("went".to_string()));
-                        }
+        assert!(heard.try_recv().is_err(), "said more than the picture");
+    }
+
+    /// A picture asked for of a window that then comes back -- with or
+    /// without its old connection having been found to go -- is said not
+    /// to be coming, rather than waited for for good; and so is a file the
+    /// window was half way through sending.
+    ///
+    /// Broken deliberately three ways. By letting go of nothing when a
+    /// window comes back (`let_go` left out of the `Attached` arm of
+    /// `Heard::heard`): the picture was never said to have gone, and the
+    /// status row said "Bringing the picture across" for good. By letting go
+    /// without saying so (`forget_everything` calling nothing): the same.
+    /// And by the picture's own answer saying nothing of a window that went
+    /// (its `None` arm in `Desk::picture` sending nothing).
+    #[test]
+    fn what_a_window_that_came_back_was_asked_is_said_to_have_gone() {
+        use obelus_app::app::desk::Desk as _;
+
+        let written = Written::default();
+        let out = Arc::new(Out::new());
+        Out::write_to(&out, Box::new(written.clone()));
+        let (events, heard) = std::sync::mpsc::channel();
+        let afar = Arc::new(Afar {
+            out: Arc::clone(&out),
+            asked: AtomicU64::new(0),
+            waiting: Mutex::new(HashMap::new()),
+            events: events.clone(),
+        });
+        let window = {
+            let (afar, written) = (Arc::clone(&afar), written.clone());
+            std::thread::spawn(move || {
+                let deadline = std::time::Instant::now() + Duration::from_secs(20);
+                loop {
+                    assert!(std::time::Instant::now() < deadline, "never asked");
+                    if let Some(number) = written.messages().iter().find_map(|down| match down {
+                        Down::HoldsAPicture(number) => Some(*number),
+                        _ => None,
+                    }) {
+                        afar.answered(number, Answer::Holds(true));
+                        return;
                     }
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+            })
+        };
+        assert!(matches!(afar.picture(), app::desk::Picture::Coming));
+        window.join().expect("the window");
+
+        let mut hearing = Heard {
+            events,
+            size: Arc::new(Measured::default()),
+            out: Arc::clone(&out),
+            afar: Arc::clone(&afar),
+            arriving: Arriving::default(),
+        };
+        hearing
+            .heard(ToChild::Up(Up::Dropped {
+                name: "log.txt".to_string(),
+                file: Ok(obelus_front::link::Carried {
+                    carrying: 1,
+                    length: 10,
                 }),
-            )
-            .expect("asked");
-        afar.forget_everything();
+            }))
+            .expect("heard");
+        hearing
+            .heard(ToChild::Up(Up::Piece {
+                carrying: 1,
+                bytes: vec![1, 2, 3],
+            }))
+            .expect("heard");
+        // Back before anything said the old connection went.
+        hearing
+            .heard(ToChild::Attached {
+                size: [80, 24, 0, 0],
+            })
+            .expect("heard");
+
+        let said: Vec<String> = heard
+            .try_iter()
+            .filter_map(|event| match event {
+                Event::Amiss(why) => Some(why),
+                _ => None,
+            })
+            .collect();
         assert!(
-            matches!(heard.try_recv(), Ok(Event::Amiss(why)) if why == "went"),
-            "what waited for question {asked} was never told the window went"
+            said.iter()
+                .any(|why| why == "The window went before the picture came across"),
+            "the picture was never said to have gone: {said:?}"
+        );
+        assert!(
+            said.iter()
+                .any(|why| why == "Not all of log.txt came across, so it was not kept"),
+            "the file was never said to have gone: {said:?}"
         );
     }
 
