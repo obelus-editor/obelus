@@ -962,8 +962,9 @@ crates/
                       and output are the connection, it goes on while
                       nobody is watching, a file dropped on the window
                       is kept where this machine keeps what passes, a frame
-                      is one message, and a picture goes behind the frames,
-                      not among them (serve);
+                      is one message, the loop never waits for the
+                      network, and a picture goes behind the frames, not
+                      among them (serve);
                       a terminal can change which Obelus it draws (client)
   obelus-check-theme/ whether Obelus can read a theme, for the themes
                     registry, and in no release
@@ -978,8 +979,9 @@ crates/
                       be somewhere else, and a picture crosses as its bytes,
                       and the window decodes it (lib); a resize carries the
                       size (input); the front end is the same front end, what
-                      only this machine can do is done here, and a
-                      connection that goes is knocked on again (client); a
+                      only this machine can do is done here, what is
+                      large goes up behind the keys, and a connection that
+                      goes is knocked on again (client); a
                       connection is a knock first, what is said
                       after it is not hidden, a window is named so that
                       it can be found again, and a connection that went

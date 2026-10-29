@@ -44,6 +44,7 @@ impl App {
             Event::Reachable(at) => self.reachable(&at),
             Event::Unreachable { at, why } => self.unreachable(&at, why),
             Event::Amiss(why) => self.wrong(why),
+            Event::Pictured(mime, bytes) => self.pictured(mime, bytes),
             Event::Bot(event) => self.bot_event(event),
             Event::BotReached(number, event) => self.reached_event(number, event),
             Event::Held(number, lock) => self.held_the_bot(number, lock),

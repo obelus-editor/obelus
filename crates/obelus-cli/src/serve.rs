@@ -17,13 +17,12 @@
 //! answer -- what is on their clipboard -- is answered with nothing.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     io::Write as _,
     process::ExitCode,
     sync::{
         Arc, Condvar, Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
-        mpsc::Sender,
     },
     time::Duration,
 };
@@ -32,7 +31,7 @@ use anyhow::{Context as _, Result};
 use obelus_app::{app, event::Event, startup};
 use obelus_front::{
     Closed, Measured, Showing, Update,
-    link::{Down, Front, ToChild, Up},
+    link::{Arriving, Down, Front, PIECE, ToChild, Up},
     replay::Screen,
 };
 
@@ -43,22 +42,15 @@ use obelus_front::{
 /// not coming.
 const PATIENCE: Duration = Duration::from_secs(1);
 
-/// How long the picture on the reader's clipboard is waited for, which
-/// crosses whole: a screenshot is megabytes, and a second is not long
-/// enough for one on a network that is merely ordinary. Waited for only
-/// when a picture is what is being pasted, the way a paste here waits for
-/// the clipboard to hand one over.
-const PICTURE_PATIENCE: Duration = Duration::from_secs(10);
+/// How long what is still to be written is given to go once Obelus has
+/// ended, so that the window hears it ended -- and not for ever, with
+/// nobody reading.
+const LAST_WORDS: Duration = Duration::from_secs(5);
 
 /// The most updates kept for one message, which a frame that never ends --
 /// nothing a front end says without a wake after it -- would otherwise
 /// grow without end.
 const KEPT_MOST: usize = 1 << 16;
-
-/// How much of a picture goes at once: the longest a frame waits behind a
-/// picture is one of these crossing, a few milliseconds on a network that
-/// is merely ordinary.
-const PIECE: usize = 64 << 10;
 
 /// What `ob --serve-one` writes to, and whether a window is there to read
 /// it.
@@ -69,30 +61,51 @@ const PIECE: usize = 64 << 10;
 /// cell at a time it was a message per cell: a page scrolled was thousands
 /// of writes to the pipe, and the server's thousands of packets after them.
 ///
+/// **The loop never waits for the network.** Everything is written on a
+/// thread of its own ([`Out::write_to`]), and while it is writing, what
+/// Obelus goes on saying is kept -- a cell said again taking the place of
+/// what was said of it before, and a frame ended again taking the place of
+/// the one before it ([`Kept`]). So a connection slower than the screen is
+/// changing is sent the screen as it is when there is room to send it,
+/// rather than every frame there has been one after another; and the keys
+/// are answered at the speed of this machine, with the network behind
+/// them, rather than at the speed of the network.
+///
 /// **A picture goes behind the frames, not among them.** What it is goes at
-/// once, as [`Down::Hung`], and its bytes go a [`PIECE`] at a time on a
-/// thread of their own, letting go of the writer between pieces -- so the
-/// new theme's colours are drawn the moment they are said and its picture
-/// arrives under them, rather than every frame waiting for megabytes to
-/// cross first.
+/// once, as [`Down::Hung`], and its bytes go a [`PIECE`] at a time after
+/// anything else there is to say -- so the new theme's colours are drawn the
+/// moment they are said and its picture arrives under them, rather than
+/// every frame waiting for megabytes to cross first.
 struct Out {
-    writing: Mutex<Said>,
-    /// What wakes the thread a picture is sent on.
-    pieces: Condvar,
+    said: Mutex<Said>,
+    /// What wakes the writer, and whoever is waiting for it to be done.
+    stirred: Condvar,
     /// Whether a window is attached, which is when anything is written.
     attached: AtomicBool,
+    /// Whether what is written to has gone, which nothing comes back from.
+    closed: AtomicBool,
     /// The screen as everything said leaves it, for a window that comes.
     screen: Mutex<Screen>,
 }
 
-/// Where what is said goes, and what is kept for the next message.
+/// What is still to be written.
+#[derive(Default)]
 struct Said {
-    writer: std::io::BufWriter<Box<dyn std::io::Write + Send>>,
-    kept: Vec<Update>,
+    /// What has been said that goes before anything kept, in order.
+    queued: VecDeque<Down>,
+    /// What the screen has been told since the last of it went.
+    kept: Kept,
+    /// Whether what is kept is to go: a frame has ended, or something was
+    /// said with nothing after it.
+    due: bool,
     /// The picture going a piece at a time, where one is.
     sending: Option<Sending>,
     /// The last number a picture went under.
     numbered: u64,
+    /// Whether the writer has something in its hands.
+    writing: bool,
+    /// What was said while what is kept was torn, which goes after it.
+    behind: VecDeque<Down>,
 }
 
 /// A picture on its way, and how much of it has gone.
@@ -102,71 +115,272 @@ struct Sending {
     sent: usize,
 }
 
+/// Updates kept for the next message, with each said again in place of
+/// what it says again.
+///
+/// A cell takes the place of what was said of the same cell before it, and
+/// a frame's end takes the place of the end of the frame before it, along
+/// with that frame's shapes -- a window replaces its shapes at every frame,
+/// so only the last frame's are ever drawn. What is moved is moved earlier,
+/// so neither may be moved across what changes the meaning of what came
+/// before it: a cell not across the screen cleared, and nothing across a
+/// theme going, which is a picture of the screen as it was.
+#[derive(Default)]
+struct Kept {
+    updates: Vec<Option<Update>>,
+    /// Where in `updates` the last word on each cell is, by row and then
+    /// column -- a grid rather than a map, because every cell of every
+    /// frame comes through here, behind or not.
+    cells: Vec<Vec<Option<usize>>>,
+    /// Which places in `cells` say anything, so that forgetting them is as
+    /// much work as there are of them and not as there are cells.
+    placed: Vec<(usize, usize)>,
+    /// Where the shapes said since the last frame ended are.
+    shaping: Vec<usize>,
+    /// Where the last frame's end is, and where its shapes are, while both
+    /// are still here to be taken the place of.
+    framed: Option<(usize, Vec<usize>)>,
+    /// Whether a cell of a frame still being said has taken its place
+    /// ahead of the end of the one before it -- and so what is kept, sent
+    /// now, would end that frame with some of this one's cells and not the
+    /// rest: a frame that never was. Whole again at the next frame's end.
+    torn: bool,
+}
+
+impl Kept {
+    fn keep(&mut self, update: Update) {
+        let at = self.updates.len();
+        match &update {
+            Update::Cell { x, y, .. } => {
+                let (x, y) = (usize::from(*x), usize::from(*y));
+                if self.cells.len() <= y {
+                    self.cells.resize_with(y + 1, Vec::new);
+                }
+                let row = &mut self.cells[y];
+                if row.len() <= x {
+                    row.resize(x + 1, None);
+                }
+                if let Some(was) = row[x] {
+                    self.torn |= self.framed.as_ref().is_some_and(|(end, _)| was < *end);
+                    self.updates[was] = Some(update);
+                    return;
+                }
+                row[x] = Some(at);
+                self.placed.push((x, y));
+            }
+            Update::Cleared => self.forget_the_cells(),
+            Update::Recoloured => {
+                self.forget_the_cells();
+                self.framed = None;
+            }
+            Update::Frame => {
+                if let Some((end, shapes)) = self.framed.take() {
+                    self.updates[end] = None;
+                    for shape in shapes {
+                        self.updates[shape] = None;
+                    }
+                }
+                self.framed = Some((at, std::mem::take(&mut self.shaping)));
+                self.torn = false;
+            }
+            update if update.is_a_shape() => self.shaping.push(at),
+            _ => {}
+        }
+        self.updates.push(Some(update));
+    }
+
+    /// Forgets where each cell was said, so that nothing said after is
+    /// moved before now.
+    fn forget_the_cells(&mut self) {
+        for (x, y) in self.placed.drain(..) {
+            self.cells[y][x] = None;
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.updates.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.updates.is_empty()
+    }
+
+    /// Everything kept, in order, and nothing kept after.
+    fn take(&mut self) -> Vec<Update> {
+        // The grid is kept, emptied, rather than made again for every
+        // frame.
+        self.forget_the_cells();
+        self.shaping.clear();
+        self.framed = None;
+        self.torn = false;
+        std::mem::take(&mut self.updates)
+            .into_iter()
+            .flatten()
+            .collect()
+    }
+}
+
 impl Said {
     /// Keeps something for the screen -- or, for a picture, says what it is
-    /// at once and sets its bytes going, and answers whether it did.
-    fn keep(&mut self, update: Update) -> Result<bool, Closed> {
+    /// and sets its bytes going.
+    fn keep(&mut self, update: Update) {
         match update {
             Update::Picture(Some(hanging)) => {
-                // What came before it first, so that the window is told
-                // things in the order they were said.
-                self.out()?;
                 self.numbered += 1;
                 let length = u64::try_from(hanging.bytes.len()).unwrap_or(u64::MAX);
-                obelus_wire::write(
-                    &mut self.writer,
-                    &Down::Hung {
-                        number: self.numbered,
-                        wallpaper: hanging.wallpaper,
-                        length,
-                    },
-                )
-                .map_err(|_| Closed)?;
+                self.say(Down::Hung {
+                    number: self.numbered,
+                    wallpaper: hanging.wallpaper,
+                    length,
+                });
                 self.sending = Some(Sending {
                     number: self.numbered,
                     bytes: hanging.bytes,
                     sent: 0,
                 });
-                return Ok(true);
+                return;
             }
             // A picture let go of is one whose bytes are no longer worth
             // sending.
             Update::Picture(None) => {
                 self.sending = None;
-                self.kept.push(update);
+                self.kept.keep(update);
             }
-            update => self.kept.push(update),
+            update => self.kept.keep(update),
         }
         if self.kept.len() >= KEPT_MOST {
-            self.out()?;
+            self.due = true;
         }
-        Ok(false)
     }
 
-    /// Writes what is kept, as one message, where anything is.
-    fn out(&mut self) -> Result<(), Closed> {
-        if self.kept.is_empty() {
-            return Ok(());
+    /// Says one thing after what is kept for the screen, so that the window
+    /// is told things in the order they were said -- or, where what is kept
+    /// is torn and cannot go yet, behind it once it does: told a moment
+    /// late is better than told a frame that never was.
+    fn say(&mut self, down: Down) {
+        if self.kept.torn {
+            self.behind.push_back(down);
+            return;
         }
-        let updates = std::mem::take(&mut self.kept);
-        obelus_wire::write(&mut self.writer, &Down::Updates(updates)).map_err(|_| Closed)
+        if let Some(updates) = self.take_what_is_kept() {
+            self.queued.push_back(updates);
+        }
+        self.queued.push_back(down);
+    }
+
+    /// What is kept, as one message, and what was said behind it into the
+    /// queue after it.
+    fn take_what_is_kept(&mut self) -> Option<Down> {
+        self.due = false;
+        self.queued.extend(self.behind.drain(..));
+        (!self.kept.is_empty()).then(|| Down::Updates(self.kept.take()))
+    }
+
+    /// Whether what is kept is to go now: the end of a whole frame, or
+    /// more than is kept for one.
+    fn kept_is_due(&self) -> bool {
+        !self.kept.is_empty() && ((self.due && !self.kept.torn) || self.kept.len() >= KEPT_MOST)
+    }
+
+    /// The next thing to write: what was said in order first, then the
+    /// screen, and a piece of a picture only when there is nothing else.
+    fn next(&mut self) -> Option<Down> {
+        if let Some(down) = self.queued.pop_front() {
+            return Some(down);
+        }
+        if self.kept_is_due() {
+            let updates = self.take_what_is_kept();
+            // What was behind it is in the queue now, after it.
+            return updates.or_else(|| self.queued.pop_front());
+        }
+        let sending = self.sending.as_mut()?;
+        let end = (sending.sent + PIECE).min(sending.bytes.len());
+        let piece = Down::Piece {
+            number: sending.number,
+            bytes: sending.bytes[sending.sent..end].to_vec(),
+        };
+        sending.sent = end;
+        if end >= sending.bytes.len() {
+            self.sending = None;
+        }
+        Some(piece)
+    }
+
+    /// Whether there is anything to write other than a picture's pieces.
+    fn waiting(&self) -> bool {
+        !self.queued.is_empty() || self.kept_is_due()
     }
 }
 
 impl Out {
-    /// What writes to `writer`, with a window already reading.
-    fn new(writer: Box<dyn std::io::Write + Send>) -> Self {
+    /// Nothing said yet, with a window already reading -- and nothing
+    /// written until [`Out::write_to`] says where.
+    fn new() -> Self {
         Self {
-            writing: Mutex::new(Said {
-                writer: std::io::BufWriter::new(writer),
-                kept: Vec::new(),
-                sending: None,
-                numbered: 0,
-            }),
-            pieces: Condvar::new(),
+            said: Mutex::new(Said::default()),
+            stirred: Condvar::new(),
             attached: AtomicBool::new(true),
+            closed: AtomicBool::new(false),
             screen: Mutex::new(Screen::default()),
         }
+    }
+
+    /// Writes to `writer`, on a thread of its own, everything said from now
+    /// on and anything said before.
+    fn write_to(out: &Arc<Self>, writer: Box<dyn std::io::Write + Send>) {
+        let writing = Arc::clone(out);
+        let started = std::thread::Builder::new()
+            .name("obelus writing to the window".to_string())
+            .spawn(move || {
+                let out = writing;
+                let mut writer = std::io::BufWriter::new(writer);
+                loop {
+                    let Ok(mut said) = out.said.lock() else {
+                        return;
+                    };
+                    let down = loop {
+                        if let Some(down) = said.next() {
+                            break down;
+                        }
+                        said.writing = false;
+                        out.stirred.notify_all();
+                        said = match out.stirred.wait(said) {
+                            Ok(said) => said,
+                            Err(_) => return,
+                        };
+                    };
+                    said.writing = true;
+                    drop(said);
+                    // Nobody to send it to: the window that comes back is
+                    // told everything again, from the screen.
+                    if !out.attached.load(Ordering::Acquire) {
+                        continue;
+                    }
+                    if obelus_wire::write(&mut writer, &down).is_err() {
+                        out.closed.store(true, Ordering::Release);
+                        out.stirred.notify_all();
+                        return;
+                    }
+                }
+            });
+        if let Err(error) = started {
+            tracing::warn!(%error, "no thread to write to the window on, so nothing goes");
+            Self::closed_now(out);
+        }
+    }
+
+    /// Says that nothing written will arrive.
+    fn closed_now(out: &Self) {
+        out.closed.store(true, Ordering::Release);
+        out.stirred.notify_all();
+    }
+
+    /// Whether what is said can still go anywhere.
+    fn open(&self) -> Result<(), Closed> {
+        if self.closed.load(Ordering::Acquire) {
+            return Err(Closed);
+        }
+        Ok(())
     }
 
     /// Keeps something for the screen, to go with the rest of its frame.
@@ -176,89 +390,55 @@ impl Out {
 
     /// Keeps several, under the one lock.
     fn keep_all(&self, updates: Vec<Update>) -> Result<(), Closed> {
+        self.open()?;
         if !self.attached.load(Ordering::Acquire) {
             return Ok(());
         }
-        let mut said = self.writing.lock().map_err(|_| Closed)?;
-        let mut hung = false;
+        let mut said = self.said.lock().map_err(|_| Closed)?;
         for update in updates {
-            hung |= said.keep(update)?;
+            said.keep(update);
         }
+        // A picture said, or a frame grown past what is kept: either is
+        // something for the writer.
+        let stir = said.waiting() || said.sending.is_some();
         drop(said);
-        if hung {
-            self.pieces.notify_one();
+        if stir {
+            self.stirred.notify_all();
         }
         Ok(())
     }
 
-    /// Sends the picture being sent, a piece at a time, for as long as
-    /// there is one -- on a thread of its own, which lets go of the writer
-    /// between pieces so that a frame said meanwhile goes between them.
-    fn send_pictures(out: &Arc<Self>) {
-        let out = Arc::clone(out);
-        let started = std::thread::Builder::new()
-            .name("obelus sending a picture".to_string())
-            .spawn(move || {
-                loop {
-                    let Ok(mut said) = out.writing.lock() else {
-                        return;
-                    };
-                    while said.sending.is_none() {
-                        said = match out.pieces.wait(said) {
-                            Ok(said) => said,
-                            Err(_) => return,
-                        };
-                    }
-                    // Nobody to send it to: the window that comes back is
-                    // told the picture again, from the screen.
-                    if !out.attached.load(Ordering::Acquire) {
-                        said.sending = None;
-                        continue;
-                    }
-                    let Some(sending) = said.sending.as_mut() else {
-                        continue;
-                    };
-                    let end = (sending.sent + PIECE).min(sending.bytes.len());
-                    let piece = Down::Piece {
-                        number: sending.number,
-                        bytes: sending.bytes[sending.sent..end].to_vec(),
-                    };
-                    sending.sent = end;
-                    if end >= sending.bytes.len() {
-                        said.sending = None;
-                    }
-                    if obelus_wire::write(&mut said.writer, &piece).is_err() {
-                        said.sending = None;
-                    }
-                    drop(said);
-                    // The lock is nobody's turn in particular: given back
-                    // this way, a frame waiting on it is the next to have it
-                    // rather than this thread again.
-                    std::thread::yield_now();
-                }
-            });
-        if let Err(error) = started {
-            tracing::warn!(%error, "no thread to send a picture on, so none goes");
-        }
-    }
-
-    /// Writes one thing for the window, where there is one -- after what is
+    /// Says one thing to the window, where there is one -- after what is
     /// kept for the screen, so that the two arrive in the order said.
-    fn say(&self, down: &Down) -> Result<(), Closed> {
+    fn say(&self, down: Down) -> Result<(), Closed> {
+        self.open()?;
         if !self.attached.load(Ordering::Acquire) {
             return Ok(());
         }
-        let mut said = self.writing.lock().map_err(|_| Closed)?;
-        said.out()?;
-        obelus_wire::write(&mut said.writer, down).map_err(|_| Closed)
+        let mut said = self.said.lock().map_err(|_| Closed)?;
+        said.say(down);
+        drop(said);
+        self.stirred.notify_all();
+        Ok(())
     }
 
-    /// Sends what is kept, and what was written.
+    /// Sends what is kept.
     fn flush(&self) {
-        if let Ok(mut said) = self.writing.lock() {
-            let _ = said.out();
-            let _ = said.writer.flush();
+        if let Ok(mut said) = self.said.lock() {
+            said.due = true;
         }
+        self.stirred.notify_all();
+    }
+
+    /// Waits up to `patience` for everything said to have been written --
+    /// all but a picture's pieces, which nobody waits for.
+    fn drained(&self, patience: Duration) {
+        let Ok(said) = self.said.lock() else {
+            return;
+        };
+        let _ = self.stirred.wait_timeout_while(said, patience, |said| {
+            (said.writing || said.waiting()) && !self.closed.load(Ordering::Acquire)
+        });
     }
 
     /// A window has come: it is told everything on the screen, and then
@@ -271,11 +451,15 @@ impl Out {
         let Ok(screen) = self.screen.lock() else {
             return;
         };
-        if let Ok(mut said) = self.writing.lock() {
+        if let Ok(mut said) = self.said.lock() {
             // Kept for a window that has gone since: the screen says all
             // of it again, the picture with it.
-            said.kept.clear();
-            said.sending = None;
+            let numbered = said.numbered;
+            *said = Said {
+                numbered,
+                writing: said.writing,
+                ..Said::default()
+            };
         }
         self.attached.store(true, Ordering::Release);
         for update in screen.again() {
@@ -314,13 +498,31 @@ impl Showing for Out {
     }
 }
 
+/// What the reader's machine answered.
+enum Answer {
+    /// What was on the clipboard.
+    Words(Option<String>),
+    /// The picture on the clipboard, once all of it has arrived.
+    Picture(Option<(String, Vec<u8>)>),
+    /// Whether the clipboard holds a picture.
+    Holds(bool),
+    /// The picture on the clipboard is longer than anything waits for.
+    TooLarge,
+}
+
+/// What is done with an answer once it comes -- or with nothing, where the
+/// window that was asked went before it answered.
+type Answering = Box<dyn FnOnce(Option<Answer>) + Send>;
+
 /// The reader's machine, at the other end of the connection.
 struct Afar {
     out: Arc<Out>,
     /// The last number a question was asked under.
     asked: AtomicU64,
-    /// Who is waiting for which answer.
-    waiting: Mutex<HashMap<u64, Sender<Up>>>,
+    /// What is waiting for which answer.
+    waiting: Mutex<HashMap<u64, Answering>>,
+    /// The loop, for a picture that arrives after the paste that asked.
+    events: std::sync::mpsc::Sender<Event>,
 }
 
 impl std::fmt::Debug for Afar {
@@ -330,37 +532,78 @@ impl std::fmt::Debug for Afar {
 }
 
 impl Afar {
-    /// Asks the reader's machine something, and waits `patience` for it.
-    fn ask(&self, question: impl FnOnce(u64) -> Down, patience: Duration) -> Option<Up> {
+    /// Asks the reader's machine something, and has `then` do what is done
+    /// with the answer when it comes -- answering the question's number, or
+    /// nothing where there is nobody to ask.
+    fn asked(&self, question: impl FnOnce(u64) -> Down, then: Answering) -> Option<u64> {
+        // Under the lock a window coming or going takes as well
+        // (`forget_everything`), so that a question is either asked of the
+        // window that is there or let go of with the rest -- never asked of
+        // one that has gone and waited for after everything else was let go.
+        let mut waiting = self.waiting.lock().ok()?;
         if !self.out.attached.load(Ordering::Acquire) {
             return None;
         }
         let number = self.asked.fetch_add(1, Ordering::Relaxed) + 1;
+        self.out.say(question(number)).ok()?;
+        // After it is said is soon enough: whatever answers takes this lock
+        // first.
+        waiting.insert(number, then);
+        Some(number)
+    }
+
+    /// Asks the reader's machine something, and waits `patience` for it.
+    fn ask(&self, question: impl FnOnce(u64) -> Down, patience: Duration) -> Option<Answer> {
         let (answer, answered) = std::sync::mpsc::channel();
-        self.waiting.lock().ok()?.insert(number, answer);
-        let asked = self.out.say(&question(number));
-        self.out.flush();
-        let heard = asked
-            .ok()
-            .and_then(|()| answered.recv_timeout(patience).ok());
+        let number = self.asked(
+            question,
+            Box::new(move |heard| {
+                let _ = answer.send(heard);
+            }),
+        )?;
+        let heard = answered.recv_timeout(patience).ok().flatten();
         if heard.is_none() {
             tracing::info!(number, "the reader's machine did not answer in time");
         }
-        if let Ok(mut waiting) = self.waiting.lock() {
-            waiting.remove(&number);
-        }
+        self.forget(number);
         heard
     }
 
-    /// Hands an answer to whoever is waiting for it.
-    fn answered(&self, number: u64, up: Up) {
+    /// Stops waiting for the answer to a question.
+    fn forget(&self, number: u64) {
+        if let Ok(mut waiting) = self.waiting.lock() {
+            waiting.remove(&number);
+        }
+    }
+
+    /// Stops waiting for every answer, and tells whatever was waiting: the
+    /// window that was asked has gone. `meanwhile` is the window going or
+    /// coming, done with nothing able to be asked in between.
+    fn forget_everything(&self, meanwhile: impl FnOnce()) {
+        let waiting: Vec<Answering> = match self.waiting.lock() {
+            Ok(mut waiting) => {
+                meanwhile();
+                waiting.drain().map(|(_, waiting)| waiting).collect()
+            }
+            Err(_) => {
+                meanwhile();
+                Vec::new()
+            }
+        };
+        for waiting in waiting {
+            waiting(None);
+        }
+    }
+
+    /// Hands an answer to whatever is waiting for it.
+    fn answered(&self, number: u64, answer: Answer) {
         let waiting = self
             .waiting
             .lock()
             .ok()
             .and_then(|mut waiting| waiting.remove(&number));
         if let Some(waiting) = waiting {
-            let _ = waiting.send(up);
+            waiting(Some(answer));
         }
     }
 }
@@ -368,7 +611,7 @@ impl Afar {
 impl app::desk::Desk for Afar {
     fn copy(&self, text: &str) -> std::io::Result<()> {
         self.out
-            .say(&Down::Copy(text.to_string()))
+            .say(Down::Copy(text.to_string()))
             .map_err(|_| std::io::Error::other("the window has gone"))?;
         self.out.flush();
         Ok(())
@@ -376,32 +619,69 @@ impl app::desk::Desk for Afar {
 
     fn paste(&self) -> Option<String> {
         match self.ask(Down::Paste, PATIENCE)? {
-            Up::Pasted { words, .. } => words,
+            Answer::Words(words) => words,
             _ => None,
         }
     }
 
-    fn picture(&self) -> Option<(String, Vec<u8>)> {
-        match self.ask(Down::Picture, PICTURE_PATIENCE)? {
-            Up::Pictured { picture, .. } => picture,
-            _ => None,
+    // Whether there is a picture is a few bytes and worth the moment; the
+    // picture is megabytes, and arrives when it has crossed -- or what
+    // became of it does.
+    fn picture(&self) -> app::desk::Picture {
+        if !self.holds_a_picture() {
+            return app::desk::Picture::Nothing;
+        }
+        let events = self.events.clone();
+        let asked = self.asked(
+            Down::Picture,
+            Box::new(move |answer| {
+                let _ = events.send(match answer {
+                    Some(Answer::Picture(Some((shape, bytes)))) => Event::Pictured(shape, bytes),
+                    Some(Answer::TooLarge) => Event::Amiss(
+                        "The picture on the clipboard is too large to bring across".to_string(),
+                    ),
+                    Some(_) => Event::Amiss("The clipboard no longer holds a picture".to_string()),
+                    None => {
+                        Event::Amiss("The window went before the picture came across".to_string())
+                    }
+                });
+            }),
+        );
+        match asked {
+            Some(_) => app::desk::Picture::Coming,
+            None => app::desk::Picture::Nothing,
         }
     }
 
     fn holds_a_picture(&self) -> bool {
         matches!(
             self.ask(Down::HoldsAPicture, PATIENCE),
-            Some(Up::Holds { picture: true, .. })
+            Some(Answer::Holds(true))
         )
     }
 
     fn open(&self, url: &str) -> std::io::Result<()> {
         self.out
-            .say(&Down::Open(url.to_string()))
+            .say(Down::Open(url.to_string()))
             .map_err(|_| std::io::Error::other("no window to open it in"))?;
         self.out.flush();
         Ok(())
     }
+}
+
+/// What is arriving.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Carrying {
+    /// A file dropped on the window, by its name.
+    Dropped(String),
+    /// The picture on the clipboard, answering the question of this
+    /// number, in this shape.
+    Picture {
+        /// The question.
+        number: u64,
+        /// What shape it is in.
+        shape: String,
+    },
 }
 
 /// Runs one Obelus for the window `ob --server` is carrying the connection
@@ -434,8 +714,8 @@ pub(crate) fn one() -> Result<ExitCode> {
         "drawn on a front end at the other end of a connection"
     );
 
-    let out = Arc::new(Out::new(Box::new(std::io::stdout())));
-    Out::send_pictures(&out);
+    let out = Arc::new(Out::new());
+    Out::write_to(&out, Box::new(std::io::stdout()));
     let showing: Arc<dyn Showing> = out.clone();
     let measured = Arc::new(Measured::default());
     measured.resized(size[0], size[1], u32::from(size[2]), u32::from(size[3]));
@@ -453,79 +733,35 @@ pub(crate) fn one() -> Result<ExitCode> {
             app.ctrl_enter_arrives(keyboard);
         }
     }
+    let (sender, events) = obelus_app::event::channel();
     let afar = Arc::new(Afar {
         out: Arc::clone(&out),
         asked: AtomicU64::new(0),
         waiting: Mutex::new(HashMap::new()),
+        events: sender.clone(),
     });
     app.desked_by(Arc::clone(&afar) as Arc<dyn app::desk::Desk>);
     app.drawn_afar();
 
-    let (sender, events) = obelus_app::event::channel();
-    let hearing = sender.clone();
-    let heard_size = Arc::clone(&measured);
-    let heard_out = Arc::clone(&out);
+    let mut heard = Heard {
+        events: sender.clone(),
+        size: Arc::clone(&measured),
+        out: Arc::clone(&out),
+        afar: Arc::clone(&afar),
+        arriving: Arriving::default(),
+    };
     std::thread::Builder::new()
         .name("obelus connection".to_string())
         .spawn(move || {
             loop {
-                match obelus_wire::read::<_, ToChild>(&mut reading) {
-                    Ok(Some(ToChild::Up(Up::Input(input)))) => {
-                        if hearing.send(input.into_event(&heard_size)).is_err() {
-                            return;
-                        }
-                    }
-                    Ok(Some(ToChild::Up(up))) => {
-                        let number = match &up {
-                            Up::Pasted { number, .. }
-                            | Up::Pictured { number, .. }
-                            | Up::Holds { number, .. } => *number,
-                            Up::Dropped { name, file } => {
-                                let heard = match file {
-                                    Ok(bytes) => match dropped_in(&std::env::temp_dir())
-                                        .and_then(|directory| kept(&directory, name, bytes))
-                                    {
-                                        Ok(path) => Event::Dropped(path),
-                                        Err(why) => Event::Amiss(why),
-                                    },
-                                    Err(why) => Event::Amiss(why.clone()),
-                                };
-                                if hearing.send(heard).is_err() {
-                                    return;
-                                }
-                                continue;
-                            }
-                            Up::Input(_) => continue,
-                        };
-                        afar.answered(number, up);
-                    }
-                    // A window again, perhaps of another size: the size
-                    // first, so that the screen it is told is the one that
-                    // fits it after the resize is heard.
-                    Ok(Some(ToChild::Attached { size })) => {
-                        heard_size.resized(
-                            size[0],
-                            size[1],
-                            u32::from(size[2]),
-                            u32::from(size[3]),
-                        );
-                        heard_out.attach();
-                        if hearing.send(Event::Resize).is_err() {
-                            return;
-                        }
-                    }
-                    Ok(Some(ToChild::Detached)) => {
-                        heard_out.attached.store(false, Ordering::Release);
-                    }
-                    Ok(Some(ToChild::Open { .. })) => {
-                        tracing::warn!("told what to open twice");
-                    }
+                let told = match obelus_wire::read::<_, ToChild>(&mut reading) {
+                    Ok(Some(told)) => told,
                     // `ob --server` has gone, or let this go: nobody can
                     // reach it again, so it stops the way a kill stops one.
-                    Ok(Some(ToChild::Leave) | None) | Err(_) => {
-                        let _ = hearing.send(Event::Stopped);
-                        return;
-                    }
+                    Ok(None) | Err(_) => ToChild::Leave,
+                };
+                if heard.heard(told).is_err() {
+                    return;
                 }
             }
         })
@@ -540,9 +776,151 @@ pub(crate) fn one() -> Result<ExitCode> {
         Some(app::Going::Home) => Down::Home,
         _ => Down::Finished,
     };
-    let _ = out.say(&last);
-    out.flush();
+    let _ = out.say(last);
+    out.drained(LAST_WORDS);
     outcome.map(|()| ExitCode::SUCCESS)
+}
+
+/// What `ob --server` says to this Obelus, heard: the window's keys, its
+/// answers and what it sends a piece at a time, and its coming and going.
+struct Heard {
+    /// The loop.
+    events: std::sync::mpsc::Sender<Event>,
+    size: Arc<Measured>,
+    out: Arc<Out>,
+    afar: Arc<Afar>,
+    arriving: Arriving<Carrying>,
+}
+
+impl Heard {
+    /// Hears one thing, and answers `Err` where the loop has gone or been
+    /// told to stop -- after which nothing more is heard.
+    fn heard(&mut self, told: ToChild) -> Result<(), ()> {
+        match told {
+            ToChild::Up(Up::Input(input)) => self.tell(input.into_event(&self.size)),
+            ToChild::Up(up) => self.answered(up),
+            // A window again, perhaps of another size: the size first, so
+            // that the screen it is told is the one that fits it after the
+            // resize is heard.
+            ToChild::Attached { size } => {
+                self.size
+                    .resized(size[0], size[1], u32::from(size[2]), u32::from(size[3]));
+                // A window that comes back before its old connection was
+                // known to have gone is never told `Detached`: what the old
+                // one was asked and what it was sending are let go of here
+                // too, or a picture asked for waits for good.
+                let out = Arc::clone(&self.out);
+                self.let_go(|| out.attach())?;
+                self.tell(Event::Resize)
+            }
+            ToChild::Detached => {
+                let out = Arc::clone(&self.out);
+                self.let_go(|| out.attached.store(false, Ordering::Release))
+            }
+            ToChild::Open { .. } => {
+                tracing::warn!("told what to open twice");
+                Ok(())
+            }
+            ToChild::Leave => {
+                let _ = self.events.send(Event::Stopped);
+                Err(())
+            }
+        }
+    }
+
+    /// Lets go of everything the window that went was asked and was
+    /// sending, and says so: a picture half here is told by what waited for
+    /// it, and a file half here by this. `meanwhile` is the window coming or
+    /// going, which nothing may be asked in the middle of.
+    fn let_go(&mut self, meanwhile: impl FnOnce()) -> Result<(), ()> {
+        self.afar.forget_everything(meanwhile);
+        for gone in self.arriving.forget() {
+            if let Carrying::Dropped(name) = gone {
+                self.tell(Event::Amiss(format!(
+                    "Not all of {name} came across, so it was not kept"
+                )))?;
+            }
+        }
+        Ok(())
+    }
+
+    /// An answer from the window, or a piece of something it is sending.
+    fn answered(&mut self, up: Up) -> Result<(), ()> {
+        let whole = match up {
+            Up::Pasted { number, words } => {
+                self.afar.answered(number, Answer::Words(words));
+                Ok(None)
+            }
+            Up::Holds { number, picture } => {
+                self.afar.answered(number, Answer::Holds(picture));
+                Ok(None)
+            }
+            Up::Pictured {
+                number,
+                picture: None,
+            } => {
+                self.afar.answered(number, Answer::Picture(None));
+                Ok(None)
+            }
+            Up::Pictured {
+                number,
+                picture: Some((shape, carried)),
+            } => self.arriving.begin(
+                carried.carrying,
+                carried.length,
+                Carrying::Picture { number, shape },
+            ),
+            Up::Dropped {
+                name,
+                file: Ok(carried),
+            } => self
+                .arriving
+                .begin(carried.carrying, carried.length, Carrying::Dropped(name)),
+            Up::Dropped { file: Err(why), .. } => return self.tell(Event::Amiss(why)),
+            Up::Piece { carrying, bytes } => Ok(self.arriving.took(carrying, &bytes)),
+            Up::Input(input) => return self.tell(input.into_event(&self.size)),
+        };
+        match whole {
+            Err(Carrying::Picture { number, .. }) => {
+                self.afar.answered(number, Answer::TooLarge);
+                Ok(())
+            }
+            Err(Carrying::Dropped(name)) => self.tell(Event::Amiss(format!(
+                "Too large to bring across, so not kept: {name}"
+            ))),
+            Ok(Some((Carrying::Picture { number, shape }, bytes))) => {
+                self.afar
+                    .answered(number, Answer::Picture(Some((shape, bytes))));
+                Ok(())
+            }
+            // Written on a thread of its own: tens of megabytes to the disk
+            // is long enough for the keys behind it to be felt waiting.
+            Ok(Some((Carrying::Dropped(name), bytes))) => {
+                let events = self.events.clone();
+                let started = std::thread::Builder::new()
+                    .name("obelus keeping what was dropped".to_string())
+                    .spawn(move || {
+                        let heard = match dropped_in(&std::env::temp_dir())
+                            .and_then(|directory| kept(&directory, &name, &bytes))
+                        {
+                            Ok(path) => Event::Dropped(path),
+                            Err(why) => Event::Amiss(why),
+                        };
+                        let _ = events.send(heard);
+                    });
+                if let Err(error) = started {
+                    tracing::warn!(%error, "no thread to keep what was dropped on");
+                }
+                Ok(())
+            }
+            Ok(None) => Ok(()),
+        }
+    }
+
+    /// Tells the loop, and answers `Err` where it has gone.
+    fn tell(&self, event: Event) -> Result<(), ()> {
+        self.events.send(event).map_err(|_| ())
+    }
 }
 
 /// How a terminal at the other end draws a picture, as ratatui names it.
@@ -695,8 +1073,8 @@ mod tests {
     #[test]
     fn a_picture_goes_as_what_it_is_and_then_its_pieces() {
         let written = Written::default();
-        let out = Arc::new(Out::new(Box::new(written.clone())));
-        Out::send_pictures(&out);
+        let out = Arc::new(Out::new());
+        Out::write_to(&out, Box::new(written.clone()));
         let bytes: Vec<u8> = (0..200_000_u32).map(|at| (at % 251) as u8).collect();
         out.show(Update::Picture(Some(obelus_front::Hanging {
             wallpaper: obelus_theme::Wallpaper {
@@ -766,7 +1144,7 @@ mod tests {
     #[test]
     fn a_picture_let_go_of_sends_none_of_itself() {
         let written = Written::default();
-        let out = Arc::new(Out::new(Box::new(written.clone())));
+        let out = Arc::new(Out::new());
         out.show(Update::Picture(Some(obelus_front::Hanging {
             wallpaper: obelus_theme::Wallpaper {
                 file: std::path::PathBuf::from("dusk.jpg"),
@@ -782,8 +1160,8 @@ mod tests {
         out.wake();
         // Started only now, so that nothing of it can have gone before the
         // letting go.
-        Out::send_pictures(&out);
-        std::thread::sleep(Duration::from_millis(300));
+        Out::write_to(&out, Box::new(written.clone()));
+        out.drained(Duration::from_secs(10));
         assert!(
             !written
                 .messages()
@@ -802,7 +1180,8 @@ mod tests {
     #[test]
     fn cells_handed_over_together_are_kept_and_said() {
         let written = Written::default();
-        let out = Out::new(Box::new(written.clone()));
+        let out = Arc::new(Out::new());
+        Out::write_to(&out, Box::new(written.clone()));
         let mut cell = ratatui::buffer::Cell::default();
         cell.set_symbol("x");
         let cells: Vec<Update> = (0..100)
@@ -815,6 +1194,7 @@ mod tests {
         out.show_all(cells).expect("shown");
         out.show(Update::Frame).expect("shown");
         out.wake();
+        out.drained(Duration::from_secs(10));
         let messages = written.messages();
         assert_eq!(messages.len(), 1, "not one message for the frame");
         let Down::Updates(updates) = &messages[0] else {
@@ -841,7 +1221,8 @@ mod tests {
     #[test]
     fn a_frame_goes_as_one_message() {
         let written = Written::default();
-        let out = Out::new(Box::new(written.clone()));
+        let out = Arc::new(Out::new());
+        Out::write_to(&out, Box::new(written.clone()));
         let mut cell = ratatui::buffer::Cell::default();
         cell.set_symbol("x");
         for x in 0..1000 {
@@ -853,12 +1234,14 @@ mod tests {
             .expect("shown");
         }
         out.show(Update::Frame).expect("shown");
+        out.drained(Duration::from_secs(10));
         assert!(
             written.messages().is_empty(),
             "said before the frame was done"
         );
         out.wake();
-        out.say(&Down::Open("u".to_string())).expect("said");
+        out.say(Down::Open("u".to_string())).expect("said");
+        out.drained(Duration::from_secs(10));
 
         let messages = written.messages();
         assert_eq!(messages.len(), 2, "not one message for the frame");
@@ -868,6 +1251,425 @@ mod tests {
         assert_eq!(updates.len(), 1001);
         assert_eq!(updates.last(), Some(&Update::Frame));
         assert_eq!(messages[1], Down::Open("u".to_string()));
+    }
+
+    /// Where a test's `Out` writes, held up until the test lets it go --
+    /// a connection slower than the screen.
+    struct Stalled {
+        written: Written,
+        go: Arc<(Mutex<bool>, Condvar)>,
+    }
+
+    impl std::io::Write for Stalled {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            let (gone, going) = &*self.go;
+            let mut gone = gone.lock().expect("the gate");
+            while !*gone {
+                gone = going.wait(gone).expect("the gate");
+            }
+            drop(gone);
+            self.written.write(bytes)
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn cell(symbol: &str) -> Box<ratatui::buffer::Cell> {
+        let mut cell = ratatui::buffer::Cell::default();
+        cell.set_symbol(symbol);
+        Box::new(cell)
+    }
+
+    /// Frames said while the window is still being sent the last one wait
+    /// as one: each cell as it was last said, the last frame's shapes and
+    /// none before them -- and saying them never waits for the window.
+    ///
+    /// Broken deliberately twice. By keeping every update as it came
+    /// (`Kept::keep` pushing and nothing else): a hundred frames went as a
+    /// hundred cells and a hundred ends, after the window had caught up.
+    /// And by writing on the loop's thread (`Out::flush` writing what is
+    /// kept, as it did): the first frame said waited for the window, and
+    /// the test with it.
+    #[test]
+    fn frames_said_while_the_window_is_behind_go_as_one() {
+        let written = Written::default();
+        let go = Arc::new((Mutex::new(false), Condvar::new()));
+        let out = Arc::new(Out::new());
+        Out::write_to(
+            &out,
+            Box::new(Stalled {
+                written: written.clone(),
+                go: Arc::clone(&go),
+            }),
+        );
+        let saying = {
+            let out = Arc::clone(&out);
+            std::thread::spawn(move || {
+                for frame in 0..100_u16 {
+                    out.show(Update::Cell {
+                        x: 0,
+                        y: 0,
+                        cell: cell(&frame.to_string()),
+                    })
+                    .expect("shown");
+                    out.show(Update::Ruled {
+                        area: ratatui::layout::Rect::new(0, frame, 1, 1),
+                    })
+                    .expect("shown");
+                    out.show(Update::Frame).expect("shown");
+                    out.wake();
+                }
+            })
+        };
+        let deadline = std::time::Instant::now() + Duration::from_secs(20);
+        while !saying.is_finished() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "saying a frame waited for the window"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        saying.join().expect("said");
+        {
+            let (gone, going) = &*go;
+            *gone.lock().expect("the gate") = true;
+            going.notify_all();
+        }
+        out.drained(Duration::from_secs(10));
+
+        let updates: Vec<Update> = written
+            .messages()
+            .into_iter()
+            .flat_map(|down| match down {
+                Down::Updates(updates) => updates,
+                other => panic!("not the screen: {other:?}"),
+            })
+            .collect();
+        // The first frame, which the writer had in its hands when the
+        // window stalled, and the last, which is everything after it.
+        assert!(
+            updates.len() <= 6,
+            "{} updates for two frames",
+            updates.len()
+        );
+        let cells: Vec<&str> = updates
+            .iter()
+            .filter_map(|update| match update {
+                Update::Cell { cell, .. } => Some(cell.symbol()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            cells.last(),
+            Some(&"99"),
+            "not the cell as it was last said"
+        );
+        let rules: Vec<u16> = updates
+            .iter()
+            .filter_map(|update| match update {
+                Update::Ruled { area } => Some(area.y),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(rules.last(), Some(&99), "not the last frame's shapes");
+        assert!(rules.len() <= 2, "shapes of frames gone by: {rules:?}");
+        assert_eq!(updates.last(), Some(&Update::Frame));
+    }
+
+    /// What is kept does not go while a frame still being said has some
+    /// of its cells ahead of the last frame's end, and goes whole once
+    /// that frame ends; what is said meanwhile goes after it.
+    ///
+    /// Broken deliberately by never marking it torn (the `torn |=` left
+    /// out of `Kept::keep`): the frame went with the second frame's `b`
+    /// ahead of the first frame's end and none of the rest of the second
+    /// frame -- a frame that never was.
+    #[test]
+    fn a_frame_half_said_does_not_go() {
+        let mut said = Said::default();
+        said.keep(Update::Cell {
+            x: 0,
+            y: 0,
+            cell: cell("a"),
+        });
+        said.keep(Update::Frame);
+        said.due = true;
+        // The next frame, half said when the writer comes for it.
+        said.keep(Update::Cell {
+            x: 0,
+            y: 0,
+            cell: cell("b"),
+        });
+        said.say(Down::Open("u".to_string()));
+        assert!(said.next().is_none(), "half a frame went");
+        said.keep(Update::Cell {
+            x: 1,
+            y: 0,
+            cell: cell("c"),
+        });
+        said.keep(Update::Frame);
+        said.due = true;
+        let Some(Down::Updates(updates)) = said.next() else {
+            panic!("the frame did not go once it was whole");
+        };
+        let cells: Vec<&str> = updates
+            .iter()
+            .filter_map(|update| match update {
+                Update::Cell { cell, .. } => Some(cell.symbol()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(cells, ["b", "c"]);
+        assert_eq!(updates.last(), Some(&Update::Frame));
+        assert_eq!(
+            updates
+                .iter()
+                .filter(|update| **update == Update::Frame)
+                .count(),
+            1
+        );
+        assert_eq!(said.next(), Some(Down::Open("u".to_string())));
+    }
+
+    /// A cell is not moved across the screen being cleared, nor anything
+    /// across a theme going.
+    ///
+    /// Broken deliberately by moving them anyway (the `Cleared` and
+    /// `Recoloured` arms left out of `Kept::keep`): the `b` said after the
+    /// clear went before it, and the window cleared it away.
+    #[test]
+    fn nothing_is_moved_across_a_clear() {
+        let mut kept = Kept::default();
+        for update in [
+            Update::Cell {
+                x: 0,
+                y: 0,
+                cell: cell("a"),
+            },
+            Update::Cleared,
+            Update::Cell {
+                x: 0,
+                y: 0,
+                cell: cell("b"),
+            },
+            Update::Recoloured,
+            Update::Cell {
+                x: 0,
+                y: 0,
+                cell: cell("c"),
+            },
+        ] {
+            kept.keep(update);
+        }
+        let said: Vec<String> = kept
+            .take()
+            .iter()
+            .map(|update| match update {
+                Update::Cell { cell, .. } => cell.symbol().to_string(),
+                Update::Cleared => "cleared".to_string(),
+                Update::Recoloured => "recoloured".to_string(),
+                other => format!("{other:?}"),
+            })
+            .collect();
+        assert_eq!(said, ["a", "cleared", "b", "recoloured", "c"]);
+    }
+
+    /// A picture asked for arrives in the loop as itself once the window
+    /// has answered, and nothing waits for it meanwhile.
+    ///
+    /// Broken deliberately by answering that none is coming
+    /// (`Desk::picture` answering `Nothing` where it asked): the paste went
+    /// on to paste words, with the picture still to arrive.
+    #[test]
+    fn a_picture_asked_for_arrives_in_the_loop() {
+        use obelus_app::app::desk::Desk as _;
+
+        let written = Written::default();
+        let out = Arc::new(Out::new());
+        Out::write_to(&out, Box::new(written.clone()));
+        let (events, heard) = std::sync::mpsc::channel();
+        let afar = Arc::new(Afar {
+            out: Arc::clone(&out),
+            asked: AtomicU64::new(0),
+            waiting: Mutex::new(HashMap::new()),
+            events,
+        });
+        // The window, answering whether there is a picture and nothing
+        // else: what was asked for after that is answered below.
+        let window = {
+            let (afar, written) = (Arc::clone(&afar), written.clone());
+            std::thread::spawn(move || {
+                let deadline = std::time::Instant::now() + Duration::from_secs(20);
+                loop {
+                    assert!(std::time::Instant::now() < deadline, "never asked");
+                    if let Some(number) = written.messages().iter().find_map(|down| match down {
+                        Down::HoldsAPicture(number) => Some(*number),
+                        _ => None,
+                    }) {
+                        afar.answered(number, Answer::Holds(true));
+                        return;
+                    }
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+            })
+        };
+        assert!(matches!(afar.picture(), app::desk::Picture::Coming));
+        window.join().expect("the window");
+        out.drained(Duration::from_secs(10));
+        let asked = written
+            .messages()
+            .iter()
+            .find_map(|down| match down {
+                Down::Picture(number) => Some(*number),
+                _ => None,
+            })
+            .expect("the picture was not asked for");
+        assert!(heard.try_recv().is_err(), "arrived before it was sent");
+        afar.answered(
+            asked,
+            Answer::Picture(Some(("image/png".to_string(), vec![1, 2, 3]))),
+        );
+        assert!(matches!(
+            heard.try_recv(),
+            Ok(Event::Pictured(shape, bytes)) if shape == "image/png" && bytes == [1, 2, 3]
+        ));
+
+        assert!(heard.try_recv().is_err(), "said more than the picture");
+    }
+
+    /// A picture asked for of a window that then comes back -- with or
+    /// without its old connection having been found to go -- is said not
+    /// to be coming, rather than waited for for good; and so is a file the
+    /// window was half way through sending.
+    ///
+    /// Broken deliberately three ways. By letting go of nothing when a
+    /// window comes back (`let_go` left out of the `Attached` arm of
+    /// `Heard::heard`): the picture was never said to have gone, and the
+    /// status row said "Bringing the picture across" for good. By letting go
+    /// without saying so (`forget_everything` calling nothing): the same.
+    /// And by the picture's own answer saying nothing of a window that went
+    /// (its `None` arm in `Desk::picture` sending `Event::Resize` instead).
+    #[test]
+    fn what_a_window_that_came_back_was_asked_is_said_to_have_gone() {
+        use obelus_app::app::desk::Desk as _;
+
+        let written = Written::default();
+        let out = Arc::new(Out::new());
+        Out::write_to(&out, Box::new(written.clone()));
+        let (events, heard) = std::sync::mpsc::channel();
+        let afar = Arc::new(Afar {
+            out: Arc::clone(&out),
+            asked: AtomicU64::new(0),
+            waiting: Mutex::new(HashMap::new()),
+            events: events.clone(),
+        });
+        let window = {
+            let (afar, written) = (Arc::clone(&afar), written.clone());
+            std::thread::spawn(move || {
+                let deadline = std::time::Instant::now() + Duration::from_secs(20);
+                loop {
+                    assert!(std::time::Instant::now() < deadline, "never asked");
+                    if let Some(number) = written.messages().iter().find_map(|down| match down {
+                        Down::HoldsAPicture(number) => Some(*number),
+                        _ => None,
+                    }) {
+                        afar.answered(number, Answer::Holds(true));
+                        return;
+                    }
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+            })
+        };
+        assert!(matches!(afar.picture(), app::desk::Picture::Coming));
+        window.join().expect("the window");
+
+        let mut hearing = Heard {
+            events,
+            size: Arc::new(Measured::default()),
+            out: Arc::clone(&out),
+            afar: Arc::clone(&afar),
+            arriving: Arriving::default(),
+        };
+        hearing
+            .heard(ToChild::Up(Up::Dropped {
+                name: "log.txt".to_string(),
+                file: Ok(obelus_front::link::Carried {
+                    carrying: 1,
+                    length: 10,
+                }),
+            }))
+            .expect("heard");
+        hearing
+            .heard(ToChild::Up(Up::Piece {
+                carrying: 1,
+                bytes: vec![1, 2, 3],
+            }))
+            .expect("heard");
+        // Back before anything said the old connection went.
+        hearing
+            .heard(ToChild::Attached {
+                size: [80, 24, 0, 0],
+            })
+            .expect("heard");
+
+        let said: Vec<String> = heard
+            .try_iter()
+            .filter_map(|event| match event {
+                Event::Amiss(why) => Some(why),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            said.iter()
+                .any(|why| why == "The window went before the picture came across"),
+            "the picture was never said to have gone: {said:?}"
+        );
+        assert!(
+            said.iter()
+                .any(|why| why == "Not all of log.txt came across, so it was not kept"),
+            "the file was never said to have gone: {said:?}"
+        );
+    }
+
+    /// A question asked while a window goes is asked of no window: it is
+    /// not let in between the window going and what waits being let go of,
+    /// where nothing would ever answer it.
+    ///
+    /// Broken deliberately by asking whether a window is there before
+    /// taking the lock a window going takes (`attached` loaded ahead of
+    /// `waiting.lock()` in `Afar::asked`, as it was): the question saw the
+    /// window there, waited out its going, and was waited for after
+    /// everything else had been let go of.
+    #[test]
+    fn a_question_asked_as_the_window_goes_is_asked_of_none() {
+        let out = Arc::new(Out::new());
+        Out::write_to(&out, Box::new(Written::default()));
+        let (events, _heard) = std::sync::mpsc::channel();
+        let afar = Arc::new(Afar {
+            out: Arc::clone(&out),
+            asked: AtomicU64::new(0),
+            waiting: Mutex::new(HashMap::new()),
+            events,
+        });
+        let mut asking = None;
+        afar.forget_everything(|| {
+            let afar = Arc::clone(&afar);
+            asking = Some(std::thread::spawn(move || {
+                afar.asked(Down::Picture, Box::new(|_| {}))
+            }));
+            // Long enough for the question to get as far as it can while
+            // the window is going.
+            std::thread::sleep(Duration::from_millis(200));
+            out.attached.store(false, Ordering::Release);
+        });
+        let asked = asking.expect("asked").join().expect("the question");
+        assert_eq!(asked, None, "asked of a window that had gone");
+        assert!(
+            afar.waiting.lock().expect("waiting").is_empty(),
+            "something waits that nothing will answer"
+        );
     }
 
     /// A dropped file is kept under its own name, and a second of the same

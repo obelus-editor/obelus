@@ -29,9 +29,8 @@ pub trait Desk: std::fmt::Debug + Send + Sync {
     /// The words on the clipboard, where there are any.
     fn paste(&self) -> Option<String>;
 
-    /// The picture on the clipboard, and what shape it is in, where there
-    /// is one.
-    fn picture(&self) -> Option<(String, Vec<u8>)>;
+    /// The picture on the clipboard: here, none, or on its way.
+    fn picture(&self) -> Picture;
 
     /// Whether what is on the clipboard is a picture.
     fn holds_a_picture(&self) -> bool;
@@ -42,6 +41,23 @@ pub trait Desk: std::fmt::Debug + Send + Sync {
     ///
     /// Where nothing would open it.
     fn open(&self, url: &str) -> std::io::Result<()>;
+}
+
+/// The picture on the clipboard, as a paste is answered about it.
+///
+/// **A picture may be on its way rather than here.** On a machine at the
+/// other end of a connection a screenshot is megabytes, and the loop
+/// waiting for them to cross was a screen that stopped for as long as they
+/// took -- so that answer is that one is coming, and the loop goes on.
+#[derive(Debug)]
+pub enum Picture {
+    /// There is none.
+    Nothing,
+    /// This one, in this shape.
+    Here(String, Vec<u8>),
+    /// One is on its way: it arrives as `Event::Pictured`, or what became
+    /// of it as `Event::Amiss`.
+    Coming,
 }
 
 /// The machine Obelus runs on, which is the reader's whenever Obelus is
@@ -58,8 +74,10 @@ impl Desk for Here {
         obelus_clipboard::paste()
     }
 
-    fn picture(&self) -> Option<(String, Vec<u8>)> {
-        obelus_clipboard::picture()
+    fn picture(&self) -> Picture {
+        obelus_clipboard::picture().map_or(Picture::Nothing, |(shape, bytes)| {
+            Picture::Here(shape, bytes)
+        })
     }
 
     fn holds_a_picture(&self) -> bool {

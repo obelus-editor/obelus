@@ -13,6 +13,12 @@
 //! and browser are this machine's, so what Obelus there asks of them is
 //! answered here (`crate::link::Down`).
 //!
+//! **What is large goes up behind the keys.** A picture on the clipboard
+//! and a file dropped on the window are read and sent a piece at a time on
+//! a thread of their own ([`carry`]), letting go of the connection between
+//! pieces -- so a key pressed meanwhile goes between them, and the screen
+//! goes on being heard while they cross.
+//!
 //! **A connection that goes is knocked on again.** With the window's name,
 //! which takes up the Obelus that was there -- still running, with
 //! whatever it was doing -- and is told the whole screen again. Nothing
@@ -25,7 +31,7 @@ use std::{
     sync::{
         Mutex,
         atomic::{AtomicBool, Ordering},
-        mpsc::Receiver,
+        mpsc::{Receiver, Sender},
     },
     time::Duration,
 };
@@ -35,7 +41,7 @@ use obelus_app::event::Event;
 
 use crate::{
     Input, Measured, Showing, Update,
-    link::{Answered, Challenge, Down, Front, Knock, Up},
+    link::{Answered, Arriving, Carried, Challenge, Down, Front, Knock, PIECE, Up},
 };
 
 /// The longest wait between two knocks on a server that has gone quiet.
@@ -305,37 +311,10 @@ fn knock(
     Ok((stream, answered))
 }
 
-/// A picture arriving in pieces: which, what the theme said of it, how
-/// long it is, and what has come.
-struct Arriving {
-    number: u64,
-    wallpaper: obelus_theme::Wallpaper,
-    length: u64,
-    bytes: Vec<u8>,
-}
-
-impl Arriving {
-    /// Takes in a piece of the picture of `number`, and hands the picture
-    /// back once it is whole. A piece of any other is about a picture that
-    /// has been let go of, and goes nowhere.
-    fn took(&mut self, number: u64, piece: &[u8]) -> Option<crate::Hanging> {
-        if number != self.number {
-            return None;
-        }
-        // Room made as the pieces come, rather than for what the other end
-        // said the length would be.
-        self.bytes.extend_from_slice(piece);
-        let had = u64::try_from(self.bytes.len()).unwrap_or(u64::MAX);
-        (had >= self.length).then(|| crate::Hanging {
-            wallpaper: self.wallpaper.clone(),
-            bytes: std::mem::take(&mut self.bytes),
-        })
-    }
-}
-
 /// Hangs a picture that has arrived whole, and answers whether there is
 /// still a front end to hang it on.
-fn hung(here: &dyn Showing, whole: crate::Hanging) -> bool {
+fn hung(here: &dyn Showing, (wallpaper, bytes): (obelus_theme::Wallpaper, Vec<u8>)) -> bool {
+    let whole = crate::Hanging { wallpaper, bytes };
     if here.show(Update::Picture(Some(whole))).is_err() {
         return false;
     }
@@ -387,14 +366,32 @@ pub fn run(
     let writing: Mutex<Option<TcpStream>> = Mutex::default();
     let leaving = AtomicBool::new(false);
     let over = AtomicBool::new(false);
+    let (writing, leaving, over) = (&writing, &leaving, &over);
     std::thread::scope(|scope| {
+        // Ends once both ends of `to_carry` have gone, which is the two
+        // below ending.
+        let (to_carry, carrying) = std::sync::mpsc::channel();
+        std::thread::Builder::new()
+            .name("obelus carrying to the server".to_string())
+            .spawn_scoped(scope, move || carry(&carrying, writing))
+            .map_err(anyhow::Error::from)?;
+        let asked_to_carry = to_carry.clone();
         // The connection on a thread of its own, and what the front end
         // says read here: the channel is this thread's to read and no
         // other's.
         let connecting = std::thread::Builder::new()
             .name("obelus server to front end".to_string())
-            .spawn_scoped(scope, || {
-                let left = connection(afar, front, here, measured, &writing, &leaving);
+            .spawn_scoped(scope, move || {
+                let left = connection(
+                    afar,
+                    front,
+                    here,
+                    measured,
+                    writing,
+                    leaving,
+                    &asked_to_carry,
+                );
+                drop(asked_to_carry);
                 // And what is reading the front end, which is waiting on
                 // it: told to stop, and woken to hear it.
                 over.store(true, Ordering::Release);
@@ -407,13 +404,10 @@ pub fn run(
                 break;
             }
             heard(&event);
-            // A file dropped goes as what it holds, not where it is.
-            if let Event::Dropped(path) = &event {
-                if let Ok(mut writing) = writing.lock()
-                    && let Some(stream) = writing.as_mut()
-                {
-                    let _ = obelus_wire::write(stream, &dropped(path));
-                }
+            // A file dropped goes as what it holds, not where it is -- read
+            // and sent behind the keys, not here ahead of them.
+            if let Event::Dropped(path) = event {
+                let _ = to_carry.send(Carry::Dropped(path));
                 continue;
             }
             let closed = matches!(event, Event::Closed);
@@ -433,6 +427,7 @@ pub fn run(
                 leaving.store(true, Ordering::Release);
             }
         }
+        drop(to_carry);
         connecting
             .join()
             .unwrap_or_else(|_| Err(anyhow::anyhow!("the connection's thread stopped")))
@@ -505,9 +500,10 @@ pub fn from_here(app: &obelus_app::app::App, build: &'static str) -> Result<Opti
 /// picture or a log an agent is shown.
 const DROPPED_MOST: u64 = 32 << 20;
 
-/// A file dropped on the window, as it crosses: what it holds, or why it
-/// does not go -- a folder, a file too large, one that will not read.
-fn dropped(path: &std::path::Path) -> Up {
+/// A file dropped on the window, as it crosses: its name, and what it holds
+/// or why it does not go -- a folder, a file too large, one that will not
+/// read.
+fn dropped(path: &std::path::Path) -> (String, Result<Vec<u8>, String>) {
     let name = path.file_name().map_or_else(
         || "dropped".to_string(),
         |name| name.to_string_lossy().into_owned(),
@@ -521,7 +517,96 @@ fn dropped(path: &std::path::Path) -> Up {
         Ok(_) => std::fs::read(path).map_err(|error| format!("Would not read {name}: {error}")),
         Err(error) => Err(format!("Would not read {name}: {error}")),
     };
-    Up::Dropped { name, file }
+    (name, file)
+}
+
+/// What the carrying thread is asked to send.
+#[derive(Debug)]
+enum Carry {
+    /// A file dropped on the window.
+    Dropped(std::path::PathBuf),
+    /// The picture on the clipboard, to the question of that number.
+    Picture(u64),
+}
+
+/// Reads and sends what is asked for, one after another, each a [`PIECE`]
+/// at a time -- letting go of the connection between pieces, so that
+/// whatever else is said goes between them.
+///
+/// What was on its way when the connection went is not sent again: the
+/// Obelus at the other end lets go of what it had of it when a window comes
+/// back (`ToChild::Attached`), and the question a picture answered has
+/// stopped waiting.
+fn carry(asked: &Receiver<Carry>, writing: &Mutex<Option<TcpStream>>) {
+    let mut carrying = 0_u64;
+    while let Ok(asked) = asked.recv() {
+        carrying += 1;
+        let carried = |bytes: &[u8]| Carried {
+            carrying,
+            length: u64::try_from(bytes.len()).unwrap_or(u64::MAX),
+        };
+        let (said, bytes) = match asked {
+            Carry::Dropped(path) => match dropped(&path) {
+                (name, Ok(bytes)) => (
+                    Up::Dropped {
+                        name,
+                        file: Ok(carried(&bytes)),
+                    },
+                    bytes,
+                ),
+                (name, Err(why)) => (
+                    Up::Dropped {
+                        name,
+                        file: Err(why),
+                    },
+                    Vec::new(),
+                ),
+            },
+            Carry::Picture(number) => match obelus_clipboard::picture() {
+                Some((shape, bytes)) => (
+                    Up::Pictured {
+                        number,
+                        picture: Some((shape, carried(&bytes))),
+                    },
+                    bytes,
+                ),
+                None => (
+                    Up::Pictured {
+                        number,
+                        picture: None,
+                    },
+                    Vec::new(),
+                ),
+            },
+        };
+        if !said_up(writing, &said) {
+            continue;
+        }
+        for piece in bytes.chunks(PIECE) {
+            let piece = Up::Piece {
+                carrying,
+                bytes: piece.to_vec(),
+            };
+            if !said_up(writing, &piece) {
+                break;
+            }
+            // The lock is nobody's turn in particular: given back this way,
+            // a key waiting on it is the next to have it rather than this
+            // thread again.
+            std::thread::yield_now();
+        }
+    }
+}
+
+/// Says one thing up the connection there is now, and answers whether it
+/// went.
+fn said_up(writing: &Mutex<Option<TcpStream>>, up: &Up) -> bool {
+    let Ok(mut writing) = writing.lock() else {
+        return false;
+    };
+    writing
+        .as_mut()
+        .is_some_and(|stream| obelus_wire::write(stream, up).is_ok())
 }
 
 /// Knocks, hears, and knocks again when the connection goes, until there
@@ -533,6 +618,7 @@ fn connection(
     measured: &Measured,
     writing: &Mutex<Option<TcpStream>>,
     leaving: &AtomicBool,
+    to_carry: &Sender<Carry>,
 ) -> Result<Left> {
     let mut window: Option<String> = afar.window.clone();
     // Since when the connection has been gone, for a window that was in.
@@ -594,7 +680,7 @@ fn connection(
         if let (Ok(mut writing), Ok(clone)) = (writing.lock(), stream.try_clone()) {
             *writing = Some(clone);
         }
-        let heard = hear(&mut stream, here, writing);
+        let heard = hear(&mut stream, here, writing, to_carry);
         if let Ok(mut writing) = writing.lock() {
             *writing = None;
         }
@@ -613,6 +699,7 @@ fn hear(
     stream: &mut TcpStream,
     here: &dyn Showing,
     writing: &Mutex<Option<TcpStream>>,
+    to_carry: &Sender<Carry>,
 ) -> Option<Left> {
     let answer = |up: &Up| {
         if let Ok(mut writing) = writing.lock()
@@ -626,7 +713,7 @@ fn hear(
     // is two more than there need be.
     let mut reading = std::io::BufReader::new(&*stream);
     // The picture whose pieces are arriving, where one is.
-    let mut arriving: Option<Arriving> = None;
+    let mut arriving = Arriving::<obelus_theme::Wallpaper>::default();
     loop {
         match obelus_wire::read::<_, Down>(&mut reading) {
             Ok(Some(Down::Updates(updates))) => {
@@ -635,16 +722,20 @@ fn hear(
                 // picture's reader make it look on this machine. Once for
                 // the lot, after the lot.
                 let mut looks = false;
-                for update in updates {
+                for update in &updates {
                     looks |= matches!(update, Update::Frame | Update::Picture(_));
                     // A picture let go of is one whose pieces still to come
                     // are about a page that has gone.
                     if matches!(update, Update::Picture(None)) {
-                        arriving = None;
+                        arriving.forget();
                     }
-                    if here.show(update).is_err() {
-                        return Some(Left::Finished);
-                    }
+                }
+                // Handed over together, the way `Cells` hands over a frame
+                // on this machine: a page scrolled is thousands of cells,
+                // and a window taking them one at a time sends on its
+                // channel once for each.
+                if here.show_all(updates).is_err() {
+                    return Some(Left::Finished);
                 }
                 if looks {
                     here.wake();
@@ -655,25 +746,23 @@ fn hear(
                 wallpaper,
                 length,
             })) => {
-                arriving = Some(Arriving {
-                    number,
-                    wallpaper,
-                    length,
-                    bytes: Vec::new(),
-                });
-                if let Some(whole) = arriving.as_mut().and_then(|now| now.took(number, &[])) {
-                    arriving = None;
-                    if !hung(here, whole) {
-                        return Some(Left::Finished);
+                // The one before it is under a page that has gone.
+                arriving.forget();
+                match arriving.begin(number, length, wallpaper) {
+                    Ok(Some(whole)) => {
+                        if !hung(here, whole) {
+                            return Some(Left::Finished);
+                        }
                     }
+                    Ok(None) => {}
+                    Err(_) => tracing::warn!(length, "a picture too large to wait for"),
                 }
             }
             Ok(Some(Down::Piece { number, bytes })) => {
-                if let Some(whole) = arriving.as_mut().and_then(|now| now.took(number, &bytes)) {
-                    arriving = None;
-                    if !hung(here, whole) {
-                        return Some(Left::Finished);
-                    }
+                if let Some(whole) = arriving.took(number, &bytes)
+                    && !hung(here, whole)
+                {
+                    return Some(Left::Finished);
                 }
             }
             Ok(Some(Down::Copy(words))) => {
@@ -685,10 +774,11 @@ fn hear(
                 number,
                 words: obelus_clipboard::paste(),
             }),
-            Ok(Some(Down::Picture(number))) => answer(&Up::Pictured {
-                number,
-                picture: obelus_clipboard::picture(),
-            }),
+            // Megabytes, so behind the keys and not here: this thread would
+            // stop hearing the screen for as long as they took to cross.
+            Ok(Some(Down::Picture(number))) => {
+                let _ = to_carry.send(Carry::Picture(number));
+            }
             Ok(Some(Down::HoldsAPicture(number))) => answer(&Up::Holds {
                 number,
                 picture: obelus_clipboard::holds_a_picture(),
@@ -847,20 +937,132 @@ mod tests {
         std::fs::write(&file, b"pixels").expect("the file");
         assert_eq!(
             dropped(&file),
-            Up::Dropped {
-                name: "shot.png".to_string(),
-                file: Ok(b"pixels".to_vec()),
-            }
+            ("shot.png".to_string(), Ok(b"pixels".to_vec()))
         );
         assert!(matches!(
             dropped(&directory),
-            Up::Dropped { file: Err(why), .. } if why.starts_with("A folder")
+            (_, Err(why)) if why.starts_with("A folder")
         ));
-        assert!(matches!(
-            dropped(&directory.join("not-there")),
-            Up::Dropped { file: Err(_), .. }
-        ));
+        assert!(matches!(dropped(&directory.join("not-there")), (_, Err(_))));
         let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// A file dropped goes up as what it is and then its bytes, a piece at
+    /// a time, so that a key pressed meanwhile can go between the pieces.
+    ///
+    /// Broken deliberately by sending it whole (`bytes.chunks(PIECE)` in
+    /// `carry` made `bytes.chunks(bytes.len().max(1))`): the file went as
+    /// one piece, which every key behind it waited for.
+    #[test]
+    fn a_dropped_file_goes_up_a_piece_at_a_time() {
+        let directory =
+            std::env::temp_dir().join(format!("obelus-carrying-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).expect("a directory");
+        let file = directory.join("log.txt");
+        let bytes: Vec<u8> = (0..200_000_u32).map(|at| (at % 251) as u8).collect();
+        std::fs::write(&file, &bytes).expect("the file");
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("loopback");
+        let stream =
+            TcpStream::connect(listener.local_addr().expect("an address")).expect("connected");
+        let (mut server, _) = listener.accept().expect("the window");
+        // Read as it is sent: more than a socket holds, so a reader that
+        // waited for the end would wait for ever.
+        let reading = std::thread::spawn(move || {
+            let mut heard = Vec::new();
+            while let Some(up) = obelus_wire::read::<_, Up>(&mut server).expect("read") {
+                heard.push(up);
+            }
+            heard
+        });
+        let writing = Mutex::new(Some(stream));
+        let (to_carry, carrying) = std::sync::mpsc::channel();
+        to_carry.send(Carry::Dropped(file)).expect("asked");
+        drop(to_carry);
+        carry(&carrying, &writing);
+        drop(writing);
+        let heard = reading.join().expect("read");
+        let Some(Up::Dropped {
+            name,
+            file: Ok(Carried { carrying, length }),
+        }) = heard.first().cloned()
+        else {
+            panic!("not what the file is first: {:?}", heard.first());
+        };
+        assert_eq!(name, "log.txt");
+        assert_eq!(length, 200_000);
+        let pieces: Vec<&Vec<u8>> = heard[1..]
+            .iter()
+            .map(|up| match up {
+                Up::Piece {
+                    carrying: which,
+                    bytes,
+                } if *which == carrying => bytes,
+                other => panic!("not a piece of it: {other:?}"),
+            })
+            .collect();
+        assert!(pieces.len() > 1, "it went whole");
+        assert!(pieces.iter().all(|piece| piece.len() <= PIECE));
+        assert_eq!(
+            pieces.into_iter().flatten().copied().collect::<Vec<u8>>(),
+            bytes
+        );
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// A frame arrives at the front end as one handing over, not a cell at
+    /// a time.
+    ///
+    /// Broken deliberately by handing them over one at a time (`show` for
+    /// each update in `hear`, as it was): a frame of a hundred cells was a
+    /// hundred and one handings over.
+    #[test]
+    fn a_frame_is_handed_to_the_front_end_at_once() {
+        #[derive(Default)]
+        struct Counted {
+            handings: std::sync::atomic::AtomicUsize,
+        }
+        impl Showing for Counted {
+            fn show(&self, _: Update) -> Result<(), crate::Closed> {
+                self.handings.fetch_add(1, Ordering::Relaxed);
+                Ok(())
+            }
+
+            fn show_all(&self, _: Vec<Update>) -> Result<(), crate::Closed> {
+                self.handings.fetch_add(1, Ordering::Relaxed);
+                Ok(())
+            }
+
+            fn wake(&self) {}
+        }
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("loopback");
+        let at = listener.local_addr().expect("an address");
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("the window");
+            let mut cell = ratatui::buffer::Cell::default();
+            cell.set_symbol("z");
+            let mut frame: Vec<Update> = (0..100)
+                .map(|x| Update::Cell {
+                    x,
+                    y: 0,
+                    cell: Box::new(cell.clone()),
+                })
+                .collect();
+            frame.push(Update::Frame);
+            obelus_wire::write(&mut stream, &Down::Updates(frame)).expect("said");
+            obelus_wire::write(&mut stream, &Down::Finished).expect("said");
+        });
+        let mut stream = TcpStream::connect(at).expect("connected");
+        let writing = Mutex::new(Some(stream.try_clone().expect("both halves")));
+        let here = Counted::default();
+        let (to_carry, _carrying) = std::sync::mpsc::channel();
+        assert_eq!(
+            hear(&mut stream, &here, &writing, &to_carry),
+            Some(Left::Finished)
+        );
+        server.join().expect("the server");
+        assert_eq!(here.handings.load(Ordering::Relaxed), 1);
     }
 
     /// Waiting for a machine says so once it answers.
@@ -947,7 +1149,7 @@ mod tests {
     /// rest of its pieces come after.
     ///
     /// Broken deliberately by keeping the pieces of a picture let go of
-    /// (the `arriving = None` for `Update::Picture(None)` left out of
+    /// (the `arriving.forget()` for `Update::Picture(None)` left out of
     /// `hear`): the first picture was hung, whole, after the page had let
     /// go of it -- an old theme's picture under the new one's colours.
     #[test]
@@ -1000,7 +1202,11 @@ mod tests {
         let mut stream = TcpStream::connect(at).expect("connected");
         let writing = Mutex::new(Some(stream.try_clone().expect("both halves")));
         let here = Kept::default();
-        assert_eq!(hear(&mut stream, &here, &writing), Some(Left::Finished));
+        let (to_carry, _carrying) = std::sync::mpsc::channel();
+        assert_eq!(
+            hear(&mut stream, &here, &writing, &to_carry),
+            Some(Left::Finished)
+        );
         server.join().expect("the server");
         let hung: Vec<Vec<u8>> = here
             .shown
@@ -1051,8 +1257,9 @@ mod tests {
         let mut stream = TcpStream::connect(at).expect("connected");
         let writing = Mutex::new(Some(stream.try_clone().expect("both halves")));
         let here = Kept::default();
+        let (to_carry, _carrying) = std::sync::mpsc::channel();
         assert_eq!(
-            hear(&mut stream, &here, &writing),
+            hear(&mut stream, &here, &writing, &to_carry),
             Some(Left::Finished),
             "the end was not heard as one"
         );

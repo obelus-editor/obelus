@@ -17,6 +17,9 @@ enum Column {
     InRow(usize),
 }
 
+/// What the status row says while a picture pasted from a machine at the
+/// other end of a connection crosses.
+const BRINGING: &str = "Bringing the picture across";
 impl App {
     /// Goes to a place a server named, recording where the reader was.
     ///
@@ -624,18 +627,18 @@ impl App {
         // being ignored. So the question is asked before the paste is
         // offered rather than after it fails, and where the answer is no
         // the words on the clipboard are pasted as they always were.
-        if self.can_take_a_picture()
-            && let Some((mime, bytes)) = self.desk().picture()
-        {
-            // The width the box wraps to, taken from the same function the
-            // view lays itself out with -- see `App::chat_key`.
-            let room = obelus_ui::chat::writing_width(self.editor_area);
-            if let Some(talk) = self.conversation_mut() {
-                talk.chat
-                    .writing_mut()
-                    .attach(obelus_component::composer::Attached { mime, bytes }, room);
+        if self.can_take_a_picture() {
+            match self.desk().picture() {
+                crate::app::desk::Picture::Here(mime, bytes) => {
+                    self.attach_picture(mime, bytes);
+                    return;
+                }
+                crate::app::desk::Picture::Coming => {
+                    self.say(BRINGING);
+                    return;
+                }
+                crate::app::desk::Picture::Nothing => {}
             }
-            return;
         }
         let Some(what) = self.desk().paste() else {
             // A picture and nowhere for it is not nothing, and what is
@@ -661,6 +664,34 @@ impl App {
         // input method's commit, and one given up with escape never does.
         self.spelled_over = None;
         self.paste_text(&what);
+    }
+
+    /// A picture from the clipboard that arrived after the paste that asked
+    /// for it: put in the box where the box would still take it, which the
+    /// reader may have moved away from while it crossed.
+    pub(in crate::app) fn pictured(&mut self, mime: String, bytes: Vec<u8>) {
+        if !self.can_take_a_picture() {
+            self.wrong("A picture goes in a message to an agent".to_string());
+            return;
+        }
+        // Only what the paste said: anything said since is somebody
+        // else's, and still true.
+        if self.note() == Some(BRINGING) {
+            self.quiet();
+        }
+        self.attach_picture(mime, bytes);
+    }
+
+    /// Puts a picture in the box a message is written in.
+    fn attach_picture(&mut self, mime: String, bytes: Vec<u8>) {
+        // The width the box wraps to, taken from the same function the view
+        // lays itself out with -- see `App::chat_key`.
+        let room = obelus_ui::chat::writing_width(self.editor_area);
+        if let Some(talk) = self.conversation_mut() {
+            talk.chat
+                .writing_mut()
+                .attach(obelus_component::composer::Attached { mime, bytes }, room);
+        }
     }
 
     /// Whether a picture pasted now would have somewhere to go and somebody

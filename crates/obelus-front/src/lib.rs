@@ -361,6 +361,48 @@ pub enum Update<P = Option<Hanging>> {
 }
 
 impl<P> Update<P> {
+    /// Whether this is one of the shapes a frame says, which a window
+    /// replaces all of at every frame's end -- see `replay::Screen`.
+    ///
+    /// Every arm by name, for the same reason as [`Update::apart`].
+    #[must_use]
+    pub const fn is_a_shape(&self) -> bool {
+        match self {
+            Self::Marked { .. }
+            | Self::Capped { .. }
+            | Self::Barred { .. }
+            | Self::Stroked { .. }
+            | Self::Ticked { .. }
+            | Self::Spun { .. }
+            | Self::Ruled { .. }
+            | Self::Parted { .. }
+            | Self::Paired { .. }
+            | Self::Found { .. }
+            | Self::Linked { .. }
+            | Self::Spelled { .. }
+            | Self::Sheened { .. }
+            | Self::Scrolled { .. }
+            | Self::Behind { .. } => true,
+            Self::Cell { .. }
+            | Self::Cleared
+            | Self::Caret(_)
+            | Self::Frame
+            | Self::TextSize(_)
+            | Self::Fonts(_)
+            | Self::Animates(_)
+            | Self::BarTabs(_)
+            | Self::PictureStrength(_)
+            | Self::Ground(_)
+            | Self::Holding { .. }
+            | Self::Picture(_)
+            | Self::Tabs(_)
+            | Self::Recoloured
+            | Self::CaretInk(_)
+            | Self::CaretIs { .. }
+            | Self::Mark { .. } => false,
+        }
+    }
+
     /// The same update for a front end whose pictures are something else,
     /// or the picture it is, which is the one update that is not the same.
     ///
@@ -1244,7 +1286,13 @@ mod tests {
             },
             link::Up::Pictured {
                 number: 2,
-                picture: Some(("image/png".to_string(), vec![1])),
+                picture: Some((
+                    "image/png".to_string(),
+                    link::Carried {
+                        carrying: 1,
+                        length: 1,
+                    },
+                )),
             },
             link::Up::Holds {
                 number: 3,
@@ -1252,7 +1300,14 @@ mod tests {
             },
             link::Up::Dropped {
                 name: "a.png".to_string(),
-                file: Ok(vec![1, 2]),
+                file: Ok(link::Carried {
+                    carrying: 2,
+                    length: 2,
+                }),
+            },
+            link::Up::Piece {
+                carrying: 2,
+                bytes: vec![1, 2],
             },
         ] {
             bytes.extend(obelus_wire::framed(&up).expect("framed"));
