@@ -1436,9 +1436,9 @@ impl App {
         }
 
         match obelus_lsp::command_for(language) {
-            Some(command) if self.servers.contains_key(&language) => {
-                self.say(format!("Restarted {command}"));
-            }
+            // Nothing said: the server's mark on the status row turns while
+            // it starts, which says it.
+            Some(_) if self.servers.contains_key(&language) => {}
             Some(command) if !obelus_lsp::on_path(command) => {
                 self.wrong(format!("{command} is not installed"));
             }
@@ -1460,7 +1460,8 @@ impl App {
         let was_running = self.stop(language);
         self.stopped.insert(language);
         match (obelus_lsp::command_for(language), was_running) {
-            (Some(command), true) => self.say(format!("Stopped {command}")),
+            // Nothing said: the server's mark on the status row says it.
+            (Some(_), true) => {}
             (Some(command), false) => self.wrong(format!("{command} was not running")),
             (None, _) => self.wrong(format!("No language server for {}", language.name())),
         }

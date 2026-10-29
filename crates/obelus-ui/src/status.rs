@@ -66,6 +66,8 @@ pub struct StatusView<'a> {
     /// question it answers -- will a reply from my phone get here -- is
     /// asked when one has not.
     bot: Option<(&'static str, obelus_bot::State)>,
+    /// Whether that chat is heard through another window.
+    relayed: bool,
     /// The machine this Obelus runs on, where it is drawn on another.
     from: Option<&'a str>,
     /// When a question is being asked, the row is the question.
@@ -142,6 +144,7 @@ impl<'a> StatusView<'a> {
             busy: app.server_busy(),
             phase: app.phase(),
             bot: app.bot(),
+            relayed: app.bot_relayed(),
             from: app.drawn_from(),
             troubles: app.troubles(),
             prompt: app.prompt(),
@@ -343,11 +346,26 @@ fn server_badge(server: Option<(&'static str, ServerState)>, busy: Option<u32>) 
 /// words once, as it goes wrong, and the settings page says it for as long
 /// as it stays wrong -- this is the one cell that says to go and look.
 #[must_use]
-fn bot_badge(bot: Option<(&'static str, obelus_bot::State)>, phase: u32) -> String {
+fn bot_badge(bot: Option<(&'static str, obelus_bot::State)>, relayed: bool, phase: u32) -> String {
     let Some((name, state)) = bot else {
         return String::new();
     };
     let mark = match state {
+        // Heard through another window, which is the one the chat is held
+        // by: the same mark as this window holding it would have the reader
+        // looking here for the key that lets it go, and that key is dim
+        // here. A link where there is a font for it, and a hollow dot where
+        // there is not -- neither has an emoji's spelling.
+        state if state.connected() && relayed => {
+            return match obelus_icons::enabled() {
+                true => format!(
+                    "{}{}{name}  ",
+                    obelus_icons::ui::RELAYED,
+                    crate::after_a_glyph()
+                ),
+                false => format!("\u{25e6} {name}  "),
+            };
+        }
         state if state.connected() => '\u{25cf}',
         state if state.wrong() => '\u{2715}',
         obelus_bot::State::Connecting => crate::spinning(phase),
@@ -367,6 +385,7 @@ fn bot_badge(bot: Option<(&'static str, obelus_bot::State)>, phase: u32) -> Stri
 #[must_use]
 pub(crate) fn bot_mark(
     bot: Option<(&'static str, obelus_bot::State)>,
+    relayed: bool,
     phase: u32,
     theme: &Theme,
 ) -> Option<(String, Color)> {
@@ -376,7 +395,7 @@ pub(crate) fn bot_mark(
         state if state.wrong() => theme.status_stale,
         _ => theme.gutter,
     };
-    Some((bot_badge(bot, phase).trim_end().to_string(), ink))
+    Some((bot_badge(bot, relayed, phase).trim_end().to_string(), ink))
 }
 
 /// What the row says about the window rather than about what is being
@@ -404,6 +423,7 @@ pub(crate) struct Surroundings<'a> {
     server: Option<(&'static str, ServerState)>,
     busy: Option<u32>,
     bot: Option<(&'static str, obelus_bot::State)>,
+    relayed: bool,
     from: Option<&'a str>,
     phase: u32,
 }
@@ -421,6 +441,7 @@ impl<'a> Surroundings<'a> {
         server: Option<(&'static str, ServerState)>,
         busy: Option<u32>,
         bot: Option<(&'static str, obelus_bot::State)>,
+        relayed: bool,
         from: Option<&'a str>,
         phase: u32,
     ) -> Self {
@@ -428,6 +449,7 @@ impl<'a> Surroundings<'a> {
             server,
             busy,
             bot,
+            relayed,
             from,
             phase,
         }
@@ -439,6 +461,7 @@ impl<'a> Surroundings<'a> {
             view.server.filter(|_| with_server),
             view.busy.then_some(view.phase),
             view.bot,
+            view.relayed,
             view.from,
             view.phase,
         )
@@ -454,7 +477,7 @@ impl<'a> Surroundings<'a> {
             let mark = mark_of(&whole);
             things.push((whole, mark, badge_colour(self.server, theme)));
         }
-        if let Some((whole, ink)) = bot_mark(self.bot, self.phase, theme) {
+        if let Some((whole, ink)) = bot_mark(self.bot, self.relayed, self.phase, theme) {
             let mark = mark_of(&whole);
             things.push((whole, mark, ink));
         }
@@ -2026,6 +2049,7 @@ mod tests {
             Some(("rust-analyzer", ServerState::Ready)),
             None,
             Some(("Feishu", obelus_bot::State::Connected)),
+            false,
             Some("devbox"),
             0,
         );
@@ -2062,18 +2086,49 @@ mod tests {
         assert_eq!(said(1), vec![ELSEWHERE.to_string()]);
     }
 
+    /// A window that hears the chat through another says so with a mark
+    /// of its own, so a reader does not look here for the key that lets it
+    /// go. Only where it is connected: connecting and going wrong look the
+    /// same from either window, and say the same thing.
+    ///
+    /// Broken by having `bot_badge` ignore `relayed`: the two marks are one.
+    #[test]
+    fn a_chat_heard_through_another_window_is_marked_apart() {
+        let _held = crate::glyphs_held();
+        let connected = Some(("Feishu", obelus_bot::State::Connected));
+        let here = bot_badge(connected, false, 0);
+        let there = bot_badge(connected, true, 0);
+        assert_ne!(
+            here.chars().next(),
+            there.chars().next(),
+            "{here:?} and {there:?}"
+        );
+        assert!(there.contains("Feishu"), "{there:?}");
+        assert_eq!(
+            there.chars().next(),
+            Some(match obelus_icons::enabled() {
+                true => obelus_icons::ui::RELAYED,
+                false => '\u{25e6}',
+            }),
+            "{there:?}"
+        );
+        let wrong = Some(("Feishu", obelus_bot::State::Refused));
+        assert_eq!(bot_badge(wrong, true, 0), bot_badge(wrong, false, 0));
+    }
+
     #[test]
     fn the_chat_mark_turns_while_it_connects() {
-        assert_eq!(bot_badge(None, 0), "");
-        let connecting = bot_badge(Some(("Feishu", obelus_bot::State::Connecting)), 3);
+        assert_eq!(bot_badge(None, false, 0), "");
+        let connecting = bot_badge(Some(("Feishu", obelus_bot::State::Connecting)), false, 3);
         assert!(connecting.starts_with(crate::spinning(3)), "{connecting:?}");
         assert_ne!(
-            bot_badge(Some(("Feishu", obelus_bot::State::Connecting)), 4),
+            bot_badge(Some(("Feishu", obelus_bot::State::Connecting)), false, 4),
             connecting,
             "the mark did not move from one frame to the next"
         );
         assert!(
-            bot_badge(Some(("Feishu", obelus_bot::State::Connected)), 3).starts_with('\u{25cf}')
+            bot_badge(Some(("Feishu", obelus_bot::State::Connected)), false, 3)
+                .starts_with('\u{25cf}')
         );
         // A field nobody filled in, and an app the platform will not let
         // connect, are as wrong as a refused token. Broken deliberately by
@@ -2085,7 +2140,7 @@ mod tests {
             obelus_bot::State::Declined,
         ] {
             assert!(
-                bot_badge(Some(("Feishu", state)), 3).starts_with('\u{2715}'),
+                bot_badge(Some(("Feishu", state)), false, 3).starts_with('\u{2715}'),
                 "{state:?}"
             );
         }

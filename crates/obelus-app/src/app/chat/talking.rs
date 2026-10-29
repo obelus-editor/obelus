@@ -2253,20 +2253,9 @@ impl App {
         // By the name the list of what is open gives it, read before it
         // goes: the reader may have been somewhere else, and "the
         // conversation" is then one of several.
-        let named = self.document(id).and_then(Document::chat).and_then(|talk| {
-            let notes = obelus_todo::read(&self.working_directory)
-                .notes()
-                .unwrap_or_default();
-            self.conversation_name(talk, &notes)
-        });
+        // Nothing said: what was on screen has gone, which says it, and a
+        // note would have the status row for nothing.
         self.close(id);
-        // Bounded the way a path said on this row is (`named`): the name
-        // can be a whole line of the reader's, and a sentence the row cannot
-        // hold squeezes the file's name out of it or is not said at all.
-        self.say(match named {
-            Some(named) => format!("Closed {}", obelus_ui::truncate_from_right(&named, 40)),
-            None => "Closed the conversation".to_string(),
-        });
         // And out of the list of what is open, where that is showing: a
         // row for a conversation that has gone is a row that lies.
         self.refresh_switching();

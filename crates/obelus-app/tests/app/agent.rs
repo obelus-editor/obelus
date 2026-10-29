@@ -6826,12 +6826,14 @@ fn a_question_still_up_keeps_the_conversation_open() {
 /// is then one of several. And the list is a row of what is true now: a
 /// row for a conversation that has gone is a row whose enter does nothing.
 ///
-/// Broken deliberately two ways. Saying "Closed the conversation" whatever
-/// the name fails the first assertion. Taking the call to
-/// `refresh_switching` out of `close_the_conversation` leaves the row in
-/// the list.
+/// Nothing is said about it: what was on screen going says it, and a note
+/// would have the status row for nothing.
+///
+/// Broken deliberately two ways. Saying "Closed {name}" again fails the
+/// first assertion. Taking the call to `refresh_switching` out of
+/// `close_the_conversation` leaves the row in the list.
 #[test]
-fn a_conversation_an_agent_closes_is_named_and_leaves_the_list() {
+fn a_conversation_an_agent_closes_leaves_the_list_and_says_nothing() {
     let scratch = support::Scratch::new("agent-closed-named");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
@@ -6856,7 +6858,7 @@ fn a_conversation_an_agent_closes_is_named_and_leaves_the_list() {
 
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentList);
     assert_eq!(close_it(&mut app, 1), "closed");
-    assert_eq!(app.note(), Some("Closed wire the counts up"));
+    assert_eq!(app.note(), None, "closing it was said");
     let listed = app
         .picker()
         .expect("the list of what is open")
@@ -6920,41 +6922,6 @@ fn a_conversation_goes_by_its_first_words_until_it_is_named() {
     assert!(
         after.iter().any(|label| label == "Renamed by the agent"),
         "the agent's name did not take over from the first words: {after:?}"
-    );
-}
-
-/// Where the conversation an agent closes goes by a long name, the line
-/// saying so cuts the name rather than going unsaid.
-///
-/// The name can be a whole line of the reader's, and the status row drops
-/// a sentence it cannot hold -- after squeezing the file's name out of the
-/// row to make room for it.
-///
-/// Broken deliberately by saying the name whole in
-/// `close_the_conversation`.
-#[test]
-fn a_long_name_is_cut_where_its_closing_is_said() {
-    let (mut app, events) = talking();
-    pump(&mut app, &events, "the handshake", |app| {
-        app.talking() == obelus_agent::Talking::Ready
-    });
-    let long = format!("/cost {}", "and the counts ".repeat(10));
-    support::type_text(&mut app, &long);
-    support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "the answer", |app| {
-        said_in_transcript(app, "ran cost") && app.talking() == obelus_agent::Talking::Ready
-    });
-
-    assert_eq!(close_it(&mut app, 0), "closed");
-    let said = app.note().expect("nothing said about the closing");
-    assert!(
-        said.starts_with("Closed /cost and the counts") && said.ends_with('\u{2026}'),
-        "the closing named it some other way: {said:?}"
-    );
-    assert!(
-        // Characters for columns, which this name's are.
-        said.chars().count() <= "Closed ".len() + 40,
-        "the name went on the row whole: {said:?}"
     );
 }
 

@@ -2112,8 +2112,9 @@ impl App {
             return false;
         };
         match buffer.save() {
+            // Nothing said: the status row's `unsaved` going says it, and
+            // a note would have the row and cover the file it is about.
             Ok(()) => {
-                self.say("Saved".to_string());
                 self.saved_document(index);
                 true
             }

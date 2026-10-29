@@ -59,8 +59,8 @@ fn wrong_ink() -> Color {
 /// would have done, telling a reader that copying failed.
 ///
 /// Deliberate break: have `wrong_ink` in `StatusView` answer `Some` for
-/// every note. `Saved` goes red. Break the other way by having it answer
-/// `None` always, and `Nothing to undo` goes back to the ink `Saved` is
+/// every note. A report goes red. Break the other way by having it answer
+/// `None` always, and `Nothing to undo` goes back to the ink a report is
 /// in.
 #[test]
 fn a_refusal_is_in_the_ink_of_things_that_went_wrong() {
@@ -71,12 +71,11 @@ fn a_refusal_is_in_the_ink_of_things_that_went_wrong() {
     assert_eq!(app.note(), Some("Nothing to undo"));
     assert_eq!(ink(&mut app), wrong_ink(), "a refusal is not in the red");
 
-    // And a report, from the same row in the same corner. `Saved` and
-    // `Not saved` are the pair this is all about: a reader glancing at the
-    // row read them the same.
-    support::type_text(&mut app, "// ");
-    dispatch::dispatch(&mut app, Command::FileSave);
-    assert_eq!(app.note(), Some("Saved"));
+    // And a report, from the same row in the same corner. `Copied` and
+    // `Could not copy` are a pair a reader glancing at the row would read
+    // the same; through the door a report goes through, because copying
+    // for real is the machine's clipboard.
+    app.say_for_test("Copied selection");
     assert_ne!(
         ink(&mut app),
         wrong_ink(),
@@ -88,6 +87,29 @@ fn a_refusal_is_in_the_ink_of_things_that_went_wrong() {
         ink(&mut app),
         DARK.status_foreground,
         "the note is not in the row's ink"
+    );
+}
+
+/// What succeeded and is already on screen is not said: saving takes
+/// `unsaved` off the row, which says it, and a note would have the row and
+/// cover the file it is about until the next key.
+///
+/// Deliberate break: say `Saved` again in `write_now`.
+#[test]
+fn a_save_says_nothing_the_row_does_not() {
+    let (_scratch, mut app) = reading("said-saved");
+    support::type_text(&mut app, "// ");
+    dispatch::dispatch(&mut app, Command::FileSave);
+    assert_eq!(app.note(), None, "saving was said");
+    let dump = support::render(&mut app, 76, 12);
+    let status = support::text_block(&dump)
+        .lines()
+        .last()
+        .expect("a status row")
+        .to_string();
+    assert!(
+        status.contains("hint.rs") && !status.contains("unsaved"),
+        "the row does not say it was written:\n{dump}"
     );
 }
 
@@ -210,19 +232,12 @@ fn reads_as_copy(said: &str, name: Option<&str>) -> bool {
 /// state a previous case left behind -- a close that asks about unwritten
 /// work is a key that answered something else.
 ///
-/// Deliberate break: lowercase any one of `Saved`, `Renamed to {}` or
-/// `Thinking\u{2026}`. Which is how this was found: five of them
+/// Deliberate break: lowercase any one of `Nothing to undo`, `Renamed to
+/// {}` or `Thinking\u{2026}`. Which is how this was found: five of them
 /// had been lowercase since they were written, against the one sentence in
 /// the guide about how Obelus writes.
 #[test]
 fn what_is_said_reads_as_copy() {
-    // What a command reports.
-    let (_a, mut app) = reading("copy-saved");
-    support::type_text(&mut app, "// ");
-    dispatch::dispatch(&mut app, Command::FileSave);
-    let said = app.note().unwrap_or_default();
-    assert!(reads_as_copy(said, None), "saving: {said:?}");
-
     // What it refuses.
     let (_b, mut app) = reading("copy-refused");
     dispatch::dispatch(&mut app, Command::Undo);

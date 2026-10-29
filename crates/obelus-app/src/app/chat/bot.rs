@@ -1156,9 +1156,8 @@ impl App {
         // from now on goes to the platform, and nothing more to the relay.
         self.settle_the_relay();
         self.start_relaying();
-        if let Some(platform) = self.platform() {
-            self.say(format!("{} talks to this window now", platform.name));
-        }
+        // Nothing said: the chat's mark on the status row says it, and a
+        // note would have the row and cover that mark until the next key.
     }
 
     /// Stops this window talking to the chat, which leaves it to no window
@@ -1188,9 +1187,8 @@ impl App {
         self.stop_relaying(obelus_bot::relay::Over::Stopped);
         self.bot.holding = None;
         self.let_the_chat_go();
-        if let Some(platform) = self.platform() {
-            self.say(format!("{} talks to no window now", platform.name));
-        }
+        // Nothing said: the chat's mark on the status row says it, and a
+        // note would have the row and cover that mark until the next key.
     }
 
     /// Whether a path that changed is another window asking for the chat.

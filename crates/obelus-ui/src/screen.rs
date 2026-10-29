@@ -463,6 +463,9 @@ pub trait Screen {
     /// The chat, by name, and where this window stands with it -- `None`
     /// where it is not the window the chat talks to.
     fn bot(&self) -> Option<(&'static str, obelus_bot::State)>;
+    /// Whether that chat is heard through another window rather than held
+    /// by this one -- which is where `disconnect-from-chat` does nothing.
+    fn bot_relayed(&self) -> bool;
     /// The machine this Obelus runs on, where it is drawn on another --
     /// `None` where the reader is sitting at it.
     fn drawn_from(&self) -> Option<&str>;

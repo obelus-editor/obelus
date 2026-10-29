@@ -538,8 +538,10 @@ fn a_chat_that_is_set_is_connected_to_when_told() {
         Some("xoxb-1-bot")
     );
     drop(faked);
-    // Under the note that says so, which has the row until a key.
-    support::press(&mut app, KeyCode::Down);
+    // The mark says it, and nothing else does: a note would have the row
+    // and cover the mark until the next key. Broken deliberately by saying
+    // `{} talks to this window now` again in `take_the_bot`.
+    assert_eq!(app.note(), None, "connecting was said");
     let line = status(&mut app);
     assert!(
         line.contains("● Slack"),
@@ -3296,6 +3298,9 @@ fn the_first_with_the_chat(
 /// thread was asked for. Answering every thread in the window that holds
 /// the chat: the words never reached the second window's agent. Marking
 /// the chat only in the window that holds it: the second's row was empty.
+/// And marking it in the second the way the first marks it -- `bot_badge`
+/// ignoring `relayed` -- which has a reader in the second looking there for
+/// the key that lets it go, dim there.
 /// And on Unix, writing the door with the default mode: others could read
 /// its key.
 #[test]
@@ -3322,10 +3327,25 @@ fn a_window_without_the_chat_is_heard_in_it_through_the_one_with_it() {
             "the door's key is readable by others: {mode:o}"
         );
     }
+    let relayed = match obelus_icons::enabled() {
+        true => obelus_icons::ui::RELAYED,
+        false => '\u{25e6}',
+    };
     assert!(
-        status_row(&mut second).contains("\u{25cf} Slack"),
-        "the second's status row does not mark the chat: {}",
+        status_row(&mut second).contains(&format!("{relayed}"))
+            && status_row(&mut second).contains("Slack"),
+        "the second's status row does not mark the chat as heard through another: {}",
         status_row(&mut second)
+    );
+    assert!(
+        !status_row(&mut second).contains("\u{25cf} Slack"),
+        "the second marks the chat as though it held it: {}",
+        status_row(&mut second)
+    );
+    assert!(
+        status_row(&mut first).contains("\u{25cf} Slack"),
+        "the first does not mark the chat it holds: {}",
+        status_row(&mut first)
     );
 
     second.new_conversation();

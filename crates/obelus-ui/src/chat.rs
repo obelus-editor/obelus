@@ -779,6 +779,8 @@ pub struct ChatView<'a> {
     /// same mark a file's row carries, since this row is the one a reader
     /// working from a chat is most often on.
     bot: Option<(&'static str, obelus_bot::State)>,
+    /// Whether that chat is heard through another window.
+    relayed: bool,
     /// The machine this Obelus runs on, where it is drawn on another.
     from: Option<&'a str>,
     /// The palette's key, as the key table writes it: the last key on the
@@ -820,6 +822,7 @@ impl<'a> ChatView<'a> {
             usage: app.agent_usage(),
             tasks: app.background_tasks(),
             bot: app.bot(),
+            relayed: app.bot_relayed(),
             from: app.drawn_from(),
             palette: crate::status::palette_key(app),
             seen: None,
@@ -2056,7 +2059,7 @@ impl ChatView<'_> {
     /// What the row says about the window: the chat and the machine, and
     /// no server, because a conversation is not a file one is about.
     fn surroundings(&self) -> crate::status::Surroundings<'_> {
-        crate::status::Surroundings::new(None, None, self.bot, self.from, self.phase)
+        crate::status::Surroundings::new(None, None, self.bot, self.relayed, self.from, self.phase)
     }
 
     /// How much of the row they may have: a third, which leaves the
@@ -2540,6 +2543,7 @@ mod tests {
             usage: None,
             tasks: None,
             bot: None,
+            relayed: false,
             from: None,
             palette: None,
             seen: Some(seen),
@@ -2588,6 +2592,7 @@ mod tests {
             usage: None,
             tasks: Some((2, 0)),
             bot: None,
+            relayed: false,
             from: None,
             palette: None,
             seen: None,
@@ -2636,6 +2641,7 @@ mod tests {
             usage: None,
             tasks: None,
             bot: None,
+            relayed: false,
             from: None,
             palette: None,
             seen: None,
@@ -2689,6 +2695,7 @@ mod tests {
                 usage: None,
                 tasks: None,
                 bot: None,
+                relayed: false,
                 from: None,
                 palette: None,
                 seen: None,
@@ -2872,6 +2879,7 @@ mod tests {
                 usage: None,
                 tasks: None,
                 bot: None,
+                relayed: false,
                 from: None,
                 palette: None,
                 seen: None,
@@ -2949,6 +2957,7 @@ mod tests {
                 usage: None,
                 tasks: None,
                 bot: None,
+                relayed: false,
                 from: None,
                 palette: None,
                 seen: None,
@@ -3014,6 +3023,7 @@ mod tests {
                 usage: None,
                 tasks: None,
                 bot: None,
+                relayed: false,
                 from: None,
                 palette: None,
                 seen: None,
@@ -3126,6 +3136,7 @@ mod caret {
             usage: None,
             tasks: None,
             bot: None,
+            relayed: false,
             from: None,
             palette: None,
             seen: None,
@@ -3227,6 +3238,7 @@ mod caret {
                         usage: None,
                         tasks: None,
                         bot: None,
+                        relayed: false,
                         from: None,
                         palette: None,
                         seen: None,
