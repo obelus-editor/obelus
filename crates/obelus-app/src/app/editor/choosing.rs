@@ -203,15 +203,7 @@ impl App {
         // this tab is where that is said instead -- and where they can be
         // pressed from, by name.
         let here = self.keys_here();
-        // And after them what the agent lets the reader set, where the view
-        // is a conversation: a row each, under a line that says they are
-        // not keys (`obelus_ui::chat::on_the_row` says why the mode alone
-        // stays on the row under the box).
-        let session = match (self.layers().nearest(), self.notes(), self.discussion()) {
-            (None, None, None) if self.chat().is_some() => settings_as_rows(self.agent_settings()),
-            _ => Vec::new(),
-        };
-        let own = usize::from(!here.is_empty() || !session.is_empty());
+        let own = usize::from(!here.is_empty());
         let commands = obelus_command::ALL
             .iter()
             .filter(|spec| spec.command.shown())
@@ -243,11 +235,7 @@ impl App {
                 changed: None,
                 value: PickerValue::Command(spec.command),
             });
-        let items = keys_as_rows(&here)
-            .into_iter()
-            .chain(session)
-            .chain(commands)
-            .collect();
+        let items = keys_as_rows(&here).into_iter().chain(commands).collect();
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
         // It holds every command, so it is only ever empty for a query that
         // matches none of them -- which the picker says itself.
@@ -1038,19 +1026,6 @@ impl App {
             PickerValue::Setting { key, word } => {
                 self.change_setting(key, &obelus_config::Value::Choice(word));
             }
-            PickerValue::AgentSetting(id) => {
-                let kind = self
-                    .agent_settings()
-                    .iter()
-                    .find(|setting| setting.id == id)
-                    .map(|setting| setting.kind);
-                match kind {
-                    Some(obelus_agent::acp::Kind::Select) => self.open_agent_setting(&id),
-                    Some(obelus_agent::acp::Kind::Switch) => self.flip_agent_setting(&id),
-                    // Taken away by the agent while the palette was open.
-                    None => {}
-                }
-            }
             PickerValue::AgentValue { setting, value } => {
                 self.set_agent_setting(&setting, &value);
             }
@@ -1095,47 +1070,6 @@ impl App {
 
 /// What the palette's own first tab is called.
 const HERE: &str = "Here";
-
-/// The agent's settings as rows of the palette's first tab, each saying
-/// what it is set to where a key's row says its key.
-///
-/// The agent's own words for a setting and its values, as they arrived:
-/// they are not Obelus's to capitalise. The heading over them is.
-fn settings_as_rows(settings: &[obelus_agent::acp::Setting]) -> Vec<PickerItem> {
-    settings
-        .iter()
-        .map(|setting| {
-            let switch = setting.kind == obelus_agent::acp::Kind::Switch;
-            PickerItem {
-                prose: false,
-                marker: None,
-                // The tick where a key's row has its switch's, so a switch
-                // reads the same here whichever kind of row it is.
-                icon: Some(match switch {
-                    true => obelus_ui::tick(setting.current == "on"),
-                    false => ' ',
-                }),
-                label: setting.name.clone(),
-                version: None,
-                detail: setting.about.clone(),
-                trailing: (!switch).then(|| {
-                    let on = setting.current_name().unwrap_or(&setting.current);
-                    format!("{on} {}", obelus_ui::opens(false))
-                }),
-                changed: None,
-                value: PickerValue::AgentSetting(setting.id.clone()),
-                enabled: true,
-                colours: None,
-                status: None,
-                depth: 0,
-                opens: None,
-                kind: None,
-                tab: Some(0),
-                section: Some("Session".to_string()),
-            }
-        })
-        .collect()
-}
 
 /// The keys of a view as rows of the palette, in its first tab.
 ///

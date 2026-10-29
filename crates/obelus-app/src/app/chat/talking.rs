@@ -2729,7 +2729,7 @@ impl App {
         // the box is showing -- so the keys that walk it need it as much as
         // the view does. Cloned because the box is about to be borrowed to
         // take the key.
-        let settings = obelus_ui::chat::on_the_row(self.agent_settings()).to_vec();
+        let settings = self.agent_settings().to_vec();
         let tasks = self.background_count_on_row();
         let Some(talk) = self.conversation_mut() else {
             return false;
@@ -3742,8 +3742,7 @@ impl App {
         // that are really there: they are the agent's, and it can take one
         // away in the middle of a sentence -- a model with no thinking
         // levels does exactly that.
-        let settings = obelus_ui::chat::on_the_row(self.agent_settings()).len()
-            + usize::from(self.background_count_on_row());
+        let settings = self.agent_settings().len() + usize::from(self.background_count_on_row());
         if let Some(talk) = self.conversation_mut() {
             talk.chat.settle_focus(settings);
         }

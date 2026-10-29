@@ -2502,21 +2502,18 @@ fn a_page_over_the_conversation_is_not_under_its_list_of_commands() {
     );
 }
 
-/// The conversation's status row says which way of working the session is
-/// in, and nothing else of what it is set to: the rest are rows of the
-/// palette's first tab, under a rule that says they are not keys, each with
-/// what it is on at its end.
+/// The conversation's status row says what the session is set to: every
+/// setting the agent offers, in its own order, as short as it can be said.
 ///
-/// The mode because it changes what the next message does and one key steps
-/// it; the rest are set once and seldom, and on a row that also carries the
-/// keys, the memory and the surroundings they were cut to a word each.
-///
-/// Broken deliberately three ways: `on_the_row` handing back every setting
-/// puts the model and the switch back on the row; the palette's items built
-/// without `settings_as_rows` leave no row for the model; and those rows
-/// made with no `section` draw no rule over them.
+/// Values, not names and values: what a select is on names itself -- `Fast`
+/// is plainly a model and `ask first` is plainly a way of working -- so a
+/// name in front of it would be a label on something already labelled. A
+/// switch is the other way round, because "on" says nothing and the thing it
+/// is about is its name, so the name is written behind a box, the one every
+/// switch in Obelus is drawn as, and being off is said by an empty box and
+/// dim ink.
 #[test]
-fn the_status_row_says_the_mode_and_the_palette_the_rest() {
+fn the_status_row_says_what_the_session_is_set_to() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the settings", |app| {
         app.agent_settings().len() > 2
@@ -2524,142 +2521,57 @@ fn the_status_row_says_the_mode_and_the_palette_the_rest() {
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     let screen = rows(&dump);
     let status = screen[screen.len() - 1].to_string();
+    // Broken by having `said` give a switch no tick: the name alone fails
+    // this.
     assert!(
-        status.contains("ask first"),
-        "the mode is not on the row:\n{dump}"
+        status.contains("ask first \u{b7} Fast \u{b7} \u{25a1} Allow everything"),
+        "not every setting, in the agent's order, with the switch in a box \
+         that is empty while it is off:\n{dump}"
     );
+    // The names of the selects are not on it: the row would be twice as
+    // long and say the same thing.
     assert!(
-        !status.contains("Fast") && !status.contains("Allow everything"),
-        "more than the mode is on the row:\n{dump}"
-    );
-
-    // In the palette, by name, under the rule.
-    support::press_control(&mut app, 'p');
-    support::type_text(&mut app, "model");
-    let dump = support::render(&mut app, WIDTH, HEIGHT);
-    let screen = rows(&dump);
-    let model = screen
-        .iter()
-        .position(|row| row.contains("Which model it thinks with"))
-        .unwrap_or_else(|| panic!("no row for the model:\n{dump}"));
-    assert!(
-        screen[model].contains("Fast \u{25b8}"),
-        "the row does not say what it is on, or that it opens:\n{dump}"
-    );
-    assert!(
-        screen[model - 1].contains("\u{2500} Session \u{2500}"),
-        "no rule over the settings:\n{dump}"
+        !status.contains("Model"),
+        "a select's name is on the row as well as its value:\n{dump}"
     );
 
-    // And a switch says which way it is, with the tick every switch in the
-    // palette has.
-    for _ in 0.."model".len() {
-        support::press(&mut app, KeyCode::Backspace);
-    }
-    support::type_text(&mut app, "allow everything");
-    let dump = support::render(&mut app, WIDTH, HEIGHT);
-    let switch = rows(&dump)
-        .into_iter()
-        .find(|row| row.contains("Allow everything"))
-        .unwrap_or_else(|| panic!("no row for the switch:\n{dump}"))
-        .to_string();
-    assert!(
-        switch.contains(obelus_ui::tick(false)),
-        "the switch that is off does not say so: {switch}"
-    );
-}
-
-/// Changing one of the agent's settings from the palette leaves the
-/// palette open, and its rows say what the agent then says it is on.
-///
-/// A switch flips where it stands; a list of values takes the palette's
-/// place and gives it back, on the same row, once one is chosen. A palette
-/// that closed on each would have to be opened and walked to the same place
-/// for the next.
-///
-/// Broken deliberately three ways: `accept` letting `AgentSetting` fall
-/// through to the list being torn down closes the palette on the switch;
-/// taking `back_to_the_palette` out of the arm for a value leaves no
-/// palette after one is chosen; and `keep_the_palettes_settings` asked by
-/// nothing leaves the switch's row saying it is off after the agent has
-/// said it is on.
-#[test]
-fn a_setting_changed_from_the_palette_leaves_it_open() {
-    let (mut app, events) = talking();
-    pump(&mut app, &events, "the settings", |app| {
-        app.agent_settings().len() > 2
-    });
-    let palette_open = |app: &App| {
-        app.picker()
-            .is_some_and(|list| list.opener() == Some(obelus_command::Command::CommandPalette))
+    // And the switch is dim while it is off, which is the colour Obelus
+    // draws everything that is there and not in force. The values are not.
+    let styles = support::style_block(&dump)
+        .lines()
+        .filter(|row| row.contains('|'))
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    let ink = |needle: &str| {
+        // In cells rather than bytes: the box in front of the switch is
+        // one cell and three bytes.
+        let at = status[..status.find(needle).expect("the words")]
+            .chars()
+            .count();
+        // Three characters of row number and the bar before the cells.
+        styles[styles.len() - 1].chars().nth(at).expect("a cell")
     };
-
-    support::press_control(&mut app, 'p');
-    support::type_text(&mut app, "allow everything");
-    support::press(&mut app, KeyCode::Enter);
-    assert!(palette_open(&app), "the switch closed the palette");
-    pump(&mut app, &events, "the switch to go on", |app| {
-        app.agent_settings()
-            .iter()
-            .any(|setting| setting.id == "allow_all" && setting.current == "on")
-    });
-    let dump = support::render(&mut app, WIDTH, HEIGHT);
-    // The last row saying it: the transcript says it too, above, as a thing
-    // the reader did to the conversation.
-    let switch = rows(&dump)
-        .into_iter()
-        .rfind(|row| row.contains("Allow everything"))
-        .unwrap_or_else(|| panic!("the switch left the palette:\n{dump}"))
-        .to_string();
-    assert!(
-        switch.contains(obelus_ui::tick(true)),
-        "the row still says the switch is off: {switch}"
+    assert_ne!(
+        ink("ask first"),
+        ink("Allow everything"),
+        "the switch that is off looks like a value:\n{dump}"
     );
-
-    // A list of values, chosen from, and the palette back on its row.
-    support::press(&mut app, KeyCode::Esc);
-    support::press_control(&mut app, 'p');
-    support::type_text(&mut app, "model");
-    support::press(&mut app, KeyCode::Enter);
-    let names: Vec<String> = app
-        .picker()
-        .expect("the list")
-        .matches()
-        .map(|item| item.label.clone())
-        .collect();
-    assert_eq!(names, ["Fast", "Careful"], "not the model's values");
-    support::press(&mut app, KeyCode::Down);
-    support::press(&mut app, KeyCode::Enter);
-    assert!(palette_open(&app), "choosing a value closed the palette");
-    let on = app
-        .picker()
-        .and_then(|list| list.selected_item())
-        .map(|item| item.label.clone());
     assert_eq!(
-        on.as_deref(),
-        Some("Model"),
-        "the palette is not on the row"
-    );
-
-    // And given up on goes back too: escape gives up on the list, which
-    // was nearest, and not on the palette it was opened from.
-    support::press(&mut app, KeyCode::Enter);
-    support::press(&mut app, KeyCode::Esc);
-    assert!(
-        palette_open(&app),
-        "giving up on the values closed the palette"
+        ink("ask first"),
+        ink("Fast"),
+        "two values are drawn differently:\n{dump}"
     );
 }
 
-/// Down, at the bottom of the box, goes to the row under it -- and the mode
-/// there can then be changed.
+/// Down, at the bottom of the box, goes to the row under it -- and what is
+/// there can then be walked and changed.
 ///
 /// One key, walking whatever is still able to move, in the order the things
 /// are on screen: down the box, then down the transcript, then out of the
 /// box altogether. Which is the gesture that was already there, one step
 /// longer.
 #[test]
-fn down_from_the_box_reaches_the_mode_and_changes_it() {
+fn down_from_the_box_reaches_the_settings_and_changes_them() {
     use obelus_component::chat::Focus;
 
     let (mut app, events) = talking();
@@ -2687,25 +2599,41 @@ fn down_from_the_box_reaches_the_mode_and_changes_it() {
         "none",
         "the caret stayed in the box while the keys were elsewhere:\n{dump}"
     );
-    // Being on it says so with the mark Obelus puts on everything with a
-    // list behind it.
+    // The mode is the first of them, and being on it says so with the mark
+    // Obelus puts on everything with a list behind it.
     let screen = rows(&dump);
     assert!(
         screen[screen.len() - 1].contains("ask first \u{25b8}"),
         "nothing says the thing under the focus opens:\n{dump}"
     );
 
-    // The mode is all there is to walk, so along is round to itself.
+    // Along the row, and round.
     support::press(&mut app, KeyCode::Right);
-    assert_eq!(
-        focus(&app),
-        Focus::Settings(0),
-        "the row has more than the mode"
+    assert_eq!(focus(&app), Focus::Settings(1));
+    support::press(&mut app, KeyCode::Left);
+    support::press(&mut app, KeyCode::Left);
+    assert_eq!(focus(&app), Focus::Settings(2), "the row does not go round");
+
+    // The switch is last, and enter flips it where it stands: a list of two
+    // values is a list nobody wants.
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.picker().is_none(), "a switch opened a list");
+    pump(&mut app, &events, "the switch to go on", |app| {
+        app.agent_settings()
+            .iter()
+            .any(|setting| setting.id == "allow_all" && setting.current == "on")
+    });
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let screen = rows(&dump);
+    assert!(
+        screen[screen.len() - 1].contains("Allow everything"),
+        "the switch left the row:\n{dump}"
     );
 
-    // Enter opens the list of its values, the ordinary compact list, and
-    // one chosen there is taken -- and the focus is still on the row, with
-    // no palette: the list was not opened from one.
+    // A select opens the list of its values instead, which is the ordinary
+    // compact list -- and the focus is still on the row behind it, so the
+    // next one can be changed without going back down.
+    support::press(&mut app, KeyCode::Left);
     support::press(&mut app, KeyCode::Enter);
     let names: Vec<String> = app
         .picker()
@@ -2713,14 +2641,15 @@ fn down_from_the_box_reaches_the_mode_and_changes_it() {
         .matches()
         .map(|item| item.label.clone())
         .collect();
-    assert_eq!(names, ["ask first", "write code"], "not the mode's values");
+    assert_eq!(names, ["Fast", "Careful"], "not the model's values");
     support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);
-    assert!(app.picker().is_none(), "a palette came up from nowhere");
-    pump(&mut app, &events, "the mode to change", |app| {
-        app.agent_mode().is_some_and(|mode| mode.current != "ask")
+    pump(&mut app, &events, "the model to change", |app| {
+        app.agent_settings()
+            .iter()
+            .any(|setting| setting.id == "model" && setting.current == "careful")
     });
-    assert_eq!(focus(&app), Focus::Settings(0), "the row lost the focus");
+    assert_eq!(focus(&app), Focus::Settings(1), "the row lost the focus");
 
     // Up comes back to the box, and typing does not: a letter pressed on
     // the row stays on the row, and goes nowhere.
@@ -2923,18 +2852,19 @@ fn a_drag_held_above_the_transcript_carries_on_scrolling() {
 }
 
 /// What Obelus has just said is the conversation's whole status row, as it
-/// is every other's: the mode and the keys come back at the next key.
+/// is every other's: the settings and the keys come back at the next key.
 ///
 /// It used to be drawn over the settings and left the keys and the memory
 /// beside it, which was a third place for the same sentence.
 ///
 /// Broken deliberately by taking the arm for the note out of
-/// `ChatView::status`: the mode and the keys are drawn, and the note is not.
+/// `ChatView::status`: the settings and the keys are drawn, and the note is
+/// not.
 #[test]
 fn a_note_is_the_conversations_whole_row() {
     let (mut app, events) = talking();
-    pump(&mut app, &events, "the mode", |app| {
-        app.agent_mode().is_some()
+    pump(&mut app, &events, "the settings", |app| {
+        app.agent_settings().len() > 2
     });
     app.say_for_test("Copied selection");
     let dump = support::render(&mut app, WIDTH, HEIGHT);
@@ -2952,16 +2882,16 @@ fn a_note_is_the_conversations_whole_row() {
     );
 }
 
-/// A row too narrow for the mode says so rather than stopping silently: a
-/// reader who cannot see it cannot know it is there.
+/// A row too narrow for everything says so rather than stopping silently: a
+/// reader who cannot see a setting cannot know it is there.
 #[test]
 fn a_status_row_with_no_room_says_there_is_more() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the settings", |app| {
         app.agent_settings().len() > 2
     });
-    support::lay_out(&mut app, 24, HEIGHT);
-    let dump = support::render(&mut app, 24, HEIGHT);
+    support::lay_out(&mut app, 34, HEIGHT);
+    let dump = support::render(&mut app, 34, HEIGHT);
     let screen = rows(&dump);
     let status = screen[screen.len() - 1].to_string();
     assert!(
@@ -2969,29 +2899,24 @@ fn a_status_row_with_no_room_says_there_is_more() {
         "nothing says the row was cut:\n{dump}"
     );
     assert!(
-        !status.contains("ask first"),
+        !status.contains("Allow everything"),
         "it all fitted, so this tests nothing:\n{dump}"
     );
 }
 
-/// An agent with nothing to configure leaves the row's left empty and puts
-/// no rule in the palette: a heading over nothing would say there was
-/// something to set.
-///
-/// Broken deliberately by having `settings_as_rows` say "Nothing to change"
-/// as a row under the heading when the agent offers nothing -- what the
-/// row under the box used to say -- which puts the rule over it.
+/// An agent with nothing to configure says so. An empty row would leave a
+/// reader wondering whether Obelus had failed to read something.
 #[test]
-fn an_agent_with_nothing_to_change_has_no_settings_in_the_palette() {
+fn an_agent_with_nothing_to_change_says_so() {
     let (mut app, events) = playing(&["nothing-to-change"]);
     pump(&mut app, &events, "the session", |app| {
         app.talking() == obelus_agent::Talking::Ready
     });
-    support::press_control(&mut app, 'p');
     let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let screen = rows(&dump);
     assert!(
-        !dump.contains("Session"),
-        "a heading over settings there are none of:\n{dump}"
+        screen[screen.len() - 1].contains("Nothing to change"),
+        "the row says nothing at all:\n{dump}"
     );
 }
 
@@ -3219,9 +3144,9 @@ fn a_command_named_like_a_setting_still_goes_to_the_agent() {
     );
 }
 
-/// One setting's values, as the list its row of the palette opens: what
-/// each is called, what it is, which one is on -- and the agent's own
-/// account of itself afterwards, whichever side asked for the change.
+/// One setting's values, as the list the row opens: what each is called,
+/// what it is, which one is on -- and the agent's own account of itself
+/// afterwards, whichever side asked for the change.
 #[test]
 fn a_settings_values_are_a_list_and_the_agent_answers_with_all_of_them() {
     let (mut app, events) = talking();
@@ -3231,9 +3156,9 @@ fn a_settings_values_are_a_list_and_the_agent_answers_with_all_of_them() {
             .any(|setting| setting.id == "model")
     });
 
-    // The model, by name in the palette, and open it.
-    support::press_control(&mut app, 'p');
-    support::type_text(&mut app, "model");
+    // Down to the row, along to the model, and open it.
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Right);
     support::press(&mut app, KeyCode::Enter);
     let text = screen(&mut app);
     assert!(text.contains("Careful"), "no list of models:\n{text}");
@@ -3276,9 +3201,10 @@ fn a_settings_values_are_a_list_and_the_agent_answers_with_all_of_them() {
     );
 
     // And it runs the other way too: an agent that puts itself on another
-    // model says so, and the palette shows what the agent last said. Out of
-    // the palette first, which came back once the model was chosen.
-    support::press(&mut app, KeyCode::Esc);
+    // model says so, and the row shows what the agent last said. Up to the
+    // box first: the keys are still on the row the model was chosen from,
+    // and typing there goes nowhere.
+    support::press(&mut app, KeyCode::Up);
     support::type_text(&mut app, "answer this one quickly");
     support::press(&mut app, KeyCode::Enter);
     pump(
@@ -3291,14 +3217,11 @@ fn a_settings_values_are_a_list_and_the_agent_answers_with_all_of_them() {
                 .any(|setting| setting.id == "model" && setting.current == "fast")
         },
     );
-    support::press_control(&mut app, 'p');
-    support::type_text(&mut app, "model");
     let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let screen = rows(&dump);
     assert!(
-        rows(&dump)
-            .iter()
-            .any(|row| row.contains("Which model it thinks with") && row.contains("Fast")),
-        "the model it moved itself to is not in the palette:\n{dump}"
+        screen[screen.len() - 1].contains("Fast"),
+        "the model it moved itself to is not on the row:\n{dump}"
     );
 }
 
@@ -8602,9 +8525,15 @@ fn a_narrow_row_keeps_the_settings_and_the_keys() {
             .expect("the status row")
     };
 
-    // Where it fits, all three are there.
+    // Where it fits, all of it is there, the palette's key with it.
     let wide = row(&mut app, WIDTH);
-    assert!(wide.contains("94%") && wide.contains("Mode") && wide.contains("ask first"));
+    assert!(
+        wide.contains("94%")
+            && wide.contains("Mode")
+            && wide.contains("ask first")
+            && wide.contains("More"),
+        "{wide:?}"
+    );
 
     // Where it does not, the number goes and the other two stay whole.
     let narrow = row(&mut app, 30);
@@ -8619,6 +8548,14 @@ fn a_narrow_row_keeps_the_settings_and_the_keys() {
     assert!(
         narrow.contains("ask first"),
         "the settings were cut down to nothing: {narrow:?}"
+    );
+    // The palette's key went before either: it points somewhere, and the
+    // settings and the keys are what is here. Broken deliberately by
+    // pushing it onto the keys whatever the width, which cuts the settings
+    // to a letter.
+    assert!(
+        !narrow.contains("More"),
+        "the palette's key stayed on a row that could not hold it: {narrow:?}"
     );
 }
 
@@ -10998,47 +10935,52 @@ fn one_press_on_a_cards_answer_stands_on_it_and_a_second_answers() {
     });
 }
 
-/// A press on the mode on the status row does what its key does.
+/// A press on a setting on the status row does what its key does.
 ///
 /// While a conversation is what the screen is showing, the status row is
-/// the conversation's, and the mode on it is one key away -- enter opens
-/// the list of its values -- and the row is the only thing on screen saying
-/// so. A press on it did nothing: the row's own handler knows about the
-/// three boxes a reader types in, and says a press is not its own when none
-/// of them is showing.
+/// the conversation's: a word for each of the agent's settings, saying what
+/// the session is set to. Each is one key away -- a switch flips, one with
+/// a list behind it opens the list -- and the row is the only thing on
+/// screen saying so. A press on one did nothing: the row's own handler
+/// knows about the three boxes a reader types in, and says a press is not
+/// its own when none of them is showing.
 ///
-/// The press goes to the setting and then down the key's own path, so the
-/// row and the key cannot come apart.
+/// The press goes to the setting and then down the key's own path, so a
+/// switch on the row and the same switch on the settings page cannot come
+/// apart.
 ///
-/// Broken deliberately by handing the press back, which opens nothing.
+/// Broken deliberately by handing the press back, which leaves the session
+/// set as it was.
 #[test]
-fn a_press_on_the_mode_on_the_status_row_does_what_its_key_does() {
+fn a_press_on_a_setting_on_the_status_row_does_what_its_key_does() {
     let (mut app, events) = talking();
-    pump(&mut app, &events, "the mode", |app| {
-        app.agent_mode().is_some()
+    pump(&mut app, &events, "the settings", |app| {
+        app.agent_settings()
+            .iter()
+            .any(|setting| setting.kind == obelus_agent::acp::Kind::Switch)
     });
+    let switch = app
+        .agent_settings()
+        .iter()
+        .position(|setting| setting.kind == obelus_agent::acp::Kind::Switch)
+        .expect("a switch among the settings");
+    let was = app.agent_settings()[switch].current.clone();
 
     // The word it is drawn as, and where on the row that is.
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     let status = rows(&dump)[usize::from(HEIGHT) - 1].to_string();
-    let x = support::column_of(&status, "ask first");
+    let name = app.agent_settings()[switch].name.clone();
+    let x = support::column_of(&status, &name);
     app.handle(Event::Pointer {
         kind: obelus_app::event::Pointer::Pressed,
         x: u16::try_from(x).expect("a column"),
         y: HEIGHT - 1,
     });
-    let names: Vec<String> = app
-        .picker()
-        .unwrap_or_else(|| {
-            panic!(
-                "the press opened nothing:
-{dump}"
-            )
-        })
-        .matches()
-        .map(|item| item.label.clone())
-        .collect();
-    assert_eq!(names, ["ask first", "write code"], "not the mode's values");
+    pump(&mut app, &events, "the setting to change", |app| {
+        app.agent_settings()
+            .get(switch)
+            .is_some_and(|setting| setting.current != was)
+    });
 }
 
 /// Shift and home hold the line the reader is writing, and the box draws it.
@@ -11264,22 +11206,18 @@ fn a_conversation_opens_on_what_the_reader_chose() {
             .any(|setting| setting.id == "model" && setting.current == "careful")
     });
 
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let screen = rows(&dump);
+    let status = screen[screen.len() - 1].to_string();
+    assert!(
+        status.contains("Careful"),
+        "the row does not say the conversation is on it:\n{dump}"
+    );
     // And the transcript says nothing about it: this is a standing choice,
     // not a thing the reader did in this conversation.
-    let dump = support::render(&mut app, WIDTH, HEIGHT);
     assert!(
         !support::text_block(&dump).contains("Model:"),
         "the transcript was written in about a choice made elsewhere:\n{dump}"
-    );
-    // The palette says what it is on.
-    support::press_control(&mut app, 'p');
-    support::type_text(&mut app, "model");
-    let dump = support::render(&mut app, WIDTH, HEIGHT);
-    assert!(
-        rows(&dump)
-            .iter()
-            .any(|row| row.contains("Which model it thinks with") && row.contains("Careful")),
-        "the palette does not say the conversation is on it:\n{dump}"
     );
 }
 

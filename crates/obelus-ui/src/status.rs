@@ -814,7 +814,7 @@ pub fn prompt_row(
 /// the view's foot says them any more -- so the row a reader looks at
 /// before typing says where they went. In the cap the key table writes, so
 /// a reader who moved the palette sees the key they moved it to.
-const MORE: &str = "More";
+pub(crate) const MORE: &str = "More";
 
 /// Where [`MORE`] goes on a row: from `at` cells in, and before `until`, or
 /// not at all. Dropped whole, like every aside on these rows -- half a key
@@ -838,11 +838,21 @@ pub(crate) fn more(
     if at.saturating_add(wanted).saturating_add(2) > until.min(area.right()) {
         return;
     }
-    let after = crate::capped(cells, at, area.y, key, theme);
+    more_at(cells, at, area.y, key, theme);
+}
+
+/// How many columns [`MORE`] and its key take.
+pub(crate) fn more_width(key: &str) -> usize {
+    crate::cap_width(key) + 1 + text_width(MORE)
+}
+
+/// [`MORE`] and its key, at `x`, wherever the caller has found room.
+fn more_at(cells: &mut CellBuffer, x: u16, y: u16, key: &str, theme: &Theme) {
+    let after = crate::capped(cells, x, y, key, theme);
     write(
         cells,
         after + 1,
-        area.y,
+        y,
         MORE,
         Style::new().fg(theme.gutter).bg(theme.background),
     );
@@ -1580,6 +1590,34 @@ impl StatusView<'_> {
     /// Last of the four, so a sentence Obelus has just said still takes
     /// the row: that is news and this is standing information, and the
     /// news goes when the next key is pressed.
+    /// The palette's key, against `end` and starting no nearer the row's own
+    /// words than `from`, and the column what is left of the row stops
+    /// before.
+    ///
+    /// On the row of every view whose palette leads with that view's own
+    /// keys -- the notes, a pull request's page, a conversation's -- and in
+    /// one place on each: against the surroundings, where the eye goes for
+    /// what is around the thing being read rather than what it is. It was
+    /// after the name on two of them and dropped there whenever the row had
+    /// something else to say, so the one row that said where the keys went
+    /// stopped saying it exactly when there was more on it.
+    fn palette_at_end(&self, cells: &mut CellBuffer, area: Rect, from: usize, end: usize) -> usize {
+        let Some(key) = &self.palette else {
+            return end;
+        };
+        let Some(at) = end.checked_sub(more_width(key)) else {
+            return end;
+        };
+        let Ok(x) = u16::try_from(at) else {
+            return end;
+        };
+        if at < from {
+            return end;
+        }
+        more_at(cells, area.x + x, area.y, key, self.theme);
+        at.saturating_sub(usize::from(LABEL_GAP))
+    }
+
     /// The surroundings at the end of a row that is not a file's, and the
     /// column what is left of the row stops short of.
     ///
@@ -1758,30 +1796,17 @@ impl StatusView<'_> {
         write(cells, area.x + 1, area.y, &name, style);
         let end = self.surroundings_at_end(area, cells, style);
         let first = 1 + text_width(&name) + 2;
-        let next = end + 1;
+        let end = self.palette_at_end(cells, area, first, end);
         // Where another Obelus has the review, which is why the key that
         // takes it up does nothing here: a refused claim is drawn, never
-        // said, and this is the row the notes draw theirs on. In the room
-        // the palette's key would have, because a key that does nothing is
-        // not the news.
+        // said, and this is the row the notes draw theirs on.
         if self.elsewhere {
             let held = "Talked about in another window";
-            if first + text_width(held) + 2 <= next
+            if first + text_width(held) <= end
                 && let Ok(offset) = u16::try_from(first)
             {
                 write(cells, area.x + offset, area.y, held, style);
             }
-            return;
-        }
-        if let (Some(key), Ok(end)) = (&self.palette, u16::try_from(next)) {
-            more(
-                cells,
-                area,
-                1 + text_width(&name) + AFTER_WORDS,
-                area.x.saturating_add(end),
-                key,
-                self.theme,
-            );
         }
     }
 
@@ -1803,6 +1828,8 @@ impl StatusView<'_> {
         write(cells, area.x + 1, area.y, &name, style);
 
         let end = self.surroundings_at_end(area, cells, style);
+        let first = 1 + text_width(&name) + 2;
+        let end = self.palette_at_end(cells, area, first, end);
         let left = notes.todo().notes.iter().filter(|note| !note.done).count();
         let said = (left > 0).then(|| format!("{left} to come back to"));
         let count_at = said
@@ -1814,7 +1841,6 @@ impl StatusView<'_> {
         {
             write(cells, area.x + offset, area.y, said, style);
         }
-        let first = 1 + text_width(&name) + 2;
         let next = count_at;
 
         // Where the note the caret is in is being talked about, when that is
@@ -1824,19 +1850,6 @@ impl StatusView<'_> {
         // screen cannot simply be changed here. Dropped whole where it does
         // not fit between the two, because half a place is no place.
         let Some(holder) = notes.selected_holder() else {
-            // Nothing to say about where the note is talked about, so the
-            // room after the name is the palette's key: the notes have no
-            // box of their own for it to follow.
-            if let (Some(key), Ok(end)) = (&self.palette, u16::try_from(next)) {
-                more(
-                    cells,
-                    area,
-                    1 + text_width(&name) + AFTER_WORDS,
-                    area.x.saturating_add(end),
-                    key,
-                    self.theme,
-                );
-            }
             return;
         };
         let held = match holder {

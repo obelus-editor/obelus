@@ -935,7 +935,6 @@ impl App {
             // them: there is nothing to show beside it.
             | PickerValue::KeysBack
             | PickerValue::Setting { .. }
-            | PickerValue::AgentSetting(_)
             | PickerValue::AgentValue { .. }
             | PickerValue::AgentDefault { .. }
             // A list of background work is compact, and what a row has

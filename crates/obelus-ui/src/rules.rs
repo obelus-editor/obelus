@@ -50,29 +50,6 @@ pub(crate) fn rule(cells: &mut CellBuffer, area: Rect, theme: &Theme) {
     shapes::ruled(Rect { height: 1, ..area });
 }
 
-/// A rule with a name on it, over a run of rows of a list whose rows are
-/// one row each: the line says what is under it is another kind of thing,
-/// and the name says which.
-///
-/// A rule rather than [`heading`]'s name and blank, because a list like
-/// this is short -- the palette's -- and two rows of every ten spent on
-/// one boundary is a fifth of it.
-pub(crate) fn named_rule(cells: &mut CellBuffer, area: Rect, name: &str, theme: &Theme) {
-    rule(cells, area, theme);
-    write(
-        cells,
-        area.x + 2,
-        area.y,
-        &truncate_from_right(
-            &format!(" {name} "),
-            usize::from(area.width.saturating_sub(4)),
-        ),
-        Style::new()
-            .fg(theme.status_foreground)
-            .bg(theme.background),
-    );
-}
-
 /// The line between the two halves of one panel.
 ///
 /// Not [`rule`], which is a boundary between two subjects on the page: this
