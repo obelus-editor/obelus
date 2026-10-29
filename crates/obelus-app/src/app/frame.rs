@@ -275,7 +275,6 @@ impl App {
         self.settle_agents(editor_area);
         self.prepare_icons();
         self.settle_chat(editor_area);
-        self.keep_the_palettes_settings();
         self.refresh_slash();
         // The same thing for the list of what could finish a path: the
         // window follows the selection only once it knows how many rows

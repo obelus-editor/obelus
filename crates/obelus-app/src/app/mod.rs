@@ -348,14 +348,6 @@ pub struct App {
     /// schemes, and the only honest preview of a theme is the screen wearing
     /// it. Cancelling has to undo that.
     theme_before: Option<(String, Worn)>,
-    /// What the agent's settings were when the palette's rows of them were
-    /// last written, while it has any -- see
-    /// `App::keep_the_palettes_settings`.
-    palette_settings: Option<Vec<(String, String)>>,
-    /// Which setting the list of values open now is of, where it was opened
-    /// from the palette -- which is where choosing one, or giving up, goes
-    /// back to.
-    values_from_the_palette: Option<String>,
     /// Where the reader was before quitting took them to the file it is
     /// asking about.
     ///
@@ -676,8 +668,6 @@ impl App {
             watching: [const { conversations::Watched::new() }; conversations::WATCHED],
             rendered: None,
             theme_before: None,
-            palette_settings: None,
-            values_from_the_palette: None,
             taken_from: None,
             note: None,
             events: None,
