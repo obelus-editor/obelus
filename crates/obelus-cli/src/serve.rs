@@ -104,6 +104,8 @@ struct Said {
     numbered: u64,
     /// Whether the writer has something in its hands.
     writing: bool,
+    /// What was said while what is kept was torn, which goes after it.
+    behind: VecDeque<Down>,
 }
 
 /// A picture on its way, and how much of it has gone.
@@ -138,6 +140,11 @@ struct Kept {
     /// Where the last frame's end is, and where its shapes are, while both
     /// are still here to be taken the place of.
     framed: Option<(usize, Vec<usize>)>,
+    /// Whether a cell of a frame still being said has taken its place
+    /// ahead of the end of the one before it -- and so what is kept, sent
+    /// now, would end that frame with some of this one's cells and not the
+    /// rest: a frame that never was. Whole again at the next frame's end.
+    torn: bool,
 }
 
 impl Kept {
@@ -154,6 +161,7 @@ impl Kept {
                     row.resize(x + 1, None);
                 }
                 if let Some(was) = row[x] {
+                    self.torn |= self.framed.as_ref().is_some_and(|(end, _)| was < *end);
                     self.updates[was] = Some(update);
                     return;
                 }
@@ -173,6 +181,7 @@ impl Kept {
                     }
                 }
                 self.framed = Some((at, std::mem::take(&mut self.shaping)));
+                self.torn = false;
             }
             update if update.is_a_shape() => self.shaping.push(at),
             _ => {}
@@ -203,6 +212,7 @@ impl Kept {
         self.forget_the_cells();
         self.shaping.clear();
         self.framed = None;
+        self.torn = false;
         std::mem::take(&mut self.updates)
             .into_iter()
             .flatten()
@@ -216,12 +226,9 @@ impl Said {
     fn keep(&mut self, update: Update) {
         match update {
             Update::Picture(Some(hanging)) => {
-                // What came before it first, so that the window is told
-                // things in the order they were said.
-                self.queue_what_is_kept();
                 self.numbered += 1;
                 let length = u64::try_from(hanging.bytes.len()).unwrap_or(u64::MAX);
-                self.queued.push_back(Down::Hung {
+                self.say(Down::Hung {
                     number: self.numbered,
                     wallpaper: hanging.wallpaper,
                     length,
@@ -246,12 +253,33 @@ impl Said {
         }
     }
 
-    /// Puts what is kept in the queue as one message, where anything is.
-    fn queue_what_is_kept(&mut self) {
-        self.due = false;
-        if !self.kept.is_empty() {
-            self.queued.push_back(Down::Updates(self.kept.take()));
+    /// Says one thing after what is kept for the screen, so that the window
+    /// is told things in the order they were said -- or, where what is kept
+    /// is torn and cannot go yet, behind it once it does: told a moment
+    /// late is better than told a frame that never was.
+    fn say(&mut self, down: Down) {
+        if self.kept.torn {
+            self.behind.push_back(down);
+            return;
         }
+        if let Some(updates) = self.take_what_is_kept() {
+            self.queued.push_back(updates);
+        }
+        self.queued.push_back(down);
+    }
+
+    /// What is kept, as one message, and what was said behind it into the
+    /// queue after it.
+    fn take_what_is_kept(&mut self) -> Option<Down> {
+        self.due = false;
+        self.queued.extend(self.behind.drain(..));
+        (!self.kept.is_empty()).then(|| Down::Updates(self.kept.take()))
+    }
+
+    /// Whether what is kept is to go now: the end of a whole frame, or
+    /// more than is kept for one.
+    fn kept_is_due(&self) -> bool {
+        !self.kept.is_empty() && ((self.due && !self.kept.torn) || self.kept.len() >= KEPT_MOST)
     }
 
     /// The next thing to write: what was said in order first, then the
@@ -260,9 +288,10 @@ impl Said {
         if let Some(down) = self.queued.pop_front() {
             return Some(down);
         }
-        if self.due && !self.kept.is_empty() {
-            self.due = false;
-            return Some(Down::Updates(self.kept.take()));
+        if self.kept_is_due() {
+            let updates = self.take_what_is_kept();
+            // What was behind it is in the queue now, after it.
+            return updates.or_else(|| self.queued.pop_front());
         }
         let sending = self.sending.as_mut()?;
         let end = (sending.sent + PIECE).min(sending.bytes.len());
@@ -279,7 +308,7 @@ impl Said {
 
     /// Whether there is anything to write other than a picture's pieces.
     fn waiting(&self) -> bool {
-        !self.queued.is_empty() || (self.due && !self.kept.is_empty())
+        !self.queued.is_empty() || self.kept_is_due()
     }
 }
 
@@ -387,8 +416,7 @@ impl Out {
             return Ok(());
         }
         let mut said = self.said.lock().map_err(|_| Closed)?;
-        said.queue_what_is_kept();
-        said.queued.push_back(down);
+        said.say(down);
         drop(said);
         self.stirred.notify_all();
         Ok(())
@@ -1348,6 +1376,61 @@ mod tests {
         assert_eq!(rules.last(), Some(&99), "not the last frame's shapes");
         assert!(rules.len() <= 2, "shapes of frames gone by: {rules:?}");
         assert_eq!(updates.last(), Some(&Update::Frame));
+    }
+
+    /// What is kept does not go while a frame still being said has some
+    /// of its cells ahead of the last frame's end, and goes whole once
+    /// that frame ends; what is said meanwhile goes after it.
+    ///
+    /// Broken deliberately by never marking it torn (the `torn |=` left
+    /// out of `Kept::keep`): the frame went with the second frame's `b`
+    /// ahead of the first frame's end and none of the rest of the second
+    /// frame -- a frame that never was.
+    #[test]
+    fn a_frame_half_said_does_not_go() {
+        let mut said = Said::default();
+        said.keep(Update::Cell {
+            x: 0,
+            y: 0,
+            cell: cell("a"),
+        });
+        said.keep(Update::Frame);
+        said.due = true;
+        // The next frame, half said when the writer comes for it.
+        said.keep(Update::Cell {
+            x: 0,
+            y: 0,
+            cell: cell("b"),
+        });
+        said.say(Down::Open("u".to_string()));
+        assert!(said.next().is_none(), "half a frame went");
+        said.keep(Update::Cell {
+            x: 1,
+            y: 0,
+            cell: cell("c"),
+        });
+        said.keep(Update::Frame);
+        said.due = true;
+        let Some(Down::Updates(updates)) = said.next() else {
+            panic!("the frame did not go once it was whole");
+        };
+        let cells: Vec<&str> = updates
+            .iter()
+            .filter_map(|update| match update {
+                Update::Cell { cell, .. } => Some(cell.symbol()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(cells, ["b", "c"]);
+        assert_eq!(updates.last(), Some(&Update::Frame));
+        assert_eq!(
+            updates
+                .iter()
+                .filter(|update| **update == Update::Frame)
+                .count(),
+            1
+        );
+        assert_eq!(said.next(), Some(Down::Open("u".to_string())));
     }
 
     /// A cell is not moved across the screen being cleared, nor anything
