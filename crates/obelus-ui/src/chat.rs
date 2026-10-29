@@ -811,19 +811,14 @@ impl<'a> ChatView<'a> {
             relayed: app.bot_relayed(),
             from: app.drawn_from(),
             palette: crate::status::palette_key(app),
-            here: {
-                let chat = app.shown().chat()?;
-                let modes = app.agent_settings().iter().any(|setting| {
-                    setting.category == acp::Category::Mode && setting.values.len() > 1
-                });
-                !hints(
-                    chat,
-                    app.talking() == Talking::Thinking,
-                    modes,
-                    app.page_of_the_conversation(),
-                )
-                .is_empty()
-            },
+            here: hints(
+                app.shown().chat()?,
+                app.talking() == Talking::Thinking,
+                app.agent_has_modes(),
+                app.page_of_the_conversation(),
+            )
+            .iter()
+            .any(|hint| hint.here),
             seen: None,
         })
     }
@@ -1668,6 +1663,14 @@ impl ChatView<'_> {
             .fg(self.theme.status_foreground);
         fill(cells, area, plain);
 
+        // What Obelus has just said, alone on the row, as on every status
+        // row: the settings, the memory, the keys and the surroundings come
+        // back at the next key, which is the one that takes it. Before the
+        // surroundings are drawn, or it is drawn beside them.
+        if let Some(note) = self.note {
+            crate::status::said_alone(cells, area, note, self.note_is_wrong, plain, self.theme);
+            return;
+        }
         // What the row says about the window, at the far end where every
         // status row says it (`status::Surroundings`); what is the
         // conversation's own is laid out in what that leaves.
@@ -1678,25 +1681,6 @@ impl ChatView<'_> {
             plain.fg(self.theme.status_foreground),
             self.theme,
         );
-        // What Obelus has just said, alone on the row, as on every status
-        // row (`StatusView::render_said`): the settings, the memory and the
-        // keys come back at the next key, which is the one that takes it.
-        if let Some(note) = self.note {
-            let ink = match self.note_is_wrong {
-                true => plain.fg(self
-                    .theme
-                    .colour_for(Some(obelus_text::kind::SyntaxKind::Error))),
-                false => plain,
-            };
-            write(
-                cells,
-                area.x + 1,
-                area.y,
-                &super::truncate_from_right(note, usize::from(area.width).saturating_sub(2)),
-                ink,
-            );
-            return;
-        }
         let area = self.beside_the_surroundings(area);
 
         // What a key does here, on the right. Two of them at most, and the
@@ -2560,6 +2544,52 @@ mod tests {
         assert!(
             !(seen..regions.transcript.bottom()).any(barred),
             "the bar ran on under the list"
+        );
+    }
+
+    /// What Obelus has just said is the conversation's whole status row:
+    /// the chat's mark and the machine are not drawn beside it.
+    ///
+    /// Broken deliberately by drawing the surroundings before asking
+    /// whether there is a note, which leaves them beside it.
+    #[test]
+    fn a_note_on_the_conversations_row_is_not_beside_the_surroundings() {
+        let chat = obelus_component::chat::Chat::new();
+        let area = ratatui::layout::Rect::new(0, 0, 76, 1);
+        let view = super::ChatView {
+            chat: &chat,
+            theme: &obelus_theme::builtin::DARK,
+            state: obelus_agent::Talking::Ready,
+            name: None,
+            title: None,
+            settings: &[],
+            focus: obelus_component::chat::Focus::Writing,
+            card: None,
+            asked: false,
+            in_front: true,
+            pointer: None,
+            root: std::path::Path::new("/"),
+            phase: 0,
+            branch: None,
+            back_to_the_note: None,
+            note: Some("Copied selection"),
+            note_is_wrong: false,
+            usage: None,
+            tasks: None,
+            bot: Some(("Feishu", obelus_bot::State::Connected)),
+            relayed: false,
+            from: Some("devbox"),
+            palette: None,
+            here: false,
+            seen: None,
+        };
+        let mut cells = ratatui::buffer::Buffer::empty(area);
+        view.status(&mut cells, area);
+        let row: String = (0..area.width).map(|x| cells[(x, 0)].symbol()).collect();
+        assert!(row.contains("Copied selection"), "{row:?}");
+        assert!(
+            !row.contains("Feishu") && !row.contains("devbox"),
+            "the surroundings are beside the note: {row:?}"
         );
     }
 

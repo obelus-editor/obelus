@@ -2116,9 +2116,14 @@ impl App {
             // a note would have the row and cover the file it is about.
             // And what was said while it was on its way -- laying it out,
             // tidying it up -- taken back: it used to be said over, and
-            // left alone it says the save is still going.
+            // left alone it says the save is still going. Not what went
+            // wrong on the way, which is still true once it is written: a
+            // file that changed while it was being laid out is written as
+            // it was, and that is the reader's to hear.
             Ok(()) => {
-                self.quiet();
+                if !self.note_is_wrong() {
+                    self.quiet();
+                }
                 self.saved_document(index);
                 true
             }

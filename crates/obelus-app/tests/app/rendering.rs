@@ -3285,19 +3285,61 @@ fn the_machine_drawn_afar_is_at_the_end_of_the_row() {
         "a machine said where the reader is sitting at it"
     );
 
+    // A name the test says, rather than this machine's: a long one is cut
+    // to its mark, and the test would pass on one machine and not another.
     for mut afar in [
         App::new(vec![support::open_fixture("sample.rs")]),
         App::new(Vec::new()),
     ] {
-        afar.drawn_afar();
-        let name = afar.drawn_from().expect("a machine").to_string();
+        afar.drawn_afar_as_for_test("devbox");
         support::lay_out(&mut afar, 60, HEIGHT);
         let row = last(&mut afar);
         assert!(
-            row.ends_with(&format!("\u{21c4} {name}")),
-            "not at the end of the row: {row}"
+            row.ends_with("\u{21c4} devbox"),
+            "not at the end of the row: {row:?}"
         );
     }
+    // And the name read from the machine is a name.
+    let mut real = App::new(Vec::new());
+    real.drawn_afar();
+    assert!(
+        real.drawn_from().is_some_and(|name| !name.is_empty()),
+        "no name for the machine"
+    );
+}
+
+/// A file's path keeps its last few columns on a row that also has to say
+/// the file is unsaved: the surroundings give up their words first.
+///
+/// Deliberate break: leave the marker's width out of the room the
+/// surroundings are given, which cuts the path to a couple of columns while
+/// the machine keeps its name.
+#[test]
+fn the_surroundings_give_way_to_a_path_beside_a_marker() {
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.drawn_afar_as_for_test("build-server-01");
+    support::lay_out(&mut app, 40, HEIGHT);
+    support::type_text(&mut app, "x");
+    let dump = support::render(&mut app, 40, HEIGHT);
+    let row = support::text_block(&dump)
+        .lines()
+        .last()
+        .expect("a status row")
+        .to_string();
+    assert!(
+        row.contains("unsaved"),
+        "no marker, so this tests nothing: {row:?}"
+    );
+    assert!(
+        row.contains("ample.rs"),
+        "the path was cut below its last few columns: {row:?}"
+    );
+    // At a width where the two cannot both have their words: the machine
+    // gives up its name, and keeps its mark.
+    assert!(
+        row.contains('\u{21c4}') && !row.contains("build-server-01"),
+        "the machine kept its name, so this tests nothing: {row:?}"
+    );
 }
 
 /// Naming a path puts a list of what could finish it over the welcome

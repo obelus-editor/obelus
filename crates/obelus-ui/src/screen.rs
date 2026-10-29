@@ -475,6 +475,8 @@ pub trait Screen {
     fn slash(&self) -> Option<&Picker>;
     /// What Obelus is doing about an agent.
     fn talking(&self) -> Talking;
+    /// Whether the agent has more than one way of working to step through.
+    fn agent_has_modes(&self) -> bool;
     /// The pull request or issue the conversation in front is about, where
     /// it is about one.
     fn page_of_the_conversation(&self) -> Option<obelus_component::discussion::Asked>;

@@ -58,10 +58,9 @@ fn wrong_ink() -> Color {
 /// red is the second -- and the second is what colouring the whole channel
 /// would have done, telling a reader that copying failed.
 ///
-/// Deliberate break: have `wrong_ink` in `StatusView` answer `Some` for
-/// every note. A report goes red. Break the other way by having it answer
-/// `None` always, and `Nothing to undo` goes back to the ink a report is
-/// in.
+/// Deliberate break: have `said_alone` in `status` take every note for one
+/// that went wrong. A report goes red. Break the other way by having it take
+/// none for one, and `Nothing to undo` goes back to the ink a report is in.
 #[test]
 fn a_refusal_is_in_the_ink_of_things_that_went_wrong() {
     let (_scratch, mut app) = reading("said-wrong");
@@ -120,6 +119,20 @@ fn a_save_says_nothing_the_row_does_not() {
         status.contains("hint.rs") && !status.contains("unsaved"),
         "the row does not say it was written:\n{dump}"
     );
+
+    // But not what went wrong on the way, which the save does not make
+    // untrue -- the file that changed while it was being laid out, written
+    // as it was. A refusal stands in for it, through the same door. Broken
+    // deliberately by taking back whatever was said.
+    support::type_text(&mut app, "// ");
+    dispatch::dispatch(&mut app, Command::Redo);
+    assert_eq!(app.note(), Some("Nothing to redo"));
+    dispatch::dispatch(&mut app, Command::FileSave);
+    assert_eq!(
+        app.note(),
+        Some("Nothing to redo"),
+        "the save took back what went wrong on its way"
+    );
 }
 
 /// An agent changing a file the reader has open says nothing on the status
@@ -164,7 +177,7 @@ fn an_agents_change_to_an_open_file_says_nothing_the_screen_does_not() {
 #[test]
 fn a_note_is_the_whole_row() {
     let (_scratch, mut app) = reading("said-whole");
-    app.say_for_test("Saved");
+    app.say_for_test("Copied selection");
     let dump = support::render(&mut app, 76, 12);
     let status = support::text_block(&dump)
         .lines()
@@ -172,14 +185,12 @@ fn a_note_is_the_whole_row() {
         .expect("a status row")
         .to_string();
     assert!(
-        status.contains("Saved"),
-        "the note is not on the row:
-{dump}"
+        status.contains("Copied selection"),
+        "the note is not on the row:\n{dump}"
     );
     assert!(
         !status.contains("hint.rs") && !status.contains("1:1"),
-        "the row says more than the note:
-{dump}"
+        "the row says more than the note:\n{dump}"
     );
 
     // And gone at the next key, with the row back.
@@ -191,9 +202,8 @@ fn a_note_is_the_whole_row() {
         .expect("a status row")
         .to_string();
     assert!(
-        status.contains("hint.rs") && !status.contains("Saved"),
-        "the row did not come back:
-{dump}"
+        status.contains("hint.rs") && !status.contains("Copied selection"),
+        "the row did not come back:\n{dump}"
     );
 }
 
@@ -233,12 +243,12 @@ fn a_note_alone_on_the_row_is_the_row() {
     // Something said about the file before it goes, the way a press on the
     // row or a card's answer leaves it -- neither of which quiets the row
     // the way a key does on its way in.
-    app.say_for_test("Saved");
+    app.say_for_test("Copied selection");
     dispatch::dispatch(&mut app, Command::DocumentClose);
     // Closing says nothing, and takes what was said about the file with it:
     // the reader is looking at what is there instead.
     assert_eq!(app.note(), None, "closing a file left something said");
-    app.say_for_test("Saved");
+    app.say_for_test("Copied selection");
     assert_eq!(
         ink(&mut app),
         DARK.status_foreground,

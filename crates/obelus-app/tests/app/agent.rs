@@ -2872,13 +2872,11 @@ fn a_note_is_the_conversations_whole_row() {
     let status = screen[screen.len() - 1].to_string();
     assert!(
         status.contains("Copied selection"),
-        "the note is not on the row:
-{dump}"
+        "the note is not on the row:\n{dump}"
     );
     assert!(
         !status.contains("ask first") && !status.contains("Mode"),
-        "the row says more than the note:
-{dump}"
+        "the row says more than the note:\n{dump}"
     );
 }
 
@@ -6818,20 +6816,14 @@ fn a_question_still_up_keeps_the_conversation_open() {
     assert!(is_open(&app, 0), "closed with a question up in it");
 }
 
-/// A conversation an agent closes is named where Obelus says it closed,
-/// and goes from the list of what is open while that list is showing.
-///
-/// The name is the one that list gives it -- here the note it is about --
-/// because the reader may have been somewhere else, and "the conversation"
-/// is then one of several. And the list is a row of what is true now: a
+/// A conversation an agent closes goes from the list of what is open while
+/// that list is showing, and is not said where the reader is looking at it:
+/// the screen changing says it. The list is a row of what is true now: a
 /// row for a conversation that has gone is a row whose enter does nothing.
 ///
-/// Nothing is said about it: what was on screen going says it, and a note
-/// would have the status row for nothing.
-///
-/// Broken deliberately two ways. Saying "Closed {name}" again fails the
-/// first assertion. Taking the call to `refresh_switching` out of
-/// `close_the_conversation` leaves the row in the list.
+/// Broken deliberately two ways. Saying "Closed {name}" whatever is in
+/// front fails the first assertion. Taking the call to `refresh_switching`
+/// out of `close_the_conversation` leaves the row in the list.
 #[test]
 fn a_conversation_an_agent_closes_leaves_the_list_and_says_nothing() {
     let scratch = support::Scratch::new("agent-closed-named");
@@ -6874,6 +6866,43 @@ fn a_conversation_an_agent_closes_leaves_the_list_and_says_nothing() {
         !listed,
         "the closed conversation is still a row of the list"
     );
+}
+
+/// A conversation an agent closes while the reader is somewhere else is
+/// said, by the name the list of what is open gives it -- here the note it
+/// is about: nothing on screen moved, the reader did not do it, and "the
+/// conversation" is one of several.
+///
+/// Broken deliberately by saying nothing whatever is in front, as for the
+/// conversation the reader is in.
+#[test]
+fn a_conversation_an_agent_closes_somewhere_else_is_named() {
+    let scratch = support::Scratch::new("agent-closed-elsewhere");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
+        "[[todo]]\nid = \"0123456S\"\nsaid = \"wire the counts up\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.talk_to(
+        "fake",
+        Path::new(support::sh()),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    talk_about_the_note(&mut app);
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    assert!(is_open(&app, 1), "no conversation about the note");
+
+    // Back on the notes, with the conversation behind them.
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    assert!(app.chat().is_none(), "the conversation is still in front");
+    assert_eq!(close_it(&mut app, 1), "closed");
+    assert_eq!(app.note(), Some("Closed wire the counts up"));
 }
 
 /// A conversation about no note goes by the reader's first words in the
@@ -7762,26 +7791,22 @@ fn a_plan_opens_in_a_document_of_its_own_and_follows_its_revisions() {
     let screen = rows(&dump);
     assert!(
         screen.iter().any(|row| row.contains("The plan")),
-        "the plan is not on screen:
-{dump}"
+        "the plan is not on screen:\n{dump}"
     );
     assert!(
         screen.iter().any(|row| row.contains("5. Stop")),
-        "the plan is not all there:
-{dump}"
+        "the plan is not all there:\n{dump}"
     );
     assert!(
         !screen.iter().any(|row| row.contains("# The plan")),
-        "the plan is on screen as its markdown:
-{dump}"
+        "the plan is on screen as its markdown:\n{dump}"
     );
     // Named on the status row by its own heading, as its tab and its row in
     // the list are: there is no `plan.md` anywhere to go looking for.
     let status = screen.last().expect("no status row");
     assert!(
         status.contains("Plan: The plan") && !status.contains("plan.md"),
-        "the status row does not say what it is:
-{dump}"
+        "the status row does not say what it is:\n{dump}"
     );
 
     // Back to the conversation to answer, and asked for more planning.
@@ -11723,6 +11748,20 @@ fn a_conversation_another_obelus_has_open_is_not_opened_again() {
             .last()
             .is_some_and(|status| status.contains("Talked about in another window")),
         "the status row does not say the note is talked about elsewhere:\n{dump}"
+    );
+    // And on a row with room for that or the palette's key and not both,
+    // it is that: a refused claim is drawn, and a key that does nothing
+    // here is not the news. Broken deliberately by giving the palette's key
+    // its room first again, which drops the place whole.
+    let dump = support::render(&mut app, 60, 18);
+    let status = support::text_block(&dump)
+        .lines()
+        .last()
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        status.contains("Talked about in another window"),
+        "the palette's key took the room the place needed:\n{dump}"
     );
     // The lock, and not the mark that says the key takes a conversation up
     // here: the other window may be on another checkout or another agent,
