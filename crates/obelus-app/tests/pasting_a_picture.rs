@@ -198,12 +198,8 @@ impl obelus_app::app::desk::Desk for Afar {
         None
     }
 
-    fn picture(&self) -> Option<(String, Vec<u8>)> {
-        panic!("the paste waited for the picture to cross");
-    }
-
-    fn picture_later(&self) -> Option<bool> {
-        Some(true)
+    fn picture(&self) -> obelus_app::app::desk::Picture {
+        obelus_app::app::desk::Picture::Coming
     }
 
     fn holds_a_picture(&self) -> bool {
@@ -221,6 +217,8 @@ impl obelus_app::app::desk::Desk for Afar {
 ///
 /// Deliberate break: `Event::Pictured` handled as nothing (its arm in
 /// `handle` doing nothing) leaves the box empty once the picture arrives.
+/// And quieting whatever is said when it arrives (`pictured` calling
+/// `quiet` unasked): what somebody else said meanwhile was taken away.
 #[test]
 fn a_picture_from_afar_goes_in_the_box_when_it_arrives() {
     let (mut app, _events) = talking();
@@ -233,12 +231,19 @@ fn a_picture_from_afar_goes_in_the_box_when_it_arrives() {
     assert_eq!(pictures_in_the_box(&app), 1, "not in the box once it came");
     assert_eq!(app.note(), None);
 
+    // Something said while it crossed is not the paste's to take back.
+    app.paste();
+    app.say_for_test("Saved");
+    app.handle(Event::Pictured("image/png".to_string(), vec![4]));
+    assert_eq!(pictures_in_the_box(&app), 2);
+    assert_eq!(app.note(), Some("Saved"), "what was said since went");
+
     support::press_control(&mut app, 'p');
     assert!(app.picker().is_some(), "the palette did not open");
-    app.handle(Event::Pictured("image/png".to_string(), vec![4]));
+    app.handle(Event::Pictured("image/png".to_string(), vec![5]));
     assert_eq!(
         pictures_in_the_box(&app),
-        1,
+        2,
         "it went into the box under the palette"
     );
     assert_eq!(app.note(), Some("A picture goes in a message to an agent"));

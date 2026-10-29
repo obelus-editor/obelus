@@ -3264,8 +3264,8 @@ mod by_the_word_and_the_line {
             self.0.lock().expect("their clipboard").clone()
         }
 
-        fn picture(&self) -> Option<(String, Vec<u8>)> {
-            None
+        fn picture(&self) -> obelus_app::app::desk::Picture {
+            obelus_app::app::desk::Picture::Nothing
         }
 
         fn holds_a_picture(&self) -> bool {

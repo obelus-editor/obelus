@@ -313,7 +313,7 @@ pub enum Event {
     /// status row.
     Amiss(String),
     /// The picture on the reader's clipboard, asked for by a paste and
-    /// arriving after it (`Desk::picture_later`): what shape it is in, and
+    /// arriving after it (`desk::Picture::Coming`): what shape it is in, and
     /// the picture.
     Pictured(String, Vec<u8>),
 }

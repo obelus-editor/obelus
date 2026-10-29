@@ -41,7 +41,7 @@ use obelus_app::event::Event;
 
 use crate::{
     Input, Measured, Showing, Update,
-    link::{Answered, Carried, Challenge, Down, Front, Knock, PIECE, Up},
+    link::{Answered, Arriving, Carried, Challenge, Down, Front, Knock, PIECE, Up},
 };
 
 /// The longest wait between two knocks on a server that has gone quiet.
@@ -311,37 +311,10 @@ fn knock(
     Ok((stream, answered))
 }
 
-/// A picture arriving in pieces: which, what the theme said of it, how
-/// long it is, and what has come.
-struct Arriving {
-    number: u64,
-    wallpaper: obelus_theme::Wallpaper,
-    length: u64,
-    bytes: Vec<u8>,
-}
-
-impl Arriving {
-    /// Takes in a piece of the picture of `number`, and hands the picture
-    /// back once it is whole. A piece of any other is about a picture that
-    /// has been let go of, and goes nowhere.
-    fn took(&mut self, number: u64, piece: &[u8]) -> Option<crate::Hanging> {
-        if number != self.number {
-            return None;
-        }
-        // Room made as the pieces come, rather than for what the other end
-        // said the length would be.
-        self.bytes.extend_from_slice(piece);
-        let had = u64::try_from(self.bytes.len()).unwrap_or(u64::MAX);
-        (had >= self.length).then(|| crate::Hanging {
-            wallpaper: self.wallpaper.clone(),
-            bytes: std::mem::take(&mut self.bytes),
-        })
-    }
-}
-
 /// Hangs a picture that has arrived whole, and answers whether there is
 /// still a front end to hang it on.
-fn hung(here: &dyn Showing, whole: crate::Hanging) -> bool {
+fn hung(here: &dyn Showing, (wallpaper, bytes): (obelus_theme::Wallpaper, Vec<u8>)) -> bool {
+    let whole = crate::Hanging { wallpaper, bytes };
     if here.show(Update::Picture(Some(whole))).is_err() {
         return false;
     }
@@ -740,7 +713,7 @@ fn hear(
     // is two more than there need be.
     let mut reading = std::io::BufReader::new(&*stream);
     // The picture whose pieces are arriving, where one is.
-    let mut arriving: Option<Arriving> = None;
+    let mut arriving = Arriving::<obelus_theme::Wallpaper>::default();
     loop {
         match obelus_wire::read::<_, Down>(&mut reading) {
             Ok(Some(Down::Updates(updates))) => {
@@ -754,7 +727,7 @@ fn hear(
                     // A picture let go of is one whose pieces still to come
                     // are about a page that has gone.
                     if matches!(update, Update::Picture(None)) {
-                        arriving = None;
+                        arriving.forget();
                     }
                 }
                 // Handed over together, the way `Cells` hands over a frame
@@ -773,25 +746,23 @@ fn hear(
                 wallpaper,
                 length,
             })) => {
-                arriving = Some(Arriving {
-                    number,
-                    wallpaper,
-                    length,
-                    bytes: Vec::new(),
-                });
-                if let Some(whole) = arriving.as_mut().and_then(|now| now.took(number, &[])) {
-                    arriving = None;
-                    if !hung(here, whole) {
-                        return Some(Left::Finished);
+                // The one before it is under a page that has gone.
+                arriving.forget();
+                match arriving.begin(number, length, wallpaper) {
+                    Ok(Some(whole)) => {
+                        if !hung(here, whole) {
+                            return Some(Left::Finished);
+                        }
                     }
+                    Ok(None) => {}
+                    Err(_) => tracing::warn!(length, "a picture too large to wait for"),
                 }
             }
             Ok(Some(Down::Piece { number, bytes })) => {
-                if let Some(whole) = arriving.as_mut().and_then(|now| now.took(number, &bytes)) {
-                    arriving = None;
-                    if !hung(here, whole) {
-                        return Some(Left::Finished);
-                    }
+                if let Some(whole) = arriving.took(number, &bytes)
+                    && !hung(here, whole)
+                {
+                    return Some(Left::Finished);
                 }
             }
             Ok(Some(Down::Copy(words))) => {
@@ -1178,7 +1149,7 @@ mod tests {
     /// rest of its pieces come after.
     ///
     /// Broken deliberately by keeping the pieces of a picture let go of
-    /// (the `arriving = None` for `Update::Picture(None)` left out of
+    /// (the `arriving.forget()` for `Update::Picture(None)` left out of
     /// `hear`): the first picture was hung, whole, after the page had let
     /// go of it -- an old theme's picture under the new one's colours.
     #[test]

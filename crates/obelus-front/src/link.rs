@@ -241,6 +241,84 @@ pub struct Carried {
 /// a network that is merely ordinary.
 pub const PIECE: usize = 64 << 10;
 
+/// What is arriving a piece at a time, by the number each goes under --
+/// either way: a picture under the page coming down, and what the reader
+/// sends coming up. `T` is what each is, for when it is whole.
+#[derive(Debug)]
+pub struct Arriving<T> {
+    coming: std::collections::HashMap<u64, Coming<T>>,
+}
+
+/// One thing arriving: what it is, how long it is, and what has come.
+#[derive(Debug)]
+struct Coming<T> {
+    what: T,
+    length: usize,
+    bytes: Vec<u8>,
+}
+
+impl<T> Default for Arriving<T> {
+    fn default() -> Self {
+        Self {
+            coming: std::collections::HashMap::new(),
+        }
+    }
+}
+
+impl<T> Arriving<T> {
+    /// Something of `length` bytes has started arriving under `number`:
+    /// whole at once where it is nothing at all, and handed back as `Err`
+    /// where it is longer than a frame -- which nothing Obelus sends is,
+    /// and which is not waited for.
+    ///
+    /// # Errors
+    ///
+    /// What it was, where it is too long to wait for.
+    pub fn begin(&mut self, number: u64, length: u64, what: T) -> Result<Option<(T, Vec<u8>)>, T> {
+        let Some(length) = usize::try_from(length)
+            .ok()
+            .filter(|length| *length <= obelus_wire::MOST)
+        else {
+            return Err(what);
+        };
+        if length == 0 {
+            return Ok(Some((what, Vec::new())));
+        }
+        self.coming.insert(
+            number,
+            Coming {
+                what,
+                length,
+                // Room made as the pieces come, rather than for what the
+                // other end said the length would be.
+                bytes: Vec::new(),
+            },
+        );
+        Ok(None)
+    }
+
+    /// A piece of what is arriving under `number`, and it whole once the
+    /// piece is its last. A piece of nothing arriving is of something let
+    /// go of, and goes nowhere.
+    pub fn took(&mut self, number: u64, piece: &[u8]) -> Option<(T, Vec<u8>)> {
+        let coming = self.coming.get_mut(&number)?;
+        let room = coming.length - coming.bytes.len();
+        coming
+            .bytes
+            .extend_from_slice(&piece[..piece.len().min(room)]);
+        if coming.bytes.len() < coming.length {
+            return None;
+        }
+        let whole = self.coming.remove(&number)?;
+        Some((whole.what, whole.bytes))
+    }
+
+    /// Lets go of everything arriving, and answers what each was.
+    pub fn forget(&mut self) -> Vec<T> {
+        self.coming.drain().map(|(_, coming)| coming.what).collect()
+    }
+}
+
 /// What `ob --server` tells the Obelus it started for a window, on that
 /// Obelus's standard input.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -294,6 +372,41 @@ pub fn signed_by(key: &[u8], challenge: &Challenge, signed: &[u8; 32]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// What arrives a piece at a time is whole once its last piece has
+    /// come, and not before; a piece of nothing arriving goes nowhere, one
+    /// let go of leaves nothing half there, and one longer than a frame is
+    /// not waited for.
+    ///
+    /// Broken deliberately by handing it over at its first piece (`took`
+    /// answering what has come whatever its length): half a file was kept
+    /// as if it were the file.
+    #[test]
+    fn what_arrives_in_pieces_is_whole_at_its_last() {
+        let mut arriving = Arriving::default();
+        assert_eq!(arriving.begin(1, 5, "picture"), Ok(None));
+        assert_eq!(
+            arriving.took(1, &[1, 2, 3]),
+            None,
+            "whole at its first piece"
+        );
+        assert_eq!(arriving.took(9, &[7]), None, "a piece of nothing");
+        assert_eq!(
+            arriving.took(1, &[4, 5]),
+            Some(("picture", vec![1, 2, 3, 4, 5]))
+        );
+        assert_eq!(
+            arriving.begin(2, 0, "empty"),
+            Ok(Some(("empty", Vec::new()))),
+            "nothing at all is not waited for"
+        );
+        assert_eq!(arriving.begin(3, 4, "half"), Ok(None));
+        arriving.took(3, &[1, 2]);
+        assert_eq!(arriving.forget(), ["half"]);
+        assert_eq!(arriving.took(3, &[3, 4]), None, "half of one let go of");
+        let too_long = u64::try_from(obelus_wire::MOST).expect("a length") + 1;
+        assert_eq!(arriving.begin(4, too_long, "huge"), Err("huge"));
+    }
 
     /// A connection kept alive has the kernel knocking on it.
     ///

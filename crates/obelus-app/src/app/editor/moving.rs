@@ -17,6 +17,9 @@ enum Column {
     InRow(usize),
 }
 
+/// What the status row says while a picture pasted from a machine at the
+/// other end of a connection crosses.
+const BRINGING: &str = "Bringing the picture across";
 impl App {
     /// Goes to a place a server named, recording where the reader was.
     ///
@@ -625,18 +628,16 @@ impl App {
         // offered rather than after it fails, and where the answer is no
         // the words on the clipboard are pasted as they always were.
         if self.can_take_a_picture() {
-            match self.desk().picture_later() {
-                Some(true) => {
-                    self.say("Bringing the picture across");
+            match self.desk().picture() {
+                crate::app::desk::Picture::Here(mime, bytes) => {
+                    self.attach_picture(mime, bytes);
                     return;
                 }
-                Some(false) => {}
-                None => {
-                    if let Some((mime, bytes)) = self.desk().picture() {
-                        self.attach_picture(mime, bytes);
-                        return;
-                    }
+                crate::app::desk::Picture::Coming => {
+                    self.say(BRINGING);
+                    return;
                 }
+                crate::app::desk::Picture::Nothing => {}
             }
         }
         let Some(what) = self.desk().paste() else {
@@ -673,7 +674,11 @@ impl App {
             self.wrong("A picture goes in a message to an agent".to_string());
             return;
         }
-        self.quiet();
+        // Only what the paste said: anything said since is somebody
+        // else's, and still true.
+        if self.note() == Some(BRINGING) {
+            self.quiet();
+        }
         self.attach_picture(mime, bytes);
     }
 

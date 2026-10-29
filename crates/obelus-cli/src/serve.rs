@@ -31,7 +31,7 @@ use anyhow::{Context as _, Result};
 use obelus_app::{app, event::Event, startup};
 use obelus_front::{
     Closed, Measured, Showing, Update,
-    link::{Carried, Down, Front, PIECE, ToChild, Up},
+    link::{Arriving, Down, Front, PIECE, ToChild, Up},
     replay::Screen,
 };
 
@@ -41,13 +41,6 @@ use obelus_front::{
 /// answer takes a millisecond, and one that has not come in a second is
 /// not coming.
 const PATIENCE: Duration = Duration::from_secs(1);
-
-/// How long the picture on the reader's clipboard is waited for by
-/// whatever does wait for it. A paste does not: it asks for the picture to
-/// arrive when it has crossed (`Desk::picture_later`), because a
-/// screenshot is megabytes and the loop waiting for them was a screen that
-/// stopped for as long as they took.
-const PICTURE_PATIENCE: Duration = Duration::from_secs(10);
 
 /// How long what is still to be written is given to go once Obelus has
 /// ended, so that the window hears it ended -- and not for ever, with
@@ -133,8 +126,13 @@ struct Sending {
 #[derive(Default)]
 struct Kept {
     updates: Vec<Option<Update>>,
-    /// Where in `updates` the last word on each cell is.
-    cells: HashMap<(u16, u16), usize>,
+    /// Where in `updates` the last word on each cell is, by row and then
+    /// column -- a grid rather than a map, because every cell of every
+    /// frame comes through here, behind or not.
+    cells: Vec<Vec<Option<usize>>>,
+    /// Which places in `cells` say anything, so that forgetting them is as
+    /// much work as there are of them and not as there are cells.
+    placed: Vec<(usize, usize)>,
     /// Where the shapes said since the last frame ended are.
     shaping: Vec<usize>,
     /// Where the last frame's end is, and where its shapes are, while both
@@ -147,15 +145,24 @@ impl Kept {
         let at = self.updates.len();
         match &update {
             Update::Cell { x, y, .. } => {
-                if let Some(&was) = self.cells.get(&(*x, *y)) {
+                let (x, y) = (usize::from(*x), usize::from(*y));
+                if self.cells.len() <= y {
+                    self.cells.resize_with(y + 1, Vec::new);
+                }
+                let row = &mut self.cells[y];
+                if row.len() <= x {
+                    row.resize(x + 1, None);
+                }
+                if let Some(was) = row[x] {
                     self.updates[was] = Some(update);
                     return;
                 }
-                self.cells.insert((*x, *y), at);
+                row[x] = Some(at);
+                self.placed.push((x, y));
             }
-            Update::Cleared => self.cells.clear(),
+            Update::Cleared => self.forget_the_cells(),
             Update::Recoloured => {
-                self.cells.clear();
+                self.forget_the_cells();
                 self.framed = None;
             }
             Update::Frame => {
@@ -173,6 +180,14 @@ impl Kept {
         self.updates.push(Some(update));
     }
 
+    /// Forgets where each cell was said, so that nothing said after is
+    /// moved before now.
+    fn forget_the_cells(&mut self) {
+        for (x, y) in self.placed.drain(..) {
+            self.cells[y][x] = None;
+        }
+    }
+
     fn len(&self) -> usize {
         self.updates.len()
     }
@@ -183,9 +198,15 @@ impl Kept {
 
     /// Everything kept, in order, and nothing kept after.
     fn take(&mut self) -> Vec<Update> {
-        let updates = std::mem::take(&mut self.updates);
-        *self = Self::default();
-        updates.into_iter().flatten().collect()
+        // The grid is kept, emptied, rather than made again for every
+        // frame.
+        self.forget_the_cells();
+        self.shaping.clear();
+        self.framed = None;
+        std::mem::take(&mut self.updates)
+            .into_iter()
+            .flatten()
+            .collect()
     }
 }
 
@@ -457,10 +478,13 @@ enum Answer {
     Picture(Option<(String, Vec<u8>)>),
     /// Whether the clipboard holds a picture.
     Holds(bool),
+    /// The picture on the clipboard is longer than anything waits for.
+    TooLarge,
 }
 
-/// What is done with an answer once it comes.
-type Answering = Box<dyn FnOnce(Answer) + Send>;
+/// What is done with an answer once it comes -- or with nothing, where the
+/// window that was asked went before it answered.
+type Answering = Box<dyn FnOnce(Option<Answer>) + Send>;
 
 /// The reader's machine, at the other end of the connection.
 struct Afar {
@@ -505,7 +529,7 @@ impl Afar {
                 let _ = answer.send(heard);
             }),
         )?;
-        let heard = answered.recv_timeout(patience).ok();
+        let heard = answered.recv_timeout(patience).ok().flatten();
         if heard.is_none() {
             tracing::info!(number, "the reader's machine did not answer in time");
         }
@@ -520,10 +544,16 @@ impl Afar {
         }
     }
 
-    /// Stops waiting for every answer: the window that was asked has gone.
+    /// Stops waiting for every answer, and tells whatever was waiting: the
+    /// window that was asked has gone.
     fn forget_everything(&self) {
-        if let Ok(mut waiting) = self.waiting.lock() {
-            waiting.clear();
+        let waiting: Vec<Answering> = self
+            .waiting
+            .lock()
+            .map(|mut waiting| waiting.drain().map(|(_, waiting)| waiting).collect())
+            .unwrap_or_default();
+        for waiting in waiting {
+            waiting(None);
         }
     }
 
@@ -535,7 +565,7 @@ impl Afar {
             .ok()
             .and_then(|mut waiting| waiting.remove(&number));
         if let Some(waiting) = waiting {
-            waiting(answer);
+            waiting(Some(answer));
         }
     }
 }
@@ -556,29 +586,33 @@ impl app::desk::Desk for Afar {
         }
     }
 
-    fn picture(&self) -> Option<(String, Vec<u8>)> {
-        match self.ask(Down::Picture, PICTURE_PATIENCE)? {
-            Answer::Picture(picture) => picture,
-            _ => None,
-        }
-    }
-
     // Whether there is a picture is a few bytes and worth the moment; the
-    // picture is megabytes, and arrives when it has crossed.
-    fn picture_later(&self) -> Option<bool> {
+    // picture is megabytes, and arrives when it has crossed -- or what
+    // became of it does.
+    fn picture(&self) -> app::desk::Picture {
         if !self.holds_a_picture() {
-            return Some(false);
+            return app::desk::Picture::Nothing;
         }
         let events = self.events.clone();
         let asked = self.asked(
             Down::Picture,
             Box::new(move |answer| {
-                if let Answer::Picture(Some((shape, bytes))) = answer {
-                    let _ = events.send(Event::Pictured(shape, bytes));
-                }
+                let _ = events.send(match answer {
+                    Some(Answer::Picture(Some((shape, bytes)))) => Event::Pictured(shape, bytes),
+                    Some(Answer::TooLarge) => Event::Amiss(
+                        "The picture on the clipboard is too large to bring across".to_string(),
+                    ),
+                    Some(_) => Event::Amiss("The clipboard no longer holds a picture".to_string()),
+                    None => {
+                        Event::Amiss("The window went before the picture came across".to_string())
+                    }
+                });
             }),
         );
-        Some(asked.is_some())
+        match asked {
+            Some(_) => app::desk::Picture::Coming,
+            None => app::desk::Picture::Nothing,
+        }
     }
 
     fn holds_a_picture(&self) -> bool {
@@ -597,18 +631,6 @@ impl app::desk::Desk for Afar {
     }
 }
 
-/// What the window is sending a piece at a time, by the number it goes
-/// under.
-#[derive(Default)]
-struct Arriving(HashMap<u64, Coming>);
-
-/// One thing arriving: what it is, how long it is, and what has come.
-struct Coming {
-    what: Carrying,
-    length: usize,
-    bytes: Vec<u8>,
-}
-
 /// What is arriving.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Carrying {
@@ -622,59 +644,6 @@ enum Carrying {
         /// What shape it is in.
         shape: String,
     },
-}
-
-impl Arriving {
-    /// Something has started arriving, and is whole at once where it is
-    /// nothing at all. One longer than any frame is not waited for.
-    fn begin(&mut self, what: Carrying, carried: Carried) -> Option<(Carrying, Vec<u8>)> {
-        let Some(length) = usize::try_from(carried.length)
-            .ok()
-            .filter(|length| *length <= obelus_wire::MOST)
-        else {
-            tracing::warn!(
-                length = carried.length,
-                "something too large to keep arriving"
-            );
-            return None;
-        };
-        if length == 0 {
-            return Some((what, Vec::new()));
-        }
-        self.0.insert(
-            carried.carrying,
-            Coming {
-                what,
-                length,
-                // Room made as the pieces come, rather than for what the
-                // other end said the length would be.
-                bytes: Vec::new(),
-            },
-        );
-        None
-    }
-
-    /// A piece of what is arriving under `carrying`, and it whole once the
-    /// piece is its last. A piece of nothing arriving is of something let
-    /// go of, and goes nowhere.
-    fn took(&mut self, carrying: u64, piece: &[u8]) -> Option<(Carrying, Vec<u8>)> {
-        let coming = self.0.get_mut(&carrying)?;
-        let room = coming.length - coming.bytes.len();
-        coming
-            .bytes
-            .extend_from_slice(&piece[..piece.len().min(room)]);
-        if coming.bytes.len() < coming.length {
-            return None;
-        }
-        let whole = self.0.remove(&carrying)?;
-        Some((whole.what, whole.bytes))
-    }
-
-    /// Lets go of everything arriving: the window sending it has gone, and
-    /// the one that comes back sends none of the rest.
-    fn forget(&mut self) {
-        self.0.clear();
-    }
 }
 
 /// Runs one Obelus for the window `ob --server` is carrying the connection
@@ -743,7 +712,7 @@ pub(crate) fn one() -> Result<ExitCode> {
     std::thread::Builder::new()
         .name("obelus connection".to_string())
         .spawn(move || {
-            let mut arriving = Arriving::default();
+            let mut arriving = Arriving::<Carrying>::default();
             loop {
                 let up = match obelus_wire::read::<_, ToChild>(&mut reading) {
                     Ok(Some(ToChild::Up(Up::Input(input)))) => {
@@ -760,6 +729,7 @@ pub(crate) fn one() -> Result<ExitCode> {
                             u32::from(size[2]),
                             u32::from(size[3]),
                         );
+                        // Let go of when the window went, and said so then.
                         arriving.forget();
                         heard_out.attach();
                         if hearing.send(Event::Resize).is_err() {
@@ -769,7 +739,20 @@ pub(crate) fn one() -> Result<ExitCode> {
                     }
                     Ok(Some(ToChild::Detached)) => {
                         heard_out.attached.store(false, Ordering::Release);
+                        // A picture half here is told by what waited for
+                        // it; a file half here, by this.
                         heard_afar.forget_everything();
+                        for gone in arriving.forget() {
+                            if let Carrying::Dropped(name) = gone
+                                && hearing
+                                    .send(Event::Amiss(format!(
+                                        "Not all of {name} came across, so it was not kept"
+                                    )))
+                                    .is_err()
+                            {
+                                return;
+                            }
+                        }
                         continue;
                     }
                     Ok(Some(ToChild::Open { .. })) => {
@@ -786,44 +769,57 @@ pub(crate) fn one() -> Result<ExitCode> {
                 let whole = match up {
                     Up::Pasted { number, words } => {
                         heard_afar.answered(number, Answer::Words(words));
-                        None
+                        Ok(None)
                     }
                     Up::Holds { number, picture } => {
                         heard_afar.answered(number, Answer::Holds(picture));
-                        None
+                        Ok(None)
                     }
                     Up::Pictured {
                         number,
                         picture: None,
                     } => {
                         heard_afar.answered(number, Answer::Picture(None));
-                        None
+                        Ok(None)
                     }
                     Up::Pictured {
                         number,
                         picture: Some((shape, carried)),
-                    } => arriving.begin(Carrying::Picture { number, shape }, carried),
+                    } => arriving.begin(
+                        carried.carrying,
+                        carried.length,
+                        Carrying::Picture { number, shape },
+                    ),
                     Up::Dropped {
                         name,
                         file: Ok(carried),
-                    } => arriving.begin(Carrying::Dropped(name), carried),
+                    } => arriving.begin(carried.carrying, carried.length, Carrying::Dropped(name)),
                     Up::Dropped { file: Err(why), .. } => {
                         if hearing.send(Event::Amiss(why)).is_err() {
                             return;
                         }
-                        None
+                        Ok(None)
                     }
-                    Up::Piece { carrying, bytes } => arriving.took(carrying, &bytes),
-                    Up::Input(_) => None,
+                    Up::Piece { carrying, bytes } => Ok(arriving.took(carrying, &bytes)),
+                    Up::Input(_) => Ok(None),
                 };
                 match whole {
-                    Some((Carrying::Picture { number, shape }, bytes)) => {
+                    Err(Carrying::Picture { number, .. }) => {
+                        heard_afar.answered(number, Answer::TooLarge);
+                    }
+                    Err(Carrying::Dropped(name)) => {
+                        let why = format!("Too large to bring across, so not kept: {name}");
+                        if hearing.send(Event::Amiss(why)).is_err() {
+                            return;
+                        }
+                    }
+                    Ok(Some((Carrying::Picture { number, shape }, bytes))) => {
                         heard_afar.answered(number, Answer::Picture(Some((shape, bytes))));
                     }
                     // Written on a thread of its own: tens of megabytes to
                     // the disk is long enough for the keys behind it to be
                     // felt waiting.
-                    Some((Carrying::Dropped(name), bytes)) => {
+                    Ok(Some((Carrying::Dropped(name), bytes))) => {
                         let hearing = hearing.clone();
                         let started = std::thread::Builder::new()
                             .name("obelus keeping what was dropped".to_string())
@@ -840,7 +836,7 @@ pub(crate) fn one() -> Result<ExitCode> {
                             tracing::warn!(%error, "no thread to keep what was dropped on");
                         }
                     }
-                    None => {}
+                    Ok(None) => {}
                 }
             }
         })
@@ -1358,71 +1354,18 @@ mod tests {
         assert_eq!(said, ["a", "cleared", "b", "recoloured", "c"]);
     }
 
-    /// What the window sends a piece at a time is whole once its last
-    /// piece has come, and not before; a piece of nothing arriving goes
-    /// nowhere, and a window coming back leaves nothing half there.
+    /// A picture asked for arrives in the loop as itself once the window
+    /// has answered, and nothing waits for it meanwhile; one whose window
+    /// went first says so.
     ///
-    /// Broken deliberately by handing it over at its first piece (`took`
-    /// answering what has come whatever its length): half a file was
-    /// kept as if it were the file.
+    /// Broken deliberately twice. By answering that none is coming
+    /// (`Desk::picture` answering `Nothing` where it asked): the paste
+    /// went on to paste words, with the picture still to arrive. And by
+    /// forgetting what waits without telling it (`forget_everything`
+    /// calling nothing): the reader was left with "Bringing the picture
+    /// across" for good.
     #[test]
-    fn what_arrives_in_pieces_is_whole_at_its_last() {
-        let mut arriving = Arriving::default();
-        let picture = Carrying::Picture {
-            number: 4,
-            shape: "image/png".to_string(),
-        };
-        assert_eq!(
-            arriving.begin(
-                picture.clone(),
-                Carried {
-                    carrying: 1,
-                    length: 5
-                }
-            ),
-            None
-        );
-        assert_eq!(
-            arriving.took(1, &[1, 2, 3]),
-            None,
-            "whole at its first piece"
-        );
-        assert_eq!(arriving.took(9, &[7]), None, "a piece of nothing");
-        assert_eq!(
-            arriving.took(1, &[4, 5]),
-            Some((picture, vec![1, 2, 3, 4, 5]))
-        );
-        assert_eq!(
-            arriving.begin(
-                Carrying::Dropped("empty".to_string()),
-                Carried {
-                    carrying: 2,
-                    length: 0
-                }
-            ),
-            Some((Carrying::Dropped("empty".to_string()), Vec::new())),
-            "nothing at all is not waited for"
-        );
-        arriving.begin(
-            Carrying::Dropped("half".to_string()),
-            Carried {
-                carrying: 3,
-                length: 4,
-            },
-        );
-        arriving.took(3, &[1, 2]);
-        arriving.forget();
-        assert_eq!(arriving.took(3, &[3, 4]), None, "half of one let go of");
-    }
-
-    /// A picture asked for later arrives in the loop as itself once the
-    /// window has answered, and nothing waits for it meanwhile.
-    ///
-    /// Broken deliberately by answering nothing later (`picture_later`
-    /// left as the desk's own, `None`): the paste would have waited for
-    /// the picture on the loop.
-    #[test]
-    fn a_picture_asked_for_later_arrives_in_the_loop() {
+    fn a_picture_asked_for_arrives_in_the_loop() {
         use obelus_app::app::desk::Desk as _;
 
         let written = Written::default();
@@ -1454,7 +1397,7 @@ mod tests {
                 }
             })
         };
-        assert_eq!(afar.picture_later(), Some(true));
+        assert!(matches!(afar.picture(), app::desk::Picture::Coming));
         window.join().expect("the window");
         out.drained(Duration::from_secs(10));
         let asked = written
@@ -1474,6 +1417,25 @@ mod tests {
             heard.try_recv(),
             Ok(Event::Pictured(shape, bytes)) if shape == "image/png" && bytes == [1, 2, 3]
         ));
+
+        let asked = afar
+            .asked(
+                Down::Picture,
+                Box::new({
+                    let events = afar.events.clone();
+                    move |answer| {
+                        if answer.is_none() {
+                            let _ = events.send(Event::Amiss("went".to_string()));
+                        }
+                    }
+                }),
+            )
+            .expect("asked");
+        afar.forget_everything();
+        assert!(
+            matches!(heard.try_recv(), Ok(Event::Amiss(why)) if why == "went"),
+            "what waited for question {asked} was never told the window went"
+        );
     }
 
     /// A dropped file is kept under its own name, and a second of the same
