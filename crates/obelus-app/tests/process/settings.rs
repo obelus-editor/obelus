@@ -3253,26 +3253,32 @@ fn the_palette_offers_unset_only_where_it_means_something() {
 /// A key chosen from the palette over the settings is pressed on the row
 /// the page was standing on.
 ///
+/// On the keys page, where enter -- changing the key of the row the page
+/// is on, which `open-file` has -- is said, because control and enter adds
+/// one. Not `Unset` on the
+/// project's page, reached through the filter: on a Mac the key the foot
+/// calls delete is backspace, which the filter keeps while anything is in
+/// it (`Settings::delete_is_the_filters`), so the row's `Unset` was dim
+/// there and enter on it did nothing -- on a Mac alone.
+///
 /// Broken deliberately by doing nothing with a chosen key
-/// (`PickerValue::Key` in `palette_key`): the setting stayed as it was.
+/// (`PickerValue::Key` in `palette_key`): no key was waited for.
 #[test]
 fn a_key_chosen_from_the_palette_is_pressed_on_the_page() {
     let _turn = crate::turn();
-    let scratch = project("palette-presses", "wrap = true\n");
-    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
-    app.working_directory_for_test(scratch.path().to_path_buf());
-    support::lay_out(&mut app, 76, 16);
-    dispatch::dispatch(&mut app, Command::ConfigProject);
-    support::type_text(&mut app, "wrap");
-    let before = app.config().wrap;
+    let scratch = temporary("palette-presses");
+    let mut app = open(&settings_file(&scratch));
+    support::press(&mut app, KeyCode::Tab);
+    assert!(app.settings().expect("the settings").on_keys());
+    support::type_text(&mut app, "open-file");
     support::press_control(&mut app, 'p');
-    support::type_text(&mut app, "Unset");
+    support::type_text(&mut app, "Change");
     support::press(&mut app, KeyCode::Enter);
     assert!(app.palette().is_none(), "the palette stayed up");
-    assert_ne!(
-        app.config().wrap,
-        before,
-        "the project's setting was not taken out"
+    assert!(
+        app.settings()
+            .is_some_and(|settings| settings.binding() == Some(Command::FileOpen)),
+        "the row's key is not being waited for"
     );
 }
 
