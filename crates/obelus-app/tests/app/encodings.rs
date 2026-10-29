@@ -157,7 +157,9 @@ fn choosing_an_encoding_the_file_is_not_converts_it() {
 /// several code pages.
 ///
 /// Broken by having `choose_encoding` only ever write the file in the
-/// encoding chosen: the text on screen does not change.
+/// encoding chosen: the text on screen does not change. And nothing is
+/// said: the text read again is on screen, and the row names the encoding
+/// -- broken by saying `Read as {name}` again.
 #[test]
 fn choosing_an_encoding_the_file_is_reads_it_again() {
     let latin = b"// caf\xe9, na\xefve, r\xe9sum\xe9, d\xe9j\xe0 vu\n";
@@ -171,6 +173,7 @@ fn choosing_an_encoding_the_file_is_reads_it_again() {
         "not read again as windows-1251: {:?}",
         text(&app)
     );
+    assert_eq!(app.note(), None, "reading it again was said");
     // Nothing was written, and there is nothing to write: the file is what
     // it was, read another way.
     assert!(!app.current_buffer().expect("a buffer").is_dirty());

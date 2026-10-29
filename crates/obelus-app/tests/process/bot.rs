@@ -639,7 +639,10 @@ fn pairing_lets_in_whoever_sends_the_code() {
             .chat_of("slack")
             .is_some_and(|remote| remote.people.iter().any(|person| person.name == "Sunli"))
     });
-    assert_eq!(app.note(), Some("Paired Sunli"));
+    // Told in the thread, below, and nothing said here: a note for
+    // something done in the chat would have the status row for it. Broken
+    // deliberately by saying `Paired {name}` again in `let_in`.
+    assert_eq!(app.note(), None, "pairing was said here");
     let said = said_since();
     let code_thread = format!("M-{sent}");
     assert!(
@@ -2534,7 +2537,10 @@ fn connecting_in_another_window_takes_the_chat_over() {
         "the chat to move",
         |first, second| !first.holds_the_bot_for_test() && second.holds_the_bot_for_test(),
     );
-    assert_eq!(first.note(), Some("Slack went to another window"));
+    // The mark going says it, and nothing else does. Broken deliberately
+    // by saying `{} went to another window` again in
+    // `somebody_wants_the_bot`.
+    assert_eq!(first.note(), None, "the chat going was said");
     until(&mut second, &seconds, "the second to connect", |app| {
         app.bot_state_for_test() == obelus_bot::State::Connected
     });

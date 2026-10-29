@@ -94,11 +94,20 @@ fn a_refusal_is_in_the_ink_of_things_that_went_wrong() {
 /// `unsaved` off the row, which says it, and a note would have the row and
 /// cover the file it is about until the next key.
 ///
-/// Deliberate break: say `Saved` again in `write_now`.
+/// And what was said while it was on its way goes with it: a save that
+/// asked a server to lay the file out first says so, and that was once
+/// said over by `Saved` -- left alone, it says the save is still going.
+///
+/// Deliberate breaks: say `Saved` again in `write_now`; and take the
+/// `quiet` out of it, which leaves `Laying it out…` on the row.
 #[test]
 fn a_save_says_nothing_the_row_does_not() {
     let (_scratch, mut app) = reading("said-saved");
     support::type_text(&mut app, "// ");
+    // What a save that is laying the file out says first, through the same
+    // door: the server that would answer is a stand-in's job, and what is
+    // asserted here is what the save does with what was said before it.
+    app.say_for_test("Laying it out\u{2026}");
     dispatch::dispatch(&mut app, Command::FileSave);
     assert_eq!(app.note(), None, "saving was said");
     let dump = support::render(&mut app, 76, 12);
@@ -110,6 +119,34 @@ fn a_save_says_nothing_the_row_does_not() {
     assert!(
         status.contains("hint.rs") && !status.contains("unsaved"),
         "the row does not say it was written:\n{dump}"
+    );
+}
+
+/// An agent changing a file the reader has open says nothing on the status
+/// row: the change is on screen as text, the row says the file is not
+/// written, and the transcript says which call did it.
+///
+/// Deliberate break: say `The agent changed this file` again where the
+/// agent's write goes through the buffer.
+#[test]
+fn an_agents_change_to_an_open_file_says_nothing_the_screen_does_not() {
+    let (scratch, mut app) = reading("said-agent-wrote");
+    let path = scratch.join("src/hint.rs");
+    assert!(app.write_for_agent_for_test(&path, "fn hint() { 1 }\n"));
+    assert_eq!(app.note(), None, "the agent's change was said");
+    let dump = support::render(&mut app, 76, 12);
+    assert!(
+        support::text_block(&dump).contains("fn hint() { 1 }"),
+        "the change is not on screen:\n{dump}"
+    );
+    let status = support::text_block(&dump)
+        .lines()
+        .last()
+        .expect("a status row")
+        .to_string();
+    assert!(
+        status.contains("unsaved"),
+        "the row does not say the file is not written:\n{dump}"
     );
 }
 

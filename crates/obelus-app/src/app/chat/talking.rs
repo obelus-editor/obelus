@@ -5054,9 +5054,12 @@ impl App {
                         buffer.edit(span, text, obelus_buffer::undo::Doing::Whole)
                     })
                 });
+                // Nothing said: the change is on screen as text, the status
+                // row says the file is not written, and the transcript says
+                // which call did it -- and a note would have the row and
+                // cover the file's name until a key.
                 if changed {
                     self.change_document(index);
-                    self.say("The agent changed this file".to_string());
                 }
                 // A write of what is already there changed nothing and is
                 // not a failure: the agent asked for a state, and that is

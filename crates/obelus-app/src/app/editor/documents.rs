@@ -2114,7 +2114,11 @@ impl App {
         match buffer.save() {
             // Nothing said: the status row's `unsaved` going says it, and
             // a note would have the row and cover the file it is about.
+            // And what was said while it was on its way -- laying it out,
+            // tidying it up -- taken back: it used to be said over, and
+            // left alone it says the save is still going.
             Ok(()) => {
+                self.quiet();
                 self.saved_document(index);
                 true
             }

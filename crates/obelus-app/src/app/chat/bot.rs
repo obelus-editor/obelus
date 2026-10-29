@@ -649,7 +649,9 @@ impl App {
         });
         self.keep_the_room(&room);
         self.relay_room(&room);
-        self.say(format!("Paired {name}"));
+        // Nothing said here: they are told in the thread their code began,
+        // and they are on the settings page's list from now on -- and a
+        // note would have the status row for something done elsewhere.
         self.say_to(obelus_bot::model::Out::Say {
             room,
             thread,
@@ -1212,9 +1214,9 @@ impl App {
         self.stop_relaying(obelus_bot::relay::Over::Handed);
         self.bot.holding = None;
         self.let_the_chat_go();
-        if let Some(platform) = self.platform() {
-            self.say(format!("{} went to another window", platform.name));
-        }
+        // Nothing said: the chat's mark on the status row goes, or becomes
+        // the mark of a chat heard through another window, which says it --
+        // and a note would have the row and cover the mark until a key.
     }
 
     /// The window this one was heard through went without letting the chat
