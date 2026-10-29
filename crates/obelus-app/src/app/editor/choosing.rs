@@ -143,11 +143,12 @@ impl App {
         self.git.committed = None;
         match read {
             Some(changed) => {
+                // Nothing said: the text read again is on screen, and the
+                // status row says which encoding wherever it is not UTF-8.
                 if changed {
                     self.change_document(index);
                     self.ask_standing_questions(index);
                 }
-                self.say(format!("Read as {name}"));
             }
             None => self.say(format!("Written as {name} when it is saved")),
         }

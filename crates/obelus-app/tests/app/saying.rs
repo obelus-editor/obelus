@@ -58,10 +58,9 @@ fn wrong_ink() -> Color {
 /// red is the second -- and the second is what colouring the whole channel
 /// would have done, telling a reader that copying failed.
 ///
-/// Deliberate break: have `wrong_ink` in `StatusView` answer `Some` for
-/// every note. `Saved` goes red. Break the other way by having it answer
-/// `None` always, and `Nothing to undo` goes back to the dim ink `Saved`
-/// is in.
+/// Deliberate break: have `said_alone` in `status` take every note for one
+/// that went wrong. A report goes red. Break the other way by having it take
+/// none for one, and `Nothing to undo` goes back to the ink a report is in.
 #[test]
 fn a_refusal_is_in_the_ink_of_things_that_went_wrong() {
     let (_scratch, mut app) = reading("said-wrong");
@@ -71,18 +70,141 @@ fn a_refusal_is_in_the_ink_of_things_that_went_wrong() {
     assert_eq!(app.note(), Some("Nothing to undo"));
     assert_eq!(ink(&mut app), wrong_ink(), "a refusal is not in the red");
 
-    // And a report, from the same row in the same corner. `Saved` and
-    // `Not saved` are the pair this is all about: a reader glancing at the
-    // row read them the same.
-    support::type_text(&mut app, "// ");
-    dispatch::dispatch(&mut app, Command::FileSave);
-    assert_eq!(app.note(), Some("Saved"));
+    // And a report, from the same row in the same corner. `Copied` and
+    // `Could not copy` are a pair a reader glancing at the row would read
+    // the same; through the door a report goes through, because copying
+    // for real is the machine's clipboard.
+    app.say_for_test("Copied selection");
     assert_ne!(
         ink(&mut app),
         wrong_ink(),
         "a report is drawn as though it went wrong"
     );
-    assert_eq!(ink(&mut app), DARK.gutter, "beside a file it is an aside");
+    // In the row's own ink: while it is there it is the whole row, so
+    // there is nothing for it to be an aside to.
+    assert_eq!(
+        ink(&mut app),
+        DARK.status_foreground,
+        "the note is not in the row's ink"
+    );
+}
+
+/// What succeeded and is already on screen is not said: saving takes
+/// `unsaved` off the row, which says it, and a note would have the row and
+/// cover the file it is about until the next key.
+///
+/// And what was said while it was on its way goes with it: a save that
+/// asked a server to lay the file out first says so, and that was once
+/// said over by `Saved` -- left alone, it says the save is still going.
+///
+/// Deliberate breaks: say `Saved` again in `write_now`; and take the
+/// `quiet` out of it, which leaves `Laying it out…` on the row.
+#[test]
+fn a_save_says_nothing_the_row_does_not() {
+    let (_scratch, mut app) = reading("said-saved");
+    support::type_text(&mut app, "// ");
+    // What a save that is laying the file out says first, through the same
+    // door: the server that would answer is a stand-in's job, and what is
+    // asserted here is what the save does with what was said before it.
+    app.say_for_test("Laying it out\u{2026}");
+    dispatch::dispatch(&mut app, Command::FileSave);
+    assert_eq!(app.note(), None, "saving was said");
+    let dump = support::render(&mut app, 76, 12);
+    let status = support::text_block(&dump)
+        .lines()
+        .last()
+        .expect("a status row")
+        .to_string();
+    assert!(
+        status.contains("hint.rs") && !status.contains("unsaved"),
+        "the row does not say it was written:\n{dump}"
+    );
+
+    // But not what went wrong on the way, which the save does not make
+    // untrue -- the file that changed while it was being laid out, written
+    // as it was. A refusal stands in for it, through the same door. Broken
+    // deliberately by taking back whatever was said.
+    support::type_text(&mut app, "// ");
+    dispatch::dispatch(&mut app, Command::Redo);
+    assert_eq!(app.note(), Some("Nothing to redo"));
+    dispatch::dispatch(&mut app, Command::FileSave);
+    assert_eq!(
+        app.note(),
+        Some("Nothing to redo"),
+        "the save took back what went wrong on its way"
+    );
+}
+
+/// An agent changing a file the reader has open says nothing on the status
+/// row: the change is on screen as text, the row says the file is not
+/// written, and the transcript says which call did it.
+///
+/// Deliberate break: say `The agent changed this file` again where the
+/// agent's write goes through the buffer.
+#[test]
+fn an_agents_change_to_an_open_file_says_nothing_the_screen_does_not() {
+    let (scratch, mut app) = reading("said-agent-wrote");
+    let path = scratch.join("src/hint.rs");
+    assert!(app.write_for_agent_for_test(&path, "fn hint() { 1 }\n"));
+    assert_eq!(app.note(), None, "the agent's change was said");
+    let dump = support::render(&mut app, 76, 12);
+    assert!(
+        support::text_block(&dump).contains("fn hint() { 1 }"),
+        "the change is not on screen:\n{dump}"
+    );
+    let status = support::text_block(&dump)
+        .lines()
+        .last()
+        .expect("a status row")
+        .to_string();
+    assert!(
+        status.contains("unsaved"),
+        "the row does not say the file is not written:\n{dump}"
+    );
+}
+
+/// While Obelus has something to say it is the whole row: the file's name,
+/// the position and the surroundings come back at the next key, which is
+/// the one that takes it.
+///
+/// One place for it on every row, and only the row's width to cut it --
+/// where each row once put it somewhere of its own, and dropped it whole
+/// where it did not fit.
+///
+/// Deliberate break: take the arm for `middle` out of `StatusView::render`.
+/// The note goes back beside nothing, and the file's row is drawn without
+/// it.
+#[test]
+fn a_note_is_the_whole_row() {
+    let (_scratch, mut app) = reading("said-whole");
+    app.say_for_test("Copied selection");
+    let dump = support::render(&mut app, 76, 12);
+    let status = support::text_block(&dump)
+        .lines()
+        .last()
+        .expect("a status row")
+        .to_string();
+    assert!(
+        status.contains("Copied selection"),
+        "the note is not on the row:\n{dump}"
+    );
+    assert!(
+        !status.contains("hint.rs") && !status.contains("1:1"),
+        "the row says more than the note:\n{dump}"
+    );
+
+    // And gone at the next key, with the row back.
+    support::press(&mut app, crossterm::event::KeyCode::Right);
+    let dump = support::render(&mut app, 76, 12);
+    let status = support::text_block(&dump)
+        .lines()
+        .last()
+        .expect("a status row")
+        .to_string();
+    assert!(
+        status.contains("hint.rs") && !status.contains("Copied selection"),
+        "the row did not come back:\n{dump}"
+    );
 }
 
 /// With nothing open the row is the note, so a report keeps the row's own
@@ -121,12 +243,12 @@ fn a_note_alone_on_the_row_is_the_row() {
     // Something said about the file before it goes, the way a press on the
     // row or a card's answer leaves it -- neither of which quiets the row
     // the way a key does on its way in.
-    app.say_for_test("Saved");
+    app.say_for_test("Copied selection");
     dispatch::dispatch(&mut app, Command::DocumentClose);
     // Closing says nothing, and takes what was said about the file with it:
     // the reader is looking at what is there instead.
     assert_eq!(app.note(), None, "closing a file left something said");
-    app.say_for_test("Saved");
+    app.say_for_test("Copied selection");
     assert_eq!(
         ink(&mut app),
         DARK.status_foreground,
@@ -157,19 +279,12 @@ fn reads_as_copy(said: &str, name: Option<&str>) -> bool {
 /// state a previous case left behind -- a close that asks about unwritten
 /// work is a key that answered something else.
 ///
-/// Deliberate break: lowercase any one of `Saved`, `Renamed to {}` or
-/// `Thinking\u{2026}`. Which is how this was found: five of them
+/// Deliberate break: lowercase any one of `Nothing to undo`, `Renamed to
+/// {}` or `Thinking\u{2026}`. Which is how this was found: five of them
 /// had been lowercase since they were written, against the one sentence in
 /// the guide about how Obelus writes.
 #[test]
 fn what_is_said_reads_as_copy() {
-    // What a command reports.
-    let (_a, mut app) = reading("copy-saved");
-    support::type_text(&mut app, "// ");
-    dispatch::dispatch(&mut app, Command::FileSave);
-    let said = app.note().unwrap_or_default();
-    assert!(reads_as_copy(said, None), "saving: {said:?}");
-
     // What it refuses.
     let (_b, mut app) = reading("copy-refused");
     dispatch::dispatch(&mut app, Command::Undo);

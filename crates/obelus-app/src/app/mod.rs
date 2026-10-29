@@ -387,8 +387,9 @@ pub struct App {
     desk: std::sync::Arc<dyn desk::Desk>,
     /// Whether this Obelus is drawn on a front end at the other end of a
     /// connection, which is where the key that goes back to the reader's
-    /// own machine means something.
-    afar: bool,
+    /// own machine means something -- and the name of the machine this one
+    /// is, which the status row says for as long as it is true.
+    afar: Option<String>,
     /// Where the front end is to go once this Obelus has ended, where the
     /// reader asked for somewhere rather than for leaving -- see
     /// [`App::goes_to`].
@@ -645,7 +646,7 @@ impl App {
             replacing: false,
             drawing: None,
             desk: std::sync::Arc::new(desk::Here),
-            afar: false,
+            afar: None,
             going: None,
             machine_gone: None,
             told_tabs: Vec::new(),
@@ -737,14 +738,36 @@ impl App {
 
     /// Says this Obelus is drawn on a front end at the other end of a
     /// connection, which offers the way back to the reader's own machine.
-    pub const fn drawn_afar(&mut self) {
-        self.afar = true;
+    ///
+    /// The name is this machine's own, asked once here: a window on
+    /// another machine is a window on a project somebody can mistake for
+    /// the one on their own, and the row is where that is answered.
+    pub fn drawn_afar(&mut self) {
+        let name = gethostname::gethostname().to_string_lossy().into_owned();
+        self.afar = Some(match name.is_empty() {
+            true => "Another machine".to_string(),
+            false => name,
+        });
+    }
+
+    /// Says this Obelus is drawn at the other end of a connection, on a
+    /// machine of this name: for a test, whose row would otherwise say
+    /// whatever the machine running it is called -- and a long one is cut
+    /// to its mark, on that machine alone.
+    pub fn drawn_afar_as_for_test(&mut self, name: &str) {
+        self.afar = Some(name.to_string());
     }
 
     /// Whether this Obelus is drawn at the other end of a connection.
     #[must_use]
     pub const fn is_drawn_afar(&self) -> bool {
-        self.afar
+        self.afar.is_some()
+    }
+
+    /// The machine this Obelus runs on, where it is drawn on another.
+    #[must_use]
+    pub fn drawn_from(&self) -> Option<&str> {
+        self.afar.as_deref()
     }
 
     /// Leaves, asking about what is unwritten and what is still running.

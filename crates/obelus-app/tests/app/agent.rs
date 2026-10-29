@@ -2851,6 +2851,35 @@ fn a_drag_held_above_the_transcript_carries_on_scrolling() {
     );
 }
 
+/// What Obelus has just said is the conversation's whole status row, as it
+/// is every other's: the settings and the keys come back at the next key.
+///
+/// It used to be drawn over the settings and left the keys and the memory
+/// beside it, which was a third place for the same sentence.
+///
+/// Broken deliberately by taking the arm for the note out of
+/// `ChatView::status`: the settings and the keys are drawn, and the note is
+/// not.
+#[test]
+fn a_note_is_the_conversations_whole_row() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the settings", |app| {
+        app.agent_settings().len() > 2
+    });
+    app.say_for_test("Copied selection");
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let screen = rows(&dump);
+    let status = screen[screen.len() - 1].to_string();
+    assert!(
+        status.contains("Copied selection"),
+        "the note is not on the row:\n{dump}"
+    );
+    assert!(
+        !status.contains("ask first") && !status.contains("Mode"),
+        "the row says more than the note:\n{dump}"
+    );
+}
+
 /// A row too narrow for everything says so rather than stopping silently: a
 /// reader who cannot see a setting cannot know it is there.
 #[test]
@@ -6787,20 +6816,16 @@ fn a_question_still_up_keeps_the_conversation_open() {
     assert!(is_open(&app, 0), "closed with a question up in it");
 }
 
-/// A conversation an agent closes is named where Obelus says it closed,
-/// and goes from the list of what is open while that list is showing.
-///
-/// The name is the one that list gives it -- here the note it is about --
-/// because the reader may have been somewhere else, and "the conversation"
-/// is then one of several. And the list is a row of what is true now: a
+/// A conversation an agent closes goes from the list of what is open while
+/// that list is showing, and is not said where the reader is looking at it:
+/// the screen changing says it. The list is a row of what is true now: a
 /// row for a conversation that has gone is a row whose enter does nothing.
 ///
-/// Broken deliberately two ways. Saying "Closed the conversation" whatever
-/// the name fails the first assertion. Taking the call to
-/// `refresh_switching` out of `close_the_conversation` leaves the row in
-/// the list.
+/// Broken deliberately two ways. Saying "Closed {name}" whatever is in
+/// front fails the first assertion. Taking the call to `refresh_switching`
+/// out of `close_the_conversation` leaves the row in the list.
 #[test]
-fn a_conversation_an_agent_closes_is_named_and_leaves_the_list() {
+fn a_conversation_an_agent_closes_leaves_the_list_and_says_nothing() {
     let scratch = support::Scratch::new("agent-closed-named");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
@@ -6825,7 +6850,7 @@ fn a_conversation_an_agent_closes_is_named_and_leaves_the_list() {
 
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentList);
     assert_eq!(close_it(&mut app, 1), "closed");
-    assert_eq!(app.note(), Some("Closed wire the counts up"));
+    assert_eq!(app.note(), None, "closing it was said");
     let listed = app
         .picker()
         .expect("the list of what is open")
@@ -6841,6 +6866,43 @@ fn a_conversation_an_agent_closes_is_named_and_leaves_the_list() {
         !listed,
         "the closed conversation is still a row of the list"
     );
+}
+
+/// A conversation an agent closes while the reader is somewhere else is
+/// said, by the name the list of what is open gives it -- here the note it
+/// is about: nothing on screen moved, the reader did not do it, and "the
+/// conversation" is one of several.
+///
+/// Broken deliberately by saying nothing whatever is in front, as for the
+/// conversation the reader is in.
+#[test]
+fn a_conversation_an_agent_closes_somewhere_else_is_named() {
+    let scratch = support::Scratch::new("agent-closed-elsewhere");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_todo::path(scratch.path()).expect("a tree that is there"),
+        "[[todo]]\nid = \"0123456S\"\nsaid = \"wire the counts up\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.talk_to(
+        "fake",
+        Path::new(support::sh()),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    talk_about_the_note(&mut app);
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    assert!(is_open(&app, 1), "no conversation about the note");
+
+    // Back on the notes, with the conversation behind them.
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    assert!(app.chat().is_none(), "the conversation is still in front");
+    assert_eq!(close_it(&mut app, 1), "closed");
+    assert_eq!(app.note(), Some("Closed wire the counts up"));
 }
 
 /// A conversation about no note goes by the reader's first words in the
@@ -6889,41 +6951,6 @@ fn a_conversation_goes_by_its_first_words_until_it_is_named() {
     assert!(
         after.iter().any(|label| label == "Renamed by the agent"),
         "the agent's name did not take over from the first words: {after:?}"
-    );
-}
-
-/// Where the conversation an agent closes goes by a long name, the line
-/// saying so cuts the name rather than going unsaid.
-///
-/// The name can be a whole line of the reader's, and the status row drops
-/// a sentence it cannot hold -- after squeezing the file's name out of the
-/// row to make room for it.
-///
-/// Broken deliberately by saying the name whole in
-/// `close_the_conversation`.
-#[test]
-fn a_long_name_is_cut_where_its_closing_is_said() {
-    let (mut app, events) = talking();
-    pump(&mut app, &events, "the handshake", |app| {
-        app.talking() == obelus_agent::Talking::Ready
-    });
-    let long = format!("/cost {}", "and the counts ".repeat(10));
-    support::type_text(&mut app, &long);
-    support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "the answer", |app| {
-        said_in_transcript(app, "ran cost") && app.talking() == obelus_agent::Talking::Ready
-    });
-
-    assert_eq!(close_it(&mut app, 0), "closed");
-    let said = app.note().expect("nothing said about the closing");
-    assert!(
-        said.starts_with("Closed /cost and the counts") && said.ends_with('\u{2026}'),
-        "the closing named it some other way: {said:?}"
-    );
-    assert!(
-        // Characters for columns, which this name's are.
-        said.chars().count() <= "Closed ".len() + 40,
-        "the name went on the row whole: {said:?}"
     );
 }
 
@@ -7764,26 +7791,22 @@ fn a_plan_opens_in_a_document_of_its_own_and_follows_its_revisions() {
     let screen = rows(&dump);
     assert!(
         screen.iter().any(|row| row.contains("The plan")),
-        "the plan is not on screen:
-{dump}"
+        "the plan is not on screen:\n{dump}"
     );
     assert!(
         screen.iter().any(|row| row.contains("5. Stop")),
-        "the plan is not all there:
-{dump}"
+        "the plan is not all there:\n{dump}"
     );
     assert!(
         !screen.iter().any(|row| row.contains("# The plan")),
-        "the plan is on screen as its markdown:
-{dump}"
+        "the plan is on screen as its markdown:\n{dump}"
     );
     // Named on the status row by its own heading, as its tab and its row in
     // the list are: there is no `plan.md` anywhere to go looking for.
     let status = screen.last().expect("no status row");
     assert!(
         status.contains("Plan: The plan") && !status.contains("plan.md"),
-        "the status row does not say what it is:
-{dump}"
+        "the status row does not say what it is:\n{dump}"
     );
 
     // Back to the conversation to answer, and asked for more planning.
@@ -8494,9 +8517,15 @@ fn a_narrow_row_keeps_the_settings_and_the_keys() {
             .expect("the status row")
     };
 
-    // Where it fits, all three are there.
+    // Where it fits, all of it is there, the palette's key with it.
     let wide = row(&mut app, WIDTH);
-    assert!(wide.contains("94%") && wide.contains("Mode") && wide.contains("ask first"));
+    assert!(
+        wide.contains("94%")
+            && wide.contains("Mode")
+            && wide.contains("ask first")
+            && wide.contains("More"),
+        "{wide:?}"
+    );
 
     // Where it does not, the number goes and the other two stay whole.
     let narrow = row(&mut app, 30);
@@ -8511,6 +8540,14 @@ fn a_narrow_row_keeps_the_settings_and_the_keys() {
     assert!(
         narrow.contains("ask first"),
         "the settings were cut down to nothing: {narrow:?}"
+    );
+    // The palette's key went before either: it points somewhere, and the
+    // settings and the keys are what is here. Broken deliberately by
+    // pushing it onto the keys whatever the width, which cuts the settings
+    // to a letter.
+    assert!(
+        !narrow.contains("More"),
+        "the palette's key stayed on a row that could not hold it: {narrow:?}"
     );
 }
 
@@ -11711,6 +11748,20 @@ fn a_conversation_another_obelus_has_open_is_not_opened_again() {
             .last()
             .is_some_and(|status| status.contains("Talked about in another window")),
         "the status row does not say the note is talked about elsewhere:\n{dump}"
+    );
+    // And on a row with room for that or the palette's key and not both,
+    // it is that: a refused claim is drawn, and a key that does nothing
+    // here is not the news. Broken deliberately by giving the palette's key
+    // its room first again, which drops the place whole.
+    let dump = support::render(&mut app, 60, 18);
+    let status = support::text_block(&dump)
+        .lines()
+        .last()
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        status.contains("Talked about in another window"),
+        "the palette's key took the room the place needed:\n{dump}"
     );
     // The lock, and not the mark that says the key takes a conversation up
     // here: the other window may be on another checkout or another agent,
@@ -18935,8 +18986,13 @@ fn a_review_taken_elsewhere_is_locked_on_its_row_while_the_list_is_open() {
 /// The palette opened over a conversation leads with the conversation's
 /// own keys, as it does over the notes and a pull request's page.
 ///
+/// Only the keys that are not what they are everywhere: enter sends and the
+/// ends and the arrows walk in every conversation a reader has used, and a
+/// palette of them buried the line break and the stop among the obvious.
+///
 /// Broken deliberately by leaving the conversation out of `keys_of`: the
-/// palette opens on every command with no tab of the conversation's.
+/// palette opens on every command with no tab of the conversation's. And
+/// by putting `Send` back among the box's hints, which says it here.
 #[test]
 fn the_palette_over_a_conversation_says_its_keys() {
     let (mut app, events) = talking();
@@ -18946,9 +19002,15 @@ fn the_palette_over_a_conversation_says_its_keys() {
     let here = support::keys_here(&mut app);
     let said: Vec<&str> = here.iter().map(|key| key.does.as_str()).collect();
     assert!(
-        said.contains(&"Send") && said.contains(&"New line"),
+        said.contains(&"New line"),
         "the palette does not say the box's keys: {said:?}"
     );
+    for obvious in ["Send", "Top", "Bottom", "Read back"] {
+        assert!(
+            !said.contains(&obvious),
+            "{obvious:?} is in the palette, which says what is not obvious: {said:?}"
+        );
+    }
 }
 
 /// While the list of pull requests has no rows yet, its preview shows

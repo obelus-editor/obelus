@@ -448,7 +448,8 @@ impl App {
         let taken = obelus_themes::install::remove(name, &root);
         self.forget_the_themes_on_disk();
         match taken {
-            Ok(()) => self.say(format!("Took {name} away")),
+            // Nothing said: its row going from the list says it.
+            Ok(()) => {}
             Err(why) => self.wrong(why),
         }
     }

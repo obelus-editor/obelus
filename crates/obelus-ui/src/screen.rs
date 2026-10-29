@@ -463,12 +463,23 @@ pub trait Screen {
     /// The chat, by name, and where this window stands with it -- `None`
     /// where it is not the window the chat talks to.
     fn bot(&self) -> Option<(&'static str, obelus_bot::State)>;
+    /// Whether that chat is heard through another window rather than held
+    /// by this one -- which is where `disconnect-from-chat` does nothing.
+    fn bot_relayed(&self) -> bool;
+    /// The machine this Obelus runs on, where it is drawn on another --
+    /// `None` where the reader is sitting at it.
+    fn drawn_from(&self) -> Option<&str>;
     /// The settings view, while it is open.
     fn settings(&self) -> Option<&Settings>;
     /// The agent's own commands, while one is being typed.
     fn slash(&self) -> Option<&Picker>;
     /// What Obelus is doing about an agent.
     fn talking(&self) -> Talking;
+    /// Whether the agent has more than one way of working to step through.
+    fn agent_has_modes(&self) -> bool;
+    /// The pull request or issue the conversation in front is about, where
+    /// it is about one.
+    fn page_of_the_conversation(&self) -> Option<obelus_component::discussion::Asked>;
     /// What an input method is spelling at a terminal's program, which is
     /// drawn over its screen and not yet sent to it.
     fn spelling_over_a_program(&self) -> Option<&str>;

@@ -171,6 +171,18 @@ impl Screen for App {
     fn bot(&self) -> Option<(&'static str, obelus_bot::State)> {
         App::bot_badge(self)
     }
+    fn bot_relayed(&self) -> bool {
+        !App::has_the_bot(self) && App::joined_the_relay(self)
+    }
+    fn agent_has_modes(&self) -> bool {
+        App::agent_has_modes(self)
+    }
+    fn page_of_the_conversation(&self) -> Option<obelus_component::discussion::Asked> {
+        App::page_of_the_conversation(self)
+    }
+    fn drawn_from(&self) -> Option<&str> {
+        App::drawn_from(self)
+    }
 
     fn server_busy(&self) -> bool {
         App::server_busy(self)

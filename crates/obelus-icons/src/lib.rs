@@ -193,6 +193,13 @@ pub mod ui {
     pub const AWAY: char = '\u{f03cc}';
     /// Not going there.
     pub const STAYING: char = '\u{f0156}';
+    /// The chat, heard through another window rather than held by this
+    /// one: connected, but by a link that goes through somewhere else.
+    ///
+    /// A link rather than the window `WINDOW` is, which at one cell is a
+    /// block nobody reads as anything -- and rather than an arrow, which
+    /// most fonts draw as an emoji.
+    pub const RELAYED: char = '\u{f0339}';
 }
 
 /// The glyph for one answer to a permission request.

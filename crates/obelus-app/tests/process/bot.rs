@@ -570,6 +570,10 @@ fn a_chat_that_is_set_is_connected_to_when_told() {
         Some("xoxb-1-bot")
     );
     drop(faked);
+    // The mark says it, and nothing else does: a note would have the row
+    // and cover the mark until the next key. Broken deliberately by saying
+    // `{} talks to this window now` again in `take_the_bot`.
+    assert_eq!(app.note(), None, "connecting was said");
     let line = status(&mut app);
     assert!(
         line.contains("● Slack"),
@@ -667,7 +671,10 @@ fn pairing_lets_in_whoever_sends_the_code() {
             .chat_of("slack")
             .is_some_and(|remote| remote.people.iter().any(|person| person.name == "Sunli"))
     });
-    assert_eq!(app.note(), Some("Paired Sunli"));
+    // Told in the thread, below, and nothing said here: a note for
+    // something done in the chat would have the status row for it. Broken
+    // deliberately by saying `Paired {name}` again in `let_in`.
+    assert_eq!(app.note(), None, "pairing was said here");
     let said = said_since();
     let code_thread = format!("M-{sent}");
     assert!(
@@ -2562,7 +2569,10 @@ fn connecting_in_another_window_takes_the_chat_over() {
         "the chat to move",
         |first, second| !first.holds_the_bot_for_test() && second.holds_the_bot_for_test(),
     );
-    assert_eq!(first.note(), Some("Slack went to another window"));
+    // The mark going says it, and nothing else does. Broken deliberately
+    // by saying `{} went to another window` again in
+    // `somebody_wants_the_bot`.
+    assert_eq!(first.note(), None, "the chat going was said");
     until(&mut second, &seconds, "the second to connect", |app| {
         app.bot_state_for_test() == obelus_bot::State::Connected
     });
@@ -3038,12 +3048,16 @@ fn a_chat_that_goes_wrong_says_why_once() {
     until(&mut app, &events, "the words", |app| {
         app.note() == Some("Not connected to Slack: dns error")
     });
+    // The words are the row while they last, and the mark is under them.
     let line = status_row(&mut app);
     assert!(line.contains("Not connected to Slack: dns error"), "{line}");
-    assert!(line.contains("✕ Slack"), "{line}");
 
     support::press(&mut app, KeyCode::Down);
     assert_eq!(app.note(), None, "a key did not take the words away");
+    assert!(
+        status_row(&mut app).contains("✕ Slack"),
+        "no mark once they went"
+    );
     let _ = unreachable();
     settle(&mut app, &events);
     assert_eq!(app.note(), None, "said again for the same thing");
@@ -3088,6 +3102,7 @@ fn a_chat_with_something_untold_says_what() {
     until(&mut app, &events, "the words", |app| {
         app.note() == Some("Not connected to Slack: no Bot token is set")
     });
+    support::press(&mut app, KeyCode::Down);
     let line = status_row(&mut app);
     assert!(line.contains("✕ Slack"), "{line}");
 }
@@ -3321,6 +3336,9 @@ fn the_first_with_the_chat(
 /// thread was asked for. Answering every thread in the window that holds
 /// the chat: the words never reached the second window's agent. Marking
 /// the chat only in the window that holds it: the second's row was empty.
+/// And marking it in the second the way the first marks it -- `bot_badge`
+/// ignoring `relayed` -- which has a reader in the second looking there for
+/// the key that lets it go, dim there.
 /// And on Unix, writing the door with the default mode: others could read
 /// its key.
 #[test]
@@ -3347,10 +3365,25 @@ fn a_window_without_the_chat_is_heard_in_it_through_the_one_with_it() {
             "the door's key is readable by others: {mode:o}"
         );
     }
+    let relayed = match obelus_icons::enabled() {
+        true => obelus_icons::ui::RELAYED,
+        false => '\u{25e6}',
+    };
     assert!(
-        status_row(&mut second).contains("\u{25cf} Slack"),
-        "the second's status row does not mark the chat: {}",
+        status_row(&mut second).contains(&format!("{relayed}"))
+            && status_row(&mut second).contains("Slack"),
+        "the second's status row does not mark the chat as heard through another: {}",
         status_row(&mut second)
+    );
+    assert!(
+        !status_row(&mut second).contains("\u{25cf} Slack"),
+        "the second marks the chat as though it held it: {}",
+        status_row(&mut second)
+    );
+    assert!(
+        status_row(&mut first).contains("\u{25cf} Slack"),
+        "the first does not mark the chat it holds: {}",
+        status_row(&mut first)
     );
 
     second.new_conversation();

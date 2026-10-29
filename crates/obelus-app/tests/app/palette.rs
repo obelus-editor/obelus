@@ -344,14 +344,17 @@ fn the_pointer_to_the_palette_gives_way_to_the_switches() {
 }
 
 /// The notes, with no box of their own, point at the palette from their
-/// last row, after their name.
+/// last row -- at its end, against the surroundings, where every row whose
+/// palette leads with its view's own keys points at it.
 ///
 /// The counts' last row does not: their one key is what enter does to the
 /// row the reader is on, and that row says it itself -- which their
 /// fixtures hold down (`counts_76x24` and its two neighbours), since it
 /// takes a finished count to have a row to be on.
 ///
-/// Broken deliberately by taking `more` out of `render_notes`.
+/// Broken deliberately by taking `palette_at_end` out of `render_notes`,
+/// and by putting it back after the name, where the row's own words are:
+/// the second leaves `More` on the row and not at its end.
 #[test]
 fn the_notes_point_at_the_palette_from_their_row() {
     let scratch = support::Scratch::new("palette-notes");
@@ -361,5 +364,14 @@ fn the_notes_point_at_the_palette_from_their_row() {
     support::lay_out(&mut app, WIDTH, HEIGHT);
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
     let row = last_row(&mut app);
-    assert!(row.contains("More"), "the notes do not: {row:?}");
+    let (_, cells) = row.split_once('|').expect("a row of cells");
+    assert!(cells.contains("More"), "the notes do not: {row:?}");
+    // At the end of the row: the last cell is the margin, so `More` ends
+    // one short of the width. A row with nothing else on it ends in `More`
+    // wherever it is put, which is why this counts cells.
+    assert_eq!(
+        cells.trim_end().chars().count(),
+        usize::from(WIDTH) - 1,
+        "not at the end of the row: {row:?}"
+    );
 }

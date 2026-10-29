@@ -2247,26 +2247,38 @@ impl App {
         "closed".to_string()
     }
 
-    /// Closes one conversation and says which, which is the difference
-    /// from the reader closing it: they know they did.
+    /// Closes one conversation, and says which where the reader was not
+    /// looking at it.
+    ///
+    /// Said only then, because only then is there nothing else to say it:
+    /// the conversation in front going is the screen changing under the
+    /// reader, which says it, and a note would have the status row for
+    /// nothing. One somewhere else goes without anything on screen moving
+    /// -- an agent in one conversation can close another while the reader
+    /// is in a file -- and is the reader's to hear about, because they did
+    /// not do it.
     fn close_the_conversation(&mut self, id: DocumentId) {
         // By the name the list of what is open gives it, read before it
-        // goes: the reader may have been somewhere else, and "the
-        // conversation" is then one of several.
-        let named = self.document(id).and_then(Document::chat).and_then(|talk| {
-            let notes = obelus_todo::read(&self.working_directory)
-                .notes()
-                .unwrap_or_default();
-            self.conversation_name(talk, &notes)
-        });
+        // goes: "the conversation" is one of several.
+        let named = (self.current != Some(id))
+            .then(|| {
+                self.document(id).and_then(Document::chat).map(|talk| {
+                    let notes = obelus_todo::read(&self.working_directory)
+                        .notes()
+                        .unwrap_or_default();
+                    self.conversation_name(talk, &notes)
+                })
+            })
+            .flatten();
         self.close(id);
-        // Bounded the way a path said on this row is (`named`): the name
-        // can be a whole line of the reader's, and a sentence the row cannot
-        // hold squeezes the file's name out of it or is not said at all.
-        self.say(match named {
-            Some(named) => format!("Closed {}", obelus_ui::truncate_from_right(&named, 40)),
-            None => "Closed the conversation".to_string(),
-        });
+        // Bounded the way a path said on this row is: the name can be a
+        // whole line of the reader's.
+        if let Some(named) = named {
+            self.say(match named {
+                Some(named) => format!("Closed {}", obelus_ui::truncate_from_right(&named, 40)),
+                None => "Closed a conversation".to_string(),
+            });
+        }
         // And out of the list of what is open, where that is showing: a
         // row for a conversation that has gone is a row that lies.
         self.refresh_switching();
@@ -5065,9 +5077,12 @@ impl App {
                         buffer.edit(span, text, obelus_buffer::undo::Doing::Whole)
                     })
                 });
+                // Nothing said: the change is on screen as text, the status
+                // row says the file is not written, and the transcript says
+                // which call did it -- and a note would have the row and
+                // cover the file's name until a key.
                 if changed {
                     self.change_document(index);
-                    self.say("The agent changed this file".to_string());
                 }
                 // A write of what is already there changed nothing and is
                 // not a failure: the agent asked for a state, and that is

@@ -657,19 +657,15 @@ pub fn hints(
     let chord = obelus_keymap::KeyChord::new;
     let bare = |code| chord(code, KeyModifiers::NONE);
     let control = |code| chord(code, KeyModifiers::CONTROL);
-    // The two ends are one act in two directions, but "the top" is not
-    // what the other end goes to, so each says its own.
-    let ends = [
-        Hint::new(control(KeyCode::Home), "Top").about("Go to the start of the conversation"),
-        Hint::new(control(KeyCode::End), "Bottom").about("Go to the end of the conversation"),
-    ];
+    // Nothing about what a key does everywhere: the arrows and the ends
+    // walk, enter sends what is written and changes the setting it is on,
+    // and escape goes back to the box -- what every conversation and list
+    // a reader has used does with them, and a palette of them was a page
+    // of the obvious with the four that are not somewhere among it.
     let mut hints = match chat.focus() {
         Focus::Writing => {
             let written = !chat.writing().is_blank();
             vec![
-                Hint::new(bare(KeyCode::Enter), "Send")
-                    .about("Send this, or have it wait for the turn that is running")
-                    .when(written),
                 Hint::new(control(KeyCode::Enter), "Send now")
                     .about("Stop the turn that is running and send this")
                     .only_where(thinking)
@@ -685,24 +681,10 @@ pub fn hints(
                 Hint::new(chord(KeyCode::BackTab, KeyModifiers::SHIFT), "Mode")
                     .about("Switch the agent to its next way of working")
                     .when(modes),
-                Hint::new(bare(KeyCode::Up), "Read back")
-                    .about("Go up into what has been said, with a cursor")
-                    .when(!chat.is_empty()),
             ]
         }
-        Focus::Transcript(_) => vec![
-            Hint::new(bare(KeyCode::Esc), "Write")
-                .about("Go back to the box, and let go of what is held"),
-        ],
-        Focus::Settings(_) => vec![
-            Hint::new(bare(KeyCode::Right), "Along")
-                .or(bare(KeyCode::Left))
-                .about("Go to the next setting, or the one before"),
-            Hint::new(bare(KeyCode::Enter), "Change").about("Change the setting you are on"),
-            Hint::new(bare(KeyCode::Esc), "Write").about("Go back to the box"),
-        ],
+        Focus::Transcript(_) | Focus::Settings(_) => Vec::new(),
     };
-    hints.extend(ends);
     if let Some(about) = about {
         let what = match about {
             obelus_component::discussion::Asked::PullRequest(_) => "Go to the pull request's page",
@@ -779,6 +761,17 @@ pub struct ChatView<'a> {
     /// same mark a file's row carries, since this row is the one a reader
     /// working from a chat is most often on.
     bot: Option<(&'static str, obelus_bot::State)>,
+    /// Whether that chat is heard through another window.
+    relayed: bool,
+    /// The machine this Obelus runs on, where it is drawn on another.
+    from: Option<&'a str>,
+    /// The palette's key, as the key table writes it: the last key on the
+    /// row, because the palette over a conversation leads with its keys.
+    palette: Option<String>,
+    /// Whether the conversation has any keys of its own for the palette's
+    /// first tab: where it has none there is no tab, and a row pointing at
+    /// one points at nothing.
+    here: bool,
     /// How many of the region's rows, from its top, the reader can see:
     /// a list on the status bar is drawn over the foot of a conversation
     /// rather than taking room from it, and the bar stops above the list,
@@ -815,6 +808,17 @@ impl<'a> ChatView<'a> {
             usage: app.agent_usage(),
             tasks: app.background_tasks(),
             bot: app.bot(),
+            relayed: app.bot_relayed(),
+            from: app.drawn_from(),
+            palette: crate::status::palette_key(app),
+            here: hints(
+                app.shown().chat()?,
+                app.talking() == Talking::Thinking,
+                app.agent_has_modes(),
+                app.page_of_the_conversation(),
+            )
+            .iter()
+            .any(|hint| hint.here),
             seen: None,
         })
     }
@@ -1651,11 +1655,33 @@ impl ChatView<'_> {
     pub fn status(&self, cells: &mut CellBuffer, area: Rect) {
         // The page's own colour, like every other status row: the rule
         // above it has already said the row is a different subject from
-        // what is above it.
+        // what is above it. And its ink, for the same reason: what is
+        // written in it plainly -- a note, alone on the row -- is written
+        // the way the other rows write it.
         let plain = Style::new()
             .bg(self.theme.background)
-            .fg(self.theme.foreground);
+            .fg(self.theme.status_foreground);
         fill(cells, area, plain);
+
+        // What Obelus has just said, alone on the row, as on every status
+        // row: the settings, the memory, the keys and the surroundings come
+        // back at the next key, which is the one that takes it. Before the
+        // surroundings are drawn, or it is drawn beside them.
+        if let Some(note) = self.note {
+            crate::status::said_alone(cells, area, note, self.note_is_wrong, plain, self.theme);
+            return;
+        }
+        // What the row says about the window, at the far end where every
+        // status row says it (`status::Surroundings`); what is the
+        // conversation's own is laid out in what that leaves.
+        self.surroundings().draw(
+            cells,
+            area,
+            Self::surroundings_room(area),
+            plain.fg(self.theme.status_foreground),
+            self.theme,
+        );
+        let area = self.beside_the_surroundings(area);
 
         // What a key does here, on the right. Two of them at most, and the
         // way back comes first: a conversation about a note is reached from
@@ -1664,7 +1690,7 @@ impl ChatView<'_> {
         //
         // Measured first, because the room the settings have is what is left
         // of the row.
-        let keys = self.status_keys();
+        let keys = self.status_keys(area);
         let hint = joined(&keys);
         if let Some(hint) = &hint
             && let Ok(offset) =
@@ -1712,44 +1738,6 @@ impl ChatView<'_> {
             write(cells, area.x + offset, area.y, said, plain.fg(ink));
         }
 
-        let room = over.saturating_sub(used.as_ref().map_or(0, |(said, _)| text_width(said) + GAP));
-        // The chat's mark beside the memory, and for the same reason: it
-        // stays put while the settings scroll.
-        let room = match self.bot_on_row(room) {
-            Some((mark, ink, wide)) => {
-                let at = 1 + room - text_width(&mark);
-                if let Ok(offset) = u16::try_from(at) {
-                    write(cells, area.x + offset, area.y, &mark, plain.fg(ink));
-                    crate::turning_at(area.x + offset, area.y, &mark);
-                }
-                room - wide
-            }
-            None => room,
-        };
-        // A note over the settings, for as long as it lasts. The settings
-        // are what the session is set to and are still true a moment later;
-        // a note is the answer to the key just pressed, and an answer that
-        // waits its turn is an answer nobody reads.
-        if let Some(note) = self.note {
-            // In the red everything that would not go is written in, the
-            // same as the status row's: the words are the same in either
-            // place and a reader glancing at the row has nothing else to
-            // tell a refusal from a report.
-            let ink = match self.note_is_wrong {
-                true => plain.fg(self
-                    .theme
-                    .colour_for(Some(obelus_text::kind::SyntaxKind::Error))),
-                false => plain,
-            };
-            write(
-                cells,
-                area.x + 1,
-                area.y,
-                &super::truncate_from_right(note, room),
-                ink,
-            );
-            return;
-        }
         // The count of background work, beside the memory and for the same
         // reason: it stays put while the settings scroll. At the end of
         // them it was the first thing cut, on a row the settings fill.
@@ -1938,7 +1926,8 @@ impl ChatView<'_> {
     /// with nothing on screen saying where they are.
     #[must_use]
     pub fn shows_tasks(&self, area: Rect) -> bool {
-        self.tasks_placed(area).is_some()
+        self.tasks_placed(self.beside_the_surroundings(area))
+            .is_some()
     }
 
     /// Which setting the row starts at.
@@ -1976,8 +1965,8 @@ impl ChatView<'_> {
     ///
     /// Asked before the settings are drawn, because the room they have is
     /// what is left of the row once this is on it.
-    fn status_hint(&self) -> Option<String> {
-        joined(&self.status_keys())
+    fn status_hint(&self, area: Rect) -> Option<String> {
+        joined(&self.status_keys(area))
     }
 
     /// The same row, kept as the key and what it does rather than as one
@@ -1987,7 +1976,7 @@ impl ChatView<'_> {
     /// text and the cap round each key is about *where the key is*: a
     /// front end that draws the shape has to be told which cells of that
     /// run are the key, and a run that had already been joined cannot say.
-    fn status_keys(&self) -> Vec<(String, &'static str)> {
+    fn status_keys(&self, area: Rect) -> Vec<(String, &'static str)> {
         let back = self
             .back_to_the_note
             .map(|chord| (chord.label(), "The note"));
@@ -2003,7 +1992,26 @@ impl ChatView<'_> {
             .chat
             .suggestion()
             .map(|_| (chord(KeyCode::Right, KeyModifiers::NONE), "Fill it in"));
-        [suggested, back, mode].into_iter().flatten().collect()
+        let mut keys: Vec<_> = [suggested, back, mode].into_iter().flatten().collect();
+        // And last, nearest the surroundings, where every row whose palette
+        // leads with its view's own keys points at it
+        // (`StatusView::palette_at_end`): the row says two or three of
+        // them, and the rest are there. The first thing a short row gives
+        // up, before the settings are cut: it points somewhere, and the
+        // settings and the keys are what is here.
+        if let Some(key) = self.palette.as_ref().filter(|_| self.here) {
+            let without = joined(&keys).map_or(0, |hint| text_width(&hint) + 2);
+            let settings = self
+                .setting_words()
+                .iter()
+                .map(|said| said_width(said) + SEPARATOR_WIDTH)
+                .sum::<usize>();
+            let wanted = without + crate::status::more_width(key) + 2 + settings + 2;
+            if usize::from(area.width) >= wanted {
+                keys.push((key.clone(), crate::status::MORE));
+            }
+        }
+        keys
     }
 
     /// How much of the status row the settings have.
@@ -2021,26 +2029,42 @@ impl ChatView<'_> {
 
     /// The same, before the count of background work has taken its share.
     fn room_beside_the_marks(&self, area: Rect) -> usize {
-        let hint = self.status_hint();
+        let hint = self.status_hint(area);
         let taken = hint.as_deref().map_or(0, |hint| text_width(hint) + 2);
         let over = usize::from(area.width).saturating_sub(taken + 2);
         let used = self
             .usage
             .and_then(used_up)
             .filter(|(said, _)| over > text_width(said) + GAP + LEAST_SETTINGS);
-        let room = over.saturating_sub(used.as_ref().map_or(0, |(said, _)| text_width(said) + GAP));
-        room - self.bot_on_row(room).map_or(0, |(_, _, wide)| wide)
+        over.saturating_sub(used.as_ref().map_or(0, |(said, _)| text_width(said) + GAP))
     }
 
-    /// The chat's mark, where what the row has left holds it and still
-    /// leaves the settings some room, with its ink and how much it takes.
+    /// What the row says about the window: the chat and the machine, and
+    /// no server, because a conversation is not a file one is about.
+    fn surroundings(&self) -> crate::status::Surroundings<'_> {
+        crate::status::Surroundings::new(None, None, self.bot, self.relayed, self.from, self.phase)
+    }
+
+    /// How much of the row they may have: a third, which leaves the
+    /// conversation's own the most of it.
+    fn surroundings_room(area: Rect) -> usize {
+        usize::from(area.width) / 3
+    }
+
+    /// The row with the surroundings taken off its end.
     ///
-    /// Asked by the drawing and by `status_room` both, so the settings and
-    /// a press on them are measured against the row that is there.
-    fn bot_on_row(&self, room: usize) -> Option<(String, Color, usize)> {
-        let (mark, ink) = crate::status::bot_mark(self.bot, self.phase, self.theme)?;
-        let wide = text_width(&mark) + GAP;
-        (room > wide + LEAST_SETTINGS).then_some((mark, ink, wide))
+    /// Asked by the drawing and by a press both, so a setting is measured
+    /// against the row that is there.
+    fn beside_the_surroundings(&self, area: Rect) -> Rect {
+        let taken = self
+            .surroundings()
+            .width(Self::surroundings_room(area), self.theme);
+        Rect {
+            width: area
+                .width
+                .saturating_sub(u16::try_from(taken).unwrap_or(u16::MAX)),
+            ..area
+        }
     }
 
     /// Which of the agent's settings a point on the status row is on.
@@ -2055,6 +2079,12 @@ impl ChatView<'_> {
         if y != area.y {
             return None;
         }
+        // Nothing under a press while a note has the row: what it would
+        // have been on is not drawn.
+        if self.note.is_some() {
+            return None;
+        }
+        let area = self.beside_the_surroundings(area);
         if let Some((at, word)) = self.tasks_placed(area) {
             let wide = u16::try_from(text_width(&word)).unwrap_or(0);
             if x >= at && x < at.saturating_add(wide) {
@@ -2382,8 +2412,10 @@ mod tests {
     /// cursor has gone up into it.
     ///
     /// Broken deliberately by answering the box's keys wherever the cursor
-    /// is: the transcript's way back to the box is not said, and the box's
-    /// line break is said where it does nothing.
+    /// is: the box's line break is said where it does nothing. The
+    /// transcript has no keys of its own to say -- its arrows walk and its
+    /// escape goes back to the box, as everywhere -- so there the tab is
+    /// empty, and the row does not point at it.
     #[test]
     fn a_conversations_keys_are_the_half_the_cursor_is_in() {
         let mut chat = obelus_component::chat::Chat::new();
@@ -2405,8 +2437,7 @@ mod tests {
 
         chat.stand_in_transcript(obelus_component::chat::Place::default());
         let reading = does(&chat);
-        assert!(reading.contains(&"Write"), "{reading:?}");
-        assert!(!reading.contains(&"New line"), "{reading:?}");
+        assert!(reading.is_empty(), "{reading:?}");
     }
 
     /// Break: count the gap between two hints as the gap inside one, and
@@ -2496,6 +2527,10 @@ mod tests {
             usage: None,
             tasks: None,
             bot: None,
+            relayed: false,
+            from: None,
+            palette: None,
+            here: false,
             seen: Some(seen),
         };
         let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -2509,6 +2544,52 @@ mod tests {
         assert!(
             !(seen..regions.transcript.bottom()).any(barred),
             "the bar ran on under the list"
+        );
+    }
+
+    /// What Obelus has just said is the conversation's whole status row:
+    /// the chat's mark and the machine are not drawn beside it.
+    ///
+    /// Broken deliberately by drawing the surroundings before asking
+    /// whether there is a note, which leaves them beside it.
+    #[test]
+    fn a_note_on_the_conversations_row_is_not_beside_the_surroundings() {
+        let chat = obelus_component::chat::Chat::new();
+        let area = ratatui::layout::Rect::new(0, 0, 76, 1);
+        let view = super::ChatView {
+            chat: &chat,
+            theme: &obelus_theme::builtin::DARK,
+            state: obelus_agent::Talking::Ready,
+            name: None,
+            title: None,
+            settings: &[],
+            focus: obelus_component::chat::Focus::Writing,
+            card: None,
+            asked: false,
+            in_front: true,
+            pointer: None,
+            root: std::path::Path::new("/"),
+            phase: 0,
+            branch: None,
+            back_to_the_note: None,
+            note: Some("Copied selection"),
+            note_is_wrong: false,
+            usage: None,
+            tasks: None,
+            bot: Some(("Feishu", obelus_bot::State::Connected)),
+            relayed: false,
+            from: Some("devbox"),
+            palette: None,
+            here: false,
+            seen: None,
+        };
+        let mut cells = ratatui::buffer::Buffer::empty(area);
+        view.status(&mut cells, area);
+        let row: String = (0..area.width).map(|x| cells[(x, 0)].symbol()).collect();
+        assert!(row.contains("Copied selection"), "{row:?}");
+        assert!(
+            !row.contains("Feishu") && !row.contains("devbox"),
+            "the surroundings are beside the note: {row:?}"
         );
     }
 
@@ -2542,6 +2623,10 @@ mod tests {
             usage: None,
             tasks: Some((2, 0)),
             bot: None,
+            relayed: false,
+            from: None,
+            palette: None,
+            here: false,
             seen: None,
         };
         let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -2588,6 +2673,10 @@ mod tests {
             usage: None,
             tasks: None,
             bot: None,
+            relayed: false,
+            from: None,
+            palette: None,
+            here: false,
             seen: None,
         };
         let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -2639,6 +2728,10 @@ mod tests {
                 usage: None,
                 tasks: None,
                 bot: None,
+                relayed: false,
+                from: None,
+                palette: None,
+                here: false,
                 seen: None,
             };
             let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -2820,6 +2913,10 @@ mod tests {
                 usage: None,
                 tasks: None,
                 bot: None,
+                relayed: false,
+                from: None,
+                palette: None,
+                here: false,
                 seen: None,
             };
             let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -2895,6 +2992,10 @@ mod tests {
                 usage: None,
                 tasks: None,
                 bot: None,
+                relayed: false,
+                from: None,
+                palette: None,
+                here: false,
                 seen: None,
             };
             let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -2958,6 +3059,10 @@ mod tests {
                 usage: None,
                 tasks: None,
                 bot: None,
+                relayed: false,
+                from: None,
+                palette: None,
+                here: false,
                 seen: None,
             };
             let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -3068,6 +3173,10 @@ mod caret {
             usage: None,
             tasks: None,
             bot: None,
+            relayed: false,
+            from: None,
+            palette: None,
+            here: false,
             seen: None,
         }
     }
@@ -3167,6 +3276,10 @@ mod caret {
                         usage: None,
                         tasks: None,
                         bot: None,
+                        relayed: false,
+                        from: None,
+                        palette: None,
+                        here: false,
                         seen: None,
                     };
                     let mut cells = ratatui::buffer::Buffer::empty(area);

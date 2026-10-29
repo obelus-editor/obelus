@@ -264,19 +264,21 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
         true => "Change the key on this row",
         false => "Change the setting on this row",
     };
-    let (enter, enter_does) = match remote {
+    // And whether that is what enter does in every list -- changing the
+    // row it is on -- which is not news.
+    let (enter, enter_does, a_lists_own) = match remote {
         Some(Shown::Bot { row, .. }) => match row {
-            BotRow::Pair => ("Pair", "Make a code to pair the chat with"),
+            BotRow::Pair => ("Pair", "Make a code to pair the chat with", false),
             BotRow::Setup(obelus_bot::platform::Setup::Copy { .. }) => {
-                ("Copy", "Copy what this row holds")
+                ("Copy", "Copy what this row holds", false)
             }
             BotRow::Setup(obelus_bot::platform::Setup::Steps { .. }) => {
-                ("Open", "Open the steps this row points to")
+                ("Open", "Open the steps this row points to", false)
             }
-            BotRow::Platform | BotRow::Field(_) | BotRow::People => ("Change", changes),
+            BotRow::Platform | BotRow::Field(_) | BotRow::People => ("Change", changes, true),
         },
-        _ if adding => ("Add", "Give the agent another variable"),
-        _ => ("Change", changes),
+        _ if adding => ("Add", "Give the agent another variable", false),
+        _ => ("Change", changes, true),
     };
     // On a command with no key there is nothing for enter to change, so
     // it is not offered there.
@@ -362,8 +364,11 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
             // Asked of whichever page is showing rather than of the
             // settings: the keys page has rows too, and enter does the same
             // sort of thing to one of them. Not the themes', whose enter is
-            // the card's (`theme_hints`).
-            .only_where(!settings.on_themes())
+            // the card's (`theme_hints`). And not where it changes the row
+            // it is on, which is what enter does in every list: said where
+            // it does something else -- pairs, copies, opens, adds -- or on
+            // the keys page, where a second enter makes the first news.
+            .only_where(!settings.on_themes() && (settings.on_keys() || !a_lists_own))
             .when(settings.row_count(offering) > 0 && !pairing_waits && !nothing_to_change)
             // Said on the filter's row on the keys page, where a second
             // enter makes the first news; elsewhere enter is a list's own.
