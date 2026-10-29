@@ -475,6 +475,9 @@ pub trait Screen {
     fn slash(&self) -> Option<&Picker>;
     /// What Obelus is doing about an agent.
     fn talking(&self) -> Talking;
+    /// The pull request or issue the conversation in front is about, where
+    /// it is about one.
+    fn page_of_the_conversation(&self) -> Option<obelus_component::discussion::Asked>;
     /// What an input method is spelling at a terminal's program, which is
     /// drawn over its screen and not yet sent to it.
     fn spelling_over_a_program(&self) -> Option<&str>;

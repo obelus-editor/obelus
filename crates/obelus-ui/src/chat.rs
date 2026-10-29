@@ -657,19 +657,15 @@ pub fn hints(
     let chord = obelus_keymap::KeyChord::new;
     let bare = |code| chord(code, KeyModifiers::NONE);
     let control = |code| chord(code, KeyModifiers::CONTROL);
-    // The two ends are one act in two directions, but "the top" is not
-    // what the other end goes to, so each says its own.
-    let ends = [
-        Hint::new(control(KeyCode::Home), "Top").about("Go to the start of the conversation"),
-        Hint::new(control(KeyCode::End), "Bottom").about("Go to the end of the conversation"),
-    ];
+    // Nothing about what a key does everywhere: the arrows and the ends
+    // walk, enter sends what is written and changes the setting it is on,
+    // and escape goes back to the box -- what every conversation and list
+    // a reader has used does with them, and a palette of them was a page
+    // of the obvious with the four that are not somewhere among it.
     let mut hints = match chat.focus() {
         Focus::Writing => {
             let written = !chat.writing().is_blank();
             vec![
-                Hint::new(bare(KeyCode::Enter), "Send")
-                    .about("Send this, or have it wait for the turn that is running")
-                    .when(written),
                 Hint::new(control(KeyCode::Enter), "Send now")
                     .about("Stop the turn that is running and send this")
                     .only_where(thinking)
@@ -685,24 +681,10 @@ pub fn hints(
                 Hint::new(chord(KeyCode::BackTab, KeyModifiers::SHIFT), "Mode")
                     .about("Switch the agent to its next way of working")
                     .when(modes),
-                Hint::new(bare(KeyCode::Up), "Read back")
-                    .about("Go up into what has been said, with a cursor")
-                    .when(!chat.is_empty()),
             ]
         }
-        Focus::Transcript(_) => vec![
-            Hint::new(bare(KeyCode::Esc), "Write")
-                .about("Go back to the box, and let go of what is held"),
-        ],
-        Focus::Settings(_) => vec![
-            Hint::new(bare(KeyCode::Right), "Along")
-                .or(bare(KeyCode::Left))
-                .about("Go to the next setting, or the one before"),
-            Hint::new(bare(KeyCode::Enter), "Change").about("Change the setting you are on"),
-            Hint::new(bare(KeyCode::Esc), "Write").about("Go back to the box"),
-        ],
+        Focus::Transcript(_) | Focus::Settings(_) => Vec::new(),
     };
-    hints.extend(ends);
     if let Some(about) = about {
         let what = match about {
             obelus_component::discussion::Asked::PullRequest(_) => "Go to the pull request's page",
@@ -786,6 +768,10 @@ pub struct ChatView<'a> {
     /// The palette's key, as the key table writes it: the last key on the
     /// row, because the palette over a conversation leads with its keys.
     palette: Option<String>,
+    /// Whether the conversation has any keys of its own for the palette's
+    /// first tab: where it has none there is no tab, and a row pointing at
+    /// one points at nothing.
+    here: bool,
     /// How many of the region's rows, from its top, the reader can see:
     /// a list on the status bar is drawn over the foot of a conversation
     /// rather than taking room from it, and the bar stops above the list,
@@ -825,6 +811,19 @@ impl<'a> ChatView<'a> {
             relayed: app.bot_relayed(),
             from: app.drawn_from(),
             palette: crate::status::palette_key(app),
+            here: {
+                let chat = app.shown().chat()?;
+                let modes = app.agent_settings().iter().any(|setting| {
+                    setting.category == acp::Category::Mode && setting.values.len() > 1
+                });
+                !hints(
+                    chat,
+                    app.talking() == Talking::Thinking,
+                    modes,
+                    app.page_of_the_conversation(),
+                )
+                .is_empty()
+            },
             seen: None,
         })
     }
@@ -2016,7 +2015,7 @@ impl ChatView<'_> {
         // them, and the rest are there. The first thing a short row gives
         // up, before the settings are cut: it points somewhere, and the
         // settings and the keys are what is here.
-        if let Some(key) = &self.palette {
+        if let Some(key) = self.palette.as_ref().filter(|_| self.here) {
             let without = joined(&keys).map_or(0, |hint| text_width(&hint) + 2);
             let settings = self
                 .setting_words()
@@ -2429,8 +2428,10 @@ mod tests {
     /// cursor has gone up into it.
     ///
     /// Broken deliberately by answering the box's keys wherever the cursor
-    /// is: the transcript's way back to the box is not said, and the box's
-    /// line break is said where it does nothing.
+    /// is: the box's line break is said where it does nothing. The
+    /// transcript has no keys of its own to say -- its arrows walk and its
+    /// escape goes back to the box, as everywhere -- so there the tab is
+    /// empty, and the row does not point at it.
     #[test]
     fn a_conversations_keys_are_the_half_the_cursor_is_in() {
         let mut chat = obelus_component::chat::Chat::new();
@@ -2452,8 +2453,7 @@ mod tests {
 
         chat.stand_in_transcript(obelus_component::chat::Place::default());
         let reading = does(&chat);
-        assert!(reading.contains(&"Write"), "{reading:?}");
-        assert!(!reading.contains(&"New line"), "{reading:?}");
+        assert!(reading.is_empty(), "{reading:?}");
     }
 
     /// Break: count the gap between two hints as the gap inside one, and
@@ -2546,6 +2546,7 @@ mod tests {
             relayed: false,
             from: None,
             palette: None,
+            here: false,
             seen: Some(seen),
         };
         let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -2595,6 +2596,7 @@ mod tests {
             relayed: false,
             from: None,
             palette: None,
+            here: false,
             seen: None,
         };
         let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -2644,6 +2646,7 @@ mod tests {
             relayed: false,
             from: None,
             palette: None,
+            here: false,
             seen: None,
         };
         let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -2698,6 +2701,7 @@ mod tests {
                 relayed: false,
                 from: None,
                 palette: None,
+                here: false,
                 seen: None,
             };
             let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -2882,6 +2886,7 @@ mod tests {
                 relayed: false,
                 from: None,
                 palette: None,
+                here: false,
                 seen: None,
             };
             let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -2960,6 +2965,7 @@ mod tests {
                 relayed: false,
                 from: None,
                 palette: None,
+                here: false,
                 seen: None,
             };
             let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -3026,6 +3032,7 @@ mod tests {
                 relayed: false,
                 from: None,
                 palette: None,
+                here: false,
                 seen: None,
             };
             let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -3139,6 +3146,7 @@ mod caret {
             relayed: false,
             from: None,
             palette: None,
+            here: false,
             seen: None,
         }
     }
@@ -3241,6 +3249,7 @@ mod caret {
                         relayed: false,
                         from: None,
                         palette: None,
+                        here: false,
                         seen: None,
                     };
                     let mut cells = ratatui::buffer::Buffer::empty(area);

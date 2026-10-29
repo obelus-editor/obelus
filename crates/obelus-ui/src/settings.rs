@@ -362,8 +362,11 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
             // Asked of whichever page is showing rather than of the
             // settings: the keys page has rows too, and enter does the same
             // sort of thing to one of them. Not the themes', whose enter is
-            // the card's (`theme_hints`).
-            .only_where(!settings.on_themes())
+            // the card's (`theme_hints`). And not where it changes the row
+            // it is on, which is what enter does in every list: said where
+            // it does something else -- pairs, copies, opens, adds -- or on
+            // the keys page, where a second enter makes the first news.
+            .only_where(!settings.on_themes() && (settings.on_keys() || enter != "Change"))
             .when(settings.row_count(offering) > 0 && !pairing_waits && !nothing_to_change)
             // Said on the filter's row on the keys page, where a second
             // enter makes the first news; elsewhere enter is a list's own.

@@ -174,6 +174,9 @@ impl Screen for App {
     fn bot_relayed(&self) -> bool {
         !App::has_the_bot(self) && App::joined_the_relay(self)
     }
+    fn page_of_the_conversation(&self) -> Option<obelus_component::discussion::Asked> {
+        App::page_of_the_conversation(self)
+    }
     fn drawn_from(&self) -> Option<&str> {
         App::drawn_from(self)
     }

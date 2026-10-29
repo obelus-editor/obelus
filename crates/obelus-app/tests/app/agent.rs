@@ -18947,8 +18947,13 @@ fn a_review_taken_elsewhere_is_locked_on_its_row_while_the_list_is_open() {
 /// The palette opened over a conversation leads with the conversation's
 /// own keys, as it does over the notes and a pull request's page.
 ///
+/// Only the keys that are not what they are everywhere: enter sends and the
+/// ends and the arrows walk in every conversation a reader has used, and a
+/// palette of them buried the line break and the stop among the obvious.
+///
 /// Broken deliberately by leaving the conversation out of `keys_of`: the
-/// palette opens on every command with no tab of the conversation's.
+/// palette opens on every command with no tab of the conversation's. And
+/// by putting `Send` back among the box's hints, which says it here.
 #[test]
 fn the_palette_over_a_conversation_says_its_keys() {
     let (mut app, events) = talking();
@@ -18958,9 +18963,15 @@ fn the_palette_over_a_conversation_says_its_keys() {
     let here = support::keys_here(&mut app);
     let said: Vec<&str> = here.iter().map(|key| key.does.as_str()).collect();
     assert!(
-        said.contains(&"Send") && said.contains(&"New line"),
+        said.contains(&"New line"),
         "the palette does not say the box's keys: {said:?}"
     );
+    for obvious in ["Send", "Top", "Bottom", "Read back"] {
+        assert!(
+            !said.contains(&obvious),
+            "{obvious:?} is in the palette, which says what is not obvious: {said:?}"
+        );
+    }
 }
 
 /// While the list of pull requests has no rows yet, its preview shows

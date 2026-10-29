@@ -3194,12 +3194,15 @@ fn writing_the_settings_keeps_what_obelus_does_not_recognise() {
 /// to draw -- and the row it goes into already says what it narrows,
 /// before anything has been typed there.
 ///
-/// Nor is escape, which means the same thing in every view Obelus has.
+/// Nor is escape, which means the same thing in every view Obelus has; nor
+/// enter where it changes the row it is on, which is what it does in every
+/// list.
 ///
 /// Deliberate breaks: put a "To filter" hint back on the foot, and it
 /// carries a cap nobody presses; let `what_is_filtered` say nothing, and
 /// the page no longer says anywhere that it can be typed at; put a
-/// `Leave` on escape back at the end of the foot, and it is said here.
+/// `Leave` on escape back at the end of the foot, and it is said here;
+/// and say enter's `Change` on every page again.
 #[test]
 fn the_settings_say_what_their_keys_do() {
     let _turn = crate::turn();
@@ -3210,12 +3213,14 @@ fn the_settings_say_what_their_keys_do() {
     dispatch::dispatch(&mut app, Command::ConfigProject);
 
     let usable = support::usable_here(&mut app);
-    for word in ["Change", "Unset"] {
-        assert!(
-            usable.contains(&word.to_string()),
-            "{word:?} is not in the palette: {usable:?}"
-        );
-    }
+    assert!(
+        usable.contains(&"Unset".to_string()),
+        "\"Unset\" is not in the palette: {usable:?}"
+    );
+    assert!(
+        !usable.contains(&"Change".to_string()),
+        "the palette is spending itself on a list's enter: {usable:?}"
+    );
     assert!(
         !usable.contains(&"Leave".to_string()),
         "the palette is spending itself on escape: {usable:?}"
@@ -3253,15 +3258,22 @@ fn the_palette_offers_unset_only_where_it_means_something() {
 #[test]
 fn a_key_chosen_from_the_palette_is_pressed_on_the_page() {
     let _turn = crate::turn();
-    let scratch = temporary("palette-presses");
-    let mut app = open(&settings_file(&scratch));
+    let scratch = project("palette-presses", "wrap = true\n");
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    support::lay_out(&mut app, 76, 16);
+    dispatch::dispatch(&mut app, Command::ConfigProject);
     support::type_text(&mut app, "wrap");
     let before = app.config().wrap;
     support::press_control(&mut app, 'p');
-    support::type_text(&mut app, "Change");
+    support::type_text(&mut app, "Unset");
     support::press(&mut app, KeyCode::Enter);
     assert!(app.palette().is_none(), "the palette stayed up");
-    assert_ne!(app.config().wrap, before, "the switch was not flipped");
+    assert_ne!(
+        app.config().wrap,
+        before,
+        "the project's setting was not taken out"
+    );
 }
 
 /// Whether the palette over the page offers a key by that word, now.

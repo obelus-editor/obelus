@@ -23,7 +23,7 @@ screen 66x24  editor 66x22  status 66x1
 20|     A code to send in the group you put the bot in               
 21|                                                                  
 22|──────────────────────────────────────────────────────────────────
-23| > Filter chat settings     Ctrl+p  More                          
+23| > Filter chat settings                                           
 -- style --
  0|aaaaaaaaaaaaaaaaabbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -48,7 +48,7 @@ screen 66x24  editor 66x22  status 66x1
 20|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccccc
 21|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 22|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-23|dddaaaaaaaaaaaaaaaaaaaaddddggggggggdaaaadddddddddddddddddddddddddd
+23|dddaaaaaaaaaaaaaaaaaaaaddddddddddddddddddddddddddddddddddddddddddd
 -- legend --
 a fg=#52525b bg=#18181b
 b fg=#e4e4e7 bg=#27272a
@@ -56,6 +56,5 @@ c fg=#e4e4e7 bg=#18181b
 d fg=#d4d4d8 bg=#18181b
 e fg=#a1a1aa bg=#18181b
 f fg=#52525b bg=#27272a
-g fg=#a1a1aa bg=#27272a
 -- cursor --
 none
