@@ -3618,6 +3618,26 @@ mod tests {
         assert_eq!(picker.selected(), 0, "the wheel moved the selection");
     }
 
+    /// A list told to put its details beside its labels after its rows were
+    /// laid out lays them out again, rather than keeping them under.
+    ///
+    /// Broken deliberately by leaving the measurement alone in
+    /// `details_beside`: the row stayed two tall until the width changed.
+    #[test]
+    fn details_put_beside_after_the_rows_were_laid_out_go_beside() {
+        let item = PickerItem {
+            detail: Some("1.2.3.4".to_string()),
+            ..named("devbox")
+        };
+        let mut picker = Picker::new(vec![item], PickerLayout::Compact { rows: 10 });
+        picker.wraps(None);
+        picker.refresh_indices(10, 40);
+        assert_eq!(picker.body(0, 40).rows(), 2);
+        picker.details_beside();
+        picker.refresh_indices(10, 40);
+        assert_eq!(picker.body(0, 40).rows(), 1);
+    }
+
     /// One row, for the tests above.
     pub(super) fn named(label: &str) -> PickerItem {
         PickerItem {
