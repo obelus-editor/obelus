@@ -2161,6 +2161,101 @@ mod tests {
         }
     }
 
+    /// A pane over the whole page has glass over the whole window, the
+    /// strip round the grid included; one that meets the grid's edge on
+    /// fewer sides goes out to the window's edge on those and no others.
+    ///
+    /// Checked the way the shader draws it, a margin further on, against
+    /// the window's own edges.
+    ///
+    /// Deliberate break: hand `glass` back as it came, which is what the
+    /// pane's glass was before -- stopped at the last whole cell, with the
+    /// page's ground showing in a strip beside and below the settings.
+    /// Leaving out any one of the four sides fails the first case; leaving
+    /// out the rule's guard on the bottom fails the list's.
+    #[test]
+    fn a_pane_over_the_page_reaches_the_window_edge() {
+        use glass::out_to_the_window;
+        use ratatui::layout::Rect;
+        let window = [1882.0, 1012.0];
+        let margin = [5.0, 7.0];
+        let cell = [10.0, 20.0];
+        let grid = [187, 49];
+        let glass_of = |area: Rect| {
+            [
+                f32::from(area.x) * cell[0],
+                f32::from(area.y) * cell[1],
+                f32::from(area.right()) * cell[0],
+                f32::from(area.bottom()) * cell[1],
+            ]
+        };
+        // Where the shader draws it.
+        let drawn = |[left, top, far, low]: [f32; 4]| {
+            [
+                left + margin[0],
+                top + margin[1],
+                far + margin[0],
+                low + margin[1],
+            ]
+        };
+
+        let whole = Rect::new(0, 0, grid[0], grid[1]);
+        let at = out_to_the_window(
+            glass_of(whole),
+            whole,
+            grid,
+            [false; 2],
+            window,
+            margin,
+            0.0,
+        );
+        assert_eq!(drawn(at), [0.0, 0.0, window[0], window[1]], "the settings");
+
+        // Under a bar of the page's own, the top stops at the bar.
+        let at = out_to_the_window(
+            glass_of(whole),
+            whole,
+            grid,
+            [false; 2],
+            window,
+            margin,
+            4.0,
+        );
+        assert_eq!(drawn(at)[1], 4.0, "the bar");
+
+        // A list standing on the status row's rule: out to the sides, and
+        // its top is where it is.
+        let list = Rect::new(0, 30, grid[0], 19);
+        let at = out_to_the_window(
+            glass_of(list),
+            list,
+            grid,
+            [true, true],
+            window,
+            margin,
+            0.0,
+        );
+        assert_eq!(
+            drawn(at),
+            [
+                0.0,
+                30.0 * cell[1] + margin[1],
+                window[0],
+                49.0 * cell[1] + margin[1]
+            ],
+            "a list on the status row"
+        );
+
+        // Down the right of the page, from the top: the left is the grid's.
+        let side = Rect::new(100, 0, 87, grid[1]);
+        let at = out_to_the_window(glass_of(side), side, grid, [false; 2], window, margin, 0.0);
+        assert_eq!(
+            drawn(at),
+            [100.0 * cell[0] + margin[0], 0.0, window[0], window[1]],
+            "a pane down the side"
+        );
+    }
+
     /// The frame is put back everywhere the things that are moving are
     /// not, exactly once.
     ///

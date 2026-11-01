@@ -615,11 +615,11 @@ impl Painter {
             true => ON_GLASS_TINT,
             false => TINT,
         };
-        let (left, mut top) = (
+        let (mut left, mut top) = (
             f32::from(behind.area.x) * cell.width,
             f32::from(behind.area.y) * cell.height,
         );
-        let far = f32::from(behind.area.right()) * cell.width;
+        let mut far = f32::from(behind.area.right()) * cell.width;
         let mut low = f32::from(behind.area.bottom()) * cell.height;
         // A rule along the pane's first or last row is its edge, and the
         // glass starts or stops where the rule's line is, which is the
@@ -666,6 +666,20 @@ impl Painter {
         if from_the_top(self.titled, behind.area.y, behind.joined) {
             top = -self.margin[1];
         }
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "a window is thousands of pixels, not millions"
+        )]
+        let window = [self.configured.width as f32, self.configured.height as f32];
+        [left, top, far, low] = out_to_the_window(
+            [left, top, far, low],
+            behind.area,
+            [page.columns(), page.rows()],
+            [edge(behind.area.y).is_some(), under.is_some()],
+            window,
+            self.margin,
+            self.titled,
+        );
         let glass = self.quads.len();
         self.quads.push(Quad {
             rect: [left, top, (far - left).max(1.0), (low - top).max(1.0)],
@@ -1335,6 +1349,45 @@ fn cut(piece: [f32; 4], room: [f32; 4], into: &mut Vec<[f32; 4]>) {
     if room[2] < far {
         into.push([room[2], over, far, under]);
     }
+}
+
+/// Where a pane's glass is, once it goes on out to the window's edge on
+/// every side it meets the grid's -- `glass` is left, top, right and bottom
+/// in the grid's pixels, and `ruled` is whether its first row and its last
+/// are a rule.
+///
+/// A pane is the page's own region taken over, as wide as the window (see
+/// `outside` in `paint.wgsl`), and the window is not a whole number of
+/// cells: the strip round the grid is the page's ground -- see
+/// `grid::margin` -- and a pane over the whole page that stopped at its last
+/// whole cell left that strip bare beside and below its glass. Not past a
+/// rule, which is the pane's edge wherever it has one; and the top is
+/// `from_the_top`'s already where the bar is the page's.
+pub(super) fn out_to_the_window(
+    glass: [f32; 4],
+    area: Rect,
+    grid: [u16; 2],
+    ruled: [bool; 2],
+    window: [f32; 2],
+    margin: [f32; 2],
+    titled: f32,
+) -> [f32; 4] {
+    let [mut left, mut top, mut far, mut low] = glass;
+    if area.x == 0 {
+        left = -margin[0];
+    }
+    if area.right() == grid[0] {
+        far = window[0] - margin[0];
+    }
+    // Only down to the bar, which is not the page's unless `from_the_top`
+    // has said so -- and then `top` is above this already.
+    if area.y == 0 && !ruled[0] {
+        top = top.min(titled - margin[1]);
+    }
+    if area.bottom() == grid[1] && !ruled[1] {
+        low = window[1] - margin[1];
+    }
+    [left, top, far, low]
 }
 
 /// Asked here, and by the window of the tabs -- see `title::from_the_top`.
