@@ -143,9 +143,9 @@ impl Body {
         let wide = text_width(&item.label) + usize::from(BESIDE_GAP) + text_width(detail);
         match wide <= usize::from(columns.label) {
             true => Self {
-                label: vec![0..item.label.len()],
+                label: std::iter::once(0..item.label.len()).collect(),
                 label_cut: false,
-                detail: vec![0..detail.len()],
+                detail: std::iter::once(0..detail.len()).collect(),
                 detail_cut: false,
                 beside: true,
             },
