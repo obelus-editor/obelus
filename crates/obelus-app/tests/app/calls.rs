@@ -511,9 +511,10 @@ fn the_row_being_waited_on_turns() {
 ///
 /// Deliberate break: putting back the early `return false` on `afar` in
 /// `wants_animating`, which stopped every clock where only the sheen should
-/// stop -- the first half fails. Taking `self.over_a_network` out of `far`
-/// fails the second test's sheen half instead
-/// (`the_welcome_screen_over_a_network_does_not_wake`).
+/// stop -- the first half fails. Returning early on `far` instead, which
+/// is the same mistake made for ssh as well, fails both halves. Taking
+/// `self.over_a_network` out of `far` fails neither: that is the sheen's
+/// half, `the_welcome_screen_over_a_network_does_not_wake`.
 #[test]
 fn the_row_being_waited_on_turns_over_a_network() {
     for (how, drawn) in [
