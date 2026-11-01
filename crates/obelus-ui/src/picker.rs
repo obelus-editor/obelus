@@ -7,7 +7,7 @@
 
 use obelus_component::picker::{
     Marking, Picker, PickerItem, PickerLayout,
-    wrapped::{BAR_COLUMNS, Body, DETAIL_INDENT, WORDS_AT},
+    wrapped::{BAR_COLUMNS, BESIDE_GAP, Body, DETAIL_INDENT, WORDS_AT},
 };
 use obelus_git::FileStatus;
 use obelus_text::text_width;
@@ -39,6 +39,19 @@ const _: () = assert!(BAR_COLUMNS == SCROLLBAR_WIDTH);
 /// Every mark Obelus draws is one cell; a wider one would push its own row
 /// along rather than everybody's.
 const MARKER_COLUMNS: u16 = 2;
+
+/// Where the query matched a row's detail, counted from the detail's front.
+///
+/// A list that matches details matches its label, a space and the detail as
+/// one text (`Picker::matches_details`), so what is past the space is the
+/// detail's; a list that does not has nothing there, and this is empty.
+fn in_the_detail(item: &PickerItem, matched: &[u32]) -> Vec<u32> {
+    let from = u32::try_from(item.label.chars().count() + 1).unwrap_or(u32::MAX);
+    matched
+        .iter()
+        .filter_map(|at| at.checked_sub(from))
+        .collect()
+}
 
 /// How tall the whole list is: its rows, and the tabs over them.
 fn list_region_rows(picker: &Picker, width: u16) -> u16 {
@@ -754,6 +767,7 @@ impl PickerView<'_> {
         }
 
         let mut y = area.y;
+        let mut label_end = WORDS_AT;
         let last = body.label.len().saturating_sub(1);
         for (row, range) in body.label.iter().enumerate() {
             if y >= area.bottom() {
@@ -778,13 +792,36 @@ impl PickerView<'_> {
                     spelled: None,
                 },
             );
+            if row == 0 {
+                label_end = end;
+            }
             if row == last && body.label_cut {
                 at(cells, words, end, y, "\u{2026}", style, &Marked::plain());
             }
             y += 1;
         }
 
-        if let Some(detail) = item.detail.as_deref() {
+        let in_detail = in_the_detail(item, matched);
+        let detail_marked = |skip| Marked {
+            matched: Matched::Indices(&in_detail),
+            mark: self.theme.picker_match_background,
+            syntax: None,
+            skip,
+            spelled: None,
+        };
+        if body.beside
+            && let Some(detail) = item.detail.as_deref()
+        {
+            at(
+                cells,
+                words,
+                label_end.saturating_add(BESIDE_GAP),
+                area.y,
+                detail,
+                dim,
+                &detail_marked(0),
+            );
+        } else if let Some(detail) = item.detail.as_deref() {
             let last = body.detail.len().saturating_sub(1);
             for (row, range) in body.detail.iter().enumerate() {
                 if y >= area.bottom() {
@@ -803,14 +840,16 @@ impl PickerView<'_> {
                         &Marked::plain(),
                     );
                 }
+                // Up to where this row stops with what came before skipped,
+                // as the label's rows are, so a match lands where it is.
                 let end = at(
                     cells,
                     words,
                     WORDS_AT + DETAIL_INDENT,
                     y,
-                    &detail[range.clone()],
+                    &detail[..range.end],
                     dim,
-                    &Marked::plain(),
+                    &detail_marked(detail[..range.start].chars().count()),
                 );
                 if row == last && body.detail_cut {
                     at(cells, words, end, y, "\u{2026}", dim, &Marked::plain());
@@ -1122,6 +1161,7 @@ impl PickerView<'_> {
             let from = self.picker.detail_column().map_or(column, |widest| {
                 column.max(label_at.saturating_add(u16::try_from(widest).unwrap_or(u16::MAX)))
             });
+            let in_detail = in_the_detail(item, matched);
             column = at(
                 cells,
                 inner,
@@ -1129,7 +1169,13 @@ impl PickerView<'_> {
                 y,
                 detail,
                 dim,
-                &Marked::plain(),
+                &Marked {
+                    matched: Matched::Indices(&in_detail),
+                    mark: self.theme.picker_match_background,
+                    syntax: None,
+                    skip: 0,
+                    spelled: None,
+                },
             );
         }
 

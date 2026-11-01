@@ -10,6 +10,13 @@
 //! first connection asks for it, and none after does -- which makes the file as
 //! private as the key on the server is (`obelus_private`).
 //!
+//! **A machine is called what it calls itself.** The address is what the
+//! reader typed -- `1.2.3.4` as often as a name -- and the status row of a
+//! window on it says the name the machine gives itself, so a list of
+//! addresses was a list the reader had to remember the other half of. The
+//! name crosses with the answer to a knock and is kept beside the address,
+//! and the row says the name with the address after it.
+//!
 //! **A new one first, then the ones there have been, by the day.** The list
 //! opens on the row that asks where, and the machines after it are in the
 //! runs of days the conversations and the projects are in
@@ -34,6 +41,9 @@ fn path() -> Option<std::path::PathBuf> {
 pub struct Server {
     /// The machine, and its port where the reader gave one.
     pub at: String,
+    /// What the machine calls itself, where a window has been let in since
+    /// it was said -- the name a window on it says on its status row.
+    pub name: Option<String>,
     /// The key it printed, as it printed it.
     pub key: String,
     /// When a window last got in, in seconds since the epoch.
@@ -73,6 +83,10 @@ fn servers_in(table: &toml::Table) -> Vec<Server> {
                     let row = row.as_table()?;
                     Some(Server {
                         at: row.get("at")?.as_str()?.to_string(),
+                        name: row
+                            .get("name")
+                            .and_then(toml::Value::as_str)
+                            .map(str::to_string),
                         key: row.get("key")?.as_str()?.to_string(),
                         last: row.get("last").and_then(toml::Value::as_integer),
                     })
@@ -93,6 +107,9 @@ fn to_toml(servers: &[Server]) -> String {
             "at = {}\n",
             toml::Value::String(server.at.clone())
         ));
+        if let Some(name) = &server.name {
+            out.push_str(&format!("name = {}\n", toml::Value::String(name.clone())));
+        }
         out.push_str(&format!(
             "key = {}\n",
             toml::Value::String(server.key.clone())
@@ -135,22 +152,39 @@ pub fn as_a_key(letters: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
+/// What this machine calls itself, as a window on it says on its status row
+/// and the window that knocked keeps beside the address -- or nothing, where
+/// it has no name to give.
+#[must_use]
+pub fn this_machine() -> Option<String> {
+    let name = gethostname::gethostname().to_string_lossy().into_owned();
+    (!name.is_empty()).then_some(name)
+}
+
 /// Puts a machine at the top of the list with the key it let a window in
-/// with, read-modify-write for the reason the projects' list is.
+/// with and the name it gave, read-modify-write for the reason the projects'
+/// list is. A machine that gave no name keeps the one it gave before.
 ///
 /// Answers whether it was written.
-pub fn remember(at: &str, key: &str, now: i64) -> bool {
+pub fn remember(at: &str, name: Option<&str>, key: &str, now: i64) -> bool {
     let Some(path) = path() else {
         return false;
     };
     let Some(mut servers) = read() else {
         return false;
     };
+    let before = servers
+        .iter()
+        .position(|server| server.at == at)
+        .map(|found| servers.remove(found));
     servers.retain(|server| server.at != at);
     servers.insert(
         0,
         Server {
             at: at.to_string(),
+            name: name
+                .map(str::to_string)
+                .or_else(|| before.and_then(|server| server.name)),
             key: key.to_string(),
             last: Some(now),
         },
@@ -199,37 +233,43 @@ impl crate::app::App {
             section: None,
         };
         let items = std::iter::once(new)
-            .chain(
-                read()
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|server| PickerItem {
-                        prose: false,
-                        marker: None,
-                        icon: None,
-                        label: server.at.clone(),
-                        version: None,
-                        detail: None,
-                        trailing: server.last.map(|last| obelus_git::how_long_ago(last, now)),
-                        changed: None,
-                        value: PickerValue::Server(server.at),
-                        enabled: true,
-                        colours: None,
-                        status: None,
-                        depth: 0,
-                        opens: None,
-                        kind: None,
-                        tab: None,
-                        section: Some(
-                            crate::app::conversations::when_said(server.last, today, &zone)
-                                .to_string(),
-                        ),
-                    }),
-            )
+            .chain(read().unwrap_or_default().into_iter().map(|server| {
+                PickerItem {
+                    prose: false,
+                    marker: None,
+                    icon: None,
+                    // The address only where it says something the name
+                    // does not.
+                    detail: server
+                        .name
+                        .as_ref()
+                        .filter(|name| **name != server.at)
+                        .map(|_| server.at.clone()),
+                    label: server.name.clone().unwrap_or_else(|| server.at.clone()),
+                    version: None,
+                    trailing: server.last.map(|last| obelus_git::how_long_ago(last, now)),
+                    changed: None,
+                    value: PickerValue::Server(server.at),
+                    enabled: true,
+                    colours: None,
+                    status: None,
+                    depth: 0,
+                    opens: None,
+                    kind: None,
+                    tab: None,
+                    section: Some(
+                        crate::app::conversations::when_said(server.last, today, &zone).to_string(),
+                    ),
+                }
+            }))
             .collect();
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: SERVER_ROWS });
         // Wrapped, which is what draws a heading over each run of days.
         picker.wraps(None);
+        // The address after the name, and found by either: the reader knows
+        // a machine by what its window calls it and by what they typed.
+        picker.details_beside();
+        picker.matches_details();
         picker.keeps_order(true);
         picker.before_typing("Filter machines");
         picker.opened_by(Command::ServerConnect);
@@ -298,11 +338,13 @@ mod tests {
         let servers = vec![
             Server {
                 at: "devbox:9000".to_string(),
+                name: None,
                 key: "00ff".to_string(),
                 last: Some(20),
             },
             Server {
                 at: "10.0.0.2".to_string(),
+                name: Some("build \"box\"".to_string()),
                 key: "ab\"cd".to_string(),
                 last: Some(30),
             },

@@ -743,11 +743,7 @@ impl App {
     /// another machine is a window on a project somebody can mistake for
     /// the one on their own, and the row is where that is answered.
     pub fn drawn_afar(&mut self) {
-        let name = gethostname::gethostname().to_string_lossy().into_owned();
-        self.afar = Some(match name.is_empty() {
-            true => "Another machine".to_string(),
-            false => name,
-        });
+        self.afar = Some(servers::this_machine().unwrap_or_else(|| "Another machine".to_string()));
     }
 
     /// Says this Obelus is drawn at the other end of a connection, on a

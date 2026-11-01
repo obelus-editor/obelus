@@ -59,6 +59,9 @@ pub const BAR_COLUMNS: u16 = 1;
 /// Between the words and the trailing column.
 const GAP: u16 = 2;
 
+/// Between a label and a detail beside it.
+pub const BESIDE_GAP: u16 = 2;
+
 /// Where a row's words go, across the list.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Columns {
@@ -100,6 +103,9 @@ pub struct Body {
     pub detail: Vec<Range<usize>>,
     /// Whether the detail goes on past the last of them.
     pub detail_cut: bool,
+    /// Whether the detail is on the label's one row, after it, rather than
+    /// under it.
+    pub beside: bool,
 }
 
 impl Body {
@@ -120,13 +126,41 @@ impl Body {
             label_cut,
             detail,
             detail_cut,
+            beside: false,
+        }
+    }
+
+    /// The same, with the detail on the label's row after it where the two
+    /// fit there whole -- and under it where they do not, rather than either
+    /// cut to make the room. A short name and a short word about it, which
+    /// is what a list asks this for, read as one thing; a row cut to keep
+    /// them together would have lost the half that told two rows apart.
+    #[must_use]
+    pub fn beside(item: &PickerItem, columns: Columns, detail_rows: usize) -> Self {
+        let Some(detail) = item.detail.as_deref().filter(|detail| !detail.is_empty()) else {
+            return Self::of(item, columns, detail_rows);
+        };
+        let wide = text_width(&item.label) + usize::from(BESIDE_GAP) + text_width(detail);
+        match wide <= usize::from(columns.label) {
+            true => Self {
+                label: vec![0..item.label.len()],
+                label_cut: false,
+                detail: vec![0..detail.len()],
+                detail_cut: false,
+                beside: true,
+            },
+            false => Self::of(item, columns, detail_rows),
         }
     }
 
     /// How many rows the words take.
     #[must_use]
     pub fn rows(&self) -> u16 {
-        u16::try_from(self.label.len().max(1) + self.detail.len()).unwrap_or(u16::MAX)
+        let under = match self.beside {
+            true => 0,
+            false => self.detail.len(),
+        };
+        u16::try_from(self.label.len().max(1) + under).unwrap_or(u16::MAX)
     }
 }
 
@@ -267,6 +301,35 @@ mod tests {
             Body::of(&row("label", None, None), columns, MOST_DETAIL_ROWS).rows(),
             1
         );
+    }
+
+    /// A detail goes beside a label where both fit on the row, and under it
+    /// where they do not, with neither cut.
+    ///
+    /// Broken deliberately by leaving out the gap between them (`wide`
+    /// without `BESIDE_GAP`): a label and a detail that only fit pressed
+    /// together went on one row.
+    #[test]
+    fn a_detail_goes_beside_its_label_where_both_fit() {
+        let columns = Columns {
+            label: 16,
+            detail: 14,
+        };
+        // Six, two between, and eight: sixteen.
+        let fits = Body::beside(&row("devbox", Some("10.0.0.2"), None), columns, 2);
+        assert!(fits.beside, "{fits:?}");
+        assert_eq!(fits.rows(), 1);
+        assert_eq!(fits.detail, vec![0..8]);
+
+        // Seventeen.
+        let wide = Body::beside(&row("devbox", Some("10.0.0.22"), None), columns, 2);
+        assert!(!wide.beside, "{wide:?}");
+        assert_eq!(wide.rows(), 2);
+        assert!(!wide.label_cut && !wide.detail_cut);
+
+        let alone = Body::beside(&row("devbox", None, None), columns, 2);
+        assert!(!alone.beside);
+        assert_eq!(alone.rows(), 1);
     }
 
     /// Chinese has no spaces and still wraps, and a row never starts on

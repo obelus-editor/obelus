@@ -208,7 +208,9 @@ fn the_way_back_is_offered_only_on_another_machine() {
 fn the_keys_remembered_are_nobody_else_s() {
     let _turn = crate::turn();
     keep_servers("[[server]]\nat = \"old\"\nkey = \"aa\"\nlast = 0\n");
-    assert!(obelus_app::app::servers::remember("devbox", "00ff", 1));
+    assert!(obelus_app::app::servers::remember(
+        "devbox", None, "00ff", 1
+    ));
     let path = obelus_logging::state_directory()
         .expect("somewhere to keep them")
         .join("servers.toml");
@@ -223,5 +225,91 @@ fn the_keys_remembered_are_nobody_else_s() {
     assert_eq!(
         obelus_app::app::servers::key_for("devbox").as_deref(),
         Some("00ff")
+    );
+}
+
+/// A machine that gave its name is listed by it, with the address the reader
+/// typed beside it on the same row, and found by either; one that has not
+/// yet is listed by its address alone.
+///
+/// Broken deliberately three times. By leaving the name unread from the file
+/// (`name: None` in `servers_in`): the row said the address and nothing
+/// else. By matching labels only (`matched_text` answering the label
+/// whatever `details` said): typing the address found nothing. And by laying
+/// the detail out under the label (`details_beside` left off): the address
+/// was on a row of its own.
+#[test]
+fn a_machine_is_listed_by_its_name_and_found_by_its_address() {
+    let _turn = crate::turn();
+    let now = jiff::Timestamp::now().as_second();
+    keep_servers(&format!(
+        "[[server]]\nat = \"10.0.0.7\"\nkey = \"aa\"\nlast = {now}\n\n\
+         [[server]]\nat = \"1.2.3.4\"\nname = \"devbox\"\nkey = \"00ff\"\nlast = {now}\n"
+    ));
+    let mut app = connecting();
+    let labels = |app: &App| -> Vec<(String, Option<String>)> {
+        app.picker()
+            .expect("the list of machines")
+            .matches()
+            .map(|item| (item.label.clone(), item.detail.clone()))
+            .collect()
+    };
+    assert_eq!(
+        labels(&app),
+        [
+            ("New connection".to_string(), None),
+            ("10.0.0.7".to_string(), None),
+            ("devbox".to_string(), Some("1.2.3.4".to_string())),
+        ]
+    );
+    let screen = support::render(&mut app, 80, 24);
+    assert!(
+        screen.lines().any(|line| line.contains("devbox  1.2.3.4")),
+        "the address was not beside the name:\n{screen}"
+    );
+
+    support::type_text(&mut app, "1.2.3");
+    assert_eq!(
+        labels(&app),
+        [("devbox".to_string(), Some("1.2.3.4".to_string()))],
+        "the address found nothing"
+    );
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        app.goes_to(),
+        Some(&Going::To {
+            at: "1.2.3.4".to_string(),
+            key: "00ff".to_string(),
+            window: None,
+        })
+    );
+}
+
+/// The name a machine gave is kept with it, and a window let in that heard
+/// no name keeps the one it had.
+///
+/// Broken deliberately by writing what was given and nothing else (`name`
+/// without the `or_else` from what was there before): the second window
+/// in left the machine nameless.
+#[test]
+fn a_machine_keeps_its_name_when_none_is_given() {
+    let _turn = crate::turn();
+    keep_servers("");
+    assert!(obelus_app::app::servers::remember(
+        "1.2.3.4",
+        Some("devbox"),
+        "00ff",
+        1
+    ));
+    assert!(obelus_app::app::servers::remember(
+        "1.2.3.4", None, "00ff", 2
+    ));
+    let app = connecting();
+    assert!(
+        app.picker()
+            .expect("the list of machines")
+            .matches()
+            .any(|item| item.label == "devbox" && item.detail.as_deref() == Some("1.2.3.4")),
+        "the name was lost"
     );
 }
