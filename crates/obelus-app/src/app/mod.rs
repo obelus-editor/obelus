@@ -760,6 +760,13 @@ impl App {
         self.over_a_network = true;
     }
 
+    /// Whether the terminal this Obelus draws on is at the other end of a
+    /// network.
+    #[must_use]
+    pub const fn is_drawn_over_a_network(&self) -> bool {
+        self.over_a_network
+    }
+
     /// Says this Obelus is drawn at the other end of a connection, on a
     /// machine of this name: for a test, whose row would otherwise say
     /// whatever the machine running it is called -- and a long one is cut
