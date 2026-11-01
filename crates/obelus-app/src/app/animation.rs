@@ -16,13 +16,18 @@ impl App {
     /// from the half-dozen places that change any of it, which is how a
     /// ticker outlives its reason.
     pub(super) fn wants_animating(&self, working: bool) -> bool {
-        // Not drawn at the other end of a connection, which is a session
-        // over a network however this process was started: the same answer
-        // `Ticker::start` gives one over ssh, for the same reason, asked of
-        // the one thing that knows -- the environment here is the server's.
-        if self.afar.is_some() {
-            return false;
-        }
+        // Over a network -- drawn at the other end of a connection, which is
+        // one however this process was started, or on a terminal at the
+        // other end of ssh -- the sheen stays still: every step of it
+        // repaints the whole wordmark, twelve times a second, for a logo.
+        // `afar` rather than the environment for the first, because the
+        // environment here is the server's.
+        //
+        // And only the sheen. A mark that turns is a cell a tick, and it is
+        // owed: one that stands still over ssh says nothing is happening
+        // while an agent works. It once stood still there, because the
+        // network was asked of the ticker and so stopped all of these.
+        let far = self.afar.is_some() || self.over_a_network;
         // Nothing open and no page taking its place: the welcome screen's
         // sheen. A settings page over the welcome is not a welcome screen,
         // so keeping its clock running would redraw a motionless page.
@@ -39,7 +44,8 @@ impl App {
         //
         // Nor while Obelus is asking which project: that screen is not the
         // welcome screen and has no mark to run a sheen across.
-        let sheen = self.current.is_none()
+        let sheen = !far
+            && self.current.is_none()
             && self.which_project.chooser.is_none()
             && !self.layers().filling()
             && !obelus_config::in_a_window();
@@ -226,7 +232,7 @@ impl App {
     pub(super) fn animate(&mut self, wanted: bool) {
         self.clock.waking = wanted;
         match (wanted, self.clock.ticker.is_some()) {
-            (true, false) => self.clock.ticker = self.events.clone().and_then(Ticker::start),
+            (true, false) => self.clock.ticker = self.events.clone().map(Ticker::start),
             (false, true) => self.clock.ticker = None,
             _ => {}
         }
@@ -247,7 +253,8 @@ pub(in crate::app) struct Clock {
     /// The thread sending ticks, while anything wants them.
     ///
     /// Held so that dropping it stops the animation. There is nothing to
-    /// animate once a file is open, and nothing over a network at all.
+    /// animate once a file is open, and over a network only a mark that
+    /// turns.
     pub(in crate::app) ticker: Option<Ticker>,
     /// Whether the last frame asked to be woken again.
     ///

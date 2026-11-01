@@ -1085,10 +1085,11 @@ which is why the fixtures never contain pixels.
 **Nothing but the animation waits on the animation's clock.** Something on
 screen moves only while something is moving -- asked every frame from what is
 true (`App::wants_animating`), never switched on and off from the places that
-change it, which is how a ticker outlives its reason -- and the ticker answers
-`None` over a network, where an animation is a luxury paid for in round trips.
-That is right for a sheen and wrong for anything the reader is owed, so every
-wait has a one-shot clock of its own (`event::Pause`, through
+change it, which is how a ticker outlives its reason -- and over a network
+the sheen does not move, an animation being a luxury paid for in round trips,
+while a mark that turns still does, because it is owed. The same split for a
+wait: the clock that ticks a frame rate is the wrong one for anything owed at
+a moment, so every wait has a one-shot clock of its own (`event::Pause`, through
 `App::come_back_in`): a pause is a moment and an animation is a frame rate.
 **A guard on a deadline earns its place exactly when something other than that
 deadline's own clock can reach the work.**

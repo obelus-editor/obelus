@@ -390,6 +390,9 @@ pub struct App {
     /// own machine means something -- and the name of the machine this one
     /// is, which the status row says for as long as it is true.
     afar: Option<String>,
+    /// Whether the terminal this Obelus draws on is at the other end of an
+    /// ssh session -- see `App::wants_animating`, the one thing that asks.
+    over_a_network: bool,
     /// Where the front end is to go once this Obelus has ended, where the
     /// reader asked for somewhere rather than for leaving -- see
     /// [`App::goes_to`].
@@ -647,6 +650,7 @@ impl App {
             drawing: None,
             desk: std::sync::Arc::new(desk::Here),
             afar: None,
+            over_a_network: false,
             going: None,
             machine_gone: None,
             told_tabs: Vec::new(),
@@ -748,6 +752,12 @@ impl App {
             true => "Another machine".to_string(),
             false => name,
         });
+    }
+
+    /// Says the terminal this Obelus draws on is at the other end of a
+    /// network, which keeps the welcome screen's sheen still.
+    pub const fn drawn_over_a_network(&mut self) {
+        self.over_a_network = true;
     }
 
     /// Says this Obelus is drawn at the other end of a connection, on a

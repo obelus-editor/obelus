@@ -101,6 +101,11 @@ pub fn start(paths: &[PathBuf], built: &'static str) -> Result<App> {
     // Read here rather than in `App::new`, so that a test gets the defaults
     // rather than whatever the machine it runs on has in `~/.config`.
     app.load_config();
+    // Asked of the environment here rather than in `App::new` for the same
+    // reason, so that a suite run over ssh still sees a welcome screen move.
+    if crate::event::over_a_network() {
+        app.drawn_over_a_network();
+    }
     // After the settings, because how many projects the page offers is one
     // of them.
     if asking {
