@@ -719,8 +719,8 @@ impl PickerView<'_> {
         }
     }
 
-    /// One wrapped row's words: its mark, its label, its detail under it,
-    /// and its trailing words on its first row.
+    /// One wrapped row's words: its mark, its label, its detail under it or
+    /// beside it, and its trailing words on its first row.
     fn wrapped_body(
         &self,
         cells: &mut CellBuffer,

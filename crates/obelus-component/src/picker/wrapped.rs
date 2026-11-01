@@ -131,10 +131,11 @@ impl Body {
     }
 
     /// The same, with the detail on the label's row after it where the two
-    /// fit there whole -- and under it where they do not, rather than either
-    /// cut to make the room. A short name and a short word about it, which
-    /// is what a list asks this for, read as one thing; a row cut to keep
-    /// them together would have lost the half that told two rows apart.
+    /// fit there whole -- and laid out as [`Body::of`] lays it, under the
+    /// label, where they do not, rather than either cut to keep them on one
+    /// row. A short name and a short word about it, which is what a list
+    /// asks this for, read as one thing; a row cut to keep them together
+    /// would have lost the half that told two rows apart.
     #[must_use]
     pub fn beside(item: &PickerItem, columns: Columns, detail_rows: usize) -> Self {
         let Some(detail) = item.detail.as_deref().filter(|detail| !detail.is_empty()) else {
@@ -304,7 +305,7 @@ mod tests {
     }
 
     /// A detail goes beside a label where both fit on the row, and under it
-    /// where they do not, with neither cut.
+    /// where they do not.
     ///
     /// Broken deliberately by leaving out the gap between them (`wide`
     /// without `BESIDE_GAP`): a label and a detail that only fit pressed

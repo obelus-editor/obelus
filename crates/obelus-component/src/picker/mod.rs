@@ -1427,8 +1427,10 @@ impl Picker {
     /// Puts a wrapped row's detail on the label's row, after it, where the
     /// two fit there -- for a list whose details are a word about a name
     /// rather than a sentence under it.
-    pub const fn details_beside(&mut self) {
+    pub fn details_beside(&mut self) {
         self.details_beside = true;
+        // The rows were wrapped with their details under them.
+        self.measured = None;
     }
 
     /// Matches the query against each row's detail as well as its label,
