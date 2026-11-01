@@ -53,6 +53,19 @@ fn in_the_detail(item: &PickerItem, matched: &[u32]) -> Vec<u32> {
         .collect()
 }
 
+/// How a detail's matches are marked: as a label's are, counted from the
+/// detail's front (`in_the_detail`), with the first `skip` characters not
+/// drawn.
+const fn marked_in_detail<'a>(in_detail: &'a [u32], theme: &Theme, skip: usize) -> Marked<'a> {
+    Marked {
+        matched: Matched::Indices(in_detail),
+        mark: theme.picker_match_background,
+        syntax: None,
+        skip,
+        spelled: None,
+    }
+}
+
 /// How tall the whole list is: its rows, and the tabs over them.
 fn list_region_rows(picker: &Picker, width: u16) -> u16 {
     LIST_ROWS
@@ -802,13 +815,6 @@ impl PickerView<'_> {
         }
 
         let in_detail = in_the_detail(item, matched);
-        let detail_marked = |skip| Marked {
-            matched: Matched::Indices(&in_detail),
-            mark: self.theme.picker_match_background,
-            syntax: None,
-            skip,
-            spelled: None,
-        };
         if body.beside
             && let Some(detail) = item.detail.as_deref()
         {
@@ -819,7 +825,7 @@ impl PickerView<'_> {
                 area.y,
                 detail,
                 dim,
-                &detail_marked(0),
+                &marked_in_detail(&in_detail, self.theme, 0),
             );
         } else if let Some(detail) = item.detail.as_deref() {
             let last = body.detail.len().saturating_sub(1);
@@ -849,7 +855,11 @@ impl PickerView<'_> {
                     y,
                     &detail[..range.end],
                     dim,
-                    &detail_marked(detail[..range.start].chars().count()),
+                    &marked_in_detail(
+                        &in_detail,
+                        self.theme,
+                        detail[..range.start].chars().count(),
+                    ),
                 );
                 if row == last && body.detail_cut {
                     at(cells, words, end, y, "\u{2026}", dim, &Marked::plain());
@@ -1169,13 +1179,7 @@ impl PickerView<'_> {
                 y,
                 detail,
                 dim,
-                &Marked {
-                    matched: Matched::Indices(&in_detail),
-                    mark: self.theme.picker_match_background,
-                    syntax: None,
-                    skip: 0,
-                    spelled: None,
-                },
+                &marked_in_detail(&in_detail, self.theme, 0),
             );
         }
 

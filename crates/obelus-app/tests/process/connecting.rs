@@ -313,3 +313,43 @@ fn a_machine_keeps_its_name_when_none_is_given() {
         "the name was lost"
     );
 }
+
+/// What the query matched in an address is marked there, character for
+/// character, beside the name and under it alike.
+///
+/// Broken deliberately by counting the detail from the space rather than
+/// after it (`label.chars().count()` without the `+ 1` in `in_the_detail`):
+/// every mark moved one cell right, off the `1` and onto the dot after the
+/// `3`.
+#[test]
+fn what_matched_in_an_address_is_marked_in_it() {
+    let _turn = crate::turn();
+    let now = jiff::Timestamp::now().as_second();
+    keep_servers(&format!(
+        "[[server]]\nat = \"1.2.3.4\"\nname = \"devbox\"\nkey = \"00ff\"\nlast = {now}\n"
+    ));
+    // Wide enough for the address beside the name, and too narrow for it.
+    for (width, beside) in [(80, true), (26, false)] {
+        let mut app = connecting();
+        support::type_text(&mut app, "1.2.3");
+        let cells = support::cells_of(&mut app, width, 24);
+        let (x, y) = support::find(&cells, "1.2.3.4");
+        let (_, name) = support::find(&cells, "devbox");
+        assert_eq!(
+            y == name,
+            beside,
+            "at {width} columns:
+{}",
+            support::render(&mut app, width, 24)
+        );
+        let mark = app.theme().picker_match_background;
+        let marked: Vec<bool> = (0..7)
+            .map(|at| cells.cell((x + at, y)).is_some_and(|cell| cell.bg == mark))
+            .collect();
+        assert_eq!(
+            marked,
+            [true, true, true, true, true, false, false],
+            "at {width} columns"
+        );
+    }
+}
