@@ -113,3 +113,56 @@ fn the_tree_is_settled_before_its_settings_are_read() {
         "the tree named a width and Obelus is not using it"
     );
 }
+
+/// A start in an ssh session knows it is one, which is what keeps the
+/// welcome screen's sheen still there and nothing else.
+///
+/// Here rather than beside the tests of what the flag does, because it
+/// sets a variable the whole process reads -- and set back on the way out,
+/// so nothing after this turn sees it.
+///
+/// Broken deliberately by dropping the `drawn_over_a_network` call from
+/// `startup::start`: every test of what the flag does still passes, and
+/// this one does not.
+#[test]
+fn a_start_over_ssh_knows_it_is_over_a_network() {
+    let _turn = crate::turn();
+    let scratch = support::Scratch::new("starting-over-ssh");
+    let _ssh = Variable::set("SSH_TTY", "/dev/pts/0");
+
+    let app = startup::start(&[scratch.path().to_path_buf()], BUILT).expect("starting");
+
+    assert!(
+        app.is_drawn_over_a_network(),
+        "started in an ssh session, and Obelus does not know it"
+    );
+}
+
+/// An environment variable, set for as long as this is held and put back
+/// as it was when it goes -- a panic included.
+struct Variable {
+    name: &'static str,
+    was: Option<std::ffi::OsString>,
+}
+
+impl Variable {
+    fn set(name: &'static str, value: &str) -> Self {
+        let was = std::env::var_os(name);
+        // SAFETY: every test in this binary holds `crate::turn` while it
+        // runs, so nothing beside this one is reading the environment.
+        unsafe { std::env::set_var(name, value) };
+        Self { name, was }
+    }
+}
+
+impl Drop for Variable {
+    fn drop(&mut self) {
+        // SAFETY: as in `set`; this is dropped before the turn is.
+        unsafe {
+            match &self.was {
+                Some(was) => std::env::set_var(self.name, was),
+                None => std::env::remove_var(self.name),
+            }
+        }
+    }
+}

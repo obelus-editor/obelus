@@ -3256,6 +3256,18 @@ fn the_welcome_screen_drawn_afar_does_not_wake() {
     );
 }
 
+/// Nor on a terminal at the other end of ssh, for the same reason.
+///
+/// Deliberate break: taking `self.over_a_network` out of `far` in
+/// `wants_animating`, and the sheen runs over ssh again.
+#[test]
+fn the_welcome_screen_over_a_network_does_not_wake() {
+    let mut app = App::new(Vec::new());
+    app.drawn_over_a_network();
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    assert!(!app.is_waking(), "the welcome screen wakes over ssh");
+}
+
 /// An Obelus drawn on another machine says which machine it runs on, at
 /// the end of the status row whatever the row is about -- and one drawn
 /// where the reader sits says nothing, and spends no column on it.

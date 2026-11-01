@@ -567,7 +567,7 @@ fn a_file_that_stops_changing_is_asked_about_again() {
     // started comes back to say. Waited for rather than slept through:
     // that it arrives at all is the half of this that was broken, since
     // the frame that used to notice came from the animation and there is
-    // none of that over a network.
+    // was none of that over a network then.
     //
     // Before the drain below, which walks the channel for two seconds and
     // would swallow this on its way past.

@@ -379,7 +379,7 @@ fn the_question_is_on_the_row_the_caret_is_in() {
 /// Without one the five-second limit is a comment: a file the reader asked
 /// to rename sits where it was until they happen to press something else.
 /// It used to be the animation's clock, which is the same comment on any
-/// machine with nothing animated on it -- `Ticker::start` answers `None`
+/// machine with nothing animated on it -- `Ticker::start` answered `None`
 /// over a network, which is exactly where a server is most likely to be
 /// the one that stops answering.
 ///

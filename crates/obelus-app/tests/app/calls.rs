@@ -506,6 +506,39 @@ fn the_row_being_waited_on_turns() {
     );
 }
 
+/// Over a network the mark turns all the same: the welcome screen's sheen is
+/// what stands still there, not a row saying something is still happening.
+///
+/// Deliberate break: putting back the early `return false` on `afar` in
+/// `wants_animating`, which stopped every clock where only the sheen should
+/// stop -- the first half fails. Returning early on `far` instead, which
+/// is the same mistake made for ssh as well, fails both halves. Taking
+/// `self.over_a_network` out of `far` fails neither: that is the sheen's
+/// half, `the_welcome_screen_over_a_network_does_not_wake`.
+#[test]
+fn the_row_being_waited_on_turns_over_a_network() {
+    for (how, drawn) in [
+        ("afar", App::drawn_afar as fn(&mut App)),
+        ("over ssh", App::drawn_over_a_network),
+    ] {
+        let (scratch, mut app) = reading(&format!("calls-turning-far-{}", how.replace(' ', "-")));
+        drawn(&mut app);
+        let (sender, _heard) = obelus_app::event::channel();
+        app.events_for_test(sender);
+        assert!(
+            app.stand_in_server_for_test(LanguageId::Rust, support::cat()),
+            "the echo would not start"
+        );
+        app.declared_for_test(LanguageId::Rust, json!({ "callHierarchyProvider": true }));
+        app.prepared_for_test(json!([item(&scratch.join("one.rs"), "run", 0)]));
+        support::render(&mut app, 80, 24);
+        assert!(
+            app.is_waking(),
+            "drawn {how}, the mark turns and nothing is waking the screen to turn it"
+        );
+    }
+}
+
 /// The reader's own question opens what it answers, and the probe's does
 /// not -- which is decided by the kind the question was remembered as,
 /// not by anything the answer carries.

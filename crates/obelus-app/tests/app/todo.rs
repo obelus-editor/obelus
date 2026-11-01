@@ -2974,7 +2974,7 @@ fn typing_is_written_down_once_the_reader_stops() {
 ///
 /// It used to be `Event::Tick` that came back for them, which meant the
 /// notes were written down only where there was something to animate:
-/// `Ticker::start` answers `None` over a network, so a reader on ssh typed
+/// `Ticker::start` answered `None` over a network, so a reader on ssh typed
 /// a note and nothing wrote it until they walked out of it. Both halves
 /// here -- the tick does not write them, and the notes do not keep the
 /// animation awake -- because either one alone passes with the other

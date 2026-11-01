@@ -537,13 +537,13 @@ const TICK: Duration = Duration::from_millis(80);
 /// Only a heuristic, and only the one that is worth having: the variables
 /// below are set by sshd for the session it starts, so their presence means
 /// the terminal is at the other end of a link. It says nothing about how fast
-/// that link is, but the animation is worth exactly nothing over any of them
-/// -- every frame is a screenful of escape sequences sent so that a logo can
-/// shimmer -- so the heuristic being crude costs nothing either.
+/// that link is, but the welcome screen's sheen is worth exactly nothing over
+/// any of them -- every frame is a wordmark of escape sequences sent so that
+/// a logo can shimmer -- so the heuristic being crude costs nothing either.
 ///
 /// What it misses: a local terminal that got here some other way (mosh
 /// without ssh, a serial console, a container's exec). Those keep the
-/// animation, which is a wasted redraw and not a broken screen.
+/// sheen, which is a wasted redraw and not a broken screen.
 #[must_use]
 pub fn over_a_network() -> bool {
     over_a_network_by(|name| std::env::var_os(name))
@@ -581,17 +581,14 @@ pub struct Ticker {
 }
 
 impl Ticker {
-    /// Starts ticking, unless this session is remote.
+    /// Starts ticking.
     ///
-    /// `None` over a network, so the caller has nothing to hold and nothing
-    /// to stop: an animation is a luxury, and a luxury paid for in round
-    /// trips is not one.
+    /// Whatever the session is over: what is not worth a frame over a
+    /// network is decided by what is moving (`App::wants_animating`), and a
+    /// refusal here stopped the marks that are owed along with the sheen
+    /// that is not.
     #[must_use]
-    pub fn start(sender: Sender<Event>) -> Option<Self> {
-        if over_a_network() {
-            tracing::info!("a session over a network, so no animation");
-            return None;
-        }
+    pub fn start(sender: Sender<Event>) -> Self {
         let beating = obelus_runtime::handle().spawn(async move {
             let mut beat = tokio::time::interval(TICK);
             // The first one is immediate, and a frame drawn the instant the
@@ -604,7 +601,7 @@ impl Ticker {
                 }
             }
         });
-        Some(Self { beating })
+        Self { beating }
     }
 
     /// Stops ticking.
@@ -629,8 +626,8 @@ impl Drop for Ticker {
 /// `App::come_back_in`.
 ///
 /// All five hung on [`Ticker`] or on the frames it kept coming, and that
-/// was wrong twice. An animation is a luxury and `Ticker::start` says so by
-/// refusing over a network -- so on ssh none of these ever happened: a note
+/// was wrong twice. The ticker did not run over a network, and does not run
+/// at all while nothing moves -- so on ssh none of these ever happened: a note
 /// typed there reached no file until the reader walked out of it, the
 /// colours stopped arriving, a rename waited on a stuck server for the rest
 /// of the session, and the pointer could rest for ever and never ask. And a

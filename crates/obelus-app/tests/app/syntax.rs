@@ -951,7 +951,7 @@ mod catching_up {
     /// Nothing would come back for the tree until the reader pressed
     /// something else -- which for the last keystroke of a paragraph is
     /// never. That used to be the ticker, kept awake for as long as a tree
-    /// owed an answer, and `Ticker::start` answers `None` over a network:
+    /// owed an answer, and `Ticker::start` answered `None` over a network:
     /// on ssh the colours simply stopped arriving. Both halves, because
     /// either one passes with the other broken.
     #[test]
