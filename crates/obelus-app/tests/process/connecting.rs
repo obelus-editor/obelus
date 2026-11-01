@@ -286,11 +286,13 @@ fn a_machine_is_listed_by_its_name_and_found_by_its_address() {
 }
 
 /// The name a machine gave is kept with it, and a window let in that heard
-/// no name keeps the one it had.
+/// no name, or an empty one, keeps the one it had.
 ///
-/// Broken deliberately by writing what was given and nothing else (`name`
-/// without the `or_else` from what was there before): the second window
-/// in left the machine nameless.
+/// Broken deliberately twice. By writing what was given and nothing else
+/// (`name` without the `or_else` from what was there before): the second
+/// window in left the machine nameless. And by keeping an empty name as
+/// one (`named` answering whatever it was given): the row's label was a
+/// blank.
 #[test]
 fn a_machine_keeps_its_name_when_none_is_given() {
     let _turn = crate::turn();
@@ -303,6 +305,14 @@ fn a_machine_keeps_its_name_when_none_is_given() {
     ));
     assert!(obelus_app::app::servers::remember(
         "1.2.3.4", None, "00ff", 2
+    ));
+    // And a name with nothing in it is no name: a server of another build
+    // may say one.
+    assert!(obelus_app::app::servers::remember(
+        "1.2.3.4",
+        Some(" "),
+        "00ff",
+        3
     ));
     let app = connecting();
     assert!(

@@ -86,7 +86,7 @@ fn servers_in(table: &toml::Table) -> Vec<Server> {
                         name: row
                             .get("name")
                             .and_then(toml::Value::as_str)
-                            .map(str::to_string),
+                            .and_then(named),
                         key: row.get("key")?.as_str()?.to_string(),
                         last: row.get("last").and_then(toml::Value::as_integer),
                     })
@@ -161,6 +161,13 @@ pub fn this_machine() -> Option<String> {
     (!name.is_empty()).then_some(name)
 }
 
+/// A name a machine gave, where it is one: a server of another build may
+/// send nothing in it, and an empty name is a row with no words in it.
+fn named(name: &str) -> Option<String> {
+    let name = name.trim();
+    (!name.is_empty()).then(|| name.to_string())
+}
+
 /// Puts a machine at the top of the list with the key it let a window in
 /// with and the name it gave, read-modify-write for the reason the projects'
 /// list is. A machine that gave no name keeps the one it gave before.
@@ -183,7 +190,7 @@ pub fn remember(at: &str, name: Option<&str>, key: &str, now: i64) -> bool {
         Server {
             at: at.to_string(),
             name: name
-                .map(str::to_string)
+                .and_then(named)
                 .or_else(|| before.and_then(|server| server.name)),
             key: key.to_string(),
             last: Some(now),
