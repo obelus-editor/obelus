@@ -567,15 +567,14 @@ impl Painter {
                 let Some((from, to)) = rule.spans(page, x, y) else {
                     continue;
                 };
-                let left = f32::from(x) * cell.width;
-                // The strip past the last whole cell, which a line that
-                // reaches the window's edge has to reach as well -- see
-                // `backgrounds`.
-                let end = match x + 1 == page.columns() && to >= 1.0 {
-                    true => right,
-                    false => cell.width.mul_add(to, left),
-                };
-                let start = cell.width.mul_add(from, left);
+                let (start, end) = across_the_strip(
+                    x,
+                    (from, to),
+                    page.columns(),
+                    cell.width,
+                    right,
+                    self.margin[0],
+                );
                 self.block(
                     start,
                     top,
@@ -1221,6 +1220,37 @@ pub(super) fn dashes(left: f32, width: f32, thick: f32) -> Vec<(f32, f32)> {
     dashes
 }
 
+/// Where a rule's line in column `x` starts and ends, in the grid's pixels,
+/// from the part of the cell it covers (`from` and `to`, of one).
+///
+/// Out into the strip round the grid at either end of the row, where the
+/// line reaches that end -- see `grid::margin`. Only the right end did, and
+/// once a pane's glass went out to the window's edge on the left as well
+/// (see `glass::out_to_the_window`), the line along a list's top stopped a
+/// few pixels short of the left edge with the glass under it and the page
+/// above: a notch, at one end of the line and not the other. `right` is the
+/// window's width, which is past its edge in these pixels and drawn no
+/// further than the edge.
+pub(super) fn across_the_strip(
+    x: u16,
+    (from, to): (f32, f32),
+    columns: u16,
+    width: f32,
+    right: f32,
+    margin: f32,
+) -> (f32, f32) {
+    let left = f32::from(x) * width;
+    let start = match x == 0 && from <= 0.0 {
+        true => -margin,
+        false => width.mul_add(from, left),
+    };
+    let end = match x + 1 == columns && to >= 1.0 {
+        true => right,
+        false => width.mul_add(to, left),
+    };
+    (start, end)
+}
+
 /// Whether this cell is what an input method is still spelling: a view
 /// said so, and nothing has been put over the cell since -- see
 /// `Page::layer`.
@@ -1252,6 +1282,39 @@ pub(super) fn underline_ink(look: &Look<'_>) -> Option<[f32; 4]> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A rule across the whole row reaches the window's edge at both ends,
+    /// and one that stops short of either end stops where its cells do.
+    ///
+    /// Deliberate break: start the first column at its cell's own left, as
+    /// every column did -- the line along a list's top stopping short of
+    /// the window's left edge, over the glass that does not -- and it fails
+    /// the first case. Starting a half-covered first cell at the margin too
+    /// fails the second.
+    #[test]
+    fn a_rule_reaches_both_edges_of_the_window() {
+        let (columns, width, right, margin) = (80, 10.0, 806.0, 3.0);
+        assert_eq!(
+            across_the_strip(0, (0.0, 1.0), columns, width, right, margin),
+            (-3.0, 10.0),
+            "the left end"
+        );
+        assert_eq!(
+            across_the_strip(0, (0.5, 1.0), columns, width, right, margin),
+            (5.0, 10.0),
+            "a line that starts part way along its first cell"
+        );
+        assert_eq!(
+            across_the_strip(79, (0.0, 1.0), columns, width, right, margin),
+            (790.0, 806.0),
+            "the right end"
+        );
+        assert_eq!(
+            across_the_strip(40, (0.0, 1.0), columns, width, right, margin),
+            (400.0, 410.0),
+            "the middle"
+        );
+    }
 
     /// A tab's shadow falls off its top, its sides and the curves at its
     /// foot, and stops at the foot, where the page it is a piece of starts.

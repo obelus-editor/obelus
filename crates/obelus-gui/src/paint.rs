@@ -2172,7 +2172,8 @@ mod tests {
     /// pane's glass was before -- stopped at the last whole cell, with the
     /// page's ground showing in a strip beside and below the settings.
     /// Leaving out any one of the four sides fails the first case; leaving
-    /// out the rule's guard on the bottom fails the list's.
+    /// out the rule's guard on the bottom fails the list's, and the one on
+    /// the top fails the rule along the first row.
     #[test]
     fn a_pane_over_the_page_reaches_the_window_edge() {
         use glass::out_to_the_window;
@@ -2245,6 +2246,12 @@ mod tests {
             ],
             "a list on the status row"
         );
+
+        // A pane on the first row whose first row is a rule: its top is
+        // the rule's line, which is no nearer the window's top.
+        let ruled_top = glass_of(whole);
+        let at = out_to_the_window(ruled_top, whole, grid, [true, false], window, margin, 0.0);
+        assert_eq!(drawn(at)[1], margin[1], "a rule along the first row");
 
         // Down the right of the page, from the top: the left is the grid's.
         let side = Rect::new(100, 0, 87, grid[1]);
