@@ -80,7 +80,7 @@ pub(in crate::app) struct Waiting {
     /// what it is about: the wait is one field on the application and
     /// finishing takes it, which drops this with it. It used to be the
     /// animation's tick that came back, which meant a rename over a network
-    /// -- where there is no tick -- waited on a stuck server for the rest
+    /// -- where there was no tick then -- waited on a stuck server for the rest
     /// of the session.
     pub(in crate::app) pause: Option<crate::event::Pause>,
 }

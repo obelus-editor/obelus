@@ -136,8 +136,8 @@ impl App {
     /// starting.
     ///
     /// A clock of its own -- [`crate::event::Pause`] -- and not the
-    /// animation's tick, which is where this used to hang. That clock does
-    /// not run over a network, and a note that reaches no file until the
+    /// animation's tick, which is where this used to hang. That clock did
+    /// not run over a network then, and a note that reaches no file until the
     /// reader walks out of it is not something a reader should have to have
     /// a local terminal for.
     fn the_notes_will_settle(&mut self) {

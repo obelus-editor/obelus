@@ -605,8 +605,8 @@ fn a_rest_of_nothing_asks_nothing() {
 
     // A clock of the rest's own is what times it, which is the only thing
     // about a rest that can be seen without a server. It used to be the
-    // animation asked to keep waking -- and over a network nothing is
-    // animated, so the pointer could rest for ever and never ask.
+    // animation asked to keep waking -- and over a network nothing was
+    // animated then, so the pointer could rest for ever and never ask.
     point(&mut app, x, y);
     assert!(
         app.rest_has_a_clock_for_test(),
