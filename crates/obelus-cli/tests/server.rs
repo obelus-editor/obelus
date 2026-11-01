@@ -241,11 +241,16 @@ fn a_window_is_drawn_comes_back_and_leaves() {
     let Answered::Open {
         window: name,
         again,
+        machine,
     } = answered
     else {
         panic!("not let in: {answered:?}");
     };
     assert!(!again, "a new window was taken for an old one");
+    // What a window on it says on its status row, so the window that
+    // knocked can keep it beside the address. Broken deliberately by
+    // answering `machine: None`: the window heard no name.
+    assert_eq!(machine, obelus_app::app::servers::this_machine());
     assert!(
         window.until("the file", |window| window
             .text()
@@ -259,7 +264,8 @@ fn a_window_is_drawn_comes_back_and_leaves() {
         answered,
         Answered::Open {
             window: name,
-            again: true
+            again: true,
+            machine: obelus_app::app::servers::this_machine(),
         },
         "the window that went was not taken up again"
     );
@@ -424,7 +430,8 @@ fn a_window_back_before_its_old_connection_went_is_taken_up() {
         answered,
         Answered::Open {
             window: name,
-            again: true
+            again: true,
+            machine: obelus_app::app::servers::this_machine(),
         },
         "the window was not taken up"
     );
