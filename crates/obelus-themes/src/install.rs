@@ -113,7 +113,7 @@ async fn install(theme: &Listed, root: &Path, sender: &impl Sink<Event>) -> Resu
         Some(picture) => Some(
             obelus_download::bytes(&picture.url, started, |progress| say(half(progress, 1)))
                 .await
-                .map_err(|why| format!("The wallpaper did not arrive, {why}"))?,
+                .map_err(obelus_i18n::install::wallpaper_did_not_arrive_because)?,
         ),
         None => None,
     };
@@ -151,16 +151,16 @@ fn half(progress: Progress, which: u64) -> Progress {
 /// unpacks it beside where it goes, and puts it there.
 fn settle(bytes: &[u8], picture: Option<&[u8]>, theme: &Listed, root: &Path) -> Result<(), String> {
     if !obelus_download::hashes_to(bytes, &theme.sha256) {
-        return Err("It is not the package the registry describes".to_string());
+        return Err(obelus_i18n::install::package_does_not_match().to_string());
     }
     let picture = match (&theme.picture, picture) {
         (Some(listed), Some(bytes)) => {
             if !obelus_download::hashes_to(bytes, &listed.sha256) {
-                return Err("Its wallpaper is not the picture the registry describes".to_string());
+                return Err(obelus_i18n::install::wallpaper_does_not_match().to_string());
             }
             Some((listed.file.as_str(), bytes))
         }
-        (Some(_), None) => return Err("Its wallpaper did not arrive".to_string()),
+        (Some(_), None) => return Err(obelus_i18n::install::wallpaper_did_not_arrive().to_string()),
         (None, _) => None,
     };
     let into = home(&theme.name, root).ok_or_else(|| {
@@ -188,7 +188,7 @@ fn unpack_and_read(
 ) -> Result<PathBuf, String> {
     obelus_download::unpack(bytes, &theme.package, staging)?;
     let arrived = theme_in(staging)
-        .ok_or_else(|| format!("There is no {} in the package", obelus_theme::written::FILE))?;
+        .ok_or_else(|| obelus_i18n::install::not_in_the_package(obelus_theme::written::FILE))?;
     // Into the directory the rename puts in place, so the picture arrives
     // with the theme or not at all. Not decoded here: its hash says it is
     // the picture the registry decoded.
@@ -199,7 +199,7 @@ fn unpack_and_read(
     // a theme the reader can wear rather than a file Obelus refuses the
     // first time it is chosen.
     obelus_theme::written::read_where(&arrived.join(obelus_theme::written::FILE))
-        .map_err(|wrong| format!("Obelus cannot read the theme it was sent: {}", wrong.why))?;
+        .map_err(|wrong| obelus_i18n::install::theme_unreadable(wrong.why))?;
     let record = serde_json::json!({
         "commit": theme.commit,
         "sha256": theme.sha256,
@@ -251,10 +251,9 @@ fn put_in_place(arrived: &Path, into: &Path, root: &Path, name: &str) -> Result<
 /// When another Obelus is installing it, or the directory will not go.
 pub fn remove(name: &str, root: &Path) -> Result<(), String> {
     let _claim = claim(name, root)?;
-    let into = home(name, root)
-        .ok_or_else(|| format!("{name} is not a name Obelus can keep a directory of"))?;
+    let into = home(name, root).ok_or_else(|| obelus_i18n::install::not_a_directory_name(name))?;
     if installed(name, root).is_none() {
-        return Err(format!("{name} did not come from the registry"));
+        return Err(obelus_i18n::install::not_from_the_registry(name));
     }
     std::fs::remove_dir_all(&into).map_err(|error| format!("{into:?}: {error}"))
 }
@@ -290,7 +289,7 @@ fn claim(name: &str, root: &Path) -> Result<Claim, String> {
         .open(&path)
         .map_err(|error| format!("{path:?}: {error}"))?;
     if obelus_claim::held_by_somebody_else(&file) {
-        return Err(format!("Another Obelus is installing {name}"));
+        return Err(obelus_i18n::install::another_is_installing(name));
     }
     Ok(Claim { path, _file: file })
 }

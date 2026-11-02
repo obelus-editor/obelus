@@ -98,7 +98,7 @@ pub fn found_in(directory: &Path) -> Vec<(String, PathBuf)> {
 /// When the file cannot be read or is not TOML.
 pub fn read_where(path: &Path) -> std::result::Result<Read, Wrong> {
     let said = std::fs::read_to_string(path).map_err(|error| Wrong {
-        why: format!("reading {}: {error}", path.display()),
+        why: obelus_i18n::theme_file::could_not_read(error.to_string(), path.display().to_string()),
         at: None,
     })?;
     let table: toml::Table = said.parse().map_err(|error: toml::de::Error| Wrong {
@@ -163,7 +163,10 @@ fn hung(
 ) -> Option<Wallpaper> {
     let hung = table.get("wallpaper")?;
     let Some(hung) = hung.as_table() else {
-        troubles.push(spans.wrong(&["wallpaper"], "A wallpaper is a table of its own"));
+        troubles.push(spans.wrong(
+            &["wallpaper"],
+            obelus_i18n::theme_file::wallpaper_not_a_table(),
+        ));
         return None;
     };
     // A name nothing reads, before anything is read: a misspelt `opacity`
@@ -172,15 +175,18 @@ fn hung(
     for key in hung.keys().filter(|key| !WALLPAPER.contains(&key.as_str())) {
         troubles.push(spans.named(
             &["wallpaper", key],
-            "Nothing about a wallpaper is called this",
+            obelus_i18n::theme_file::no_such_wallpaper_key(),
         ));
     }
     let Some(named) = hung.get("file") else {
-        troubles.push(spans.wrong(&["wallpaper"], "This wallpaper names no file"));
+        troubles.push(spans.wrong(&["wallpaper"], obelus_i18n::theme_file::no_file()));
         return None;
     };
     let Some(named) = named.as_str() else {
-        troubles.push(spans.wrong(&["wallpaper", "file"], "A file is named in quotes"));
+        troubles.push(spans.wrong(
+            &["wallpaper", "file"],
+            obelus_i18n::theme_file::file_in_quotes(),
+        ));
         return None;
     };
     // Beside the theme as it really is: a theme file is often a link into a
@@ -194,7 +200,7 @@ fn hung(
     let Ok(about) = std::fs::metadata(&file) else {
         troubles.push(spans.wrong(
             &["wallpaper", "file"],
-            &format!("There is no picture at {}", file.display()),
+            &obelus_i18n::theme_file::no_picture_at(file.display().to_string()),
         ));
         return None;
     };
@@ -209,10 +215,7 @@ fn hung(
             _ => {
                 troubles.push(spans.wrong(
                     &["wallpaper", "opacity"],
-                    &format!(
-                        "An opacity is a whole number from 0 to 100, so this is {}",
-                        wallpaper::OPACITY
-                    ),
+                    &obelus_i18n::theme_file::opacity_range(wallpaper::OPACITY),
                 ));
                 wallpaper::OPACITY
             }
@@ -223,10 +226,7 @@ fn hung(
         Some(value) => value.as_str().and_then(Fit::named).unwrap_or_else(|| {
             troubles.push(spans.wrong(
                 &["wallpaper", "fit"],
-                &format!(
-                    "No fit is called this, so it is cover\nOne of {}",
-                    words(&Fit::ALL)
-                ),
+                &obelus_i18n::theme_file::no_such_fit(words(&Fit::ALL)),
             ));
             Fit::default()
         }),
@@ -236,10 +236,7 @@ fn hung(
         Some(value) => value.as_str().and_then(Anchor::named).unwrap_or_else(|| {
             troubles.push(spans.wrong(
                 &["wallpaper", "anchor"],
-                &format!(
-                    "No anchor is called this, so it is center\nOne of {}",
-                    words(&Anchor::ALL)
-                ),
+                &obelus_i18n::theme_file::no_such_anchor(words(&Anchor::ALL)),
             ));
             Anchor::default()
         }),
@@ -374,7 +371,7 @@ fn over_noting(table: &toml::Table) -> (Theme, Noted) {
             None => {
                 noted.borrow_mut().push(Note {
                     keys: vec!["base".to_string()],
-                    why: "No built-in theme is called this, so it builds on dark",
+                    why: obelus_i18n::theme_file::no_such_base(),
                     name: false,
                 });
                 &builtin::DARK
@@ -395,7 +392,7 @@ fn over_noting(table: &toml::Table) -> (Theme, Noted) {
             at.push(key.to_string());
             noted.borrow_mut().push(Note {
                 keys: at,
-                why: "Not a colour, so it is the one this builds on\nA colour is written #rrggbb or #rgb",
+                why: obelus_i18n::theme_file::not_a_colour(),
                 name: false,
             });
         }
@@ -500,19 +497,19 @@ fn over_noting(table: &toml::Table) -> (Theme, Noted) {
                         .filter(|key| !asked.contains(&(section, key.as_str())))
                         .map(|key| Note {
                             keys: vec![section.to_string(), key.clone()],
-                            why: "No colour here is called this",
+                            why: obelus_i18n::theme_file::no_such_colour_here(),
                             name: true,
                         }),
                 ),
                 None => noted.push(Note {
                     keys: vec![section.to_string()],
-                    why: "These colours are a table of their own",
+                    why: obelus_i18n::theme_file::colours_not_a_table(),
                     name: false,
                 }),
             },
             key if !asked.contains(&("", key)) => noted.push(Note {
                 keys: vec![key.to_string()],
-                why: "No colour in a theme is called this",
+                why: obelus_i18n::theme_file::no_such_colour(),
                 name: true,
             }),
             _ => {}
@@ -537,7 +534,7 @@ fn slanted(said: &toml::Value, named: &[(&str, SyntaxKind)], noted: &mut Noted) 
     let Some(words) = said.as_array() else {
         noted.push(Note {
             keys: at(),
-            why: "Not a list of kinds, so it slants what this builds on\nA list is written [\"comment\"]",
+            why: obelus_i18n::theme_file::italic_not_a_list(),
             name: false,
         });
         return None;
@@ -558,7 +555,7 @@ fn slanted(said: &toml::Value, named: &[(&str, SyntaxKind)], noted: &mut Noted) 
     if astray {
         noted.push(Note {
             keys: at(),
-            why: "A word here names no colour, so it slants nothing\nA kind is named the way its colour is, like comment or type_name",
+            why: obelus_i18n::theme_file::italic_names_no_colour(),
             name: false,
         });
     }

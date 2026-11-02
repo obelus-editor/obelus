@@ -36,7 +36,7 @@ impl App {
             let cursor = buffer.cursor();
             (cursor.line, cursor.column)
         }) else {
-            self.wrong("No file open".to_string());
+            self.wrong(obelus_i18n::editing::no_file_open());
             return;
         };
         self.ask_hover_at(at, false);
@@ -63,7 +63,7 @@ impl App {
         }
         let Some(language) = buffer.language() else {
             if !pointed {
-                self.wrong("No language server for this file".to_string());
+                self.wrong(obelus_i18n::language_server::no_server_for_this_file());
             }
             return;
         };
@@ -85,10 +85,9 @@ impl App {
         };
         if !client.capabilities().is_some_and(hover::supported) {
             if !pointed {
-                self.wrong(format!(
-                    "{} does not say what things are",
-                    server_named(language)
-                ));
+                self.wrong(obelus_i18n::language_server::no_hover(server_named(
+                    language,
+                )));
             }
             return;
         }

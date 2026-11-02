@@ -53,15 +53,4 @@ impl Severity {
             Self::Information | Self::Hint => '\u{00b7}',
         }
     }
-
-    /// What to call it.
-    #[must_use]
-    pub const fn title(self) -> &'static str {
-        match self {
-            Self::Error => "Error",
-            Self::Warning => "Warning",
-            Self::Information => "Information",
-            Self::Hint => "Hint",
-        }
-    }
 }

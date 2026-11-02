@@ -421,12 +421,13 @@ impl Laying<'_> {
                         from: self.rows.len(),
                     });
                     if !summarised {
+                        let details = obelus_i18n::markdown::details();
                         let heading = Shaped {
                             shown: Gathered {
-                                text: "Details".to_string(),
+                                text: details.to_string(),
                                 runs: Vec::new(),
                             },
-                            looks: vec![Look::default(); "Details".len()],
+                            looks: vec![Look::default(); details.len()],
                             links: Vec::new(),
                         };
                         self.summary(&heading, width, prefix);
@@ -480,7 +481,10 @@ impl Laying<'_> {
         self.lay(&heading, width, prefix);
         if self.rows.len() == first {
             // A heading with no words is still the one thing to open it by.
-            self.row(prefix, vec![Span::new("Details", self.words())]);
+            self.row(
+                prefix,
+                vec![Span::new(obelus_i18n::markdown::details(), self.words())],
+            );
         }
         if let Some(row) = self.rows.get_mut(first) {
             row.details = Some(obelus_row::Details {

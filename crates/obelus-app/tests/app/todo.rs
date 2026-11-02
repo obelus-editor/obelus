@@ -907,7 +907,7 @@ fn a_note_with_nothing_in_it_is_dropped() {
 
 /// The palette says which of the notes' keys can be pressed.
 ///
-/// Broken deliberately by offering "Go there" whatever the note
+/// Broken deliberately by offering "Go to" whatever the note
 /// (`notes.can_go()` left off it in `todo::hints`).
 #[test]
 fn the_palette_dims_a_key_that_would_do_nothing() {
@@ -916,13 +916,13 @@ fn the_palette_dims_a_key_that_would_do_nothing() {
 
     // The first note is about the project, so there is nowhere to go.
     let usable = support::usable_here(&mut app);
-    assert!(!usable.contains(&"Go there".to_string()), "{usable:?}");
-    assert!(usable.contains(&"Another".to_string()), "{usable:?}");
+    assert!(!usable.contains(&"Go to".to_string()), "{usable:?}");
+    assert!(usable.contains(&"New note".to_string()), "{usable:?}");
 
     press(&mut app, KeyCode::Down);
     let usable = support::usable_here(&mut app);
     assert!(
-        usable.contains(&"Go there".to_string()),
+        usable.contains(&"Go to".to_string()),
         "the key that works is dim: {usable:?}"
     );
 }
@@ -1047,14 +1047,14 @@ fn the_caret_is_on_the_cell_the_letter_goes_in() {
 /// letter here, so it is the one thing a reader will go looking for and not
 /// find. There is nowhere else it could be said -- this view has no card.
 ///
-/// Broken deliberately by leaving "Drop" out of `todo::hints`.
+/// Broken deliberately by leaving "Delete" out of `todo::hints`.
 #[test]
 fn dropping_a_note_is_in_the_palette() {
     let scratch = tree("drop-palette", THREE);
     let mut app = open(&scratch, 100, 14);
     let usable = support::usable_here(&mut app);
     assert!(
-        usable.contains(&"Drop".to_string()),
+        usable.contains(&"Delete".to_string()),
         "the palette does not say how: {usable:?}"
     );
 }
@@ -1293,7 +1293,9 @@ fn the_notes_do_not_open_on_a_file_that_will_not_read() {
         "the notes opened on a file Obelus cannot read"
     );
     assert!(
-        app.note().unwrap_or_default().contains("will not read"),
+        app.note()
+            .unwrap_or_default()
+            .contains("Could not read the notes file"),
         "the reader was not told why nothing happened: {:?}",
         app.note()
     );
@@ -1331,7 +1333,9 @@ fn what_was_done_while_the_file_would_not_read_lands_when_it_reads_again() {
     // The reader ticks the note off anyway, and is told it went nowhere.
     app.handle(alt(KeyCode::Char(' ')));
     assert!(
-        app.note().unwrap_or_default().contains("will not read"),
+        app.note()
+            .unwrap_or_default()
+            .contains("Could not read the notes file"),
         "the reader was not told: {:?}",
         app.note()
     );
@@ -1504,7 +1508,7 @@ fn ticking_off_a_note_another_window_took_away_does_not_put_it_back() {
         "the other note went too:\n{after}"
     );
     assert!(
-        one.note().unwrap_or_default().contains("taken away"),
+        one.note().unwrap_or_default().contains("deleted elsewhere"),
         "the reader was not told: {:?}",
         one.note()
     );
@@ -1549,7 +1553,7 @@ fn a_note_being_typed_in_stays_with_the_reader_who_is_typing() {
         "what the reader was typing was lost:\n{after}"
     );
     assert!(
-        one.note().unwrap_or_default().contains("taken away"),
+        one.note().unwrap_or_default().contains("deleted elsewhere"),
         "the reader was not told: {:?}",
         one.note()
     );
@@ -1743,7 +1747,7 @@ fn a_conversation_says_how_to_get_back_to_its_note() {
 
     let screen = support::text_block(&support::render(&mut app, 76, 24)).to_string();
     assert!(
-        screen.contains("The note"),
+        screen.contains("Note"),
         "the conversation does not say how to get back:\n{screen}"
     );
 }
@@ -3091,7 +3095,7 @@ fn the_status_row_says_it_is_the_notes_and_what_is_left() {
     let status = rows.lines().last().unwrap_or_default();
 
     assert!(
-        status.contains("Todo"),
+        status.contains("Notes"),
         "the row does not say which document this is:\n{dump}"
     );
     assert!(
@@ -3292,7 +3296,7 @@ fn a_conversation_names_the_key_back_to_its_note() {
     let dump = support::render(&mut app, 120, 18);
     let row = support::text_block(&dump)
         .lines()
-        .find(|row| row.contains("The note"))
+        .find(|row| row.contains("Note"))
         .map(str::to_string)
         .unwrap_or_else(|| panic!("nothing says how to get back:\n{dump}"));
     assert!(row.contains("Ctrl+t"), "{row}");

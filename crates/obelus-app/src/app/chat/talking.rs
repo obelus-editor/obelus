@@ -260,8 +260,7 @@ impl App {
             talk.told = None;
             talk.started_on.clear();
             if had {
-                talk.chat
-                    .note("The agent this was with is no longer the one Obelus talks to");
+                talk.chat.note(obelus_i18n::conversation::another_agent());
                 talk.page_outlived_its_session();
             }
         }
@@ -1399,7 +1398,7 @@ impl App {
                 .conversation()
                 .is_some_and(|talk| talk.card_in_front().is_none_or(Card::takes_words));
         if !into_a_conversation {
-            self.wrong("A file goes in a message to an agent".to_string());
+            self.wrong(obelus_i18n::conversation::files_go_to_agents());
             return;
         }
         // The space after it is the terminal's too: several dropped at once
@@ -1642,9 +1641,9 @@ impl App {
         // is what the conversations' list does by day for the same reason.
         picker.wraps(None);
         picker.keeps_order(true);
-        picker.before_typing("Filter background work");
-        picker.ask("Background work");
-        picker.when_empty("Nothing has been left running here");
+        picker.before_typing(obelus_i18n::conversation::filter_background_tasks());
+        picker.ask(obelus_i18n::conversation::background_tasks());
+        picker.when_empty(obelus_i18n::conversation::no_background_tasks());
         picker.lists_tasks(stoppable);
         self.show_list(picker);
     }
@@ -1664,8 +1663,8 @@ impl App {
             .map(|task| task.output.clone());
         match output {
             Some(Some(path)) if path.is_file() => self.open(&path),
-            Some(Some(_)) => self.wrong("Its output is not there any more".to_string()),
-            Some(None) => self.wrong("It said nowhere its output goes".to_string()),
+            Some(Some(_)) => self.wrong(obelus_i18n::conversation::output_gone()),
+            Some(None) => self.wrong(obelus_i18n::conversation::no_output()),
             None => {}
         }
     }
@@ -1818,7 +1817,8 @@ impl App {
                 // The one that is on says so in words. A list where the
                 // selected row and the current value look the same cannot
                 // say which of the two it is showing.
-                trailing: (value.id == setting.current).then(|| "current".to_string()),
+                trailing: (value.id == setting.current)
+                    .then(|| obelus_i18n::project::current().to_string()),
                 changed: None,
                 value: PickerValue::AgentValue {
                     setting: id.to_string(),
@@ -1835,9 +1835,9 @@ impl App {
             })
             .collect();
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
-        picker.before_typing("Filter values");
+        picker.before_typing(obelus_i18n::editing::filter_values());
         picker.ask(&question);
-        picker.when_empty("This one has nothing to choose from");
+        picker.when_empty(obelus_i18n::picker::nothing_to_choose_from());
         // Opened on what it is already on, so the list starts by saying
         // where the reader is rather than at whatever happens to be first.
         if let Some(current) = current {
@@ -1884,7 +1884,8 @@ impl App {
         // conversation: what the agent answers with is the whole set of
         // settings again, which is not something to show.
         if let Some(talk) = self.conversation_mut() {
-            talk.chat.note(&format!("{name}: {told}"));
+            talk.chat
+                .note(&obelus_i18n::conversation::set_to(name, told));
         }
     }
 
@@ -1984,11 +1985,11 @@ impl App {
                 // settings page's line does not: see `Shown::warning`.
                 gone.push((
                     said,
-                    format!(
-                        "No longer offered by {name}: {value} for {}, so this conversation is \
-                         on {}",
-                        setting.name,
-                        setting.current_name().unwrap_or(&setting.current)
+                    obelus_i18n::conversation::no_longer_offered(
+                        &name,
+                        setting.current_name().unwrap_or(&setting.current),
+                        &setting.name,
+                        value,
                     ),
                 ));
                 continue;
@@ -2275,8 +2276,10 @@ impl App {
         // whole line of the reader's.
         if let Some(named) = named {
             self.say(match named {
-                Some(named) => format!("Closed {}", obelus_ui::truncate_from_right(&named, 40)),
-                None => "Closed a conversation".to_string(),
+                Some(named) => {
+                    obelus_i18n::conversation::closed(obelus_ui::truncate_from_right(&named, 40))
+                }
+                None => obelus_i18n::conversation::closed_a_conversation().to_string(),
             });
         }
         // And out of the list of what is open, where that is showing: a
@@ -2415,7 +2418,7 @@ impl App {
             talk.queued.clear();
             talk.card = None;
             if asked {
-                talk.chat.note("It stopped waiting for an answer");
+                talk.chat.note(obelus_i18n::conversation::stopped_waiting());
                 forgotten.push(DocumentId::new(at));
             }
         }
@@ -2508,7 +2511,7 @@ impl App {
             })
             .collect();
         let mut slash = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
-        slash.before_typing("Filter what the agent offers");
+        slash.before_typing(obelus_i18n::conversation::filter_the_agents_commands());
         slash.set_query(&name);
         if slash.match_count() > 0
             && let Some(talk) = self.conversation_mut()
@@ -2649,7 +2652,7 @@ impl App {
         if let Err(error) = self.desk().open(url) {
             tracing::warn!(%error, "the link was not opened");
             if let Some(talk) = self.conversation_mut() {
-                talk.chat.note("Nothing here opens links");
+                talk.chat.note(obelus_i18n::app::could_not_open_the_link());
             }
         }
     }
@@ -2788,7 +2791,7 @@ impl App {
                 true
             }
             ChatOutcome::Copy(code) => {
-                self.copied(&code, "code");
+                self.copied(&code, obelus_component::copied::Copied::Code);
                 true
             }
             ChatOutcome::Choose(id) => {
@@ -2878,7 +2881,7 @@ impl App {
             // Only a form has the row, so this is the form refused.
             CardOutcome::Declined => {
                 self.mirror_given_up_here(Whose::Whoever, "Declined", true);
-                self.refuse_asking(Whose::Whoever, "Declined");
+                self.refuse_asking(Whose::Whoever, obelus_i18n::conversation::declined());
                 self.ask_the_next(Whose::Whoever);
                 true
             }
@@ -2891,7 +2894,7 @@ impl App {
                     .map(|card| {
                         chosen
                             .iter()
-                            .map(|id| card.name_of(id).unwrap_or(id).to_string())
+                            .map(|id| card.said_of(id).unwrap_or(id).to_string())
                             .chain(words.iter().cloned())
                             .collect::<Vec<String>>()
                             .join(", ")
@@ -3048,7 +3051,7 @@ impl App {
                 talk.sign_in_next = None;
                 if talk.signing_in.take().is_some() {
                     talk.card = None;
-                    talk.chat.note("Signed in");
+                    talk.chat.note(obelus_i18n::app::signed_in());
                 }
             }
         }
@@ -3099,7 +3102,7 @@ impl App {
         talk.asking = None;
         talk.going = None;
         talk.card = None;
-        talk.chat.note("It stopped waiting for an answer");
+        talk.chat.note(obelus_i18n::conversation::stopped_waiting());
         self.mirror_withdrawn(whose);
         self.ask_the_next(whose);
     }
@@ -3195,17 +3198,23 @@ impl App {
             vec![
                 Choice {
                     id: "open".to_string(),
-                    name: "Open it".to_string(),
-                    about: Some("Opens it in your browser".to_string()),
+                    name: obelus_i18n::conversation::open_link().to_string(),
+                    about: Some(obelus_i18n::page::opens_in_the_browser().to_string()),
                     icon: icons.then_some(obelus_icons::ui::AWAY),
                     chosen: false,
+                    said: Some(
+                        obelus_i18n::in_english(obelus_i18n::conversation::open_link).to_string(),
+                    ),
                 },
                 Choice {
                     id: "no".to_string(),
-                    name: "no".to_string(),
+                    name: obelus_i18n::conversation::not_now().to_string(),
                     about: None,
                     icon: icons.then_some(obelus_icons::ui::STAYING),
                     chosen: false,
+                    said: Some(
+                        obelus_i18n::in_english(obelus_i18n::conversation::not_now).to_string(),
+                    ),
                 },
             ],
             false,
@@ -3230,7 +3239,7 @@ impl App {
         if chosen != Some("open") {
             if let Some(talk) = self.talk_mut(whose) {
                 talk.card = None;
-                talk.chat.note("Not opened");
+                talk.chat.note(obelus_i18n::conversation::not_opened());
             }
             let _ = going.answer.send(false);
             return;
@@ -3242,7 +3251,7 @@ impl App {
             // which on a machine with no browser is the only way they will
             // get it.
             if let Some(talk) = self.talk_mut(whose) {
-                talk.chat.note("Nothing here opens links");
+                talk.chat.note(obelus_i18n::app::could_not_open_the_link());
                 talk.going = Some(going);
             }
             return;
@@ -3283,12 +3292,14 @@ impl App {
             return;
         };
         let logins = talker.logins().to_vec();
-        let agent = talker.info().unwrap_or("the agent").to_string();
+        let agent = talker.info().map(str::to_string);
         if logins.is_empty() {
             talker.give_up_signing_in();
-            self.in_talk(whose, |chat| {
-                chat.note(&format!("There is no way to sign in to {agent} from here"));
-            });
+            let said = match &agent {
+                Some(agent) => obelus_i18n::conversation::no_way_to_sign_in_to(agent),
+                None => obelus_i18n::conversation::no_way_to_sign_in().to_string(),
+            };
+            self.in_talk(whose, |chat| chat.note(&said));
             return;
         }
         self.show_the_question(whose);
@@ -3306,19 +3317,25 @@ impl App {
                     acp::How::Asked => obelus_icons::ui::AWAY,
                 }),
                 chosen: false,
+                said: None,
             })
             .collect();
         choices.push(Choice {
             id: NOT_SIGNING_IN.to_string(),
-            name: "Not now".to_string(),
+            name: obelus_i18n::conversation::not_now().to_string(),
             about: None,
             icon: icons.then_some(obelus_icons::ui::STAYING),
             chosen: false,
+            said: Some(obelus_i18n::in_english(obelus_i18n::conversation::not_now).to_string()),
         });
         let mut card = Card::new(choices, false);
+        let sign_in = match &agent {
+            Some(agent) => obelus_i18n::conversation::sign_in_to(agent),
+            None => obelus_i18n::conversation::sign_in().to_string(),
+        };
         let about = match &why {
-            Some(why) => format!("Sign in to {agent} to go on\n\n{why}"),
-            None => format!("Sign in to {agent} to go on"),
+            Some(why) => format!("{sign_in}\n\n{why}"),
+            None => sign_in,
         };
         card.about(&about);
         if let Some(talk) = self.talk_mut(whose) {
@@ -3354,11 +3371,13 @@ impl App {
             if let Some(talker) = self.agent.talker.as_ref() {
                 talker.give_up_signing_in();
             }
-            self.in_talk(whose, |chat| chat.note("Not signed in"));
+            self.in_talk(whose, |chat| {
+                chat.note(obelus_i18n::conversation::not_signed_in())
+            });
             return;
         };
         self.in_talk(whose, |chat| {
-            chat.note(&format!("Signing in: {}", login.name))
+            chat.note(&obelus_i18n::conversation::signing_in(&login.name));
         });
         match login.how {
             acp::How::Run {
@@ -3551,13 +3570,16 @@ impl App {
             match &field.takes {
                 acp::Takes::One { values, .. } => match chosen.first() {
                     Some(id) => {
-                        said.push(format!("{}: {}", field.title, called(values, id)));
+                        said.push(obelus_i18n::conversation::answered(
+                            called(values, id),
+                            &field.title,
+                        ));
                         given.push((field.name.clone(), acp::Reply::Value(id.clone())));
                     }
                     // Nothing chosen, on a question that did not have to be:
                     // the reader answered in their own words instead, and
                     // the field is left out.
-                    None => said.push(format!("{}: left blank", field.title)),
+                    None => said.push(obelus_i18n::conversation::left_blank(&field.title)),
                 },
                 acp::Takes::Some { values, .. } => {
                     // Nothing ticked is the field left blank, like an empty
@@ -3568,9 +3590,12 @@ impl App {
                     // with nothing ticked.
                     let names: Vec<String> = chosen.iter().map(|id| called(values, id)).collect();
                     match names.is_empty() {
-                        true => said.push(format!("{}: left blank", field.title)),
+                        true => said.push(obelus_i18n::conversation::left_blank(&field.title)),
                         false => {
-                            said.push(format!("{}: {}", field.title, names.join(", ")));
+                            said.push(obelus_i18n::conversation::answered(
+                                names.join(obelus_i18n::language_server::list_separator()),
+                                &field.title,
+                            ));
                             given.push((field.name.clone(), acp::Reply::Values(chosen.to_vec())));
                         }
                     }
@@ -3578,10 +3603,10 @@ impl App {
                 acp::Takes::Switch(_) => {
                     let on = chosen.first().is_some_and(|id| id == "on");
                     let side = match on {
-                        true => "on",
-                        false => "off",
+                        true => obelus_i18n::conversation::on(),
+                        false => obelus_i18n::conversation::off(),
                     };
-                    said.push(format!("{}: {side}", field.title));
+                    said.push(obelus_i18n::conversation::answered(side, &field.title));
                     given.push((field.name.clone(), acp::Reply::Switch(on)));
                 }
                 // Not what a card with named answers is asking.
@@ -3656,15 +3681,15 @@ impl App {
         most: Option<f64>,
     ) -> Option<acp::Reply> {
         let Ok(number) = text.parse::<f64>() else {
-            let title = field.title.clone();
-            self.in_talk(whose, |chat| {
-                chat.note(&format!("{title} takes a number, not {text:?}"))
-            });
+            let said = obelus_i18n::conversation::not_a_number(&field.title);
+            self.in_talk(whose, |chat| chat.note(&said));
             return None;
         };
         if least.is_some_and(|least| number < least) || most.is_some_and(|most| number > most) {
             let asked = question(field);
-            self.in_talk(whose, |chat| chat.note(&format!("That is outside {asked}")));
+            self.in_talk(whose, |chat| {
+                chat.note(&obelus_i18n::conversation::out_of_range(asked))
+            });
             return None;
         }
         Some(match whole {
@@ -3683,7 +3708,9 @@ impl App {
             return;
         };
         if asking.answer.send(Some(asking.given)).is_err() {
-            self.in_talk(whose, |chat| chat.note("It stopped waiting for an answer"));
+            self.in_talk(whose, |chat| {
+                chat.note(obelus_i18n::conversation::stopped_waiting())
+            });
         }
     }
 
@@ -3699,7 +3726,7 @@ impl App {
         if let Some(talk) = self.talk_mut(whose)
             && talk.going.take().is_some()
         {
-            talk.chat.note("Not opened");
+            talk.chat.note(obelus_i18n::conversation::not_opened());
             return;
         }
         let Some(asking) = self.talk_mut(whose).and_then(|talk| talk.asking.take()) else {
@@ -3934,7 +3961,7 @@ impl App {
         } else if talk.permission.is_some() {
             self.refuse_permission(whose);
         } else {
-            self.refuse_asking(whose, "Not answered");
+            self.refuse_asking(whose, obelus_i18n::conversation::not_answered());
         }
     }
 
@@ -4040,7 +4067,8 @@ impl App {
                     words.push_str(output.trim_end());
                 }
                 if truncated {
-                    words.push_str("\n\u{2026} and more, which Obelus did not keep");
+                    words.push('\n');
+                    words.push_str(obelus_i18n::conversation::output_not_kept());
                 }
                 // How it ended, where that is not simply well. The mark on
                 // the row says a command failed and cannot say what a
@@ -4057,11 +4085,17 @@ impl App {
                     Some(obelus_agent::running::Ended {
                         signal: Some(signal),
                         ..
-                    }) => words.push_str(&format!("\n\u{2026} and was stopped by {signal}")),
+                    }) => {
+                        words.push('\n');
+                        words.push_str(&obelus_i18n::conversation::command_stopped_by(
+                            signal.to_string(),
+                        ));
+                    }
                     Some(obelus_agent::running::Ended {
                         code: Some(code), ..
                     }) if code != 0 => {
-                        words.push_str(&format!("\n\u{2026} and exited {code}"));
+                        words.push('\n');
+                        words.push_str(&obelus_i18n::conversation::command_exited(code));
                     }
                     _ => {}
                 }
@@ -4175,7 +4209,8 @@ impl App {
                 // opens on what the reader chose like any other.
                 talk.started_on.clear();
                 talk.introduced = false;
-                talk.chat.note(&format!("Starting again, because {why}"));
+                talk.chat
+                    .note(&obelus_i18n::conversation::starting_again(why));
                 talk.page_outlived_its_session();
             }
             if let Some(which) = which {
@@ -4435,15 +4470,23 @@ impl App {
                 match reason.as_deref() {
                     Ok("end_turn") => {}
                     Ok("cancelled") if to_say => {}
-                    Ok("cancelled") => self.in_talk(whose, |chat| chat.note("Stopped")),
+                    Ok("cancelled") => {
+                        self.in_talk(whose, |chat| chat.note(obelus_i18n::chat::stopped()))
+                    }
                     Ok("refusal") => {
-                        self.in_talk(whose, |chat| chat.note("It declined to answer"));
+                        self.in_talk(whose, |chat| {
+                            chat.note(obelus_i18n::conversation::refused_to_answer())
+                        });
                     }
                     Ok("max_tokens") => {
-                        self.in_talk(whose, |chat| chat.note("It ran out of room to answer in"));
+                        self.in_talk(whose, |chat| {
+                            chat.note(obelus_i18n::conversation::out_of_room())
+                        });
                     }
                     Ok(other) => self.in_talk(whose, |chat| chat.note(other)),
-                    Err(why) => self.in_talk(whose, |chat| chat.note(&format!("The agent: {why}"))),
+                    Err(why) => self.in_talk(whose, |chat| {
+                        chat.note(&obelus_i18n::conversation::agent_said(why))
+                    }),
                 }
                 // A turn that was stopped, ran out of room or failed takes
                 // its questions with it: whatever was asking is not coming
@@ -4467,14 +4510,30 @@ impl App {
                 self.keep_the_page(whose);
             }
             acp::Incoming::Failed(what, why) => {
-                tracing::warn!(what, why, "the agent");
+                tracing::warn!(?what, why, "the agent");
                 // Asking what it can be set to is over, however it went:
                 // the page says it has heard nothing rather than that it
                 // is still asking.
-                if what == obelus_agent::acp::link::ASKING_WHAT_IT_OFFERS {
+                if what == acp::Doing::AskingWhatItOffers {
                     self.agents.asking = None;
                 }
-                let said = format!("{what}: {why}");
+                let said = match what {
+                    acp::Doing::AskingWhatItOffers => {
+                        obelus_i18n::conversation::could_not_ask_what_it_offers(why)
+                    }
+                    acp::Doing::PuttingAQuestion => {
+                        obelus_i18n::conversation::could_not_put_the_question(why)
+                    }
+                    acp::Doing::ChangingASetting => {
+                        obelus_i18n::conversation::could_not_change_the_setting(why)
+                    }
+                    acp::Doing::StoppingATask => {
+                        obelus_i18n::conversation::could_not_stop_the_task(why)
+                    }
+                    acp::Doing::ChangingTheMode => {
+                        obelus_i18n::conversation::could_not_change_the_mode(why)
+                    }
+                };
                 match self.conversation_mut() {
                     Some(talk) => talk.chat.note(&said),
                     // Nothing on screen is a conversation, which is the
@@ -4496,9 +4555,7 @@ impl App {
             // all again to something that already knows.
             acp::Incoming::Remembered { .. } => {
                 self.in_talk(whose, |chat| {
-                    chat.note(
-                        "Taken up where you left it; this agent cannot send back what was said",
-                    );
+                    chat.note(obelus_i18n::conversation::taken_up());
                 });
             }
             acp::Incoming::Asked { question, .. } => self.put_to_the_reader(whose, question),
@@ -4586,9 +4643,11 @@ impl App {
                 self.background_work_ended_everywhere();
                 match why {
                     Some(why) => self.in_talk(whose, |chat| {
-                        chat.note(&format!("The agent stopped: {why}"))
+                        chat.note(&obelus_i18n::conversation::agent_stopped_because(why));
                     }),
-                    None => self.in_talk(whose, |chat| chat.note("The agent stopped")),
+                    None => self.in_talk(whose, |chat| {
+                        chat.note(obelus_i18n::conversation::agent_stopped())
+                    }),
                 }
             }
             // Folded into the handle above, or -- for a conversation
@@ -4625,7 +4684,7 @@ impl App {
             // The agent signed the reader in itself, and what was waiting
             // on it is already being asked again.
             acp::Incoming::SignedIn => {
-                self.in_talk(whose, |chat| chat.note("Signed in"));
+                self.in_talk(whose, |chat| chat.note(obelus_i18n::app::signed_in()));
                 self.signed_in_everywhere();
             }
         }
@@ -4680,7 +4739,7 @@ impl App {
         };
         let Some(root) = self.agents_root() else {
             self.in_transcript(|chat| {
-                chat.note("This system has nowhere for Obelus to keep an agent")
+                chat.note(obelus_i18n::conversation::nowhere_to_install());
             });
             return;
         };
@@ -4694,9 +4753,7 @@ impl App {
                 "No agent to talk to: nothing is installed under that name"
             );
             if let Some(talk) = self.conversation_mut() {
-                talk.chat.note(&format!(
-                    "{id} is not installed \u{2014} open the settings and install it"
-                ));
+                talk.chat.note(&obelus_i18n::conversation::install_it(&id));
             }
             return;
         };
@@ -4787,7 +4844,7 @@ impl App {
     /// so that two conversations' plans are two names in the list.
     fn plan_called(&self, of: DocumentId, words: &str) -> String {
         if let Some(heading) = heading_of(words) {
-            return format!("Plan: {heading}");
+            return obelus_i18n::conversation::plan_called(heading);
         }
         let notes = obelus_todo::read(&self.working_directory)
             .notes()
@@ -4795,7 +4852,10 @@ impl App {
         self.document(of)
             .and_then(Document::chat)
             .and_then(|talk| self.conversation_name(talk, &notes))
-            .map_or_else(|| "Plan".to_string(), |name| format!("Plan: {name}"))
+            .map_or_else(
+                || obelus_i18n::conversation::plan().to_string(),
+                obelus_i18n::conversation::plan_called,
+            )
     }
 
     /// Names a conversation's plan again, because the conversation has
@@ -4866,6 +4926,7 @@ impl App {
                 about: None,
                 icon: obelus_icons::enabled().then(|| obelus_icons::for_permission(&choice.kind)),
                 chosen: false,
+                said: None,
             })
             .collect();
         let mut card = Card::new(choices, false);
@@ -4928,7 +4989,9 @@ impl App {
             return;
         };
         if answer.send(Some(option.to_string())).is_err() {
-            self.in_talk(whose, |chat| chat.note("It stopped waiting for an answer"));
+            self.in_talk(whose, |chat| {
+                chat.note(obelus_i18n::conversation::stopped_waiting())
+            });
         }
     }
 
@@ -4950,7 +5013,7 @@ impl App {
         };
         let _ = answer.send(None);
         if let Some(talk) = self.talk_mut(whose) {
-            talk.chat.note("Not answered");
+            talk.chat.note(obelus_i18n::conversation::not_answered());
         }
     }
 
@@ -5168,17 +5231,31 @@ fn question(field: &acp::Field) -> String {
         whole, least, most, ..
     } = field.takes
     {
-        let kind = match whole {
-            true => "a whole number",
-            false => "a number",
+        // A whole sentence for each, because where the bounds go is the
+        // language's to say.
+        let (title, least, most) = (
+            asked,
+            least.map(|n| n.to_string()),
+            most.map(|n| n.to_string()),
+        );
+        asked = match (whole, least, most) {
+            (true, Some(least), Some(most)) => {
+                obelus_i18n::conversation::whole_number_between(title, least, most)
+            }
+            (false, Some(least), Some(most)) => {
+                obelus_i18n::conversation::number_between(title, least, most)
+            }
+            (true, Some(least), None) => {
+                obelus_i18n::conversation::whole_number_at_least(title, least)
+            }
+            (false, Some(least), None) => obelus_i18n::conversation::number_at_least(title, least),
+            (true, None, Some(most)) => {
+                obelus_i18n::conversation::whole_number_at_most(title, most)
+            }
+            (false, None, Some(most)) => obelus_i18n::conversation::number_at_most(title, most),
+            (true, None, None) => obelus_i18n::conversation::whole_number(title),
+            (false, None, None) => obelus_i18n::conversation::number(title),
         };
-        let bounds = match (least, most) {
-            (Some(least), Some(most)) => format!(": {kind} from {least} to {most}"),
-            (Some(least), None) => format!(": {kind}, {least} or more"),
-            (None, Some(most)) => format!(": {kind}, {most} or less"),
-            (None, None) => format!(": {kind}"),
-        };
-        asked.push_str(&bounds);
     }
     match field.about.as_deref() {
         Some(about) => format!("{asked} \u{2014} {about}"),
@@ -5228,16 +5305,28 @@ fn card_of(field: &acp::Field) -> Card {
             let sides = [
                 acp::Value {
                     id: "on".to_string(),
-                    name: "on".to_string(),
+                    name: obelus_i18n::conversation::on().to_string(),
                     about: None,
                 },
                 acp::Value {
                     id: "off".to_string(),
-                    name: "off".to_string(),
+                    name: obelus_i18n::conversation::off().to_string(),
                     about: None,
                 },
             ];
-            let mut card = Card::new(choices_of(&sides, &[]), false);
+            // On and off are Obelus's words here, not the agent's, so a
+            // chat's thread is told them in its own language.
+            let mut choices = choices_of(&sides, &[]);
+            for choice in &mut choices {
+                choice.said = Some(
+                    obelus_i18n::in_english(match choice.id.as_str() {
+                        "on" => obelus_i18n::conversation::on,
+                        _ => obelus_i18n::conversation::off,
+                    })
+                    .to_string(),
+                );
+            }
+            let mut card = Card::new(choices, false);
             card.prefer(match on {
                 true => "on",
                 false => "off",
@@ -5265,6 +5354,7 @@ fn choices_of(values: &[acp::Value], chosen: &[String]) -> Vec<Choice> {
             about: value.about.clone(),
             icon: None,
             chosen: chosen.contains(&value.id),
+            said: None,
         })
         .collect()
 }
@@ -5333,12 +5423,12 @@ const BACKGROUND_ROWS: u16 = 24;
 fn task_row(task: &obelus_agent::acp::tasks::Task) -> PickerItem {
     use obelus_agent::acp::tasks::State;
     let state = match &task.state {
-        State::Running if task.stopping => "Stopping".to_string(),
-        State::Running => "Running".to_string(),
-        State::Paused => "Paused".to_string(),
-        State::Done => "Done".to_string(),
-        State::Failed => "Failed".to_string(),
-        State::Stopped => "Stopped".to_string(),
+        State::Running if task.stopping => obelus_i18n::conversation::stopping().to_string(),
+        State::Running => obelus_i18n::chat::running().to_string(),
+        State::Paused => obelus_i18n::conversation::paused().to_string(),
+        State::Done => obelus_i18n::chat::done().to_string(),
+        State::Failed => obelus_i18n::chat::failed().to_string(),
+        State::Stopped => obelus_i18n::chat::stopped().to_string(),
         State::Other(word) => word.clone(),
     };
     let trailing = match task.ended {
@@ -5373,8 +5463,8 @@ fn task_row(task: &obelus_agent::acp::tasks::Task) -> PickerItem {
         // so each heading is said once, where its run starts.
         section: Some(
             match task.state.is_over() {
-                false => "Running",
-                true => "Finished",
+                false => obelus_i18n::chat::running(),
+                true => obelus_i18n::conversation::finished(),
             }
             .to_string(),
         ),
@@ -5385,9 +5475,9 @@ fn task_row(task: &obelus_agent::acp::tasks::Task) -> PickerItem {
 fn lasted_said(lasted: std::time::Duration) -> String {
     let seconds = lasted.as_secs();
     match seconds {
-        0..60 => format!("{seconds}s"),
-        60..3600 => format!("{}m", seconds / 60),
-        _ => format!("{}h", seconds / 3600),
+        0..60 => obelus_i18n::time::seconds_short(seconds),
+        60..3600 => obelus_i18n::time::minutes_short(seconds / 60),
+        _ => obelus_i18n::time::hours_short(seconds / 3600),
     }
 }
 

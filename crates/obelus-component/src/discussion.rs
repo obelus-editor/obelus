@@ -355,10 +355,7 @@ pub fn lay_out(
     rows.push(Row::said(vec![Span::new(named, Ink::Aside)]));
     match (asked, said) {
         (Asked::PullRequest(_), Some(said)) => {
-            let files = match said.files {
-                1 => "1 file".to_string(),
-                files => format!("{files} files"),
-            };
+            let files = obelus_i18n::discussion::files(said.files);
             rows.push(Row::said(vec![
                 Span::new(format!("+{}", said.additions), Ink::Added),
                 Span::new(" ", Ink::Aside),
@@ -405,12 +402,12 @@ pub fn lay_out(
             // Two blanks in front, where the view puts the mark and the one
             // blank after it.
             let waiting = match asked {
-                Asked::PullRequest(_) => "  Asking GitHub for its description, checks and comments",
-                Asked::Issue(_) => "  Asking GitHub for its description and comments",
+                Asked::PullRequest(_) => obelus_i18n::discussion::asking_about_pull_request(),
+                Asked::Issue(_) => obelus_i18n::discussion::asking_about_issue(),
             };
             rows.push(Row {
                 waiting: true,
-                ..Row::said(vec![Span::new(waiting, Ink::Aside)])
+                ..Row::said(vec![Span::new(format!("  {waiting}"), Ink::Aside)])
             });
             return rows;
         }
@@ -470,7 +467,10 @@ fn described(title: Option<&str>, body: Option<&str>, folding: &Folding, width: 
         .collect();
     if body.is_some_and(|body| body.trim().is_empty()) {
         rows.push(Row::default());
-        rows.push(Row::said(vec![Span::new("No description", Ink::Aside)]));
+        rows.push(Row::said(vec![Span::new(
+            obelus_i18n::discussion::no_description(),
+            Ink::Aside,
+        )]));
     }
     rows
 }
@@ -482,9 +482,15 @@ fn described(title: Option<&str>, body: Option<&str>, folding: &Folding, width: 
 /// Shut until then: forty names would push what was said off the screen,
 /// and the heading's count is what most readers come for.
 fn files(said: &Discussion, folding: &Folding, width: u16) -> Vec<Row> {
-    let heading = Span::new("Files  ", Ink::Heading(2));
+    let heading = Span::new(
+        format!("{}  ", obelus_i18n::discussion::files_heading()),
+        Ink::Heading(2),
+    );
     if said.changed.is_empty() && said.files == 0 {
-        return vec![Row::said(vec![heading, Span::new("None", Ink::Aside)])];
+        return vec![Row::said(vec![
+            heading,
+            Span::new(obelus_i18n::discussion::none(), Ink::Aside),
+        ])];
     }
     let open = folding.is_open(Fold::Files, &[]);
     let mut rows = vec![Row {
@@ -559,7 +565,7 @@ fn files(said: &Discussion, folding: &Folding, width: u16) -> Vec<Row> {
         .saturating_sub(said.changed.len());
     if more > 0 {
         rows.push(Row::said(vec![Span::new(
-            format!("  And {more} more, on GitHub"),
+            format!("  {}", obelus_i18n::discussion::more_on_github(more)),
             Ink::Aside,
         )]));
     }
@@ -603,20 +609,26 @@ fn cut_from_the_left(path: &str, room: usize) -> String {
 /// anything about, and fourteen rows of them would push what was said off
 /// the screen for a fact one count says.
 fn checks(checks: &[Check], folding: &Folding) -> Vec<Row> {
-    let heading = Span::new("Checks  ", Ink::Heading(2));
+    let heading = Span::new(
+        format!("{}  ", obelus_i18n::discussion::checks_heading()),
+        Ink::Heading(2),
+    );
     if checks.is_empty() {
-        return vec![Row::said(vec![heading, Span::new("None", Ink::Aside)])];
+        return vec![Row::said(vec![
+            heading,
+            Span::new(obelus_i18n::discussion::none(), Ink::Aside),
+        ])];
     }
     let count = |stands: Stands| checks.iter().filter(|check| check.stands == stands).count();
     // Worst first, so the count that matters is the one the eye lands on.
     let kinds = [
-        (Stands::Failed, "\u{2717}", "failed", Ink::Removed),
-        (Stands::Running, "\u{25cc}", "running", Ink::Doubtful),
-        (Stands::Passed, "\u{2713}", "passed", Ink::Added),
-        (Stands::Skipped, "\u{2013}", "skipped", Ink::Aside),
+        (Stands::Failed, "\u{2717}", Ink::Removed),
+        (Stands::Running, "\u{25cc}", Ink::Doubtful),
+        (Stands::Passed, "\u{2713}", Ink::Added),
+        (Stands::Skipped, "\u{2013}", Ink::Aside),
     ];
     let mut summary = vec![heading];
-    for (stands, mark, said, ink) in kinds {
+    for (stands, mark, ink) in kinds {
         let count = count(stands);
         if count == 0 {
             continue;
@@ -624,7 +636,13 @@ fn checks(checks: &[Check], folding: &Folding) -> Vec<Row> {
         if summary.len() > 1 {
             summary.push(Span::new(" \u{b7} ", Ink::Aside));
         }
-        summary.push(Span::new(format!("{mark} {count} {said}"), ink));
+        let said = match stands {
+            Stands::Failed => obelus_i18n::discussion::checks_failed(count),
+            Stands::Running => obelus_i18n::discussion::checks_running(count),
+            Stands::Passed => obelus_i18n::discussion::checks_passed(count),
+            Stands::Skipped => obelus_i18n::discussion::checks_skipped(count),
+        };
+        summary.push(Span::new(format!("{mark} {said}"), ink));
     }
     // A heading folds only where opening it shows something: with nothing
     // but failures and checks still running, every name is already there.
@@ -639,7 +657,7 @@ fn checks(checks: &[Check], folding: &Folding) -> Vec<Row> {
         true => &kinds[..],
         false => &kinds[..2],
     };
-    for (stands, mark, _, ink) in named {
+    for (stands, mark, ink) in named {
         for check in checks.iter().filter(|check| check.stands == *stands) {
             // The name is the link, where the check has a page: where it
             // failed is told there, and nowhere here.
@@ -663,7 +681,10 @@ fn checks(checks: &[Check], folding: &Folding) -> Vec<Row> {
 /// out as the markdown it is.
 fn comments(said: &[Comment], folding: &Folding, width: u16) -> Vec<Row> {
     if said.is_empty() {
-        return vec![Row::said(vec![Span::new("No comments", Ink::Aside)])];
+        return vec![Row::said(vec![Span::new(
+            obelus_i18n::discussion::no_comments(),
+            Ink::Aside,
+        )])];
     }
     let now = std::time::SystemTime::now();
     let ago = |when: Option<i64>| {
@@ -697,7 +718,10 @@ fn comments(said: &[Comment], folding: &Folding, width: u16) -> Vec<Row> {
                     None => on.path.clone(),
                 };
                 let name = 0..place.len();
-                heading.row.spans.push(Span::new("  on ", Ink::Aside));
+                heading.row.spans.push(Span::new(
+                    format!("  {} ", obelus_i18n::discussion::on()),
+                    Ink::Aside,
+                ));
                 heading
                     .row
                     .spans
@@ -705,13 +729,17 @@ fn comments(said: &[Comment], folding: &Folding, width: u16) -> Vec<Row> {
                 let mut after = ago(comment.when);
                 match comment.replies.len() {
                     0 => {}
-                    1 => after.push_str(" \u{b7} 1 reply"),
-                    replies => after.push_str(&format!(" \u{b7} {replies} replies")),
+                    replies => after.push_str(&format!(
+                        " \u{b7} {}",
+                        obelus_i18n::discussion::replies(replies)
+                    )),
                 }
                 if on.resolved {
-                    after.push_str(" \u{b7} Resolved");
+                    after.push_str(" \u{b7} ");
+                    after.push_str(obelus_i18n::discussion::resolved());
                 } else if on.outdated {
-                    after.push_str(" \u{b7} Outdated");
+                    after.push_str(" \u{b7} ");
+                    after.push_str(obelus_i18n::discussion::outdated());
                 }
                 heading.row.spans.push(Span::new(after, Ink::Aside));
                 if let Some(line) = linked {
@@ -817,23 +845,27 @@ fn hunk(lines: &str, width: u16) -> Vec<Row> {
         .collect()
 }
 
+/// What a page's rows were laid out against: a width, and the language
+/// Obelus's own words in them were said in.
+type LaidAt = (u16, obelus_i18n::Language);
+
 /// What a page says about why `gh` said nothing.
 #[must_use]
 pub fn unlisted(why: &Unlisted) -> String {
     match why {
-        Unlisted::NoGh => "Listing pull requests needs gh, which is not installed".to_string(),
-        Unlisted::SignedOut => "Not signed in to GitHub: gh auth login signs in".to_string(),
-        Unlisted::Failed(why) => format!("GitHub would not answer: {why}"),
+        Unlisted::NoGh => obelus_i18n::discussion::no_gh().to_string(),
+        Unlisted::SignedOut => obelus_i18n::discussion::signed_out().to_string(),
+        Unlisted::Failed(why) => obelus_i18n::discussion::github_failed(why.as_str()),
     }
 }
 
 /// What the row naming a comment says it did.
-const fn what_it_did(did: Did) -> &'static str {
+fn what_it_did(did: Did) -> &'static str {
     match did {
-        Did::Commented => "commented",
-        Did::Approved => "approved",
-        Did::RequestedChanges => "requested changes",
-        Did::Dismissed => "was dismissed",
+        Did::Commented => obelus_i18n::discussion::commented(),
+        Did::Approved => obelus_i18n::discussion::approved(),
+        Did::RequestedChanges => obelus_i18n::discussion::requested_changes(),
+        Did::Dismissed => obelus_i18n::discussion::dismissed(),
     }
 }
 
@@ -902,9 +934,11 @@ pub struct DiscussionView {
     refused: Option<Unlisted>,
     /// What the reader has opened and shut.
     folding: Folding,
-    /// The rows as they were last laid out, and the width they were laid
-    /// out at. Dropped by everything that changes what there is to lay out.
-    laid: std::cell::RefCell<Option<(u16, Vec<Row>)>>,
+    /// The rows as they were last laid out, and the width and the language
+    /// they were laid out at -- the headings and the counts are Obelus's
+    /// words, and the reader can change their language with the page open.
+    /// Dropped by everything that changes what there is to lay out.
+    laid: std::cell::RefCell<Option<(LaidAt, Vec<Row>)>>,
     /// How many times what there is to lay out has changed -- see
     /// [`Self::changes`].
     changes: u64,
@@ -1039,11 +1073,12 @@ impl DiscussionView {
 
     /// The rows, laid out or remembered from the last time they were.
     fn laid_out(&self, width: u16) -> Vec<Row> {
+        let laid_at = (width, obelus_i18n::spoken());
         if let Some(rows) = self
             .laid
             .borrow()
             .as_ref()
-            .filter(|(at, _)| *at == width)
+            .filter(|(at, _)| *at == laid_at)
             .map(|(_, rows)| rows.clone())
         {
             return rows;
@@ -1055,7 +1090,7 @@ impl DiscussionView {
             &self.folding,
             width,
         );
-        *self.laid.borrow_mut() = Some((width, rows.clone()));
+        *self.laid.borrow_mut() = Some((laid_at, rows.clone()));
         rows
     }
 

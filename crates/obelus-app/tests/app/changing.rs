@@ -107,7 +107,7 @@ fn every_file_a_rename_touches_is_opened_and_left_unwritten() {
     // say has been read.
     let note = app.note().unwrap_or_default().to_string();
     assert!(
-        note.contains('2') && note.contains("nothing written"),
+        note.contains('2') && note.contains("not saved yet"),
         "the note does not say what changed: {note:?}"
     );
 
@@ -700,7 +700,9 @@ fn nothing_offered_is_said_rather_than_listed() {
     app.actions_for_test(json!([]));
     assert!(app.picker().is_none(), "an empty list was opened");
     assert!(
-        app.note().unwrap_or_default().contains("Nothing to do"),
+        app.note()
+            .unwrap_or_default()
+            .contains("No code actions here"),
         "the reader was not told"
     );
 }

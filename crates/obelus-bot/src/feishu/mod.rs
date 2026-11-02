@@ -22,31 +22,31 @@ pub static DESCRIPTION: Description = Description {
     fields: &[
         Field {
             key: "app_id",
-            name: "App ID",
-            about: "From Credentials & Basic Info, on the app's page",
+            name: obelus_i18n::bot::feishu_app_id,
+            about: obelus_i18n::bot::feishu_app_id_about,
             kind: FieldKind::Text,
         },
         Field {
             key: "app_secret",
-            name: "App Secret",
-            about: "From the same page, beside the App ID",
+            name: obelus_i18n::bot::feishu_app_secret,
+            about: obelus_i18n::bot::feishu_app_secret_about,
             kind: FieldKind::Secret { looks_like: "" },
         },
         Field {
             key: "domain",
-            name: "Domain",
-            about: "feishu for Feishu, lark for Lark outside China",
+            name: obelus_i18n::bot::feishu_domain,
+            about: obelus_i18n::bot::feishu_domain_about,
             kind: FieldKind::Choice(DOMAINS),
         },
     ],
     setup: Setup::Steps {
-        name: "Developer console",
+        name: obelus_i18n::bot::feishu_console,
         // One app per machine, for the reason Slack's row gives: the long
         // connection hands each event to one of an app's connections at
         // random.
         // And the card callback by the same connection, or a question's
         // card draws and refuses every press with 200340.
-        about: "One app per machine: a custom app with the bot on, long connection for events and for the card callback",
+        about: obelus_i18n::bot::feishu_console_about,
         url: "https://open.feishu.cn/app",
     },
     begin: "Start a topic here to talk to an agent.",

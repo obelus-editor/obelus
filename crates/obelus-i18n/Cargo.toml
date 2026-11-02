@@ -1,0 +1,23 @@
+[package]
+name = "obelus-i18n"
+description = "What Obelus says, in the reader's language"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Cargo inherits nothing here on its own; every member says it.
+[lints]
+workspace = true
+
+[dependencies]
+fluent-bundle.workspace = true
+sys-locale.workspace = true
+tracing.workspace = true
+
+[build-dependencies]
+fluent-syntax.workspace = true
+
+# The generator, again, for its own tests: what it refuses is the point of
+# it, and a build script has no tests of its own.
+[dev-dependencies]
+fluent-syntax.workspace = true

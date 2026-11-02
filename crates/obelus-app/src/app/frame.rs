@@ -180,9 +180,9 @@ impl App {
             .conversation()
             .is_some_and(|talk| talk.held && talk.card.is_some());
         let doing = match self.talking() {
-            _ if held => Some("It has a question for when you stop typing"),
-            Talking::Starting => Some("Starting\u{2026}"),
-            Talking::Thinking => Some("Thinking\u{2026}"),
+            _ if held => Some(obelus_i18n::app::question_waiting()),
+            Talking::Starting => Some(obelus_i18n::chat::starting()),
+            Talking::Thinking => Some(obelus_i18n::app::thinking()),
             Talking::Nobody | Talking::Idle | Talking::Ready | Talking::Gone => None,
         };
         let can = self.talking() == Talking::Thinking && self.ctrl_enter_arrives;

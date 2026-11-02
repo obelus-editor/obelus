@@ -9,11 +9,11 @@ screen 64x20  editor 64x18  status 64x1
  6|      ║ ▀█████▀ ██████▀ ███████ ███████ ▀█████▀ ▀█████▀ ║       
  7|      ╚════════════════════ v1.2.3 ═════════════════════╝       
  8|                                                                
- 9|             F1 Open a file          F3 Changed files           
+ 9|             F1 Open file            F3 Changed files           
 10|                                                                
-11|             F6 Search files         F4 Ask the agent           
+11|             F6 Find in files        F4 Ask the agent           
 12|                                                                
-13|         Ctrl+p Run a command    Ctrl+q Leave Obelus            
+13|         Ctrl+p Run command      Ctrl+q Quit                    
 14|                                                                
 15|                 obelus-editor.github.io/obelus                 
 16|                                                                
@@ -30,11 +30,11 @@ screen 64x20  editor 64x18  status 64x1
  6|aaaaaababbbbbccacccddddaddeeeeeaffffffgaggggghhahhhiiiiaiaaaaaaa
  7|aaaaaabbbbbbbccccccdddddddeaeeeeffafffggggggghhhhhhiiiiiiaaaaaaa
  8|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 9|aaaaaaaaaaaaaaaajjjjjjjjjjjaaaaaaaaaaaaajjjjjjjjjjjjjaaaaaaaaaaa
+ 9|aaaaaaaaaaaaaaaajjjjjjjjjaaaaaaaaaaaaaaajjjjjjjjjjjjjaaaaaaaaaaa
 10|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-11|aaaaaaaaaaaaaaaajjjjjjjjjjjjaaaaaaaaaaaajjjjjjjjjjjjjaaaaaaaaaaa
+11|aaaaaaaaaaaaaaaajjjjjjjjjjjjjaaaaaaaaaaajjjjjjjjjjjjjaaaaaaaaaaa
 12|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-13|aaaaaaaaaaaaaaaajjjjjjjjjjjjjaaaaaaaaaaajjjjjjjjjjjjaaaaaaaaaaaa
+13|aaaaaaaaaaaaaaaajjjjjjjjjjjaaaaaaaaaaaaajjjjaaaaaaaaaaaaaaaaaaaa
 14|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 15|aaaaaaaaaaaaaaajjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjaaaaaaaaaaaaaaa
 16|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

@@ -8,7 +8,7 @@
 
 use crossterm::event::KeyCode;
 use obelus_app::{
-    app::{App, dispatch},
+    app::{App, Whence, dispatch},
     event::Event,
 };
 use obelus_command::Command;
@@ -374,9 +374,9 @@ fn a_theme_from_the_registry_is_offered_and_said_to_be() {
         "{:?}",
         app.themes()
     );
-    assert_eq!(app.theme_whence("rain"), Some("Downloaded"));
-    assert_eq!(app.theme_whence("mine"), Some("Local"));
-    assert_eq!(app.theme_whence("shared"), Some("Local"));
+    assert_eq!(app.theme_whence("rain"), Some(Whence::Downloaded));
+    assert_eq!(app.theme_whence("mine"), Some(Whence::Local));
+    assert_eq!(app.theme_whence("shared"), Some(Whence::Local));
     assert_eq!(app.theme_whence("dark"), None);
     assert_eq!(
         app.theme_called("shared")
@@ -1631,7 +1631,7 @@ fn a_name_the_list_has_not_got_is_looked_for_in_more_themes() {
     support::type_text(&mut app, "zzqx");
     let dump = support::render(&mut app, 70, 14);
     assert!(
-        support::text_block(&dump).contains("Enter looks in More themes"),
+        support::text_block(&dump).contains("Press Enter to look in More themes"),
         "the empty list does not say where else to look:\n{dump}"
     );
 

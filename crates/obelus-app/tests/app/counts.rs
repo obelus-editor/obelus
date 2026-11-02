@@ -457,7 +457,7 @@ fn the_palette_opens_over_the_counts() {
 fn the_counts_say_what_their_keys_do() {
     let mut app = open(76, 18);
     press(&mut app, KeyCode::Tab);
-    assert_eq!(support::usable_here(&mut app), ["Open"]);
+    assert_eq!(support::usable_here(&mut app), ["Expand"]);
 
     // On a file it reads it instead: one key, two acts.
     press(&mut app, KeyCode::Enter);
@@ -465,7 +465,7 @@ fn the_counts_say_what_their_keys_do() {
     press(&mut app, KeyCode::Down);
     assert_eq!(
         support::usable_here(&mut app),
-        ["Read it"],
+        ["Open"],
         "enter does not say what it does"
     );
 }
@@ -473,14 +473,14 @@ fn the_counts_say_what_their_keys_do() {
 /// A key chosen from the palette over the counts is pressed in them.
 ///
 /// Broken deliberately by giving the counts no keys in the palette
-/// (`App::keys_of`): there was no "Open" to choose, and nothing opened.
+/// (`App::keys_of`): there was no "Expand" to choose, and nothing opened.
 #[test]
 fn a_key_chosen_from_the_palette_is_pressed_in_the_counts() {
     let mut app = open(76, 18);
     press(&mut app, KeyCode::Tab);
     let before = app.counts().expect("the counts").rows().len();
     support::press_control(&mut app, 'p');
-    support::type_text(&mut app, "Open");
+    support::type_text(&mut app, "Expand");
     press(&mut app, KeyCode::Enter);
     assert!(app.palette().is_none(), "the palette stayed up");
     assert!(

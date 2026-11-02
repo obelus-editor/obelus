@@ -127,9 +127,18 @@ pub fn hints(counts: &Counts) -> Vec<Hint> {
     let folds = on.and_then(|row| row.open);
     vec![{
         let (word, about) = match folds {
-            Some(true) => ("Close", "Fold away what is under this row"),
-            Some(false) => ("Open", "Show what is under this row"),
-            None => ("Read it", "Open this file"),
+            Some(true) => (
+                obelus_i18n::counts::collapse(),
+                obelus_i18n::counts::collapse_about(),
+            ),
+            Some(false) => (
+                obelus_i18n::counts::expand(),
+                obelus_i18n::counts::expand_about(),
+            ),
+            None => (
+                obelus_i18n::counts::open(),
+                obelus_i18n::counts::open_about(),
+            ),
         };
         Hint::new(bare(KeyCode::Enter), word)
             .about(about)
@@ -226,17 +235,17 @@ impl Layout {
     fn headings(self) -> Vec<(&'static str, u16)> {
         let mut headings = Vec::with_capacity(5);
         if self.columns.files {
-            headings.push(("Files", FILES_WIDTH));
+            headings.push((obelus_i18n::counts::files(), FILES_WIDTH));
         }
-        headings.push(("Lines", NUMBER_WIDTH));
+        headings.push((obelus_i18n::counts::lines(), NUMBER_WIDTH));
         if self.columns.code {
-            headings.push(("Code", NUMBER_WIDTH));
+            headings.push((obelus_i18n::counts::code(), NUMBER_WIDTH));
         }
         if self.columns.comments {
-            headings.push(("Comments", NUMBER_WIDTH));
+            headings.push((obelus_i18n::counts::comments(), NUMBER_WIDTH));
         }
         if self.columns.blanks {
-            headings.push(("Blank", NUMBER_WIDTH));
+            headings.push((obelus_i18n::counts::blanks(), NUMBER_WIDTH));
         }
         headings
     }
@@ -321,9 +330,9 @@ impl Widget for CountsView<'_> {
                 cells,
                 body,
                 if self.counts.is_counting() {
-                    "Counting…"
+                    obelus_i18n::counts::counting()
                 } else {
-                    "Nothing here to count"
+                    obelus_i18n::counts::nothing_to_count()
                 },
                 self.theme,
             );

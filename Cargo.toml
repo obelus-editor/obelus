@@ -52,6 +52,7 @@ obelus-font = { path = "crates/obelus-font" }
 obelus-front = { path = "crates/obelus-front" }
 obelus-git = { path = "crates/obelus-git" }
 obelus-github = { path = "crates/obelus-github" }
+obelus-i18n = { path = "crates/obelus-i18n" }
 obelus-icons = { path = "crates/obelus-icons" }
 obelus-keymap = { path = "crates/obelus-keymap" }
 obelus-jobs = { path = "crates/obelus-jobs" }
@@ -526,6 +527,14 @@ windows-sys = { version = "0.61.2", features = [
 # resource in a PE, and there is nowhere else for Explorer or a taskbar to
 # read a program's icon from.
 winresource = "0.1.31"
+
+# What Obelus says, in the reader's language (`obelus-i18n`). Fluent rather
+# than a table of strings because a plural and the order a sentence puts its
+# parts in belong to the language, not to the code that asks for the
+# sentence. The syntax crate is the build's: the messages are read there,
+# checked against each other and made into a function each.
+fluent-bundle = "0.16"
+fluent-syntax = "0.12"
 
 # Which language the reader reads, which on Windows decides which face Han is
 # drawn in: see `obelus-gui`'s `cascade.rs`. The crate cosmic-text asks the

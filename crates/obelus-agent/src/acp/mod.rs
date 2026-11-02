@@ -71,9 +71,9 @@ pub use agent_client_protocol::schema::v1::SessionId;
 use futures::channel::mpsc;
 use obelus_sink::Sink;
 pub use said::{
-    Answer, Ask, BACKGROUNDED, Call, Category, Change, Choice, Chosen, Cost, Field, How, Incoming,
-    Kind, Listed, Login, Order, Place, Question, Reply, Setting, Step, Takes, Turn, Update, Usage,
-    Value,
+    Answer, Ask, BACKGROUNDED, Call, Category, Change, Choice, Chosen, Cost, Doing, Field, How,
+    Incoming, Kind, Listed, Login, Order, Place, Question, Reply, Setting, Step, Takes, Turn,
+    Update, Usage, Value,
 };
 
 /// Which connection to an agent something came from, by a count kept for

@@ -218,7 +218,7 @@ fn let_in(mut stream: TcpStream, key: &[u8], windows: &Windows, knocking: Knocki
     if !obelus_front::link::signed_by(key, &challenge, &knock.signed) {
         obelus_wire::write(
             &mut stream,
-            &Answered::Refused("That is not this server's key".to_string()),
+            &Answered::Refused(obelus_i18n::remote::wrong_key().to_string()),
         )?;
         anyhow::bail!("a knock not signed with the key");
     }
@@ -330,6 +330,7 @@ fn started(knock: &Knock, windows: &Windows) -> Result<Entered> {
             front: knock.front.clone(),
             size: knock.size,
             path: knock.path.clone(),
+            locale: knock.locale.clone(),
         },
     );
     let reading: Arc<Mutex<Option<Reader>>> = Arc::default();

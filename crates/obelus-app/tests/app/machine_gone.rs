@@ -47,7 +47,7 @@ fn the_page_says_which_machine_and_what_can_be_done() {
         "Trying again",
         "Try again",
         "Work on this machine",
-        "Leave",
+        "Quit",
     ] {
         assert!(
             screen.contains(said),

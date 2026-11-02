@@ -102,7 +102,7 @@ fn it_refuses_to_move_onto_something_that_is_there() {
     dispatch::dispatch(&mut app, Command::FileRename);
     answer(&mut app, "src/main.rs");
 
-    assert_eq!(app.note(), Some("src/main.rs is already there"));
+    assert_eq!(app.note(), Some("src/main.rs already exists"));
     assert!(scratch.join("src/hint.rs").exists(), "it moved anyway");
     assert_eq!(
         std::fs::read_to_string(scratch.join("src/main.rs")).expect("reading it"),
@@ -362,7 +362,10 @@ fn the_question_is_on_the_row_the_caret_is_in() {
     let rows = support::text_block(&dump);
     let last = rows.lines().last().unwrap_or_default();
     assert!(
-        last.contains(&format!("Call it: {}", support::as_shown("src/hint.rs"))),
+        last.contains(&format!(
+            "Rename or move to: {}",
+            support::as_shown("src/hint.rs")
+        )),
         "the status row is not the question:\n{dump}"
     );
 

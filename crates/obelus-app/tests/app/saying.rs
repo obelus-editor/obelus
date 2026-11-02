@@ -116,7 +116,7 @@ fn a_save_says_nothing_the_row_does_not() {
         .expect("a status row")
         .to_string();
     assert!(
-        status.contains("hint.rs") && !status.contains("unsaved"),
+        status.contains("hint.rs") && !status.contains("Unsaved"),
         "the row does not say it was written:\n{dump}"
     );
 
@@ -158,7 +158,7 @@ fn an_agents_change_to_an_open_file_says_nothing_the_screen_does_not() {
         .expect("a status row")
         .to_string();
     assert!(
-        status.contains("unsaved"),
+        status.contains("Unsaved"),
         "the row does not say the file is not written:\n{dump}"
     );
 }
@@ -232,7 +232,7 @@ fn a_note_alone_on_the_row_is_the_row() {
     dispatch::dispatch(&mut app, Command::FileNew);
     support::type_text(&mut app, "src");
     support::press(&mut app, crossterm::event::KeyCode::Enter);
-    assert_eq!(app.note(), Some("src is already there"));
+    assert_eq!(app.note(), Some("src already exists"));
     assert_eq!(ink(&mut app), wrong_ink(), "a refusal is not in the red");
 
     // And a report there is the row's own ink: there is no file's name

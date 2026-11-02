@@ -57,7 +57,7 @@ fn rows(said: &str, others: usize, room: u16) -> Vec<String> {
     // Counted rather than listed. One complaint is a box and five is the
     // screen, and the list of problems is where they are all said.
     if others > 0 {
-        rows.push(format!("and {others} more here"));
+        rows.push(obelus_i18n::editor::more_problems_here(others));
     }
     rows.truncate(usize::from(MOST_ROWS));
     rows

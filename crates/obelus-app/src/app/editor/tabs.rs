@@ -57,8 +57,8 @@ impl App {
                     }
                     Document::Chat(talk) => self
                         .conversation_name(talk, notes)
-                        .unwrap_or_else(|| "A conversation".to_string()),
-                    Document::Notes(_) => "Todo".to_string(),
+                        .unwrap_or_else(|| obelus_i18n::editing::a_conversation().to_string()),
+                    Document::Notes(_) => obelus_i18n::status::notes().to_string(),
                     Document::Terminal(terminal) => terminal.name().to_string(),
                     Document::Discussion(page) => page.name(),
                 };

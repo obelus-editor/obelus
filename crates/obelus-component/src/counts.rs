@@ -315,10 +315,10 @@ impl Counts {
     #[must_use]
     pub fn tabs(&self) -> Vec<String> {
         vec![
-            "Languages".to_string(),
+            obelus_i18n::counts::languages().to_string(),
             match self.only {
                 Some(language) => language.to_string(),
-                None => "Files".to_string(),
+                None => obelus_i18n::counts::files().to_string(),
             },
         ]
     }
@@ -368,7 +368,7 @@ impl Counts {
                         icon: obelus_icons::enabled().then_some(obelus_icons::ui::TREE),
                         // Capitalised like the language names under it:
                         // it sits in that column and is read down it.
-                        name: "All".to_string(),
+                        name: obelus_i18n::counts::all().to_string(),
                         depth: 0,
                         open: None,
                         files: Some(counted.files.len()),

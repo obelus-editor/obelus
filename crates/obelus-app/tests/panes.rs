@@ -470,7 +470,7 @@ fn the_welcome_screen_is_under_the_settings() {
             .collect(),
     );
     assert!(
-        behind.contains("Open a file"),
+        behind.contains("Open file"),
         "the settings were put over a blank page:\n{behind}"
     );
     let shown = text(
@@ -479,7 +479,7 @@ fn the_welcome_screen_is_under_the_settings() {
             .collect(),
     );
     assert!(
-        !shown.contains("Open a file"),
+        !shown.contains("Open file"),
         "the welcome screen shows through the settings in a terminal:\n{shown}"
     );
     drop(under);
@@ -515,7 +515,7 @@ fn the_welcome_screen_is_under_the_settings() {
     );
     assert!(shown.contains("Rust"), "the counts are not up:\n{shown}");
     assert!(
-        !shown.contains("Open a file"),
+        !shown.contains("Open file"),
         "the welcome screen shows through the counts in a terminal:\n{shown}"
     );
 }

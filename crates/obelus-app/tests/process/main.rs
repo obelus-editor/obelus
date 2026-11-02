@@ -20,6 +20,7 @@ mod bot;
 mod choosing_a_project;
 mod connecting;
 mod glyphs;
+mod language;
 mod reopening;
 mod settings;
 mod starting;

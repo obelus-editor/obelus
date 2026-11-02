@@ -34,7 +34,7 @@ use unicode_width::{UnicodeWidthChar as _, UnicodeWidthStr};
 
 use crate::{Screen, put, write};
 
-/// The commands worth naming, with the words this screen says them in.
+/// The commands worth naming, with the message this screen says them in.
 ///
 /// Ways *in*, which is what this screen is for: a file, a file that has
 /// changed, a search of the project, the agent, everything by name, and the way
@@ -47,15 +47,25 @@ use crate::{Screen, put, write};
 /// wide, beside a key and a picture of what they open. What is left to say
 /// there is which *thing* -- a file, the files that changed, the agent --
 /// and the verb is the key. Thirteen columns is what two of them and their
-/// caps fit into, which is the other half of why they are short.
-const OFFERED: &[(Command, &str)] = &[
-    (Command::FileOpen, "Open a file"),
-    (Command::FileChanged, "Changed files"),
-    (Command::SearchProject, "Search files"),
-    (Command::ConversationSelect, "Ask the agent"),
-    (Command::CommandPalette, "Run a command"),
-    (Command::Quit, "Leave Obelus"),
+/// caps fit into, which is the other half of why they are short -- and,
+/// where a palette's title fits in that room, the screen says the title.
+///
+/// Functions rather than the words, because the words are the reader's
+/// language, which can change while this screen is up.
+const OFFERED: &[(Command, Words)] = &[
+    (Command::FileOpen, obelus_i18n::welcome::open_file),
+    (Command::FileChanged, obelus_i18n::welcome::changed_files),
+    (Command::SearchProject, obelus_i18n::welcome::find_in_files),
+    (
+        Command::ConversationSelect,
+        obelus_i18n::welcome::ask_the_agent,
+    ),
+    (Command::CommandPalette, obelus_i18n::welcome::run_command),
+    (Command::Quit, obelus_i18n::welcome::quit),
 ];
+
+/// A message, asked for when the screen is drawn.
+type Words = fn() -> &'static str;
 
 /// Where Obelus's own website is.
 ///
@@ -168,18 +178,21 @@ fn label(version: &str) -> String {
 /// Beside the version rather than on a row of its own, for the reason the
 /// version is in the edge: it is a fact about the version.
 fn news(newer: &str) -> String {
-    format!("v{newer} is out")
+    obelus_i18n::welcome::newer_is_out(newer)
 }
 
-/// The version and the news, as one run of text, and which characters of
-/// it are the news.
+/// The version and the news, as one run of text, and which columns of it
+/// are the news.
+///
+/// Columns and not characters: the news is in the reader's language, and a
+/// character of Chinese is two of them.
 fn said(version: &str, newer: Option<&str>) -> (String, std::ops::Range<usize>) {
     let version = label(version);
     match newer {
         Some(newer) => {
             let news = news(newer);
-            let from = version.chars().count() + " \u{b7} ".chars().count();
-            let to = from + news.chars().count();
+            let from = obelus_text::text_width(&version) + obelus_text::text_width(" \u{b7} ");
+            let to = from + obelus_text::text_width(&news);
             (format!("{version} \u{b7} {news}"), from..to)
         }
         None => (version, 0..0),
@@ -201,10 +214,12 @@ fn foot(version: &str, newer: Option<&str>) -> (String, std::ops::Range<usize>) 
     let Some(edge) = WORDMARK.last() else {
         return (String::new(), 0..0);
     };
+    // The edge is a column a character, which is what lets it be cut by
+    // characters below while the run set into it is measured in columns.
     let width = edge.chars().count();
     let fits = |(said, news): (String, std::ops::Range<usize>)| {
         let set = format!(" {said} ");
-        (width >= set.chars().count() + 4).then_some((set, news))
+        (width >= obelus_text::text_width(&set) + 4).then_some((set, news))
     };
     let set = newer
         .and_then(|newer| fits(said(version, Some(newer))))
@@ -212,7 +227,7 @@ fn foot(version: &str, newer: Option<&str>) -> (String, std::ops::Range<usize>) 
     let Some((set, news)) = set else {
         return ((*edge).to_string(), 0..0);
     };
-    let taken = set.chars().count();
+    let taken = obelus_text::text_width(&set);
     let at = (width - taken) / 2;
     let foot = edge
         .chars()
@@ -432,6 +447,9 @@ impl WelcomeView<'_> {
             let row = if at == last { foot.as_str() } else { *row };
             let mut column = 0u16;
             for character in row.chars() {
+                // A column a character, but for the news in the foot,
+                // whose words may be wider.
+                let mut wide = 1;
                 if character != ' ' {
                     let step = u32::from(column * RAMP_STEPS / width.max(1));
                     // The news in plain ink, still while the mark moves
@@ -442,9 +460,9 @@ impl WelcomeView<'_> {
                         true => self.theme.foreground,
                         false => sheen(from, to, step, self.phase),
                     };
-                    put(cells, left + column, y, character, Style::new().fg(ink));
+                    wide = put(cells, left + column, y, character, Style::new().fg(ink));
                 }
-                column = column.saturating_add(1);
+                column = column.saturating_add(wide);
             }
             y += 1;
         }
@@ -510,15 +528,13 @@ impl WelcomeView<'_> {
             .or_else(|| fits(said(self.version, None)))
             && let Ok(offset) = u16::try_from(usize::from(width).saturating_sub(said.width()))
         {
-            for (at, character) in said.chars().enumerate() {
-                let ink = match news.contains(&at) {
+            let mut at = 0u16;
+            for character in said.chars() {
+                let ink = match news.contains(&usize::from(at)) {
                     true => self.theme.foreground,
                     false => self.theme.gutter,
                 };
-                let Ok(at) = u16::try_from(at) else {
-                    continue;
-                };
-                put(
+                at += put(
                     cells,
                     left + offset + at,
                     y,
@@ -604,7 +620,7 @@ impl WelcomeView<'_> {
                 Some(Hint {
                     icon: obelus_icons::enabled().then(|| obelus_icons::for_command(*command)),
                     key: chord.label(),
-                    text: (*text).to_string(),
+                    text: text().to_string(),
                 })
             })
             .collect()

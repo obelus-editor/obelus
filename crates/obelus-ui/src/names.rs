@@ -24,21 +24,15 @@ use crate::{
 /// band up and down under a reader who is reading it.
 const LIST_ROWS: u16 = 10;
 
-/// What the lower half is.
-///
-/// On the rule rather than in a row of its own: a boundary that says what
-/// is under it is still one boundary.
-const OFFERED: &str = " On this machine ";
-
-/// What a name that is in the list but not on this machine says about
-/// itself.
-///
-/// Said rather than hidden, and not a refusal: one settings file is read on
-/// every machine the reader uses, so a name that means nothing here means
-/// something there -- and a list that quietly dropped it would be a list
-/// that changed their answer for them.
-const ELSEWHERE: &str = "Not on this machine";
-
+// What the lower half is (`names::on-this-machine`) is said on the rule
+// rather than in a row of its own: a boundary that says what is under it is
+// still one boundary.
+//
+// What a name that is in the list but not on this machine says about itself
+// (`names::not-on-this-machine`) is said rather than hidden, and not a
+// refusal: one settings file is read on every machine the reader uses, so a
+// name that means nothing here means something there -- and a list that
+// quietly dropped it would be a list that changed their answer for them.
 /// What the keys do here, and which of them do anything now -- both said
 /// on the list's own row (`crate::said_on_its_row`), since the palette lets
 /// go of the names rather than opening over them.
@@ -51,8 +45,11 @@ pub fn hints(names: &Names) -> Vec<Hint> {
     vec![
         {
             let (word, about) = match on.is_some_and(Row::chosen) {
-                true => ("Take out", "Take this name out of the list"),
-                false => ("Add", "Add this name to the list"),
+                true => (
+                    obelus_i18n::names::remove(),
+                    obelus_i18n::names::remove_about(),
+                ),
+                false => (obelus_i18n::names::add(), obelus_i18n::names::add_about()),
             };
             Hint::new(bare(KeyCode::Enter), word)
                 .about(about)
@@ -61,11 +58,14 @@ pub fn hints(names: &Names) -> Vec<Hint> {
         },
         // One act in two directions, which is why it is one hint: the
         // notes move a row with the same chord.
-        Hint::new(chord(KeyCode::Up, KeyModifiers::ALT), "Move")
-            .or(chord(KeyCode::Down, KeyModifiers::ALT))
-            .about("Change the order the names are tried in")
-            .when(on.is_some_and(Row::chosen))
-            .said(true),
+        Hint::new(
+            chord(KeyCode::Up, KeyModifiers::ALT),
+            obelus_i18n::names::move_it(),
+        )
+        .or(chord(KeyCode::Down, KeyModifiers::ALT))
+        .about(obelus_i18n::names::move_about())
+        .when(on.is_some_and(Row::chosen))
+        .said(true),
     ]
 }
 
@@ -193,7 +193,7 @@ impl NamesView<'_> {
                     cells,
                     room.x + 3,
                     y,
-                    OFFERED,
+                    &format!(" {} ", obelus_i18n::names::on_this_machine()),
                     Style::new().fg(self.theme.gutter).bg(self.theme.background),
                 );
             }
@@ -204,8 +204,8 @@ impl NamesView<'_> {
                 // The sentence keeps its capital and the name keeps its own
                 // spelling.
                 let said = match self.names.otherwise() {
-                    Some(face) => format!("Nothing chosen, so {face}"),
-                    None => "Nothing chosen, so the machine's own monospaced face".to_string(),
+                    Some(face) => obelus_i18n::names::nothing_chosen(face),
+                    None => obelus_i18n::names::nothing_chosen_at_all().to_string(),
                 };
                 crate::nothing(
                     cells,
@@ -278,8 +278,9 @@ impl NamesView<'_> {
         if here {
             return;
         }
-        let width = u16::try_from(obelus_text::text_width(ELSEWHERE)).unwrap_or(0);
+        let elsewhere = obelus_i18n::names::not_on_this_machine();
+        let width = u16::try_from(obelus_text::text_width(elsewhere)).unwrap_or(0);
         let x = room.right().saturating_sub(width + 1);
-        write(cells, x, y, ELSEWHERE, style.fg(self.theme.gutter));
+        write(cells, x, y, elsewhere, style.fg(self.theme.gutter));
     }
 }

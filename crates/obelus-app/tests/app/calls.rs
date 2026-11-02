@@ -120,8 +120,8 @@ fn a_tree_of_calls_on_screen() {
 /// time, so opening a row is exactly one question. And the list's row says
 /// which of the two enter does on the row the reader is on.
 ///
-/// Broken deliberately by the word being `Open` whatever the row, as it
-/// was: the list's row said `Open` on a row enter shuts.
+/// Broken deliberately by the word being `Expand` whatever the row, as it
+/// was: the list's row said `Expand` on a row enter shuts.
 #[test]
 fn enter_opens_a_row_and_closes_it() {
     let (scratch, mut app) = reading("calls-folded");
@@ -158,7 +158,10 @@ fn enter_opens_a_row_and_closes_it() {
             .to_string()
     };
     let open = says(&mut app);
-    assert!(open.contains("Close") && !open.contains("Open"), "{open:?}");
+    assert!(
+        open.contains("Collapse") && !open.contains("Expand"),
+        "{open:?}"
+    );
 
     // And again, which closes it: the same key, the same row.
     support::press(&mut app, KeyCode::Enter);
@@ -168,7 +171,10 @@ fn enter_opens_a_row_and_closes_it() {
         "the key that opened it would not close it"
     );
     let shut = says(&mut app);
-    assert!(shut.contains("Open") && !shut.contains("Close"), "{shut:?}");
+    assert!(
+        shut.contains("Expand") && !shut.contains("Collapse"),
+        "{shut:?}"
+    );
 }
 
 /// Choosing a row goes to the call rather than to the caller: a reader who

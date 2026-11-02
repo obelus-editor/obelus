@@ -201,7 +201,7 @@ where
         // platform is reached through gives up on its own.
         let answered = tokio::time::timeout(ANSWER_WITHIN, attempt(tries))
             .await
-            .unwrap_or_else(|_| Err(Failure::again("no answer in time")));
+            .unwrap_or_else(|_| Err(Failure::again(obelus_i18n::bot::no_answer_in_time())));
         match answered {
             Ok(done) => return Ok(done),
             Err(Failure::Refused(why)) => return Err(Failed::Refused(why)),

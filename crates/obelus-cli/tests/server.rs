@@ -133,6 +133,7 @@ impl Window {
                 size: [80, 24, 0, 0],
                 path: Some(path.to_string()),
                 window: again.map(str::to_string),
+                locale: None,
             },
         )
         .expect("the knock");

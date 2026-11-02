@@ -38,24 +38,6 @@ impl Direction {
     /// and that is what brings them here.
     pub const ALL: [Self; 2] = [Self::Callers, Self::Calls];
 
-    /// What to call it on a tab.
-    #[must_use]
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Callers => "Callers",
-            Self::Calls => "Calls",
-        }
-    }
-
-    /// What to say about an item with nothing this way.
-    #[must_use]
-    pub const fn nothing(self) -> &'static str {
-        match self {
-            Self::Callers => "Nothing calls that",
-            Self::Calls => "That calls nothing",
-        }
-    }
-
     /// The request that asks it.
     #[must_use]
     pub const fn method(self) -> &'static str {

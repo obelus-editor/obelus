@@ -12,7 +12,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::field::Field;
+use crate::{copied::Copied, field::Field};
 
 /// What a prompt is asking for.
 ///
@@ -90,23 +90,25 @@ impl PromptKind {
     #[must_use]
     pub fn label(&self) -> std::borrow::Cow<'static, str> {
         std::borrow::Cow::Borrowed(match self {
-            Self::Told(field) => return format!("{}: ", field.name).into(),
-            Self::Variable { name, .. } => return format!("{name}: ").into(),
-            Self::VariableName { again: false, .. } => "New variable: ",
-            Self::VariableName { again: true, .. } => "A name cannot start with a digit: ",
-            Self::Line => "Line: ",
-            Self::Server => "Connect to: ",
-            Self::ServerKey { .. } => "Key: ",
-            Self::Name => "Rename to: ",
-            // Not "Rename to: ", which is what a symbol's prompt says:
-            // two prompts with the same words on the same row are one
-            // prompt as far as a reader glancing at it is concerned, and
-            // these two change very different things.
-            Self::Path => "Call it: ",
+            Self::Told(field) => return obelus_i18n::prompt::asking_for((field.name)()).into(),
+            Self::Variable { name, .. } => {
+                return obelus_i18n::prompt::asking_for(name.as_str()).into();
+            }
+            Self::VariableName { again: false, .. } => obelus_i18n::prompt::new_variable(),
+            Self::VariableName { again: true, .. } => obelus_i18n::prompt::not_a_digit(),
+            Self::Line => obelus_i18n::prompt::line(),
+            Self::Server => obelus_i18n::prompt::server(),
+            Self::ServerKey { .. } => obelus_i18n::prompt::server_key(),
+            Self::Name => obelus_i18n::prompt::rename_symbol(),
+            // Not what a symbol's prompt says: two prompts with the same
+            // words on the same row are one prompt as far as a reader
+            // glancing at it is concerned, and these two change very
+            // different things.
+            Self::Path => obelus_i18n::prompt::rename_file(),
             // The same argument once more, and this pair is the closer
             // one: both answers are a path, and only the words say
             // whether the file at the end of it is being moved or made.
-            Self::NewPath => "New file: ",
+            Self::NewPath => obelus_i18n::prompt::new_file(),
         })
     }
 
@@ -292,12 +294,12 @@ impl Prompt {
 
     /// What a copy takes from the answer: what is held, or all of it.
     #[must_use]
-    pub fn copied(&self) -> (String, &'static str) {
+    pub fn copied(&self) -> (String, Copied) {
         self.text.copied()
     }
 
     /// The same, and takes it out.
-    pub fn cut(&mut self) -> (String, &'static str) {
+    pub fn cut(&mut self) -> (String, Copied) {
         self.text.cut()
     }
 

@@ -290,7 +290,7 @@ pub(crate) fn branch_badge(head: Option<&obelus_git::Head>) -> String {
     };
     let said = match head {
         obelus_git::Head::Branch(name) => name.as_str(),
-        obelus_git::Head::Detached => "Detached",
+        obelus_git::Head::Detached => obelus_i18n::status::detached(),
     };
     match obelus_icons::enabled() {
         true => format!(
@@ -871,10 +871,12 @@ pub fn prompt_row(
 /// the view's foot says them any more -- so the row a reader looks at
 /// before typing says where they went. In the cap the key table writes, so
 /// a reader who moved the palette sees the key they moved it to.
-pub(crate) const MORE: &str = "More";
+pub(crate) fn more_word() -> &'static str {
+    obelus_i18n::status::more()
+}
 
-/// Where [`MORE`] goes on a row: from `at` cells in, and before `until`, or
-/// not at all. Dropped whole, like every aside on these rows -- half a key
+/// Where [`more_word`] goes on a row: from `at` cells in, and before `until`,
+/// or not at all. Dropped whole, like every aside on these rows -- half a key
 /// is no key.
 pub(crate) fn more(
     cells: &mut CellBuffer,
@@ -888,7 +890,7 @@ pub(crate) fn more(
         return;
     };
     let at = area.x.saturating_add(at);
-    let wanted = crate::cap_width(key) + 1 + text_width(MORE);
+    let wanted = crate::cap_width(key) + 1 + text_width(more_word());
     let Ok(wanted) = u16::try_from(wanted) else {
         return;
     };
@@ -898,26 +900,26 @@ pub(crate) fn more(
     more_at(cells, at, area.y, key, theme);
 }
 
-/// How many columns [`MORE`] and its key take.
+/// How many columns [`more_word`] and its key take.
 pub(crate) fn more_width(key: &str) -> usize {
-    crate::cap_width(key) + 1 + text_width(MORE)
+    crate::cap_width(key) + 1 + text_width(more_word())
 }
 
-/// [`MORE`] and its key, at `x`, wherever the caller has found room.
+/// [`more_word`] and its key, at `x`, wherever the caller has found room.
 fn more_at(cells: &mut CellBuffer, x: u16, y: u16, key: &str, theme: &Theme) {
     let after = crate::capped(cells, x, y, key, theme);
     write(
         cells,
         after + 1,
         y,
-        MORE,
+        more_word(),
         Style::new().fg(theme.gutter).bg(theme.background),
     );
 }
 
 /// The keys a view says on its own row (`crate::said_on_its_row`), against
 /// `until` and after the first `taken` cells of the row: each in the cap
-/// [`MORE`]'s key wears, with its word after it.
+/// [`more_word`]'s key wears, with its word after it.
 ///
 /// Dropped whole where they would reach what is before them: half a set of
 /// keys is a set that says the wrong thing about the rest.
@@ -970,7 +972,7 @@ pub(crate) fn said_keys(
     start
 }
 
-/// How far [`MORE`] stands from the words it follows, so the two are not
+/// How far [`more_word`] stands from the words it follows, so the two are not
 /// read as one sentence.
 const AFTER_WORDS: usize = 4;
 
@@ -1125,7 +1127,7 @@ fn read_row(picker: &Picker, area: Rect, cells: &mut CellBuffer, style: Style, t
         crossterm::event::KeyModifiers::NONE,
     )
     .label();
-    let does = "Close";
+    let does = obelus_i18n::status::close();
     // The key first, so the words cannot take it off the row.
     let width = u16::try_from(crate::cap_width(&key) + 1 + text_width(does)).unwrap_or(0);
     let at = area.right().saturating_sub(width + 2);
@@ -1181,10 +1183,10 @@ pub fn filter_caret(query: &str, at: usize) -> u16 {
 /// The word in front of the box that asks which project: what it narrows,
 /// or that it is a path being named.
 #[must_use]
-pub const fn choosing_question(naming: bool) -> &'static str {
+pub fn choosing_question(naming: bool) -> &'static str {
     match naming {
-        true => "Open",
-        false => "Filter",
+        true => obelus_i18n::status::open(),
+        false => obelus_i18n::status::filter(),
     }
 }
 
@@ -1295,10 +1297,12 @@ impl StatusView<'_> {
             marker.push_str(&format!("  {mode}"));
         }
         if self.replacing {
-            marker.push_str("  Replacing");
+            marker.push_str("  ");
+            marker.push_str(obelus_i18n::status::replacing());
         }
         if self.read_only {
-            marker.push_str("  Read only");
+            marker.push_str("  ");
+            marker.push_str(obelus_i18n::status::read_only());
         }
         // Unsaved work, and the file having moved under it. Both are the
         // same kind of fact as the three above -- what is on screen is not
@@ -1307,19 +1311,20 @@ impl StatusView<'_> {
         if buffer.is_dirty() {
             marker.push_str(&match obelus_icons::enabled() {
                 true => format!(
-                    " {}{}unsaved",
+                    " {}{}{}",
                     obelus_icons::ui::UNSAVED,
-                    crate::after_a_glyph()
+                    crate::after_a_glyph(),
+                    obelus_i18n::status::unsaved()
                 ),
-                false => " [unsaved]".to_string(),
+                false => format!(" [{}]", obelus_i18n::status::unsaved()),
             });
         }
         let away = match buffer.on_disk() {
             obelus_buffer::Disk::Unchanged => None,
-            obelus_buffer::Disk::Written => Some("Moved"),
+            obelus_buffer::Disk::Written => Some(obelus_i18n::status::moved()),
             // Said in its own word. A reader who is told their file
             // "moved" when it is gone will go looking for it.
-            obelus_buffer::Disk::Deleted => Some("Deleted"),
+            obelus_buffer::Disk::Deleted => Some(obelus_i18n::status::deleted()),
         };
         if let Some(away) = away {
             marker.push_str(&match obelus_icons::enabled() {
@@ -1334,11 +1339,12 @@ impl StatusView<'_> {
         if buffer.is_stale() {
             marker.push_str(&match obelus_icons::enabled() {
                 true => format!(
-                    " {}{}stale",
+                    " {}{}{}",
                     obelus_icons::ui::STALE,
-                    crate::after_a_glyph()
+                    crate::after_a_glyph(),
+                    obelus_i18n::status::stale()
                 ),
-                false => " [stale]".to_string(),
+                false => format!(" [{}]", obelus_i18n::status::stale()),
             });
         }
         // What the bytes are written in, where it is anything but UTF-8,
@@ -1539,7 +1545,7 @@ impl StatusView<'_> {
         // the box's two ways out, and the palette where it has more.
         if let Some(dialling) = settings.dialling() {
             let name =
-                obelus_config::Setting::named(dialling.key).map_or("", |setting| setting.name);
+                obelus_config::Setting::named(dialling.key).map_or("", |setting| setting.name());
             let ends = format!("{}\u{2013}{}", dialling.dial.least, dialling.dial.most);
             let after = write(cells, area.x + 1, area.y, name, style);
             let after = write(cells, after + 2, area.y, &ends, style.fg(self.theme.gutter));
@@ -1711,7 +1717,7 @@ impl StatusView<'_> {
     /// it, a note and a conversation are filed under it.
     fn render_project(&self, area: Rect, cells: &mut CellBuffer, style: Style) {
         let said = crate::with_home_as_tilde(self.working_directory);
-        let label = "Project";
+        let label = obelus_i18n::status::project();
         write(
             cells,
             area.x + 1,
@@ -1789,7 +1795,9 @@ impl StatusView<'_> {
             // they need to look at. Dropped whole where it does not fit,
             // the way every sentence on this row is -- a warning cut in
             // half is worse than the ink alone, which is still there.
-            let said = " — nothing is here";
+            let said = obelus_i18n::status::nothing_is_here();
+            let said = format!(" \u{2014} {said}");
+            let said = said.as_str();
             let room = area.right().saturating_sub(after);
             if u16::try_from(text_width(said)).unwrap_or(u16::MAX) <= room {
                 write(cells, after, area.y, said, style.fg(self.theme.gutter));
@@ -1801,8 +1809,8 @@ impl StatusView<'_> {
         // to know a file is as good as a directory.
         if choosing.typed.is_empty() {
             let hint = match choosing.naming {
-                true => "A directory, or a file in one",
-                false => "Narrow the list",
+                true => obelus_i18n::status::a_directory_or_a_file(),
+                false => obelus_i18n::status::narrow_the_list(),
             };
             write(
                 cells,
@@ -1825,17 +1833,16 @@ impl StatusView<'_> {
         style: Style,
     ) {
         let what = match page.asked() {
-            obelus_component::discussion::Asked::PullRequest(_) => "Pull request",
-            obelus_component::discussion::Asked::Issue(_) => "Issue",
+            obelus_component::discussion::Asked::PullRequest(_) => {
+                obelus_i18n::status::pull_request(page.number())
+            }
+            obelus_component::discussion::Asked::Issue(_) => {
+                obelus_i18n::status::issue(page.number())
+            }
         };
         let name = match obelus_icons::enabled() {
-            true => format!(
-                "{}{}{what} #{}",
-                page.icon(),
-                crate::after_a_glyph(),
-                page.number()
-            ),
-            false => format!("{what} #{}", page.number()),
+            true => format!("{}{}{what}", page.icon(), crate::after_a_glyph()),
+            false => what,
         };
         write(cells, area.x + 1, area.y, &name, style);
         let end = self.surroundings_at_end(area, cells, style);
@@ -1845,7 +1852,9 @@ impl StatusView<'_> {
         // said, and this is the row the notes draw theirs on. Before the
         // palette's key, which gives it the room: a key that does nothing
         // is not the news.
-        let held = self.elsewhere.then_some("Talked about in another window");
+        let held = self
+            .elsewhere
+            .then(obelus_i18n::status::talked_about_in_another_window);
         let end = self.palette_beside(cells, area, first, end, held.map_or(0, text_width));
         if let Some(held) = held
             && first + text_width(held) <= end
@@ -1874,23 +1883,26 @@ impl StatusView<'_> {
     ) {
         let name = match obelus_icons::enabled() {
             true => format!(
-                "{}{}Todo",
+                "{}{}{}",
                 obelus_icons::for_command(obelus_command::Command::TodoOpen),
-                crate::after_a_glyph()
+                crate::after_a_glyph(),
+                obelus_i18n::status::notes()
             ),
-            false => "Todo".to_string(),
+            false => obelus_i18n::status::notes().to_string(),
         };
         write(cells, area.x + 1, area.y, &name, style);
 
         let end = self.surroundings_at_end(area, cells, style);
         let first = 1 + text_width(&name) + 2;
         let left = notes.todo().notes.iter().filter(|note| !note.done).count();
-        let said = (left > 0).then(|| format!("{left} to come back to"));
+        let said = (left > 0).then(|| obelus_i18n::status::left_to_come_back_to(left));
         let held = notes.selected_holder().map(|holder| match holder {
             obelus_component::todo::Holder::AnotherWindow => {
-                "Talked about in another window".to_string()
+                obelus_i18n::status::talked_about_in_another_window().to_string()
             }
-            obelus_component::todo::Holder::Checkout(name) => format!("Talked about in {name}"),
+            obelus_component::todo::Holder::Checkout(name) => {
+                obelus_i18n::status::talked_about_in(name.as_str())
+            }
         });
         // What the row has to say of its own -- where the note is talked
         // about, and how many are left -- before the palette's key, which
@@ -1944,8 +1956,7 @@ impl StatusView<'_> {
             Some(ended) => Some(crate::terminal::how_it_ended(ended)),
             None => match terminal.scrolled() {
                 0 => None,
-                1 => Some("1 row back".to_string()),
-                rows => Some(format!("{rows} rows back")),
+                rows => Some(obelus_i18n::status::rows_back(rows)),
             },
         };
         let state_at = state

@@ -31,13 +31,13 @@ use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets:
 
 use crate::{Hint, Screen, fill, write};
 
-/// What the page is, along the top of it.
+/// What the page is, along the top of it, is `projects::title`.
 ///
 /// What the reader is about to do rather than what the rows are: the rows
 /// are the projects, and the row under them is not one.
-const TITLE: &str = "Open a project";
-
-/// What the row that opens a project not in the list says.
+///
+/// What the row that opens a project not in the list says is
+/// `projects::open_another`, or `projects::type_a_path`.
 ///
 /// A verb, because the row is an action among rows that are places. The
 /// ellipsis is what a desktop means by "this opens somewhere to say more",
@@ -47,12 +47,6 @@ const TITLE: &str = "Open a project";
 /// with nothing remembered the row is the whole of the page, and there is
 /// nothing for it to be another of -- and the page's own title already
 /// says what it opens.
-const OPEN_ANOTHER: &str = "Open another…";
-const TYPE_A_PATH: &str = "Type a path…";
-
-/// What the list says when the filter has left none of them.
-const NO_MATCH: &str = "No project matches";
-
 /// The least space between a path and the time beside it.
 ///
 /// Two columns, so that the end of one and the start of the other are
@@ -78,8 +72,8 @@ pub fn hints(choosing: &crate::Choosing, keymap: &Keymap) -> Vec<Hint> {
         false => vec![Hint::new(
             bare(KeyCode::Enter),
             match on_the_opening_row {
-                true => "Type a path",
-                false => "Open",
+                true => obelus_i18n::projects::type_it(),
+                false => obelus_i18n::projects::open(),
             },
         )],
         // What enter does to a path is what the row at the foot is already
@@ -89,8 +83,8 @@ pub fn hints(choosing: &crate::Choosing, keymap: &Keymap) -> Vec<Hint> {
             Hint::new(
                 bare(KeyCode::Enter),
                 match choosing.offering {
-                    true => "Fill it in",
-                    false => "Open",
+                    true => obelus_i18n::projects::fill_it_in(),
+                    false => obelus_i18n::projects::open(),
                 },
             )
             .when(choosing.offering || choosing.there),
@@ -100,10 +94,13 @@ pub fn hints(choosing: &crate::Choosing, keymap: &Keymap) -> Vec<Hint> {
     // Mac has `delete` written on is that one, and `forgets` is asked about
     // it there.
     if choosing.forgets {
-        hints.push(Hint::new(bare(KeyCode::Delete), "Forget"));
+        hints.push(Hint::new(
+            bare(KeyCode::Delete),
+            obelus_i18n::projects::forget(),
+        ));
     }
     if let Some(chord) = keymap.chord_for(Command::Quit) {
-        hints.push(Hint::new(chord, "Leave"));
+        hints.push(Hint::new(chord, obelus_i18n::projects::leave()));
     }
     hints
 }
@@ -281,7 +278,7 @@ impl Widget for ProjectsView<'_> {
             cells,
             laid.title.x + 2,
             laid.title.y,
-            TITLE,
+            obelus_i18n::projects::title(),
             Style::new().fg(self.theme.foreground),
         );
         crate::rule(cells, laid.rule, self.theme);
@@ -291,8 +288,8 @@ impl Widget for ProjectsView<'_> {
         let on = choosing.at >= choosing.known.len();
         let style = self.row_style(cells, laid.opening, on);
         let said = match headed(choosing) {
-            true => OPEN_ANOTHER,
-            false => TYPE_A_PATH,
+            true => obelus_i18n::projects::open_another(),
+            false => obelus_i18n::projects::type_a_path(),
         };
         write(
             cells,
@@ -331,7 +328,7 @@ impl ProjectsView<'_> {
                     height: 1,
                     ..list
                 },
-                NO_MATCH,
+                obelus_i18n::projects::no_match(),
                 self.theme,
             );
             return;

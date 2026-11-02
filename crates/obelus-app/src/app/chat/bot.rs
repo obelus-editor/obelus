@@ -390,8 +390,8 @@ impl App {
                     && let Some(platform) = self.platform()
                 {
                     let said = match &why {
-                        Some(why) => format!("Not connected to {}: {why}", platform.name),
-                        None => format!("Not connected to {}", platform.name),
+                        Some(why) => obelus_i18n::bot::not_connected_because(platform.name, why),
+                        None => obelus_i18n::bot::not_connected(platform.name),
                     };
                     self.wrong(said);
                 }
@@ -483,7 +483,7 @@ impl App {
                 // the ones already kept are gone.
                 Err(trouble) => {
                     tracing::warn!(platform, field, %trouble, "a token would not be kept");
-                    self.wrong(format!("Not kept: {trouble}"));
+                    self.wrong(obelus_i18n::bot::token_not_kept(trouble.to_string()));
                 }
             },
         }
@@ -762,11 +762,13 @@ impl App {
                     return;
                 };
                 match &platform.setup {
-                    Setup::Copy { what, text, .. } => self.copied(&text(), what),
+                    Setup::Copy { text, .. } => {
+                        self.copied(&text(), obelus_component::copied::Copied::Manifest);
+                    }
                     Setup::Steps { url, .. } => {
                         if let Err(error) = self.desk().open(url) {
                             tracing::warn!(%error, url, "the steps would not open");
-                            self.wrong(format!("Could not open {url}"));
+                            self.wrong(obelus_i18n::editing::could_not_open(*url));
                         }
                     }
                 }
@@ -799,7 +801,7 @@ impl App {
                         PromptKind::Told(field),
                         said.to_string(),
                     ));
-                    self.wrong(format!("{} starts with {looks_like}", field.name));
+                    self.wrong(obelus_i18n::bot::starts_with((field.name)(), looks_like));
                     return;
                 }
                 let Some(sender) = self.events.clone() else {
@@ -837,12 +839,12 @@ impl App {
             return;
         };
         if !self.settled.readable {
-            self.wrong("Not saved: the settings will not read".to_string());
+            self.wrong(obelus_i18n::project::not_saved_unreadable());
             return;
         }
         if let Err(error) = obelus_config::save_to(&path, &self.settled.readers) {
             tracing::warn!(%error, "not saving the configuration");
-            self.wrong(format!("Not saved: {error}"));
+            self.wrong(obelus_i18n::project::not_saved_because(error.to_string()));
         }
     }
 
@@ -1032,7 +1034,7 @@ impl App {
             return;
         };
         let Some(lock) = the_lock() else {
-            self.wrong(format!("Nowhere to hold {} from", platform.name));
+            self.wrong(obelus_i18n::bot::nowhere_to_hold(platform.name));
             return;
         };
         if !obelus_claim::held_by_somebody_else(&lock) {
@@ -1129,7 +1131,7 @@ impl App {
         if self.bot.taking.as_ref().map(|(asked, _)| *asked) == Some(number) {
             self.bot.taking = None;
             if let Some(platform) = self.platform() {
-                self.wrong(format!("Could not wait for {} to come here", platform.name));
+                self.wrong(obelus_i18n::bot::could_not_take_over(platform.name));
             }
         }
     }
@@ -1145,7 +1147,7 @@ impl App {
         self.bot.pair_once_connected = false;
         self.bot.given_up = Some(number);
         if let Some(platform) = self.platform() {
-            self.wrong(format!("Another window would not let {} go", platform.name));
+            self.wrong(obelus_i18n::bot::not_let_go(platform.name));
         }
     }
 

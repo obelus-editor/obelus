@@ -70,7 +70,7 @@ fn the_encoding_is_not_drawn_as_a_warning() {
     let dump = support::render(&mut app, 70, 12);
     assert_ne!(
         support::drawn_in(&dump, "GBK"),
-        support::drawn_in(&dump, "unsaved"),
+        support::drawn_in(&dump, "Unsaved"),
         "the encoding is drawn the way unsaved work is"
     );
 }
@@ -127,7 +127,7 @@ fn what_the_encoding_cannot_write_is_not_saved() {
     assert!(app.current_buffer().expect("a buffer").is_dirty());
     assert!(
         app.note()
-            .is_some_and(|said| said.contains("GBK cannot write 😀")),
+            .is_some_and(|said| said.contains("GBK cannot encode 😀")),
         "the status row says {:?}",
         app.note()
     );

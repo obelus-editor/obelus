@@ -18,12 +18,6 @@ use crate::{Marked, chat, fill, put, rule, write, write_marked};
 /// The margin every row of the conversation is drawn in.
 const MARGIN: u16 = 1;
 
-/// The row that sends the card.
-const SUBMIT: &str = "Submit";
-
-/// The row that refuses it.
-const DECLINE: &str = "Decline";
-
 /// The cells a row of the card has to write in.
 ///
 /// One function for it, because a card measured against one width and drawn
@@ -420,7 +414,14 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, card: &Card, on: Option<On>, the
         };
         let style = plain.fg(ink).bg(ground);
         fill(cells, row, style);
-        let ended = write(cells, area.x + MARGIN, row.y, SUBMIT, style);
+        // The row that sends the card.
+        let ended = write(
+            cells,
+            area.x + MARGIN,
+            row.y,
+            obelus_i18n::chat::submit(),
+            style,
+        );
         if let Some(wanting) = wanting {
             write(
                 cells,
@@ -440,7 +441,14 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, card: &Card, on: Option<On>, the
             false => plain,
         };
         fill(cells, row, style);
-        write(cells, area.x + MARGIN, row.y, DECLINE, style);
+        // The row that refuses it.
+        write(
+            cells,
+            area.x + MARGIN,
+            row.y,
+            obelus_i18n::chat::decline(),
+            style,
+        );
     }
 }
 
@@ -476,6 +484,7 @@ mod tests {
                 about: None,
                 icon: None,
                 chosen: false,
+                said: None,
             })
             .collect();
         let mut card = Card::new(choices, false);
@@ -529,6 +538,7 @@ mod tests {
                 about: None,
                 icon: None,
                 chosen: false,
+                said: None,
             })
             .collect();
         let mut card = Card::new(choices, true);

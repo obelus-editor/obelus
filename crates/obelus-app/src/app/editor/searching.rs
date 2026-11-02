@@ -37,35 +37,35 @@ pub(in crate::app) enum Here {
 
 impl Here {
     /// What typing does, for the row before anything has been typed.
-    const fn before_typing(self) -> &'static str {
+    fn before_typing(self) -> &'static str {
         match self {
-            Self::File => "Search this file",
-            Self::Reading => "Search this reading",
-            Self::Conversation => "Search this conversation",
-            Self::Page => "Search this page",
-            Self::Notes => "Search the notes",
+            Self::File => obelus_i18n::editing::search_this_file(),
+            Self::Reading => obelus_i18n::editing::search_this_preview(),
+            Self::Conversation => obelus_i18n::editing::search_this_conversation(),
+            Self::Page => obelus_i18n::editing::search_this_page(),
+            Self::Notes => obelus_i18n::editing::search_the_notes(),
         }
     }
 
     /// What the list says before anything is asked.
-    const fn invitation(self) -> &'static str {
+    fn invitation(self) -> &'static str {
         match self {
-            Self::File => "Type to search this file",
-            Self::Reading => "Type to search this reading",
-            Self::Conversation => "Type to search this conversation",
-            Self::Page => "Type to search this page",
-            Self::Notes => "Type to search the notes",
+            Self::File => obelus_i18n::editing::type_to_search_this_file(),
+            Self::Reading => obelus_i18n::editing::type_to_search_this_preview(),
+            Self::Conversation => obelus_i18n::editing::type_to_search_this_conversation(),
+            Self::Page => obelus_i18n::editing::type_to_search_this_page(),
+            Self::Notes => obelus_i18n::editing::type_to_search_the_notes(),
         }
     }
 
     /// What the list says when nothing has the query in it.
-    const fn nothing_found(self) -> &'static str {
+    fn nothing_found(self) -> &'static str {
         match self {
-            Self::File => "No match in this file",
-            Self::Reading => "No match in this reading",
-            Self::Conversation => "No match in this conversation",
-            Self::Page => "No match on this page",
-            Self::Notes => "No match in the notes",
+            Self::File => obelus_i18n::editing::no_match_in_this_file(),
+            Self::Reading => obelus_i18n::editing::no_match_in_this_preview(),
+            Self::Conversation => obelus_i18n::editing::no_match_in_this_conversation(),
+            Self::Page => obelus_i18n::editing::no_match_on_this_page(),
+            Self::Notes => obelus_i18n::editing::no_match_in_the_notes(),
         }
     }
 }
@@ -159,9 +159,9 @@ impl App {
         };
         if !able {
             self.wrong(match scope {
-                Scope::File => "Nothing here to search".to_string(),
-                Scope::Symbols => "No language server to ask".to_string(),
-                Scope::Project => "Nowhere to search".to_string(),
+                Scope::File => obelus_i18n::editing::nothing_here_to_search(),
+                Scope::Symbols => obelus_i18n::language_server::no_server_to_ask(),
+                Scope::Project => obelus_i18n::editing::nowhere_to_search(),
             });
             return;
         }
@@ -486,7 +486,7 @@ impl App {
                     // world rather than an invitation to type.
                     let reason = match self.searched_here() {
                         Some(_) => here.invitation(),
-                        None => "Nothing here to search",
+                        None => obelus_i18n::editing::nothing_here_to_search(),
                     };
                     self.search.searched = None;
                     if let Some(picker) = self.picker.as_mut() {
@@ -509,7 +509,7 @@ impl App {
                     self.search.walked = true;
                     if let Some(picker) = self.picker.as_mut() {
                         picker.replace(rows);
-                        picker.while_empty("No match in the project");
+                        picker.while_empty(obelus_i18n::editing::no_match_in_the_project());
                     }
                 }
                 None => self.search_the_project(),
@@ -580,7 +580,7 @@ impl App {
         if needle.is_broken() {
             if let Some(picker) = self.picker.as_mut() {
                 picker.replace(Vec::new());
-                picker.while_empty("That is not a pattern");
+                picker.while_empty(obelus_i18n::editing::not_a_pattern());
             }
             return;
         }
@@ -647,7 +647,7 @@ impl App {
         self.search.searched = Some((path, version));
         if let Some(picker) = self.picker.as_mut() {
             picker.replace(items);
-            picker.while_empty("No match in this file");
+            picker.while_empty(obelus_i18n::editing::no_match_in_this_file());
         }
     }
 
@@ -666,7 +666,7 @@ impl App {
         if needle.is_broken() {
             if let Some(picker) = self.picker.as_mut() {
                 picker.replace(Vec::new());
-                picker.while_empty("That is not a pattern");
+                picker.while_empty(obelus_i18n::editing::not_a_pattern());
             }
             return;
         }
@@ -1112,20 +1112,20 @@ impl App {
         if query.is_empty() {
             if let Some(picker) = self.picker.as_mut() {
                 picker.replace(Vec::new());
-                picker.while_empty("Type to search every file");
+                picker.while_empty(obelus_i18n::editing::type_to_search_every_file());
             }
             return;
         }
 
         if let Some(picker) = self.picker.as_mut() {
             picker.replace(Vec::new());
-            picker.while_empty("Searching\u{2026}");
+            picker.while_empty(obelus_i18n::editing::searching());
         }
         let needle = self.needle();
         if needle.is_broken() {
             if let Some(picker) = self.picker.as_mut() {
                 picker.replace(Vec::new());
-                picker.while_empty("That is not a pattern");
+                picker.while_empty(obelus_i18n::editing::not_a_pattern());
             }
             return;
         }
@@ -1200,7 +1200,7 @@ impl App {
             // it about the *project* rather than about the list: the picker's
             // own "no match" is about a query against rows it was given, and
             // here the rows never existed.
-            picker.while_empty("No match in the project");
+            picker.while_empty(obelus_i18n::editing::no_match_in_the_project());
             self.search.walked = true;
         }
     }
@@ -1220,7 +1220,7 @@ impl App {
                 // The server is per language, and the language comes from
                 // the file being read: with nothing open there is nobody to
                 // ask, which is a different thing from an empty answer.
-                picker.while_empty("No language server to ask");
+                picker.while_empty(obelus_i18n::language_server::no_server_to_ask());
             }
             return;
         };
@@ -1229,7 +1229,7 @@ impl App {
         if query.is_empty() {
             if let Some(picker) = self.picker.as_mut() {
                 picker.replace(Vec::new());
-                picker.while_empty("Type to search the project's symbols");
+                picker.while_empty(obelus_i18n::editing::type_to_search_symbols());
             }
             return;
         }
@@ -1238,9 +1238,9 @@ impl App {
         if let Some(picker) = self.picker.as_mut() {
             picker.replace(Vec::new());
             picker.while_empty(if asked {
-                "Asking the language server\u{2026}"
+                obelus_i18n::language_server::asking()
             } else {
-                "The language server would not answer"
+                obelus_i18n::language_server::did_not_answer()
             });
         }
     }

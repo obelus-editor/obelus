@@ -56,7 +56,7 @@ fn hints(keymap: &Keymap, gone: &Gone) -> Vec<Hint> {
     let mut hints = match gone {
         Gone::Project(_) => vec![Hint::new(
             KeyChord::new(KeyCode::Enter, KeyModifiers::NONE),
-            "Open a project",
+            obelus_i18n::gone::open_a_project(),
         )],
         // Trying again only once a try has come to something: while the
         // first is under way there is nothing to try again.
@@ -65,18 +65,18 @@ fn hints(keymap: &Keymap, gone: &Gone) -> Vec<Hint> {
             .then(|| {
                 Hint::new(
                     KeyChord::new(KeyCode::Char(AGAIN), KeyModifiers::NONE),
-                    "Try again",
+                    obelus_i18n::gone::try_again(),
                 )
             })
             .into_iter()
             .chain([Hint::new(
                 KeyChord::new(KeyCode::Esc, KeyModifiers::NONE),
-                "Work on this machine",
+                obelus_i18n::gone::work_on_this_machine(),
             )])
             .collect(),
     };
     if let Some(chord) = keymap.chord_for(Command::Quit) {
-        hints.push(Hint::new(chord, "Leave"));
+        hints.push(Hint::new(chord, obelus_i18n::gone::leave()));
     }
     hints
 }
@@ -130,13 +130,19 @@ impl Widget for GoneView<'_> {
             // letter it would have to change. Cut from the left where it
             // does not fit, the way a path is cut everywhere it is one.
             Gone::Project(was) => {
-                let lead = "Nothing is left at ";
-                let room = room.saturating_sub(obelus_text::text_width(lead));
+                // The sentence's own words measured without the path, so
+                // the path is cut to what they leave wherever the language
+                // puts it.
+                let words = obelus_i18n::gone::nothing_is_left_at("");
+                let room = room.saturating_sub(obelus_text::text_width(&words));
                 vec![
-                    ("The project has gone".to_string(), self.theme.foreground),
+                    (
+                        obelus_i18n::gone::the_project_has_gone().to_string(),
+                        self.theme.foreground,
+                    ),
                     (String::new(), self.theme.foreground),
                     (
-                        format!("{lead}{}", crate::truncate_from_left(was, room)),
+                        obelus_i18n::gone::nothing_is_left_at(crate::truncate_from_left(was, room)),
                         self.theme.gutter,
                     ),
                 ]
@@ -151,10 +157,19 @@ impl Widget for GoneView<'_> {
             // Still being connected to: the machine, and a mark that turns
             // beside it for as long as nothing has been said either way.
             Gone::Machine { at, why: None, .. } => {
-                let lead = format!("{} Connecting to ", crate::spinning(self.phase));
-                let room_for_at = room.saturating_sub(obelus_text::text_width(&lead));
+                let lead = format!("{} ", crate::spinning(self.phase));
+                let words = obelus_i18n::gone::connecting_to("");
+                let room_for_at = room
+                    .saturating_sub(obelus_text::text_width(&lead))
+                    .saturating_sub(obelus_text::text_width(&words));
                 vec![(
-                    format!("{lead}{}", crate::truncate_from_left(at, room_for_at)),
+                    format!(
+                        "{lead}{}",
+                        obelus_i18n::gone::connecting_to(crate::truncate_from_left(
+                            at,
+                            room_for_at
+                        ))
+                    ),
                     self.theme.foreground,
                 )]
             }
@@ -163,11 +178,11 @@ impl Widget for GoneView<'_> {
                 why: Some(why),
                 trying,
             } => {
-                let lead = "Obelus cannot reach ";
-                let room_for_at = room.saturating_sub(obelus_text::text_width(lead));
+                let words = obelus_i18n::gone::cannot_reach("");
+                let room_for_at = room.saturating_sub(obelus_text::text_width(&words));
                 let mut lines = vec![
                     (
-                        format!("{lead}{}", crate::truncate_from_left(at, room_for_at)),
+                        obelus_i18n::gone::cannot_reach(crate::truncate_from_left(at, room_for_at)),
                         self.theme.foreground,
                     ),
                     (String::new(), self.theme.foreground),
@@ -179,7 +194,10 @@ impl Widget for GoneView<'_> {
                 }
                 lines.extend(said.into_iter().map(|row| (row, self.theme.gutter)));
                 if *trying {
-                    lines.push(("Trying again".to_string(), self.theme.gutter));
+                    lines.push((
+                        obelus_i18n::gone::trying_again().to_string(),
+                        self.theme.gutter,
+                    ));
                 }
                 lines
             }

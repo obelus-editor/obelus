@@ -91,10 +91,7 @@ async fn install(
     // however it ends.
     let _claim = super::claim(&agent.id, root)?;
     let Some(home) = super::home(&agent.id, root) else {
-        return Err(format!(
-            "{} is not a name Obelus can keep a directory of",
-            agent.id
-        ));
+        return Err(obelus_i18n::install::not_a_directory_name(&agent.id));
     };
     match &agent.distribution {
         Distribution::Node { package, .. } => node(package, &home).await?,
@@ -122,7 +119,7 @@ async fn install(
     }
 
     let Some((command, arguments)) = super::command_for(agent, root) else {
-        return Err("Installed, but there is no telling what to run".to_string());
+        return Err(obelus_i18n::install::nothing_to_run().to_string());
     };
     super::remember(&agent.id, &command, &arguments, &agent.version, root)
 }
@@ -153,7 +150,7 @@ fn node_now(package: &str, home: &Path) -> Result<(), String> {
     // the bare name and could not start under the right one. Both halves of
     // that are `program`'s to know.
     let Some(npm) = obelus_program::found("npm") else {
-        return Err("There is no npm on the path".to_string());
+        return Err(obelus_i18n::install::no_npm().to_string());
     };
     let (npm, first) = obelus_program::as_started_here(&npm, &[]);
     let outcome = obelus_program::without_a_window(&mut std::process::Command::new(npm))
@@ -168,7 +165,7 @@ fn node_now(package: &str, home: &Path) -> Result<(), String> {
         .map_err(|error| match error.kind() {
             // The ordinary way this fails, and the one worth naming: node
             // is not installed.
-            std::io::ErrorKind::NotFound => "There is no npm on the path".to_string(),
+            std::io::ErrorKind::NotFound => obelus_i18n::install::no_npm().to_string(),
             _ => error.to_string(),
         })?;
     if outcome.status.success() {
@@ -180,7 +177,7 @@ fn node_now(package: &str, home: &Path) -> Result<(), String> {
         .lines()
         .rev()
         .find(|line| !line.trim().is_empty())
-        .unwrap_or("No reason from npm")
+        .unwrap_or(obelus_i18n::install::npm_gave_no_reason())
         .trim()
         .to_string())
 }
@@ -239,7 +236,7 @@ fn settle(
 ) -> Result<(), String> {
     if let Some(expected) = sha256 {
         if !obelus_download::hashes_to(bytes, expected) {
-            return Err("It is not the file the registry describes".to_string());
+            return Err(obelus_i18n::install::download_does_not_match().to_string());
         }
     } else {
         // Half the registry's entries have no checksum. Not a reason to
@@ -259,7 +256,7 @@ fn settle(
     // a mystery the first time the reader tries to talk to it.
     let program = into.join(command.trim_start_matches("./"));
     if !program.exists() {
-        return Err(format!("no {command} in the archive"));
+        return Err(obelus_i18n::install::not_in_the_archive(command));
     }
     make_runnable(&program);
     Ok(())
@@ -368,7 +365,7 @@ mod tests {
         let (sender, _events) = std::sync::mpsc::channel::<crate::Event>();
         let outcome = super::install(&agent, &root, std::time::Instant::now(), &sender).await;
         assert!(
-            outcome.is_err_and(|why| why.contains("another Obelus")),
+            outcome.is_err_and(|why| why.contains("Another Obelus")),
             "it installed over an install that was already running"
         );
         assert_eq!(

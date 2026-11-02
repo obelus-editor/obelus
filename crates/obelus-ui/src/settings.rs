@@ -74,25 +74,21 @@ fn arrow_at(x: u16, after: u16, width: u16) -> u16 {
     after.saturating_add(1).min(x + width)
 }
 
-/// What the agent's heading says under its name.
-///
-/// The one thing about this group that is not true of the others: Obelus's
-/// own settings take effect where they stand, and these are about the next
-/// conversation rather than the one on screen. Said once, under the name,
-/// rather than on every row -- a fact about the group is not a fact about
-/// each of its rows, and the rows have a column each of their own to spend.
-const WHEN: &str = "What a new conversation starts on.";
-
-/// And under its environment's, the other moment: these reach the process,
-/// once, and a running agent has already been started.
-const STARTED: &str = "What it is started with, from the next time it starts.";
-
-/// What an agent's row says where the reader has chosen nothing.
-///
-/// A word rather than a blank: the third state of one of these rows is a
-/// decision like the other two -- leave it to the agent -- and a control
-/// showing nothing would read as one Obelus had failed to fill in.
-const AGENTS_OWN: &str = "Agent's own";
+// What the agent's heading says under its name (`settings-page::when`) is
+// the one thing about this group that is not true of the others: Obelus's
+// own settings take effect where they stand, and these are about the next
+// conversation rather than the one on screen. Said once, under the name,
+// rather than on every row -- a fact about the group is not a fact about
+// each of its rows, and the rows have a column each of their own to spend.
+// And under its environment's (`settings-page::started`), the other moment:
+// these reach the process, once, and a running agent has already been
+// started.
+//
+// What an agent's row says where the reader has chosen nothing
+// (`settings-page::agents-own`) is a word rather than a blank: the third
+// state of one of these rows is a decision like the other two -- leave it
+// to the agent -- and a control showing nothing would read as one Obelus
+// had failed to fill in.
 
 /// How far a card's words are indented from its edge.
 ///
@@ -261,24 +257,37 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
     let adding = matches!(on_row, Some(Shown::AddVariable { .. }));
     let removes = matches!(on_row, Some(Shown::Variable { .. }));
     let changes = match settings.on_keys() {
-        true => "Change the key on this row",
-        false => "Change the setting on this row",
+        true => obelus_i18n::settings_page::change_key_about(),
+        false => obelus_i18n::settings_page::change_setting_about(),
     };
+    let change = obelus_i18n::settings_page::change();
     // And whether that is what enter does in every list -- changing the
     // row it is on -- which is not news.
     let (enter, enter_does, a_lists_own) = match remote {
         Some(Shown::Bot { row, .. }) => match row {
-            BotRow::Pair => ("Pair", "Make a code to pair the chat with", false),
-            BotRow::Setup(obelus_bot::platform::Setup::Copy { .. }) => {
-                ("Copy", "Copy what this row holds", false)
-            }
-            BotRow::Setup(obelus_bot::platform::Setup::Steps { .. }) => {
-                ("Open", "Open the steps this row points to", false)
-            }
-            BotRow::Platform | BotRow::Field(_) | BotRow::People => ("Change", changes, true),
+            BotRow::Pair => (
+                obelus_i18n::settings_page::pair(),
+                obelus_i18n::settings_page::pair_about(),
+                false,
+            ),
+            BotRow::Setup(obelus_bot::platform::Setup::Copy { .. }) => (
+                obelus_i18n::settings_page::copy(),
+                obelus_i18n::settings_page::copy_about(),
+                false,
+            ),
+            BotRow::Setup(obelus_bot::platform::Setup::Steps { .. }) => (
+                obelus_i18n::settings_page::open(),
+                obelus_i18n::settings_page::open_steps_about(),
+                false,
+            ),
+            BotRow::Platform | BotRow::Field(_) | BotRow::People => (change, changes, true),
         },
-        _ if adding => ("Add", "Give the agent another variable", false),
-        _ => ("Change", changes, true),
+        _ if adding => (
+            obelus_i18n::settings_page::add(),
+            obelus_i18n::settings_page::add_variable_about(),
+            false,
+        ),
+        _ => (change, changes, true),
     };
     // On a command with no key there is nothing for enter to change, so
     // it is not offered there.
@@ -329,15 +338,15 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
     if settings.dialling().is_some() {
         let key = |code| obelus_keymap::KeyChord::new(code, KeyModifiers::NONE);
         return vec![
-            Hint::new(key(KeyCode::Left), "Turn")
+            Hint::new(key(KeyCode::Left), obelus_i18n::settings_page::turn())
                 .or(key(KeyCode::Right))
-                .about("Turn it down or up a step")
+                .about(obelus_i18n::settings_page::turn_about())
                 .said(true),
-            Hint::new(key(KeyCode::Enter), "Keep")
-                .about("Keep what is in the box")
+            Hint::new(key(KeyCode::Enter), obelus_i18n::settings_page::keep())
+                .about(obelus_i18n::settings_page::keep_about())
                 .said(true),
-            Hint::new(key(KeyCode::Esc), "Cancel")
-                .about("Leave it as it was")
+            Hint::new(key(KeyCode::Esc), obelus_i18n::settings_page::cancel())
+                .about(obelus_i18n::settings_page::cancel_about())
                 .said(true),
         ];
     }
@@ -349,9 +358,9 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
         return vec![
             Hint::new(
                 obelus_keymap::KeyChord::new(KeyCode::Backspace, KeyModifiers::ALT),
-                "Remove",
+                obelus_i18n::settings_page::remove(),
             )
-            .about("Take this key away")
+            .about(obelus_i18n::settings_page::remove_key_about())
             .when(binding.replacing),
         ];
     }
@@ -375,9 +384,9 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
             .said(settings.on_keys()),
         Hint::new(
             obelus_keymap::KeyChord::new(KeyCode::Enter, KeyModifiers::CONTROL),
-            "Add a key",
+            obelus_i18n::settings_page::add_key(),
         )
-        .about("Give this command another key")
+        .about(obelus_i18n::settings_page::add_key_about())
         .only_where(settings.on_keys())
         .when(adds)
         .said(true),
@@ -386,16 +395,16 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
         // and every command.
         Hint::new(
             obelus_keymap::KeyChord::new(KeyCode::Backspace, KeyModifiers::ALT),
-            "Remove",
+            obelus_i18n::settings_page::remove(),
         )
-        .about("Take this key away")
+        .about(obelus_i18n::settings_page::remove_key_about())
         .only_where(settings.on_keys())
         .when(on_a_key),
         Hint::new(
             obelus_keymap::KeyChord::new(KeyCode::Char('r'), KeyModifiers::ALT),
-            "Reset",
+            obelus_i18n::settings_page::reset(),
         )
-        .about("Give this command back the keys its layout has")
+        .about(obelus_i18n::settings_page::reset_about())
         .only_where(settings.on_keys())
         .when(changed_here),
         Hint::new(
@@ -403,31 +412,34 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
                 KeyCode::Char('r'),
                 KeyModifiers::ALT | KeyModifiers::SHIFT,
             ),
-            "Reset all",
+            obelus_i18n::settings_page::reset_all(),
         )
-        .about("Give every command back the keys its layout has")
+        .about(obelus_i18n::settings_page::reset_all_about())
         .only_where(settings.on_keys())
         .when(settings.any_changed()),
         // What delete does to a row, which is one of four things or none:
         // only the one this row has is a row of the palette, and it is dim
         // while delete is the filter's.
-        Hint::new(bare(KeyCode::Delete), "Forget")
-            .about("Forget what is kept for this field")
+        Hint::new(bare(KeyCode::Delete), obelus_i18n::settings_page::forget())
+            .about(obelus_i18n::settings_page::forget_about())
             .only_where(forgets)
             .when(rows_delete),
         // On an agent's row, and only while there is something to undo:
         // what `delete` leaves there is not a default of Obelus's but the
         // agent's own answer.
-        Hint::new(bare(KeyCode::Delete), AGENTS_OWN)
-            .about("Go back to what the agent chose itself")
-            .only_where(focused.is_some())
-            .when(rows_delete),
-        Hint::new(bare(KeyCode::Delete), "Remove")
-            .about("Take this variable away")
+        Hint::new(
+            bare(KeyCode::Delete),
+            obelus_i18n::settings_page::agents_own(),
+        )
+        .about(obelus_i18n::settings_page::agents_own_about())
+        .only_where(focused.is_some())
+        .when(rows_delete),
+        Hint::new(bare(KeyCode::Delete), obelus_i18n::settings_page::remove())
+            .about(obelus_i18n::settings_page::remove_variable_about())
             .only_where(removes)
             .when(rows_delete),
-        Hint::new(bare(KeyCode::Delete), "Unset")
-            .about("Take this setting out of the project's file")
+        Hint::new(bare(KeyCode::Delete), obelus_i18n::settings_page::unset())
+            .about(obelus_i18n::settings_page::unset_about())
             .only_where(settings.on_project() && !settings.on_keys() && !settings.on_cards())
             .when(rows_delete),
     ]
@@ -452,17 +464,26 @@ fn theme_hints(settings: &Settings, card: Option<&ThemeCard>) -> Vec<Hint> {
     use crossterm::event::{KeyCode, KeyModifiers};
     let bare = |code| obelus_keymap::KeyChord::new(code, KeyModifiers::NONE);
     let (enter, does) = match card {
-        Some(card) if card.may_be_worn() => ("Use", "Wear this theme"),
-        Some(card) if card.installed => ("Update", "Install the newer version of this theme"),
-        _ => ("Install", "Install this theme"),
+        Some(card) if card.may_be_worn() => (
+            obelus_i18n::settings_page::use_theme(),
+            obelus_i18n::settings_page::use_theme_about(),
+        ),
+        Some(card) if card.installed => (
+            obelus_i18n::settings_page::update(),
+            obelus_i18n::settings_page::update_theme_about(),
+        ),
+        _ => (
+            obelus_i18n::settings_page::install(),
+            obelus_i18n::settings_page::install_theme_about(),
+        ),
     };
     vec![
         Hint::new(bare(KeyCode::Enter), enter)
             .about(does)
             .when(card.is_some_and(|card| card.may_be_installed() || card.may_be_worn()))
             .said(true),
-        Hint::new(bare(KeyCode::Delete), "Remove")
-            .about("Take this theme off this machine")
+        Hint::new(bare(KeyCode::Delete), obelus_i18n::settings_page::remove())
+            .about(obelus_i18n::settings_page::remove_theme_about())
             .when(
                 card.is_some_and(ThemeCard::may_be_taken_away) && !settings.delete_is_the_filters(),
             )
@@ -772,12 +793,22 @@ impl Widget for SettingsView<'_> {
                     },
                 })
                 .collect();
-            self.column(cells, region, &rows, "No command by that name");
+            self.column(
+                cells,
+                region,
+                &rows,
+                obelus_i18n::settings_page::no_command_matches(),
+            );
             return;
         }
 
         let rows = self.rows(region);
-        self.column(cells, region, &rows, "No setting by that name");
+        self.column(
+            cells,
+            region,
+            &rows,
+            obelus_i18n::settings_page::no_setting_matches(),
+        );
     }
 }
 
@@ -854,7 +885,7 @@ impl SettingsView<'_> {
         match shown {
             Shown::Obelus { setting, opens } => Row {
                 opens: opens.map(Heading::Group),
-                label: setting.name.to_string(),
+                label: setting.name().to_string(),
                 matched: self.settings.matched(setting),
                 detail: None,
                 // What it does, on its own rows under the name: beside
@@ -862,7 +893,7 @@ impl SettingsView<'_> {
                 // that lost was the description, cut off with an
                 // ellipsis on exactly the rows that had most to
                 // explain.
-                body: self.settings.wrapped(setting.about, width),
+                body: self.settings.wrapped(setting.about(), width),
                 warning: Vec::new(),
                 entry: true,
                 // A box where the value was, while it is being turned: the
@@ -900,7 +931,10 @@ impl SettingsView<'_> {
                 // offering -- which is a line in their settings file
                 // that will do nothing.
                 let (word, said) = match chosen {
-                    None => (AGENTS_OWN.to_string(), Said::Agents),
+                    None => (
+                        obelus_i18n::settings_page::agents_own().to_string(),
+                        Said::Agents,
+                    ),
                     Some(value) => match offer.name_of(value) {
                         Some(name) => (name.to_string(), Said::Reader),
                         None => ((*value).to_string(), Said::Gone),
@@ -1091,12 +1125,12 @@ enum Scope {
 
 impl Scope {
     /// The word for it.
-    const fn word(self) -> &'static str {
+    fn word(self) -> &'static str {
         match self {
-            Self::Project => "Project",
-            Self::Global => "Global",
-            Self::Default => "Default",
-            Self::Changed => "Changed",
+            Self::Project => obelus_i18n::settings_page::scope_project(),
+            Self::Global => obelus_i18n::settings_page::scope_global(),
+            Self::Default => obelus_i18n::settings_page::scope_default(),
+            Self::Changed => obelus_i18n::settings_page::scope_changed(),
         }
     }
 }
@@ -1547,7 +1581,7 @@ impl SettingsView<'_> {
             Heading::Group(group) => group.label(),
             Heading::Agent(name) | Heading::Remote(name) => name.as_str(),
             Heading::Environment(name) => {
-                environment = format!("{name} \u{b7} Environment");
+                environment = obelus_i18n::settings_page::environment_of(name.as_str());
                 environment.as_str()
             }
         };
@@ -1565,8 +1599,8 @@ impl SettingsView<'_> {
         // somewhere else, and a reader who changes one and goes back to a
         // conversation that has not moved has been told nothing.
         let when = match opens {
-            Heading::Agent(_) => Some(WHEN),
-            Heading::Environment(_) => Some(STARTED),
+            Heading::Agent(_) => Some(obelus_i18n::settings_page::when()),
+            Heading::Environment(_) => Some(obelus_i18n::settings_page::started()),
             Heading::Group(_) | Heading::Remote(_) => None,
         };
         if let Some(when) = when
@@ -1593,17 +1627,17 @@ impl SettingsView<'_> {
             BotRow::Platform => Aside::Does(
                 reached
                     .platform
-                    .map_or("Off", |platform| platform.name)
+                    .map_or(obelus_i18n::settings_page::off(), |platform| platform.name)
                     .to_string(),
                 true,
             ),
             BotRow::Field(field) => match reached.kept.get(field.key) {
                 Some(kept) => Aside::Does(kept.clone(), true),
-                None => Aside::Does("Not set".to_string(), true),
+                None => Aside::Does(obelus_i18n::settings_page::not_set().to_string(), true),
             },
             BotRow::People => Aside::Does(
                 match reached.people.is_empty() {
-                    true => "Nobody".to_string(),
+                    true => obelus_i18n::settings_page::nobody().to_string(),
                     false => reached.people.join(", "),
                 },
                 true,
@@ -1616,13 +1650,13 @@ impl SettingsView<'_> {
                 reached
                     .pairing
                     .clone()
-                    .unwrap_or_else(|| "Make a code".to_string()),
+                    .unwrap_or_else(|| obelus_i18n::settings_page::make_a_code().to_string()),
                 reached.state.may_connect(),
             ),
             BotRow::Setup(setup) => Aside::Does(
                 match setup {
-                    obelus_bot::platform::Setup::Copy { .. } => "Copy",
-                    obelus_bot::platform::Setup::Steps { .. } => "Open",
+                    obelus_bot::platform::Setup::Copy { .. } => obelus_i18n::settings_page::copy(),
+                    obelus_bot::platform::Setup::Steps { .. } => obelus_i18n::settings_page::open(),
                 }
                 .to_string(),
                 true,
@@ -1671,11 +1705,11 @@ impl SettingsView<'_> {
         else {
             // What it does once, beside its name; the rows of its other
             // keys say nothing there.
-            return (slot == 0).then(|| (command.spec().title.to_string(), self.theme.gutter));
+            return (slot == 0).then(|| (command.spec().title().to_string(), self.theme.gutter));
         };
         match self.settings.refused() {
             Some((chord, Refused::Taken(taken))) => Some((
-                format!("{} is {}", chord.label(), taken.name()),
+                obelus_i18n::settings_page::key_is_taken(taken.name(), chord.label()),
                 self.theme.change_removed,
             )),
             Some((chord, Refused::Never(why))) => Some((
@@ -1688,15 +1722,14 @@ impl SettingsView<'_> {
             // palette's included, so this row is the only place to say it.
             None => Some((
                 match binding.replacing && has_a_key {
-                    true => format!(
-                        "Press the new key, or {} to remove it",
+                    true => obelus_i18n::settings_page::press_the_new_key(
                         obelus_keymap::KeyChord::new(
                             crossterm::event::KeyCode::Backspace,
                             crossterm::event::KeyModifiers::ALT,
                         )
-                        .label()
+                        .label(),
                     ),
-                    false => "Press a key to add it".to_string(),
+                    false => obelus_i18n::settings_page::press_a_key().to_string(),
                 },
                 self.theme.change_modified,
             )),
@@ -1722,9 +1755,9 @@ impl SettingsView<'_> {
             let reason = match (self.agents.is_empty(), self.failure) {
                 // Two ways to have nothing, and the reader's next move
                 // differs: wait, or look at their network.
-                (true, Some(why)) => format!("Could not fetch the list of agents: {why}"),
-                (true, None) => "Fetching the list of agents\u{2026}".to_string(),
-                (false, _) => "No agent by that name".to_string(),
+                (true, Some(why)) => obelus_i18n::settings_page::agents_failed(why),
+                (true, None) => obelus_i18n::settings_page::fetching_agents().to_string(),
+                (false, _) => obelus_i18n::settings_page::no_agent_matches().to_string(),
             };
             write(
                 cells,
@@ -1988,14 +2021,22 @@ impl SettingsView<'_> {
     fn state_of(&self, agent: &Listed) -> (String, ratatui::style::Color) {
         use obelus_agent::Status;
         match &agent.status {
-            Status::Installed if agent.active => {
-                ("\u{25cf} active".to_string(), self.theme.change_added)
-            }
-            Status::Installed => ("Installed".to_string(), self.theme.gutter),
-            Status::Outdated { .. } => ("Update \u{25b8}".to_string(), self.theme.change_modified),
-            Status::Missing | Status::Failed(_) => {
-                ("Install \u{25b8}".to_string(), self.theme.foreground)
-            }
+            Status::Installed if agent.active => (
+                format!("\u{25cf} {}", obelus_i18n::settings_page::active()),
+                self.theme.change_added,
+            ),
+            Status::Installed => (
+                obelus_i18n::settings_page::installed().to_string(),
+                self.theme.gutter,
+            ),
+            Status::Outdated { .. } => (
+                format!("{} \u{25b8}", obelus_i18n::settings_page::update()),
+                self.theme.change_modified,
+            ),
+            Status::Missing | Status::Failed(_) => (
+                format!("{} \u{25b8}", obelus_i18n::settings_page::install()),
+                self.theme.foreground,
+            ),
             Status::Installing { .. } => (self.installing(agent), self.theme.foreground),
             Status::Unavailable(why) => ((*why).to_string(), self.theme.gutter),
         }
@@ -2015,23 +2056,24 @@ impl SettingsView<'_> {
     /// How far an install has got, in words -- and an update says it is
     /// one, because that is what the button it came from said.
     fn how_far(agent: &Listed) -> String {
-        let doing = match agent.status {
-            obelus_agent::Status::Installing { replacing: Some(_) } => "Updating",
-            _ => "Installing",
-        };
+        let updating = matches!(
+            agent.status,
+            obelus_agent::Status::Installing { replacing: Some(_) }
+        );
         let Some(progress) = agent.progress else {
-            return format!("{doing}\u{2026}");
+            return doing(updating, None);
         };
         match (progress.fraction(), progress.remaining()) {
-            (Some(fraction), Some(left)) => format!(
-                "{doing} {}% \u{b7} {}s left",
-                (fraction * 100.0).round() as u32,
-                left.as_secs().max(1)
-            ),
-            (Some(fraction), None) => {
-                format!("{doing} {}%", (fraction * 100.0).round() as u32)
+            (Some(fraction), Some(left)) => {
+                let percent = (fraction * 100.0).round() as u32;
+                let seconds = left.as_secs().max(1);
+                match updating {
+                    true => obelus_i18n::settings_page::updating_left(percent, seconds),
+                    false => obelus_i18n::settings_page::installing_left(percent, seconds),
+                }
             }
-            _ => format!("{doing}\u{2026}"),
+            (Some(fraction), None) => doing(updating, Some((fraction * 100.0).round() as u32)),
+            _ => doing(updating, None),
         }
     }
 }
@@ -2053,9 +2095,9 @@ impl SettingsView<'_> {
         let shown = self.settings.themes(&self.themes);
         if shown.is_empty() {
             let reason = match (self.themes.is_empty(), self.themes_failure) {
-                (true, Some(why)) => format!("Could not fetch the list of themes: {why}"),
-                (true, None) => "Fetching the list of themes\u{2026}".to_string(),
-                (false, _) => "No theme by that name".to_string(),
+                (true, Some(why)) => obelus_i18n::settings_page::themes_failed(why),
+                (true, None) => obelus_i18n::settings_page::fetching_themes().to_string(),
+                (false, _) => obelus_i18n::settings_page::no_theme_matches().to_string(),
             };
             write(
                 cells,
@@ -2257,18 +2299,18 @@ impl SettingsView<'_> {
         }
         match &theme.wallpaper {
             Some(credit) => facts.push(match &credit.license {
-                Some(license) => format!("Wallpaper {license}"),
+                Some(license) => obelus_i18n::settings_page::wallpaper_licensed(license.as_str()),
                 // Nobody may hand it on, so it comes from its author: which
                 // is the one thing to say where a licence would go.
-                None => "Wallpaper from its author".to_string(),
+                None => obelus_i18n::settings_page::wallpaper_from_author().to_string(),
             }),
             None if card.status != obelus_themes::Status::Delisted => {
-                facts.push("No wallpaper".to_string());
+                facts.push(obelus_i18n::settings_page::no_wallpaper().to_string());
             }
             None => {}
         }
         if card.shadowed {
-            facts.push(format!("A local {} is used instead", theme.name));
+            facts.push(obelus_i18n::settings_page::shadowed(theme.name.as_str()));
         }
         facts.join(" \u{b7} ")
     }
@@ -2283,8 +2325,14 @@ impl SettingsView<'_> {
     /// keeps the green it is said in everywhere beside an update's yellow.
     fn theme_state(&self, card: &ThemeCard) -> Vec<(String, ratatui::style::Color)> {
         use obelus_themes::Status;
-        let in_use = ("\u{25cf} In use".to_string(), self.theme.change_added);
-        let update = ("Update \u{25b8}".to_string(), self.theme.change_modified);
+        let in_use = (
+            format!("\u{25cf} {}", obelus_i18n::settings_page::in_use()),
+            self.theme.change_added,
+        );
+        let update = (
+            format!("{} \u{25b8}", obelus_i18n::settings_page::update()),
+            self.theme.change_modified,
+        );
         match &card.status {
             Status::Installing(progress) => vec![(
                 format!(
@@ -2298,12 +2346,21 @@ impl SettingsView<'_> {
                 vec![in_use, (" \u{b7} ".to_string(), self.theme.gutter), update]
             }
             _ if card.worn => vec![in_use],
-            Status::Installed => vec![("Installed".to_string(), self.theme.gutter)],
-            Status::Delisted => vec![("No longer listed".to_string(), self.theme.gutter)],
+            Status::Installed => vec![(
+                obelus_i18n::settings_page::installed().to_string(),
+                self.theme.gutter,
+            )],
+            Status::Delisted => vec![(
+                obelus_i18n::settings_page::no_longer_listed().to_string(),
+                self.theme.gutter,
+            )],
             Status::Outdated => vec![update],
             Status::Missing | Status::Failed(_) if card.installed => vec![update],
             Status::Missing | Status::Failed(_) => {
-                vec![("Install \u{25b8}".to_string(), self.theme.foreground)]
+                vec![(
+                    format!("{} \u{25b8}", obelus_i18n::settings_page::install()),
+                    self.theme.foreground,
+                )]
             }
         }
     }
@@ -2311,10 +2368,22 @@ impl SettingsView<'_> {
 
 /// How far a theme's install has got, in words.
 fn how_far(updating: bool, progress: Option<obelus_themes::install::Progress>) -> String {
-    let doing = if updating { "Updating" } else { "Installing" };
-    match progress.and_then(|progress| progress.fraction()) {
-        Some(fraction) => format!("{doing} {}%", (fraction * 100.0).round() as u32),
-        None => format!("{doing}\u{2026}"),
+    doing(
+        updating,
+        progress
+            .and_then(|progress| progress.fraction())
+            .map(|fraction| (fraction * 100.0).round() as u32),
+    )
+}
+
+/// An install or an update under way, and how far it has got where that
+/// is known -- an agent's and a theme's alike.
+fn doing(updating: bool, percent: Option<u32>) -> String {
+    match (updating, percent) {
+        (true, Some(percent)) => obelus_i18n::settings_page::updating_percent(percent),
+        (false, Some(percent)) => obelus_i18n::settings_page::installing_percent(percent),
+        (true, None) => obelus_i18n::settings_page::updating().to_string(),
+        (false, None) => obelus_i18n::settings_page::installing().to_string(),
     }
 }
 
@@ -2419,7 +2488,7 @@ fn draw_control(
                 // Not "none": what happens with an empty list is that the
                 // machine's own face is used, and a row that said
                 // "nothing" would be a row saying no text is drawn.
-                true => "The machine's own".to_string(),
+                true => obelus_i18n::settings_page::system_font().to_string(),
                 false => names.join(", "),
             };
             let after = write(

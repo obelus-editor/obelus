@@ -1224,7 +1224,7 @@ fn the_palette_shows_the_key_each_command_is_bound_to() {
     let unbound = row(support::text_block(&narrowed), "choose-theme");
     let ends_with_description = unbound
         .trim_end_matches(['\u{2502}', '\u{2588}', ' '])
-        .ends_with("colours");
+        .ends_with("Color theme");
     assert!(
         ends_with_description,
         "choose-theme has no binding, so it should show no key:\n{narrowed}"
@@ -1678,7 +1678,7 @@ fn the_selection_walks_past_what_cannot_be_chosen() {
 /// The palette draws such a row dim and refuses enter on it; a key is the
 /// same row reached another way, and one judgement has to answer for both.
 /// Before this, `f2` on a screen with no file open drew an empty list of
-/// open files, and `f3` on a clean tree wrote "Nothing has changed" across
+/// open files, and `f3` on a clean tree wrote "No changes" across
 /// the status row -- two answers to a question the palette had already said
 /// could not be asked.
 #[test]
@@ -2880,9 +2880,12 @@ fn stopping_and_restarting_say_what_happened() {
     let mut empty = App::new(vec![]);
     support::lay_out(&mut empty, 60, 12);
     obelus_app::app::dispatch::dispatch(&mut empty, Command::LspStop);
-    assert_eq!(empty.note(), Some("No file to stop a server for"));
+    assert_eq!(empty.note(), Some("No file to stop a language server for"));
     obelus_app::app::dispatch::dispatch(&mut empty, Command::LspRestart);
-    assert_eq!(empty.note(), Some("No file to restart a server for"));
+    assert_eq!(
+        empty.note(),
+        Some("No file to restart a language server for")
+    );
 
     // A language Obelus highlights but has no server for. The reason is the
     // useful part: "nothing happened" is not.
@@ -3060,7 +3063,7 @@ fn a_list_with_nothing_in_it_says_why() {
     press_function(&mut empty, 1);
     let dump = support::render(&mut empty, 50, 8);
     assert!(
-        support::text_block(&dump).contains("No files under this directory"),
+        support::text_block(&dump).contains("No files in this folder"),
         "an empty file list said nothing:\n{dump}"
     );
 
@@ -3386,7 +3389,8 @@ fn a_line_number_is_typed_on_the_status_bar() {
 
     // The question is the status row, and it says what it wants.
     assert!(
-        rows.last().is_some_and(|status| status.contains("Line: ")),
+        rows.last()
+            .is_some_and(|status| status.contains("Go to line: ")),
         "the question is not on the status bar:\n{asking}"
     );
     // And nothing else moved: no list, no rule, no region over the code.
@@ -3410,7 +3414,7 @@ fn a_line_number_is_typed_on_the_status_bar() {
     assert_eq!(y.parse::<u16>().expect("a row"), 11, "{asking}");
     assert_eq!(
         x.parse::<usize>().expect("a column"),
-        1 + "Line: ".len(),
+        1 + "Go to line: ".len(),
         "the caret is not after the label:\n{asking}"
     );
 
@@ -3419,7 +3423,7 @@ fn a_line_number_is_typed_on_the_status_bar() {
     assert!(
         support::text_block(&typed)
             .lines()
-            .any(|row| row.contains("Line: 30")),
+            .any(|row| row.contains("Go to line: 30")),
         "what was typed is not shown:\n{typed}"
     );
 
@@ -3682,7 +3686,7 @@ fn the_file_list_has_a_tab_for_what_has_changed() {
     press(&mut clean, KeyCode::Esc);
     dispatch::dispatch(&mut clean, Command::FileChanged);
     assert!(clean.picker().is_none(), "an empty listing opened");
-    assert_eq!(clean.note(), Some("Nothing has changed"));
+    assert_eq!(clean.note(), Some("No changes"));
 
     // A tree with changes in it: two tabs, and the changed one lists what
     // git said, by name, in the colours the status gives them.

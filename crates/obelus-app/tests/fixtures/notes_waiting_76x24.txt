@@ -23,7 +23,7 @@ screen 76x24  editor 76x22  status 76x1
 20|                                                                            
 21|                                                                            
 22|────────────────────────────────────────────────────────────────────────────
-23| Todo                                      2 to come back to   Ctrl+p  More 
+23| Notes                                     2 to come back to   Ctrl+p  More 
 -- style --
  0|abcdcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  1|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc

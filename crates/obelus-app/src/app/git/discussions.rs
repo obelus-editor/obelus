@@ -181,7 +181,7 @@ impl App {
             Outcome::Ignored => false,
             Outcome::Consumed => true,
             Outcome::Copy(text) => {
-                self.copied(&text, "code");
+                self.copied(&text, obelus_component::copied::Copied::Code);
                 true
             }
             Outcome::Open(to) => {
@@ -249,7 +249,7 @@ impl App {
             return;
         };
         let Ok(id) = gix::ObjectId::from_hex(sha.as_bytes()) else {
-            self.wrong("GitHub has not said which commit it is at");
+            self.wrong(obelus_i18n::git::no_commit_from_github());
             return;
         };
         let full = self.working_directory.join(path);
@@ -344,7 +344,7 @@ impl App {
         let read = match answer {
             Ok(bytes) => obelus_encoding::read(&bytes)
                 .map(obelus_encoding::Read::into_owned)
-                .ok_or_else(|| format!("Not text: {named}")),
+                .ok_or_else(|| obelus_i18n::git::not_text(&named)),
             Err(why) => Err(obelus_component::discussion::unlisted(&why)),
         };
         match read {
@@ -492,8 +492,8 @@ impl App {
     /// The row in the list of what is open for a pull request or an issue.
     pub(in crate::app) fn discussion_row(index: usize, page: &DiscussionView) -> PickerItem {
         let what = match page.asked() {
-            Asked::PullRequest(_) => "Pull request",
-            Asked::Issue(_) => "Issue",
+            Asked::PullRequest(_) => obelus_i18n::git::pull_request(),
+            Asked::Issue(_) => obelus_i18n::git::issue(),
         };
         PickerItem {
             prose: false,

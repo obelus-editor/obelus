@@ -29,7 +29,7 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 /// Moved whenever what a message is moves: a field, a variant, an order.
 /// The golden bytes beside the messages are what notices one moving without
 /// this.
-pub const WIRE_VERSION: u32 = 4;
+pub const WIRE_VERSION: u32 = 5;
 
 /// The longest a frame may be.
 ///
@@ -64,10 +64,7 @@ impl Hello {
     #[must_use]
     pub fn refused(&self, theirs: &Self) -> Option<String> {
         (self.version != theirs.version).then(|| {
-            format!(
-                "This Obelus is {} and the other is {}, and they do not speak alike",
-                self.build, theirs.build
-            )
+            obelus_i18n::remote::do_not_speak_alike(self.build.as_str(), theirs.build.as_str())
         })
     }
 }

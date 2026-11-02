@@ -200,7 +200,7 @@ impl App {
             icon: None,
             label: self
                 .conversation_name(talk, notes)
-                .unwrap_or_else(|| "A conversation".to_string()),
+                .unwrap_or_else(|| obelus_i18n::editing::a_conversation().to_string()),
             // The note it is about, under the name the agent gave it. Two
             // facts that are both worth having: what the reader meant to do,
             // and what came of it.
@@ -313,7 +313,7 @@ impl App {
             marker: None,
             // Said by `document_rows`, from `Document::icon`.
             icon: None,
-            label: "Todo".to_string(),
+            label: obelus_i18n::status::notes().to_string(),
             // How many are still to come back to, where a changed file puts
             // how much it moved: it is the one number about this row that
             // says whether it is worth opening.
@@ -401,7 +401,7 @@ impl App {
             .filter(|shown| *shown == Listing::All || !self.files.statuses.is_empty())
             .collect();
         let Some(tab) = listings.iter().position(|shown| *shown == listing) else {
-            self.wrong("Nothing has changed".to_string());
+            self.wrong(obelus_i18n::editing::no_changes());
             return;
         };
 
@@ -414,7 +414,7 @@ impl App {
             picker.go_to_tab(tab);
         }
         picker.lists_files();
-        picker.before_typing("Filter files");
+        picker.before_typing(obelus_i18n::editing::filter_files());
         picker.previews();
         // This list has a key of its own, so it says so. The others have
         // none, and a foot saying "enter chooses" would be a row spent on
@@ -565,7 +565,7 @@ impl App {
         // and the row on the settings page says which file did. Here there
         // is no row to say it, so the status bar does.
         if let Some(path) = self.pinned_by(setting) {
-            self.wrong(format!("{} says which files to read", path.display()));
+            self.wrong(obelus_i18n::editing::set_by(path.display().to_string()));
             return true;
         }
         let showing = !self
@@ -845,7 +845,7 @@ impl App {
                     // nothing about where it is in the tree. What puts the
                     // reader back is the name.
                     picker.replace(rows);
-                    picker.when_empty("No files under this directory");
+                    picker.when_empty(obelus_i18n::editing::no_files_in_this_folder());
                     match back {
                         // A query that came and went is not a reason to
                         // move, so the row the reader left wins over the
@@ -890,7 +890,7 @@ impl App {
                     picker.offering_ignored(Some(ignored));
                     picker.offering_hidden(Some(hidden));
                     picker.relist(Vec::new());
-                    picker.when_empty("No files under this directory");
+                    picker.when_empty(obelus_i18n::editing::no_files_in_this_folder());
                     // Open on the file being read. The walk decides where in
                     // the list it is, and it may be in the last batch, so the
                     // picker holds on to the name and selects the row when it
@@ -984,7 +984,7 @@ impl App {
                         version: None,
                         detail: match (&standing.was, standing.submodule) {
                             (Some(was), _) => Some(format!("\u{2190} {}", was.display())),
-                            (None, true) => Some("submodule".to_string()),
+                            (None, true) => Some(obelus_i18n::editing::submodule().to_string()),
                             (None, false) => None,
                         },
                         trailing: None,
@@ -1005,7 +1005,7 @@ impl App {
                     .collect();
                 if let Some(picker) = self.picker.as_mut() {
                     picker.replace(items);
-                    picker.when_empty("Nothing has changed");
+                    picker.when_empty(obelus_i18n::editing::no_changes());
                 }
             }
         }
@@ -1106,7 +1106,7 @@ impl App {
         }
 
         let Some(id) = self.current else {
-            self.wrong("No file to close".to_string());
+            self.wrong(obelus_i18n::editing::no_file_to_close());
             return;
         };
         self.close(id);
@@ -1184,7 +1184,6 @@ impl App {
         if running > 0 {
             self.ask_before_stopping_them(
                 running,
-                "close the others",
                 obelus_component::question::Answer::ClosingTheOthers(
                     keep,
                     obelus_component::question::Leaving::Discard,
@@ -1436,8 +1435,8 @@ impl App {
         }
         if self.reading_of_current().is_none() {
             self.wrong(match self.current_buffer() {
-                Some(_) => "Nothing to preview in this file".to_string(),
-                None => "No file to preview".to_string(),
+                Some(_) => obelus_i18n::editing::nothing_to_preview(),
+                None => obelus_i18n::editing::no_file_to_preview(),
             });
             return;
         }
@@ -1604,11 +1603,11 @@ impl App {
                 tracing::warn!(%error, "could not open");
                 let name = relative(path, &self.working_directory);
                 self.wrong(if !path.exists() {
-                    format!("{name} is not there any more")
+                    obelus_i18n::editing::no_longer_exists(name)
                 } else if path.is_dir() {
-                    format!("{name} is a directory")
+                    obelus_i18n::editing::is_a_directory(name)
                 } else {
-                    format!("Could not open {name}: {error}")
+                    obelus_i18n::editing::could_not_open_because(error.to_string(), name)
                 });
             }
         }
@@ -1751,9 +1750,8 @@ impl App {
         // and not place: `<project>/../elsewhere` begins with the
         // project's own path and is nowhere near it.
         if !folded(&path).starts_with(folded(&self.working_directory)) {
-            self.wrong(format!(
-                "{} is outside the project",
-                self.named(&path, answer)
+            self.wrong(obelus_i18n::editing::outside_the_project(
+                self.named(&path, answer),
             ));
             return;
         }
@@ -1773,8 +1771,8 @@ impl App {
             // a read-only disk -- has no such fact behind it and gets the
             // shape that names no reason.
             self.wrong(match parent.exists() && !parent.is_dir() {
-                true => format!("{shown} is not a directory"),
-                false => format!("Could not make {shown}"),
+                true => obelus_i18n::editing::not_a_directory(shown),
+                false => obelus_i18n::editing::could_not_create(shown),
             });
             return;
         }
@@ -1796,8 +1794,8 @@ impl App {
                 // whole of it is in the log, which is where `save-file`
                 // puts its own for the same reason.
                 self.wrong(match path.exists() {
-                    true => format!("{name} is already there"),
-                    false => format!("Could not make {name}"),
+                    true => obelus_i18n::editing::already_exists(name),
+                    false => obelus_i18n::editing::could_not_create(name),
                 });
             }
         }
@@ -2008,7 +2006,7 @@ impl App {
     /// Writes the file being read back to disk.
     pub fn save_current(&mut self) {
         let Some(index) = self.current.map(DocumentId::get) else {
-            self.wrong("No file open".to_string());
+            self.wrong(obelus_i18n::editing::no_file_open());
             return;
         };
         let Some(buffer) = self.file_mut(DocumentId::new(index)) else {
@@ -2019,14 +2017,14 @@ impl App {
         // whose path is only what it is called.
         if !buffer.content().is_file() {
             let why = match buffer.content().is_plan() {
-                true => "This is an agent's plan, not a file",
-                false => "This is a commit's version, not the file",
+                true => obelus_i18n::editing::is_a_plan(),
+                false => obelus_i18n::editing::is_a_commits_version(),
             };
-            self.wrong(why.to_string());
+            self.wrong(why);
             return;
         }
         if !buffer.is_dirty() {
-            self.wrong("Nothing to save".to_string());
+            self.wrong(obelus_i18n::editing::nothing_to_save());
             return;
         }
         // The file moved under the reader while they were editing it.
@@ -2070,7 +2068,7 @@ impl App {
     /// arrives here, having settled the one thing it stopped for.
     pub(in crate::app) fn format_then_write(&mut self, index: usize) {
         if self.settled.config.format_on_save && self.ask_formatting(index) {
-            self.say("Laying it out\u{2026}".to_string());
+            self.say(obelus_i18n::editing::formatting());
             return;
         }
         self.write_now(index);
@@ -2091,11 +2089,11 @@ impl App {
                     self.change_document(index);
                     self.ask_standing_questions(index);
                 }
-                self.say("Took what is on disk -- undo brings yours back".to_string());
+                self.say(obelus_i18n::editing::reverted());
             }
             Err(error) => {
                 tracing::warn!(%error, "taking what is on disk failed");
-                self.wrong("Could not read it".to_string());
+                self.wrong(obelus_i18n::editing::could_not_read_the_file());
             }
         }
     }
@@ -2147,14 +2145,15 @@ impl App {
                 // which encoding. The way out is choose-encoding.
                 let unwritable = error.downcast_ref::<obelus_encoding::Unwritable>();
                 let said = match (buffer.path().file_name(), unwritable) {
-                    (Some(name), Some(why)) => format!(
-                        "{} not saved: {} cannot write {}",
-                        name.to_string_lossy(),
+                    (Some(name), Some(why)) => obelus_i18n::editing::not_saved_unencodable(
+                        why.character.to_string(),
                         why.written.name(),
-                        why.character
+                        name.to_string_lossy(),
                     ),
-                    (Some(name), None) => format!("{}: not saved", name.to_string_lossy()),
-                    (None, _) => "Not saved".to_string(),
+                    (Some(name), None) => {
+                        obelus_i18n::editing::not_saved_named(name.to_string_lossy())
+                    }
+                    (None, _) => obelus_i18n::editing::not_saved().to_string(),
                 };
                 self.wrong(said);
                 false

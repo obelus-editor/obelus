@@ -193,7 +193,10 @@ fn hex(key: &[u8]) -> String {
 /// the places the name is -- or why there is none.
 fn connected(address: &str) -> std::io::Result<TcpStream> {
     use std::net::ToSocketAddrs as _;
-    let mut last = std::io::Error::new(std::io::ErrorKind::NotFound, "Nothing is at that name");
+    let mut last = std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        obelus_i18n::remote::nothing_at_that_address(),
+    );
     for at in address.to_socket_addrs()? {
         match TcpStream::connect_timeout(&at, CONNECTING) {
             Ok(stream) => return Ok(stream),
@@ -301,6 +304,9 @@ fn knock(
             size: [size.width, size.height, pixels.width, pixels.height],
             path: afar.path.clone(),
             window: window.map(str::to_string),
+            // This machine's, because it is the reader's: the one at the
+            // other end may be a server with no language of its own.
+            locale: sys_locale::get_locale(),
         },
     )?;
     let answered: Answered =
@@ -509,13 +515,17 @@ fn dropped(path: &std::path::Path) -> (String, Result<Vec<u8>, String>) {
         |name| name.to_string_lossy().into_owned(),
     );
     let file = match std::fs::metadata(path) {
-        Ok(found) if found.is_dir() => Err(format!("A folder cannot be sent: {name}")),
-        Ok(found) if found.len() > DROPPED_MOST => Err(format!(
-            "Larger than {} MiB, so not sent: {name}",
-            DROPPED_MOST >> 20
+        Ok(found) if found.is_dir() => Err(obelus_i18n::remote::folder_not_sent(&name)),
+        Ok(found) if found.len() > DROPPED_MOST => Err(obelus_i18n::remote::too_large_to_send(
+            DROPPED_MOST >> 20,
+            &name,
         )),
-        Ok(_) => std::fs::read(path).map_err(|error| format!("Would not read {name}: {error}")),
-        Err(error) => Err(format!("Would not read {name}: {error}")),
+        Ok(_) => std::fs::read(path)
+            .map_err(|error| obelus_i18n::remote::could_not_read(error.to_string(), &name)),
+        Err(error) => Err(obelus_i18n::remote::could_not_read(
+            error.to_string(),
+            &name,
+        )),
     };
     (name, file)
 }

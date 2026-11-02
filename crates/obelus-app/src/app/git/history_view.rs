@@ -61,11 +61,11 @@ impl About {
 
     /// The tab's name.
     #[must_use]
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::File => "This file",
-            Self::Refs => "The refs",
-            Self::Project => "The project",
+            Self::File => obelus_i18n::git::tab_this_file(),
+            Self::Refs => obelus_i18n::git::tab_refs(),
+            Self::Project => obelus_i18n::git::tab_the_project(),
         }
     }
 }
@@ -150,15 +150,15 @@ impl App {
         let radii = self.historic(about);
         let Some(tab) = radii.iter().position(|shown| *shown == about) else {
             self.wrong(match about {
-                About::File | About::Refs => "No file open".to_string(),
-                About::Project => "No history here".to_string(),
+                About::File | About::Refs => obelus_i18n::editing::no_file_open(),
+                About::Project => obelus_i18n::git::no_history_here(),
             });
             return;
         };
 
         let names: Vec<&str> = radii.iter().map(|radius| radius.label()).collect();
         let mut picker = Picker::new(Vec::new(), PickerLayout::FullArea);
-        picker.before_typing("Filter commits");
+        picker.before_typing(obelus_i18n::git::filter_commits());
         picker.with_scopes(&names);
         // A commit's files hang under it: the query is about the commits.
         picker.nests();
@@ -563,23 +563,20 @@ impl App {
             }
         }
         let empty = match (self.history.reading.is_some(), self.history.of.as_deref()) {
-            _ if showing == Some(About::Refs) => "Nothing points at a commit here",
+            _ if showing == Some(About::Refs) => obelus_i18n::git::no_refs_here(),
             // Still looking. A file's history is every commit that ever
             // touched it, and nothing found yet is not nothing to find.
-            (true, _) => "Reading the history\u{2026}",
+            (true, _) => obelus_i18n::git::reading_the_history(),
             // Said in the reader's terms: they pressed a key about *this*
             // file, and the answer is about this file.
-            (false, Some(_)) => "No commit has touched this file",
-            (false, None) => "Nothing in the history here",
+            (false, Some(_)) => obelus_i18n::git::no_commit_touches_this_file(),
+            (false, None) => obelus_i18n::git::no_commits_here(),
         };
         // How far the walk has got. A file's history can find nothing for a
         // second and a half and still be working, and a count that moves is
         // the only thing that tells that apart from a list that is finished
         // and empty.
-        let filling = self
-            .history
-            .reading
-            .map(|walked| format!("{walked} commits read\u{2026}"));
+        let filling = self.history.reading.map(obelus_i18n::git::commits_read);
         if let (Some(picker), Some(left)) = (self.picker.as_ref(), self.history.left.as_ref())
             && (picker.selected(), picker.query()) != *left
         {
@@ -704,7 +701,7 @@ impl App {
     ) {
         let full = self.working_directory.join(path);
         let Some(text) = obelus_git::history::text_at(&self.working_directory, id, &full) else {
-            self.wrong("Nothing to read there".to_string());
+            self.wrong(obelus_i18n::git::not_at_that_commit());
             return;
         };
         let from = self.here();

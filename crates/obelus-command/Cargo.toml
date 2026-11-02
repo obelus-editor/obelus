@@ -10,6 +10,7 @@ license.workspace = true
 workspace = true
 
 [dependencies]
+obelus-i18n.workspace = true
 # For `Drawn` alone: which front end a command means anything in is the
 # same question a setting answers, and one answer to it is the point.
 obelus-config.workspace = true

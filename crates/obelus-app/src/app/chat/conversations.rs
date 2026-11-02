@@ -250,10 +250,10 @@ pub(in crate::app) fn when_said(
     match days {
         // A day ahead of this one is a clock that disagrees, and today is
         // the least wrong thing to say about it -- `how_long_ago`'s answer.
-        Some(..=0) => "Today",
-        Some(1) => "Yesterday",
-        Some(2..=6) => "This week",
-        _ => "Earlier",
+        Some(..=0) => obelus_i18n::time::today(),
+        Some(1) => obelus_i18n::time::yesterday(),
+        Some(2..=6) => obelus_i18n::time::this_week(),
+        _ => obelus_i18n::time::earlier(),
     }
 }
 
@@ -474,7 +474,7 @@ impl App {
         // query ranking the rows would scatter them out from under their
         // headings. What it does is say which rows are left.
         picker.keeps_order(true);
-        picker.before_typing("Filter conversations");
+        picker.before_typing(obelus_i18n::conversation::filter_conversations());
         // Scopes rather than groups: the rows of a tab are fetched when the
         // reader walks onto it, the way a search's are. A row of tabs the
         // picker filters would need an "All" in front of them, which is the
@@ -728,20 +728,16 @@ impl App {
         let whose = self.conversing.agents.get(tab).cloned().unwrap_or_default();
         let said = match whose == in_use {
             true if self.conversing.unreadable => {
-                "Obelus cannot read what it wrote down about this project.".to_string()
+                obelus_i18n::conversation::history_unreadable().to_string()
             }
             true if self.conversing.rows.iter().any(|listed| listed.there) => {
-                "A conversation can only be taken up in the checkout it was had in.".to_string()
+                obelus_i18n::conversation::only_in_its_checkout().to_string()
             }
             true => String::new(),
             false if in_use.is_empty() => {
-                "No agent is chosen, and a conversation can only be taken up by the agent that had it."
-                    .to_string()
+                obelus_i18n::conversation::only_by_its_agent_and_none_chosen().to_string()
             }
-            false => format!(
-                "{} is the agent in use, and a conversation can only be taken up by the agent that had it.",
-                self.agent_called(&in_use)
-            ),
+            false => obelus_i18n::conversation::only_by_its_agent(self.agent_called(&in_use)),
         };
         picker.about(&said);
     }
@@ -765,7 +761,7 @@ impl App {
             prose: false,
             marker: Some(fresh()),
             icon: None,
-            label: "New conversation".to_string(),
+            label: obelus_i18n::commands::new_conversation().to_string(),
             version: None,
             detail: None,
             trailing: None,
@@ -867,7 +863,7 @@ impl App {
                     .and_then(|talk| self.conversation_name(talk, &todo))
                     .or_else(|| kept.title.clone())
                     .or_else(|| about.clone())
-                    .unwrap_or_else(|| "Untitled".to_string());
+                    .unwrap_or_else(|| obelus_i18n::conversation::untitled().to_string());
                 // Not said twice: a title the agent never gave is the
                 // note's own words, and the same words after them is the
                 // rule a setting's description already follows. And
@@ -1005,7 +1001,7 @@ impl App {
                     listed
                         .title
                         .clone()
-                        .unwrap_or_else(|| "Untitled".to_string()),
+                        .unwrap_or_else(|| obelus_i18n::conversation::untitled().to_string()),
                     None,
                     trailing.clone(),
                     !elsewhere,
@@ -1168,7 +1164,7 @@ impl App {
     /// it has none, and the tab is still where a new conversation starts.
     fn tab_called(&self, agent: &str) -> String {
         match agent.is_empty() {
-            true => "No agent".to_string(),
+            true => obelus_i18n::chat::no_agent().to_string(),
             false => self.agent_called(agent),
         }
     }

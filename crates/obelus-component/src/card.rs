@@ -90,6 +90,7 @@ use crossterm::event::{KeyCode, KeyModifiers};
 use obelus_text::coordinates::DisplayColumn;
 
 use super::composer::Composer;
+use crate::copied::Copied;
 
 /// How far under an answer's name what it means is drawn.
 ///
@@ -122,6 +123,11 @@ pub struct Choice {
     pub icon: Option<char>,
     /// Whether it is one of the answers as things stand.
     pub chosen: bool,
+    /// What a chat platform's thread calls it, where that is not its name:
+    /// Obelus's own choices, whose names are in the reader's language and
+    /// whose thread is read in English. An agent's choices are its own words
+    /// in both places, and leave this empty.
+    pub said: Option<String>,
 }
 
 /// The half of a card the reader writes in.
@@ -463,20 +469,20 @@ impl Card {
     /// What a copy takes from the card: what is held in the words, or all
     /// of them. Nothing on a card with nowhere to write.
     #[must_use]
-    pub fn copied(&self) -> Option<(String, &'static str)> {
+    pub fn copied(&self) -> Option<(String, Copied)> {
         let words = self.words.as_ref()?;
         Some(match words.composer.selected() {
-            Some(held) => (held, "selection"),
-            None => (words.composer.text(), "answer"),
+            Some(held) => (held, Copied::Selection),
+            None => (words.composer.text(), Copied::Answer),
         })
     }
 
     /// The same, and takes it out.
-    pub fn cut(&mut self, width: u16) -> Option<(String, &'static str)> {
+    pub fn cut(&mut self, width: u16) -> Option<(String, Copied)> {
         let words = self.words.as_mut()?;
         Some(match words.composer.cut(width.max(1)) {
-            Some(held) => (held, "selection"),
-            None => (words.composer.take(), "answer"),
+            Some(held) => (held, Copied::Selection),
+            None => (words.composer.take(), Copied::Answer),
         })
     }
 
@@ -562,10 +568,13 @@ impl Card {
             .as_ref()
             .is_some_and(|words| !words.composer.is_blank());
         Some(match self.short_of(self.chosen().len() as u64, written)? {
-            Short::Least(least) => format!("at least {least}"),
-            Short::Most(most) => format!("at most {most}"),
-            Short::One => "Choose one".to_string(),
-            Short::Words => format!("{} first", self.placeholder().unwrap_or("An answer")),
+            Short::Least(least) => obelus_i18n::card::choose_at_least(least),
+            Short::Most(most) => obelus_i18n::card::choose_at_most(most),
+            Short::One => obelus_i18n::card::choose_one().to_string(),
+            Short::Words => match self.placeholder() {
+                Some(what) => obelus_i18n::card::first(what),
+                None => obelus_i18n::card::an_answer_first().to_string(),
+            },
         })
     }
 
@@ -606,23 +615,23 @@ impl Card {
             .iter()
             .any(|id| !self.choices.iter().any(|choice| choice.id == *id))
         {
-            return Err("That is not one of the answers".to_string());
+            return Err(obelus_i18n::card::not_an_answer().to_string());
         }
         if !self.several && chosen.len() > 1 {
-            return Err("Just one".to_string());
+            return Err(obelus_i18n::card::just_one().to_string());
         }
         if words.is_some() && !self.takes_words() {
-            return Err("This takes no words".to_string());
+            return Err(obelus_i18n::card::takes_no_words().to_string());
         }
         match self.short_of(chosen.len() as u64, words.is_some()) {
             None => Ok(()),
-            Some(Short::Least(least)) => Err(format!("At least {least}")),
-            Some(Short::Most(most)) => Err(format!("At most {most}")),
-            Some(Short::One) => Err("Choose one as well".to_string()),
-            Some(Short::Words) => Err(format!(
-                "{} as well",
-                self.placeholder().unwrap_or("An answer")
-            )),
+            Some(Short::Least(least)) => Err(obelus_i18n::card::choose_at_least(least)),
+            Some(Short::Most(most)) => Err(obelus_i18n::card::choose_at_most(most)),
+            Some(Short::One) => Err(obelus_i18n::card::choose_one_as_well().to_string()),
+            Some(Short::Words) => Err(match self.placeholder() {
+                Some(what) => obelus_i18n::card::as_well(what),
+                None => obelus_i18n::card::an_answer_as_well().to_string(),
+            }),
         }
     }
 
@@ -633,6 +642,16 @@ impl Card {
             .iter()
             .find(|choice| choice.id == id)
             .map(|choice| choice.name.as_str())
+    }
+
+    /// What a chat platform's thread calls a choice, by its id: what it was
+    /// given to say there, or its name where it was given nothing.
+    #[must_use]
+    pub fn said_of(&self, id: &str) -> Option<&str> {
+        self.choices
+            .iter()
+            .find(|choice| choice.id == id)
+            .map(|choice| choice.said.as_deref().unwrap_or(&choice.name))
     }
 
     /// How many rows the card wants, given the width it has.
@@ -1055,8 +1074,25 @@ mod tests {
                 about: None,
                 icon: None,
                 chosen: false,
+                said: None,
             })
             .collect()
+    }
+
+    /// A chat is told a choice by what it was given to say there, and by
+    /// its name where it was given nothing.
+    ///
+    /// Broken deliberately by `said_of` answering the name always: the
+    /// chat was told the screen's word for a choice Obelus made.
+    #[test]
+    fn a_chat_is_told_a_choice_in_its_own_words() {
+        let mut choices = answers();
+        choices[0].name = "开".to_string();
+        choices[0].said = Some("On".to_string());
+        let card = Card::new(choices, false);
+        assert_eq!(card.said_of("one"), Some("On"));
+        assert_eq!(card.said_of("two"), Some("two"));
+        assert_eq!(card.said_of("nine"), None);
     }
 
     /// An answer given on a card drawn elsewhere is held to what this one
@@ -1076,11 +1112,11 @@ mod tests {
         );
         assert_eq!(
             one.takes(&["one".to_string(), "two".to_string()], None),
-            Err("Just one".to_string())
+            Err("Choose just one".to_string())
         );
         assert_eq!(
             one.takes(&[], Some("mine")),
-            Err("This takes no words".to_string())
+            Err("This question takes no written answer".to_string())
         );
 
         let mut several = Card::new(answers(), true);
@@ -1088,7 +1124,7 @@ mod tests {
         several.writing("Reason", true, None);
         assert_eq!(
             several.takes(&["one".to_string()], Some("why")),
-            Err("At least 2".to_string())
+            Err("Choose at least 2".to_string())
         );
         assert_eq!(
             several.takes(&["one".to_string(), "three".to_string()], None),
@@ -1175,7 +1211,7 @@ mod tests {
             card.handle_key(&key(KeyCode::Enter), ROOM),
             CardOutcome::Consumed
         );
-        assert_eq!(card.complaint().as_deref(), Some("at least 2"));
+        assert_eq!(card.complaint().as_deref(), Some("Choose at least 2"));
         // Ticked again, and it goes -- in the order the answers are in
         // rather than the order they were ticked, because that is the
         // order the agent listed them in.

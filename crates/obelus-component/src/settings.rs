@@ -62,6 +62,7 @@ use obelus_keymap::{KeyChord, Keymap};
 use obelus_themes::Card as ThemeCard;
 
 use crate::{
+    copied::Copied,
     field::Field,
     window::{Move, Window, Wrap},
 };
@@ -328,13 +329,13 @@ impl Page {
 
     /// The tab's name.
     #[must_use]
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Settings => "Settings",
-            Self::Keys => "Keys",
-            Self::Agents => "Agents",
-            Self::Bot => "Chat",
-            Self::Themes => "Themes",
+            Self::Settings => obelus_i18n::settings_page::tab_settings(),
+            Self::Keys => obelus_i18n::settings_page::tab_keys(),
+            Self::Agents => obelus_i18n::settings_page::tab_agents(),
+            Self::Bot => obelus_i18n::settings_page::tab_chat(),
+            Self::Themes => obelus_i18n::settings_page::tab_themes(),
         }
     }
 }
@@ -482,16 +483,16 @@ impl Shown<'_> {
     #[must_use]
     pub fn label(&self) -> &str {
         match self {
-            Self::Obelus { setting, .. } => setting.name,
+            Self::Obelus { setting, .. } => setting.name(),
             Self::Agent { offer, .. } => &offer.name,
             Self::Variable { name, .. } => name,
-            Self::AddVariable { .. } => "Add a variable",
+            Self::AddVariable { .. } => obelus_i18n::settings_page::add_a_variable(),
             Self::Silent { .. } => "",
             Self::Bot { row, .. } => match row {
-                BotRow::Platform => "Platform",
-                BotRow::Field(field) => field.name,
-                BotRow::People => "People",
-                BotRow::Pair => "Pair",
+                BotRow::Platform => obelus_i18n::settings_page::platform(),
+                BotRow::Field(field) => (field.name)(),
+                BotRow::People => obelus_i18n::settings_page::people(),
+                BotRow::Pair => obelus_i18n::settings_page::pair(),
                 BotRow::Setup(setup) => setup.name(),
             },
         }
@@ -501,20 +502,20 @@ impl Shown<'_> {
     #[must_use]
     pub fn about(&self) -> &str {
         match self {
-            Self::Obelus { setting, .. } => setting.about,
+            Self::Obelus { setting, .. } => setting.about(),
             Self::Agent { offer, .. } => offer.about.as_deref().unwrap_or_default(),
             // What it holds, under its name where a gloss goes, and whole:
             // the column the controls are in is the width of a word, and
             // a proxy's address or a token cut down to that is a value the
             // reader cannot check.
             Self::Variable { value, .. } => value,
-            Self::AddVariable { .. } => "A name and then what it holds",
+            Self::AddVariable { .. } => obelus_i18n::settings_page::add_a_variable_about(),
             Self::Silent { saying, .. } => saying,
             Self::Bot { row, .. } => match row {
-                BotRow::Platform => "Which chat a note can be worked on from",
-                BotRow::Field(field) => field.about,
-                BotRow::People => "Who may talk to this machine through it",
-                BotRow::Pair => "A code to send in the group you put the bot in",
+                BotRow::Platform => obelus_i18n::settings_page::platform_about(),
+                BotRow::Field(field) => (field.about)(),
+                BotRow::People => obelus_i18n::settings_page::people_about(),
+                BotRow::Pair => obelus_i18n::settings_page::pair_row_about(),
                 BotRow::Setup(setup) => setup.about(),
             },
         }
@@ -550,9 +551,9 @@ impl Shown<'_> {
                 chosen: Some(value),
                 agent,
                 ..
-            } if offer.name_of(value).is_none() => Some(format!(
-                "No longer offered by {agent}, so a new conversation starts on its own"
-            )),
+            } if offer.name_of(value).is_none() => {
+                Some(obelus_i18n::settings_page::no_longer_offered(*agent))
+            }
             Self::Agent { .. } => None,
         }
     }
@@ -561,7 +562,7 @@ impl Shown<'_> {
 /// Whether a setting is one of those left by what has been typed, already
 /// lowercased: by its name, or by what it is called in the file.
 fn narrowed_to(setting: &Setting, query: &str) -> bool {
-    query.is_empty() || setting.name.to_lowercase().contains(query) || setting.key.contains(query)
+    query.is_empty() || setting.name().to_lowercase().contains(query) || setting.key.contains(query)
 }
 
 /// A row of the keys page waiting for its key, and what that key will do.
@@ -645,7 +646,7 @@ impl KeyRow {
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
-            Self::Setting(setting) => setting.name,
+            Self::Setting(setting) => setting.name(),
             Self::Key { command, .. } => command.name(),
         }
     }
@@ -798,11 +799,11 @@ impl Settings {
             return None;
         }
         Some(match self.page() {
-            Page::Keys => "Filter keys",
-            Page::Agents => "Filter agents",
-            Page::Bot => "Filter chat settings",
-            Page::Settings => "Filter settings",
-            Page::Themes => "Filter themes",
+            Page::Keys => obelus_i18n::settings_page::filter_keys(),
+            Page::Agents => obelus_i18n::settings_page::filter_agents(),
+            Page::Bot => obelus_i18n::settings_page::filter_chat(),
+            Page::Settings => obelus_i18n::settings_page::filter_settings(),
+            Page::Themes => obelus_i18n::settings_page::filter_themes(),
         })
     }
 
@@ -889,14 +890,13 @@ impl Settings {
                 ..
             } => {
                 let secret = matches!(field.kind, obelus_bot::platform::FieldKind::Secret { .. });
-                let name = self
-                    .reached
-                    .platform
-                    .map_or("The chat", |platform| platform.name);
                 match self.reached.state {
-                    obelus_bot::State::Refused if secret => Some(format!("Refused by {name}")),
+                    obelus_bot::State::Refused if secret => Some(match self.reached.platform {
+                        Some(platform) => obelus_i18n::settings_page::refused_by(platform.name),
+                        None => obelus_i18n::settings_page::refused().to_string(),
+                    }),
                     obelus_bot::State::Unread if secret => {
-                        Some("The tokens would not read".to_string())
+                        Some(obelus_i18n::settings_page::tokens_unreadable().to_string())
                     }
                     _ => None,
                 }
@@ -913,7 +913,9 @@ impl Settings {
         let opens = Some(
             self.reached
                 .platform
-                .map_or("Chat", |platform| platform.name),
+                .map_or(obelus_i18n::settings_page::chat_heading(), |platform| {
+                    platform.name
+                }),
         );
         let mut rows = vec![BotRow::Platform];
         if let Some(platform) = self.reached.platform {
@@ -1056,7 +1058,7 @@ impl Settings {
             .filter(|spec| {
                 query.is_empty()
                     || spec.name.to_lowercase().contains(&query)
-                    || spec.title.to_lowercase().contains(&query)
+                    || spec.title().to_lowercase().contains(&query)
             })
             .flat_map(|spec| {
                 let rows = self.held(spec.command).len().max(1);
@@ -1226,12 +1228,12 @@ impl Settings {
 
     /// What a copy takes from the query: what is held, or all of it.
     #[must_use]
-    pub fn copy_query(&self) -> (String, &'static str) {
+    pub fn copy_query(&self) -> (String, Copied) {
         self.query.copied()
     }
 
     /// The same, and takes it out.
-    pub fn cut_query(&mut self, offering: Option<&Offering>) -> (String, &'static str) {
+    pub fn cut_query(&mut self, offering: Option<&Offering>) -> (String, Copied) {
         let taken = self.query.cut();
         self.settle(offering);
         taken
@@ -1368,7 +1370,11 @@ impl Settings {
                 opens: opens.take(),
             });
         }
-        if query.is_empty() || "add a variable".contains(&query) {
+        if query.is_empty()
+            || obelus_i18n::settings_page::add_a_variable()
+                .to_lowercase()
+                .contains(&query)
+        {
             rows.push(Shown::AddVariable {
                 opens: opens.take(),
             });
@@ -1535,7 +1541,7 @@ impl Settings {
     /// and for no query at all: there is nothing on the row to point at.
     #[must_use]
     pub fn matched(&self, setting: &Setting) -> Option<std::ops::Range<usize>> {
-        self.matched_in(setting.name)
+        self.matched_in(setting.name())
     }
 
     /// What a row's control shows, from the config it is handed.

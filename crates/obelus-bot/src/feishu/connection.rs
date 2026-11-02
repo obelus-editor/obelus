@@ -281,7 +281,7 @@ impl Api {
             .unwrap_or_default()
             .to_string();
         if url.is_empty() {
-            return Err(Refusal::Other("no address to connect to".to_string()));
+            return Err(Refusal::Other(obelus_i18n::bot::no_address().to_string()));
         }
         let ping = answer["data"]["ClientConfig"]["PingInterval"]
             .as_u64()
@@ -321,7 +321,7 @@ fn answered(
     answer: Option<Value>,
 ) -> Result<Value, Failure> {
     let Some(answer) = answer.filter(|answer| answer["code"].is_i64()) else {
-        let why = format!("answered {status}");
+        let why = obelus_i18n::bot::answered(status.to_string());
         return match status.is_server_error()
             || status == reqwest::StatusCode::TOO_MANY_REQUESTS
             || status.is_success()
@@ -937,7 +937,7 @@ async fn connected(
     {
         Ok(Ok((socket, _))) => socket,
         Ok(Err(error)) => return Lost::Unmade(error.to_string()),
-        Err(_) => return Lost::Unmade("no answer".to_string()),
+        Err(_) => return Lost::Unmade(obelus_i18n::bot::no_answer_in_time().to_string()),
     };
     let (mut out, mut heard) = socket.split();
     api.socket_is(State::Connected, None, sink);

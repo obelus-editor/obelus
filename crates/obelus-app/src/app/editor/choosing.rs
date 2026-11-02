@@ -36,7 +36,9 @@ impl App {
                 label: name.clone(),
                 version: None,
                 detail: None,
-                trailing: self.theme_whence(&name).map(str::to_string),
+                trailing: self
+                    .theme_whence(&name)
+                    .map(|whence| whence.said().to_string()),
                 changed: None,
                 value: PickerValue::Theme(name),
                 enabled: true,
@@ -51,12 +53,12 @@ impl App {
             .chain(std::iter::once(Self::more_themes()))
             .collect();
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
-        picker.when_empty("No theme is built in");
+        picker.when_empty(obelus_i18n::editing::no_theme_is_built_in());
         picker.otherwise(
-            crate::app::project::themes::NONE_HERE,
+            crate::app::project::themes::none_here(),
             PickerValue::MoreThemes,
         );
-        picker.before_typing("Filter themes");
+        picker.before_typing(obelus_i18n::settings_page::filter_themes());
         // Open on the one that is on, so the list starts by saying which
         // theme this is rather than making the reader work it out.
         picker.prefer(self.theme_name().to_string());
@@ -93,7 +95,7 @@ impl App {
             })
             .collect();
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
-        picker.before_typing("Filter encodings");
+        picker.before_typing(obelus_i18n::editing::filter_encodings());
         // Open on the one the file is in, so the list starts by saying it.
         picker.prefer(now.name().into_owned());
         picker.opened_by(Command::EncodingSelect);
@@ -150,7 +152,7 @@ impl App {
                     self.ask_standing_questions(index);
                 }
             }
-            None => self.say(format!("Written as {name} when it is saved")),
+            None => self.say(obelus_i18n::editing::written_as(name)),
         }
     }
 
@@ -228,7 +230,7 @@ impl App {
                     .map(|at| at + 1 + own),
                 section: None,
                 version: None,
-                detail: Some(spec.title.to_string()),
+                detail: Some(spec.title().to_string()),
                 // The key it is bound to, if it is bound to one. A command
                 // with nothing here is one the palette is the only way to
                 // reach, which is worth being able to see.
@@ -240,8 +242,8 @@ impl App {
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
         // It holds every command, so it is only ever empty for a query that
         // matches none of them -- which the picker says itself.
-        picker.when_empty("No command by that name");
-        picker.before_typing("Filter commands");
+        picker.when_empty(obelus_i18n::settings_page::no_command_matches());
+        picker.before_typing(obelus_i18n::editing::filter_commands());
         // Tabs over one long list. Fourteen commands is already more than a
         // compact list shows at once, and the groups are what a reader is
         // choosing between when they do not already know the name.
@@ -250,7 +252,7 @@ impl App {
             .map(|group| group.name())
             .collect();
         match own {
-            1 => picker.with_tabs_and_its_own(HERE, &names),
+            1 => picker.with_tabs_and_its_own(obelus_i18n::editing::here(), &names),
             _ => picker.with_tabs(&names),
         }
         // Read down as much as it is typed at: most of what the palette
@@ -420,7 +422,7 @@ impl App {
     /// shows is a server's own words -- its stderr, its handshake, and the
     /// requests Obelus sent it.
     pub fn open_log(&mut self) {
-        self.open_log_file(obelus_logging::OBELUS, "No log file");
+        self.open_log_file(obelus_logging::OBELUS, obelus_i18n::editing::no_log_file());
     }
 
     /// And the language servers' own, which is the other half of the same
@@ -428,7 +430,10 @@ impl App {
     /// file of its own because it is somebody else's program talking at a
     /// volume that would bury the dozen lines Obelus has to say.
     pub fn open_server_log(&mut self) {
-        self.open_log_file(obelus_logging::SERVERS, "No server log file");
+        self.open_log_file(
+            obelus_logging::SERVERS,
+            obelus_i18n::editing::no_server_log_file(),
+        );
     }
 
     /// Opens whichever log, or says there is none.
@@ -1069,9 +1074,6 @@ impl App {
     }
 }
 
-/// What the palette's own first tab is called.
-const HERE: &str = "Here";
-
 /// The keys of a view as rows of the palette, in its first tab.
 ///
 /// A pair of keys for one act in two directions is a row each here, where
@@ -1099,7 +1101,7 @@ fn keys_as_rows(keys: &[obelus_ui::Hint]) -> Vec<PickerItem> {
                 // blank, so that the words of the tab line up down it.
                 icon: Some(hint.switched.map_or(' ', obelus_ui::tick)),
                 label: match which_way(chord).filter(|_| paired) {
-                    Some(way) => format!("{does} {way}"),
+                    Some(way) => way(does),
                     None => does,
                 },
                 version: None,
@@ -1121,14 +1123,15 @@ fn keys_as_rows(keys: &[obelus_ui::Hint]) -> Vec<PickerItem> {
         .collect()
 }
 
-/// Which way one key of a pair goes, in the word a row says it with --
-/// none for a key that is not an arrow, whose row is then the word alone.
-fn which_way(chord: KeyChord) -> Option<&'static str> {
+/// Which way one key of a pair goes, as the row says it with the word for
+/// what the pair does -- none for a key that is not an arrow, whose row is
+/// then the word alone.
+fn which_way(chord: KeyChord) -> Option<fn(String) -> String> {
     match chord.pressed().code {
-        KeyCode::Up => Some("up"),
-        KeyCode::Down => Some("down"),
-        KeyCode::Left => Some("left"),
-        KeyCode::Right => Some("right"),
+        KeyCode::Up => Some(obelus_i18n::editing::does_up),
+        KeyCode::Down => Some(obelus_i18n::editing::does_down),
+        KeyCode::Left => Some(obelus_i18n::editing::does_left),
+        KeyCode::Right => Some(obelus_i18n::editing::does_right),
         _ => None,
     }
 }

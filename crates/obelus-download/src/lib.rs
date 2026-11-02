@@ -79,13 +79,13 @@ pub async fn bytes(
     let http = reqwest::Client::builder()
         .user_agent(concat!("obelus/", env!("CARGO_PKG_VERSION")))
         .build()
-        .map_err(|error| format!("fetching it: {error}"))?;
+        .map_err(|error| obelus_i18n::install::could_not_download(error.to_string()))?;
     let response = http
         .get(url)
         .send()
         .await
         .and_then(reqwest::Response::error_for_status)
-        .map_err(|error| format!("fetching it: {error}"))?;
+        .map_err(|error| obelus_i18n::install::could_not_download(error.to_string()))?;
     let total = response.content_length();
 
     let mut bytes: Vec<u8> = Vec::with_capacity(
@@ -96,7 +96,8 @@ pub async fn bytes(
     let mut body = response.bytes_stream();
     let mut said = Instant::now();
     while let Some(chunk) = body.next().await {
-        let chunk = chunk.map_err(|error| format!("reading it: {error}"))?;
+        let chunk =
+            chunk.map_err(|error| obelus_i18n::install::download_interrupted(error.to_string()))?;
         bytes.extend_from_slice(&chunk);
         if said.elapsed() >= REPORT {
             said = Instant::now();
@@ -131,20 +132,20 @@ pub fn unpack(bytes: &[u8], name: &str, into: &Path) -> Result<(), String> {
         let reader = flate2::read::GzDecoder::new(bytes);
         return tar::Archive::new(reader)
             .unpack(into)
-            .map_err(|error| format!("unpacking it: {error}"));
+            .map_err(|error| obelus_i18n::install::could_not_unpack(error.to_string()));
     }
     if name.ends_with(".zip") {
         let reader = std::io::Cursor::new(bytes);
-        let mut zip =
-            zip::ZipArchive::new(reader).map_err(|error| format!("unpacking it: {error}"))?;
+        let mut zip = zip::ZipArchive::new(reader)
+            .map_err(|error| obelus_i18n::install::could_not_unpack(error.to_string()))?;
         return zip
             .extract(into)
-            .map_err(|error| format!("unpacking it: {error}"));
+            .map_err(|error| obelus_i18n::install::could_not_unpack(error.to_string()));
     }
     // `.tar.bz2` is four of the agent registry's hundred entries, and a
     // shape Obelus has no unpacker for. Saying which shape beats saying
     // "failed".
-    Err(format!("Obelus cannot unpack {name}"))
+    Err(obelus_i18n::install::cannot_unpack(name))
 }
 
 /// Reads a response body, up to a limit, as text.

@@ -92,7 +92,7 @@ impl App {
             .current_buffer()
             .map(|buffer| buffer.path().to_path_buf())
         else {
-            self.wrong("No file to rename".to_string());
+            self.wrong(obelus_i18n::language_server::no_file_to_rename());
             return;
         };
         self.ask_what_to_call_it(&path);
@@ -149,10 +149,10 @@ impl App {
         // cannot be put back, and a reader who meant it can say so by
         // taking the other file away first.
         if to.exists() {
-            self.wrong(format!(
-                "{} is already there",
-                relative(&to, &self.working_directory)
-            ));
+            self.wrong(obelus_i18n::editing::already_exists(relative(
+                &to,
+                &self.working_directory,
+            )));
             return;
         }
         // Somewhere that does not exist yet, which is what taking a path
@@ -161,7 +161,10 @@ impl App {
         if let Some(parent) = to.parent()
             && let Err(error) = std::fs::create_dir_all(parent)
         {
-            self.wrong(format!("Could not make {}: {error}", parent.display()));
+            self.wrong(obelus_i18n::editing::could_not_create_because(
+                error.to_string(),
+                parent.display().to_string(),
+            ));
             return;
         }
         let waiting = self.ask_what_the_rename_changes(&from, &to);
@@ -169,10 +172,10 @@ impl App {
             self.make_the_rename(&from, &to, &Wanted::default(), None);
             return;
         }
-        self.say(format!(
-            "Asking what renaming {} changes\u{2026}",
-            relative(&from, &self.working_directory)
-        ));
+        self.say(obelus_i18n::language_server::checking_the_rename(relative(
+            &from,
+            &self.working_directory,
+        )));
         self.lsp.renaming = Some(Renaming::Waiting(Waiting {
             from,
             to,
@@ -302,7 +305,7 @@ impl App {
     /// waiting. A rename that finished first left nothing for this to find,
     /// which `finish_the_rename` says by taking it.
     pub(in crate::app) fn rename_without_them(&mut self) {
-        self.finish_the_rename(Some("The language server did not answer"));
+        self.finish_the_rename(Some(obelus_i18n::language_server::did_not_answer()));
     }
 
     /// Whether the rename that is waiting has the clock that ends it.
@@ -327,7 +330,7 @@ impl App {
             // server that had nothing to change says so with an empty
             // edit, and a reader who renamed a file with no references to
             // it should not be told anything went wrong.
-            None if waiting.unready => Some("The language server was not ready to update anything"),
+            None if waiting.unready => Some(obelus_i18n::language_server::not_ready_to_update()),
             None => None,
         };
         self.make_the_rename(&waiting.from, &waiting.to, &waiting.wanted, aside);
@@ -348,17 +351,20 @@ impl App {
             false => Some(self.apply_wanted(wanted)),
         };
         if let Err(error) = std::fs::rename(from, to) {
-            self.wrong(format!("Could not rename it: {error}"));
+            self.wrong(obelus_i18n::language_server::could_not_rename(
+                error.to_string(),
+            ));
             return;
         }
         self.followed(from, to);
         self.told_about_the_rename(from, to);
-        let mut said = format!("Renamed to {}", relative(to, &self.working_directory));
+        let mut said =
+            obelus_i18n::language_server::renamed_to(relative(to, &self.working_directory));
         if let Some(changed) = changed {
-            said.push_str(&format!("; {changed}"));
+            said = obelus_i18n::app::and_then(said, changed);
         }
         if let Some(aside) = aside {
-            said.push_str(&format!("; {aside}"));
+            said = obelus_i18n::app::and_then(said, aside);
         }
         self.say(said);
     }

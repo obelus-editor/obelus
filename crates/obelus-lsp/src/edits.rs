@@ -36,12 +36,26 @@ pub struct Change {
 pub struct Wanted {
     /// The edits, in the order the server gave them.
     pub changes: Vec<Change>,
-    /// The operations Obelus refuses, named so a reader can be told.
+    /// The operations Obelus refuses, kept so a reader can be told.
     ///
     /// Creating, renaming and deleting files. A rename that moves a module
     /// to a new path is a real thing servers ask for and a thing Obelus
     /// has no way to undo, so the edits go in and this is reported.
-    pub refused: Vec<String>,
+    pub refused: Vec<Refused>,
+}
+
+/// An operation on a file that a server asked for and Obelus will not do.
+///
+/// Which one, and not the words for it: those are the application's, in
+/// the reader's language.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Refused {
+    /// Making a file.
+    Create,
+    /// Moving or renaming one.
+    Rename,
+    /// Taking one away.
+    Delete,
 }
 
 impl Wanted {
@@ -116,14 +130,11 @@ pub fn from_edit(edit: WorkspaceEdit) -> Wanted {
                             .collect();
                         take(&edit.text_document.uri, edits);
                     }
-                    DocumentChangeOperation::Op(op) => wanted.refused.push(
-                        match op {
-                            ResourceOp::Create(_) => "creating a file",
-                            ResourceOp::Rename(_) => "moving a file",
-                            ResourceOp::Delete(_) => "deleting a file",
-                        }
-                        .to_string(),
-                    ),
+                    DocumentChangeOperation::Op(op) => wanted.refused.push(match op {
+                        ResourceOp::Create(_) => Refused::Create,
+                        ResourceOp::Rename(_) => Refused::Rename,
+                        ResourceOp::Delete(_) => Refused::Delete,
+                    }),
                 }
             }
         }

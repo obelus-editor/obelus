@@ -212,8 +212,14 @@ impl Chat {
         // And against which characters are pictures, which is a question
         // about the window's fonts and changes when the reader's do: a
         // heart laid out one cell wide and drawn two runs into the word
-        // after it.
-        let at = (width, obelus_text::pictures_version());
+        // after it. And against the language, because a run's heading and
+        // a plan's step are Obelus's words, and the reader can change which
+        // language those are in while the conversation is open.
+        let at = (
+            width,
+            obelus_text::pictures_version(),
+            obelus_i18n::spoken(),
+        );
         if let Some(rows) = self
             .laid
             .borrow()
@@ -364,8 +370,8 @@ impl Chat {
         // What they have in common, where they have it: a run of reads is a
         // run of files, and a run of commands is a run of calls.
         let what = match members.iter().all(|said| !said.places.is_empty()) {
-            true => "Files",
-            false => "Calls",
+            true => obelus_i18n::chat::run_of_files(count),
+            false => obelus_i18n::chat::run_of_calls(count),
         };
         // The state of the run is the state of the worst of it: one that
         // failed is the news, and one still running is why the row moves.
@@ -381,7 +387,7 @@ impl Chat {
         let open = self.is_run_open(run.start);
         let mut rows = vec![Row {
             speaker: Speaker::Tool,
-            spans: plain(format!("{count} {what}")),
+            spans: plain(what),
             from: None,
             held: None,
             found: None,
@@ -585,7 +591,7 @@ impl Chat {
         // agent's: there is nothing in it to take a copy of.
         let mut rows = vec![self.opening(
             said,
-            plain("thought".to_string()),
+            plain(obelus_i18n::chat::thought().to_string()),
             depth,
             Some(Folds::Said(at)),
             None,

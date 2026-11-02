@@ -637,13 +637,11 @@ impl app::desk::Desk for Afar {
             Box::new(move |answer| {
                 let _ = events.send(match answer {
                     Some(Answer::Picture(Some((shape, bytes)))) => Event::Pictured(shape, bytes),
-                    Some(Answer::TooLarge) => Event::Amiss(
-                        "The picture on the clipboard is too large to bring across".to_string(),
-                    ),
-                    Some(_) => Event::Amiss("The clipboard no longer holds a picture".to_string()),
-                    None => {
-                        Event::Amiss("The window went before the picture came across".to_string())
+                    Some(Answer::TooLarge) => {
+                        Event::Amiss(obelus_i18n::remote::picture_too_large().to_string())
                     }
+                    Some(_) => Event::Amiss(obelus_i18n::remote::no_picture_any_more().to_string()),
+                    None => Event::Amiss(obelus_i18n::remote::window_went().to_string()),
                 });
             }),
         );
@@ -693,8 +691,12 @@ enum Carrying {
 /// not open.
 pub(crate) fn one() -> Result<ExitCode> {
     let mut reading = std::io::stdin();
-    let Some(ToChild::Open { front, size, path }) =
-        obelus_wire::read::<_, ToChild>(&mut reading).context("told what to open")?
+    let Some(ToChild::Open {
+        front,
+        size,
+        path,
+        locale,
+    }) = obelus_wire::read::<_, ToChild>(&mut reading).context("told what to open")?
     else {
         anyhow::bail!("nothing said what to open");
     };
@@ -706,6 +708,11 @@ pub(crate) fn one() -> Result<ExitCode> {
     {
         obelus_config::drawn_in_a_window();
         obelus_keymap::draw_control_as_command(command_is_control);
+    }
+    // Before the settings are applied, for the same reason: `auto` is the
+    // language of the machine the reader is at, and that is not this one.
+    if let Some(locale) = locale {
+        obelus_i18n::hear_the_reader(&locale);
     }
     let paths: Vec<std::path::PathBuf> = path.into_iter().map(Into::into).collect();
     let mut app = startup::start(&paths, env!("OBELUS_BUILD"))?;
@@ -836,9 +843,7 @@ impl Heard {
         self.afar.forget_everything(meanwhile);
         for gone in self.arriving.forget() {
             if let Carrying::Dropped(name) = gone {
-                self.tell(Event::Amiss(format!(
-                    "Not all of {name} came across, so it was not kept"
-                )))?;
+                self.tell(Event::Amiss(obelus_i18n::remote::not_all_came_across(name)))?;
             }
         }
         Ok(())
@@ -885,9 +890,9 @@ impl Heard {
                 self.afar.answered(number, Answer::TooLarge);
                 Ok(())
             }
-            Err(Carrying::Dropped(name)) => self.tell(Event::Amiss(format!(
-                "Too large to bring across, so not kept: {name}"
-            ))),
+            Err(Carrying::Dropped(name)) => {
+                self.tell(Event::Amiss(obelus_i18n::remote::too_large_to_keep(name)))
+            }
             Ok(Some((Carrying::Picture { number, shape }, bytes))) => {
                 self.afar
                     .answered(number, Answer::Picture(Some((shape, bytes))));
@@ -956,14 +961,17 @@ fn dropped_in(temporary: &std::path::Path) -> Result<std::path::PathBuf, String>
     match std::fs::DirBuilder::new().mode(0o700).create(&directory) {
         Ok(()) => {}
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-        Err(error) => return Err(format!("Nowhere to keep what was dropped: {error}")),
+        Err(error) => {
+            return Err(obelus_i18n::remote::nowhere_to_keep_dropped(
+                error.to_string(),
+            ));
+        }
     }
     let found = std::fs::symlink_metadata(&directory)
-        .map_err(|error| format!("Nowhere to keep what was dropped: {error}"))?;
+        .map_err(|error| obelus_i18n::remote::nowhere_to_keep_dropped(error.to_string()))?;
     if !found.is_dir() || found.uid() != whose || found.permissions().mode() & 0o077 != 0 {
-        return Err(format!(
-            "Nothing was kept, because {} is not yours alone",
-            directory.display()
+        return Err(obelus_i18n::remote::not_yours_alone(
+            directory.display().to_string(),
         ));
     }
     Ok(directory)
@@ -994,9 +1002,9 @@ fn kept(
     let named = std::path::Path::new(name)
         .file_name()
         .filter(|named| *named != "." && *named != "..")
-        .ok_or_else(|| format!("Not a file's name: {name}"))?;
+        .ok_or_else(|| obelus_i18n::remote::not_a_file_name(name))?;
     std::fs::create_dir_all(directory)
-        .map_err(|error| format!("Nowhere to keep {name}: {error}"))?;
+        .map_err(|error| obelus_i18n::remote::nowhere_to_keep(error.to_string(), name))?;
     let named = std::path::Path::new(named);
     let stem = named
         .file_stem()
@@ -1019,16 +1027,20 @@ fn kept(
             .open(&path)
         {
             Ok(mut file) => {
-                return file
-                    .write_all(bytes)
-                    .map(|()| path)
-                    .map_err(|error| format!("Could not keep {name}: {error}"));
+                return file.write_all(bytes).map(|()| path).map_err(|error| {
+                    obelus_i18n::remote::could_not_keep_because(error.to_string(), name)
+                });
             }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-            Err(error) => return Err(format!("Could not keep {name}: {error}")),
+            Err(error) => {
+                return Err(obelus_i18n::remote::could_not_keep_because(
+                    error.to_string(),
+                    name,
+                ));
+            }
         }
     }
-    Err(format!("Could not keep {name}"))
+    Err(obelus_i18n::remote::could_not_keep(name))
 }
 
 #[cfg(test)]
@@ -1623,7 +1635,7 @@ mod tests {
             .collect();
         assert!(
             said.iter()
-                .any(|why| why == "The window went before the picture came across"),
+                .any(|why| why == "The window closed before the picture came across"),
             "the picture was never said to have gone: {said:?}"
         );
         assert!(

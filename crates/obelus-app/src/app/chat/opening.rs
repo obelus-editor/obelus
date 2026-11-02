@@ -43,84 +43,116 @@ const ALWAYS: &str = include_str!("always.txt");
 /// summary drops.
 const WORKFLOW: &str = include_str!("workflow.txt");
 
-/// Every workflow, by the name the setting gives it.
-///
-/// One file each, holding everything a workflow says, so that it is all
-/// written side by side: what it is called on screen, then a line of
-/// `----`, then what the list it is chosen from says about it, then
-/// another `----`, then what `read_workflow` hands an agent. A file with
-/// nothing under the second line, or no second line, asks nothing of the
-/// agent -- which is what `none` is, and why it is a file like the others
-/// rather than a case in the code.
+/// Every workflow, by the name the setting gives it: what it is called on
+/// screen, what the list it is chosen from says about it, and a file
+/// holding what `read_workflow` hands an agent. An empty file asks nothing
+/// of the agent -- which is what `none` is, and why it is a file like the
+/// others rather than a case in the code.
 ///
 /// A title of its own because the name is the setting's word, written in
 /// the reader's file and read by `obelus-config`, and a word like
-/// `feature-branch` is a name and not copy.
+/// `feature-branch` is a name and not copy. The title and what the list
+/// says are in the reader's language, asked for when they are drawn; what
+/// the agent is handed is a prompt, and English.
 ///
 /// The names are written twice, here and in `obelus-config`, which reads
 /// the setting and cannot see these files: the test below is what keeps
 /// the two lists the same list.
-const WORKFLOWS: &[(&str, &str)] = &[
-    ("none", include_str!("workflows/none.txt")),
-    ("in-place", include_str!("workflows/in-place.txt")),
+const WORKFLOWS: &[(&str, Said, Said, &str)] = &[
+    (
+        "none",
+        obelus_i18n::conversation::workflow_none,
+        obelus_i18n::conversation::workflow_none_about,
+        include_str!("workflows/none.txt"),
+    ),
+    (
+        "in-place",
+        obelus_i18n::conversation::workflow_in_place,
+        obelus_i18n::conversation::workflow_in_place_about,
+        include_str!("workflows/in-place.txt"),
+    ),
     (
         "feature-branch",
+        obelus_i18n::conversation::workflow_feature_branch,
+        obelus_i18n::conversation::workflow_feature_branch_about,
         include_str!("workflows/feature-branch.txt"),
     ),
 ];
 
-/// A workflow's file, as what it is called, what the list says and what
-/// the agent is handed.
-fn read_workflow(file: &'static str) -> (&'static str, &'static str, Option<&'static str>) {
-    let (title, rest) = file.split_once("\n----\n").unwrap_or((file, ""));
-    match rest.split_once("\n----\n") {
-        Some((about, asked)) => (
-            title.trim(),
-            about.trim(),
-            Some(asked.trim()).filter(|asked| !asked.is_empty()),
-        ),
-        None => (title.trim(), rest.trim(), None),
-    }
+/// A message that takes nothing, asked for when it is said.
+type Said = fn() -> &'static str;
+
+/// What a workflow's file hands the agent, if anything.
+fn read_workflow(file: &'static str) -> Option<&'static str> {
+    Some(file.trim()).filter(|asked| !asked.is_empty())
 }
 
 /// Every workflow's name, what it is called on screen, and what the list
 /// it is chosen from says about it.
 pub(in crate::app) fn workflows() -> impl Iterator<Item = (&'static str, &'static str, &'static str)>
 {
-    WORKFLOWS.iter().map(|(name, file)| {
-        let (title, about, _) = read_workflow(file);
-        (*name, title, about)
-    })
+    WORKFLOWS
+        .iter()
+        .map(|(name, title, about, _)| (*name, title(), about()))
 }
 
 /// Every role, by the name the setting gives it.
 ///
-/// The workflows' arrangement, and for their reasons: one file each, with
-/// what it is called on screen, a line of `----`, what the list it is
-/// chosen from says about it, another `----`, and what goes into
-/// [`ALWAYS`] in place of `{role}` -- what the agent calls itself, what it
-/// calls the reader, and how it speaks. What stays the same whoever the
+/// The workflows' arrangement, and for their reasons: what it is called on
+/// screen and what the list it is chosen from says about it are messages,
+/// in the reader's language, and its file is what goes into [`ALWAYS`] in
+/// place of `{role}` -- what the agent calls itself, what it calls the
+/// reader, and how it speaks, in English. What stays the same whoever the
 /// agent is -- the third person, and that a role is only a voice -- is
 /// said once, around the hole, rather than in every file.
 ///
 /// The names are written twice, here and in `obelus-config`, and the test
 /// below keeps the two lists the same list.
-const ROLES: &[(&str, &str)] = &[
-    ("obelus", include_str!("roles/obelus.txt")),
-    ("soldier", include_str!("roles/soldier.txt")),
-    ("butler", include_str!("roles/butler.txt")),
-    ("first-officer", include_str!("roles/first-officer.txt")),
-    ("apprentice", include_str!("roles/apprentice.txt")),
-    ("eunuch", include_str!("roles/eunuch.txt")),
+const ROLES: &[(&str, Said, Said, &str)] = &[
+    (
+        "obelus",
+        obelus_i18n::conversation::role_obelus,
+        obelus_i18n::conversation::role_obelus_about,
+        include_str!("roles/obelus.txt"),
+    ),
+    (
+        "soldier",
+        obelus_i18n::conversation::role_soldier,
+        obelus_i18n::conversation::role_soldier_about,
+        include_str!("roles/soldier.txt"),
+    ),
+    (
+        "butler",
+        obelus_i18n::conversation::role_butler,
+        obelus_i18n::conversation::role_butler_about,
+        include_str!("roles/butler.txt"),
+    ),
+    (
+        "first-officer",
+        obelus_i18n::conversation::role_first_officer,
+        obelus_i18n::conversation::role_first_officer_about,
+        include_str!("roles/first-officer.txt"),
+    ),
+    (
+        "apprentice",
+        obelus_i18n::conversation::role_apprentice,
+        obelus_i18n::conversation::role_apprentice_about,
+        include_str!("roles/apprentice.txt"),
+    ),
+    (
+        "eunuch",
+        obelus_i18n::conversation::role_eunuch,
+        obelus_i18n::conversation::role_eunuch_about,
+        include_str!("roles/eunuch.txt"),
+    ),
 ];
 
 /// Every role's name, what it is called on screen, and what the list it
 /// is chosen from says about it.
 pub(in crate::app) fn roles() -> impl Iterator<Item = (&'static str, &'static str, &'static str)> {
-    ROLES.iter().map(|(name, file)| {
-        let (title, about, _) = read_workflow(file);
-        (*name, title, about)
-    })
+    ROLES
+        .iter()
+        .map(|(name, title, about, _)| (*name, title(), about()))
 }
 
 /// What the agent is told of the role the reader has chosen.
@@ -130,11 +162,11 @@ pub(in crate::app) fn roles() -> impl Iterator<Item = (&'static str, &'static st
 /// a word before it gets here, so only a config set some other way --
 /// `Config::set`, a test -- can hand one over.
 fn role(word: &str) -> &'static str {
-    let (_, file) = ROLES
+    let (.., file) = ROLES
         .iter()
-        .find(|(name, _)| *name == word)
+        .find(|(name, ..)| *name == word)
         .unwrap_or(&ROLES[0]);
-    read_workflow(file).2.unwrap_or_default()
+    read_workflow(file).unwrap_or_default()
 }
 
 /// What a conversation about a note says it is about.
@@ -248,7 +280,7 @@ impl App {
             said: about
                 .as_ref()
                 .map(|(_, line, _)| *line)
-                .or(briefed.map(|_| crate::brief::SAID)),
+                .or(briefed.map(|_| crate::brief::said())),
             now: about.map(|(_, _, now)| now),
             introduced: true,
         })
@@ -260,10 +292,10 @@ impl App {
     /// before the reader wrote it: an agent told to follow nothing in
     /// particular goes about a change its own way.
     fn workflow(&self) -> Option<&'static str> {
-        let (_, file) = WORKFLOWS
+        let (.., file) = WORKFLOWS
             .iter()
-            .find(|(name, _)| *name == self.config().workflow)?;
-        read_workflow(file).2
+            .find(|(name, ..)| *name == self.config().workflow)?;
+        read_workflow(file)
     }
 
     /// What `read_workflow` answers.
@@ -322,7 +354,7 @@ impl App {
                     .replace("{about}", &about);
                 Some((
                     words,
-                    "Told the agent which issue to answer",
+                    obelus_i18n::conversation::told_which_issue(),
                     stamp.to_string(),
                 ))
             }
@@ -335,7 +367,7 @@ impl App {
                     .replace("{now}", stamp);
                 Some((
                     words,
-                    "Told the agent what has been said since",
+                    obelus_i18n::conversation::told_what_was_said(),
                     stamp.to_string(),
                 ))
             }
@@ -381,7 +413,7 @@ impl App {
                     .replace("{about}", &about);
                 Some((
                     words,
-                    "Told the agent which pull request to review",
+                    obelus_i18n::conversation::told_which_pull_request(),
                     sha.to_string(),
                 ))
             }
@@ -394,7 +426,7 @@ impl App {
                     .replace("{sha}", sha);
                 Some((
                     words,
-                    "Told the agent what has been pushed since",
+                    obelus_i18n::conversation::told_what_was_pushed(),
                     sha.to_string(),
                 ))
             }
@@ -434,17 +466,17 @@ impl App {
             Topic::Loose => None,
             Topic::Note(_) => {
                 let now = what_the_note_says(self.the_note_this_is_about()?);
-                (talk.told.as_deref() != Some(now.as_str())).then_some(LOOK)
+                (talk.told.as_deref() != Some(now.as_str())).then(look)
             }
             Topic::PullRequest(number) => match talk.told.as_deref() {
-                None => Some(REVIEW),
-                Some(was) => self.has_moved_since(*number, was).then_some(REVIEW_AGAIN),
+                None => Some(review()),
+                Some(was) => self.has_moved_since(*number, was).then(review_again),
             },
             Topic::Issue(number) => match talk.told.as_deref() {
-                None => Some(ANSWER),
+                None => Some(answer()),
                 Some(was) => self
                     .has_been_answered_since(*number, was)
-                    .then_some(ANSWER_AGAIN),
+                    .then(answer_again),
             },
         }
     }
@@ -486,8 +518,11 @@ impl App {
             format!("\nIt is about {}:{}.", at.path.display(), at.line.get() + 1)
         });
         let (template, said) = match told {
-            None => (NOTE, "Told the agent what this conversation is about"),
-            Some(_) => (REWORDED, "Told the agent the note has been rewritten"),
+            None => (NOTE, obelus_i18n::conversation::told_the_note()),
+            Some(_) => (
+                REWORDED,
+                obelus_i18n::conversation::told_the_note_was_reworded(),
+            ),
         };
         Some((filled(template, &about.id, &at, &about.said), said, now))
     }
@@ -499,7 +534,7 @@ impl App {
 ///
 /// What is written down as told, and so what the next message is compared
 /// against -- by the opening, and by the box deciding whether to offer
-/// [`LOOK`].
+/// [`look`].
 pub(in crate::app) fn what_the_note_says(about: &obelus_todo::Note) -> String {
     match &about.at {
         Some(at) => format!(
@@ -519,7 +554,12 @@ pub(in crate::app) fn what_the_note_says(about: &obelus_todo::Note) -> String {
 /// the reader has left to say is usually only that they would like an
 /// answer -- and typing that every time is the cost of opening a
 /// conversation from a note at all.
-pub(in crate::app) const LOOK: &str = "Look into this";
+///
+/// In the reader's language, because these are the reader's words: what
+/// they take from the box is what they say.
+pub(in crate::app) fn look() -> &'static str {
+    obelus_i18n::conversation::look_into_this()
+}
 
 /// The same for a review: choosing the pull request said which, and what
 /// is left is saying go.
@@ -527,17 +567,25 @@ pub(in crate::app) const LOOK: &str = "Look into this";
 /// Offered rather than sent, because a reader may want to say where to look
 /// first -- and a review started the moment the row was chosen is one they
 /// could not have said that to.
-pub(in crate::app) const REVIEW: &str = "Review this pull request";
+pub(in crate::app) fn review() -> &'static str {
+    obelus_i18n::conversation::review_this()
+}
 
 /// And for one pushed to since the last review.
-pub(in crate::app) const REVIEW_AGAIN: &str = "Review what has been pushed since";
+pub(in crate::app) fn review_again() -> &'static str {
+    obelus_i18n::conversation::review_what_was_pushed()
+}
 
 /// The same for an issue: choosing it said which, and what is left is how
 /// it should be answered.
-pub(in crate::app) const ANSWER: &str = "Read this issue and suggest a reply";
+pub(in crate::app) fn answer() -> &'static str {
+    obelus_i18n::conversation::answer_this()
+}
 
 /// And for one commented on or changed since.
-pub(in crate::app) const ANSWER_AGAIN: &str = "Read what has been said since";
+pub(in crate::app) fn answer_again() -> &'static str {
+    obelus_i18n::conversation::answer_what_was_said()
+}
 
 /// Fills a template in: Obelus's own values first, the reader's words last.
 ///
@@ -578,13 +626,10 @@ mod tests {
     ///
     /// Two lists of one set of names, because the setting is read where
     /// these files cannot be seen. Broken deliberately by adding a name to
-    /// the setting's list with no file beside it, by taking the title and
-    /// its `----` out of `feature-branch.txt`, which moves every piece up
-    /// one and hands the agent nothing, and by taking the line between the
-    /// title and the description out of `none.txt`, which runs the two
-    /// together into a title of two lines. And by giving `in-place.txt`
-    /// the feature branch's last part, which tells the agent to make a
-    /// worktree.
+    /// the setting's list with no file beside it, by emptying
+    /// `feature-branch.txt`, which hands the agent nothing, and by giving
+    /// `in-place.txt` the feature branch's words, which tell the agent to
+    /// make a worktree.
     #[test]
     fn every_workflow_the_setting_accepts_is_written_here() {
         let accepted = match obelus_config::Setting::named("workflow").map(|setting| setting.kind) {
@@ -593,27 +638,23 @@ mod tests {
         };
         let written: Vec<&str> = super::workflows().map(|(name, ..)| name).collect();
         assert_eq!(accepted, written.as_slice());
-        for (name, file) in super::WORKFLOWS {
-            let (title, about, _) = super::read_workflow(file);
+        for (name, title, about) in super::workflows() {
             assert!(
-                !title.is_empty() && !title.contains('\n') && !title.contains("----"),
+                !title.is_empty() && !title.contains('\n'),
                 "{name} is not called anything: {title:?}"
             );
-            assert!(
-                !about.is_empty() && !about.contains("----"),
-                "{name} does not say what it does: {about:?}"
-            );
+            assert!(!about.is_empty(), "{name} does not say what it does");
         }
         assert!(
-            super::read_workflow(super::WORKFLOWS[0].1).2.is_none(),
+            super::read_workflow(super::WORKFLOWS[0].3).is_none(),
             "none asks something of the agent"
         );
         let asked = |name: &str| {
-            let (_, file) = super::WORKFLOWS
+            let (.., file) = super::WORKFLOWS
                 .iter()
-                .find(|(each, _)| *each == name)
+                .find(|(each, ..)| *each == name)
                 .expect("a workflow by that name");
-            super::read_workflow(file).2
+            super::read_workflow(file)
         };
         assert!(
             asked("feature-branch").is_some_and(|asked| asked.contains("git worktree add")),
@@ -645,8 +686,7 @@ mod tests {
     /// it is called, what it is, and who the agent is in it.
     ///
     /// Broken deliberately by adding a name to the setting's list with no
-    /// file beside it, by taking the title and its `----` out of
-    /// `soldier.txt`, which moves every piece up one and tells the agent
+    /// role beside it, by emptying `soldier.txt`, which tells the agent
     /// nothing, and by writing `soldier.txt`'s example sentence with an
     /// "I" the agent is said to use.
     #[test]
@@ -657,8 +697,8 @@ mod tests {
         };
         let written: Vec<&str> = super::roles().map(|(name, ..)| name).collect();
         assert_eq!(accepted, written.as_slice());
-        for (name, file) in super::ROLES {
-            let (title, about, told) = super::read_workflow(file);
+        for (name, title, about, file) in super::ROLES {
+            let (title, about, told) = (title(), about(), super::read_workflow(file));
             assert!(
                 !title.is_empty() && !title.contains('\n') && !title.contains("----"),
                 "{name} is not called anything: {title:?}"

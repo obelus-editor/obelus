@@ -63,10 +63,11 @@ impl Description {
 pub struct Field {
     /// The platform's own name for it, which is also how it is kept.
     pub key: &'static str,
-    /// What the row calls it.
-    pub name: &'static str,
+    /// What the row calls it, asked for when it is drawn: it is in the
+    /// reader's language.
+    pub name: fn() -> &'static str,
     /// Where to find it, under the name.
-    pub about: &'static str,
+    pub about: fn() -> &'static str,
     /// What sort of thing it is, which decides where it is kept.
     pub kind: FieldKind,
 }
@@ -95,20 +96,18 @@ pub enum Setup {
     /// from a manifest.
     Copy {
         /// What the row calls it.
-        name: &'static str,
+        name: fn() -> &'static str,
         /// Where it goes, under the name.
-        about: &'static str,
-        /// What a copy of it is called, mid-sentence: `Copied {what}`.
-        what: &'static str,
+        about: fn() -> &'static str,
         /// The text itself.
         text: fn() -> String,
     },
     /// A page of steps to follow, for a platform with nothing to paste.
     Steps {
         /// What the row calls it.
-        name: &'static str,
+        name: fn() -> &'static str,
         /// What the steps are for, under the name.
-        about: &'static str,
+        about: fn() -> &'static str,
         /// Where they are.
         url: &'static str,
     },
@@ -117,17 +116,17 @@ pub enum Setup {
 impl Setup {
     /// What its row is called.
     #[must_use]
-    pub const fn name(&self) -> &'static str {
+    pub fn name(&self) -> &'static str {
         match self {
-            Self::Copy { name, .. } | Self::Steps { name, .. } => name,
+            Self::Copy { name, .. } | Self::Steps { name, .. } => name(),
         }
     }
 
     /// What it says under the name.
     #[must_use]
-    pub const fn about(&self) -> &'static str {
+    pub fn about(&self) -> &'static str {
         match self {
-            Self::Copy { about, .. } | Self::Steps { about, .. } => about,
+            Self::Copy { about, .. } | Self::Steps { about, .. } => about(),
         }
     }
 }
@@ -199,12 +198,14 @@ pub fn reach(platform: &'static Description, settled: Told, sink: Arc<dyn Sink<E
             .fields
             .iter()
             .filter(|field| !told.contains_key(field.key))
-            .map(|field| field.name)
+            .map(|field| (field.name)())
             .collect();
         if !untold.is_empty() {
             let _ = sink.send(Event::connection(
                 crate::State::Unready,
-                Some(format!("no {} is set", untold.join(" or "))),
+                Some(obelus_i18n::bot::not_set(
+                    untold.join(obelus_i18n::language_server::list_separator()),
+                )),
             ));
             return;
         }

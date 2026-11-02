@@ -237,7 +237,7 @@ fn a_terminal_lists_the_worktrees_and_says_where_it_is() {
     // Nothing at the foot at all, whichever row the terminal opens on: its
     // own, where a window's foot would say `Stay`.
     let screen = support::render(&mut app, 80, 24);
-    for word in ["New window", "Switch", "Go to it", "Stay"] {
+    for word in ["New window", "Switch", "Switch to it", "Stay"] {
         assert!(
             !screen.contains(word),
             "a terminal's foot says {word}:\n{screen}"
@@ -431,19 +431,15 @@ fn something_unwritten_is_asked_about_before_going() {
     choose_in_place(&mut app, "feature");
     assert_eq!(
         support::ways(&app),
-        [
-            "Save everything and switch",
-            "Switch without saving",
-            "cancel"
-        ],
+        ["Save all and switch", "Switch without saving", "Cancel"],
         "going with something unwritten did not ask"
     );
-    support::answer(&mut app, "cancel");
+    support::answer(&mut app, "Cancel");
     assert_eq!(resolved(app.working_directory()), resolved(&main));
 
     dispatch::dispatch(&mut app, Command::WorktreeList);
     choose_in_place(&mut app, "feature");
-    support::answer(&mut app, "Save everything and switch");
+    support::answer(&mut app, "Save all and switch");
     assert_eq!(
         std::fs::read_to_string(&file).expect("the file"),
         "// fn main() {}\n",
@@ -605,7 +601,7 @@ fn the_palette_says_what_each_enter_does_on_the_row() {
     };
     assert_eq!(said(&mut app, "feature"), ["New window", "Switch"]);
     assert_eq!(said(&mut app, "main"), ["New window"]);
-    assert_eq!(said(&mut app, "file.rs"), ["Go to it"]);
+    assert_eq!(said(&mut app, "file.rs"), ["Switch to it"]);
     assert_eq!(said(&mut app, "Nothing open"), ["Stay"]);
 
     // And staying is what it does: the list closes, and nothing is opened

@@ -465,8 +465,11 @@ impl App {
         notes: &obelus_todo::Todo,
         state: Option<Turning>,
     ) -> Head {
-        let title = self
-            .conversation_name(talk, notes)
+        // In English, like everything else the thread says: until the
+        // agent names a conversation its name is Obelus's -- `Review #12:
+        // ...` -- and the people in the thread read whatever this reader
+        // chose for the screen.
+        let title = obelus_i18n::in_english(|| self.conversation_name(talk, notes))
             .unwrap_or_else(|| "A conversation".to_string());
         let mut place = self
             .working_directory
@@ -752,14 +755,8 @@ impl App {
             // connection was down too long, is nothing the platform did.
             if let (Some(id), Some(platform)) = (self.document_named(&chat), self.platform()) {
                 let said = match waited {
-                    true => format!(
-                        "{} was not reached in time to start a thread for this conversation",
-                        platform.name
-                    ),
-                    false => format!(
-                        "{} would not start a thread for this conversation",
-                        platform.name
-                    ),
+                    true => obelus_i18n::bot::thread_not_started_in_time(platform.name),
+                    false => obelus_i18n::bot::thread_refused(platform.name),
                 };
                 self.in_talk(talking::Whose::One(id), |talk| talk.note(&said));
             }
@@ -786,14 +783,8 @@ impl App {
         tracing::info!(chat, ?why, "something not said in its thread");
         if let (Some(id), Some(platform)) = (self.document_named(&chat), self.platform()) {
             let said = match why {
-                Some(why) => format!(
-                    "{} would not take a message for this conversation: {why}",
-                    platform.name
-                ),
-                None => format!(
-                    "{} was not reached in time for a message for this conversation",
-                    platform.name
-                ),
+                Some(why) => obelus_i18n::bot::message_refused(platform.name, why),
+                None => obelus_i18n::bot::message_not_sent_in_time(platform.name),
             };
             self.in_talk(talking::Whose::One(id), |talk| talk.note(&said));
         }

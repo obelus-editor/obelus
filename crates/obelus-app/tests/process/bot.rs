@@ -173,7 +173,7 @@ fn secrets_that_will_not_read_are_said_on_their_rows() {
     to_the_row(&mut app, "App token");
     let screen = support::render(&mut app, 66, 20);
     assert!(
-        screen.contains("The tokens would not read"),
+        screen.contains("The saved tokens could not be read"),
         "the row says nothing about it:\n{screen}"
     );
 }
@@ -202,7 +202,7 @@ fn a_token_is_kept_drawn_by_its_ends_and_forgotten() {
         app.prompt().is_some(),
         "a bot token was taken as the app token"
     );
-    assert_eq!(app.note(), Some("App token starts with xapp-"));
+    assert_eq!(app.note(), Some("App token must start with xapp-"));
     assert_eq!(
         obelus_bot::secrets::read("slack", "app_token"),
         Ok(None),
@@ -799,6 +799,97 @@ fn pressed(asked: u64, chosen: &str) -> obelus_bot::Event {
 /// three ways: not mirrored, no thought in the thread; run into the words
 /// after it, the words did not stand on their own; sent calling the reader,
 /// the thought was not quiet.
+/// A thread is named in English whatever this screen speaks: the people in
+/// it read it, and until the agent names a conversation its name is
+/// Obelus's -- `Review #123: ...` -- which on this screen is in Chinese.
+///
+/// Broken deliberately by taking `in_english` out of `head_of`: the thread
+/// asked for was `审查 #123：...`.
+#[test]
+fn a_thread_is_named_in_english_whatever_the_screen_speaks() {
+    let _turn = turn();
+    obelus_bot::platform::connect_for_test(fake_connect);
+    *FAKED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    let scratch = support::Scratch::new("bot-english");
+    std::fs::write(
+        scratch.join("config.toml"),
+        "language = \"zh-CN\"\nchat = \"slack\"\n[chats.slack]\npeople = [{ id = \"U1\", name = \"Sunli\" }]\n",
+    )
+    .expect("the settings");
+    a_room_kept();
+    obelus_bot::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_bot::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    // What `gh` says: one pull request, which is what the review is of.
+    let answer = scratch.join("gh-answer.json");
+    std::fs::write(
+        &answer,
+        r#"[{"number":123,"title":"Keep the fold","author":{"login":"alice"},"headRefName":"keep-fold","baseRefName":"master","headRefOid":"abc123","isDraft":false,"reviewDecision":"","updatedAt":""}]"#,
+    )
+    .expect("the answer");
+
+    let mut app = App::new(Vec::new());
+    app.config_file_for_test(scratch.join("config.toml"));
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    let script = std::path::absolute("tests/fixtures/fake-gh.sh").expect("a directory");
+    app.gh_for_test(
+        std::path::PathBuf::from(support::sh()),
+        vec![script.display().to_string(), answer.display().to_string()],
+    );
+    let events = support::drive(&mut app);
+    app.agents_root_for_test(scratch.join("agents"));
+    support::lay_out(&mut app, 76, 24);
+    assert_eq!(
+        obelus_i18n::spoken(),
+        obelus_i18n::Language::SimplifiedChinese,
+        "the settings were not read, so this proves nothing"
+    );
+    dispatch::dispatch(&mut app, Command::BotConnect);
+    app.talk_to(
+        "fake",
+        std::path::Path::new(support::sh()),
+        &[
+            "tests/fixtures/fake-agent.sh".to_string(),
+            "prompts".to_string(),
+        ],
+    );
+
+    dispatch::dispatch(&mut app, Command::ShowPullRequests);
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while !app.picker().is_some_and(|picker| picker.row_count() == 1) {
+        assert!(std::time::Instant::now() < until, "the list never came");
+        if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(50)) {
+            app.handle(event);
+        }
+    }
+    support::press(&mut app, KeyCode::Enter);
+    support::press_alt(&mut app, 'a');
+    let shown = app.what_this_conversation_is_called().unwrap_or_default();
+    assert!(
+        shown.contains("\u{5ba1}\u{67e5}"),
+        "the review is not called anything Chinese on screen, so this proves nothing: {shown:?}"
+    );
+    app.open_a_session_for_test();
+
+    let said = said_until(&mut app, &events, "a thread to be asked for", |said| {
+        said.iter()
+            .any(|out| matches!(out, obelus_bot::model::Out::Open { .. }))
+    });
+    let title = said
+        .iter()
+        .find_map(|out| match out {
+            obelus_bot::model::Out::Open { head, .. } => Some(head.title.clone()),
+            _ => None,
+        })
+        .expect("a thread asked for");
+    obelus_i18n::speak("en");
+    assert_eq!(
+        title, "Review #123: Keep the fold",
+        "the thread is named in the screen's language"
+    );
+}
+
 #[test]
 fn a_conversation_and_its_thread_say_the_same_things() {
     let _turn = turn();
@@ -2162,7 +2253,7 @@ fn a_thread_that_would_not_open_is_asked_for_on_the_next_connection() {
     }
     let dump = support::render(&mut app, 76, 24);
     assert!(
-        dump.contains("Slack was not reached in time"),
+        dump.contains("Could not reach Slack in time"),
         "a thread let go of here was blamed on the platform:\n{dump}"
     );
 
@@ -2599,7 +2690,7 @@ fn a_window_that_will_not_let_go_is_given_up_on() {
     let (mut second, seconds) = a_window(&scratch);
     dispatch::dispatch(&mut second, Command::BotConnect);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
-    while second.note() != Some("Another window would not let Slack go") {
+    while second.note() != Some("Another window would not let go of Slack") {
         assert!(
             std::time::Instant::now() < deadline,
             "the asking was never given up on"
@@ -2793,7 +2884,7 @@ fn asking_again_waits_on_the_same_thread() {
     let (mut second, seconds) = a_window(&scratch);
     dispatch::dispatch(&mut second, Command::BotConnect);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
-    while second.note() != Some("Another window would not let Slack go") {
+    while second.note() != Some("Another window would not let go of Slack") {
         assert!(
             std::time::Instant::now() < deadline,
             "the asking was never given up on"
@@ -2848,7 +2939,7 @@ fn a_clock_from_an_asking_taken_back_gives_up_on_nothing() {
     second.handle(ran_out);
     assert_ne!(
         second.note(),
-        Some("Another window would not let Slack go"),
+        Some("Another window would not let go of Slack"),
         "the new asking was given up on by the old clock"
     );
     assert!(
@@ -2915,7 +3006,7 @@ fn an_asking_taken_back_after_giving_up_stays_taken_back() {
     let (mut second, seconds) = a_window(&scratch);
     dispatch::dispatch(&mut second, Command::BotConnect);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
-    while second.note() != Some("Another window would not let Slack go") {
+    while second.note() != Some("Another window would not let go of Slack") {
         assert!(
             std::time::Instant::now() < deadline,
             "the asking was never given up on"
@@ -3100,7 +3191,7 @@ fn a_chat_with_something_untold_says_what() {
     support::lay_out(&mut app, 76, 24);
     dispatch::dispatch(&mut app, Command::BotConnect);
     until(&mut app, &events, "the words", |app| {
-        app.note() == Some("Not connected to Slack: no Bot token is set")
+        app.note() == Some("Not connected to Slack: Bot token not set")
     });
     support::press(&mut app, KeyCode::Down);
     let line = status_row(&mut app);
@@ -4009,7 +4100,7 @@ fn what_a_thread_was_not_told_is_said_in_its_conversation() {
     }
     let dump = support::render(&mut app, 100, 24);
     assert!(
-        dump.contains("Slack would not take a message for this conversation: message too long"),
+        dump.contains("Slack would not take a message from this conversation: message too long"),
         "the conversation said nothing:\n{dump}"
     );
     let _ = platform.send(obelus_bot::Event::Unsaid {
@@ -4024,7 +4115,7 @@ fn what_a_thread_was_not_told_is_said_in_its_conversation() {
     }
     let dump = support::render(&mut app, 100, 24);
     assert!(
-        dump.contains("Slack was not reached in time for a message"),
+        dump.contains("Could not reach Slack in time to send a message"),
         "a message let go of here was blamed on the platform:\n{dump}"
     );
 }
@@ -4072,7 +4163,7 @@ fn what_a_joined_window_s_thread_was_not_told_is_said_there() {
         thread: "T2".to_string(),
         why: Some("msg_too_long".to_string()),
     });
-    let wanted = "Slack would not take a message for this conversation: msg_too_long";
+    let wanted = "Slack would not take a message from this conversation: msg_too_long";
     let until = std::time::Instant::now() + std::time::Duration::from_secs(15);
     loop {
         while let Ok(event) = firsts.try_recv() {

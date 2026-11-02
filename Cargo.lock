@@ -1638,6 +1638,41 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "98de4bbd547a563b716d8dfa9aad1cb19bfab00f4fa09a6a4ed21dbcf44ce9c4"
 
 [[package]]
+name = "fluent-bundle"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "01203cb8918f5711e73891b347816d932046f95f54207710bda99beaeb423bf4"
+dependencies = [
+ "fluent-langneg",
+ "fluent-syntax",
+ "intl-memoizer",
+ "intl_pluralrules",
+ "rustc-hash 2.1.3",
+ "self_cell",
+ "smallvec",
+ "unic-langid",
+]
+
+[[package]]
+name = "fluent-langneg"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7eebbe59450baee8282d71676f3bfed5689aeab00b27545e83e5f14b1195e8b0"
+dependencies = [
+ "unic-langid",
+]
+
+[[package]]
+name = "fluent-syntax"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "54f0d287c53ffd184d04d8677f590f4ac5379785529e5e08b1c8083acdd5c198"
+dependencies = [
+ "memchr",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "fluent-uri"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3429,6 +3464,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "intl-memoizer"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "310da2e345f5eb861e7a07ee182262e94975051db9e4223e909ba90f392f163f"
+dependencies = [
+ "type-map",
+ "unic-langid",
+]
+
+[[package]]
+name = "intl_pluralrules"
+version = "7.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "078ea7b7c29a2b4df841a7f6ac8775ff6074020c6776d48491ce2268e068f972"
+dependencies = [
+ "unic-langid",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4226,6 +4280,7 @@ dependencies = [
  "obelus-claim",
  "obelus-download",
  "obelus-git",
+ "obelus-i18n",
  "obelus-jobs",
  "obelus-logging",
  "obelus-program",
@@ -4269,6 +4324,7 @@ dependencies = [
  "obelus-encoding",
  "obelus-git",
  "obelus-github",
+ "obelus-i18n",
  "obelus-icons",
  "obelus-jobs",
  "obelus-keymap",
@@ -4313,6 +4369,7 @@ dependencies = [
  "futures",
  "lark-websocket-protobuf",
  "obelus-claim",
+ "obelus-i18n",
  "obelus-logging",
  "obelus-private",
  "obelus-runtime",
@@ -4373,6 +4430,7 @@ dependencies = [
  "obelus-app",
  "obelus-config",
  "obelus-front",
+ "obelus-i18n",
  "obelus-keymap",
  "obelus-logging",
  "obelus-private",
@@ -4406,6 +4464,7 @@ name = "obelus-command"
 version = "0.18.0"
 dependencies = [
  "obelus-config",
+ "obelus-i18n",
 ]
 
 [[package]]
@@ -4424,6 +4483,7 @@ dependencies = [
  "obelus-editing",
  "obelus-git",
  "obelus-github",
+ "obelus-i18n",
  "obelus-icons",
  "obelus-keymap",
  "obelus-lsp",
@@ -4444,6 +4504,7 @@ name = "obelus-config"
 version = "0.18.0"
 dependencies = [
  "dirs",
+ "obelus-i18n",
  "obelus-text",
  "toml 1.1.5+spec-1.1.0",
  "toml_edit 0.22.27",
@@ -4456,6 +4517,7 @@ version = "0.18.0"
 dependencies = [
  "flate2",
  "futures",
+ "obelus-i18n",
  "reqwest",
  "sha2 0.11.0",
  "tar",
@@ -4476,6 +4538,7 @@ version = "0.18.0"
 dependencies = [
  "chardetng",
  "encoding_rs",
+ "obelus-i18n",
 ]
 
 [[package]]
@@ -4503,6 +4566,7 @@ dependencies = [
  "obelus-buffer",
  "obelus-clipboard",
  "obelus-component",
+ "obelus-i18n",
  "obelus-logging",
  "obelus-theme",
  "obelus-ui",
@@ -4512,6 +4576,7 @@ dependencies = [
  "serde",
  "sha2 0.11.0",
  "socket2",
+ "sys-locale",
  "tracing",
 ]
 
@@ -4523,6 +4588,7 @@ dependencies = [
  "gix",
  "imara-diff",
  "obelus-encoding",
+ "obelus-i18n",
  "obelus-runtime",
  "obelus-sink",
  "obelus-text",
@@ -4533,6 +4599,7 @@ name = "obelus-github"
 version = "0.18.0"
 dependencies = [
  "jiff",
+ "obelus-i18n",
  "obelus-program",
  "serde_json",
  "tracing",
@@ -4557,6 +4624,7 @@ dependencies = [
  "obelus-config",
  "obelus-font",
  "obelus-front",
+ "obelus-i18n",
  "obelus-icons",
  "obelus-keymap",
  "obelus-logging",
@@ -4581,6 +4649,16 @@ dependencies = [
  "winit",
  "winresource",
  "x11rb",
+]
+
+[[package]]
+name = "obelus-i18n"
+version = "0.18.0"
+dependencies = [
+ "fluent-bundle",
+ "fluent-syntax",
+ "sys-locale",
+ "tracing",
 ]
 
 [[package]]
@@ -4609,6 +4687,7 @@ dependencies = [
  "crossterm",
  "obelus-command",
  "obelus-editing",
+ "obelus-i18n",
  "obelus-icons",
  "serde",
  "serde_json",
@@ -4633,6 +4712,7 @@ dependencies = [
  "globset",
  "libc",
  "lsp-types",
+ "obelus-i18n",
  "obelus-jobs",
  "obelus-program",
  "obelus-runtime",
@@ -4653,6 +4733,7 @@ name = "obelus-markdown"
 version = "0.18.0"
 dependencies = [
  "emojis",
+ "obelus-i18n",
  "obelus-row",
  "obelus-syntax",
  "obelus-text",
@@ -4723,6 +4804,7 @@ dependencies = [
  "grep-searcher",
  "ignore",
  "obelus-encoding",
+ "obelus-i18n",
  "obelus-runtime",
  "obelus-sink",
  "regex",
@@ -4798,6 +4880,7 @@ version = "0.18.0"
 dependencies = [
  "anyhow",
  "image",
+ "obelus-i18n",
  "obelus-text",
  "ratatui",
  "serde",
@@ -4813,6 +4896,7 @@ dependencies = [
  "flate2",
  "obelus-claim",
  "obelus-download",
+ "obelus-i18n",
  "obelus-runtime",
  "obelus-sink",
  "obelus-theme",
@@ -4849,6 +4933,7 @@ dependencies = [
  "obelus-component",
  "obelus-config",
  "obelus-git",
+ "obelus-i18n",
  "obelus-icons",
  "obelus-keymap",
  "obelus-lsp",
@@ -4886,6 +4971,7 @@ dependencies = [
 name = "obelus-wire"
 version = "0.18.0"
 dependencies = [
+ "obelus-i18n",
  "obelus-runtime",
  "postcard",
  "serde",
@@ -7601,6 +7687,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1e27c91459209c2986af3dcf603a5a74a4368754ce37414f59acc971167f643"
 dependencies = [
  "displaydoc",
+ "serde_core",
  "zerovec",
 ]
 
@@ -8233,6 +8320,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "type-map"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb30dbbd9036155e74adad6812e9898d03ec374946234fbcebd5dfc7b9187b90"
+dependencies = [
+ "rustc-hash 2.1.3",
+]
+
+[[package]]
 name = "typed-path"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8257,6 +8353,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c8a2469e56e6e5095c82ccd3afb98dad95f7af7929aab6d8ba8d6e0f73657da"
 dependencies = [
  "arrayvec",
+]
+
+[[package]]
+name = "unic-langid"
+version = "0.9.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a28ba52c9b05311f4f6e62d5d9d46f094bd6e84cb8df7b3ef952748d752a7d05"
+dependencies = [
+ "unic-langid-impl",
+]
+
+[[package]]
+name = "unic-langid-impl"
+version = "0.9.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dce1bf08044d4b7a94028c93786f8566047edc11110595914de93362559bc658"
+dependencies = [
+ "tinystr",
 ]
 
 [[package]]
@@ -9697,6 +9811,7 @@ version = "0.11.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bb0464e17806c1d976d5cba29399c7f08e516e279e2ba493f63123b5fca67dd8"
 dependencies = [
+ "serde",
  "yoke",
  "zerofrom",
  "zerovec-derive",

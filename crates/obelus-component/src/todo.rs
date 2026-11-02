@@ -72,6 +72,7 @@ use obelus_todo::{Change, INDENT, Note, NoteId, Todo};
 
 use crate::{
     composer::{Composer, Laid},
+    copied::Copied,
     window::Window,
 };
 
@@ -222,7 +223,7 @@ pub enum TodoOutcome {
         /// What to copy.
         text: String,
         /// What it was, for the reader to be told what they got.
-        what: &'static str,
+        what: Copied,
     },
     /// The same, for text this has just taken out: write the notes down
     /// too, and say it was cut rather than copied.
@@ -230,7 +231,7 @@ pub enum TodoOutcome {
         /// What to copy.
         text: String,
         /// What it was.
-        what: &'static str,
+        what: Copied,
     },
     /// Put whatever is on the clipboard into the note the caret is in.
     ///
@@ -1101,7 +1102,7 @@ impl TodoView {
                     said: match self.where_now.get(index) {
                         Some(Some(line)) => format!("{}:{}", at.path.display(), line.get() + 1),
                         // The file still has the note, and the line does not.
-                        _ => format!("{}:gone", at.path.display()),
+                        _ => obelus_i18n::notes::line_gone(at.path.display().to_string()),
                     },
                     head: false,
                     gap: false,
@@ -2333,11 +2334,11 @@ impl TodoView {
                 match composer.selected() {
                     Some(text) => TodoOutcome::Copy {
                         text,
-                        what: "selection",
+                        what: Copied::Selection,
                     },
                     None => TodoOutcome::Copy {
                         text: composer.text(),
-                        what: "note",
+                        what: Copied::Note,
                     },
                 }
             }
@@ -2363,7 +2364,7 @@ impl TodoView {
                     self.follow_caret();
                     return TodoOutcome::Cut {
                         text,
-                        what: "selection",
+                        what: Copied::Selection,
                     };
                 }
                 // Nothing held, so the whole note goes. Which is how a note
@@ -2372,7 +2373,7 @@ impl TodoView {
                 match self.take_note_away() {
                     true => TodoOutcome::Cut {
                         text: whole,
-                        what: "note",
+                        what: Copied::Note,
                     },
                     false => TodoOutcome::Consumed,
                 }

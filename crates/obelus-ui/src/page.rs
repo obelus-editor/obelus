@@ -78,7 +78,7 @@ pub(crate) fn offer_copy(
     };
     let keys = [(
         crate::chat::chord(KeyCode::Enter, KeyModifiers::NONE),
-        "Copies the code",
+        obelus_i18n::page::copies_the_code(),
     )];
     let Some(said) = crate::chat::joined(&keys) else {
         return;

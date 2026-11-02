@@ -19,7 +19,7 @@ use crate::support;
 const CALLED: [&str; 4] = ["Obelus", "Mnemonic", "VS Code", "TextMate"];
 
 /// What the list asks, which is how a test tells it from any other list.
-const ASKED: &str = "Which keys Obelus starts from";
+const ASKED: &str = "Choose a keymap";
 
 /// An application on a scratch project, with a settings file of its own
 /// that holds `contents` -- or that is not there at all, for `None`.
@@ -83,7 +83,7 @@ fn the_list_says_what_each_layout_would_give() {
         let written = obelus_config::key_layout(layout.name()).expect("a layout");
         assert_eq!(row.label, written.name);
         assert!(
-            detail.starts_with(written.about),
+            detail.starts_with(written.about()),
             "{} says something else here than the setting does: {detail}",
             row.label
         );
@@ -253,7 +253,7 @@ fn what_went_wrong_comes_first() {
     start(&mut app);
     assert_eq!(
         asked(&app).as_deref(),
-        Some("What went wrong starting up"),
+        Some("Problems starting up"),
         "the problems are not in front"
     );
     assert!(!settings(&scratch).exists(), "something was written");

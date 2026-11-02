@@ -220,7 +220,7 @@ impl App {
         }) {
             Ok((todo, missed)) => {
                 if !missed.is_empty() {
-                    self.wrong("That note was taken away elsewhere".to_string());
+                    self.wrong(obelus_i18n::project::note_taken_away());
                 }
                 // The names whose words were in that, so the page knows
                 // which of what it is holding is the only copy there is.
@@ -275,9 +275,9 @@ impl App {
         // wrong are in the log, where there is room for them.
         self.wrong(match why {
             obelus_todo::NotChanged::Unreadable(_) => {
-                "The notes will not read, so none are written".to_string()
+                obelus_i18n::project::notes_unreadable_not_written()
             }
-            obelus_todo::NotChanged::Unwritable(_) => "The notes could not be written".to_string(),
+            obelus_todo::NotChanged::Unwritable(_) => obelus_i18n::project::notes_not_written(),
         });
     }
 
@@ -303,7 +303,7 @@ impl App {
             // has begun replacing their own list one note at a time.
             obelus_todo::Reading::Unreadable(why, at) => {
                 tracing::warn!(why, "the notes will not read");
-                self.wrong("The notes will not read".to_string());
+                self.wrong(obelus_i18n::project::notes_unreadable());
                 // And on the file itself. It is a file a reader opens --
                 // they write notes into it from the page and edit it by
                 // hand -- so being told the whole list will not read
@@ -315,7 +315,7 @@ impl App {
                         &path,
                         at,
                         obelus_lsp::trouble::Severity::Error,
-                        &format!("The notes will not read\n{why}"),
+                        &format!("{}\n{why}", obelus_i18n::project::notes_unreadable()),
                     );
                 }
                 return None;
@@ -784,7 +784,7 @@ impl App {
             TodoOutcome::Paste => {
                 match self.desk().paste() {
                     Some(what) => self.paste_into_notes(&what),
-                    None => self.wrong("Nothing to paste".to_string()),
+                    None => self.wrong(obelus_i18n::editing::nothing_to_paste()),
                 }
                 true
             }

@@ -103,9 +103,9 @@ pub fn keys(picker: &Picker) -> Vec<Hint> {
         return vec![
             Hint::new(
                 obelus_keymap::KeyChord::new(KeyCode::Char('s'), KeyModifiers::ALT),
-                "Stop",
+                obelus_i18n::picker::stop(),
             )
-            .about("Stop the work on this row")
+            .about(obelus_i18n::picker::stop_about())
             .when(picker.stops_this_one())
             .said(true),
         ];
@@ -122,16 +122,22 @@ pub fn keys(picker: &Picker) -> Vec<Hint> {
         let enter = |modifiers| obelus_keymap::KeyChord::new(KeyCode::Enter, modifiers);
         let on = picker.selected_item();
         let (word, about) = match on.and_then(|item| item.opens) {
-            Some(true) => ("Close", "Fold away what is under this row"),
-            _ => ("Open", "Show what this row holds, under it"),
+            Some(true) => (
+                obelus_i18n::picker::collapse(),
+                obelus_i18n::picker::collapse_about(),
+            ),
+            _ => (
+                obelus_i18n::picker::expand(),
+                obelus_i18n::picker::expand_about(),
+            ),
         };
         return vec![
             Hint::new(enter(KeyModifiers::NONE), word)
                 .about(about)
                 .when(on.is_some())
                 .said(true),
-            Hint::new(enter(KeyModifiers::ALT), "Go there")
-                .about("Go to the place this row names")
+            Hint::new(enter(KeyModifiers::ALT), obelus_i18n::picker::go_there())
+                .about(obelus_i18n::picker::go_there_about())
                 .when(on.is_some())
                 .said(true),
         ];
@@ -143,9 +149,9 @@ pub fn keys(picker: &Picker) -> Vec<Hint> {
     if picker.rows_move() {
         let alt = |code| obelus_keymap::KeyChord::new(code, KeyModifiers::ALT);
         return vec![
-            Hint::new(alt(KeyCode::Up), "Move")
+            Hint::new(alt(KeyCode::Up), obelus_i18n::picker::move_it())
                 .or(alt(KeyCode::Down))
-                .about("Change the order of the open documents")
+                .about(obelus_i18n::picker::move_about())
                 .when(picker.query().is_empty())
                 .said(true),
         ];
@@ -159,18 +165,30 @@ pub fn keys(picker: &Picker) -> Vec<Hint> {
         let enter = |modifiers| obelus_keymap::KeyChord::new(KeyCode::Enter, modifiers);
         let does = picker.worktree_enter();
         let (word, about) = match does {
-            Some(WorktreeEnter::Bring) => ("Go to it", "Bring the window on that tree forward"),
-            Some(WorktreeEnter::Stay) => ("Stay", "Close the list and stay in this window"),
-            Some(WorktreeEnter::Switch) => ("Switch", "Take this window to that tree"),
-            Some(WorktreeEnter::Open) | None => ("New window", "Open that tree in a new window"),
+            Some(WorktreeEnter::Bring) => (
+                obelus_i18n::picker::bring(),
+                obelus_i18n::picker::bring_about(),
+            ),
+            Some(WorktreeEnter::Stay) => (
+                obelus_i18n::picker::stay(),
+                obelus_i18n::picker::stay_about(),
+            ),
+            Some(WorktreeEnter::Switch) => (
+                obelus_i18n::picker::switch(),
+                obelus_i18n::picker::switch_about(),
+            ),
+            Some(WorktreeEnter::Open) | None => (
+                obelus_i18n::picker::new_window(),
+                obelus_i18n::picker::new_window_about(),
+            ),
         };
         return vec![
             Hint::new(enter(KeyModifiers::NONE), word)
                 .about(about)
                 .when(does.is_some())
                 .said(true),
-            Hint::new(enter(KeyModifiers::CONTROL), "Switch")
-                .about("Take this window to that tree")
+            Hint::new(enter(KeyModifiers::CONTROL), obelus_i18n::picker::switch())
+                .about(obelus_i18n::picker::switch_about())
                 .when(picker.switches_here())
                 .said(true),
         ];
@@ -184,32 +202,32 @@ pub fn keys(picker: &Picker) -> Vec<Hint> {
         // tab's.
         let here = how.is_some();
         return vec![
-            Hint::new(alt('r'), "Regex")
-                .about("Read the query as a regular expression")
+            Hint::new(alt('r'), obelus_i18n::picker::regex())
+                .about(obelus_i18n::picker::regex_about())
                 .set(asked.regex)
                 .only_where(here),
-            Hint::new(alt('w'), "Word")
-                .about("Find it only where it is a whole word")
+            Hint::new(alt('w'), obelus_i18n::picker::word())
+                .about(obelus_i18n::picker::word_about())
                 .set(asked.word)
                 .only_where(here),
-            Hint::new(alt('c'), "Case")
-                .about("Find the capitals as they are typed")
+            Hint::new(alt('c'), obelus_i18n::picker::case())
+                .about(obelus_i18n::picker::case_about())
                 .set(asked.sensitive)
                 .only_where(here),
             // The other way round from the three above: this one is the
             // symbols tab's, and they are the two that read a text.
-            Hint::new(alt('o'), "Outside")
-                .about("Find names outside the project as well")
+            Hint::new(alt('o'), obelus_i18n::picker::outside())
+                .about(obelus_i18n::picker::outside_about())
                 .set(picker.reaches_outside().unwrap_or(false))
                 .only_where(picker.reaches_outside().is_some()),
             // The file list's two, because they are the same settings and
             // the project's tab walks the files they choose.
-            Hint::new(alt('i'), "Ignored files")
-                .about("Search the files the project ignores")
+            Hint::new(alt('i'), obelus_i18n::picker::ignored_files())
+                .about(obelus_i18n::picker::search_ignored_about())
                 .set(picker.offers_ignored().unwrap_or(false))
                 .only_where(picker.offers_ignored().is_some()),
-            Hint::new(alt('.'), "Hidden files")
-                .about("Search the files a system keeps out of sight")
+            Hint::new(alt('.'), obelus_i18n::picker::hidden_files())
+                .about(obelus_i18n::picker::search_hidden_about())
                 .set(picker.offers_hidden().unwrap_or(false))
                 .only_where(picker.offers_hidden().is_some()),
         ];
@@ -217,22 +235,22 @@ pub fn keys(picker: &Picker) -> Vec<Hint> {
     let offering = picker.offers_ignored();
     let showing = picker.offers_hidden();
     vec![
-        Hint::new(alt('i'), "Ignored files")
-            .about("Offer the files the project ignores")
+        Hint::new(alt('i'), obelus_i18n::picker::ignored_files())
+            .about(obelus_i18n::picker::offer_ignored_about())
             .set(offering.unwrap_or(false))
             .only_where(offering.is_some()),
         // Beside it and not folded into it: what a project said to ignore
         // and what a convention says not to show are two different things
         // kept out, and one switch for both would say one was set when the
         // other was.
-        Hint::new(alt('.'), "Hidden files")
-            .about("Offer the files a system keeps out of sight")
+        Hint::new(alt('.'), obelus_i18n::picker::hidden_files())
+            .about(obelus_i18n::picker::offer_hidden_about())
             .set(showing.unwrap_or(false))
             .only_where(showing.is_some()),
         // Not a switch: what it does depends on the row the reader is on,
         // which is why it draws no setting.
-        Hint::new(alt('n'), "Rename")
-            .about("Rename the file or directory on this row")
+        Hint::new(alt('n'), obelus_i18n::picker::rename())
+            .about(obelus_i18n::picker::rename_about())
             .only_where(offering.is_some()),
     ]
 }

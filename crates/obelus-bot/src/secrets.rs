@@ -99,7 +99,7 @@ fn path() -> Result<PathBuf, Trouble> {
         .cloned()
         .or_else(obelus_logging::state_directory)
         .map(|directory| directory.join("secrets.toml"))
-        .ok_or_else(|| Trouble("there is nowhere on this machine to keep a token".to_string()))
+        .ok_or_else(|| Trouble(obelus_i18n::bot::nowhere_to_keep_tokens().to_string()))
 }
 
 /// A table of strings, only the owner's to read.
@@ -140,8 +140,8 @@ mod file {
                 .span()
                 .map(|span| text[..span.start].matches('\n').count() + 1);
             Trouble(match at {
-                Some(line) => format!("{} is not TOML at line {line}", path.display()),
-                None => format!("{} is not TOML", path.display()),
+                Some(line) => obelus_i18n::bot::not_toml_at(line, path.display().to_string()),
+                None => obelus_i18n::bot::not_toml(path.display().to_string()),
             })
         })?;
         Ok(table

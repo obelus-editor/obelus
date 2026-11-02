@@ -81,10 +81,10 @@ pub(crate) fn drawing(
                     // The one thing that goes wrong here and stays wrong:
                     // the wheel keeps sending arrow keys, and nothing on
                     // screen would otherwise say why.
-                    app.amiss("The wheel will not be reported, so it moves the cursor");
+                    app.amiss(obelus_i18n::remote::wheel_not_reported());
                 }
                 if !found.paste {
-                    app.amiss("Pasting will arrive a character at a time, not in one go");
+                    app.amiss(obelus_i18n::remote::paste_a_character_at_a_time());
                 }
                 let images = found.images.take().unwrap_or_else(|| match told {
                     Some((protocol, cell)) => obelus_ui::image::Images::told(protocol, cell),

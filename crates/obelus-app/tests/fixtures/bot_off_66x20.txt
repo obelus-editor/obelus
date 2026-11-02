@@ -5,7 +5,7 @@ screen 66x20  editor 66x18  status 66x1
  2| Chat                                                             
  3|                                                                  
  4|   Platform                                Off ▸                  
- 5|     Which chat a note can be worked on from                      
+ 5|     The chat notes can be worked on from                         
  6|                                                                  
  7|                                                                  
  8|                                                                  
@@ -26,7 +26,7 @@ screen 66x20  editor 66x18  status 66x1
  2|cddddccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  3|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbebbbbbbbbbbbbbbbbbb
- 5|bbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebbbbbbbbbbbbbbbbbbbbbb
+ 5|bbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebbbbbbbbbbbbbbbbbbbbbbbbb
  6|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  7|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  8|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc

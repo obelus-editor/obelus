@@ -149,7 +149,7 @@ impl App {
                 } else if agent.distribution.installable() {
                     Status::Missing
                 } else {
-                    Status::Unavailable("Nothing for this machine")
+                    Status::Unavailable(obelus_i18n::conversation::nothing_for_this_machine())
                 };
                 Listed {
                     // In use *and* here. An agent the settings name and the
@@ -212,19 +212,17 @@ impl App {
             Some(offers) if !offers.is_empty() => (offers, None),
             _ if asking => (
                 Vec::new(),
-                Some(format!("Asking {name} what it can be set to")),
+                Some(obelus_i18n::conversation::asking_what_it_offers(&name)),
             ),
             // Answered, with nothing: which is not the same as not having
             // answered, and is said in other words.
             Some(_) => (
                 Vec::new(),
-                Some(format!("There is nothing to set for {name}")),
+                Some(obelus_i18n::conversation::nothing_to_set(&name)),
             ),
             None => (
                 Vec::new(),
-                Some(format!(
-                    "Nothing has been heard from {name} about what it can be set to"
-                )),
+                Some(obelus_i18n::conversation::not_heard_what_it_offers(&name)),
             ),
         };
         Some(Offering {
@@ -675,7 +673,7 @@ impl App {
             return;
         }
         let Some(root) = self.agents_root() else {
-            self.wrong("This system has nowhere to install to".to_string());
+            self.wrong(obelus_i18n::conversation::nowhere_to_install());
             return;
         };
         // Nothing to report yet -- a download says how far through it is
@@ -709,7 +707,7 @@ impl App {
     pub(in crate::app) fn activate_agent(&mut self, id: &str) {
         if self.installed(id).is_none() {
             tracing::warn!(id, "not using an agent that is not installed");
-            self.wrong(format!("{id} is not installed"));
+            self.wrong(obelus_i18n::conversation::agent_not_installed(id));
             return;
         }
         // Whatever was running is not this one. Stopped rather than left

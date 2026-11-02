@@ -1197,7 +1197,7 @@ impl App {
         {
             if let Err(error) = self.desk().open(obelus_ui::welcome::SITE) {
                 tracing::warn!(%error, "the website was not opened");
-                self.say("Nothing here opens links");
+                self.say(obelus_i18n::app::could_not_open_the_link());
             }
             return;
         }

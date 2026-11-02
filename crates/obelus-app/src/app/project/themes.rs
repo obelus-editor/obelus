@@ -40,7 +40,9 @@ use crate::app::*;
 
 /// What a list of themes says where what was typed matches none of them,
 /// and enter takes the words to the themes page.
-pub(in crate::app) const NONE_HERE: &str = "No theme here by that name. Enter looks in More themes";
+pub(in crate::app) fn none_here() -> &'static str {
+    obelus_i18n::project::no_theme_by_that_name()
+}
 
 /// What Obelus knows about the registry's themes.
 #[derive(Debug, Default)]
@@ -126,13 +128,37 @@ impl OnDisk {
     }
 
     /// `App::theme_whence`, answered from what was read.
-    fn whence(&self, name: &str) -> Option<&'static str> {
+    fn whence(&self, name: &str) -> Option<Whence> {
         if self.readers.contains(name) {
-            Some("Local")
+            Some(Whence::Local)
         } else if self.downloaded.iter().any(|found| found == name) {
-            Some("Downloaded")
+            Some(Whence::Downloaded)
         } else {
             None
+        }
+    }
+}
+
+/// Where a theme that is not built in comes from.
+///
+/// A kind and not the words a list says it in: what is worn, what stands in
+/// front of what and what a fresh download is put on by are decided by it,
+/// and words are only the same as each other in one language at a time.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Whence {
+    /// The reader's own, beside their settings.
+    Local,
+    /// Taken from the registry.
+    Downloaded,
+}
+
+impl Whence {
+    /// What a list says beside the name, in the language being spoken.
+    #[must_use]
+    pub fn said(self) -> &'static str {
+        match self {
+            Self::Local => obelus_i18n::project::theme_local(),
+            Self::Downloaded => obelus_i18n::project::theme_downloaded(),
         }
     }
 }
@@ -282,7 +308,7 @@ impl App {
             prose: false,
             marker: None,
             icon: obelus_icons::enabled().then_some(obelus_icons::ui::MORE_THEMES),
-            label: "More themes".to_string(),
+            label: obelus_i18n::project::more_themes().to_string(),
             version: None,
             detail: None,
             trailing: None,
@@ -342,7 +368,7 @@ impl App {
             return;
         }
         let Some(root) = self.settled.installed.clone() else {
-            self.wrong("This system has nowhere to keep a theme");
+            self.wrong(obelus_i18n::project::nowhere_to_keep_themes());
             return;
         };
         // Nothing to say about how far yet, but the card stops offering a
@@ -394,7 +420,7 @@ impl App {
                 self.themes.failures.remove(&name);
                 if self.settled.config.theme == name {
                     self.reread_theme();
-                } else if fresh && self.theme_whence(&name) == Some("Downloaded") {
+                } else if fresh && self.theme_whence(&name) == Some(Whence::Downloaded) {
                     self.choose_theme(&name);
                 }
             }
@@ -438,7 +464,7 @@ impl App {
         }
         if card.status == Status::Delisted && self.themes.taking.as_deref() != Some(name) {
             self.themes.taking = Some(name.to_string());
-            self.say(format!("Delete again to take {name} away for good"));
+            self.say(obelus_i18n::project::delete_again(name));
             return;
         }
         self.themes.taking = None;
@@ -460,8 +486,8 @@ impl App {
 fn theme_card(disk: &OnDisk, theme: Listed, status: Status, installed: bool, worn: &str) -> Card {
     let whence = disk.whence(&theme.name);
     Card {
-        worn: installed && theme.name == worn && whence == Some("Downloaded"),
-        shadowed: installed && whence == Some("Local"),
+        worn: installed && theme.name == worn && whence == Some(Whence::Downloaded),
+        shadowed: installed && whence == Some(Whence::Local),
         installed,
         theme,
         status,

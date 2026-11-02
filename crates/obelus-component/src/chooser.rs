@@ -62,6 +62,7 @@ use std::path::{Path, PathBuf};
 use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::{
+    copied::Copied,
     field::Field,
     window::{Move, Window, Wrap},
 };
@@ -480,13 +481,13 @@ impl Chooser {
 
     /// What a copy takes from whichever box is showing.
     #[must_use]
-    pub fn copied(&self) -> (String, &'static str) {
+    pub fn copied(&self) -> (String, Copied) {
         self.typing().copied()
     }
 
     /// The same, taken out of the box -- which moves it the way a paste
     /// does, so it answers the way a paste does too.
-    pub fn cut(&mut self) -> ((String, &'static str), Outcome) {
+    pub fn cut(&mut self) -> ((String, Copied), Outcome) {
         match &mut self.doing {
             Doing::Choosing => {
                 let cut = self.filter.cut();

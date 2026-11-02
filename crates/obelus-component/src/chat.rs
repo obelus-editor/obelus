@@ -116,7 +116,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use obelus_row::{Ink, Span};
 
-use crate::{composer::Composer, window::Window};
+use crate::{composer::Composer, copied::Copied, window::Window};
 
 mod kept;
 mod keys;
@@ -716,9 +716,10 @@ pub type Spot = crate::page::Spot<(usize, Source)>;
 /// a `Spot` could not point at the very thing this was for.
 pub use crate::page::Place;
 
-/// What a conversation's rows were laid out against: a width, and a
-/// version of `obelus_text`'s table of pictures.
-type LaidAt = (u16, u64);
+/// What a conversation's rows were laid out against: a width, a version
+/// of `obelus_text`'s table of pictures, and the language Obelus's own words
+/// in them were said in.
+type LaidAt = (u16, u64, obelus_i18n::Language);
 
 /// A conversation.
 ///
@@ -1322,8 +1323,8 @@ impl Chat {
             .position(|step| step.state == "in_progress");
         let total = self.plan.len();
         match at.and_then(|at| Some((at, self.plan.get(at)?))) {
-            Some((at, step)) => format!("Step {} of {total} \u{2014} {}", at + 1, step.said),
-            None => format!("{total} steps"),
+            Some((at, step)) => obelus_i18n::chat::step_of(at + 1, step.said.as_str(), total),
+            None => obelus_i18n::chat::steps(total),
         }
     }
 
@@ -1936,21 +1937,21 @@ impl Chat {
     /// with its line and the notes follow with their note: copying nothing
     /// is not something a key can usefully do.
     #[must_use]
-    pub fn copied(&self, width: u16) -> (String, &'static str) {
+    pub fn copied(&self, width: u16) -> (String, Copied) {
         if let Some(held) = self.held_text(width) {
-            return (held, "selection");
+            return (held, Copied::Selection);
         }
         match self.input.selected() {
-            Some(held) => (held, "selection"),
-            None => (self.input.text(), "message"),
+            Some(held) => (held, Copied::Selection),
+            None => (self.input.text(), Copied::Message),
         }
     }
 
     /// The same, and takes it out.
-    pub fn cut(&mut self, room: u16) -> (String, &'static str) {
+    pub fn cut(&mut self, room: u16) -> (String, Copied) {
         match self.input.cut(room.max(1)) {
-            Some(held) => (held, "selection"),
-            None => (self.input.take(), "message"),
+            Some(held) => (held, Copied::Selection),
+            None => (self.input.take(), Copied::Message),
         }
     }
 
@@ -2457,7 +2458,7 @@ mod tests {
             "opening the first call shut something else: {:?}",
             rows.iter().map(Row::text).collect::<Vec<_>>()
         );
-        assert_eq!(rows[0].text(), "3 Calls", "the run did not stay open");
+        assert_eq!(rows[0].text(), "3 calls", "the run did not stay open");
         assert!(
             rows.iter().any(|row| row.text() == "output 0"),
             "the first call did not open: {:?}",
@@ -3446,7 +3447,7 @@ mod tests {
         chat.handle_key(&shifted(KeyCode::Left), false, ROOM, &[], false);
         assert_eq!(
             chat.copied(ROOM.reading),
-            ("re".to_string(), "selection"),
+            ("re".to_string(), Copied::Selection),
             "shift and the left arrow did not hold what it passed over"
         );
 
@@ -3474,13 +3475,13 @@ mod tests {
         chat.handle_key(&shifted(KeyCode::Left), false, ROOM, &[], false);
         assert_eq!(
             chat.copied(ROOM.reading),
-            ("ef".to_string(), "selection"),
+            ("ef".to_string(), Copied::Selection),
             "shift and left did not hold what they passed over in the box"
         );
         chat.handle_key(&shifted(KeyCode::Right), false, ROOM, &[], false);
         assert_eq!(
             chat.copied(ROOM.reading),
-            ("f".to_string(), "selection"),
+            ("f".to_string(), Copied::Selection),
             "shift and right did not give back what was held"
         );
 
@@ -3527,7 +3528,7 @@ mod tests {
         chat.handle_key(&shifted(KeyCode::Home), false, ROOM, &[], false);
         assert_eq!(
             chat.copied(ROOM.reading),
-            ("a message I typed".to_string(), "selection"),
+            ("a message I typed".to_string(), Copied::Selection),
             "shift and home did not hold the line in the box"
         );
         assert!(
@@ -3542,7 +3543,7 @@ mod tests {
         chat.handle_key(&shifted(KeyCode::End), false, ROOM, &[], false);
         assert_eq!(
             chat.copied(ROOM.reading),
-            ("a message I typed".to_string(), "selection"),
+            ("a message I typed".to_string(), Copied::Selection),
             "shift and end did not hold the line in the box"
         );
         assert!(chat.at_the_end(), "shift and end moved the transcript");
@@ -3676,7 +3677,7 @@ mod tests {
         chat.handle_key(&shifted(KeyCode::Home), false, ROOM, &[], false);
         assert_eq!(
             chat.copied(ROOM.reading),
-            ("alpha b".to_string(), "selection"),
+            ("alpha b".to_string(), Copied::Selection),
             "shift and home did not hold what is before the cursor"
         );
 
@@ -3690,7 +3691,7 @@ mod tests {
         chat.handle_key(&shifted(KeyCode::Home), false, ROOM, &[], false);
         assert_eq!(
             chat.copied(ROOM.reading),
-            ("a quo".to_string(), "selection"),
+            ("a quo".to_string(), Copied::Selection),
             "shift and home did not hold what is before the cursor, in a quote"
         );
 
@@ -3723,7 +3724,10 @@ mod tests {
         chat.handle_key(&shifted(KeyCode::End), false, ROOM, &[], false);
         assert_eq!(
             chat.copied(ROOM.reading),
-            ("Two open the page and press it".to_string(), "selection"),
+            (
+                "Two open the page and press it".to_string(),
+                Copied::Selection
+            ),
             "the words after the soft break could not be held"
         );
     }
@@ -3753,7 +3757,7 @@ mod tests {
         read(&mut chat, "t3", "completed");
         let rows = chat.rows(ROOM.reading);
         assert_eq!(rows.len(), 1, "a run of three is not one row: {rows:?}");
-        assert_eq!(rows[0].text(), "3 Files");
+        assert_eq!(rows[0].text(), "3 files");
         assert!(rows[0].folds.is_some() && !rows[0].open);
 
         // Opened, its members are under it; closed again, they are not.
@@ -3950,7 +3954,7 @@ mod tests {
              stop being the same number, which is why the caret jumped.",
         );
         let rows = chat.rows(ROOM.reading);
-        assert_eq!(rows[0].text(), "thought", "long thinking has no heading");
+        assert_eq!(rows[0].text(), "Thought", "long thinking has no heading");
         assert!(rows[0].open, "Obelus closed the thinking by itself");
         assert!(rows.len() > 1, "the thinking is not under its heading");
 

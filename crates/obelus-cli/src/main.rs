@@ -76,6 +76,10 @@ fn main() -> Result<ExitCode> {
     // Before anything that can panic, so a panic on the way up is in the
     // log as well.
     obelus_logging::catch_panics();
+    // Which language `auto` is, asked here and not where the settings are
+    // read: a test starts Obelus the way a reader does, and a test that
+    // asked would speak the machine's language to every fixture after it.
+    obelus_i18n::hear_the_system();
 
     // Before anything about the terminal, which neither of these touches.
     if arguments.server {
