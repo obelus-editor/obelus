@@ -108,9 +108,6 @@ pub enum SettingsOutcome {
     /// Only the key: what is in the list is in the config, and what may go
     /// in it comes from the machine rather than from anything here.
     Names(&'static str),
-    /// A setting that is typed wants its line: which setting, and what it
-    /// says now, which is where the typing starts.
-    Type(&'static str, String),
     /// A command should be on these keys from now on, in this order, and
     /// on no others -- on none, where the list is empty.
     ///
@@ -1553,7 +1550,6 @@ impl Settings {
                     .unwrap_or_default(),
             ),
             Kind::Names => Value::Names(Vec::new()),
-            Kind::Text => Value::Text(String::new()),
             Kind::Count(dial) => Value::Count(dial.least),
         })
     }
@@ -2104,9 +2100,7 @@ impl Settings {
             Kind::Choice(choices) => {
                 let word = match Self::value_of(setting, config) {
                     Value::Choice(word) => word,
-                    Value::Count(_) | Value::Switch(_) | Value::Names(_) | Value::Text(_) => {
-                        String::new()
-                    }
+                    Value::Count(_) | Value::Switch(_) | Value::Names(_) => String::new(),
                 };
                 SettingsOutcome::Choose(setting.key, choices, word)
             }
@@ -2131,10 +2125,6 @@ impl Settings {
             // offers, so what opens is not the short list of
             // choices but the thing that adds and orders.
             Kind::Names => SettingsOutcome::Names(setting.key),
-            Kind::Text => match Self::value_of(setting, config) {
-                Value::Text(said) => SettingsOutcome::Type(setting.key, said),
-                _ => SettingsOutcome::Type(setting.key, String::new()),
-            },
         }
     }
 

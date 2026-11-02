@@ -26,7 +26,7 @@ use crate::{app::*, conversation::Topic};
 
 /// Who the agent is talking to, in every conversation.
 ///
-/// With one hole, `{name}`, for what the agent calls itself -- the
+/// With one hole, `{role}`, for who the agent is to the reader -- the
 /// reader's setting, read when the conversation begins. A reader who
 /// changes it half-way is heard in the next conversation, not this one:
 /// this is said once, and saying it again would be the agent told twice
@@ -91,6 +91,49 @@ pub(in crate::app) fn workflows() -> impl Iterator<Item = (&'static str, &'stati
         let (title, about, _) = read_workflow(file);
         (*name, title, about)
     })
+}
+
+/// Every role, by the name the setting gives it.
+///
+/// The workflows' arrangement, and for their reasons: one file each, with
+/// what it is called on screen, a line of `----`, what the list it is
+/// chosen from says about it, another `----`, and what goes into
+/// [`ALWAYS`] in place of `{role}` -- what the agent calls itself, what it
+/// calls the reader, and how it speaks. What stays the same whoever the
+/// agent is -- the third person, and that a role is only a voice -- is
+/// said once, around the hole, rather than in every file.
+///
+/// The names are written twice, here and in `obelus-config`, and the test
+/// below keeps the two lists the same list.
+const ROLES: &[(&str, &str)] = &[
+    ("obelus", include_str!("roles/obelus.txt")),
+    ("soldier", include_str!("roles/soldier.txt")),
+    ("butler", include_str!("roles/butler.txt")),
+    ("copilot", include_str!("roles/copilot.txt")),
+    ("apprentice", include_str!("roles/apprentice.txt")),
+    ("eunuch", include_str!("roles/eunuch.txt")),
+];
+
+/// Every role's name, what it is called on screen, and what the list it
+/// is chosen from says about it.
+pub(in crate::app) fn roles() -> impl Iterator<Item = (&'static str, &'static str, &'static str)> {
+    ROLES.iter().map(|(name, file)| {
+        let (title, about, _) = read_workflow(file);
+        (*name, title, about)
+    })
+}
+
+/// What the agent is told of the role the reader has chosen.
+///
+/// A word Obelus does not know is the first role, which is what the
+/// setting holds before the reader chooses: the file is read with the word
+/// checked, so this is only ever a word a newer Obelus wrote.
+fn role(word: &str) -> &'static str {
+    let (_, file) = ROLES
+        .iter()
+        .find(|(name, _)| *name == word)
+        .unwrap_or(&ROLES[0]);
+    read_workflow(file).2.unwrap_or_default()
 }
 
 /// What a conversation about a note says it is about.
@@ -179,7 +222,7 @@ impl App {
     ) -> Option<Opening> {
         let mut pieces = Vec::new();
         if !introduced {
-            pieces.push(ALWAYS.trim().replace("{name}", &self.config().speaks_as));
+            pieces.push(ALWAYS.trim().replace("{role}", role(&self.config().role)));
             if self.workflow().is_some() {
                 pieces.push(WORKFLOW.trim().to_string());
             }
@@ -595,5 +638,55 @@ mod tests {
         assert!(words.contains("`.worktree/pr-7`"), "{words}");
         assert!(words.contains("info/exclude"), "{words}");
         assert!(!words.contains("outside this checkout"), "{words}");
+    }
+
+    /// The roles here are the ones the setting accepts, and each says what
+    /// it is called, what it is, and who the agent is in it.
+    ///
+    /// Broken deliberately by adding a name to the setting's list with no
+    /// file beside it, by taking the title and its `----` out of
+    /// `soldier.txt`, which moves every piece up one and tells the agent
+    /// nothing, and by writing `soldier.txt`'s example sentence with an
+    /// "I" the agent is said to use.
+    #[test]
+    fn every_role_the_setting_accepts_is_written_here() {
+        let accepted = match obelus_config::Setting::named("role").map(|setting| setting.kind) {
+            Some(obelus_config::Kind::Choice(words)) => words,
+            other => panic!("the role setting is not a choice: {other:?}"),
+        };
+        let written: Vec<&str> = super::roles().map(|(name, ..)| name).collect();
+        assert_eq!(accepted, written.as_slice());
+        for (name, file) in super::ROLES {
+            let (title, about, told) = super::read_workflow(file);
+            assert!(
+                !title.is_empty() && !title.contains('\n') && !title.contains("----"),
+                "{name} is not called anything: {title:?}"
+            );
+            assert!(
+                !about.is_empty() && !about.contains("----"),
+                "{name} does not say what it is: {about:?}"
+            );
+            // The one thing every role must tell the agent, whatever else
+            // it says: what to call itself, and that it is not "I".
+            let told = told.unwrap_or_else(|| panic!("{name} tells the agent nothing"));
+            assert!(
+                told.contains("You speak of yourself as ")
+                    && told.contains("never \"I have changed the file\"")
+                    && !told.contains("\"I have changed the file\", never"),
+                "{name} does not say what the agent calls itself: {told:?}"
+            );
+        }
+    }
+
+    /// The role the reader chose is what goes into the opening, and a
+    /// word nobody knows is the first.
+    ///
+    /// Broken deliberately by having `role` read `ROLES[0]` whatever the
+    /// word, which tells a soldier it is Obelus.
+    #[test]
+    fn the_role_chosen_is_the_role_told() {
+        assert!(super::role("soldier").contains("commander"));
+        assert!(super::role("obelus").contains("as Obelus"));
+        assert_eq!(super::role("pirate"), super::role("obelus"));
     }
 }
