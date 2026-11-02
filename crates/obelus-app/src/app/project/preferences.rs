@@ -386,10 +386,6 @@ impl App {
                 self.open_names(key);
                 true
             }
-            SettingsOutcome::Type(key, said) => {
-                self.ask_on_the_status_row(Prompt::about(PromptKind::Setting(key), said));
-                true
-            }
             SettingsOutcome::Install(id) => {
                 self.install_agent(&id);
                 true
@@ -544,10 +540,15 @@ impl App {
         // The workflows are asked of the application too, for what each one
         // does: a name like `feature-branch` says what it is only to
         // somebody who knows the term, and the words that say it are in
-        // the file beside what the agent is handed.
+        // the file beside what the agent is handed. And the roles, for
+        // the same reason: `butler` is a word, and who the agent becomes
+        // in it is a sentence.
         let choices: Vec<(String, Option<String>)> = match key {
             "theme" => self.themes().into_iter().map(|name| (name, None)).collect(),
             "workflow" => crate::app::opening::workflows()
+                .map(|(name, _, about)| (name.to_string(), Some(about.to_string())))
+                .collect(),
+            "role" => crate::app::opening::roles()
                 .map(|(name, _, about)| (name.to_string(), Some(about.to_string())))
                 .collect(),
             // What each layout puts the opening keys on, because the name
@@ -612,7 +613,7 @@ impl App {
         // second of two left a blank where it should have been, and the
         // first of three went off the top.
         let rows = match key {
-            "workflow" => COMPACT_ROWS * 3,
+            "workflow" | "role" => COMPACT_ROWS * 3,
             _ => COMPACT_ROWS,
         };
         let mut picker = Picker::new(items, PickerLayout::Compact { rows });
@@ -623,7 +624,7 @@ impl App {
         // and all of them, because they are Obelus's own. A layout's is
         // one, and its last words are the keys it puts the files and the
         // palette on.
-        if matches!(key, "workflow" | "keys_from") {
+        if matches!(key, "workflow" | "role" | "keys_from") {
             picker.wraps(None);
             picker.details_whole();
         }
@@ -986,6 +987,9 @@ impl App {
     pub fn called(&self, key: &str, word: &str) -> Option<std::borrow::Cow<'static, str>> {
         match key {
             "workflow" => crate::app::opening::workflows()
+                .find(|(name, ..)| *name == word)
+                .map(|(_, title, _)| title.into()),
+            "role" => crate::app::opening::roles()
                 .find(|(name, ..)| *name == word)
                 .map(|(_, title, _)| title.into()),
             // A platform by its name, and none by the page's word for it.

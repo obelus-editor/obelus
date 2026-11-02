@@ -284,7 +284,7 @@
       <p class="quiet small">它还会告诉你是<em>哪一行</em>的问题。配置文件解析不了、某个键绑不上、项目设了无权设的项、主题名字找不到对应的文件——都会标在出问题的那一行上，和语言服务器报的错放在同一个列表里，所以 <kbd>Alt+e</kbd> 和 <kbd>Alt+[</kbd> <kbd>Alt+]</kbd> 照样能找到它们。</p>
 
       <div class="aside">
-        <p><strong>项目不能设的十二项：</strong><code>agent</code>、<code>agents</code>、<code>environment</code>、<code>keys</code>、<code>keys_from</code>、<code>remote</code>、<code>remotes</code>、<code>new_versions</code>、<code>conversation_days</code>、<code>read_only</code>、<code>build_jobs</code>、<code>theme</code>。这十二项都该你说了算，不该由一个下载来的仓库定：你的机器上启动哪个程序；agent 不问你就能做什么（这正是不怀好意的项目最想改的）；agent 带着什么环境变量启动（能借此把它指向别人的服务器）；按键放在哪（能改键的项目就能把 <code>quit</code> 挪到你会误按的地方）；谁能从聊天里找到这台机器；Obelus 要不要联网检查新版本；对话保留多久（项目能借此清空你的对话列表）；你自己的键能不能改文件；一次构建能占你机器多少；以及你用哪套主题。</p>
+        <p><strong>项目不能设的十三项：</strong><code>agent</code>、<code>agents</code>、<code>environment</code>、<code>keys</code>、<code>keys_from</code>、<code>remote</code>、<code>remotes</code>、<code>new_versions</code>、<code>conversation_days</code>、<code>read_only</code>、<code>build_jobs</code>、<code>role</code>、<code>theme</code>。这十三项都该你说了算，不该由一个下载来的仓库定：你的机器上启动哪个程序；agent 不问你就能做什么（这正是不怀好意的项目最想改的）；agent 带着什么环境变量启动（能借此把它指向别人的服务器）；按键放在哪（能改键的项目就能把 <code>quit</code> 挪到你会误按的地方）；谁能从聊天里找到这台机器；Obelus 要不要联网检查新版本；对话保留多久（项目能借此清空你的对话列表）；你自己的键能不能改文件；一次构建能占你机器多少；agent 怎么称呼你；以及你用哪套主题。</p>
       </div>
 
       <h3>能设的项</h3>
@@ -318,6 +318,7 @@
           <tr><td><code>hidden_files</code></td><td><code>false</code></td><td>文件列表里也显示隐藏文件：名字以点开头的，以及 Windows 上设了隐藏属性的</td></tr>
           <tr><td><code>new_versions</code></td><td><code>true</code></td><td>每天去 GitHub 查一次有没有新版本，有的话在欢迎页上说一声</td></tr>
           <tr><td><code>workflow</code></td><td><code>"feature-branch"</code></td><td>agent 怎么改这个项目。<code>feature-branch</code>：在自己的 worktree 和分支上改；<code>in-place</code>：步骤一样，但直接改你正在看的代码；<code>none</code>：按 agent 自己的习惯来。不是 Git 仓库的项目没有分支可开，agent 就直接改。见<a href="index.html#how">工作流</a>。项目可以设</td></tr>
+          <tr><td><code>role</code></td><td><code>"obelus"</code></td><td>对话里 agent 是你的什么人：怎么自称、怎么称呼你、用什么语气说话。<code>obelus</code>：编辑器的一部分，自称 Obelus；<code>soldier</code>：士兵对指挥官；<code>butler</code>：管家对主人；<code>first-officer</code>：副驾驶对机长；<code>apprentice</code>：学徒对师傅；<code>eunuch</code>：奴才对皇上，古装剧那种。不管哪个角色，agent 都用名字自称、不说"我"，所以对话里的"我"永远是你；角色只改说话的方式，不改做事的方式。下一个对话起生效。只能你自己设，项目不能设</td></tr>
           <tr><td><code>conversation_days</code></td><td><code>30</code></td><td>不挂在笔记上的对话，最后一条消息之后多少天被忘掉；<code>0</code> 表示永远不忘。agent 那边对话还在，只是 Obelus 找不回去了，事后把天数调大也找不回来。挂在笔记上的对话跟着笔记走；有窗口正开着的对话不会被忘</td></tr>
         </tbody>
       </table>
