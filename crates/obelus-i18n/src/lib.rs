@@ -210,36 +210,50 @@ numbers!(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize);
 
 /// One language's messages, and the ones that take nothing already said.
 struct Catalogue {
-    bundle: FluentBundle<FluentResource>,
+    /// A bundle a file, so a name need only be one message in its own file.
+    bundles: Vec<FluentBundle<FluentResource>>,
     plain: Vec<String>,
 }
 
 impl Catalogue {
     fn of(language: Language) -> Self {
         let tag = language.word();
-        let identifier = tag.parse().unwrap_or_default();
-        let mut bundle = FluentBundle::new_concurrent(vec![identifier]);
-        // Fluent puts invisible marks round every variable by default, so a
-        // name written right to left cannot turn the sentence round it. They
-        // are characters, and a terminal gives each a cell: every row with a
-        // variable in it would come out wider than it measured.
-        bundle.set_use_isolating(false);
-        for source in SOURCES[language.index()] {
-            let resource = match FluentResource::try_new((*source).to_string()) {
-                Ok(resource) => resource,
-                // The build parsed the same text and would have stopped.
-                Err((resource, errors)) => {
-                    tracing::error!(tag, ?errors, "messages that will not parse");
-                    resource
-                }
-            };
-            if let Err(errors) = bundle.add_resource(resource) {
-                tracing::error!(tag, ?errors, "messages said twice");
-            }
-        }
-        let plain = PLAIN.iter().map(|id| say(&bundle, tag, id, None)).collect();
-        Self { bundle, plain }
+        let bundles: Vec<_> = SOURCES[language.index()]
+            .iter()
+            .map(|source| bundle(tag, source))
+            .collect();
+        let plain = PLAIN
+            .iter()
+            .map(|(file, id)| match bundles.get(*file) {
+                Some(bundle) => say(bundle, tag, id, None),
+                None => id.to_string(),
+            })
+            .collect();
+        Self { bundles, plain }
     }
+}
+
+/// One file's messages in one language.
+fn bundle(tag: &str, source: &str) -> FluentBundle<FluentResource> {
+    let identifier = tag.parse().unwrap_or_default();
+    let mut bundle = FluentBundle::new_concurrent(vec![identifier]);
+    // Fluent puts invisible marks round every variable by default, so a
+    // name written right to left cannot turn the sentence round it. They
+    // are characters, and a terminal gives each a cell: every row with a
+    // variable in it would come out wider than it measured.
+    bundle.set_use_isolating(false);
+    let resource = match FluentResource::try_new(source.to_string()) {
+        Ok(resource) => resource,
+        // The build parsed the same text and would have stopped.
+        Err((resource, errors)) => {
+            tracing::error!(tag, ?errors, "messages that will not parse");
+            resource
+        }
+    };
+    if let Err(errors) = bundle.add_resource(resource) {
+        tracing::error!(tag, ?errors, "messages said twice");
+    }
+    bundle
 }
 
 /// Every language's messages, made the first time anything is said.
@@ -281,13 +295,16 @@ fn plain(index: usize) -> &'static str {
     catalogue().plain.get(index).map_or("", String::as_str)
 }
 
-/// A message that takes something.
-fn formatted(id: &str, args: impl IntoIterator<Item = (&'static str, Arg)>) -> String {
+/// A message that takes something, by its file's place in [`SOURCES`].
+fn formatted(file: usize, id: &str, args: impl IntoIterator<Item = (&'static str, Arg)>) -> String {
     let mut fluent = FluentArgs::new();
     for (name, Arg(value)) in args {
         fluent.set(name, value);
     }
-    say(&catalogue().bundle, spoken().word(), id, Some(&fluent))
+    match catalogue().bundles.get(file) {
+        Some(bundle) => say(bundle, spoken().word(), id, Some(&fluent)),
+        None => id.to_string(),
+    }
 }
 
 #[cfg(test)]

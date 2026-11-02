@@ -54,7 +54,6 @@ pub(crate) fn generate(languages: &[Language]) -> Result<String, Vec<String>> {
     let mut read: Vec<BTreeMap<String, Vec<Message>>> = Vec::new();
     for language in languages {
         let mut files = BTreeMap::new();
-        let mut seen = BTreeSet::new();
         for file in &language.files {
             let place = format!("{}/{}.ftl", language.word, file.stem);
             if !is_a_name(&file.stem) {
@@ -63,14 +62,6 @@ pub(crate) fn generate(languages: &[Language]) -> Result<String, Vec<String>> {
                 ));
             }
             let messages = messages(&place, &file.source, &mut wrong);
-            for message in &messages {
-                if !seen.insert(message.id.clone()) {
-                    wrong.push(format!(
-                        "{place}: {} is said twice in {}",
-                        message.id, language.word
-                    ));
-                }
-            }
             files.insert(file.stem.clone(), messages);
         }
         read.push(files);
@@ -137,14 +128,18 @@ fn messages(place: &str, source: &str, wrong: &mut Vec<String>) -> Vec<Message> 
             resource
         }
     };
-    let found: BTreeMap<&str, &ast::Message<&str>> = resource
-        .body
-        .iter()
-        .filter_map(|entry| match entry {
-            ast::Entry::Message(message) => Some((message.id.name, message)),
-            _ => None,
-        })
-        .collect();
+    // A file is a bundle of its own, so a name has to be one message in it
+    // and need not be unique anywhere else: `group-files` is a tab of the
+    // settings and of the palette both. Fluent keeps the first of two and
+    // says so only when the bundle is made, which is too late.
+    let mut found: BTreeMap<&str, &ast::Message<&str>> = BTreeMap::new();
+    for entry in &resource.body {
+        if let ast::Entry::Message(message) = entry
+            && found.insert(message.id.name, message).is_some()
+        {
+            wrong.push(format!("{place}: {} is said twice", message.id.name));
+        }
+    }
     let mut messages = Vec::new();
     for message in found.values() {
         let id = message.id.name;
@@ -293,6 +288,8 @@ fn is_a_name(name: &str) -> bool {
         && !name.ends_with('-')
         && !name.contains("--")
         && !KEYWORDS.contains(&snake(name).as_str())
+        // Every module has a function of its own by this name.
+        && name != "named"
 }
 
 /// A Fluent name as a Rust one.
@@ -332,26 +329,65 @@ fn written(languages: &[Language], model: &BTreeMap<String, Vec<Message>>) -> St
         out.push_str("    ],\n");
     }
     out.push_str("];\n\n");
-    let plain: Vec<&Message> = model
+    // A file's place among `SOURCES` is its place here: both are in the
+    // order of the files' names, and every language has the same files.
+    let plain: Vec<(usize, &Message)> = model
         .values()
-        .flatten()
-        .filter(|message| message.variables.is_empty())
+        .enumerate()
+        .flat_map(|(file, messages)| messages.iter().map(move |message| (file, message)))
+        .filter(|(_, message)| message.variables.is_empty())
         .collect();
     out.push_str(&format!(
-        "/// The messages that take nothing, which are said once per language and kept.\n\
-         pub(crate) const PLAIN: [&str; {}] = [{}];\n",
+        "/// The messages that take nothing, by file and name, which are said once per language and kept.\n\
+         pub(crate) const PLAIN: [(usize, &str); {}] = [{}];\n",
         plain.len(),
         plain
             .iter()
-            .map(|message| format!("{:?}", message.id))
+            .map(|(file, message)| format!("({file}, {:?})", message.id))
             .collect::<Vec<_>>()
             .join(", ")
     ));
-    for (stem, messages) in model {
+    for (file, (stem, messages)) in model.iter().enumerate() {
         out.push_str(&format!(
             "\n/// What `{stem}.ftl` says.\npub mod {} {{\n",
             snake(stem)
         ));
+        // By name, for a table that already names its rows -- the commands
+        // by their own names, the settings by their keys -- where a
+        // function each would be a second list of the same rows to keep in
+        // step. Whoever asks this way holds every row to it in a test.
+        let arms: Vec<String> = messages
+            .iter()
+            .filter(|message| message.variables.is_empty())
+            .map(|message| {
+                format!(
+                    "            {:?} => Some({}()),\n",
+                    message.id,
+                    snake(&message.id)
+                )
+            })
+            .collect();
+        out.push_str(&format!(
+            "    /// Every message in this file, by its name in the file.\n    pub const NAMES: &[&str] = &[{}];\n",
+            messages
+                .iter()
+                .map(|message| format!("{:?}", message.id))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+        out.push_str(
+            "    /// A message of this file that takes nothing, by its name in the file.\n    #[must_use]\n    pub fn named(id: &str) -> Option<&'static str> {\n",
+        );
+        if arms.is_empty() {
+            out.push_str("        let _ = id;\n        None\n");
+        } else {
+            out.push_str("        match id {\n");
+            for arm in arms {
+                out.push_str(&arm);
+            }
+            out.push_str("            _ => None,\n        }\n");
+        }
+        out.push_str("    }\n");
         for message in messages {
             let doc = format!("`{}`: {}", message.id, message.text);
             out.push_str(&format!("    #[doc = {doc:?}]\n    #[must_use]\n"));
@@ -359,7 +395,7 @@ fn written(languages: &[Language], model: &BTreeMap<String, Vec<Message>>) -> St
             if message.variables.is_empty() {
                 let index = plain
                     .iter()
-                    .position(|plain| plain.id == message.id)
+                    .position(|(its, plain)| *its == file && plain.id == message.id)
                     .unwrap_or_default();
                 out.push_str(&format!(
                     "    pub fn {name}() -> &'static str {{\n        crate::plain({index})\n    }}\n"
@@ -378,7 +414,7 @@ fn written(languages: &[Language], model: &BTreeMap<String, Vec<Message>>) -> St
                     .collect::<Vec<_>>()
                     .join(", ");
                 out.push_str(&format!(
-                    "    pub fn {name}({parameters}) -> String {{\n        crate::formatted({:?}, [{arguments}])\n    }}\n",
+                    "    pub fn {name}({parameters}) -> String {{\n        crate::formatted({file}, {:?}, [{arguments}])\n    }}\n",
                     message.id
                 ));
             }

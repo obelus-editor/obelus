@@ -4462,6 +4462,7 @@ name = "obelus-command"
 version = "0.18.0"
 dependencies = [
  "obelus-config",
+ "obelus-i18n",
 ]
 
 [[package]]

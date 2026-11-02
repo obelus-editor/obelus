@@ -239,16 +239,17 @@ impl Group {
         Self::Obelus,
     ];
 
-    /// The word on the tab.
+    /// The word on the tab, in the language being spoken.
     #[must_use]
-    pub const fn name(self) -> &'static str {
+    pub fn name(self) -> &'static str {
+        use obelus_i18n::palette;
         match self {
-            Self::Files => "Files",
-            Self::Search => "Search",
-            Self::Code => "Code",
-            Self::Edit => "Edit",
-            Self::Git => "Git",
-            Self::Obelus => "Obelus",
+            Self::Files => palette::group_files(),
+            Self::Search => palette::group_search(),
+            Self::Code => palette::group_code(),
+            Self::Edit => palette::group_edit(),
+            Self::Git => palette::group_git(),
+            Self::Obelus => palette::group_obelus(),
         }
     }
 }
@@ -431,8 +432,18 @@ pub struct CommandSpec {
     pub command: Command,
     /// The name shown in the palette and matched against the query.
     pub name: &'static str,
-    /// One line of description.
-    pub title: &'static str,
+}
+
+impl CommandSpec {
+    /// One line of description, in the language being spoken.
+    ///
+    /// Kept in `obelus-i18n`'s `commands.ftl` by the command's own name,
+    /// which a test holds every command to -- so the name is what comes
+    /// out if one is ever missing, rather than nothing.
+    #[must_use]
+    pub fn title(&self) -> &'static str {
+        obelus_i18n::commands::named(self.name).unwrap_or(self.name)
+    }
 }
 
 /// Every command, in the order the palette lists them.
@@ -440,87 +451,70 @@ pub const ALL: &[CommandSpec] = &[
     CommandSpec {
         command: Command::FileOpen,
         name: "open-file",
-        title: "Open a file",
     },
     CommandSpec {
         command: Command::FileNew,
         name: "new-file",
-        title: "Make a file and open it",
     },
     CommandSpec {
         command: Command::FileChanged,
         name: "open-changed-file",
-        title: "Open a file that has changed",
     },
     CommandSpec {
         command: Command::FileSave,
         name: "save-file",
-        title: "Write this file back to disk",
     },
     CommandSpec {
         command: Command::FileReload,
         name: "reload-file",
-        title: "Re-read this file from disk",
     },
     CommandSpec {
         command: Command::DocumentList,
         name: "switch-document",
-        title: "Switch to something already open",
     },
     CommandSpec {
         command: Command::WorktreeList,
         name: "switch-worktree",
-        title: "Go to another worktree of this repository",
     },
     CommandSpec {
         command: Command::DocumentClose,
         name: "close-document",
-        title: "Close what is being read",
     },
     CommandSpec {
         command: Command::DocumentCloseOthers,
         name: "close-other-documents",
-        title: "Close all but what is being read",
     },
     CommandSpec {
         command: Command::ProjectClose,
         name: "close-project",
-        title: "Close this project",
     },
     CommandSpec {
         command: Command::ProjectList,
         name: "switch-project",
-        title: "Go to a project opened before",
     },
     CommandSpec {
         command: Command::FileRename,
         name: "rename-file",
-        title: "Call this file something else, or move it",
     },
     CommandSpec {
         command: Command::PreviewToggle,
         name: "toggle-preview",
-        title: "Show this file rendered, or stop",
     },
     CommandSpec {
         command: Command::ThemeSelect,
         name: "choose-theme",
-        title: "Change the colours",
     },
     CommandSpec {
         command: Command::EncodingSelect,
         name: "choose-encoding",
-        title: "Read this file in another encoding, or write it in one",
     },
     CommandSpec {
         command: Command::CommandPalette,
         name: "run-command",
-        title: "Run a command by name",
     },
     CommandSpec {
         command: Command::SymbolMenu,
         name: "ask-about-symbol",
-        title: "Ask about the symbol under the cursor",
     },
     // No default keys, with one exception. The menu is the way in, and
     // giving each of these a chord would rebuild the one-key-per-question
@@ -546,267 +540,214 @@ pub const ALL: &[CommandSpec] = &[
     CommandSpec {
         command: Command::SymbolComplete,
         name: "complete-here",
-        title: "What could be typed here",
     },
     CommandSpec {
         command: Command::SymbolHover,
         name: "describe-symbol",
-        title: "What this is",
     },
     CommandSpec {
         command: Command::SymbolSignature,
         name: "show-signature",
-        title: "What this call takes",
     },
     CommandSpec {
         command: Command::CodeActions,
         name: "do-something-here",
-        title: "What can be done here",
     },
     CommandSpec {
         command: Command::SymbolRename,
         name: "rename-symbol",
-        title: "Rename this, everywhere it is",
     },
     CommandSpec {
         command: Command::SymbolTroubles,
         name: "show-problems",
-        title: "What is wrong with this file",
     },
     CommandSpec {
         command: Command::SymbolTroublePrevious,
         name: "go-to-previous-problem",
-        title: "Go to the previous problem",
     },
     CommandSpec {
         command: Command::SymbolTroubleNext,
         name: "go-to-next-problem",
-        title: "Go to the next problem",
     },
     CommandSpec {
         command: Command::SymbolOutline,
         name: "show-outline",
-        title: "Everything this file defines",
     },
     CommandSpec {
         command: Command::SymbolDefinition,
         name: "go-to-definition",
-        title: "Go to definition",
     },
     CommandSpec {
         command: Command::SymbolTypeDefinition,
         name: "go-to-type-definition",
-        title: "Go to type definition",
     },
     CommandSpec {
         command: Command::SymbolImplementation,
         name: "go-to-implementation",
-        title: "Go to implementation",
     },
     CommandSpec {
         command: Command::SymbolReferences,
         name: "find-references",
-        title: "Find references",
     },
     CommandSpec {
         command: Command::SymbolCalls,
         name: "show-calls",
-        title: "Who calls this, and what it calls",
     },
     CommandSpec {
         command: Command::SearchFile,
         name: "search-file",
-        title: "Search this document",
     },
     CommandSpec {
         command: Command::SearchProject,
         name: "search-project",
-        title: "Search every file",
     },
     CommandSpec {
         command: Command::SearchSymbols,
         name: "search-symbols",
-        title: "Search the project's symbols",
     },
     CommandSpec {
         command: Command::GoLine,
         name: "go-to-line",
-        title: "Go to a line by number",
     },
     CommandSpec {
         command: Command::GoBracket,
         name: "go-to-bracket",
-        title: "Go to the matching bracket",
     },
     CommandSpec {
         command: Command::HistoryFile,
         name: "show-file-history",
-        title: "Every commit that changed this file",
     },
     CommandSpec {
         command: Command::HistoryProject,
         name: "show-project-history",
-        title: "Every commit in this project",
     },
     CommandSpec {
         command: Command::ShowPullRequests,
         name: "show-pull-requests",
-        title: "The open pull requests and issues, to read one",
     },
     CommandSpec {
         command: Command::Fold,
         name: "fold",
-        title: "Fold what is here, or unfold it",
     },
     CommandSpec {
         command: Command::FoldAll,
         name: "fold-all",
-        title: "Fold everything this file offers",
     },
     CommandSpec {
         command: Command::UnfoldAll,
         name: "unfold-all",
-        title: "Unfold everything that is folded",
     },
     CommandSpec {
         command: Command::GitHunk,
         name: "show-change",
-        title: "Show what changed here",
     },
     CommandSpec {
         command: Command::GitPrevious,
         name: "go-to-previous-change",
-        title: "Go to the previous change",
     },
     CommandSpec {
         command: Command::GitNext,
         name: "go-to-next-change",
-        title: "Go to the next change",
     },
     CommandSpec {
         command: Command::SelectionCopy,
         name: "copy-selection",
-        title: "Copy the selection, or this line",
     },
     CommandSpec {
         command: Command::SelectionWiden,
         name: "widen-selection",
-        title: "Widen what is selected",
     },
     CommandSpec {
         command: Command::SelectionAll,
         name: "select-all",
-        title: "Select the whole file",
     },
     CommandSpec {
         command: Command::SelectionCut,
         name: "cut-selection",
-        title: "Cut the selection, or this line",
     },
     CommandSpec {
         command: Command::LineUp,
         name: "move-line-up",
-        title: "Move this line, or the selected ones, up",
     },
     CommandSpec {
         command: Command::LineDown,
         name: "move-line-down",
-        title: "Move this line, or the selected ones, down",
     },
     CommandSpec {
         command: Command::CommentToggle,
         name: "toggle-comment",
-        title: "Comment this line, or the selected ones, out",
     },
     CommandSpec {
         command: Command::ReplaceToggle,
         name: "toggle-replace",
-        title: "Type over what is under the cursor, instead of before it",
     },
     CommandSpec {
         command: Command::Paste,
         name: "paste",
-        title: "Put back what was last copied or cut",
     },
     CommandSpec {
         command: Command::Undo,
         name: "undo",
-        title: "Put back what the last change took away",
     },
     CommandSpec {
         command: Command::Redo,
         name: "redo",
-        title: "Do again what undo put back",
     },
     CommandSpec {
         command: Command::SelectionClear,
         name: "clear-selection",
-        title: "Stop selecting",
     },
     CommandSpec {
         command: Command::GoBack,
         name: "go-back",
-        title: "Go back to where you were",
     },
     CommandSpec {
         command: Command::GoForward,
         name: "go-forward",
-        title: "Go forward again",
     },
     CommandSpec {
         command: Command::ConversationNew,
         name: "new-conversation",
-        title: "Start a new conversation with the agent",
     },
     CommandSpec {
         command: Command::ConversationSelect,
         name: "choose-conversation",
-        title: "Choose a conversation with the agent, or start one",
     },
     CommandSpec {
         command: Command::TerminalOpen,
         name: "open-terminal",
-        title: "Your shell, in a terminal of Obelus's own",
     },
     CommandSpec {
         command: Command::CountLines,
         name: "count-lines",
-        title: "How much code is here, by language and by file",
     },
     CommandSpec {
         command: Command::TodoOpen,
         name: "todo",
-        title: "What this project means to come back to",
     },
     CommandSpec {
         command: Command::TodoAdd,
         name: "todo-add",
-        title: "Write down something to come back to, at this line",
     },
     CommandSpec {
         command: Command::ConfigOpen,
         name: "open-settings",
-        title: "Change Obelus's settings",
     },
     CommandSpec {
         command: Command::BotConnect,
         name: "connect-to-chat",
-        title: "Talk to the chat from this window, and from no other",
     },
     CommandSpec {
         command: Command::BotDisconnect,
         name: "disconnect-from-chat",
-        title: "Stop talking to the chat from this window",
     },
     CommandSpec {
         command: Command::ServerConnect,
         name: "connect-to-server",
-        title: "Draw an Obelus on another machine in this window",
     },
     CommandSpec {
         command: Command::ServerDisconnect,
         name: "disconnect-from-server",
-        title: "Leave the other machine, and come back to this one",
     },
     CommandSpec {
         command: Command::ConfigProject,
@@ -814,37 +755,30 @@ pub const ALL: &[CommandSpec] = &[
         // program has taught a reader to type for this: a name is typed,
         // and one that had to be learned is a name nobody finds.
         name: "open-project-settings",
-        title: "Change the settings this project carries",
     },
     CommandSpec {
         command: Command::ConfigFile,
         name: "open-settings-file",
-        title: "Open the settings file",
     },
     CommandSpec {
         command: Command::LogOpen,
         name: "open-log",
-        title: "Open Obelus's own log",
     },
     CommandSpec {
         command: Command::LogServers,
         name: "open-server-log",
-        title: "Open the language servers' log",
     },
     CommandSpec {
         command: Command::LspRestart,
         name: "restart-server",
-        title: "Restart the language server",
     },
     CommandSpec {
         command: Command::LspStop,
         name: "stop-server",
-        title: "Stop the language server",
     },
     CommandSpec {
         command: Command::Quit,
         name: "quit",
-        title: "Leave Obelus",
     },
 ];
 
@@ -1515,6 +1449,31 @@ pub fn by_name(name: &str) -> Option<Command> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every command says what it does, and nothing is said about a command
+    /// there is not. English is enough to ask: the build holds every other
+    /// language to it.
+    ///
+    /// Broken deliberately twice: by renaming `quit` in `commands.ftl`, and
+    /// by adding a message for a command that does not exist. The first
+    /// left the palette saying `quit` where the title goes; the second was a
+    /// line nobody would ever see.
+    #[test]
+    fn every_command_says_what_it_does_and_nothing_else_is_said() {
+        for spec in ALL {
+            assert!(
+                obelus_i18n::commands::named(spec.name).is_some(),
+                "{} has no title in commands.ftl",
+                spec.name
+            );
+        }
+        for id in obelus_i18n::commands::NAMES {
+            assert!(
+                ALL.iter().any(|spec| spec.name == *id),
+                "commands.ftl says something about {id}, which is no command"
+            );
+        }
+    }
 
     /// `spec` panics for a command left out of `ALL`, and the palette would
     /// simply not list it. Both are silent, so enumerate the variants here.

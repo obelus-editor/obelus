@@ -723,23 +723,6 @@ pub enum Whose {
 pub struct Setting {
     /// What it is called in the file.
     pub key: &'static str,
-    /// What the view calls it: one word where one will do.
-    ///
-    /// A *name*, not a sentence. These were sentences -- "Colour theme",
-    /// "Who last changed the line the cursor is on" -- on the grounds that a
-    /// name and a description side by side read as a heading and a footnote.
-    /// Which is true when the footnote says what the heading already had;
-    /// what it actually produced was a column of prose, where a reader
-    /// looking for the one row they came for had to read every row to find
-    /// it. A column of names is scanned. The palette has said a name and a
-    /// description side by side since the beginning, and this is that row.
-    pub name: &'static str,
-    /// What it does, in the dim colour after the name.
-    ///
-    /// Empty where the name is the whole of it: `Theme` needs no gloss, and
-    /// a line of prose saying "the colour theme" beside it is the footnote
-    /// that objection was about.
-    pub about: &'static str,
     /// Which tab it lives under.
     pub group: Group,
     /// What sort of control it gets.
@@ -767,6 +750,39 @@ impl Setting {
     #[must_use]
     pub fn named(key: &str) -> Option<&'static Self> {
         ALL.iter().find(|setting| setting.key == key)
+    }
+
+    /// What the view calls it, in the language being spoken: one word where
+    /// one will do.
+    ///
+    /// A *name*, not a sentence. These were sentences -- "Colour theme",
+    /// "Who last changed the line the cursor is on" -- on the grounds that a
+    /// name and a description side by side read as a heading and a footnote.
+    /// Which is true when the footnote says what the heading already had;
+    /// what it actually produced was a column of prose, where a reader
+    /// looking for the one row they came for had to read every row to find
+    /// it. A column of names is scanned. The palette has said a name and a
+    /// description side by side since the beginning, and this is that row.
+    ///
+    /// Kept in `obelus-i18n`'s `settings.ftl` by the key, with hyphens for
+    /// its underscores. A test holds every setting to it, so the key is what
+    /// comes out if one is ever missing.
+    #[must_use]
+    pub fn name(&self) -> &'static str {
+        obelus_i18n::settings::named(&self.key.replace('_', "-")).unwrap_or(self.key)
+    }
+
+    /// What it does, in the dim colour after the name, in the language
+    /// being spoken.
+    ///
+    /// Empty where the name is the whole of it: `Theme` needs no gloss, and
+    /// a line of prose saying "the colour theme" beside it is the footnote
+    /// that objection was about. Which is `settings.ftl` having no
+    /// `theme-about`.
+    #[must_use]
+    pub fn about(&self) -> &'static str {
+        let id = format!("{}-about", self.key.replace('_', "-"));
+        obelus_i18n::settings::named(&id).unwrap_or_default()
     }
 }
 
@@ -864,8 +880,14 @@ pub struct KeyLayout {
     /// What it is called where a reader chooses it. A name, kept in its
     /// own spelling: `VS Code`, `TextMate`.
     pub name: &'static str,
-    /// What it puts the keys on, in a line.
-    pub about: &'static str,
+}
+
+impl KeyLayout {
+    /// What it puts the keys on, in a line, in the language being spoken.
+    #[must_use]
+    pub fn about(&self) -> &'static str {
+        obelus_i18n::settings::named(&format!("layout-{}-about", self.word)).unwrap_or_default()
+    }
 }
 
 /// Every layout, in the order of [`KEY_LAYOUTS`], with its name and what it
@@ -874,22 +896,18 @@ pub const KEY_LAYOUT_CHOICES: &[KeyLayout] = &[
     KeyLayout {
         word: "obelus",
         name: "Obelus",
-        about: "The function keys, in banks of four",
     },
     KeyLayout {
         word: "mnemonic",
         name: "Mnemonic",
-        about: "Control and alt, on the letter of the word -- which a running terminal keeps for its program",
     },
     KeyLayout {
         word: "vscode",
         name: "VS Code",
-        about: "VS Code's keys where Obelus does the same thing, and no function keys",
     },
     KeyLayout {
         word: "textmate",
         name: "TextMate",
-        about: "TextMate's keys where Obelus does the same thing, and no function keys",
     },
 ];
 
@@ -907,11 +925,9 @@ pub const BUILD_JOBS: &[&str] = &["unlimited", "all", "half"];
 pub const ALL: &[Setting] = &[
     Setting {
         key: "theme",
-        name: "Theme",
         // Nothing: the name is the whole of it. A line of prose saying "the
         // colours Obelus draws in" beside it is the footnote `Setting::about`
         // is about not having.
-        about: "",
         group: Group::Appearance,
         reach: Reach::ReaderOnly,
         kind: Kind::Choice(THEMES),
@@ -919,8 +935,6 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "icons",
-        name: "Nerd Font glyphs",
-        about: "In lists, on the status bar, and beside a file's name -- a terminal without a patched font draws a box instead",
         group: Group::Appearance,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
@@ -932,8 +946,6 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "language",
-        name: "Language",
-        about: "What Obelus says on the screen. Names stay as they are written, and what is said to an agent stays in English",
         group: Group::Appearance,
         // The reader's: which language they read is about them, and a
         // project somebody else wrote cannot know it.
@@ -943,8 +955,6 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "wrap",
-        name: "Wrapping",
-        about: "A line too long for the screen carries onto the next row, broken between words",
         group: Group::Reading,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
@@ -952,8 +962,6 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "blame_margin",
-        name: "Blame",
-        about: "Who last changed the line the cursor is on",
         group: Group::Reading,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
@@ -961,8 +969,6 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "tab_width",
-        name: "Tab width",
-        about: "How wide a tab is drawn, and how many spaces one puts in",
         group: Group::Reading,
         reach: Reach::Anywhere,
         kind: Kind::Count(WIDTHS),
@@ -970,8 +976,6 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "fonts",
-        name: "Fonts",
-        about: "The faces text is drawn in, tried in the order they are written",
         group: Group::Appearance,
         reach: Reach::Anywhere,
         kind: Kind::Names,
@@ -979,8 +983,6 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "animation",
-        name: "Animation",
-        about: "Let the caret, a list and a pane arrive where they are going instead of being there",
         group: Group::Appearance,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
@@ -988,8 +990,6 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "bar_tabs",
-        name: "Tabs on the title bar",
-        about: "A tab on the window's title bar for each open document, which makes the bar taller",
         group: Group::Appearance,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
@@ -997,8 +997,6 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "font_size",
-        name: "Text size",
-        about: "How big the text is in a window, in points",
         group: Group::Appearance,
         reach: Reach::Anywhere,
         kind: Kind::Count(SIZES),
@@ -1006,8 +1004,6 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "picture_strength",
-        name: "Picture strength",
-        about: "How much of a theme's picture shows through the page, as a share of what the theme lets through -- a hundred is as the theme has it",
         group: Group::Appearance,
         // The reader's alone: how loud a picture is under their code is a
         // matter of their eyes, and a project has no picture of its own to
@@ -1018,8 +1014,6 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "hover_delay",
-        name: "Ask on a rest",
-        about: "How long the pointer has to rest on a word before Obelus says what it is, in milliseconds -- zero asks only when a key does",
         group: Group::Reading,
         reach: Reach::Anywhere,
         kind: Kind::Count(DELAYS),
@@ -1027,8 +1021,6 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "read_only",
-        name: "Read only",
-        about: "Your own keys change no file: typing, pasting and undo are refused there, and what an agent writes still goes in",
         group: Group::Reading,
         // The reader's alone: whether their keys may change a file is how
         // they work, and a repository has no say in it.
@@ -1038,8 +1030,6 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "language_servers",
-        name: "Language servers",
-        about: "Start one for a file's language when the file is opened, if it is installed -- rust-analyzer, gopls, clangd and the rest. Off, restart-server still starts the one for the language of the file in front of you",
         group: Group::Reading,
         // The reader's alone: a server reads a project by building it, and
         // rust-analyzer runs a project's build scripts and macros to do
@@ -1051,8 +1041,6 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "format_on_save",
-        name: "Formatting",
-        about: "Ask the language server to lay the file out before writing it",
         group: Group::Reading,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
@@ -1060,8 +1048,6 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "code_actions_on_save",
-        name: "Server fixes",
-        about: "Before writing, make the changes the language server offers for the whole file -- the imports sorted, the corrections it can make on its own",
         group: Group::Reading,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
@@ -1069,8 +1055,6 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "inlay_hints",
-        name: "Inferred types",
-        about: "Draw the types and parameter names a language server infers, where they would be written. They are not in the file: nothing in one can be selected or copied",
         group: Group::Reading,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
@@ -1078,8 +1062,6 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "diagnostics",
-        name: "Problem messages",
-        about: "Open the words under the line the caret is on, which costs that line a row of the file's own space. What is wrong is underlined on every line either way",
         group: Group::Reading,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
@@ -1087,8 +1069,6 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "new_versions",
-        name: "New versions",
-        about: "Ask GitHub once a day whether a newer Obelus is out, and say so on the welcome screen",
         group: Group::Appearance,
         // The reader's alone: a project that could turn it on would be a
         // downloaded file deciding that Obelus talks to the network for a
@@ -1099,8 +1079,6 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "ignored_files",
-        name: "Ignored files",
-        about: "Offer them in the file list as well -- what `.gitignore` keeps out is build output most days and the file you are looking for on the others",
         group: Group::Files,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
@@ -1108,8 +1086,6 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "hidden_files",
-        name: "Hidden files",
-        about: "Offer them in the file list as well -- a name beginning with a dot, and on Windows the attribute too; `.github` and `.env` are files like any other, and `.git` comes with them",
         group: Group::Files,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
@@ -1117,8 +1093,6 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "reopen",
-        name: "Reopen",
-        about: "Open what was open the last time this tree was, with the caret where it was in each",
         group: Group::Files,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
@@ -1126,8 +1100,6 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "recent_projects",
-        name: "Recent projects",
-        about: "How many projects the page that asks which one remembers, newest first. Fewer takes the oldest off the list",
         group: Group::Files,
         // The reader's alone: the list is one for the whole machine, and a
         // project that could shorten it would be a downloaded file emptying
@@ -1138,8 +1110,6 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "workflow",
-        name: "Workflow",
-        about: "How an agent goes about changing this project",
         group: Group::Agent,
         // A project's too, because it is about the project: whether its
         // changes go through pull requests is the project's own rule. And
@@ -1151,8 +1121,6 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "build_jobs",
-        name: "Build jobs",
-        about: "How many compiler jobs everything Obelus starts runs at once, across every Obelus on this machine -- the agent, the language servers and the terminal. A program already running keeps what it was started with",
         group: Group::Agent,
         // The reader's alone: it is one budget for the whole machine, and a
         // project that could set it would be a downloaded file deciding how
@@ -1163,8 +1131,6 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "speaks_as",
-        name: "Speaks as",
-        about: "What an agent calls itself in a conversation, so that an \"I\" there is always yours",
         group: Group::Agent,
         // A project's too: what an agent is called is no more than a word
         // in its sentences, and a project that names its own is not
@@ -1175,8 +1141,6 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "conversation_days",
-        name: "Forget conversations",
-        about: "How long after anything was last said in it a conversation about no note is left out of the list, whether Obelus or the agent kept it. Obelus forgets the page it kept, and making this longer does not bring that back; where the agent can say what it keeps, making this longer lists the conversation again. One about a note goes when the note does",
         group: Group::Agent,
         // The reader's alone: it decides what Obelus forgets of theirs, and
         // a project that could shorten it would be a downloaded file
@@ -1187,8 +1151,6 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "keys_from",
-        name: "Layout",
-        about: "What your own keys start from: the function keys, letters, or another editor's",
         group: Group::Keys,
         // The reader's, for the reason the keys are: a project that could
         // choose it would be moving every key that opens anything.
@@ -2774,6 +2736,40 @@ mod tests {
         write_project,
     };
 
+    /// Every setting has a name in `settings.ftl`, and every one with a
+    /// gloss in it is a setting; so does every layout of keys. English is
+    /// enough to ask: the build holds every other language to it.
+    ///
+    /// Broken deliberately twice: by renaming `wrap` in `settings.ftl`, and
+    /// by writing `wraps-about` there. The first left the row saying `wrap`;
+    /// the second was a gloss no row would ever show.
+    #[test]
+    fn every_setting_has_a_name_and_every_gloss_a_setting() {
+        for setting in super::ALL {
+            let id = setting.key.replace('_', "-");
+            assert!(
+                obelus_i18n::settings::named(&id).is_some(),
+                "{} has no name in settings.ftl",
+                setting.key
+            );
+        }
+        for id in obelus_i18n::settings::NAMES {
+            if let Some(key) = id.strip_suffix("-about")
+                && !id.starts_with("layout-")
+            {
+                assert!(
+                    super::ALL
+                        .iter()
+                        .any(|setting| setting.key.replace('_', "-") == key),
+                    "settings.ftl glosses {key}, which is no setting"
+                );
+            }
+        }
+        for layout in super::KEY_LAYOUT_CHOICES {
+            assert!(!layout.about().is_empty(), "{} says nothing", layout.word);
+        }
+    }
+
     /// A setting written into a project that has gone does not make the
     /// project again.
     ///
@@ -3112,7 +3108,7 @@ mod tests {
             ]
         );
         for layout in super::KEY_LAYOUT_CHOICES {
-            assert!(!layout.about.is_empty(), "{} says nothing", layout.word);
+            assert!(!layout.about().is_empty(), "{} says nothing", layout.word);
         }
         assert_eq!(super::key_layout("lazyvim"), None);
     }

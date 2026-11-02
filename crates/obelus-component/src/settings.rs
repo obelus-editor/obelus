@@ -485,7 +485,7 @@ impl Shown<'_> {
     #[must_use]
     pub fn label(&self) -> &str {
         match self {
-            Self::Obelus { setting, .. } => setting.name,
+            Self::Obelus { setting, .. } => setting.name(),
             Self::Agent { offer, .. } => &offer.name,
             Self::Variable { name, .. } => name,
             Self::AddVariable { .. } => "Add a variable",
@@ -504,7 +504,7 @@ impl Shown<'_> {
     #[must_use]
     pub fn about(&self) -> &str {
         match self {
-            Self::Obelus { setting, .. } => setting.about,
+            Self::Obelus { setting, .. } => setting.about(),
             Self::Agent { offer, .. } => offer.about.as_deref().unwrap_or_default(),
             // What it holds, under its name where a gloss goes, and whole:
             // the column the controls are in is the width of a word, and
@@ -564,7 +564,7 @@ impl Shown<'_> {
 /// Whether a setting is one of those left by what has been typed, already
 /// lowercased: by its name, or by what it is called in the file.
 fn narrowed_to(setting: &Setting, query: &str) -> bool {
-    query.is_empty() || setting.name.to_lowercase().contains(query) || setting.key.contains(query)
+    query.is_empty() || setting.name().to_lowercase().contains(query) || setting.key.contains(query)
 }
 
 /// A row of the keys page waiting for its key, and what that key will do.
@@ -648,7 +648,7 @@ impl KeyRow {
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
-            Self::Setting(setting) => setting.name,
+            Self::Setting(setting) => setting.name(),
             Self::Key { command, .. } => command.name(),
         }
     }
@@ -1059,7 +1059,7 @@ impl Settings {
             .filter(|spec| {
                 query.is_empty()
                     || spec.name.to_lowercase().contains(&query)
-                    || spec.title.to_lowercase().contains(&query)
+                    || spec.title().to_lowercase().contains(&query)
             })
             .flat_map(|spec| {
                 let rows = self.held(spec.command).len().max(1);
@@ -1538,7 +1538,7 @@ impl Settings {
     /// and for no query at all: there is nothing on the row to point at.
     #[must_use]
     pub fn matched(&self, setting: &Setting) -> Option<std::ops::Range<usize>> {
-        self.matched_in(setting.name)
+        self.matched_in(setting.name())
     }
 
     /// What a row's control shows, from the config it is handed.

@@ -228,7 +228,7 @@ impl App {
                     .map(|at| at + 1 + own),
                 section: None,
                 version: None,
-                detail: Some(spec.title.to_string()),
+                detail: Some(spec.title().to_string()),
                 // The key it is bound to, if it is bound to one. A command
                 // with nothing here is one the palette is the only way to
                 // reach, which is worth being able to see.

@@ -425,7 +425,7 @@ fn the_row_a_setting_is_typed_on_is_there_under_the_glass() {
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConfigOpen);
     support::type_text(&mut app, "speaks");
     support::press(&mut app, crossterm::event::KeyCode::Enter);
-    the_status_row_is_under_the_glass(&mut app, "Speaks as", Joined::Screen);
+    the_status_row_is_under_the_glass(&mut app, "Agent name", Joined::Screen);
 }
 
 /// The welcome screen is under the settings opened from it: a dialog is

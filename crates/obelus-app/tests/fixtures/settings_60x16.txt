@@ -6,14 +6,14 @@ screen 60x16  editor 60x14  status 60x1
  3|                                                            
  4|   Theme                               dark ▸               
  5|                                                            
- 6|   Nerd Font glyphs                    □                    
- 7|     In lists, on the status bar, and beside a file's       
- 8|     name -- a terminal without a patched font draws a      
- 9|     box instead                                            
-10|                                                            
-11|   Language                            The system's ▸       
-12|     What Obelus says on the screen. Names stay as they     
-13|     are written, and what is said to an agent stays in     
+ 6|   Nerd Font icons                     □                    
+ 7|     Your terminal's font has to be a Nerd Font, or each    
+ 8|     icon is a box                                          
+ 9|                                                            
+10|   Language                            System default ▸     
+11|                                                            
+12|   Check for updates                   ☑                    
+13|     Once a day. A new version is mentioned on the          
 14|────────────────────────────────────────────────────────────
 15| > Filter settings                                          
 -- style --
@@ -24,13 +24,13 @@ screen 60x16  editor 60x14  status 60x1
  4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbfbbbbbbbbbbbbbbc
  5|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  6|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
- 7|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccc
- 8|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccc
- 9|cccccaaaaaaaaaaacccccccccccccccccccccccccccccccccccccccccccc
-10|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-11|ccccccccccccccccccccccccccccccccccccccccccccccccccccaccccccc
-12|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccc
-13|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccc
+ 7|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccc
+ 8|cccccaaaaaaaaaaaaacccccccccccccccccccccccccccccccccccccccccc
+ 9|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+10|ccccccccccccccccccccccccccccccccccccccccccccccccccccccaccccc
+11|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+12|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+13|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccccccc
 14|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 15|dddaaaaaaaaaaaaaaadddddddddddddddddddddddddddddddddddddddddd
 -- legend --

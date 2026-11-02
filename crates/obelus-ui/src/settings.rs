@@ -854,7 +854,7 @@ impl SettingsView<'_> {
         match shown {
             Shown::Obelus { setting, opens } => Row {
                 opens: opens.map(Heading::Group),
-                label: setting.name.to_string(),
+                label: setting.name().to_string(),
                 matched: self.settings.matched(setting),
                 detail: None,
                 // What it does, on its own rows under the name: beside
@@ -862,7 +862,7 @@ impl SettingsView<'_> {
                 // that lost was the description, cut off with an
                 // ellipsis on exactly the rows that had most to
                 // explain.
-                body: self.settings.wrapped(setting.about, width),
+                body: self.settings.wrapped(setting.about(), width),
                 warning: Vec::new(),
                 entry: true,
                 // A box where the value was, while it is being turned: the
@@ -1671,7 +1671,7 @@ impl SettingsView<'_> {
         else {
             // What it does once, beside its name; the rows of its other
             // keys say nothing there.
-            return (slot == 0).then(|| (command.spec().title.to_string(), self.theme.gutter));
+            return (slot == 0).then(|| (command.spec().title().to_string(), self.theme.gutter));
         };
         match self.settings.refused() {
             Some((chord, Refused::Taken(taken))) => Some((

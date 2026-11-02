@@ -98,7 +98,8 @@ impl PromptKind {
             Self::VariableName { again: false, .. } => "New variable: ",
             Self::VariableName { again: true, .. } => "A name cannot start with a digit: ",
             Self::Setting(key) => {
-                let name = obelus_config::Setting::named(key).map_or(*key, |setting| setting.name);
+                let name =
+                    obelus_config::Setting::named(key).map_or(*key, |setting| setting.name());
                 return format!("{name}: ").into();
             }
             Self::Line => "Line: ",

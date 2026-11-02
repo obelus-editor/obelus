@@ -304,7 +304,7 @@ impl App {
                     icon: obelus_icons::enabled().then(|| obelus_icons::for_command(command)),
                     label: command.spec().name.to_string(),
                     version: None,
-                    detail: Some(command.spec().title.to_string()),
+                    detail: Some(command.spec().title().to_string()),
                     trailing: self.keymap.chord_for(command).map(KeyChord::label),
                     changed: None,
                     value: PickerValue::Command(command),
@@ -2884,7 +2884,7 @@ fn action_for(command: Command) -> Option<SymbolAction> {
 /// One name, in the command table, so the menu and the palette cannot
 /// disagree about what a question is called.
 fn title_of(action: SymbolAction) -> &'static str {
-    command_of(action).spec().title
+    command_of(action).spec().title()
 }
 
 #[cfg(test)]

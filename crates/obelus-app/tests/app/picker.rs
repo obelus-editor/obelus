@@ -1224,7 +1224,7 @@ fn the_palette_shows_the_key_each_command_is_bound_to() {
     let unbound = row(support::text_block(&narrowed), "choose-theme");
     let ends_with_description = unbound
         .trim_end_matches(['\u{2502}', '\u{2588}', ' '])
-        .ends_with("colours");
+        .ends_with("Color theme");
     assert!(
         ends_with_description,
         "choose-theme has no binding, so it should show no key:\n{narrowed}"

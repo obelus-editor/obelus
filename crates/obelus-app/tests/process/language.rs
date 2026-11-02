@@ -62,7 +62,7 @@ fn a_language_is_called_by_its_own_name() {
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     assert_eq!(
         app.called("language", "auto").as_deref(),
-        Some("The system's")
+        Some("System default")
     );
     assert_eq!(app.called("language", "zh-CN").as_deref(), Some("简体中文"));
     app.configure(speaking("zh-CN"), vec!["language"]);

@@ -200,14 +200,37 @@ fn a_name_rust_cannot_have_stops_the_build() {
     );
 }
 
-/// Broken deliberately by keeping one set of names per file rather than
-/// per language: the second file's `a` went in, and Fluent dropped one of
-/// the two when it was added to the bundle.
+/// A file is a bundle of its own, so one name in two files is two
+/// messages -- and one name twice in a file is a mistake.
+///
+/// Broken deliberately by collecting a file's messages into a map without
+/// asking whether the name was already there: the second `a` went in over
+/// the first, and the build said nothing.
 #[test]
-fn a_message_in_two_files_stops_the_build() {
-    let wrong = refused(&[language("en", &[("one", "a = A\n"), ("two", "a = B\n")])]);
-    assert_eq!(wrong.len(), 1, "{wrong:?}");
-    assert!(wrong[0].contains("a is said twice"), "{wrong:?}");
+fn a_message_said_twice_in_a_file_stops_the_build() {
+    let wrong = refused(&[language("en", &[("one", "a = A\na = B\n")])]);
+    assert_eq!(wrong, ["en/one.ftl: a is said twice"]);
+    let apart = refused(&[language("en", &[("one", "a = A\n"), ("two", "a = B\n")])]);
+    assert!(apart.is_empty(), "{apart:?}");
+}
+
+/// A table that names its rows asks for each by that name, in its own file
+/// and no other. That one file's `named` cannot answer for another's is the
+/// compiler's: a module's arms call its own functions, and only those are
+/// in scope.
+///
+/// Broken deliberately by writing every `named` as the empty one: the
+/// commands and the settings asked by name and got nothing.
+#[test]
+fn a_message_is_named_in_its_own_file() {
+    let said = in_language(Language::SimplifiedChinese, || {
+        (
+            commands::named("open-file"),
+            settings::named("theme"),
+            palette::named("theme"),
+        )
+    });
+    assert_eq!(said, (Some("打开文件"), Some("主题"), None));
 }
 
 /// Broken deliberately by checking the files of a language only by the

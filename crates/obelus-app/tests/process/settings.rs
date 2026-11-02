@@ -352,7 +352,7 @@ fn a_switch_is_a_box_that_enter_marks() {
         support::text_block(&dump)
             .lines()
             .find(|row| row.contains("Nerd Font"))
-            .map(|row| support::glyph_after(row, "Nerd Font glyphs"))
+            .map(|row| support::glyph_after(row, "Nerd Font icons"))
             .expect("the row")
     };
 
@@ -396,7 +396,7 @@ fn every_setting_is_on_one_page_under_a_heading() {
             .expect("the settings")
             .rows(app.agent_offering().as_ref())
             .iter()
-            .filter_map(|shown| Some(shown.setting()?.name.to_string()))
+            .filter_map(|shown| Some(shown.setting()?.name().to_string()))
             .collect::<Vec<_>>()
     };
     // Every setting this Obelus shows, in the order the groups are written
@@ -406,7 +406,7 @@ fn every_setting_is_on_one_page_under_a_heading() {
     assert_eq!(rows(&app)[0], "Theme");
     assert_eq!(
         rows(&app).last().map(String::as_str),
-        Some("Forget conversations")
+        Some("Conversation history")
     );
 
     // A heading on the first of each group and on nothing else, so the
@@ -733,21 +733,21 @@ fn what_a_setting_does_goes_under_it_and_wraps() {
     let file = settings_file(&scratch);
     let mut app = open(&file);
 
-    let dump = support::render(&mut app, 66, 14);
+    let dump = support::render(&mut app, 44, 14);
     let rows: Vec<&str> = support::text_block(&dump).lines().collect();
     let name = rows
         .iter()
-        .position(|row| row.contains("Nerd Font glyphs"))
+        .position(|row| row.contains("Nerd Font icons"))
         .expect("the row");
 
     // Under it, and indented from it.
     let at = |row: &str, needle: &str| row.find(needle).map(|byte| row[..byte].chars().count());
     assert!(
-        at(rows[name + 1], "In lists").is_some(),
+        at(rows[name + 1], "Your terminal").is_some(),
         "what it does is not under its name:\n{dump}"
     );
     assert!(
-        at(rows[name + 1], "In lists") > at(rows[name], "Nerd Font"),
+        at(rows[name + 1], "Your terminal") > at(rows[name], "Nerd Font"),
         "it is not indented under the name:\n{dump}"
     );
 
@@ -755,7 +755,7 @@ fn what_a_setting_does_goes_under_it_and_wraps() {
     // takes rather than cut off with an ellipsis.
     let said: String = rows[name + 1..name + 4].concat();
     assert!(
-        said.contains("draws a box instead"),
+        said.contains("each icon is a box"),
         "the end of the sentence is nowhere:\n{dump}"
     );
     assert!(
@@ -1118,7 +1118,7 @@ fn the_trees_page_says_which_settings_are_not_its_own() {
     let dump = support::render(&mut app, 76, 32);
     let wrap = support::text_block(&dump)
         .lines()
-        .find(|row| row.contains("Wrapping"))
+        .find(|row| row.contains("Word wrap"))
         .expect("the row");
     assert!(
         wrap.contains("Project"),
@@ -1242,8 +1242,12 @@ fn the_trees_page_does_not_grey_out_what_can_be_set() {
     support::type_text(&mut app, "wrap");
     let dump = support::render(&mut app, 76, 16);
     assert_eq!(
-        letter(&dump, "Wrapping", "ping"),
-        letter(&dump, "Wrapping", &support::as_shown(".obelus/config.toml")),
+        letter(&dump, "Word wrap", "ord"),
+        letter(
+            &dump,
+            "Word wrap",
+            &support::as_shown(".obelus/config.toml")
+        ),
         "a row the reader cannot use is not dim throughout:\n{dump}"
     );
 }
@@ -2080,7 +2084,7 @@ fn a_command_can_be_put_on_another_key() {
     // And the row says so where it said "press a key".
     let bound = support::render(&mut app, 66, 12);
     assert!(
-        support::text_block(&bound).contains("Change the colours"),
+        support::text_block(&bound).contains("Color theme"),
         "the row did not go back to saying what the command does:\n{bound}"
     );
 
@@ -5003,11 +5007,11 @@ fn what_an_agent_calls_itself_is_typed() {
     let scratch = temporary("speaks-as");
     let file = settings_file(&scratch);
     let mut app = open(&file);
-    support::type_text(&mut app, "speaks");
+    support::type_text(&mut app, "agent name");
     support::press(&mut app, KeyCode::Enter);
     let dump = support::render(&mut app, 100, 24);
     assert!(
-        support::text_block(&dump).contains("Speaks as: Obelus"),
+        support::text_block(&dump).contains("Agent name: Obelus"),
         "the line did not open on what it is now:\n{dump}"
     );
     for _ in "Obelus".chars() {
@@ -5116,7 +5120,7 @@ fn how_long_a_conversation_is_kept_is_said_as_a_length_of_time() {
     let scratch = temporary("conversation-days");
     let file = settings_file(&scratch);
     let mut app = open(&file);
-    support::type_text(&mut app, "forget");
+    support::type_text(&mut app, "conversation history");
 
     let dump = support::render(&mut app, 100, 24);
     let text = support::text_block(&dump);
@@ -5169,7 +5173,7 @@ fn a_number_of_days_the_list_does_not_offer_is_said_as_days() {
         14,
         "the file was not read, so this proves nothing"
     );
-    support::type_text(&mut app, "forget");
+    support::type_text(&mut app, "conversation history");
 
     let dump = support::render(&mut app, 100, 24);
     assert!(
@@ -5709,12 +5713,12 @@ fn the_keys_page_chooses_where_the_keys_start() {
         .collect();
     let at = rows
         .iter()
-        .position(|row| row.contains("Layout"))
+        .position(|row| row.contains("Keymap"))
         .unwrap_or_else(|| panic!("the layout is not on the page:\n{dump}"));
     assert!(rows[at].contains("Obelus"), "{dump}");
     // What it does under it, then the blank, then the table.
     assert!(
-        rows[at + 1].contains("What your own keys start from"),
+        rows[at + 1].contains("The key bindings your own are laid over"),
         "{dump}"
     );
     let blank = rows.iter().skip(at + 2).position(|row| {
@@ -5738,9 +5742,9 @@ fn the_keys_page_chooses_where_the_keys_start() {
         .collect::<Vec<_>>()
         .join(" ");
     for words in [
-        "The function keys, in banks of four",
-        "Control and alt, on the letter of the word",
-        "a running terminal keeps for its program",
+        "Function keys, in banks of four",
+        "Ctrl and Alt with the word's first letter",
+        "terminal they go to the shell",
     ] {
         assert!(
             said.contains(words),
@@ -5814,7 +5818,7 @@ fn a_layout_nothing_answers_to_stays_in_the_file() {
     );
 
     // Something else changed and written down.
-    support::type_text(&mut app, "wrapping");
+    support::type_text(&mut app, "word wrap");
     support::press(&mut app, KeyCode::Enter);
     let written = std::fs::read_to_string(&file).expect("the file");
     assert!(
@@ -5924,11 +5928,11 @@ fn a_number_is_turned_where_it_stands_and_kept_with_enter() {
     let file = settings_file(&scratch);
     let mut app = open(&file);
 
-    support::type_text(&mut app, "tab width");
+    support::type_text(&mut app, "tab size");
     let row_of = |dump: &str| {
         support::text_block(dump)
             .lines()
-            .find(|row| row.contains("Tab width"))
+            .find(|row| row.contains("Tab size"))
             .map(str::to_string)
             .expect("the row")
     };
@@ -6005,7 +6009,7 @@ fn escape_gives_up_a_number_being_turned() {
     let file = settings_file(&scratch);
     let mut app = open(&file);
 
-    support::type_text(&mut app, "tab width");
+    support::type_text(&mut app, "tab size");
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Right);
     support::press(&mut app, KeyCode::Right);
@@ -6038,7 +6042,7 @@ fn a_number_can_be_typed_and_is_kept_inside_its_ends() {
     let file = settings_file(&scratch);
     let mut app = open(&file);
 
-    support::type_text(&mut app, "tab width");
+    support::type_text(&mut app, "tab size");
     support::press(&mut app, KeyCode::Enter);
     support::type_text(&mut app, "8");
     support::press(&mut app, KeyCode::Enter);
@@ -6091,7 +6095,7 @@ fn the_palette_lets_go_of_a_number_being_turned() {
     let file = settings_file(&scratch);
     let mut app = open(&file);
 
-    support::type_text(&mut app, "tab width");
+    support::type_text(&mut app, "tab size");
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Right);
     let dump = support::render(&mut app, 66, 12);
@@ -6101,7 +6105,7 @@ fn the_palette_lets_go_of_a_number_being_turned() {
         .map(str::to_string)
         .unwrap_or_default();
     assert!(
-        foot.contains("Tab width") && foot.contains("1\u{2013}16"),
+        foot.contains("Tab size") && foot.contains("1\u{2013}16"),
         "the foot does not say which number and how far:\n{dump}"
     );
     assert!(
@@ -6148,7 +6152,7 @@ fn nothing_pasted_while_a_number_is_turned_goes_into_the_filter() {
     let file = settings_file(&scratch);
     let mut app = open(&file);
 
-    support::type_text(&mut app, "tab width");
+    support::type_text(&mut app, "tab size");
     support::press(&mut app, KeyCode::Enter);
     assert!(
         !app.takes_text(),
@@ -6158,7 +6162,7 @@ fn nothing_pasted_while_a_number_is_turned_goes_into_the_filter() {
     let settings = app.settings().expect("the settings");
     assert_eq!(
         settings.query(),
-        "tab width",
+        "tab size",
         "the paste went into the filter"
     );
     assert_eq!(
@@ -6182,7 +6186,7 @@ fn enter_twice_on_a_number_past_its_ends_writes_nothing() {
     std::fs::write(&file, "tab_width = 40\n").expect("the settings");
     let mut app = open(&file);
 
-    support::type_text(&mut app, "tab width");
+    support::type_text(&mut app, "tab size");
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Enter);
     assert_eq!(
@@ -6208,7 +6212,7 @@ fn a_number_being_turned_hears_another_obelus() {
     let file = settings_file(&scratch);
     let mut app = open(&file);
 
-    support::type_text(&mut app, "tab width");
+    support::type_text(&mut app, "tab size");
     support::press(&mut app, KeyCode::Enter);
     std::fs::write(&file, "tab_width = 8\n").expect("the other window");
     app.handle(Event::Watched(obelus_watch::Changed { path: file.clone() }));
@@ -6252,14 +6256,14 @@ fn a_number_being_turned_has_its_caret_and_keeps_the_pointer_off() {
     let mut app = open(&file);
     let screen = ratatui::layout::Rect::new(0, 0, 66, 12);
 
-    support::type_text(&mut app, "tab width");
+    support::type_text(&mut app, "tab size");
     support::press(&mut app, KeyCode::Enter);
     let dump = support::render(&mut app, screen.width, screen.height);
     let text = support::text_block(&dump);
     // The screen's row is the number the dump writes in front of it.
     let (y, drawn) = text
         .lines()
-        .find(|row| row.contains("Tab width"))
+        .find(|row| row.contains("Tab size"))
         .and_then(|row| row.split_once('|'))
         .map(|(y, drawn)| (y.trim().parse::<usize>().expect("a row number"), drawn))
         .expect("the row");

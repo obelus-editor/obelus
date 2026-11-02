@@ -643,7 +643,7 @@ impl App {
     /// row cannot name a key the layout does not give -- and the two are
     /// the ones a reader reaches for first: a file, and everything else.
     fn about_a_layout(&self, word: &str) -> Option<String> {
-        let gloss = obelus_config::key_layout(word)?.about;
+        let gloss = obelus_config::key_layout(word)?.about();
         let layout = obelus_keymap::Layout::named(word)?;
         let (keymap, _) = obelus_keymap::Keymap::with(layout, &self.settled.config.keys);
         let key = |command| {

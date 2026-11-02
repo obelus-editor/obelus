@@ -83,7 +83,7 @@ fn the_list_says_what_each_layout_would_give() {
         let written = obelus_config::key_layout(layout.name()).expect("a layout");
         assert_eq!(row.label, written.name);
         assert!(
-            detail.starts_with(written.about),
+            detail.starts_with(written.about()),
             "{} says something else here than the setting does: {detail}",
             row.label
         );

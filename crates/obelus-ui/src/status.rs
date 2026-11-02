@@ -1539,7 +1539,7 @@ impl StatusView<'_> {
         // the box's two ways out, and the palette where it has more.
         if let Some(dialling) = settings.dialling() {
             let name =
-                obelus_config::Setting::named(dialling.key).map_or("", |setting| setting.name);
+                obelus_config::Setting::named(dialling.key).map_or("", |setting| setting.name());
             let ends = format!("{}\u{2013}{}", dialling.dial.least, dialling.dial.most);
             let after = write(cells, area.x + 1, area.y, name, style);
             let after = write(cells, after + 2, area.y, &ends, style.fg(self.theme.gutter));
