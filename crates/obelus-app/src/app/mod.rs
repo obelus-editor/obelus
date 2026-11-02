@@ -99,8 +99,8 @@ use obelus_theme::{Theme, Worn, builtin};
 use obelus_ui::{Previewed, Screen, image::Images};
 use obelus_watch::Watcher;
 use previewing::Preview;
-pub use project::servers;
 use project::{preferences, releases, reopening};
+pub use project::{servers, themes::Whence};
 use ratatui::{
     Terminal,
     backend::Backend,

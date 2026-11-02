@@ -591,7 +591,7 @@ impl App {
                 trailing: (key == "theme")
                     .then(|| self.theme_whence(&choice))
                     .flatten()
-                    .map(str::to_string),
+                    .map(|whence| whence.said().to_string()),
                 changed: None,
                 value: PickerValue::Setting { key, word: choice },
                 enabled: true,
@@ -938,7 +938,7 @@ impl App {
     /// does go first: without it, the `nord` in the list is not the `nord`
     /// in Obelus, and nothing on the screen says so.
     #[must_use]
-    pub fn theme_whence(&self, name: &str) -> Option<&'static str> {
+    pub fn theme_whence(&self, name: &str) -> Option<crate::app::Whence> {
         let holds = |directory: Option<PathBuf>| {
             directory.is_some_and(|directory| {
                 obelus_theme::written::found_in(&directory)
@@ -947,9 +947,9 @@ impl App {
             })
         };
         if holds(self.readers_themes()) {
-            Some(obelus_i18n::project::theme_local())
+            Some(crate::app::Whence::Local)
         } else if holds(self.settled.installed.clone()) {
-            Some(obelus_i18n::project::theme_downloaded())
+            Some(crate::app::Whence::Downloaded)
         } else {
             None
         }

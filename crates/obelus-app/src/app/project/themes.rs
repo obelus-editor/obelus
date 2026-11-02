@@ -128,13 +128,37 @@ impl OnDisk {
     }
 
     /// `App::theme_whence`, answered from what was read.
-    fn whence(&self, name: &str) -> Option<&'static str> {
+    fn whence(&self, name: &str) -> Option<Whence> {
         if self.readers.contains(name) {
-            Some(obelus_i18n::project::theme_local())
+            Some(Whence::Local)
         } else if self.downloaded.iter().any(|found| found == name) {
-            Some(obelus_i18n::project::theme_downloaded())
+            Some(Whence::Downloaded)
         } else {
             None
+        }
+    }
+}
+
+/// Where a theme that is not built in comes from.
+///
+/// A kind and not the words a list says it in: what is worn, what stands in
+/// front of what and what a fresh download is put on by are decided by it,
+/// and words are only the same as each other in one language at a time.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Whence {
+    /// The reader's own, beside their settings.
+    Local,
+    /// Taken from the registry.
+    Downloaded,
+}
+
+impl Whence {
+    /// What a list says beside the name, in the language being spoken.
+    #[must_use]
+    pub fn said(self) -> &'static str {
+        match self {
+            Self::Local => obelus_i18n::project::theme_local(),
+            Self::Downloaded => obelus_i18n::project::theme_downloaded(),
         }
     }
 }
@@ -396,9 +420,7 @@ impl App {
                 self.themes.failures.remove(&name);
                 if self.settled.config.theme == name {
                     self.reread_theme();
-                } else if fresh
-                    && self.theme_whence(&name) == Some(obelus_i18n::project::theme_downloaded())
-                {
+                } else if fresh && self.theme_whence(&name) == Some(Whence::Downloaded) {
                     self.choose_theme(&name);
                 }
             }
@@ -464,11 +486,8 @@ impl App {
 fn theme_card(disk: &OnDisk, theme: Listed, status: Status, installed: bool, worn: &str) -> Card {
     let whence = disk.whence(&theme.name);
     Card {
-        // By the words, which are said in one language at a time.
-        worn: installed
-            && theme.name == worn
-            && whence == Some(obelus_i18n::project::theme_downloaded()),
-        shadowed: installed && whence == Some(obelus_i18n::project::theme_local()),
+        worn: installed && theme.name == worn && whence == Some(Whence::Downloaded),
+        shadowed: installed && whence == Some(Whence::Local),
         installed,
         theme,
         status,

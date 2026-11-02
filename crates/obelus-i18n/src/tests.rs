@@ -258,3 +258,29 @@ fn what_leaves_for_a_chat_is_said_in_english() {
     });
     assert_eq!(said, ("Appearance", "外观"));
 }
+
+/// A message or a term named and not in the file stops the build: each
+/// file is its own bundle, so one in another file is not there either.
+///
+/// Broken deliberately by not looking at what a pattern names: all three
+/// went through, and each would have said `{name}` on the screen.
+#[test]
+fn naming_what_is_not_in_the_file_stops_the_build() {
+    let wrong = refused(&[language(
+        "en",
+        &[
+            (
+                "one",
+                "a = A\nb = { a } and { c }\nd = { -brand }\n-kept = K\ne = { -kept }\n",
+            ),
+            ("two", "c = C\n"),
+        ],
+    )]);
+    assert_eq!(
+        wrong,
+        [
+            "en/one.ftl: b names c, which is not in this file",
+            "en/one.ftl: d names -brand, which is not in this file",
+        ]
+    );
+}

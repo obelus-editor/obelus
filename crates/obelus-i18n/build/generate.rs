@@ -140,6 +140,41 @@ fn messages(place: &str, source: &str, wrong: &mut Vec<String>) -> Vec<Message> 
             wrong.push(format!("{place}: {} is said twice", message.id.name));
         }
     }
+    // A message or a term named and not there is the name of nothing, which
+    // Fluent says as `{name}` on the screen and once in the log -- and a
+    // message in another file is not there, because each file is its own
+    // bundle.
+    let terms: BTreeSet<&str> = resource
+        .body
+        .iter()
+        .filter_map(|entry| match entry {
+            ast::Entry::Term(term) => Some(term.id.name),
+            _ => None,
+        })
+        .collect();
+    let patterns = resource.body.iter().filter_map(|entry| match entry {
+        ast::Entry::Message(message) => {
+            message.value.as_ref().map(|value| (message.id.name, value))
+        }
+        ast::Entry::Term(term) => Some((term.id.name, &term.value)),
+        _ => None,
+    });
+    for (whose, pattern) in patterns {
+        let mut named = Vec::new();
+        references_in(pattern, &mut named);
+        for (term, name) in named {
+            let there = match term {
+                true => terms.contains(name),
+                false => found.contains_key(name),
+            };
+            if !there {
+                let sign = if term { "-" } else { "" };
+                wrong.push(format!(
+                    "{place}: {whose} names {sign}{name}, which is not in this file"
+                ));
+            }
+        }
+    }
     let mut messages = Vec::new();
     for message in found.values() {
         let id = message.id.name;
@@ -168,6 +203,49 @@ fn messages(place: &str, source: &str, wrong: &mut Vec<String>) -> Vec<Message> 
         });
     }
     messages
+}
+
+/// Every message and term a pattern names, the term's flag first.
+fn references_in<'s>(pattern: &ast::Pattern<&'s str>, named: &mut Vec<(bool, &'s str)>) {
+    fn expression<'s>(expression: &ast::Expression<&'s str>, named: &mut Vec<(bool, &'s str)>) {
+        match expression {
+            ast::Expression::Select { selector, variants } => {
+                inline(selector, named);
+                for variant in variants {
+                    references_in(&variant.value, named);
+                }
+            }
+            ast::Expression::Inline(it) => inline(it, named),
+        }
+    }
+    fn inline<'s>(it: &ast::InlineExpression<&'s str>, named: &mut Vec<(bool, &'s str)>) {
+        match it {
+            ast::InlineExpression::MessageReference { id, .. } => named.push((false, id.name)),
+            ast::InlineExpression::TermReference { id, arguments, .. } => {
+                named.push((true, id.name));
+                for argument in arguments.iter().flat_map(|arguments| &arguments.named) {
+                    inline(&argument.value, named);
+                }
+            }
+            ast::InlineExpression::FunctionReference { arguments, .. } => {
+                for argument in &arguments.positional {
+                    inline(argument, named);
+                }
+                for argument in &arguments.named {
+                    inline(&argument.value, named);
+                }
+            }
+            ast::InlineExpression::Placeable { expression: inner } => expression(inner, named),
+            ast::InlineExpression::VariableReference { .. }
+            | ast::InlineExpression::StringLiteral { .. }
+            | ast::InlineExpression::NumberLiteral { .. } => {}
+        }
+    }
+    for element in &pattern.elements {
+        if let ast::PatternElement::Placeable { expression: it } = element {
+            expression(it, named);
+        }
+    }
 }
 
 /// Every variable a pattern reaches for, through the messages it names.

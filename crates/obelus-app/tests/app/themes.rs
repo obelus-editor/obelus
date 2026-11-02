@@ -8,7 +8,7 @@
 
 use crossterm::event::KeyCode;
 use obelus_app::{
-    app::{App, dispatch},
+    app::{App, Whence, dispatch},
     event::Event,
 };
 use obelus_command::Command;
@@ -374,9 +374,9 @@ fn a_theme_from_the_registry_is_offered_and_said_to_be() {
         "{:?}",
         app.themes()
     );
-    assert_eq!(app.theme_whence("rain"), Some("Downloaded"));
-    assert_eq!(app.theme_whence("mine"), Some("Local"));
-    assert_eq!(app.theme_whence("shared"), Some("Local"));
+    assert_eq!(app.theme_whence("rain"), Some(Whence::Downloaded));
+    assert_eq!(app.theme_whence("mine"), Some(Whence::Local));
+    assert_eq!(app.theme_whence("shared"), Some(Whence::Local));
     assert_eq!(app.theme_whence("dark"), None);
     assert_eq!(
         app.theme_called("shared")
