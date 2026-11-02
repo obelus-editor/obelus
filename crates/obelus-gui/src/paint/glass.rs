@@ -498,6 +498,7 @@ impl Painter {
     /// through the pane's rounded corners -- the one place the pane is not.
     pub(super) fn pane_under(
         &mut self,
+        page: &Page,
         behind: &Behind,
         said: &Said<'_>,
         turn: Option<f32>,
@@ -505,6 +506,12 @@ impl Painter {
     ) {
         let (barred, capped, spun) = (said.barred, said.capped, said.spun);
         let cell = fonts.cell();
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "a window is thousands of pixels, not millions"
+        )]
+        let right = self.configured.width as f32;
+        let line = thickness(cell.height);
         // The plates the page had under the pane -- the cursor's pair, what
         // a search found -- which are what a window draws those cells'
         // grounds as: left out, the page in this picture was a terminal's,
@@ -562,7 +569,35 @@ impl Painter {
                     [r, g, b, 1.0],
                 );
             }
-            for x in lettered {
+            // A rule's line the way `rules` draws it on the page, out to
+            // the window's edge -- see `Ruled::spans_behind`.
+            let mut lined = Vec::new();
+            for rule in said.ruled.iter().filter(|rule| rule.area.y == y) {
+                for x in behind.area.left()..behind.area.right() {
+                    let (Some(span), Some(under)) =
+                        (rule.spans_behind(behind, x, y), behind.look(x, y))
+                    else {
+                        continue;
+                    };
+                    let (start, end) = super::shapes::across_the_strip(
+                        x,
+                        span,
+                        page.columns(),
+                        cell.width,
+                        right,
+                        self.margin[0],
+                    );
+                    self.block(
+                        start,
+                        middle(f32::from(y) * cell.height, cell.height, line),
+                        (end - start).max(1.0),
+                        line,
+                        rgba(under.foreground, Ink::Foreground),
+                    );
+                    lined.push(x);
+                }
+            }
+            for x in lettered.into_iter().filter(|x| !lined.contains(x)) {
                 let Some(under) = behind.look(x, y) else {
                     continue;
                 };

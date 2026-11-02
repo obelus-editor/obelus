@@ -155,7 +155,7 @@ impl Painter {
                 _ => self.quads.len(),
             };
             match (at, over.is_a_box()) {
-                (0, false) => self.pane_under(over, &said, moving.turn, fonts),
+                (0, false) => self.pane_under(page, over, &said, moving.turn, fonts),
                 _ => self.seen_under(over, lower, said.spun, moving.turn, fonts),
             }
             let under = start..self.quads.len();
