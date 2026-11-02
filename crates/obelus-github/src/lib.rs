@@ -611,8 +611,11 @@ fn asked(
     arguments.push("-f");
     arguments.push(&query);
     let said = gh(root, instead, &arguments)?;
-    serde_json::from_str(&said)
-        .map_err(|error| Unlisted::Failed(format!("its answer did not read: {error}")))
+    serde_json::from_str(&said).map_err(|error| {
+        Unlisted::Failed(obelus_i18n::discussion::answer_unreadable_because(
+            error.to_string(),
+        ))
+    })
 }
 
 /// The page at `at` in what GitHub said: its rows, where the next one
@@ -650,7 +653,7 @@ fn next(list: &serde_json::Value) -> Option<String> {
 /// An answer that is not the shape it was asked for -- GitHub's own error
 /// is said by `gh` on its way out, so this is the rarer thing.
 fn unread() -> Unlisted {
-    Unlisted::Failed("its answer did not read".to_string())
+    Unlisted::Failed(obelus_i18n::discussion::answer_unreadable().to_string())
 }
 
 /// A page of issues as GitHub described them, newest first.
@@ -832,8 +835,11 @@ fn hunk_tail(hunk: &str) -> String {
 /// with [`ISSUE_VIEWED`], which is the same with what an issue has nothing
 /// for left out.
 fn read_discussion(said: &str, asked: Asked) -> Result<Discussion, Unlisted> {
-    let read: serde_json::Value = serde_json::from_str(said)
-        .map_err(|error| Unlisted::Failed(format!("its answer did not read: {error}")))?;
+    let read: serde_json::Value = serde_json::from_str(said).map_err(|error| {
+        Unlisted::Failed(obelus_i18n::discussion::answer_unreadable_because(
+            error.to_string(),
+        ))
+    })?;
     let text = |value: &serde_json::Value, key: &str| {
         value
             .get(key)
@@ -1076,7 +1082,12 @@ fn refusal(status: std::process::ExitStatus, said: &str) -> Unlisted {
     // `gh api` puts where it was filling `{owner}` in front of why it could
     // not, which is about the remotes and not about a value anybody typed.
     let first = first.map(|line| line.trim_start_matches("error parsing \"owner\" value: "));
-    Unlisted::Failed(first.unwrap_or("it gave no reason").trim().to_string())
+    Unlisted::Failed(
+        first
+            .unwrap_or(obelus_i18n::discussion::no_reason())
+            .trim()
+            .to_string(),
+    )
 }
 
 /// A page of pull requests as GitHub described them, newest first.

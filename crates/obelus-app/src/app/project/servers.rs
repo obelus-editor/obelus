@@ -183,7 +183,7 @@ impl crate::app::App {
             prose: false,
             marker: Some((obelus_component::picker::Marking::Aside, "+".to_string())),
             icon: None,
-            label: "New connection".to_string(),
+            label: obelus_i18n::project::new_connection().to_string(),
             version: None,
             detail: None,
             trailing: None,
@@ -231,7 +231,7 @@ impl crate::app::App {
         // Wrapped, which is what draws a heading over each run of days.
         picker.wraps(None);
         picker.keeps_order(true);
-        picker.before_typing("Filter machines");
+        picker.before_typing(obelus_i18n::project::filter_machines());
         picker.opened_by(Command::ServerConnect);
         self.show_list(picker);
     }
@@ -272,9 +272,7 @@ impl crate::app::App {
             return;
         }
         if as_a_key(&key).is_none() {
-            self.wrong(
-                "Not a key a server prints: it is the letters after \"gets in with the key\"",
-            );
+            self.wrong(obelus_i18n::project::not_a_server_key());
             return;
         }
         self.leave_for(crate::app::Going::To {

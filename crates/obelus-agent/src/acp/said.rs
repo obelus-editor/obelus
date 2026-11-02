@@ -297,13 +297,27 @@ pub struct Picture {
     pub bytes: Vec<u8>,
 }
 
-/// What [`Incoming::Failed`] says it was doing when asking what the agent
-/// offers did not work.
+/// What Obelus was doing when [`Incoming::Failed`] says it did not work.
 ///
-/// Named, because the application has to tell this failure from the rest:
-/// the settings page is waiting on it, and says it is asking for as long
-/// as nothing says otherwise.
-pub const ASKING_WHAT_IT_OFFERS: &str = "Asking what it can be set to";
+/// A kind rather than words, because the words are the reader's language
+/// and that is the application's to choose -- and because the application
+/// has to tell [`Self::AskingWhatItOffers`] from the rest: the settings
+/// page is waiting on it, and says it is asking for as long as nothing says
+/// otherwise.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Doing {
+    /// Asking what the agent can be set to.
+    AskingWhatItOffers,
+    /// Putting a question the agent asked to the reader, which Obelus
+    /// cannot.
+    PuttingAQuestion,
+    /// Changing one of the agent's settings.
+    ChangingASetting,
+    /// Stopping a piece of background work.
+    StoppingATask,
+    /// Changing the agent's mode.
+    ChangingTheMode,
+}
 
 /// One thing from the agent worth acting on.
 #[derive(Debug)]
@@ -419,7 +433,7 @@ pub enum Incoming {
     /// and nothing is not "it keeps none".
     Listed(Vec<Listed>),
     /// Something did not work: what Obelus was doing, and what it said.
-    Failed(&'static str, String),
+    Failed(Doing, String),
     /// A conversation Obelus asked to pick up again is not there any more.
     ///
     /// Its own message rather than a [`Self::Failed`], because it names

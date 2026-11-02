@@ -62,11 +62,11 @@ impl Scope {
     /// on its own: a reader who has not looked up at the tabs is told
     /// `Search`, and told nothing about what.
     #[must_use]
-    pub const fn before_typing(self) -> &'static str {
+    pub fn before_typing(self) -> &'static str {
         match self {
-            Self::File => "Search this file",
-            Self::Project => "Search the project",
-            Self::Symbols => "Search the project's symbols",
+            Self::File => obelus_i18n::editing::search_this_file(),
+            Self::Project => obelus_i18n::editing::search_the_project(),
+            Self::Symbols => obelus_i18n::editing::search_the_projects_symbols(),
         }
     }
 }

@@ -53,7 +53,7 @@ impl App {
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
         picker.when_empty(obelus_i18n::editing::no_theme_is_built_in());
         picker.otherwise(
-            crate::app::project::themes::NONE_HERE,
+            crate::app::project::themes::none_here(),
             PickerValue::MoreThemes,
         );
         picker.before_typing(obelus_i18n::settings_page::filter_themes());

@@ -422,7 +422,7 @@ impl crate::app::App {
             // `amiss` is where what went wrong with no line to mark
             // goes, and this has none: the file is Obelus's own and the
             // reader never opens it.
-            self.amiss(&format!("The list of projects would not read: {why}"));
+            self.amiss(&obelus_i18n::project::projects_unreadable(why));
         }
         let (mut here, went): (Vec<_>, Vec<_>) = reading
             .rows()
@@ -458,7 +458,7 @@ impl crate::app::App {
     pub(in crate::app) fn open_recent_projects(&mut self) {
         let reading = read();
         if let Reading::Unreadable(why) = &reading {
-            self.amiss(&format!("The list of projects would not read: {why}"));
+            self.amiss(&obelus_i18n::project::projects_unreadable(why));
         }
         // The tree and not the directory the window began in: `ob` started
         // in `crates` of a project is on the project, whose row says its
@@ -528,8 +528,8 @@ impl crate::app::App {
         // Newest first whatever is typed, because the runs are days: the
         // reason the conversations keep theirs.
         picker.keeps_order(true);
-        picker.before_typing("Filter projects");
-        picker.when_empty("No other project has been opened");
+        picker.before_typing(obelus_i18n::project::filter_projects());
+        picker.when_empty(obelus_i18n::project::no_other_projects());
         picker.switches_in_place(windowed);
         picker.opened_by(Command::ProjectList);
         self.show_list(picker);
@@ -912,7 +912,7 @@ impl crate::app::App {
                         rows: crate::app::COMPACT_ROWS,
                     },
                 );
-                made.before_typing("Narrow what is here");
+                made.before_typing(obelus_i18n::project::filter_this_folder());
                 made
             }
         };

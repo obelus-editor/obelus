@@ -130,9 +130,9 @@ use super::read::{
     somewhere_to_go,
 };
 pub use super::said::{
-    ASKING_WHAT_IT_OFFERS, Answer, Ask, BACKGROUNDED, Call, Carries, Category, Change, Choice,
-    Chosen, Cost, Field, How, Incoming, Kind, Login, MODE, Order, Picture, Place, Question, Reply,
-    Said, Setting, Step, Takes, Turn, Update, Usage, Value,
+    Answer, Ask, BACKGROUNDED, Call, Carries, Category, Change, Choice, Chosen, Cost, Doing, Field,
+    How, Incoming, Kind, Login, MODE, Order, Picture, Place, Question, Reply, Said, Setting, Step,
+    Takes, Turn, Update, Usage, Value,
 };
 use crate::Event;
 
@@ -716,7 +716,7 @@ async fn talk(
                     Ok(fields) => fields,
                     Err(why) => {
                         let _ = elicited.send(Event::Acp(Incoming::Failed(
-                            "a question Obelus cannot put",
+                            Doing::PuttingAQuestion,
                             why,
                         )));
                         return responder
@@ -1086,7 +1086,7 @@ async fn talk(
                                 }
                                 Err(error) => {
                                     let _ = events.send(Event::Acp(Incoming::Failed(
-                                        ASKING_WHAT_IT_OFFERS,
+                                        Doing::AskingWhatItOffers,
                                         error.to_string(),
                                     )));
                                 }
@@ -1277,8 +1277,7 @@ async fn talk(
                                 answer => {
                                     let why = match answer {
                                         Some(Err(error)) => error.to_string(),
-                                        _ => "this agent cannot take a conversation up again"
-                                            .to_string(),
+                                        _ => obelus_i18n::agent::cannot_resume().to_string(),
                                     };
                                     let _ = events.send(Event::Acp(Incoming::Lost {
                                         session: session.clone(),
@@ -1435,7 +1434,7 @@ async fn talk(
                                             ),
                                         },
                                         Err(error) => Incoming::Failed(
-                                            "Changing a setting",
+                                            Doing::ChangingASetting,
                                             error.to_string(),
                                         ),
                                     }));
@@ -1499,7 +1498,7 @@ async fn talk(
                                         }
                                         Err(error) => {
                                             let _ = told.send(Event::Acp(Incoming::Failed(
-                                                "Stopping a background task",
+                                                Doing::StoppingATask,
                                                 error.to_string(),
                                             )));
                                             true
@@ -1522,7 +1521,7 @@ async fn talk(
                                 .on_receiving_result(move |asked| {
                                     if let Err(error) = asked {
                                         let _ = told.send(Event::Acp(Incoming::Failed(
-                                            "Changing the mode",
+                                            Doing::ChangingTheMode,
                                             error.to_string(),
                                         )));
                                     }

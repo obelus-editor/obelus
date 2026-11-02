@@ -360,7 +360,7 @@ pub fn owned(bytes: Vec<u8>) -> std::io::Result<Read<'static>> {
 fn not_text() -> std::io::Error {
     std::io::Error::new(
         std::io::ErrorKind::InvalidData,
-        "not text in any encoding Obelus can write back",
+        obelus_i18n::editing::not_text_in_any_encoding(),
     )
 }
 

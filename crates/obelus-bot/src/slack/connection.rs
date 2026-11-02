@@ -134,7 +134,10 @@ async fn run(
                     true => (State::Refused, what_slack_said(&error)),
                     false => (State::Unreachable, what_slack_said(&error)),
                 },
-                Err(_) => (State::Unreachable, "no answer in time".to_string()),
+                Err(_) => (
+                    State::Unreachable,
+                    obelus_i18n::bot::no_answer_in_time().to_string(),
+                ),
             };
             let _ = sink.send(Event::connection(state, Some(why)));
             if !paused(state, &sink, &mut said, &mut waiting).await {
@@ -563,7 +566,9 @@ fn what_slack_said(error: &SlackClientError) -> String {
     match error {
         SlackClientError::ApiError(said) => said.code.clone(),
         SlackClientError::RateLimitError(_) => "ratelimited".to_string(),
-        SlackClientError::HttpError(http) => format!("answered {}", http.status_code),
+        SlackClientError::HttpError(http) => {
+            obelus_i18n::bot::answered(http.status_code.to_string())
+        }
         other => other
             .to_string()
             .lines()

@@ -63,6 +63,7 @@ no-theme-is-built-in = 没有内置主题
 filter-encodings = 筛选编码
 # 选择了一种无法用来重新读取文件的编码之后。
 written-as = 之后将以 { $encoding } 保存
+filter-values = 筛选选项
 filter-commands = 筛选命令
 # 命令面板的第一个分页：它下面那个视图的按键。
 here = 当前
@@ -126,6 +127,8 @@ nothing-to-save = 没有需要保存的更改
 formatting = 正在格式化…
 reverted = 已恢复为磁盘上的版本，撤销可以找回你的版本
 could-not-read-the-file = 无法读取文件
+# 文件没有打开的原因，跟在冒号后面。
+not-text-in-any-encoding = 不是 Obelus 能够写回的任何编码的文本
 # 文件所用的编码无法表示其中某个字符。
 not-saved-unencodable = 无法保存 { $name }：{ $encoding } 无法表示 { $character }
 not-saved-named = 无法保存 { $name }
@@ -134,6 +137,8 @@ not-saved = 无法保存
 ## 搜索。
 
 search-this-file = 搜索此文件
+search-the-project = 搜索项目
+search-the-projects-symbols = 搜索项目中的符号
 search-this-preview = 搜索此预览
 search-this-conversation = 搜索此对话
 search-this-page = 搜索此页面

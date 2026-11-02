@@ -63,6 +63,7 @@ no-theme-is-built-in = No theme is built in
 filter-encodings = Filter encodings
 # After choosing an encoding the file cannot be read again in.
 written-as = Saved as { $encoding } from now on
+filter-values = Filter values
 filter-commands = Filter commands
 # The palette's first tab: the keys of the view under it.
 here = Here
@@ -141,6 +142,8 @@ nothing-to-save = Nothing to save
 formatting = Formatting…
 reverted = Reverted to the version on disk. Undo brings yours back
 could-not-read-the-file = Could not read the file
+# Why a file was not opened, after a colon.
+not-text-in-any-encoding = not text in any encoding Obelus can write back
 # The encoding the file is written in has no way to write a character in it.
 not-saved-unencodable = Could not save { $name }: { $encoding } cannot encode { $character }
 not-saved-named = Could not save { $name }
@@ -149,6 +152,8 @@ not-saved = Could not save
 ## Searching.
 
 search-this-file = Search this file
+search-the-project = Search the project
+search-the-projects-symbols = Search the project's symbols
 search-this-preview = Search this preview
 search-this-conversation = Search this conversation
 search-this-page = Search this page

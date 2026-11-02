@@ -2877,7 +2877,7 @@ fn the_history_opens_at_the_radius_its_key_names() {
     // inside one errand: its own history, and the places it can be seen
     // from. The project is the one view that stops being about this file,
     // and it has a key rather than a tab.
-    assert_eq!(picker.tabs(), ["This file", "The refs"]);
+    assert_eq!(picker.tabs(), ["This file", "Refs"]);
     assert_eq!(picker.tab(), 0, "f9 did not open the file's own tab");
     let rows: Vec<String> = picker.matches().map(|item| item.label.clone()).collect();
     assert_eq!(
@@ -2916,7 +2916,7 @@ fn the_history_opens_at_the_radius_its_key_names() {
     support::press_function(&mut app, 10);
     support::read_history(&mut app, &events);
     let picker = app.picker().expect("the history");
-    assert_eq!(picker.tabs(), ["The project"]);
+    assert_eq!(picker.tabs(), ["Project"]);
     assert!(
         picker.matches().any(|item| item.opens.is_some()),
         "the project's rows do not say they open"

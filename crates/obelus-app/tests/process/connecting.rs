@@ -156,7 +156,7 @@ fn a_key_that_is_not_one_is_turned_down_at_the_question() {
     assert!(!app.should_quit(), "the window was let go of");
     let screen = support::render(&mut app, 100, 24);
     assert!(
-        screen.contains("Not a key a server prints"),
+        screen.contains("Not a server key"),
         "nothing said why:\n{screen}"
     );
 }

@@ -202,7 +202,7 @@ fn a_token_is_kept_drawn_by_its_ends_and_forgotten() {
         app.prompt().is_some(),
         "a bot token was taken as the app token"
     );
-    assert_eq!(app.note(), Some("App token starts with xapp-"));
+    assert_eq!(app.note(), Some("App token must start with xapp-"));
     assert_eq!(
         obelus_bot::secrets::read("slack", "app_token"),
         Ok(None),
@@ -2162,7 +2162,7 @@ fn a_thread_that_would_not_open_is_asked_for_on_the_next_connection() {
     }
     let dump = support::render(&mut app, 76, 24);
     assert!(
-        dump.contains("Slack was not reached in time"),
+        dump.contains("Could not reach Slack in time"),
         "a thread let go of here was blamed on the platform:\n{dump}"
     );
 
@@ -2599,7 +2599,7 @@ fn a_window_that_will_not_let_go_is_given_up_on() {
     let (mut second, seconds) = a_window(&scratch);
     dispatch::dispatch(&mut second, Command::BotConnect);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
-    while second.note() != Some("Another window would not let Slack go") {
+    while second.note() != Some("Another window would not let go of Slack") {
         assert!(
             std::time::Instant::now() < deadline,
             "the asking was never given up on"
@@ -2793,7 +2793,7 @@ fn asking_again_waits_on_the_same_thread() {
     let (mut second, seconds) = a_window(&scratch);
     dispatch::dispatch(&mut second, Command::BotConnect);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
-    while second.note() != Some("Another window would not let Slack go") {
+    while second.note() != Some("Another window would not let go of Slack") {
         assert!(
             std::time::Instant::now() < deadline,
             "the asking was never given up on"
@@ -2848,7 +2848,7 @@ fn a_clock_from_an_asking_taken_back_gives_up_on_nothing() {
     second.handle(ran_out);
     assert_ne!(
         second.note(),
-        Some("Another window would not let Slack go"),
+        Some("Another window would not let go of Slack"),
         "the new asking was given up on by the old clock"
     );
     assert!(
@@ -2915,7 +2915,7 @@ fn an_asking_taken_back_after_giving_up_stays_taken_back() {
     let (mut second, seconds) = a_window(&scratch);
     dispatch::dispatch(&mut second, Command::BotConnect);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
-    while second.note() != Some("Another window would not let Slack go") {
+    while second.note() != Some("Another window would not let go of Slack") {
         assert!(
             std::time::Instant::now() < deadline,
             "the asking was never given up on"
@@ -3100,7 +3100,7 @@ fn a_chat_with_something_untold_says_what() {
     support::lay_out(&mut app, 76, 24);
     dispatch::dispatch(&mut app, Command::BotConnect);
     until(&mut app, &events, "the words", |app| {
-        app.note() == Some("Not connected to Slack: no Bot token is set")
+        app.note() == Some("Not connected to Slack: Bot token not set")
     });
     support::press(&mut app, KeyCode::Down);
     let line = status_row(&mut app);
@@ -4009,7 +4009,7 @@ fn what_a_thread_was_not_told_is_said_in_its_conversation() {
     }
     let dump = support::render(&mut app, 100, 24);
     assert!(
-        dump.contains("Slack would not take a message for this conversation: message too long"),
+        dump.contains("Slack would not take a message from this conversation: message too long"),
         "the conversation said nothing:\n{dump}"
     );
     let _ = platform.send(obelus_bot::Event::Unsaid {
@@ -4024,7 +4024,7 @@ fn what_a_thread_was_not_told_is_said_in_its_conversation() {
     }
     let dump = support::render(&mut app, 100, 24);
     assert!(
-        dump.contains("Slack was not reached in time for a message"),
+        dump.contains("Could not reach Slack in time to send a message"),
         "a message let go of here was blamed on the platform:\n{dump}"
     );
 }
@@ -4072,7 +4072,7 @@ fn what_a_joined_window_s_thread_was_not_told_is_said_there() {
         thread: "T2".to_string(),
         why: Some("msg_too_long".to_string()),
     });
-    let wanted = "Slack would not take a message for this conversation: msg_too_long";
+    let wanted = "Slack would not take a message from this conversation: msg_too_long";
     let until = std::time::Instant::now() + std::time::Duration::from_secs(15);
     loop {
         while let Ok(event) = firsts.try_recv() {

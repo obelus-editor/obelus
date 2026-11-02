@@ -10,6 +10,7 @@ license.workspace = true
 workspace = true
 
 [dependencies]
+obelus-i18n.workspace = true
 postcard.workspace = true
 serde.workspace = true
 tokio.workspace = true

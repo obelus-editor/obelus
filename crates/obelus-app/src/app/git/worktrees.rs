@@ -133,10 +133,10 @@ pub(in crate::app) enum Tab {
 
 impl Tab {
     /// The word on the tab.
-    const fn label(self) -> &'static str {
+    fn label(self) -> &'static str {
         match self {
-            Self::Documents => "Documents",
-            Self::Worktrees => "Worktrees",
+            Self::Documents => obelus_i18n::git::tab_documents(),
+            Self::Worktrees => obelus_i18n::git::tab_worktrees(),
         }
     }
 }
@@ -421,10 +421,14 @@ impl App {
                 // Reachable with nothing open at all, which is how Obelus
                 // starts -- and was not, for as long as the command asked
                 // for a file.
-                "Nothing is open",
-                "Filter open documents",
+                obelus_i18n::git::nothing_open(),
+                obelus_i18n::git::filter_open_documents(),
             ),
-            Tab::Worktrees => (self.worktree_rows(), "No worktrees", "Filter worktrees"),
+            Tab::Worktrees => (
+                self.worktree_rows(),
+                obelus_i18n::git::no_worktrees(),
+                obelus_i18n::git::filter_worktrees(),
+            ),
         };
         let here = self.current;
         let this_window = self.row_of_this_window();
@@ -621,7 +625,7 @@ impl App {
                 label,
                 detail: Some(match &listed.tree.head {
                     obelus_git::Head::Branch(name) => name.clone(),
-                    obelus_git::Head::Detached => "Detached".to_string(),
+                    obelus_git::Head::Detached => obelus_i18n::status::detached().to_string(),
                 }),
                 // The row that is this window is marked as where the reader
                 // is: the tree's where this one is not a row under it, which
@@ -630,7 +634,7 @@ impl App {
                     (true, false) => Some(crate::app::conversations::here()),
                     _ => (here || !listed.seen.is_empty()).then(somebody),
                 },
-                trailing: (!listed.tree.there).then(|| "Missing".to_string()),
+                trailing: (!listed.tree.there).then(|| obelus_i18n::git::missing().to_string()),
                 // In a terminal this one is where the reader is, which is
                 // the list closing.
                 enabled: here || listed.tree.there,
@@ -653,7 +657,7 @@ impl App {
                         None => obelus_icons::ui::IN_A_TERMINAL,
                     },
                     label: match seen.reading.is_empty() {
-                        true => "Nothing open".to_string(),
+                        true => obelus_i18n::git::nothing_open().to_string(),
                         false => seen.reading.clone(),
                     },
                     detail: None,

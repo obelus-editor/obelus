@@ -481,7 +481,7 @@ impl App {
         // The caller's words, because the list knows names and nothing
         // about what they name -- and this one is the faces a window
         // draws with.
-        names.before_typing("Filter the faces on this machine");
+        names.before_typing(obelus_i18n::project::filter_fonts());
         self.names = Some((key, names));
     }
 
@@ -527,7 +527,7 @@ impl App {
         if key == "theme" {
             self.theme_before = Some((self.theme_name().to_string(), self.worn()));
             picker.otherwise(
-                crate::app::project::themes::NONE_HERE,
+                crate::app::project::themes::none_here(),
                 PickerValue::MoreThemes,
             );
         }
@@ -616,8 +616,8 @@ impl App {
             _ => COMPACT_ROWS,
         };
         let mut picker = Picker::new(items, PickerLayout::Compact { rows });
-        picker.before_typing("Filter values");
-        picker.when_empty("This setting has no choices");
+        picker.before_typing(obelus_i18n::editing::filter_values());
+        picker.when_empty(obelus_i18n::picker::nothing_to_choose_from());
         // Read whole, the way the list of conversations is, because what
         // is under each workflow is a few sentences rather than a word --
         // and all of them, because they are Obelus's own. A layout's is
@@ -651,23 +651,15 @@ impl App {
                 .chord_for(command)
                 .map(obelus_keymap::KeyChord::label)
         };
-        let examples: Vec<String> = [
-            ("Open a file with", Command::FileOpen),
-            ("run a command with", Command::CommandPalette),
-        ]
-        .into_iter()
-        .filter_map(|(words, command)| Some(format!("{words} {}", key(command)?)))
-        .collect();
-        if examples.is_empty() {
-            return Some(gloss.to_string());
-        }
-        // A sentence of its own, so it has to start with a capital however
-        // many of the two there are.
-        let mut said = examples.join(", ");
-        if let Some(first) = said.get(..1) {
-            said.replace_range(..1, &first.to_uppercase());
-        }
-        Some(format!("{gloss}. {said}"))
+        // A sentence for each of the ways it can come out, because which of
+        // the two there are is not the language's to piece together.
+        let said = match (key(Command::FileOpen), key(Command::CommandPalette)) {
+            (Some(open), Some(run)) => obelus_i18n::project::layout_keys(open, run),
+            (Some(open), None) => obelus_i18n::project::layout_open_key(open),
+            (None, Some(run)) => obelus_i18n::project::layout_run_key(run),
+            (None, None) => return Some(gloss.to_string()),
+        };
+        Some(obelus_i18n::project::layout_gloss(gloss, said))
     }
 
     /// Offers the layouts the reader's keys start from, on a first start.
@@ -686,7 +678,7 @@ impl App {
             obelus_config::KEY_LAYOUTS,
             &self.settled.readers.keys_from.clone(),
         );
-        picker.ask("Which keys Obelus starts from");
+        picker.ask(obelus_i18n::project::choose_a_keymap());
         self.show_list(picker);
     }
 
@@ -749,7 +741,7 @@ impl App {
                 // conversation's own list does: a list where the selected
                 // row and the current value look alike cannot say which of
                 // the two it is showing.
-                trailing: current.then(|| "current".to_string()),
+                trailing: current.then(|| obelus_i18n::project::current().to_string()),
                 changed: None,
                 value: PickerValue::AgentDefault {
                     agent: agent.clone(),
@@ -767,8 +759,8 @@ impl App {
             }
         };
         let mut items = vec![row(
-            "Agent's own".to_string(),
-            Some("Whatever it opens a conversation on".to_string()),
+            obelus_i18n::settings_page::agents_own().to_string(),
+            Some(obelus_i18n::project::agents_own_value().to_string()),
             None,
             chosen.is_none(),
         )];
@@ -781,13 +773,13 @@ impl App {
             )
         }));
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
-        picker.before_typing("Filter agents");
+        picker.before_typing(obelus_i18n::editing::filter_values());
         picker.ask(&offer.name);
-        picker.when_empty("This one has nothing to choose from");
+        picker.when_empty(obelus_i18n::picker::nothing_to_choose_from());
         // Opened on what it is on, so the list starts by saying where the
         // reader is rather than at whatever happens to be first.
         picker.prefer(match &chosen {
-            None => "Agent's own".to_string(),
+            None => obelus_i18n::settings_page::agents_own().to_string(),
             Some(value) => offer.name_of(value).unwrap_or(value).to_string(),
         });
         self.show_list(picker);
@@ -837,12 +829,12 @@ impl App {
             return;
         };
         if !self.settled.readable {
-            self.wrong("Not saved: the settings will not read".to_string());
+            self.wrong(obelus_i18n::project::not_saved_unreadable());
             return;
         }
         if let Err(error) = obelus_config::save_to(&path, &self.settled.readers) {
             tracing::warn!(%error, "not saving the configuration");
-            self.wrong(format!("Not saved: {error}"));
+            self.wrong(obelus_i18n::project::not_saved_because(error.to_string()));
         }
     }
 
@@ -871,12 +863,12 @@ impl App {
             return;
         };
         if !self.settled.readable {
-            self.wrong("Not saved: the settings will not read".to_string());
+            self.wrong(obelus_i18n::project::not_saved_unreadable());
             return;
         }
         if let Err(error) = obelus_config::save_to(&path, &self.settled.readers) {
             tracing::warn!(%error, "not saving the configuration");
-            self.wrong(format!("Not saved: {error}"));
+            self.wrong(obelus_i18n::project::not_saved_because(error.to_string()));
         }
     }
 
@@ -955,9 +947,9 @@ impl App {
             })
         };
         if holds(self.readers_themes()) {
-            Some("Local")
+            Some(obelus_i18n::project::theme_local())
         } else if holds(self.settled.installed.clone()) {
-            Some("Downloaded")
+            Some(obelus_i18n::project::theme_downloaded())
         } else {
             None
         }
@@ -990,7 +982,7 @@ impl App {
                 .map(|(_, title, _)| title.into()),
             // A platform by its name, and none by the page's word for it.
             "chat" => match word {
-                "" => Some("Off".into()),
+                "" => Some(obelus_i18n::settings_page::off().into()),
                 key => obelus_bot::platform::named(key).map(|platform| platform.name.into()),
             },
             "keys_from" => obelus_config::key_layout(word).map(|layout| layout.name.into()),
@@ -1006,24 +998,23 @@ impl App {
             "build_jobs" => {
                 let cpus = logical_cpus();
                 match word {
-                    "unlimited" => Some("Unlimited".into()),
-                    "all" => Some(format!("All {}", of_the(cpus)).into()),
+                    "unlimited" => Some(obelus_i18n::project::jobs_unlimited().into()),
+                    "all" => Some(obelus_i18n::project::jobs_all(cpus).into()),
                     "half" => jobs_for(word)
-                        .map(|jobs| format!("Half: {jobs} of {}", of_the(cpus)).into()),
+                        .map(|jobs| obelus_i18n::project::jobs_half(cpus, jobs).into()),
                     _ => None,
                 }
             }
             "conversation_days" => match word {
-                "0" => Some("Never".into()),
-                "7" => Some("A week".into()),
-                "30" => Some("A month".into()),
-                "90" => Some("Three months".into()),
-                "365" => Some("A year".into()),
-                "1" => Some("1 day".into()),
+                "0" => Some(obelus_i18n::project::days_forever().into()),
+                "7" => Some(obelus_i18n::project::days_week().into()),
+                "30" => Some(obelus_i18n::project::days_month().into()),
+                "90" => Some(obelus_i18n::project::days_three_months().into()),
+                "365" => Some(obelus_i18n::project::days_year().into()),
                 days => days
                     .parse::<usize>()
                     .ok()
-                    .map(|days| format!("{days} days").into()),
+                    .map(|days| obelus_i18n::project::days(days).into()),
             },
             _ => None,
         }
@@ -1090,7 +1081,7 @@ impl App {
             Err(wrong) => {
                 tracing::warn!(why = wrong.why, "a theme that would not read");
                 // Not opening on the name, which a sentence may not.
-                self.wrong(format!("The theme `{name}` will not read"));
+                self.wrong(obelus_i18n::project::theme_unreadable(name));
                 // And on the theme's own file, where the line is. The
                 // colours on screen stay as they are: a reader who cannot
                 // read the screen cannot fix the file.
@@ -1099,7 +1090,11 @@ impl App {
                     &path,
                     wrong.at,
                     obelus_lsp::trouble::Severity::Error,
-                    &format!("This theme will not read\n{}", wrong.why),
+                    &format!(
+                        "{}\n{}",
+                        obelus_i18n::project::this_theme_unreadable(),
+                        wrong.why
+                    ),
                 );
                 None
             }
@@ -1281,12 +1276,12 @@ impl App {
             // Said when it was found to be unreadable, and again here,
             // because this is the moment the reader finds out their change
             // is not being kept.
-            self.wrong("Not saved: the settings will not read".to_string());
+            self.wrong(obelus_i18n::project::not_saved_unreadable());
             return;
         }
         if let Err(error) = obelus_config::save_to(&path, &self.settled.readers) {
             tracing::warn!(%error, "not saving the configuration");
-            self.wrong(format!("Not saved: {error}"));
+            self.wrong(obelus_i18n::project::not_saved_because(error.to_string()));
         }
     }
 
@@ -1326,7 +1321,7 @@ impl App {
         let path = obelus_config::project_path_for(&self.working_directory);
         if let Err(error) = obelus_config::write_project(&path, key, value) {
             tracing::warn!(%error, path = %path.display(), "not writing the project's settings");
-            self.wrong(format!("Not saved: {error}"));
+            self.wrong(obelus_i18n::project::not_saved_because(error.to_string()));
             return;
         }
         // Read back the way any other change to that file arrives, so the
@@ -1349,14 +1344,16 @@ impl App {
     /// made in it by hand is picked up the next time Obelus starts.
     pub fn open_config_file(&mut self) {
         let Some(path) = self.settled.path.clone() else {
-            self.wrong("This system has nowhere for a settings file".to_string());
+            self.wrong(obelus_i18n::project::nowhere_for_settings());
             return;
         };
         if !path.exists()
             && let Err(error) = obelus_config::save_to(&path, &self.settled.config)
         {
             tracing::warn!(%error, "not writing the configuration");
-            self.wrong(format!("No settings file, and none written: {error}"));
+            self.wrong(obelus_i18n::project::settings_file_not_written(
+                error.to_string(),
+            ));
             return;
         }
         self.open(&path);
@@ -1395,8 +1392,8 @@ impl App {
     /// list of two, because it takes every key the reader chose at once,
     /// and the reader is in a list of keys already.
     fn ask_to_put_every_key_back(&mut self) {
-        let layout = obelus_config::key_layout(&self.settled.config.keys_from)
-            .map_or("the layout", |layout| layout.name);
+        let layout =
+            obelus_config::key_layout(&self.settled.config.keys_from).map(|layout| layout.name);
         let row = |label: &str, value| PickerItem {
             prose: false,
             marker: None,
@@ -1417,11 +1414,14 @@ impl App {
             section: None,
         };
         let items = vec![
-            row("Put them back", PickerValue::KeysBack),
-            row("Keep them", PickerValue::Nothing),
+            row(obelus_i18n::project::reset_them(), PickerValue::KeysBack),
+            row(obelus_i18n::project::keep_them(), PickerValue::Nothing),
         ];
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: 2 });
-        picker.ask(&format!("Put every key back to {layout}'s?"));
+        picker.ask(&match layout {
+            Some(layout) => obelus_i18n::project::reset_every_key_to(layout),
+            None => obelus_i18n::project::reset_every_key().to_string(),
+        });
         // A question, which a key that names another view does not swap
         // away: it is waiting on the reader.
         picker.will_not_give_way();
@@ -1446,12 +1446,12 @@ impl App {
         if !self.settled.readable {
             // Said here as a setting's change says it: this is the moment
             // the reader finds out the key is not being kept.
-            self.wrong("Not saved: the settings will not read".to_string());
+            self.wrong(obelus_i18n::project::not_saved_unreadable());
             return;
         }
         if let Err(error) = obelus_config::save_to(&path, &self.settled.readers) {
             tracing::warn!(%error, "not saving the configuration");
-            self.wrong(format!("Not saved: {error}"));
+            self.wrong(obelus_i18n::project::not_saved_because(error.to_string()));
         }
     }
 
@@ -1765,22 +1765,17 @@ impl App {
                 // was meant to be -- `No theme is called` -- which is the
                 // sentence's own noun.
                 obelus_config::Why::NoSuchSetting => {
-                    format!("No setting is called `{}`", one.key)
+                    obelus_i18n::project::no_such_setting(&one.key)
                 }
                 obelus_config::Why::NotForAProject => {
-                    format!("A project may not set `{}`", one.key)
+                    obelus_i18n::project::not_for_a_project(&one.key)
                 }
-                obelus_config::Why::NotATable => {
-                    format!(
-                        "What `{}` is set to is not a table of its settings",
-                        one.key
-                    )
-                }
+                obelus_config::Why::NotATable => obelus_i18n::project::not_a_table(&one.key),
                 // Not "No workflow is called ...", which opens on the title
                 // of one of the workflows. Which setting it is goes without
                 // saying: the mark is on the line that sets it.
                 obelus_config::Why::NoSuchChoice(word) => {
-                    format!("Nothing answers to `{word}`")
+                    obelus_i18n::project::no_such_choice(word)
                 }
             };
             self.obelus_says(path, one.at, obelus_lsp::trouble::Severity::Warning, &said);
@@ -1811,7 +1806,7 @@ impl App {
                 path,
                 spans.get("theme").copied(),
                 obelus_lsp::trouble::Severity::Warning,
-                &format!("No theme is called `{called}`"),
+                &obelus_i18n::project::no_such_theme(called),
             );
         }
         for one in std::mem::take(&mut self.settled.unbound) {
@@ -1820,18 +1815,18 @@ impl App {
                 // rather than what the reader wrote: what is left to say is
                 // the thing they cannot see.
                 obelus_keymap::Unbindable::NoSuchCommand => {
-                    format!("No command is called `{}`", one.name)
+                    obelus_i18n::project::no_such_command(&one.name)
                 }
                 // About the key and not the line: a line may name several,
                 // and the ones that would do are bound -- which command it
                 // is goes without saying, because the mark is on its line.
                 obelus_keymap::Unbindable::Unreadable => {
-                    format!("No key is called `{}`", one.text)
+                    obelus_i18n::project::no_such_key(&one.text)
                 }
                 // The reason the page that binds keys gives, in its own
                 // words, because it is the same judgement.
                 obelus_keymap::Unbindable::NotAllowed(why) => {
-                    format!("No command can be on `{}`: {why}", one.text)
+                    obelus_i18n::project::key_not_allowed(&one.text, why)
                 }
             };
             let at = spans.get(&format!("keys.{}", one.name)).copied();
@@ -1864,13 +1859,13 @@ impl App {
             path,
             at,
             obelus_lsp::trouble::Severity::Error,
-            &format!("The settings will not read, so none are saved\n{why}"),
+            &format!("{}\n{why}", obelus_i18n::project::settings_unreadable()),
         );
         self.settled.readable = false;
         // Short, because the status row is one row and shares it with the
         // file and the position: which file and what went wrong are in the
         // log, where there is room for them.
-        self.wrong("The settings will not read, so none are saved".to_string());
+        self.wrong(obelus_i18n::project::settings_unreadable());
     }
 
     /// Uses a configuration without reading a file.
@@ -1927,23 +1922,23 @@ fn logical_cpus() -> usize {
     std::thread::available_parallelism().map_or(1, std::num::NonZero::get)
 }
 
-/// A number of CPUs, as a sentence says it.
-fn of_the(cpus: usize) -> String {
-    match cpus {
-        1 => "1 CPU".to_string(),
-        cpus => format!("{cpus} CPUs"),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     /// One CPU is said in the singular, on the one machine that has it.
     ///
-    /// Deliberate break: take out the arm for one, and the page says
-    /// `All 1 CPUs`.
+    /// Deliberate break: take the `[one]` arms out of `jobs-all` and
+    /// `jobs-half` in `en/project.ftl`, and the page says `All 1 CPUs`.
     #[test]
     fn one_cpu_is_one_cpu() {
-        assert_eq!(super::of_the(1), "1 CPU");
-        assert_eq!(super::of_the(24), "24 CPUs");
+        assert_eq!(obelus_i18n::project::jobs_all(1_usize), "All 1 CPU");
+        assert_eq!(obelus_i18n::project::jobs_all(24_usize), "All 24 CPUs");
+        assert_eq!(
+            obelus_i18n::project::jobs_half(1_usize, 1_usize),
+            "Half: 1 of 1 CPU"
+        );
+        assert_eq!(
+            obelus_i18n::project::jobs_half(24_usize, 12_usize),
+            "Half: 12 of 24 CPUs"
+        );
     }
 }

@@ -3018,7 +3018,7 @@ fn a_mode_the_agent_refuses_goes_back() {
     });
     let text = screen(&mut app);
     assert!(
-        text.contains("Changing the mode"),
+        text.contains("Could not change the mode"),
         "nothing said why it went back:\n{text}"
     );
 }
@@ -3165,7 +3165,7 @@ fn a_settings_values_are_a_list_and_the_agent_answers_with_all_of_them() {
         "the rows do not say what they are:\n{text}"
     );
     assert!(
-        text.contains("current"),
+        text.contains("Current"),
         "nothing says which one is on:\n{text}"
     );
     // A row says what it is only when that is not its name again: agents
@@ -3706,7 +3706,7 @@ fn a_form_the_agent_asks_for_is_put_one_field_at_a_time() {
         .iter()
         .map(|choice| choice.name.clone())
         .collect();
-    assert_eq!(sides, ["on", "off"], "the switch has other sides");
+    assert_eq!(sides, ["On", "Off"], "the switch has other sides");
     assert_eq!(
         app.card().map(Card::on),
         Some(On::Choice(1)),
@@ -3733,7 +3733,7 @@ fn a_form_the_agent_asks_for_is_put_one_field_at_a_time() {
     support::press(&mut app, KeyCode::Enter);
     let text = screen(&mut app);
     assert!(
-        text.contains("takes a number"),
+        text.contains("must be a number"),
         "words went in as a number:\n{text}"
     );
     for _ in 0..5 {
@@ -3743,7 +3743,7 @@ fn a_form_the_agent_asks_for_is_put_one_field_at_a_time() {
     support::press(&mut app, KeyCode::Enter);
     let text = screen(&mut app);
     assert!(
-        text.contains("outside"),
+        text.contains("Out of range"),
         "a number past the end was taken:\n{text}"
     );
     assert!(
@@ -5600,7 +5600,7 @@ fn an_agent_that_stops_takes_the_questions_in_every_conversation_with_it() {
     assert!(
         rows(&dump)
             .iter()
-            .any(|row| row.contains("It stopped waiting for an answer")),
+            .any(|row| row.contains("stopped waiting for an answer")),
         "the question went with no reason on the page:\n{dump}"
     );
 }
@@ -8304,7 +8304,7 @@ fn somewhere_to_go_is_put_on_a_card_and_opened() {
         "the end of the url is not on the page:\n{dump}"
     );
     assert!(
-        screen.iter().any(|row| row.contains("Open it")),
+        screen.iter().any(|row| row.contains("Open link")),
         "there is no way to go:\n{dump}"
     );
 
@@ -10178,7 +10178,7 @@ fn an_agent_that_can_only_resume_is_asked_to_resume() {
 
     let text = screen(&mut app);
     assert!(
-        text.contains("cannot send back what was said"),
+        text.contains("cannot show the earlier messages"),
         "nothing says why the page is empty:\n{text}"
     );
     // Taken up, not started again: the agent still has the context.
@@ -10223,7 +10223,7 @@ fn an_agent_that_can_do_neither_is_not_asked() {
         "nothing says the old conversation was not there:\n{text}"
     );
     assert!(
-        text.contains("take a conversation up again"),
+        text.contains("cannot resume a conversation"),
         "the reason is not Obelus's own:\n{text}"
     );
     assert!(
@@ -10449,7 +10449,7 @@ fn a_command_is_on_the_page_in_the_words_it_was_run_in() {
     );
     // And the number it came out with, which the mark cannot say.
     assert!(
-        screen.iter().any(|row| row.contains("and exited 3")),
+        screen.iter().any(|row| row.contains("exit code 3")),
         "the page does not say what the command exited with:\n{dump}"
     );
 }
@@ -11275,7 +11275,7 @@ fn a_value_the_agent_no_longer_offers_is_not_sent() {
     );
     // Wrapped to the transcript's width, so the first of its rows and then
     // the second.
-    let said = "No longer offered by fake: brilliant for Model, so this conversation is on";
+    let said = "No longer offered by fake: brilliant for Model, so this conversation";
     let times = app.chat().map_or(0, |chat| {
         chat.rows(WIDTH)
             .iter()
@@ -11496,7 +11496,7 @@ fn the_settings_page_asks_what_the_agent_offers_each_time_it_opens() {
         .agent_offering()
         .and_then(|offering| offering.silence)
         .unwrap_or_default();
-    assert_eq!(silence, "Asking fake what it can be set to");
+    assert_eq!(silence, "Asking fake for its settings\u{2026}");
     pump(&mut app, &events, "what it offers", |app| {
         app.agent_offering()
             .is_some_and(|offering| !offering.offers.is_empty())
@@ -11624,7 +11624,7 @@ fn choosing_another_agent_stops_the_one_that_was_running() {
     support::press(&mut app, KeyCode::Esc);
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     assert!(
-        support::text_block(&dump).contains("no longer the one Obelus talks to"),
+        support::text_block(&dump).contains("was with another agent"),
         "the conversation was left holding a session nobody can reach:\n{dump}"
     );
 }
@@ -13080,7 +13080,7 @@ fn another_agents_conversations_get_a_tab_and_cannot_be_taken_up() {
     assert!(
         picker
             .what_about()
-            .is_some_and(|said| said.contains("only be taken up by the agent that had it")),
+            .is_some_and(|said| said.contains("only be resumed by the agent that had it")),
         "a tab of rows that cannot be chosen says nothing about why"
     );
 }
@@ -13151,7 +13151,7 @@ fn another_checkouts_conversations_are_listed_and_cannot_be_taken_up() {
     assert!(
         app.picker()
             .and_then(|picker| picker.what_about())
-            .is_some_and(|said| said.contains("checkout it was had in")),
+            .is_some_and(|said| said.contains("worktree it was started in")),
         "a row that cannot be chosen says nothing about why"
     );
 }
@@ -13208,7 +13208,7 @@ fn a_conversation_from_a_checkout_that_has_gone_is_not_listed() {
     assert!(
         app.picker()
             .and_then(|picker| picker.what_about())
-            .is_none_or(|said| !said.contains("checkout it was had in")),
+            .is_none_or(|said| !said.contains("worktree it was started in")),
         "the list says why rows cannot be chosen when none is there"
     );
 }
@@ -13762,7 +13762,7 @@ fn a_table_obelus_cannot_read_is_not_a_project_nobody_has_talked_about() {
     );
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     assert!(
-        dump.contains("cannot read what it wrote down"),
+        dump.contains("Could not read this project's conversation history"),
         "the list blamed the reader for Obelus's own unreadable file:\n{dump}"
     );
 }
@@ -14623,7 +14623,7 @@ fn an_agent_with_nothing_to_set_says_so() {
     pump(&mut app, &events, "the answer", |app| {
         !silence(app).starts_with("Asking")
     });
-    assert_eq!(silence(&app), "There is nothing to set for fake");
+    assert_eq!(silence(&app), "No settings for fake");
 }
 
 /// That a choice is not offered any more is said once in a conversation,
@@ -16185,7 +16185,10 @@ fn a_file_dropped_outside_a_conversation_goes_nowhere() {
     let (mut app, _events) = wired();
 
     app.handle(Event::Dropped(picture));
-    assert_eq!(app.note(), Some("A file goes in a message to an agent"));
+    assert_eq!(
+        app.note(),
+        Some("A file can only be dropped into a conversation")
+    );
 }
 
 /// A file dropped while a list is open over the conversation is refused,
@@ -16202,7 +16205,10 @@ fn a_file_dropped_with_a_list_in_front_goes_nowhere() {
     assert!(app.picker().is_some(), "the palette did not open");
 
     app.handle(Event::Dropped(picture));
-    assert_eq!(app.note(), Some("A file goes in a message to an agent"));
+    assert_eq!(
+        app.note(),
+        Some("A file can only be dropped into a conversation")
+    );
     assert!(in_the_box(&app).is_empty(), "the drop went behind the list");
 }
 
@@ -17429,7 +17435,7 @@ fn the_list_of_pull_requests_says_why_it_is_empty() {
     pump(&mut app, &events, "the empty list", the_list_has_answered);
     let text = screen(&mut app);
     assert!(
-        text.contains("No pull request is open"),
+        text.contains("No open pull requests"),
         "an empty answer was not said as one:\n{text}"
     );
 
@@ -18400,7 +18406,7 @@ fn a_query_that_matches_no_pull_request_says_so() {
     });
     let text = screen(&mut app);
     assert!(
-        text.contains("No match") && !text.contains("No pull request is open"),
+        text.contains("No match") && !text.contains("No open pull requests"),
         "a query nothing matched was said as nothing being open:\n{text}"
     );
 }
@@ -18632,7 +18638,7 @@ fn a_search_that_did_not_come_is_asked_again_from_an_empty_list() {
     support::press(&mut app, KeyCode::Down);
     let _ = screen(&mut app);
     pump(&mut app, &events, "the search again", |app| {
-        tally(app) == "0 match"
+        tally(app) == "0 matches"
     });
 }
 
@@ -18749,7 +18755,7 @@ fn a_query_is_asked_of_github_once_the_typing_stops() {
     support::type_text(&mut app, "fold");
     assert_eq!(shown(&app), [123], "the rows here were not matched at once");
     let _ = screen(&mut app);
-    assert_eq!(tally(&app), "Asking GitHub about \"fold\"");
+    assert_eq!(tally(&app), "Searching GitHub for \u{201c}fold\u{201d}");
 
     pump(&mut app, &events, "the search", |app| {
         app.picker()
@@ -18759,7 +18765,7 @@ fn a_query_is_asked_of_github_once_the_typing_stops() {
     assert_eq!(shown(&app), [123, 130]);
     // Counted by the rows above it, not by GitHub's five: what it found
     // that does not match here is not a match here.
-    assert_eq!(tally(&app), "2 match");
+    assert_eq!(tally(&app), "2 matches");
     assert_eq!(
         asked_saying(&answer, "search("),
         1,

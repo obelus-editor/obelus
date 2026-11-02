@@ -1,7 +1,3 @@
-In place
-----
-The agent changes the checkout you are reading, so each change arrives in the file in front of you and undoes like any other. It runs the tests before and after and says what it ran, waits for you to try it, offers to review it, and then asks whether to commit it here, put it on a branch for a pull request, or leave it uncommitted. Nothing is committed or pushed until you say so.
-----
 This project changes its files in the checkout the reader is reading, so that each change arrives where they are looking. Change files with your tools for editing files rather than with a shell command, wherever you can: a write that comes through Obelus lands in the buffer the reader has open and is one change they can undo, where a file rewritten behind it is only re-read. If `git rev-parse --show-toplevel` says this is not a git repository, change the files where they are, say so, and leave out everything below about git.
 
 Before your first change, note which branch the checkout is on and what `git status --porcelain` already shows: those changes are the reader's, and nothing you do may take them with it. Then get the project building and run its tests once, so that a failure afterwards is known to be the change's. If they already fail, say which, and ask whether to go on. If a file you are about to change already has changes of the reader's, say so before changing it, because from then on git cannot tell their lines from yours.

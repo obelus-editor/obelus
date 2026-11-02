@@ -36,6 +36,10 @@ outdated = Outdated
 no-gh = Listing pull requests needs gh, which is not installed
 signed-out = Not signed in to GitHub. Run gh auth login to sign in
 github-failed = GitHub would not answer: { $why }
+# Why GitHub would not answer, after the colon above.
+answer-unreadable = its answer could not be read
+answer-unreadable-because = its answer could not be read: { $error }
+no-reason = it gave no reason
 
 ## What a comment's author did, after their name.
 

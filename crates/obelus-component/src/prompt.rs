@@ -93,7 +93,7 @@ impl PromptKind {
     #[must_use]
     pub fn label(&self) -> std::borrow::Cow<'static, str> {
         std::borrow::Cow::Borrowed(match self {
-            Self::Told(field) => return obelus_i18n::prompt::asking_for(field.name).into(),
+            Self::Told(field) => return obelus_i18n::prompt::asking_for((field.name)()).into(),
             Self::Variable { name, .. } => {
                 return obelus_i18n::prompt::asking_for(name.as_str()).into();
             }

@@ -27,7 +27,10 @@ const PLACE: &str = include_str!("place.txt");
 
 /// What the transcript says where a brief went out, so the reader can see
 /// that something of theirs went with their words.
-pub const SAID: &str = "Told the agent where this conversation was started from";
+#[must_use]
+pub fn said() -> &'static str {
+    obelus_i18n::conversation::told_where_it_started()
+}
 
 /// How much of a selection goes to the agent in its own words.
 ///
@@ -91,8 +94,8 @@ impl Brief {
     #[must_use]
     pub fn label(&self, had: bool) -> String {
         match had {
-            true => format!("Conversation about {}", self.title()),
-            false => format!("New conversation about {}", self.title()),
+            true => obelus_i18n::conversation::conversation_about(self.title()),
+            false => obelus_i18n::conversation::new_conversation_about(self.title()),
         }
     }
 
@@ -132,7 +135,10 @@ impl Place {
             None => (self.line.get() + 1).to_string(),
         };
         match &self.commit {
-            Some(commit) => format!("{}:{lines} at {commit}", self.path.display()),
+            Some(commit) => obelus_i18n::conversation::place_at_commit(
+                commit,
+                format!("{}:{lines}", self.path.display()),
+            ),
             None => format!("{}:{lines}", self.path.display()),
         }
     }

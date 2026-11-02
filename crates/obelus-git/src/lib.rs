@@ -427,23 +427,26 @@ pub fn how_long_ago(when: i64, now: std::time::SystemTime) -> String {
     // A commit from the future is a clock that disagrees, not a fact about
     // the file. "Just now" is the least wrong thing to say about it.
     if seconds < 60 {
-        return "just now".to_string();
+        return obelus_i18n::time::just_now().to_string();
     }
-    for (unit, name) in [
-        (60 * 60 * 24 * 365, "year"),
-        (60 * 60 * 24 * 30, "month"),
-        (60 * 60 * 24 * 7, "week"),
-        (60 * 60 * 24, "day"),
-        (60 * 60, "hour"),
-        (60, "minute"),
-    ] {
+    // A message for each unit, because "3 days ago" is one phrase with its
+    // own plural, and where the number goes is the language's.
+    type Said = fn(i64) -> String;
+    let units: [(i64, Said); 6] = [
+        (60 * 60 * 24 * 365, obelus_i18n::time::years_ago),
+        (60 * 60 * 24 * 30, obelus_i18n::time::months_ago),
+        (60 * 60 * 24 * 7, obelus_i18n::time::weeks_ago),
+        (60 * 60 * 24, obelus_i18n::time::days_ago),
+        (60 * 60, obelus_i18n::time::hours_ago),
+        (60, obelus_i18n::time::minutes_ago),
+    ];
+    for (unit, said) in units {
         let count = seconds / unit;
         if count >= 1 {
-            let plural = if count == 1 { "" } else { "s" };
-            return format!("{count} {name}{plural} ago");
+            return said(count);
         }
     }
-    "just now".to_string()
+    obelus_i18n::time::just_now().to_string()
 }
 
 /// Whether git says anything in the tree has changed.

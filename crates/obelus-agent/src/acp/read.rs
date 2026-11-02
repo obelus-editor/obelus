@@ -324,14 +324,24 @@ pub(crate) fn fields_of(schema: &ElicitationSchema) -> Result<Vec<Field>, String
                                 about: None,
                             })
                             .collect(),
-                        other => return Err(format!("{name} is a list of {other:?}")),
+                        other => {
+                            return Err(obelus_i18n::agent::list_of_a_kind_not_asked(
+                                name.as_str(),
+                                format!("{other:?}"),
+                            ));
+                        }
                     },
                     least: several.min_items,
                     most: several.max_items,
                     chosen: several.default.clone().unwrap_or_default(),
                 },
             ),
-            other => return Err(format!("{name} is a {other:?}")),
+            other => {
+                return Err(obelus_i18n::agent::kind_not_asked(
+                    name.as_str(),
+                    format!("{other:?}"),
+                ));
+            }
         };
         fields.push(Field {
             name: name.clone(),
@@ -506,7 +516,7 @@ pub(crate) fn offers_in(opened: &NewSessionResponse) -> Vec<Setting> {
 pub(crate) fn mode_setting(state: &SessionModeState) -> Setting {
     Setting {
         id: MODE.to_string(),
-        name: "Mode".to_string(),
+        name: obelus_i18n::chat::mode().to_string(),
         about: None,
         values: state
             .available_modes
@@ -669,10 +679,10 @@ fn order_of(order: &AvailableCommand) -> Order {
 fn words(content: &ContentBlock) -> Option<String> {
     match content {
         ContentBlock::Text(text) => Some(text.text.clone()),
-        ContentBlock::Image(_) => Some("(an image)".to_string()),
-        ContentBlock::Audio(_) => Some("(audio)".to_string()),
+        ContentBlock::Image(_) => Some(obelus_i18n::agent::an_image().to_string()),
+        ContentBlock::Audio(_) => Some(obelus_i18n::agent::audio().to_string()),
         ContentBlock::ResourceLink(link) => Some(format!("({})", link.uri)),
-        ContentBlock::Resource(_) => Some("(a resource)".to_string()),
+        ContentBlock::Resource(_) => Some(obelus_i18n::agent::a_resource().to_string()),
         _ => None,
     }
 }

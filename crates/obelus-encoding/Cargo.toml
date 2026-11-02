@@ -10,5 +10,6 @@ license.workspace = true
 workspace = true
 
 [dependencies]
+obelus-i18n.workspace = true
 chardetng.workspace = true
 encoding_rs.workspace = true

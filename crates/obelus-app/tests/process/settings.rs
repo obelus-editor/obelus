@@ -2170,12 +2170,12 @@ fn a_key_that_could_never_fire_is_refused() {
     support::press_control_key(&mut app, KeyCode::Enter);
 
     for (code, modifiers, why) in [
-        (KeyCode::Up, KeyModifiers::NONE, "editor"),
-        (KeyCode::PageDown, KeyModifiers::NONE, "editor"),
-        (KeyCode::Char('z'), KeyModifiers::NONE, "Typing"),
+        (KeyCode::Up, KeyModifiers::NONE, "reserved for moving"),
+        (KeyCode::PageDown, KeyModifiers::NONE, "reserved for moving"),
+        (KeyCode::Char('z'), KeyModifiers::NONE, "for typing"),
         // The front of the reason, which is what a row this narrow has
         // room for once the key is spelled out rather than drawn.
-        (KeyCode::Tab, KeyModifiers::NONE, "every list and box takes"),
+        (KeyCode::Tab, KeyModifiers::NONE, "reserved for lists"),
     ] {
         app.handle(Event::Key(KeyEvent::new(code, modifiers)));
         let dump = support::render(&mut app, 66, 12);
@@ -2940,7 +2940,7 @@ fn the_question_about_every_key_does_not_give_way() {
     let still_asked = |app: &App| {
         app.picker()
             .and_then(|picker| picker.question())
-            .is_some_and(|question| question.starts_with("Put every key back"))
+            .is_some_and(|question| question.starts_with("Reset every key"))
     };
     assert!(still_asked(&app), "the question gave way");
     // Nor to the palette, which lets go of any other list on the status
@@ -3006,7 +3006,7 @@ fn alt_shift_r_asks_and_puts_every_key_back() {
     assert!(
         app.picker()
             .and_then(|picker| picker.question())
-            .is_some_and(|question| question.starts_with("Put every key back")),
+            .is_some_and(|question| question.starts_with("Reset every key")),
         "it did not ask"
     );
     assert_eq!(
@@ -3585,7 +3585,7 @@ fn an_agent_that_has_not_said_what_it_offers_says_so_rather_than_nothing() {
     support::press(&mut app, KeyCode::Up);
     let dump = support::render(&mut app, 66, 12);
     assert!(
-        support::text_block(&dump).contains("Nothing has been heard"),
+        support::text_block(&dump).contains("No answer from"),
         "an agent that has said nothing says nothing:\n{dump}"
     );
 }
@@ -4910,10 +4910,7 @@ fn a_line_that_did_nothing_is_a_warning_on_that_line() {
     // Under the table it is in, which is the only way to say which of an
     // agent's lines is the one that is wrong.
     assert!(
-        said.contains(&(
-            4,
-            "What `agents.copilot` is set to is not a table of its settings"
-        )),
+        said.contains(&(4, "The value of `agents.copilot` must be a table")),
         "{said:?}"
     );
 }
@@ -4982,7 +4979,7 @@ fn each_workflow_says_what_it_does_where_it_is_chosen() {
         "Obelus asks nothing of the agent",
         "straight in the checkout you are reading.",
         "The agent works on a branch",
-        "taken away only when you say so.",
+        "removed only when you say so.",
         "The agent changes the checkout you are reading",
         "until you say so.",
         "No workflow",
@@ -5207,7 +5204,10 @@ fn a_workflow_nothing_answers_to_is_marked() {
 
     let problems: Vec<_> = app.problems().collect();
     assert_eq!(problems.len(), 1, "{problems:?}");
-    assert_eq!(problems[0].message, "Nothing answers to `feature_branch`");
+    assert_eq!(
+        problems[0].message,
+        "Not one of the choices: `feature_branch`"
+    );
     assert_eq!(problems[0].span.line.get(), 0);
     assert_eq!(
         app.config().workflow,
@@ -5235,7 +5235,7 @@ fn a_workflow_nothing_answers_to_is_said_on_the_welcome_screen() {
     support::lay_out(&mut app, 100, 30);
     let dump = support::render(&mut app, 100, 30);
     assert!(
-        support::text_block(&dump).contains("Nothing answers to `feature_branch`"),
+        support::text_block(&dump).contains("Not one of the choices: `feature_branch`"),
         "the welcome screen does not say so:\n{dump}"
     );
 }
@@ -5363,7 +5363,7 @@ fn a_theme_file_that_will_not_read_is_an_error_on_that_file() {
     let problems: Vec<_> = app.problems().collect();
     assert_eq!(problems.len(), 1, "{problems:?}");
     assert!(
-        problems[0].message.starts_with("This theme will not read"),
+        problems[0].message.starts_with("Could not read this theme"),
         "{problems:?}"
     );
     assert_eq!(problems[0].severity, obelus_lsp::trouble::Severity::Error);
@@ -5401,7 +5401,9 @@ fn notes_that_will_not_read_are_an_error_on_the_notes_file() {
     let problems: Vec<_> = app.problems().collect();
     assert_eq!(problems.len(), 1, "{problems:?}");
     assert!(
-        problems[0].message.starts_with("The notes will not read"),
+        problems[0]
+            .message
+            .starts_with("Could not read the notes file"),
         "{problems:?}"
     );
     assert_eq!(problems[0].severity, obelus_lsp::trouble::Severity::Error);

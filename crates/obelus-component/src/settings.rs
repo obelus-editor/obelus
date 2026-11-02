@@ -493,7 +493,7 @@ impl Shown<'_> {
             Self::Silent { .. } => "",
             Self::Bot { row, .. } => match row {
                 BotRow::Platform => obelus_i18n::settings_page::platform(),
-                BotRow::Field(field) => field.name,
+                BotRow::Field(field) => (field.name)(),
                 BotRow::People => obelus_i18n::settings_page::people(),
                 BotRow::Pair => obelus_i18n::settings_page::pair(),
                 BotRow::Setup(setup) => setup.name(),
@@ -516,7 +516,7 @@ impl Shown<'_> {
             Self::Silent { saying, .. } => saying,
             Self::Bot { row, .. } => match row {
                 BotRow::Platform => obelus_i18n::settings_page::platform_about(),
-                BotRow::Field(field) => field.about,
+                BotRow::Field(field) => (field.about)(),
                 BotRow::People => obelus_i18n::settings_page::people_about(),
                 BotRow::Pair => obelus_i18n::settings_page::pair_row_about(),
                 BotRow::Setup(setup) => setup.about(),

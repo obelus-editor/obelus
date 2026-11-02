@@ -82,7 +82,7 @@ pub fn drawn(before: &str, after: &str) -> Vec<Line> {
         let at = hunk.line.get();
         rows.push(Line {
             marker: None,
-            text: format!("line {}", at + 1),
+            text: obelus_i18n::chat::line(at + 1),
         });
         rows.extend(hunk.removed.iter().map(|text| Line {
             marker: Some(Marker::Removed),

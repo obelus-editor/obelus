@@ -339,7 +339,7 @@ fn written(languages: &[Language], model: &BTreeMap<String, Vec<Message>>) -> St
         .collect();
     out.push_str(&format!(
         "/// The messages that take nothing, by file and name, which are said once per language and kept.\n\
-         pub(crate) const PLAIN: [(usize, &str); {}] = [{}];\n",
+         pub(crate) static PLAIN: [(usize, &str); {}] = [{}];\n",
         plain.len(),
         plain
             .iter()

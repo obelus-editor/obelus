@@ -64,10 +64,7 @@ impl Hello {
     #[must_use]
     pub fn refused(&self, theirs: &Self) -> Option<String> {
         (self.version != theirs.version).then(|| {
-            format!(
-                "This Obelus is {} and the other is {}, and they do not speak alike",
-                self.build, theirs.build
-            )
+            obelus_i18n::remote::do_not_speak_alike(self.build.as_str(), theirs.build.as_str())
         })
     }
 }

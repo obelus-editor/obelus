@@ -267,7 +267,7 @@ pub const CLAIM: &str = "installing";
 /// below says why the file on its own was not enough.
 pub fn claim(id: &str, root: &std::path::Path) -> Result<Claim, String> {
     let Some(home) = home(id, root) else {
-        return Err(format!("{id} is not a name Obelus can keep a directory of"));
+        return Err(obelus_i18n::install::not_a_directory_name(id));
     };
     std::fs::create_dir_all(&home).map_err(|error| format!("{home:?}: {error}"))?;
     let path = home.join(CLAIM);
@@ -294,7 +294,7 @@ pub fn claim(id: &str, root: &std::path::Path) -> Result<Claim, String> {
         .open(&path)
         .map_err(|error| format!("{path:?}: {error}"))?;
     if obelus_claim::held_by_somebody_else(&file) {
-        return Err(format!("another Obelus is installing {id}"));
+        return Err(obelus_i18n::install::another_is_installing(id));
     }
     Ok(Claim { path, file })
 }
@@ -375,7 +375,7 @@ pub fn remember(
     root: &std::path::Path,
 ) -> Result<(), String> {
     let Some(home) = home(id, root) else {
-        return Err(format!("{id} is not a name Obelus can keep a directory of"));
+        return Err(obelus_i18n::install::not_a_directory_name(id));
     };
     let record = serde_json::json!({
         "command": command,
@@ -562,7 +562,7 @@ mod tests {
         let mine = super::claim("some-agent", &root).expect("the first claim");
         let theirs = super::claim("some-agent", &root);
         assert!(
-            theirs.is_err_and(|why| why.contains("another Obelus")),
+            theirs.is_err_and(|why| why.contains("Another Obelus")),
             "two of them installed it at once"
         );
         // And another agent is another install, which this says nothing

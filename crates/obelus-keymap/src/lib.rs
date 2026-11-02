@@ -901,17 +901,17 @@ pub fn why_not(chord: KeyChord) -> Option<&'static str> {
         | KeyCode::PageDown
             if !alt =>
         {
-            Some("The editor's own, for moving about a file")
+            Some(obelus_i18n::keys::moves_the_cursor())
         }
         // Enter under alt is the only one of these that is a chord: the
         // rest are what a dialog takes and what typing will mean.
         KeyCode::Enter if chord.modifiers == KeyModifiers::ALT => None,
         KeyCode::Enter | KeyCode::Tab | KeyCode::BackTab | KeyCode::Backspace | KeyCode::Delete => {
-            Some("Every list and box takes this one itself")
+            Some(obelus_i18n::keys::lists_take_it())
         }
         // Escape has one meaning everywhere: give up on the nearest thing.
-        KeyCode::Esc => Some("Escape always backs out of the nearest thing"),
-        KeyCode::Char(_) if alone => Some("Typing, not a command"),
+        KeyCode::Esc => Some(obelus_i18n::keys::escape_backs_out()),
+        KeyCode::Char(_) if alone => Some(obelus_i18n::keys::typing()),
         // Copy and paste, under the names the desktop knows them by --
         // `shift+Insert` and `ctrl+Insert` are shipped, and are not Obelus
         // naming a command with shift. These two are the chords a terminal
@@ -965,7 +965,7 @@ pub fn why_not(chord: KeyChord) -> Option<&'static str> {
         | KeyCode::End
         | KeyCode::PageUp
         | KeyCode::PageDown => None,
-        _ => Some("Not a key Obelus can be given"),
+        _ => Some(obelus_i18n::keys::never_arrives()),
     }
 }
 

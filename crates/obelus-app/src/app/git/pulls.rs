@@ -63,8 +63,11 @@ const SETTLES_AFTER: std::time::Duration = std::time::Duration::from_millis(300)
 /// box in front of the word.
 fn tabs() -> [String; 2] {
     [
-        (obelus_icons::ui::PULL_REQUEST, "Pull requests"),
-        (obelus_icons::ui::ISSUE, "Issues"),
+        (
+            obelus_icons::ui::PULL_REQUEST,
+            obelus_i18n::git::tab_pull_requests(),
+        ),
+        (obelus_icons::ui::ISSUE, obelus_i18n::git::tab_issues()),
     ]
     .map(|(mark, name)| {
         if obelus_icons::enabled() {
@@ -454,7 +457,10 @@ impl<T: Listable> Listing<T> {
         let stuck = |why: &Unlisted| {
             Some(Tally {
                 words: unlisted(why),
-                key: Some(("\u{2193}".to_string(), "Try again".to_string())),
+                key: Some((
+                    "\u{2193}".to_string(),
+                    obelus_i18n::gone::try_again().to_string(),
+                )),
             })
         };
         let search = self.search_for(query);
@@ -463,43 +469,43 @@ impl<T: Listable> Listing<T> {
         let searching = !query.is_empty()
             && self.searchable()
             && search.map_or(settling, |search| search.asking);
-        let matching = match matched {
-            1 => "1 matches".to_string(),
-            matched => format!("{matched} match"),
-        };
         let tally = match (query.is_empty(), search) {
             (false, _) if !self.searchable() => None,
-            (false, _) if searching => words(format!("Asking GitHub about \"{query}\"")),
+            (false, _) if searching => words(obelus_i18n::git::searching_github(query)),
             (false, Some(search)) => match (&search.stalled, &search.older) {
                 (Some(why), _) => stuck(why),
                 (None, _) if !search.answered => None,
-                (None, Some(_)) => words(format!("{matching} so far")),
+                (None, Some(_)) => words(obelus_i18n::git::matches_so_far(matched)),
                 // GitHub's search stops at a thousand, whatever it counts.
                 (None, None)
                     if search.found.len() >= SEARCH_GIVES
                         && search.total > search.found.len() as u64 =>
                 {
-                    words(format!("{matching} \u{b7} GitHub gives no more"))
+                    words(obelus_i18n::git::matches_and_no_more(matched))
                 }
-                (None, None) => words(matching),
+                (None, None) => words(obelus_i18n::git::matches(matched)),
             },
             (false, None) => None,
             (true, _) => match (&self.asking, self.paging, &self.stalled, &self.stale) {
-                (_, true, ..) => words(format!("Asking GitHub for {PAGE} more")),
-                (Some(Toward::Newer(_)), ..) => words("Asking GitHub what has changed".to_string()),
+                (_, true, ..) => words(obelus_i18n::git::asking_for_more(PAGE)),
+                (Some(Toward::Newer(_)), ..) => {
+                    words(obelus_i18n::git::asking_what_changed().to_string())
+                }
                 (Some(_), ..) => None,
                 (None, false, Some(why), _) => stuck(why),
                 _ if !self.answered => None,
                 // Nothing to press: the rows are what they were, and the
                 // next opening asks again.
                 (None, false, None, Some(why)) => {
-                    words(format!("May be out of date \u{b7} {}", unlisted(why)))
+                    words(obelus_i18n::git::may_be_out_of_date(unlisted(why)))
                 }
                 (None, false, None, None) => {
                     let listed = self.listed.len();
                     match (self.older.is_some(), self.total) {
-                        (true, Some(total)) => words(format!("{listed} of {total} open")),
-                        _ => words(format!("{listed} open")),
+                        (true, Some(total)) => {
+                            words(obelus_i18n::git::open_of_total(listed, total))
+                        }
+                        _ => words(obelus_i18n::git::open_count(listed)),
                     }
                 }
             },
@@ -512,10 +518,12 @@ impl<T: Listable> Listing<T> {
             .filter(|search| !search.answered)
             .and_then(|search| search.stalled.as_ref());
         let empty = match (&self.asking, &self.unlisted, unasked) {
-            (Some(Toward::First), ..) => ("Still asking GitHub".to_string(), true),
+            (Some(Toward::First), ..) => {
+                (obelus_i18n::git::still_asking_github().to_string(), true)
+            }
             (_, Some(why), _) if !self.answered => (unlisted(why), true),
             (_, _, Some(why)) if !query.is_empty() => (unlisted(why), true),
-            _ if searching => ("Still asking GitHub".to_string(), true),
+            _ if searching => (obelus_i18n::git::still_asking_github().to_string(), true),
             _ => (none.to_string(), false),
         };
         let unfinished = match query.is_empty() {
@@ -580,7 +588,7 @@ impl App {
     /// the first time a window asks, it waits.
     pub fn show_the_pull_requests(&mut self) {
         let mut picker = Picker::new(Vec::new(), PickerLayout::FullArea);
-        picker.before_typing("Filter by title or number");
+        picker.before_typing(obelus_i18n::git::filter_by_title_or_number());
         // Newest first whatever is typed: a query says which are left, and
         // a ranking would put a pull request from last year above this
         // morning's because its title scored better.
@@ -993,14 +1001,18 @@ impl App {
             .as_ref()
             .map_or(0, obelus_component::picker::Picker::match_count);
         let said = match self.showing_issues() {
-            true => self
-                .pulls
-                .issues
-                .says(&query, settling, matched, "No issue is open"),
-            false => self
-                .pulls
-                .pulls
-                .says(&query, settling, matched, "No pull request is open"),
+            true => self.pulls.issues.says(
+                &query,
+                settling,
+                matched,
+                obelus_i18n::git::no_open_issues(),
+            ),
+            false => self.pulls.pulls.says(
+                &query,
+                settling,
+                matched,
+                obelus_i18n::git::no_open_pull_requests(),
+            ),
         };
         if let Some(picker) = self.picker.as_mut() {
             let (empty, whatever_is_typed) = &said.empty;
@@ -1012,7 +1024,10 @@ impl App {
             // every list still waiting on its rows wears: in front of that
             // line where there are no rows, and after the box where the
             // rows already there are standing in.
-            picker.filling(said.turning.then(|| "Asking GitHub\u{2026}".to_string()));
+            picker.filling(
+                said.turning
+                    .then(|| obelus_i18n::git::asking_github().to_string()),
+            );
             picker.tally(said.tally);
             picker.unfinished(said.unfinished);
         }
@@ -1049,7 +1064,7 @@ impl App {
             icon: None,
             marker,
             label: format!("{number} {}", pull.title),
-            detail: pull.draft.then(|| "Draft".to_string()),
+            detail: pull.draft.then(|| obelus_i18n::git::draft().to_string()),
             trailing,
             changed: None,
             version: None,
@@ -1275,8 +1290,8 @@ impl App {
     #[must_use]
     pub(in crate::app) fn what_a_review_is_called(&self, number: u64) -> String {
         match self.pull_request(number) {
-            Some(pull) => format!("Review #{number}: {}", pull.title),
-            None => format!("Review #{number}"),
+            Some(pull) => obelus_i18n::git::review_named(number, &pull.title),
+            None => obelus_i18n::git::review(number),
         }
     }
 
@@ -1285,8 +1300,8 @@ impl App {
     #[must_use]
     pub(in crate::app) fn what_an_answer_is_called(&self, number: u64) -> String {
         match self.issue(number) {
-            Some(issue) => format!("Issue #{number}: {}", issue.title),
-            None => format!("Issue #{number}"),
+            Some(issue) => obelus_i18n::git::issue_named(number, &issue.title),
+            None => obelus_i18n::status::issue(number),
         }
     }
 
@@ -1424,7 +1439,7 @@ mod tests {
             older: Some("next".to_string()),
             ..super::Search::new("fold".to_string(), 1)
         });
-        assert_eq!(words(&tab, "fold", 97), "97 match so far");
+        assert_eq!(words(&tab, "fold", 97), "97 matches so far");
         if let Some(search) = tab.search.as_mut() {
             search.found = (0..1000).collect();
             search.total = 4210;
@@ -1432,28 +1447,28 @@ mod tests {
         }
         assert_eq!(
             words(&tab, "fold", 97),
-            "97 match \u{b7} GitHub gives no more"
+            "97 matches \u{b7} GitHub gives no more"
         );
         if let Some(search) = tab.search.as_mut() {
             search.total = 1000;
         }
-        assert_eq!(words(&tab, "fold", 97), "97 match");
-        assert_eq!(words(&tab, "fold", 1), "1 matches");
+        assert_eq!(words(&tab, "fold", 97), "97 matches");
+        assert_eq!(words(&tab, "fold", 1), "1 match");
         // The typing settling says GitHub is about to be asked -- but not on
         // a tab that has asked already, which walking back onto is.
-        assert_eq!(words(&tab, "fold", 97), "97 match");
+        assert_eq!(words(&tab, "fold", 97), "97 matches");
         assert_eq!(
             tab.says("fold", true, 97, "None")
                 .tally
                 .map(|tally| tally.words),
-            Some("97 match".to_string())
+            Some("97 matches".to_string())
         );
         tab.search = None;
         assert_eq!(
             tab.says("fold", true, 97, "None")
                 .tally
                 .map(|tally| tally.words),
-            Some("Asking GitHub about \"fold\"".to_string())
+            Some("Searching GitHub for \u{201c}fold\u{201d}".to_string())
         );
 
         tab.stalled = Some(super::Unlisted::Failed("EOF".to_string()));

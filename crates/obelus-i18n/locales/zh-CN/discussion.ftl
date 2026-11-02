@@ -30,6 +30,10 @@ outdated = 已过时
 no-gh = 列出拉取请求需要 gh，但它没有安装
 signed-out = 尚未登录 GitHub。运行 gh auth login 登录
 github-failed = GitHub 没有响应：{ $why }
+# GitHub 没有响应的原因，跟在上面那句的冒号后面。
+answer-unreadable = 无法解析它的回答
+answer-unreadable-because = 无法解析它的回答：{ $error }
+no-reason = 它没有给出原因
 
 ## 评论作者做了什么，跟在名字后面。
 

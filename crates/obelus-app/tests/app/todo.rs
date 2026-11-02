@@ -1293,7 +1293,9 @@ fn the_notes_do_not_open_on_a_file_that_will_not_read() {
         "the notes opened on a file Obelus cannot read"
     );
     assert!(
-        app.note().unwrap_or_default().contains("will not read"),
+        app.note()
+            .unwrap_or_default()
+            .contains("Could not read the notes file"),
         "the reader was not told why nothing happened: {:?}",
         app.note()
     );
@@ -1331,7 +1333,9 @@ fn what_was_done_while_the_file_would_not_read_lands_when_it_reads_again() {
     // The reader ticks the note off anyway, and is told it went nowhere.
     app.handle(alt(KeyCode::Char(' ')));
     assert!(
-        app.note().unwrap_or_default().contains("will not read"),
+        app.note()
+            .unwrap_or_default()
+            .contains("Could not read the notes file"),
         "the reader was not told: {:?}",
         app.note()
     );
@@ -1504,7 +1508,7 @@ fn ticking_off_a_note_another_window_took_away_does_not_put_it_back() {
         "the other note went too:\n{after}"
     );
     assert!(
-        one.note().unwrap_or_default().contains("taken away"),
+        one.note().unwrap_or_default().contains("deleted elsewhere"),
         "the reader was not told: {:?}",
         one.note()
     );
@@ -1549,7 +1553,7 @@ fn a_note_being_typed_in_stays_with_the_reader_who_is_typing() {
         "what the reader was typing was lost:\n{after}"
     );
     assert!(
-        one.note().unwrap_or_default().contains("taken away"),
+        one.note().unwrap_or_default().contains("deleted elsewhere"),
         "the reader was not told: {:?}",
         one.note()
     );

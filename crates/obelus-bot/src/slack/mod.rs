@@ -12,30 +12,30 @@ pub static DESCRIPTION: Description = Description {
     fields: &[
         Field {
             key: "app_token",
-            name: "App token",
-            about: "Socket Mode's token, from Basic Information",
+            name: obelus_i18n::bot::slack_app_token,
+            about: obelus_i18n::bot::slack_app_token_about,
             kind: FieldKind::Secret {
                 looks_like: "xapp-",
             },
         },
         Field {
             key: "bot_token",
-            name: "Bot token",
-            about: "From OAuth & Permissions, once the app is installed",
+            name: obelus_i18n::bot::slack_bot_token,
+            about: obelus_i18n::bot::slack_bot_token_about,
             kind: FieldKind::Secret {
                 looks_like: "xoxb-",
             },
         },
     ],
     setup: Setup::Copy {
-        name: "Manifest",
+        name: obelus_i18n::bot::slack_manifest,
         // One app per machine, said where the app is made: Slack hands each
         // event of an app to one of its connections at random, so two
         // machines on one app each hear half of what is said and neither can
         // tell. Keeping the tokens in this machine's state keeps them from
         // following a reader's settings to another machine; this keeps the
         // reader from putting them there.
-        about: "One app per machine: paste it into Create New App → From a manifest",
+        about: obelus_i18n::bot::slack_manifest_about,
         text: manifest,
     },
     begin: "Send a message here to talk to an agent; it answers in the thread under it.",

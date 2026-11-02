@@ -19,7 +19,7 @@ use crate::support;
 const CALLED: [&str; 4] = ["Obelus", "Mnemonic", "VS Code", "TextMate"];
 
 /// What the list asks, which is how a test tells it from any other list.
-const ASKED: &str = "Which keys Obelus starts from";
+const ASKED: &str = "Choose a keymap";
 
 /// An application on a scratch project, with a settings file of its own
 /// that holds `contents` -- or that is not there at all, for `None`.
