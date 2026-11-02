@@ -892,7 +892,7 @@ pub const ROLES: &[&str] = &[
     "obelus",
     "soldier",
     "butler",
-    "copilot",
+    "first-officer",
     "apprentice",
     "eunuch",
 ];

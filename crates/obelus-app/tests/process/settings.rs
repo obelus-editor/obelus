@@ -4993,10 +4993,11 @@ fn each_workflow_says_what_it_does_where_it_is_chosen() {
 /// the one chosen is what the row says and what the file keeps.
 ///
 /// Broken deliberately three ways: the choices with no detail, which
-/// leaves `few words` off the list; `called` not naming a role, which
-/// leaves `soldier` on the row where `Soldier and commander` should be;
-/// and the list at the ordinary height, which draws only the choices
-/// around the one in force and leaves `Soldier and commander` off it.
+/// leaves `calls itself Obelus` and `few words` off the list; `called` not
+/// naming a role, which leaves `soldier` on the row where `Soldier and
+/// commander` should be; and the list at the ordinary height, which draws only
+/// the choices around the one in force and leaves `Soldier and commander` off
+/// it.
 #[test]
 fn a_role_is_chosen_from_a_list_that_says_who_the_agent_is() {
     let _turn = crate::turn();
@@ -5012,8 +5013,10 @@ fn a_role_is_chosen_from_a_list_that_says_who_the_agent_is() {
         .filter_map(|row| row.split_once('|').map(|(_, cells)| cells.trim()))
         .collect::<Vec<_>>()
         .join(" ");
+    // Words of the list's own rather than `Obelus`, which the row behind
+    // it says as well.
     for said in [
-        "Obelus",
+        "calls itself Obelus",
         "Soldier and commander",
         "the outcome first, in few words",
         "Eunuch and emperor",

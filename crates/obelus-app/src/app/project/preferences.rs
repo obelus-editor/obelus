@@ -541,7 +541,7 @@ impl App {
         // does: a name like `feature-branch` says what it is only to
         // somebody who knows the term, and the words that say it are in
         // the file beside what the agent is handed. And the roles, for
-        // the same reason: `copilot` is a word, and who the agent becomes
+        // the same reason: `butler` is a word, and who the agent becomes
         // in it is a sentence.
         let choices: Vec<(String, Option<String>)> = match key {
             "theme" => self.themes().into_iter().map(|name| (name, None)).collect(),

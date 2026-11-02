@@ -109,7 +109,7 @@ const ROLES: &[(&str, &str)] = &[
     ("obelus", include_str!("roles/obelus.txt")),
     ("soldier", include_str!("roles/soldier.txt")),
     ("butler", include_str!("roles/butler.txt")),
-    ("copilot", include_str!("roles/copilot.txt")),
+    ("first-officer", include_str!("roles/first-officer.txt")),
     ("apprentice", include_str!("roles/apprentice.txt")),
     ("eunuch", include_str!("roles/eunuch.txt")),
 ];
@@ -126,8 +126,9 @@ pub(in crate::app) fn roles() -> impl Iterator<Item = (&'static str, &'static st
 /// What the agent is told of the role the reader has chosen.
 ///
 /// A word Obelus does not know is the first role, which is what the
-/// setting holds before the reader chooses: the file is read with the word
-/// checked, so this is only ever a word a newer Obelus wrote.
+/// setting holds before the reader chooses. Reading the file refuses such
+/// a word before it gets here, so only a config set some other way --
+/// `Config::set`, a test -- can hand one over.
 fn role(word: &str) -> &'static str {
     let (_, file) = ROLES
         .iter()
