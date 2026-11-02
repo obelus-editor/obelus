@@ -554,36 +554,48 @@ impl Painter {
     /// out, by `letters`. Cell by cell, because a rule some later view
     /// covered part of is a line only where it was not covered.
     pub(super) fn rules(&mut self, page: &Page, ruled: &[Ruled], cell: CellSize) {
+        for rule in ruled {
+            let y = rule.area.y;
+            for x in rule.area.left()..rule.area.right() {
+                if let Some(span) = rule.spans(page, x, y) {
+                    self.rule_in(x, y, span, page, page.look(x, y).foreground, cell);
+                }
+            }
+        }
+    }
+
+    /// One cell of a rule's line: the part of the cell `span` says, out
+    /// into the strip round the grid at either end of the row.
+    ///
+    /// One answer, for the page and for the picture of what a pane was put
+    /// over (`pane_under`, `seen_under_rows`). The picture drew the rule
+    /// as its glyph, and while a list that types on the status row slid
+    /// in, that glyph was the status row's rule: a cell wide at the end,
+    /// short of the window's edge, and a pixel off the line it became.
+    pub(super) fn rule_in(
+        &mut self,
+        x: u16,
+        y: u16,
+        span: (f32, f32),
+        page: &Page,
+        ink: Color,
+        cell: CellSize,
+    ) {
         #[expect(
             clippy::cast_precision_loss,
             reason = "a window is thousands of pixels, not millions"
         )]
         let right = self.configured.width as f32;
         let line = thickness(cell.height);
-        for rule in ruled {
-            let y = rule.area.y;
-            let top = middle(f32::from(y) * cell.height, cell.height, line);
-            for x in rule.area.left()..rule.area.right() {
-                let Some((from, to)) = rule.spans(page, x, y) else {
-                    continue;
-                };
-                let (start, end) = across_the_strip(
-                    x,
-                    (from, to),
-                    page.columns(),
-                    cell.width,
-                    right,
-                    self.margin[0],
-                );
-                self.block(
-                    start,
-                    top,
-                    (end - start).max(1.0),
-                    line,
-                    rgba(page.look(x, y).foreground, Ink::Foreground),
-                );
-            }
-        }
+        let (start, end) =
+            across_the_strip(x, span, page.columns(), cell.width, right, self.margin[0]);
+        self.block(
+            start,
+            middle(f32::from(y) * cell.height, cell.height, line),
+            (end - start).max(1.0),
+            line,
+            rgba(ink, Ink::Foreground),
+        );
     }
 
     /// The lines between one thing and the next where there is no row for

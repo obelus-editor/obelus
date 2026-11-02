@@ -1933,7 +1933,7 @@ mod tests {
 
     use super::{
         glass::{
-            Source, above_its_line, behind_row, beneath, by_source, casting, left_out,
+            BehindRow, Source, above_its_line, behind_row, beneath, by_source, casting, left_out,
             lettered_behind, plates_behind, reached, sliding, tiles,
         },
         ground::{held_runs, runs, without},
@@ -2823,6 +2823,33 @@ mod tests {
         );
     }
 
+    /// And a rule said before the pane, which the picture draws as the line
+    /// the page does rather than as its glyph -- what is asked here is
+    /// which cells are lines and which are left to the letters; the line
+    /// itself is `rule_in`, the one the page's rules are drawn by.
+    ///
+    /// Deliberate breaks: leave the lined cells in `lettered`, and the
+    /// glyph is drawn over the line -- the second assertion; hand back no
+    /// lines, and the status row's rule under a list sliding in is the
+    /// glyph again, a cell short of the window's edge -- the first.
+    #[test]
+    fn a_rule_is_a_line_and_not_a_letter_behind_a_pane() {
+        let behind = behind("a\u{2500}\u{2500}b");
+        let ruled = [Ruled {
+            area: ratatui::layout::Rect::new(1, 0, 2, 1),
+            depth: 0,
+        }];
+        let BehindRow {
+            lettered, lined, ..
+        } = behind_row(&behind, &page(""), (&[], &[], &ruled), 0);
+        assert_eq!(
+            lined,
+            vec![(1, (0.0, 1.0)), (2, (0.0, 1.0))],
+            "the rule's cells"
+        );
+        assert_eq!(lettered, vec![0, 3], "and nothing else's letters");
+    }
+
     /// And the mark that turns, which the picture behind a list draws as
     /// the arc the page does -- a transcript seen through the glass of a
     /// file picker had its spinner back in braille. What is asked here is
@@ -2847,7 +2874,7 @@ mod tests {
             depth: 0,
         };
         let spun = [one(1), one(2)];
-        let (_, lettered) = behind_row(&behind, &[], &spun, 0);
+        let lettered = behind_row(&behind, &page(""), (&[], &spun, &[]), 0).lettered;
         assert_eq!(
             lettered,
             vec![0, 1, 3],
@@ -2870,7 +2897,7 @@ mod tests {
         // And its cell is the picture's letter, then: there is no arc there.
         //
         // Deliberate break: drop the depth from `turns_at`.
-        let (_, lettered) = behind_row(&behind, &[], &[on_the_pane], 0);
+        let lettered = behind_row(&behind, &page(""), (&[], &[on_the_pane], &[]), 0).lettered;
         assert_eq!(lettered, vec![0, 1, 2, 3], "the picture's own braille");
     }
 
@@ -3250,7 +3277,9 @@ mod tests {
     #[test]
     fn so_does_the_picture_a_panes_glass_reads() {
         let behind = behind("\u{4e2d}\u{6587}");
-        let (grounds, lettered) = behind_row(&behind, &[], &[], 0);
+        let BehindRow {
+            grounds, lettered, ..
+        } = behind_row(&behind, &page(""), (&[], &[], &[]), 0);
 
         // Both characters under one run of their own colour: nothing of
         // the reset cells is left to be drawn over a glyph.

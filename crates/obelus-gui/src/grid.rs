@@ -796,15 +796,41 @@ impl Ruled {
     /// row's rule among them, under a list that types on the status row.
     /// Drawn as its glyph there, the line stopped at the last whole cell
     /// and stood a pixel off the line drawn once the pane had arrived.
-    pub(crate) fn spans_behind(&self, behind: &Behind, x: u16, y: u16) -> Option<(f32, f32)> {
+    ///
+    /// The picture is the page as the panes and boxes before this one left
+    /// it, so a cell one of them covers after the rule was said is theirs
+    /// -- the same question `spans` asks of the page, asked of fewer of
+    /// them.
+    pub(crate) fn spans_behind(
+        &self,
+        page: &Page,
+        behind: &Behind,
+        x: u16,
+        y: u16,
+    ) -> Option<(f32, f32)> {
         if y != self.area.y
             || x < self.area.x
             || x >= self.area.right()
             || self.depth > behind.depth
+            || page.layer_under(x, y, behind.depth) > self.depth
         {
             return None;
         }
         across(behind.look(x, y)?.text)
+    }
+
+    /// Where the first rule said before `behind` runs across this cell of
+    /// its picture, if one does -- see `spans_behind`.
+    pub(crate) fn behind(
+        ruled: &[Self],
+        page: &Page,
+        behind: &Behind,
+        x: u16,
+        y: u16,
+    ) -> Option<(f32, f32)> {
+        ruled
+            .iter()
+            .find_map(|rule| rule.spans_behind(page, behind, x, y))
     }
 
     /// Whether every cell of the row is still this rule's.
@@ -1217,8 +1243,16 @@ impl Page {
     /// and a cell deeper than that is somebody else's by now, whatever it
     /// holds.
     pub(crate) fn layer(&self, x: u16, y: u16) -> usize {
+        self.layer_under(x, y, self.put_over.len())
+    }
+
+    /// The same, as the page was before the panes and boxes from `depth`
+    /// on were put over it -- which is the picture the one at `depth`
+    /// reads.
+    pub(crate) fn layer_under(&self, x: u16, y: u16, depth: usize) -> usize {
         self.put_over
             .iter()
+            .take(depth)
             .rposition(|over| over.contains(Position { x, y }))
             .map_or(0, |at| at + 1)
     }
@@ -2117,10 +2151,16 @@ mod tests {
     /// line, where the picture still holds the rule's glyphs, and nothing
     /// else as one.
     ///
-    /// Deliberate break: answer `None` from `spans_behind` -- the status
+    /// And over a box said after the rule, the box's cells in the picture
+    /// are the box's, whatever they hold -- the second pane in a stack
+    /// reads a picture with the first one in it.
+    ///
+    /// Deliberate breaks: answer `None` from `spans_behind` -- the status
     /// row's rule under a list sliding in is then its glyph again, a cell
     /// wide at the end and short of the window's edge -- and the first
-    /// assertion fails. Dropping the depth guard fails the third.
+    /// assertion fails. Dropping the depth guard fails the third; dropping
+    /// the `layer_under` guard fails the box's cell; dropping the column
+    /// guard fails the last.
     #[test]
     fn a_rule_under_a_pane_is_a_line_in_its_picture() {
         let glyph = |text: &str| {
@@ -2128,6 +2168,7 @@ mod tests {
             cell.set_symbol(text);
             cell
         };
+        let page = written(&["    "; 5]);
         let under = Behind {
             cells: vec![glyph("\u{2500}"), glyph("\u{2524}"), glyph("a"), glyph(" ")],
             ..pane(Rect::new(0, 3, 2, 2))
@@ -2137,24 +2178,62 @@ mod tests {
             depth,
         };
         assert_eq!(
-            rule(0).spans_behind(&under, 0, 3),
+            rule(0).spans_behind(&page, &under, 0, 3),
             Some((0.0, 1.0)),
             "a rule said before the pane"
         );
         assert_eq!(
-            rule(0).spans_behind(&under, 1, 3),
+            rule(0).spans_behind(&page, &under, 1, 3),
             Some((0.0, 0.5)),
             "a tee"
         );
         assert_eq!(
-            rule(1).spans_behind(&under, 0, 3),
+            rule(1).spans_behind(&page, &under, 0, 3),
             None,
             "a rule said on the pane is not in what it was put over"
         );
         assert_eq!(
-            rule(0).spans_behind(&under, 0, 4),
+            rule(0).spans_behind(&page, &under, 0, 4),
             None,
             "a row the rule is not on"
+        );
+
+        // A box over the rule's right half, and a pane over both: the
+        // box's top edge is in the second pane's picture where the rule
+        // was, in the same glyph.
+        let mut page = written(&["    "; 5]);
+        let frame = Behind {
+            joined: Joined::Nowhere,
+            ..pane(Rect::new(2, 3, 2, 2))
+        };
+        let over = Behind {
+            cells: ["\u{2500}"; 8].map(glyph).to_vec(),
+            depth: 1,
+            ..pane(Rect::new(0, 3, 4, 2))
+        };
+        page.put_over(&[frame, over.clone()]);
+        let rule = Ruled {
+            area: Rect::new(0, 3, 4, 1),
+            depth: 0,
+        };
+        assert_eq!(
+            rule.spans_behind(&page, &over, 1, 3),
+            Some((0.0, 1.0)),
+            "the rule beside the box"
+        );
+        assert_eq!(
+            rule.spans_behind(&page, &over, 2, 3),
+            None,
+            "the box's own cell"
+        );
+        let short = Ruled {
+            area: Rect::new(0, 3, 1, 1),
+            depth: 0,
+        };
+        assert_eq!(
+            short.spans_behind(&page, &over, 1, 3),
+            None,
+            "a column the rule does not reach"
         );
     }
 
