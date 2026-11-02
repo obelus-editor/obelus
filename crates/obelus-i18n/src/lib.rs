@@ -17,8 +17,21 @@
 //! (`open-file`), a setting's key and a theme's name are names, written the
 //! way the reader's files write them, in any language. What Obelus says to
 //! an agent -- the opening brief, the tools' descriptions, a refusal -- is
-//! a prompt and stays English. And what arrives from elsewhere -- an agent,
-//! a server, the system's own error -- is left exactly as it came.
+//! a prompt and stays English, and so does what goes to a chat's thread,
+//! which the people in it read whatever this reader chose ([`in_english`]).
+//! And what arrives from elsewhere -- an agent, a server, the system's own
+//! error -- is left exactly as it came.
+//!
+//! A log line is not copy either, and keeps the English Rust writes it in.
+//! What it carries need not: a reason the reader was shown goes into the
+//! log as they were shown it, which on a machine that reads Chinese is
+//! where the system's own errors already are.
+//!
+//! A message's variables are its function's parameters in the order of
+//! their names, not the order the sentence says them in -- which differs
+//! from language to language, and is why it cannot be the order. Two words
+//! passed the wrong way round both compile, so a call with two of a kind
+//! names what it passes where the call is read.
 //!
 //! A message that takes nothing is said once per language, the first time
 //! any is asked for, and handed out as a `&'static str` after that: the
@@ -27,7 +40,7 @@
 //! need to do.
 
 use std::sync::{
-    LazyLock, OnceLock,
+    LazyLock,
     atomic::{AtomicUsize, Ordering},
 };
 
@@ -122,24 +135,48 @@ impl Language {
 /// whatever machine it runs on.
 static SPOKEN: AtomicUsize = AtomicUsize::new(0);
 
-/// What the system asked for, once somebody has asked it.
+/// What the reader's machine reads, by [`Language::index`], once somebody
+/// has said -- [`NOBODY_SAID`] until then.
 ///
-/// Asked from the start of a real Obelus and nowhere else, which is what
+/// Said from the start of a real Obelus and nowhere else, which is what
 /// keeps `auto` from meaning the test machine's language in a test.
-static SYSTEM: OnceLock<Language> = OnceLock::new();
+static SYSTEM: AtomicUsize = AtomicUsize::new(NOBODY_SAID);
 
-/// Asks the system which language its reader reads, for `auto`.
+/// What [`SYSTEM`] holds before anybody has said.
+const NOBODY_SAID: usize = usize::MAX;
+
+/// Asks this machine which language its reader reads, for `auto`.
 ///
 /// Once, before the settings are first applied: a locale is not something
 /// that changes under a running program, and asking is reading the
-/// environment or the registry.
+/// environment or the registry. Nothing where the reader's machine has
+/// already said ([`hear_the_reader`]).
 pub fn hear_the_system() {
-    SYSTEM.get_or_init(|| {
-        let locale = sys_locale::get_locale().unwrap_or_default();
-        let language = Language::of_the_locale(&locale);
+    let locale = sys_locale::get_locale().unwrap_or_default();
+    let language = Language::of_the_locale(&locale);
+    let heard = SYSTEM.compare_exchange(
+        NOBODY_SAID,
+        language.index(),
+        Ordering::Relaxed,
+        Ordering::Relaxed,
+    );
+    if heard.is_ok() {
         tracing::info!(locale, language = language.word(), "the system's language");
-        language
-    });
+    }
+}
+
+/// Hears which language the reader's machine reads, for `auto`, where that
+/// is not the machine Obelus runs on: a window at the other end of a
+/// connection says it when it knocks, and a server has no language of the
+/// reader's to ask.
+pub fn hear_the_reader(locale: &str) {
+    let language = Language::of_the_locale(locale);
+    tracing::info!(
+        locale,
+        language = language.word(),
+        "the reader's machine's language"
+    );
+    SYSTEM.store(language.index(), Ordering::Relaxed);
 }
 
 /// Speaks what the `language` setting says: one of [`CHOICES`].
@@ -149,7 +186,10 @@ pub fn hear_the_system() {
 /// already marked it in the file, and the program has to say something.
 pub fn speak(choice: &str) {
     let language = match choice {
-        "auto" => SYSTEM.get().copied().unwrap_or_default(),
+        "auto" => Language::ALL
+            .get(SYSTEM.load(Ordering::Relaxed))
+            .copied()
+            .unwrap_or_default(),
         word => Language::named(word).unwrap_or_default(),
     };
     SPOKEN.store(language.index(), Ordering::Relaxed);

@@ -329,6 +329,7 @@ fn started(knock: &Knock, windows: &Windows) -> Result<Entered> {
             front: knock.front.clone(),
             size: knock.size,
             path: knock.path.clone(),
+            locale: knock.locale.clone(),
         },
     );
     let reading: Arc<Mutex<Option<Reader>>> = Arc::default();

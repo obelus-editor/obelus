@@ -535,7 +535,6 @@ winresource = "0.1.31"
 # checked against each other and made into a function each.
 fluent-bundle = "0.16"
 fluent-syntax = "0.12"
-unic-langid = "0.9"
 
 # Which language the reader reads, which on Windows decides which face Han is
 # drawn in: see `obelus-gui`'s `cascade.rs`. The crate cosmic-text asks the

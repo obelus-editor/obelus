@@ -304,6 +304,9 @@ fn knock(
             size: [size.width, size.height, pixels.width, pixels.height],
             path: afar.path.clone(),
             window: window.map(str::to_string),
+            // This machine's, because it is the reader's: the one at the
+            // other end may be a server with no language of its own.
+            locale: sys_locale::get_locale(),
         },
     )?;
     let answered: Answered =

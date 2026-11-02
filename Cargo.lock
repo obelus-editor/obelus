@@ -4576,6 +4576,7 @@ dependencies = [
  "serde",
  "sha2 0.11.0",
  "socket2",
+ "sys-locale",
  "tracing",
 ]
 
@@ -4658,7 +4659,6 @@ dependencies = [
  "fluent-syntax",
  "sys-locale",
  "tracing",
- "unic-langid",
 ]
 
 [[package]]

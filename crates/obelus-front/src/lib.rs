@@ -1215,6 +1215,7 @@ mod tests {
                 size: [120, 40, 1440, 960],
                 path: None,
                 window: None,
+                locale: Some("zh-CN".to_string()),
             })
             .expect("framed"),
         );
@@ -1320,6 +1321,7 @@ mod tests {
                 },
                 size: [80, 24, 0, 0],
                 path: Some("/p".to_string()),
+                locale: None,
             },
             link::ToChild::Up(link::Up::Input(Input::Closed)),
             link::ToChild::Attached {

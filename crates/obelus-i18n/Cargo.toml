@@ -13,7 +13,6 @@ workspace = true
 fluent-bundle.workspace = true
 sys-locale.workspace = true
 tracing.workspace = true
-unic-langid.workspace = true
 
 [build-dependencies]
 fluent-syntax.workspace = true

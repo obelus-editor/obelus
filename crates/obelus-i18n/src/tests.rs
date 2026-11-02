@@ -284,3 +284,26 @@ fn naming_what_is_not_in_the_file_stops_the_build() {
         ]
     );
 }
+
+/// `auto` is the language of the machine the reader is at, which a window
+/// at the other end of a connection says -- over whatever the machine
+/// Obelus runs on would have said.
+///
+/// Broken deliberately by `hear_the_reader` keeping the first it heard, the
+/// way `hear_the_system` does: the server's own language had already been
+/// heard, and `auto` stayed in it.
+#[test]
+fn auto_is_the_readers_machine_where_it_said() {
+    let said = in_language(Language::English, || {
+        // What a server with no language of the reader's would have said
+        // -- English, and not this machine's, whatever this one reads.
+        hear_the_reader("C");
+        hear_the_reader("zh_CN.UTF-8");
+        speak("auto");
+        let said = settings::group_appearance();
+        // Back to English for whoever comes next: there is no unhearing.
+        hear_the_reader("en");
+        said
+    });
+    assert_eq!(said, "外观");
+}

@@ -691,8 +691,12 @@ enum Carrying {
 /// not open.
 pub(crate) fn one() -> Result<ExitCode> {
     let mut reading = std::io::stdin();
-    let Some(ToChild::Open { front, size, path }) =
-        obelus_wire::read::<_, ToChild>(&mut reading).context("told what to open")?
+    let Some(ToChild::Open {
+        front,
+        size,
+        path,
+        locale,
+    }) = obelus_wire::read::<_, ToChild>(&mut reading).context("told what to open")?
     else {
         anyhow::bail!("nothing said what to open");
     };
@@ -704,6 +708,11 @@ pub(crate) fn one() -> Result<ExitCode> {
     {
         obelus_config::drawn_in_a_window();
         obelus_keymap::draw_control_as_command(command_is_control);
+    }
+    // Before the settings are applied, for the same reason: `auto` is the
+    // language of the machine the reader is at, and that is not this one.
+    if let Some(locale) = locale {
+        obelus_i18n::hear_the_reader(&locale);
     }
     let paths: Vec<std::path::PathBuf> = path.into_iter().map(Into::into).collect();
     let mut app = startup::start(&paths, env!("OBELUS_BUILD"))?;

@@ -111,6 +111,10 @@ pub struct Knock {
     /// The name of the window this was, where it was one and its
     /// connection went.
     pub window: Option<String>,
+    /// The language the reader's machine reads, as that machine says it,
+    /// where it says: what `auto` is for an Obelus whose own machine is
+    /// not the one the reader is sitting at.
+    pub locale: Option<String>,
 }
 
 /// Obelus's answer to a knock.
@@ -332,6 +336,8 @@ pub enum ToChild {
         size: [u16; 4],
         /// What to open.
         path: Option<String>,
+        /// The language the reader's machine reads, from the knock.
+        locale: Option<String>,
     },
     /// What the window said.
     Up(Up),
@@ -455,6 +461,7 @@ mod tests {
             size: [80, 24, 0, 0],
             path: Some("~/work/obelus".to_string()),
             window: Some("w1".to_string()),
+            locale: Some("zh-CN".to_string()),
         };
         let frame = obelus_wire::framed(&knock).expect("framed");
         let back: Knock = obelus_wire::unframed(&frame[4..]).expect("read");

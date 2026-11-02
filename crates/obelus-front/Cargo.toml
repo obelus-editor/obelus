@@ -33,6 +33,9 @@ hmac.workspace = true
 serde.workspace = true
 sha2.workspace = true
 socket2.workspace = true
+# The language of the machine a window is on, which is the reader's and
+# not always the one Obelus runs on.
+sys-locale.workspace = true
 tracing.workspace = true
 
 obelus-wire.workspace = true
