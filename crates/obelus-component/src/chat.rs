@@ -716,9 +716,10 @@ pub type Spot = crate::page::Spot<(usize, Source)>;
 /// a `Spot` could not point at the very thing this was for.
 pub use crate::page::Place;
 
-/// What a conversation's rows were laid out against: a width, and a
-/// version of `obelus_text`'s table of pictures.
-type LaidAt = (u16, u64);
+/// What a conversation's rows were laid out against: a width, a version
+/// of `obelus_text`'s table of pictures, and the language Obelus's own words
+/// in them were said in.
+type LaidAt = (u16, u64, obelus_i18n::Language);
 
 /// A conversation.
 ///
@@ -1322,8 +1323,8 @@ impl Chat {
             .position(|step| step.state == "in_progress");
         let total = self.plan.len();
         match at.and_then(|at| Some((at, self.plan.get(at)?))) {
-            Some((at, step)) => format!("Step {} of {total} \u{2014} {}", at + 1, step.said),
-            None => format!("{total} steps"),
+            Some((at, step)) => obelus_i18n::chat::step_of(at + 1, step.said.as_str(), total),
+            None => obelus_i18n::chat::steps(total),
         }
     }
 
@@ -2457,7 +2458,7 @@ mod tests {
             "opening the first call shut something else: {:?}",
             rows.iter().map(Row::text).collect::<Vec<_>>()
         );
-        assert_eq!(rows[0].text(), "3 Calls", "the run did not stay open");
+        assert_eq!(rows[0].text(), "3 calls", "the run did not stay open");
         assert!(
             rows.iter().any(|row| row.text() == "output 0"),
             "the first call did not open: {:?}",
@@ -3753,7 +3754,7 @@ mod tests {
         read(&mut chat, "t3", "completed");
         let rows = chat.rows(ROOM.reading);
         assert_eq!(rows.len(), 1, "a run of three is not one row: {rows:?}");
-        assert_eq!(rows[0].text(), "3 Files");
+        assert_eq!(rows[0].text(), "3 files");
         assert!(rows[0].folds.is_some() && !rows[0].open);
 
         // Opened, its members are under it; closed again, they are not.
@@ -3950,7 +3951,7 @@ mod tests {
              stop being the same number, which is why the caret jumped.",
         );
         let rows = chat.rows(ROOM.reading);
-        assert_eq!(rows[0].text(), "thought", "long thinking has no heading");
+        assert_eq!(rows[0].text(), "Thought", "long thinking has no heading");
         assert!(rows[0].open, "Obelus closed the thinking by itself");
         assert!(rows.len() > 1, "the thinking is not under its heading");
 

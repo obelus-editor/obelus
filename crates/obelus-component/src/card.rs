@@ -562,10 +562,13 @@ impl Card {
             .as_ref()
             .is_some_and(|words| !words.composer.is_blank());
         Some(match self.short_of(self.chosen().len() as u64, written)? {
-            Short::Least(least) => format!("at least {least}"),
-            Short::Most(most) => format!("at most {most}"),
-            Short::One => "Choose one".to_string(),
-            Short::Words => format!("{} first", self.placeholder().unwrap_or("An answer")),
+            Short::Least(least) => obelus_i18n::card::choose_at_least(least),
+            Short::Most(most) => obelus_i18n::card::choose_at_most(most),
+            Short::One => obelus_i18n::card::choose_one().to_string(),
+            Short::Words => match self.placeholder() {
+                Some(what) => obelus_i18n::card::first(what),
+                None => obelus_i18n::card::an_answer_first().to_string(),
+            },
         })
     }
 
@@ -606,23 +609,23 @@ impl Card {
             .iter()
             .any(|id| !self.choices.iter().any(|choice| choice.id == *id))
         {
-            return Err("That is not one of the answers".to_string());
+            return Err(obelus_i18n::card::not_an_answer().to_string());
         }
         if !self.several && chosen.len() > 1 {
-            return Err("Just one".to_string());
+            return Err(obelus_i18n::card::just_one().to_string());
         }
         if words.is_some() && !self.takes_words() {
-            return Err("This takes no words".to_string());
+            return Err(obelus_i18n::card::takes_no_words().to_string());
         }
         match self.short_of(chosen.len() as u64, words.is_some()) {
             None => Ok(()),
-            Some(Short::Least(least)) => Err(format!("At least {least}")),
-            Some(Short::Most(most)) => Err(format!("At most {most}")),
-            Some(Short::One) => Err("Choose one as well".to_string()),
-            Some(Short::Words) => Err(format!(
-                "{} as well",
-                self.placeholder().unwrap_or("An answer")
-            )),
+            Some(Short::Least(least)) => Err(obelus_i18n::card::choose_at_least(least)),
+            Some(Short::Most(most)) => Err(obelus_i18n::card::choose_at_most(most)),
+            Some(Short::One) => Err(obelus_i18n::card::choose_one_as_well().to_string()),
+            Some(Short::Words) => Err(match self.placeholder() {
+                Some(what) => obelus_i18n::card::as_well(what),
+                None => obelus_i18n::card::an_answer_as_well().to_string(),
+            }),
         }
     }
 
@@ -1076,11 +1079,11 @@ mod tests {
         );
         assert_eq!(
             one.takes(&["one".to_string(), "two".to_string()], None),
-            Err("Just one".to_string())
+            Err("Choose just one".to_string())
         );
         assert_eq!(
             one.takes(&[], Some("mine")),
-            Err("This takes no words".to_string())
+            Err("This question takes no written answer".to_string())
         );
 
         let mut several = Card::new(answers(), true);
@@ -1088,7 +1091,7 @@ mod tests {
         several.writing("Reason", true, None);
         assert_eq!(
             several.takes(&["one".to_string()], Some("why")),
-            Err("At least 2".to_string())
+            Err("Choose at least 2".to_string())
         );
         assert_eq!(
             several.takes(&["one".to_string(), "three".to_string()], None),
@@ -1175,7 +1178,7 @@ mod tests {
             card.handle_key(&key(KeyCode::Enter), ROOM),
             CardOutcome::Consumed
         );
-        assert_eq!(card.complaint().as_deref(), Some("at least 2"));
+        assert_eq!(card.complaint().as_deref(), Some("Choose at least 2"));
         // Ticked again, and it goes -- in the order the answers are in
         // rather than the order they were ticked, because that is the
         // order the agent listed them in.

@@ -4481,6 +4481,7 @@ dependencies = [
  "obelus-editing",
  "obelus-git",
  "obelus-github",
+ "obelus-i18n",
  "obelus-icons",
  "obelus-keymap",
  "obelus-lsp",
@@ -4723,6 +4724,7 @@ name = "obelus-markdown"
 version = "0.18.0"
 dependencies = [
  "emojis",
+ "obelus-i18n",
  "obelus-row",
  "obelus-syntax",
  "obelus-text",

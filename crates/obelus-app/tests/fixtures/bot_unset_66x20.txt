@@ -5,7 +5,7 @@ screen 66x20  editor 66x18  status 66x1
  2| Slack                                                           █
  3|                                                                 █
  4|   Platform                                Slack ▸               █
- 5|     Which chat a note can be worked on from                     █
+ 5|     The chat notes can be worked on from                        █
  6|                                                                 █
  7|   App token                               Not set ▸             █
  8|     Socket Mode's token, from Basic Information                 █
@@ -17,7 +17,7 @@ screen 66x20  editor 66x18  status 66x1
 14|     Who may talk to this machine through it                      
 15|                                                                  
 16|   Pair                                    Make a code ▸          
-17|     A code to send in the group you put the bot in               
+17|     A code to send in the group you added the bot to             
 18|──────────────────────────────────────────────────────────────────
 19| > Filter chat settings                                           
 -- style --
@@ -26,7 +26,7 @@ screen 66x20  editor 66x18  status 66x1
  2|cdddddccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
  3|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
  4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbfbbbbbbbbbbbbbbbe
- 5|bbbbbfffffffffffffffffffffffffffffffffffffffbbbbbbbbbbbbbbbbbbbbbe
+ 5|bbbbbffffffffffffffffffffffffffffffffffffbbbbbbbbbbbbbbbbbbbbbbbbe
  6|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
  7|cccccccccccccccccccccccccccccccccccccccccccccccccccaccccccccccccce
  8|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccccccce
@@ -38,7 +38,7 @@ screen 66x20  editor 66x18  status 66x1
 14|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccccccccccccccccccc
 15|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 16|cccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaacacccccccccc
-17|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccccc
+17|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccc
 18|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 19|dddaaaaaaaaaaaaaaaaaaaaddddddddddddddddddddddddddddddddddddddddddd
 -- legend --

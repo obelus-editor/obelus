@@ -1101,7 +1101,7 @@ impl TodoView {
                     said: match self.where_now.get(index) {
                         Some(Some(line)) => format!("{}:{}", at.path.display(), line.get() + 1),
                         // The file still has the note, and the line does not.
-                        _ => format!("{}:gone", at.path.display()),
+                        _ => obelus_i18n::notes::line_gone(at.path.display().to_string()),
                     },
                     head: false,
                     gap: false,

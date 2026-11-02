@@ -173,7 +173,7 @@ fn secrets_that_will_not_read_are_said_on_their_rows() {
     to_the_row(&mut app, "App token");
     let screen = support::render(&mut app, 66, 20);
     assert!(
-        screen.contains("The tokens would not read"),
+        screen.contains("The saved tokens could not be read"),
         "the row says nothing about it:\n{screen}"
     );
 }

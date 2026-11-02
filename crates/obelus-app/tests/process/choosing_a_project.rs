@@ -1288,11 +1288,11 @@ fn closing_the_project_asks_about_what_is_unwritten_and_then_which_project() {
         [
             "Save everything and close",
             "Close without saving",
-            "cancel"
+            "Cancel"
         ],
         "closing with something unwritten did not ask"
     );
-    support::answer(&mut app, "cancel");
+    support::answer(&mut app, "Cancel");
     assert!(app.has_a_project(), "cancelling let go of the project");
 
     obelus_app::app::dispatch::dispatch(&mut app, Command::ProjectClose);

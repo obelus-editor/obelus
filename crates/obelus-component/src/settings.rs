@@ -331,13 +331,13 @@ impl Page {
 
     /// The tab's name.
     #[must_use]
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Settings => "Settings",
-            Self::Keys => "Keys",
-            Self::Agents => "Agents",
-            Self::Bot => "Chat",
-            Self::Themes => "Themes",
+            Self::Settings => obelus_i18n::settings_page::tab_settings(),
+            Self::Keys => obelus_i18n::settings_page::tab_keys(),
+            Self::Agents => obelus_i18n::settings_page::tab_agents(),
+            Self::Bot => obelus_i18n::settings_page::tab_chat(),
+            Self::Themes => obelus_i18n::settings_page::tab_themes(),
         }
     }
 }
@@ -488,13 +488,13 @@ impl Shown<'_> {
             Self::Obelus { setting, .. } => setting.name(),
             Self::Agent { offer, .. } => &offer.name,
             Self::Variable { name, .. } => name,
-            Self::AddVariable { .. } => "Add a variable",
+            Self::AddVariable { .. } => obelus_i18n::settings_page::add_a_variable(),
             Self::Silent { .. } => "",
             Self::Bot { row, .. } => match row {
-                BotRow::Platform => "Platform",
+                BotRow::Platform => obelus_i18n::settings_page::platform(),
                 BotRow::Field(field) => field.name,
-                BotRow::People => "People",
-                BotRow::Pair => "Pair",
+                BotRow::People => obelus_i18n::settings_page::people(),
+                BotRow::Pair => obelus_i18n::settings_page::pair(),
                 BotRow::Setup(setup) => setup.name(),
             },
         }
@@ -511,13 +511,13 @@ impl Shown<'_> {
             // a proxy's address or a token cut down to that is a value the
             // reader cannot check.
             Self::Variable { value, .. } => value,
-            Self::AddVariable { .. } => "A name and then what it holds",
+            Self::AddVariable { .. } => obelus_i18n::settings_page::add_a_variable_about(),
             Self::Silent { saying, .. } => saying,
             Self::Bot { row, .. } => match row {
-                BotRow::Platform => "Which chat a note can be worked on from",
+                BotRow::Platform => obelus_i18n::settings_page::platform_about(),
                 BotRow::Field(field) => field.about,
-                BotRow::People => "Who may talk to this machine through it",
-                BotRow::Pair => "A code to send in the group you put the bot in",
+                BotRow::People => obelus_i18n::settings_page::people_about(),
+                BotRow::Pair => obelus_i18n::settings_page::pair_row_about(),
                 BotRow::Setup(setup) => setup.about(),
             },
         }
@@ -553,9 +553,9 @@ impl Shown<'_> {
                 chosen: Some(value),
                 agent,
                 ..
-            } if offer.name_of(value).is_none() => Some(format!(
-                "No longer offered by {agent}, so a new conversation starts on its own"
-            )),
+            } if offer.name_of(value).is_none() => {
+                Some(obelus_i18n::settings_page::no_longer_offered(*agent))
+            }
             Self::Agent { .. } => None,
         }
     }
@@ -801,11 +801,11 @@ impl Settings {
             return None;
         }
         Some(match self.page() {
-            Page::Keys => "Filter keys",
-            Page::Agents => "Filter agents",
-            Page::Bot => "Filter chat settings",
-            Page::Settings => "Filter settings",
-            Page::Themes => "Filter themes",
+            Page::Keys => obelus_i18n::settings_page::filter_keys(),
+            Page::Agents => obelus_i18n::settings_page::filter_agents(),
+            Page::Bot => obelus_i18n::settings_page::filter_chat(),
+            Page::Settings => obelus_i18n::settings_page::filter_settings(),
+            Page::Themes => obelus_i18n::settings_page::filter_themes(),
         })
     }
 
@@ -892,14 +892,13 @@ impl Settings {
                 ..
             } => {
                 let secret = matches!(field.kind, obelus_bot::platform::FieldKind::Secret { .. });
-                let name = self
-                    .reached
-                    .platform
-                    .map_or("The chat", |platform| platform.name);
                 match self.reached.state {
-                    obelus_bot::State::Refused if secret => Some(format!("Refused by {name}")),
+                    obelus_bot::State::Refused if secret => Some(match self.reached.platform {
+                        Some(platform) => obelus_i18n::settings_page::refused_by(platform.name),
+                        None => obelus_i18n::settings_page::refused().to_string(),
+                    }),
                     obelus_bot::State::Unread if secret => {
-                        Some("The tokens would not read".to_string())
+                        Some(obelus_i18n::settings_page::tokens_unreadable().to_string())
                     }
                     _ => None,
                 }
@@ -916,7 +915,9 @@ impl Settings {
         let opens = Some(
             self.reached
                 .platform
-                .map_or("Chat", |platform| platform.name),
+                .map_or(obelus_i18n::settings_page::chat_heading(), |platform| {
+                    platform.name
+                }),
         );
         let mut rows = vec![BotRow::Platform];
         if let Some(platform) = self.reached.platform {
@@ -1371,7 +1372,11 @@ impl Settings {
                 opens: opens.take(),
             });
         }
-        if query.is_empty() || "add a variable".contains(&query) {
+        if query.is_empty()
+            || obelus_i18n::settings_page::add_a_variable()
+                .to_lowercase()
+                .contains(&query)
+        {
             rows.push(Shown::AddVariable {
                 opens: opens.take(),
             });

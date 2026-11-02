@@ -233,7 +233,10 @@ enum Offer {
 
 /// What the offer to send now says.
 fn the_offer() -> [(String, &'static str); 1] {
-    [(chord(KeyCode::Enter, KeyModifiers::CONTROL), "Sends it now")]
+    [(
+        chord(KeyCode::Enter, KeyModifiers::CONTROL),
+        obelus_i18n::chat::sends_it_now(),
+    )]
 }
 
 /// The column the offer starts in, which is its width from the right.
@@ -306,9 +309,8 @@ fn way_back(area: Rect, chat: &Chat, card: Option<&Card>) -> Option<WayBack> {
         return None;
     }
     let said = match chat.said_since() {
-        0 => "To the end".to_string(),
-        1 => "1 new message".to_string(),
-        many => format!("{many} new messages"),
+        0 => obelus_i18n::chat::to_the_end().to_string(),
+        many => obelus_i18n::chat::new_messages(many),
     };
     let keys = chord(KeyCode::End, KeyModifiers::CONTROL);
     // Two blanks before the arrow in a window, where the cap is laid
@@ -503,7 +505,7 @@ fn said_place(title: &str, place: &acp::Place, root: &Path, more: usize) -> Stri
     let named = title.contains(&path) || title.contains(&place.path.display().to_string());
     let said = match (named, place.line) {
         (true, None) => String::new(),
-        (true, Some(line)) => format!("line {line}"),
+        (true, Some(line)) => obelus_i18n::chat::line(line),
         (false, None) => path,
         (false, Some(line)) => format!("{path}:{line}"),
     };
@@ -611,8 +613,8 @@ fn said(setting: &acp::Setting) -> (String, Option<bool>) {
 /// test binary without moving a switch every other test reads.
 fn tasks_said(running: usize, finished: usize, glyphs: bool, window: bool) -> String {
     let going = match running {
-        0 => format!("{finished} finished"),
-        _ => format!("{running} in the background"),
+        0 => obelus_i18n::chat::finished(finished),
+        _ => obelus_i18n::chat::in_the_background(running),
     };
     match glyphs {
         true => format!(
@@ -666,31 +668,45 @@ pub fn hints(
         Focus::Writing => {
             let written = !chat.writing().is_blank();
             vec![
-                Hint::new(control(KeyCode::Enter), "Send now")
-                    .about("Stop the turn that is running and send this")
+                Hint::new(control(KeyCode::Enter), obelus_i18n::chat::send_now())
+                    .about(obelus_i18n::chat::send_now_about())
                     .only_where(thinking)
                     .when(written),
                 // One act on two keys: `shift+enter` needs the keyboard
                 // protocol, and `alt+enter` arrives everywhere.
-                Hint::new(chord(KeyCode::Enter, KeyModifiers::ALT), "New line")
-                    .or(chord(KeyCode::Enter, KeyModifiers::SHIFT))
-                    .about("Break the line here"),
-                Hint::new(bare(KeyCode::Esc), "Stop")
-                    .about("Stop the agent")
+                Hint::new(
+                    chord(KeyCode::Enter, KeyModifiers::ALT),
+                    obelus_i18n::chat::new_line(),
+                )
+                .or(chord(KeyCode::Enter, KeyModifiers::SHIFT))
+                .about(obelus_i18n::chat::new_line_about()),
+                Hint::new(bare(KeyCode::Esc), obelus_i18n::chat::stop())
+                    .about(obelus_i18n::chat::stop_about())
                     .only_where(thinking),
-                Hint::new(chord(KeyCode::BackTab, KeyModifiers::SHIFT), "Mode")
-                    .about("Switch the agent to its next way of working")
-                    .when(modes),
+                Hint::new(
+                    chord(KeyCode::BackTab, KeyModifiers::SHIFT),
+                    obelus_i18n::chat::mode(),
+                )
+                .about(obelus_i18n::chat::mode_about())
+                .when(modes),
             ]
         }
         Focus::Transcript(_) | Focus::Settings(_) => Vec::new(),
     };
     if let Some(about) = about {
         let what = match about {
-            obelus_component::discussion::Asked::PullRequest(_) => "Go to the pull request's page",
-            obelus_component::discussion::Asked::Issue(_) => "Go to the issue's page",
+            obelus_component::discussion::Asked::PullRequest(_) => {
+                obelus_i18n::chat::read_pull_request()
+            }
+            obelus_component::discussion::Asked::Issue(_) => obelus_i18n::chat::read_issue(),
         };
-        hints.push(Hint::new(chord(KeyCode::Char('a'), KeyModifiers::ALT), "Read").about(what));
+        hints.push(
+            Hint::new(
+                chord(KeyCode::Char('a'), KeyModifiers::ALT),
+                obelus_i18n::chat::read(),
+            )
+            .about(what),
+        );
     }
     hints
 }
@@ -1465,7 +1481,10 @@ impl ChatView<'_> {
             // on that row too, which says the two together: written one
             // after the other, the second was written over the first.
             if stops && !footed {
-                let keys = [(chord(KeyCode::Esc, KeyModifiers::NONE), "Stops it")];
+                let keys = [(
+                    chord(KeyCode::Esc, KeyModifiers::NONE),
+                    obelus_i18n::page::stops_it(),
+                )];
                 if let Some(said) = joined(&keys)
                     && let Ok(offset) =
                         u16::try_from(usize::from(area.width).saturating_sub(text_width(&said) + 1))
@@ -1532,17 +1551,20 @@ impl ChatView<'_> {
             &first.place,
             &first.away,
         ) {
-            (Some(_), ..) => "Takes it back",
-            (None, Some(_), ..) => "Copies it to the box",
+            (Some(_), ..) => obelus_i18n::page::takes_it_back(),
+            (None, Some(_), ..) => obelus_i18n::page::copies_it_to_the_box(),
             (None, None, Some(_), ..) => match first.open {
-                true => "Closes it",
-                false => "Opens it",
+                true => obelus_i18n::page::closes_it(),
+                false => obelus_i18n::page::opens_it(),
             },
-            (None, None, None, Some(_), _) => "Opens the file",
-            (None, None, None, None, Some(_)) => "Opens it in your browser",
+            (None, None, None, Some(_), _) => obelus_i18n::page::opens_the_file(),
+            (None, None, None, None, Some(_)) => obelus_i18n::page::opens_in_the_browser(),
             (None, None, None, None, None) => return,
         };
-        let stop = (chord(KeyCode::Esc, KeyModifiers::NONE), "Stops it");
+        let stop = (
+            chord(KeyCode::Esc, KeyModifiers::NONE),
+            obelus_i18n::page::stops_it(),
+        );
         let mut keys = vec![(chord(KeyCode::Enter, KeyModifiers::NONE), does)];
         if stops {
             keys.push(stop.clone());
@@ -1787,7 +1809,7 @@ impl ChatView<'_> {
                     cells,
                     area.x + 1,
                     area.y,
-                    &super::truncate_from_right("Nothing to change", room),
+                    &super::truncate_from_right(obelus_i18n::chat::nothing_to_change(), room),
                     plain.fg(self.theme.gutter),
                 );
             }
@@ -1979,19 +2001,26 @@ impl ChatView<'_> {
     fn status_keys(&self, area: Rect) -> Vec<(String, &'static str)> {
         let back = self
             .back_to_the_note
-            .map(|chord| (chord.label(), "The note"));
+            .map(|chord| (chord.label(), obelus_i18n::chat::the_note()));
         let mode = self
             .mode()
             .is_some_and(|mode| mode.values.len() > 1)
-            .then(|| (chord(KeyCode::Tab, KeyModifiers::SHIFT), "Mode"));
+            .then(|| {
+                (
+                    chord(KeyCode::Tab, KeyModifiers::SHIFT),
+                    obelus_i18n::chat::mode(),
+                )
+            });
         // The arrow, while there is something for it to put in the box:
         // nothing on the box says that grey words can be taken, and they
         // are taken by a key that does nothing on an empty box anywhere
         // else.
-        let suggested = self
-            .chat
-            .suggestion()
-            .map(|_| (chord(KeyCode::Right, KeyModifiers::NONE), "Fill it in"));
+        let suggested = self.chat.suggestion().map(|_| {
+            (
+                chord(KeyCode::Right, KeyModifiers::NONE),
+                obelus_i18n::chat::fill_it_in(),
+            )
+        });
         let mut keys: Vec<_> = [suggested, back, mode].into_iter().flatten().collect();
         // And last, nearest the surroundings, where every row whose palette
         // leads with its view's own keys points at it
@@ -2008,7 +2037,7 @@ impl ChatView<'_> {
                 .sum::<usize>();
             let wanted = without + crate::status::more_width(key) + 2 + settings + 2;
             if usize::from(area.width) >= wanted {
-                keys.push((key.clone(), crate::status::MORE));
+                keys.push((key.clone(), crate::status::more_word()));
             }
         }
         keys
@@ -2167,7 +2196,7 @@ impl ChatView<'_> {
             put(cells, column, area.y, obelus_icons::ui::AGENT, dim);
             column += indent();
         }
-        let name = self.name.unwrap_or("No agent");
+        let name = self.name.unwrap_or(obelus_i18n::chat::no_agent());
         column = write(
             cells,
             column,
@@ -2348,28 +2377,40 @@ impl ChatView<'_> {
     /// the colour.
     fn state_said(&self, state: &str, dim: Style) -> (u16, String, Style) {
         let (glyph, word, colour) = match state {
-            WAITING => (obelus_icons::ui::WAITING, "Waiting", self.theme.gutter),
+            WAITING => (
+                obelus_icons::ui::WAITING,
+                obelus_i18n::chat::waiting(),
+                self.theme.gutter,
+            ),
             UNDER_WAY => (
                 obelus_icons::ui::RUNNING,
-                "Running",
+                obelus_i18n::chat::running(),
                 self.theme.gutter_current,
             ),
-            "completed" => (obelus_icons::ui::DONE, "Done", self.theme.gutter),
+            "completed" => (
+                obelus_icons::ui::DONE,
+                obelus_i18n::chat::done(),
+                self.theme.gutter,
+            ),
             // Returned, with what it started still going: as bright as a
             // running call, because it is, and still, because the agent is
             // not the one busy with it.
             acp::BACKGROUNDED => (
                 obelus_icons::ui::BACKGROUND,
-                "Background",
+                obelus_i18n::chat::background(),
                 self.theme.gutter_current,
             ),
             // The word the transcript already uses for the turn this call
             // was in, because it is the same fact said about a smaller
             // thing.
-            "cancelled" => (obelus_icons::ui::STAYING, "Stopped", self.theme.gutter),
+            "cancelled" => (
+                obelus_icons::ui::STAYING,
+                obelus_i18n::chat::stopped(),
+                self.theme.gutter,
+            ),
             "failed" => (
                 obelus_icons::ui::BROKEN,
-                "Failed",
+                obelus_i18n::chat::failed(),
                 self.theme.syntax.constant,
             ),
             other => (obelus_icons::ui::WAITING, other, self.theme.gutter),
@@ -2392,15 +2433,17 @@ impl ChatView<'_> {
     /// only to wait.
     fn nothing_said(&self) -> &'static str {
         match self.state {
-            Talking::Nobody => "No agent is active \u{2014} open the settings and choose one",
-            Talking::Gone => "It stopped. Ask something to start it again",
-            Talking::Starting => "Starting\u{2026}",
+            Talking::Nobody => obelus_i18n::chat::no_agent_is_active(),
+            Talking::Gone => obelus_i18n::chat::it_stopped(),
+            Talking::Starting => obelus_i18n::chat::starting(),
             // Idle belongs here rather than with starting: nothing is on
             // its way -- the frame that asks for a session has not been
             // drawn, or no agent could be started for it -- and
             // "starting..." under a still mark would say something is on
             // its way to a page nothing is coming to.
-            Talking::Idle | Talking::Ready | Talking::Thinking => "Ask it something",
+            Talking::Idle | Talking::Ready | Talking::Thinking => {
+                obelus_i18n::chat::ask_it_something()
+            }
         }
     }
 }

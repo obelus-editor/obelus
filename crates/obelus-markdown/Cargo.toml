@@ -11,6 +11,7 @@ workspace = true
 
 [dependencies]
 emojis.workspace = true
+obelus-i18n.workspace = true
 obelus-row.workspace = true
 obelus-syntax.workspace = true
 obelus-text.workspace = true

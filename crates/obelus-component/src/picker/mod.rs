@@ -297,10 +297,10 @@ impl Listing {
 
     /// The tab's name.
     #[must_use]
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::All => "All",
-            Self::Changed => "Changed",
+            Self::All => obelus_i18n::picker::all(),
+            Self::Changed => obelus_i18n::picker::changed(),
         }
     }
 }
@@ -1097,7 +1097,7 @@ impl Picker {
             marked: false,
             question: None,
             invitation: None,
-            empty: "Nothing to choose from".to_string(),
+            empty: obelus_i18n::picker::nothing_to_choose_from().to_string(),
             prefer: None,
             nests: false,
             opens: false,
@@ -1170,7 +1170,7 @@ impl Picker {
             .iter()
             .map(|way| row(way.label.clone(), way.detail.clone(), way.answer))
             .chain(std::iter::once(row(
-                "cancel".to_string(),
+                obelus_i18n::picker::cancel().to_string(),
                 None,
                 crate::question::Answer::Cancel,
             )))
@@ -1193,7 +1193,7 @@ impl Picker {
     /// adds itself, so every row is reachable by walking them and so is a row
     /// belonging to no group.
     pub fn with_tabs(&mut self, names: &[&str]) {
-        self.tabs = std::iter::once("All".to_string())
+        self.tabs = std::iter::once(obelus_i18n::picker::all().to_string())
             .chain(names.iter().map(|name| (*name).to_string()))
             .collect();
         self.refilter();
@@ -1207,7 +1207,7 @@ impl Picker {
     /// it means nothing once the view is gone -- and the groups are one
     /// further along than they would be without it.
     pub fn with_tabs_and_its_own(&mut self, own: &str, names: &[&str]) {
-        self.tabs = [own, "All"]
+        self.tabs = [own, obelus_i18n::picker::all()]
             .into_iter()
             .chain(names.iter().copied())
             .map(str::to_string)
@@ -1311,7 +1311,7 @@ impl Picker {
     #[must_use]
     pub fn is_filling(&self) -> Option<&str> {
         match self.awaiting {
-            Some(_) => Some("Matching\u{2026}"),
+            Some(_) => Some(obelus_i18n::picker::matching()),
             None => self.filling.as_deref(),
         }
     }
@@ -2086,7 +2086,7 @@ impl Picker {
         Some(match &self.otherwise {
             _ if self.query.is_empty() || self.explains => &self.empty,
             Some((line, _)) => line,
-            None => "No match",
+            None => obelus_i18n::picker::no_match(),
         })
     }
 

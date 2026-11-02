@@ -5,7 +5,7 @@ screen 66x24  editor 66x22  status 66x1
  2| Feishu                                                          █
  3|                                                                 █
  4|   Platform                                Feishu ▸              █
- 5|     Which chat a note can be worked on from                     █
+ 5|     The chat notes can be worked on from                        █
  6|                                                                 █
  7|   App ID                                  Not set ▸             █
  8|     From Credentials & Basic Info, on the app's page            █
@@ -20,7 +20,7 @@ screen 66x24  editor 66x22  status 66x1
 17|     Who may talk to this machine through it                     █
 18|                                                                  
 19|   Pair                                    Make a code ▸          
-20|     A code to send in the group you put the bot in               
+20|     A code to send in the group you added the bot to             
 21|                                                                  
 22|──────────────────────────────────────────────────────────────────
 23| > Filter chat settings                                           
@@ -30,7 +30,7 @@ screen 66x24  editor 66x22  status 66x1
  2|cddddddcccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
  3|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
  4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbfbbbbbbbbbbbbbbe
- 5|bbbbbfffffffffffffffffffffffffffffffffffffffbbbbbbbbbbbbbbbbbbbbbe
+ 5|bbbbbffffffffffffffffffffffffffffffffffffbbbbbbbbbbbbbbbbbbbbbbbbe
  6|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
  7|cccccccccccccccccccccccccccccccccccccccccccccccccccaccccccccccccce
  8|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccccccccce
@@ -45,7 +45,7 @@ screen 66x24  editor 66x22  status 66x1
 17|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccccccccccce
 18|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 19|cccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaacacccccccccc
-20|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccccc
+20|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccc
 21|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 22|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 23|dddaaaaaaaaaaaaaaaaaaaaddddddddddddddddddddddddddddddddddddddddddd

@@ -181,18 +181,24 @@ pub fn draw(
             .filter(|cursor| cursor.row == at)
             .and_then(|cursor| obelus_component::discussion::followed_at(rows, cursor));
         let does = match followed {
-            Some(obelus_component::discussion::Follows::File(_)) => Some("Opens the file"),
-            Some(obelus_component::discussion::Follows::Web(_)) => Some("Opens the link"),
+            Some(obelus_component::discussion::Follows::File(_)) => {
+                Some(obelus_i18n::page::opens_the_file())
+            }
+            Some(obelus_component::discussion::Follows::Web(_)) => {
+                Some(obelus_i18n::page::opens_the_link())
+            }
             None => acting
                 .as_ref()
                 .filter(|on| at + 1 == on.end)
                 .and_then(|on| match rows.get(on.start) {
-                    Some(first) if first.goes.is_some() => Some("Opens the link"),
-                    Some(first) if first.opens.as_ref().is_some_and(|opens| opens.by_enter) => {
-                        Some("Opens the file")
+                    Some(first) if first.goes.is_some() => {
+                        Some(obelus_i18n::page::opens_the_link())
                     }
-                    Some(first) if first.open => Some("Closes it"),
-                    Some(_) => Some("Opens it"),
+                    Some(first) if first.opens.as_ref().is_some_and(|opens| opens.by_enter) => {
+                        Some(obelus_i18n::page::opens_the_file())
+                    }
+                    Some(first) if first.open => Some(obelus_i18n::page::closes_it()),
+                    Some(_) => Some(obelus_i18n::page::opens_it()),
                     None => None,
                 }),
         };
@@ -273,14 +279,19 @@ pub fn hints(page: &DiscussionView, elsewhere: bool) -> Vec<crate::Hint> {
     let chord = obelus_keymap::KeyChord::new;
     let what = match page.asked() {
         obelus_component::discussion::Asked::PullRequest(_) => {
-            "Ask the agent to review this pull request"
+            obelus_i18n::discussion::talk_about_pull_request()
         }
-        obelus_component::discussion::Asked::Issue(_) => "Ask the agent to answer this issue",
+        obelus_component::discussion::Asked::Issue(_) => {
+            obelus_i18n::discussion::talk_about_issue()
+        }
     };
     vec![
-        crate::Hint::new(chord(KeyCode::Char('a'), KeyModifiers::ALT), "Talk")
-            .about(what)
-            .when(!elsewhere),
+        crate::Hint::new(
+            chord(KeyCode::Char('a'), KeyModifiers::ALT),
+            obelus_i18n::discussion::talk(),
+        )
+        .about(what)
+        .when(!elsewhere),
     ]
 }
 

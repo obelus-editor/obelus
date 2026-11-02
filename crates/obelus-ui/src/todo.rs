@@ -58,33 +58,37 @@ pub fn hints(notes: &Notes) -> Vec<Hint> {
     // Nothing about copy, cut and paste either: here they are what they are
     // everywhere else.
     vec![
-        Hint::new(bare(KeyCode::Enter), "Another").about("Start a new note after this one"),
-        Hint::new(alt(KeyCode::Char(' ')), "Done")
-            .about("Tick this note off, or put it back")
+        Hint::new(bare(KeyCode::Enter), obelus_i18n::notes::another())
+            .about(obelus_i18n::notes::another_about()),
+        Hint::new(alt(KeyCode::Char(' ')), obelus_i18n::notes::done())
+            .about(obelus_i18n::notes::done_about())
             .when(on.is_some() && !elsewhere),
-        Hint::new(alt(KeyCode::Char('o')), "Go there")
-            .about("Go to the place this note is about")
+        Hint::new(alt(KeyCode::Char('o')), obelus_i18n::notes::go_there())
+            .about(obelus_i18n::notes::go_there_about())
             .when(notes.can_go()),
         // Taking a whole note away is the one thing here a reader will go
         // looking for and not find, because backspace on its own is a
         // letter.
-        Hint::new(alt(KeyCode::Backspace), "Drop")
-            .about("Take this note away, with what hangs under it")
+        Hint::new(alt(KeyCode::Backspace), obelus_i18n::notes::delete())
+            .about(obelus_i18n::notes::delete_about())
             .when(on.is_some() && notes.can_drop()),
-        Hint::new(alt(KeyCode::Up), "Move")
+        Hint::new(alt(KeyCode::Up), obelus_i18n::notes::move_it())
             .or(alt(KeyCode::Down))
-            .about("Move this note past the one next to it")
+            .about(obelus_i18n::notes::move_about())
             .when(notes.rows().len() > 1 && !elsewhere),
         // One key each, because they are offered separately: a note at the
         // top can only go in, and one as deep as it may go can only come
         // out. A single row for both would be on whenever either was, and
         // would be saying a key works when it does not.
-        Hint::new(bare(KeyCode::Tab), "Under")
-            .about("Put this note under the one above it")
+        Hint::new(bare(KeyCode::Tab), obelus_i18n::notes::indent())
+            .about(obelus_i18n::notes::indent_about())
             .when(notes.can_shift(false)),
-        Hint::new(chord(KeyCode::BackTab, KeyModifiers::SHIFT), "Out")
-            .about("Bring this note out from under the one above")
-            .when(notes.can_shift(true)),
+        Hint::new(
+            chord(KeyCode::BackTab, KeyModifiers::SHIFT),
+            obelus_i18n::notes::outdent(),
+        )
+        .about(obelus_i18n::notes::outdent_about())
+        .when(notes.can_shift(true)),
     ]
 }
 
@@ -408,7 +412,7 @@ impl Widget for TodoUi<'_> {
             return;
         }
         if self.notes.rows().is_empty() {
-            crate::nothing(cells, list, "Nothing to come back to", self.theme);
+            crate::nothing(cells, list, obelus_i18n::notes::nothing(), self.theme);
             return;
         }
 

@@ -116,7 +116,7 @@ fn a_save_says_nothing_the_row_does_not() {
         .expect("a status row")
         .to_string();
     assert!(
-        status.contains("hint.rs") && !status.contains("unsaved"),
+        status.contains("hint.rs") && !status.contains("Unsaved"),
         "the row does not say it was written:\n{dump}"
     );
 
@@ -158,7 +158,7 @@ fn an_agents_change_to_an_open_file_says_nothing_the_screen_does_not() {
         .expect("a status row")
         .to_string();
     assert!(
-        status.contains("unsaved"),
+        status.contains("Unsaved"),
         "the row does not say the file is not written:\n{dump}"
     );
 }

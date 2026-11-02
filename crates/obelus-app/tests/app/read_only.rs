@@ -216,7 +216,7 @@ fn the_status_row_says_so() {
     let (_scratch, mut app) = read_only("read-only-status", "abcd\n");
     let dump = support::render(&mut app, 60, 10);
     assert!(
-        support::text_block(&dump).contains("Read only"),
+        support::text_block(&dump).contains("Read-only"),
         "nothing says so:\n{dump}"
     );
 }

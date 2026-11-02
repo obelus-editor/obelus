@@ -881,8 +881,8 @@ fn the_welcome_screen_lines_up_keys_of_different_widths() {
     };
 
     assert_eq!(
-        column_of("Open a file"),
-        column_of("Leave Obelus"),
+        column_of("Open file"),
+        column_of("Quit"),
         "the words in one column do not start together:\n{dump}"
     );
     // The wider chord's key starts further left inside its cap, which is
@@ -3040,7 +3040,7 @@ fn a_start_with_nothing_wrong_puts_nothing_up() {
 ///
 /// Deliberate break: have `draw` render `WelcomeView` whatever
 /// `ProjectsView::new` answers, and the grid comes back with the plate and
-/// `F1 Open a file` on it -- a key that cannot do anything until this is
+/// `F1 Open file` on it -- a key that cannot do anything until this is
 /// answered. And by having `name_of` never find a separator: the rows go
 /// back to whole paths in one ink, with the name at the ragged end of each.
 #[test]
@@ -3158,7 +3158,7 @@ fn the_foot_says_what_enter_does_here_and_how_to_leave() {
     app.ask_about_these_projects_for_test(many_projects(2));
     let dump = support::render(&mut app, 64, 14);
     assert!(
-        support::text_block(&dump).contains("Leave"),
+        support::text_block(&dump).contains("Quit"),
         "the way off the page is not named:\n{dump}"
     );
 
@@ -3339,7 +3339,7 @@ fn the_surroundings_give_way_to_a_path_beside_a_marker() {
         .expect("a status row")
         .to_string();
     assert!(
-        row.contains("unsaved"),
+        row.contains("Unsaved"),
         "no marker, so this tests nothing: {row:?}"
     );
     assert!(

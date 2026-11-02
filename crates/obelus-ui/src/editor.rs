@@ -399,7 +399,7 @@ pub fn say_what_is_coming(
     theme: &Theme,
 ) {
     let (said, waiting) = match buffer.content().fetched() {
-        Some(obelus_buffer::Fetched::Asking) => ("Asking GitHub for this file", true),
+        Some(obelus_buffer::Fetched::Asking) => (obelus_i18n::editor::asking_github(), true),
         Some(obelus_buffer::Fetched::Refused(why)) => (why.as_str(), false),
         Some(obelus_buffer::Fetched::Here) | None => return,
     };

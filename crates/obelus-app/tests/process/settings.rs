@@ -625,7 +625,7 @@ fn typing_narrows_the_settings() {
     support::type_text(&mut app, "zzz");
     let dump = support::render(&mut app, 66, 12);
     assert!(
-        support::text_block(&dump).contains("No setting by that name"),
+        support::text_block(&dump).contains("No setting matches"),
         "an empty screen with no reason:\n{dump}"
     );
 
@@ -2022,7 +2022,7 @@ fn an_agent_that_is_not_installed_is_not_in_use() {
         "the card does not offer to install it:\n{dump}"
     );
     assert!(
-        !text.contains("active"),
+        !text.contains("Active"),
         "the card says it is in use:\n{dump}"
     );
 
@@ -2030,7 +2030,7 @@ fn an_agent_that_is_not_installed_is_not_in_use() {
     installed(&root, "agent-0", "1.0.0");
     let dump = support::render(&mut app, 76, 16);
     assert!(
-        support::text_block(&dump).contains("active"),
+        support::text_block(&dump).contains("Active"),
         "a finished install is not in use:\n{dump}"
     );
 }
@@ -2411,7 +2411,7 @@ fn control_and_enter_adds_a_key() {
     support::press(&mut app, KeyCode::Tab);
     support::type_text(&mut app, "new-file");
     let usable = support::usable_here(&mut app);
-    assert!(usable.contains(&"Add a key".to_string()), "{usable:?}");
+    assert!(usable.contains(&"Add key".to_string()), "{usable:?}");
     // And not enter, which has nothing to change there.
     assert!(!usable.contains(&"Change".to_string()), "{usable:?}");
 }
@@ -2433,7 +2433,7 @@ fn a_command_s_row_says_its_two_enters() {
     let screen = support::render(&mut app, 120, 24);
     let row = screen
         .lines()
-        .find(|line| line.contains("Add a key"))
+        .find(|line| line.contains("Add key"))
         .unwrap_or_else(|| panic!("no row says what ctrl+enter does:\n{screen}"));
     assert!(row.contains("Change"), "{row:?}");
 
@@ -2444,7 +2444,7 @@ fn a_command_s_row_says_its_two_enters() {
     let screen = support::render(&mut app, 120, 24);
     let row = screen
         .lines()
-        .find(|line| line.contains("Add a key"))
+        .find(|line| line.contains("Add key"))
         .unwrap_or_else(|| panic!("no row says what ctrl+enter does:\n{screen}"));
     assert!(!row.contains("Change"), "{row:?}");
 }
@@ -3553,7 +3553,7 @@ fn the_active_agents_settings_are_a_group_on_the_page() {
         "no heading for the agent:\n{dump}"
     );
     assert!(
-        text.contains("What a new conversation starts on"),
+        text.contains("These apply to new conversations"),
         "the heading does not say when it takes effect:\n{dump}"
     );
     assert!(text.contains("Way of working"), "no row for it:\n{dump}");
@@ -3621,7 +3621,7 @@ fn what_an_agent_is_started_with_is_a_group_of_its_own() {
         .find("an-agent \u{b7} Environment")
         .unwrap_or_else(|| panic!("no heading for what it is started with:\n{dump}"));
     assert!(
-        text.contains("What it is started with, from the next time it starts"),
+        text.contains("These apply the next time the agent starts"),
         "the heading does not say when it arrives:\n{dump}"
     );
     let way = text
@@ -6115,7 +6115,7 @@ fn the_palette_lets_go_of_a_number_being_turned() {
     // And every key the box has is said there, so the foot points at no
     // palette that would let go of the box before it could say more.
     assert!(
-        foot.contains("Turn"),
+        foot.contains("Adjust"),
         "the foot does not say the arrows:\n{dump}"
     );
     assert!(

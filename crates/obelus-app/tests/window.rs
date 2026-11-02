@@ -129,7 +129,7 @@ fn a_window_does_not_run_the_welcome_screens_clock() {
     // frame is laid out: it is a fact about what is on the screen.
     let dump = support::render(&mut app, 64, 20);
     assert!(
-        support::text_block(&dump).contains("Open a file"),
+        support::text_block(&dump).contains("Open file"),
         "not the welcome screen:\n{dump}"
     );
     assert!(

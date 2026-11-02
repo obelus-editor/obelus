@@ -907,7 +907,7 @@ fn a_note_with_nothing_in_it_is_dropped() {
 
 /// The palette says which of the notes' keys can be pressed.
 ///
-/// Broken deliberately by offering "Go there" whatever the note
+/// Broken deliberately by offering "Go to" whatever the note
 /// (`notes.can_go()` left off it in `todo::hints`).
 #[test]
 fn the_palette_dims_a_key_that_would_do_nothing() {
@@ -916,13 +916,13 @@ fn the_palette_dims_a_key_that_would_do_nothing() {
 
     // The first note is about the project, so there is nowhere to go.
     let usable = support::usable_here(&mut app);
-    assert!(!usable.contains(&"Go there".to_string()), "{usable:?}");
-    assert!(usable.contains(&"Another".to_string()), "{usable:?}");
+    assert!(!usable.contains(&"Go to".to_string()), "{usable:?}");
+    assert!(usable.contains(&"New note".to_string()), "{usable:?}");
 
     press(&mut app, KeyCode::Down);
     let usable = support::usable_here(&mut app);
     assert!(
-        usable.contains(&"Go there".to_string()),
+        usable.contains(&"Go to".to_string()),
         "the key that works is dim: {usable:?}"
     );
 }
@@ -1047,14 +1047,14 @@ fn the_caret_is_on_the_cell_the_letter_goes_in() {
 /// letter here, so it is the one thing a reader will go looking for and not
 /// find. There is nowhere else it could be said -- this view has no card.
 ///
-/// Broken deliberately by leaving "Drop" out of `todo::hints`.
+/// Broken deliberately by leaving "Delete" out of `todo::hints`.
 #[test]
 fn dropping_a_note_is_in_the_palette() {
     let scratch = tree("drop-palette", THREE);
     let mut app = open(&scratch, 100, 14);
     let usable = support::usable_here(&mut app);
     assert!(
-        usable.contains(&"Drop".to_string()),
+        usable.contains(&"Delete".to_string()),
         "the palette does not say how: {usable:?}"
     );
 }
@@ -1743,7 +1743,7 @@ fn a_conversation_says_how_to_get_back_to_its_note() {
 
     let screen = support::text_block(&support::render(&mut app, 76, 24)).to_string();
     assert!(
-        screen.contains("The note"),
+        screen.contains("Note"),
         "the conversation does not say how to get back:\n{screen}"
     );
 }
@@ -3091,7 +3091,7 @@ fn the_status_row_says_it_is_the_notes_and_what_is_left() {
     let status = rows.lines().last().unwrap_or_default();
 
     assert!(
-        status.contains("Todo"),
+        status.contains("Notes"),
         "the row does not say which document this is:\n{dump}"
     );
     assert!(
@@ -3292,7 +3292,7 @@ fn a_conversation_names_the_key_back_to_its_note() {
     let dump = support::render(&mut app, 120, 18);
     let row = support::text_block(&dump)
         .lines()
-        .find(|row| row.contains("The note"))
+        .find(|row| row.contains("Note"))
         .map(str::to_string)
         .unwrap_or_else(|| panic!("nothing says how to get back:\n{dump}"));
     assert!(row.contains("Ctrl+t"), "{row}");

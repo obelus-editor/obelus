@@ -327,7 +327,7 @@ fn the_status_bar_says_when_a_file_can_no_longer_be_read() {
     let dump = support::render(&mut app, 60, 5);
 
     assert!(
-        support::text_block(&dump).contains("stale"),
+        support::text_block(&dump).contains("Stale"),
         "no marker on screen:\n{dump}"
     );
     assert!(
@@ -340,7 +340,7 @@ fn the_status_bar_says_when_a_file_can_no_longer_be_read() {
 fn a_readable_file_gets_no_marker() {
     let mut app = obelus_app::app::App::new(vec![support::open_fixture("sample.rs")]);
     let dump = support::render(&mut app, 60, 5);
-    assert!(!support::text_block(&dump).contains("stale"));
+    assert!(!support::text_block(&dump).contains("Stale"));
 }
 
 /// The marker takes its width out of the path's budget, not out of the cursor
@@ -351,7 +351,7 @@ fn the_marker_survives_a_narrow_screen_by_shortening_the_path() {
     let dump = support::render(&mut app, 30, 5);
     let text = support::text_block(&dump);
 
-    assert!(text.contains("stale"), "the marker was dropped:\n{dump}");
+    assert!(text.contains("Stale"), "the marker was dropped:\n{dump}");
     assert!(text.contains("1:1"), "the position was dropped:\n{dump}");
     assert!(
         text.contains('\u{2026}'),

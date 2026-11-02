@@ -1472,7 +1472,7 @@ mod saving {
         }));
 
         dispatch::dispatch(&mut app, Command::FileSave);
-        support::answer(&mut app, "cancel");
+        support::answer(&mut app, "Cancel");
 
         assert_eq!(
             std::fs::read_to_string(&path).expect("reading it"),
@@ -1565,19 +1565,19 @@ mod saying {
     fn the_status_row_says_a_document_is_unwritten() {
         let (_scratch, mut app, _path) = reading("say-status", "fn main() {}\n");
         let clean = support::render(&mut app, 70, 12);
-        assert!(!support::text_block(&clean).contains("unsaved"));
+        assert!(!support::text_block(&clean).contains("Unsaved"));
 
         support::type_text(&mut app, "x");
         let dirty = support::render(&mut app, 70, 12);
         assert!(
-            support::text_block(&dirty).contains("unsaved"),
+            support::text_block(&dirty).contains("Unsaved"),
             "nothing says the document has changes that are not on disk:\n{dirty}"
         );
 
         dispatch::dispatch(&mut app, Command::FileSave);
         let saved = support::render(&mut app, 70, 12);
         assert!(
-            !support::text_block(&saved).contains("unsaved"),
+            !support::text_block(&saved).contains("Unsaved"),
             "it still says unsaved after being written:\n{saved}"
         );
     }
@@ -1593,7 +1593,7 @@ mod saying {
 
         let dump = support::render(&mut app, 70, 12);
         assert!(
-            support::text_block(&dump).contains("Moved"),
+            support::text_block(&dump).contains("Changed on disk"),
             "nothing says the file moved under the edit:\n{dump}"
         );
     }
@@ -1815,7 +1815,7 @@ mod saying {
         // And cancelling is not a way to be moved. Both routes out, because
         // they are different code: a chosen row does not go through `leave`
         // and escape does not go through `answer`.
-        support::answer(&mut app, "cancel");
+        support::answer(&mut app, "Cancel");
         assert!(!app.should_quit(), "cancelling left");
         assert_eq!(
             reading(&app),
@@ -1916,7 +1916,7 @@ mod saying {
         support::type_text(&mut app, "x");
 
         dispatch::dispatch(&mut app, Command::Quit);
-        support::answer(&mut app, "cancel");
+        support::answer(&mut app, "Cancel");
         assert!(!app.should_quit(), "cancelling left anyway");
 
         dispatch::dispatch(&mut app, Command::Quit);

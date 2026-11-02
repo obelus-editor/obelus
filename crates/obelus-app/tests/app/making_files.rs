@@ -147,8 +147,8 @@ fn the_question_starts_in_the_directory_being_read() {
 
 /// And its own words, which is what tells it from the rename's question.
 ///
-/// Deliberate break: give `PromptKind::NewPath` the label `Call it: `. The
-/// two questions are then one row saying one thing about two different
+/// Deliberate break: give `PromptKind::NewPath` the label `Rename or move to:
+/// `. The two questions are then one row saying one thing about two different
 /// acts, and the only way to tell which is running is to remember what was
 /// pressed.
 #[test]

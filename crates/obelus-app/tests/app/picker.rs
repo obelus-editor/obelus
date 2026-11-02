@@ -3386,7 +3386,8 @@ fn a_line_number_is_typed_on_the_status_bar() {
 
     // The question is the status row, and it says what it wants.
     assert!(
-        rows.last().is_some_and(|status| status.contains("Line: ")),
+        rows.last()
+            .is_some_and(|status| status.contains("Go to line: ")),
         "the question is not on the status bar:\n{asking}"
     );
     // And nothing else moved: no list, no rule, no region over the code.
@@ -3410,7 +3411,7 @@ fn a_line_number_is_typed_on_the_status_bar() {
     assert_eq!(y.parse::<u16>().expect("a row"), 11, "{asking}");
     assert_eq!(
         x.parse::<usize>().expect("a column"),
-        1 + "Line: ".len(),
+        1 + "Go to line: ".len(),
         "the caret is not after the label:\n{asking}"
     );
 
@@ -3419,7 +3420,7 @@ fn a_line_number_is_typed_on_the_status_bar() {
     assert!(
         support::text_block(&typed)
             .lines()
-            .any(|row| row.contains("Line: 30")),
+            .any(|row| row.contains("Go to line: 30")),
         "what was typed is not shown:\n{typed}"
     );
 

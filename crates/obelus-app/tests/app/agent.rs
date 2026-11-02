@@ -2117,7 +2117,7 @@ fn the_view_says_when_nobody_is_chosen() {
     app.new_conversation();
     let text = screen(&mut app);
     assert!(
-        text.contains("No agent is active"),
+        text.contains("No agent is chosen"),
         "it did not say why it is empty:\n{text}"
     );
     assert_eq!(app.talking(), obelus_agent::Talking::Nobody);
@@ -2913,7 +2913,7 @@ fn an_agent_with_nothing_to_change_says_so() {
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     let screen = rows(&dump);
     assert!(
-        screen[screen.len() - 1].contains("Nothing to change"),
+        screen[screen.len() - 1].contains("No settings"),
         "the row says nothing at all:\n{dump}"
     );
 }
@@ -4399,7 +4399,7 @@ fn a_run_of_tool_calls_folds_into_one_row() {
     // Four reads, one row -- and the one that is not a read is its own row,
     // because a run is a run of one kind.
     let text = screen(&mut app);
-    assert!(text.contains("4 Files"), "the run is not folded:\n{text}");
+    assert!(text.contains("4 files"), "the run is not folded:\n{text}");
     assert!(
         !text.contains("Read src/app"),
         "a folded run is showing its members:\n{text}"
@@ -4411,14 +4411,14 @@ fn a_run_of_tool_calls_folds_into_one_row() {
 
     // Into the transcript and up to the run's heading, and enter opens it
     // where it is.
-    up_to(&mut app, "4 Files");
+    up_to(&mut app, "4 files");
     support::press(&mut app, KeyCode::Enter);
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     support::check(&format!("folded_{WIDTH}x{HEIGHT}"), &dump);
     let opened = rows(&dump);
     let heading = opened
         .iter()
-        .position(|row| row.contains("4 Files"))
+        .position(|row| row.contains("4 files"))
         .expect("the heading");
     assert!(
         opened[heading + 1].contains("Read src/app"),
@@ -5416,7 +5416,7 @@ fn a_conversation_about_a_note_offers_something_to_say() {
 
     let text = screen(&mut app);
     assert!(
-        text.contains("Look into this") && text.contains("Fill it in"),
+        text.contains("Look into this") && text.contains("Complete"),
         "the empty box offered nothing:\n{text}"
     );
 
@@ -5449,7 +5449,7 @@ fn a_conversation_about_a_note_offers_something_to_say() {
     );
     // Told, so there is nothing left to offer.
     assert!(
-        app.chat().is_some_and(|chat| chat.suggestion().is_none()) && !text.contains("Fill it in"),
+        app.chat().is_some_and(|chat| chat.suggestion().is_none()) && !text.contains("Complete"),
         "the box still offered the words after the note was told:\n{text}"
     );
 }
@@ -10591,7 +10591,7 @@ fn a_heading_the_transcript_folds_under_opens_when_it_is_clicked() {
 
     // Four reads under one heading, shut.
     let dump = support::render(&mut app, WIDTH, HEIGHT);
-    let at = row_of(&dump, "4 Files");
+    let at = row_of(&dump, "4 files");
     assert!(
         !rows(&dump).iter().any(|row| row.contains("Read src/app")),
         "the run is open before anybody asked:\n{dump}"
@@ -10718,7 +10718,7 @@ fn an_agent_is_told_what_the_note_says_only_when_it_does_not_know_it() {
     // reply to being told the note, and this agent has been.
     let text = screen(&mut app);
     assert!(
-        app.chat().is_some_and(|chat| chat.suggestion().is_none()) && !text.contains("Fill it in"),
+        app.chat().is_some_and(|chat| chat.suggestion().is_none()) && !text.contains("Complete"),
         "a conversation that knows its note was offered words for it:\n{text}"
     );
     support::type_text(&mut app, "/blocks");
@@ -11971,14 +11971,14 @@ fn a_note_another_obelus_is_talking_about_is_not_changed_here() {
     // And the palette does not offer the keys it will not honour, while
     // still offering the ones that work on a note anybody may read.
     let usable = support::usable_here(&mut app);
-    for word in ["Done", "Drop", "Move up", "Move down", "Under"] {
+    for word in ["Done", "Delete", "Move up", "Move down", "Indent"] {
         assert!(
             !usable.contains(&word.to_string()),
             "the palette offers {word}, which does nothing on this note: {usable:?}"
         );
     }
     assert!(
-        usable.contains(&"Another".to_string()),
+        usable.contains(&"New note".to_string()),
         "the palette stopped offering a key that still works: {usable:?}"
     );
 
@@ -12064,7 +12064,7 @@ fn a_locked_note_holds_back_the_keys_of_what_it_hangs_under() {
     );
     let usable = support::usable_here(&mut app);
     assert!(
-        !usable.contains(&"Drop".to_string()),
+        !usable.contains(&"Delete".to_string()),
         "the palette offers a key that would take somebody else's note away: {usable:?}"
     );
     // Moving the run is not changing it: every note in it keeps its words,
@@ -17322,7 +17322,7 @@ fn a_review_goes_back_to_its_page() {
 
     // The palette over the review offers the key, under the review's keys.
     support::press_control(&mut app, 'p');
-    support::type_text(&mut app, "read");
+    support::type_text(&mut app, "open");
     let text = screen(&mut app);
     assert!(
         text.contains("Go to the pull request's page"),
@@ -17409,7 +17409,7 @@ fn the_list_of_pull_requests_says_why_it_is_empty() {
     pump(&mut app, &events, "the refusal", the_list_has_answered);
     let text = screen(&mut app);
     assert!(
-        text.contains("Not signed in to GitHub: gh auth login signs in"),
+        text.contains("Not signed in to GitHub. Run gh auth login to sign in"),
         "a signed-out gh was not said as one:\n{text}"
     );
     assert!(

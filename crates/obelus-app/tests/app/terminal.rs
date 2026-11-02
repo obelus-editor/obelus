@@ -283,7 +283,7 @@ fn closing_the_project_asks_about_a_running_terminal_first() {
     assert!(app.has_a_project(), "closed without asking");
     assert_eq!(
         support::ways(&app),
-        ["Stop it and close the project", "cancel"],
+        ["Stop it and close the project", "Cancel"],
         "the question was not about the terminal"
     );
     support::answer(&mut app, "Stop it and close the project");
@@ -313,7 +313,7 @@ fn closing_the_others_asks_about_a_running_terminal_first() {
     );
     assert_eq!(
         support::ways(&app),
-        ["Stop it and close the others", "cancel"],
+        ["Stop it and close the others", "Cancel"],
         "the question was not about the one terminal"
     );
     support::answer(&mut app, "Stop it and close the others");
@@ -677,7 +677,7 @@ fn a_tab_s_cross_asks_about_a_running_terminal_first() {
     // The one document open, in the first slot there is.
     app.handle(Event::Shut(obelus_buffer::DocumentId::new(0)));
     assert!(app.terminal().is_some(), "closed without asking");
-    assert_eq!(support::ways(&app), ["Stop it and close", "cancel"]);
+    assert_eq!(support::ways(&app), ["Stop it and close", "Cancel"]);
     support::answer(&mut app, "Stop it and close");
     assert!(app.terminal().is_none(), "still open after the answer");
 }
@@ -699,7 +699,7 @@ fn a_program_that_has_ended_is_read_like_a_file() {
             .is_some_and(|terminal| terminal.ended().is_some())
     });
     assert!(
-        screen(&mut app).contains("Exited 3"),
+        screen(&mut app).contains("Exit code 3"),
         "the status row does not say how it ended:\n{}",
         screen(&mut app)
     );
@@ -714,7 +714,7 @@ fn a_program_that_has_ended_is_read_like_a_file() {
     assert!(
         trailing
             .iter()
-            .any(|said| said.as_deref() == Some("Exited 3")),
+            .any(|said| said.as_deref() == Some("Exit code 3")),
         "{trailing:?}"
     );
     press(&mut app, KeyCode::Esc, KeyModifiers::NONE);

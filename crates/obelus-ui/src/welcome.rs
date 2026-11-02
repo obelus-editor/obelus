@@ -34,7 +34,7 @@ use unicode_width::{UnicodeWidthChar as _, UnicodeWidthStr};
 
 use crate::{Screen, put, write};
 
-/// The commands worth naming, with the words this screen says them in.
+/// The commands worth naming, with the message this screen says them in.
 ///
 /// Ways *in*, which is what this screen is for: a file, a file that has
 /// changed, a search of the project, the agent, everything by name, and the way
@@ -47,15 +47,25 @@ use crate::{Screen, put, write};
 /// wide, beside a key and a picture of what they open. What is left to say
 /// there is which *thing* -- a file, the files that changed, the agent --
 /// and the verb is the key. Thirteen columns is what two of them and their
-/// caps fit into, which is the other half of why they are short.
-const OFFERED: &[(Command, &str)] = &[
-    (Command::FileOpen, "Open a file"),
-    (Command::FileChanged, "Changed files"),
-    (Command::SearchProject, "Search files"),
-    (Command::ConversationSelect, "Ask the agent"),
-    (Command::CommandPalette, "Run a command"),
-    (Command::Quit, "Leave Obelus"),
+/// caps fit into, which is the other half of why they are short -- and,
+/// where a palette's title fits in that room, the screen says the title.
+///
+/// Functions rather than the words, because the words are the reader's
+/// language, which can change while this screen is up.
+const OFFERED: &[(Command, Words)] = &[
+    (Command::FileOpen, obelus_i18n::welcome::open_file),
+    (Command::FileChanged, obelus_i18n::welcome::changed_files),
+    (Command::SearchProject, obelus_i18n::welcome::find_in_files),
+    (
+        Command::ConversationSelect,
+        obelus_i18n::welcome::ask_the_agent,
+    ),
+    (Command::CommandPalette, obelus_i18n::welcome::run_command),
+    (Command::Quit, obelus_i18n::welcome::quit),
 ];
+
+/// A message, asked for when the screen is drawn.
+type Words = fn() -> &'static str;
 
 /// Where Obelus's own website is.
 ///
@@ -610,7 +620,7 @@ impl WelcomeView<'_> {
                 Some(Hint {
                     icon: obelus_icons::enabled().then(|| obelus_icons::for_command(*command)),
                     key: chord.label(),
-                    text: (*text).to_string(),
+                    text: text().to_string(),
                 })
             })
             .collect()

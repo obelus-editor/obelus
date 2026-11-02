@@ -149,9 +149,9 @@ pub fn as_given(contents: &str, wide: bool) -> std::borrow::Cow<'_, str> {
 #[must_use]
 pub fn how_it_ended(ended: &obelus_terminal::Ended) -> String {
     match (&ended.signal, ended.succeeded()) {
-        (_, true) => "Ended".to_string(),
-        (Some(signal), false) => format!("Stopped by {signal}"),
-        (None, false) => format!("Exited {}", ended.code),
+        (_, true) => obelus_i18n::status::ended().to_string(),
+        (Some(signal), false) => obelus_i18n::status::stopped_by(signal.as_str()),
+        (None, false) => obelus_i18n::status::exited(ended.code),
     }
 }
 

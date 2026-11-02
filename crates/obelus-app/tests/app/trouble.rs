@@ -646,7 +646,7 @@ fn a_complaint_is_framed_under_the_word_and_says_how_many_more() {
     // Obelus's own row goes now that the frame is not Obelus's.
     let count = rows
         .iter()
-        .position(|row| row.contains("and 1 more here"))
+        .position(|row| row.contains("And 1 more here"))
         .unwrap_or_else(|| panic!("the box does not say how many more there are:\n{dump}"));
     assert!(
         count > said && count < bottom,
