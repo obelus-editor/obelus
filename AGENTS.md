@@ -720,6 +720,13 @@ crates/
                     lays something out and whoever draws it, belonging to
                     neither
   obelus-icons/     the Nerd Font switch and every glyph behind it
+  obelus-i18n/      what Obelus says, in the reader's language: Fluent
+                    files under locales/, a function each, written by the
+                    build, and the one switch saying which language
+                    · a name is not copy, what is said to an agent is a
+                      prompt, and a test never asks the system (lib); the
+                      first language is what there is, and the others are
+                      held to it by the build (build/generate)
   obelus-theme/     colours, and only fields the renderer reads
                     · a picture travels beside a theme's colours and not
                       among them (wallpaper)

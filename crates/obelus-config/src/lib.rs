@@ -82,6 +82,13 @@ pub struct Config {
     pub theme: String,
     /// Whether to draw Nerd Font glyphs.
     pub icons: bool,
+    /// Which language Obelus speaks: `auto` for the system's, or a
+    /// language's tag -- one of [`obelus_i18n::CHOICES`].
+    ///
+    /// About what Obelus says and nothing else. A command's name, a
+    /// setting's key and what is said to an agent are the same in every
+    /// language, so a file written in one reads in another.
+    pub language: String,
     /// Whether the margin says who last changed each line.
     ///
     /// About the margin, not about blame: whether the commit behind one
@@ -378,6 +385,9 @@ impl Default for Config {
             // Without the font, the fallbacks read correctly; with it, one
             // switch turns the glyphs on.
             icons: false,
+            // The system's, because the language a reader reads is the one
+            // thing about them their machine already knows.
+            language: "auto".to_string(),
             blame_margin: true,
             // Off, so a line is a line: a reader counting rows, comparing
             // two files side by side, or looking at a table in a comment is
@@ -661,15 +671,16 @@ impl Group {
     /// Not [`Group::Keys`], which is drawn on the keys page instead.
     pub const ALL: [Self; 4] = [Self::Appearance, Self::Reading, Self::Files, Self::Agent];
 
-    /// The tab's name.
+    /// The tab's name, in the language being spoken.
     #[must_use]
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
+        use obelus_i18n::settings;
         match self {
-            Self::Appearance => "Appearance",
-            Self::Reading => "Reading",
-            Self::Files => "Files",
-            Self::Agent => "Agent",
-            Self::Keys => "Keys",
+            Self::Appearance => settings::group_appearance(),
+            Self::Reading => settings::group_reading(),
+            Self::Files => settings::group_files(),
+            Self::Agent => settings::group_agent(),
+            Self::Keys => settings::group_keys(),
         }
     }
 }
@@ -918,6 +929,17 @@ pub const ALL: &[Setting] = &[
         // draws with whatever font the reader installed -- a guess Obelus
         // cannot make for them.
         drawn: Drawn::InATerminal,
+    },
+    Setting {
+        key: "language",
+        name: "Language",
+        about: "What Obelus says on the screen. Names stay as they are written, and what is said to an agent stays in English",
+        group: Group::Appearance,
+        // The reader's: which language they read is about them, and a
+        // project somebody else wrote cannot know it.
+        reach: Reach::ReaderOnly,
+        kind: Kind::Choice(obelus_i18n::CHOICES),
+        drawn: Drawn::Anywhere,
     },
     Setting {
         key: "wrap",
@@ -1186,6 +1208,7 @@ impl Config {
         match key {
             "theme" => Some(Value::Choice(self.theme.clone())),
             "icons" => Some(Value::Switch(self.icons)),
+            "language" => Some(Value::Choice(self.language.clone())),
             "blame_margin" => Some(Value::Switch(self.blame_margin)),
             "wrap" => Some(Value::Switch(self.wrap)),
             "tab_width" => Some(Value::Count(self.tab_width)),
@@ -1222,6 +1245,7 @@ impl Config {
         match (key, value) {
             ("theme", Value::Choice(word)) => self.theme = word.clone(),
             ("icons", Value::Switch(on)) => self.icons = *on,
+            ("language", Value::Choice(word)) => self.language = word.clone(),
             ("blame_margin", Value::Switch(on)) => self.blame_margin = *on,
             ("wrap", Value::Switch(on)) => self.wrap = *on,
             // Clamped where it is read rather than refused here: a file
@@ -1909,6 +1933,18 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
         }
         config.keys_from = word.to_string();
     }
+    // Checked the way the layout is, and kept as written for its reason:
+    // a language a newer Obelus beside this one speaks is a word this one
+    // must not take out of the file.
+    if let Some(word) = table.get("language").and_then(toml::Value::as_str)
+        && allowed("language")
+    {
+        if !obelus_i18n::CHOICES.contains(&word) {
+            tracing::warn!(word, "no language by this name, so Obelus speaks English");
+            no_such_choice.push(("language", word.to_string()));
+        }
+        config.language = word.to_string();
+    }
     if let Some(word) = table.get("build_jobs").and_then(toml::Value::as_str) {
         // Checked here for the workflow's reason: a word nothing answers to
         // read as obeyed would be a reader who asked for half the machine
@@ -2308,6 +2344,11 @@ fn lay(existing: &str, config: &Config, every: bool) -> String {
         "workflow",
         config.workflow != default.workflow,
         toml_edit::value(config.workflow.clone()),
+    );
+    put(
+        "language",
+        config.language != default.language,
+        toml_edit::value(config.language.clone()),
     );
     put(
         "keys_from",
@@ -3262,6 +3303,7 @@ mod tests {
         let config = Config {
             theme: "light".to_string(),
             icons: false,
+            language: "zh-CN".to_string(),
             blame_margin: false,
             wrap: true,
             animation: false,

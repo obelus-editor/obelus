@@ -168,18 +168,21 @@ fn label(version: &str) -> String {
 /// Beside the version rather than on a row of its own, for the reason the
 /// version is in the edge: it is a fact about the version.
 fn news(newer: &str) -> String {
-    format!("v{newer} is out")
+    obelus_i18n::welcome::newer_is_out(newer)
 }
 
-/// The version and the news, as one run of text, and which characters of
-/// it are the news.
+/// The version and the news, as one run of text, and which columns of it
+/// are the news.
+///
+/// Columns and not characters: the news is in the reader's language, and a
+/// character of Chinese is two of them.
 fn said(version: &str, newer: Option<&str>) -> (String, std::ops::Range<usize>) {
     let version = label(version);
     match newer {
         Some(newer) => {
             let news = news(newer);
-            let from = version.chars().count() + " \u{b7} ".chars().count();
-            let to = from + news.chars().count();
+            let from = obelus_text::text_width(&version) + obelus_text::text_width(" \u{b7} ");
+            let to = from + obelus_text::text_width(&news);
             (format!("{version} \u{b7} {news}"), from..to)
         }
         None => (version, 0..0),
@@ -201,10 +204,12 @@ fn foot(version: &str, newer: Option<&str>) -> (String, std::ops::Range<usize>) 
     let Some(edge) = WORDMARK.last() else {
         return (String::new(), 0..0);
     };
+    // The edge is a column a character, which is what lets it be cut by
+    // characters below while the run set into it is measured in columns.
     let width = edge.chars().count();
     let fits = |(said, news): (String, std::ops::Range<usize>)| {
         let set = format!(" {said} ");
-        (width >= set.chars().count() + 4).then_some((set, news))
+        (width >= obelus_text::text_width(&set) + 4).then_some((set, news))
     };
     let set = newer
         .and_then(|newer| fits(said(version, Some(newer))))
@@ -212,7 +217,7 @@ fn foot(version: &str, newer: Option<&str>) -> (String, std::ops::Range<usize>) 
     let Some((set, news)) = set else {
         return ((*edge).to_string(), 0..0);
     };
-    let taken = set.chars().count();
+    let taken = obelus_text::text_width(&set);
     let at = (width - taken) / 2;
     let foot = edge
         .chars()
@@ -432,6 +437,9 @@ impl WelcomeView<'_> {
             let row = if at == last { foot.as_str() } else { *row };
             let mut column = 0u16;
             for character in row.chars() {
+                // A column a character, but for the news in the foot,
+                // whose words may be wider.
+                let mut wide = 1;
                 if character != ' ' {
                     let step = u32::from(column * RAMP_STEPS / width.max(1));
                     // The news in plain ink, still while the mark moves
@@ -442,9 +450,9 @@ impl WelcomeView<'_> {
                         true => self.theme.foreground,
                         false => sheen(from, to, step, self.phase),
                     };
-                    put(cells, left + column, y, character, Style::new().fg(ink));
+                    wide = put(cells, left + column, y, character, Style::new().fg(ink));
                 }
-                column = column.saturating_add(1);
+                column = column.saturating_add(wide);
             }
             y += 1;
         }
@@ -510,15 +518,13 @@ impl WelcomeView<'_> {
             .or_else(|| fits(said(self.version, None)))
             && let Ok(offset) = u16::try_from(usize::from(width).saturating_sub(said.width()))
         {
-            for (at, character) in said.chars().enumerate() {
-                let ink = match news.contains(&at) {
+            let mut at = 0u16;
+            for character in said.chars() {
+                let ink = match news.contains(&usize::from(at)) {
                     true => self.theme.foreground,
                     false => self.theme.gutter,
                 };
-                let Ok(at) = u16::try_from(at) else {
-                    continue;
-                };
-                put(
+                at += put(
                     cells,
                     left + offset + at,
                     y,

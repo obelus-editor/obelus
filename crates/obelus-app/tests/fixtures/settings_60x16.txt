@@ -11,9 +11,9 @@ screen 60x16  editor 60x14  status 60x1
  8|     name -- a terminal without a patched font draws a      
  9|     box instead                                            
 10|                                                            
-11|   New versions                        ☑                    
-12|     Ask GitHub once a day whether a newer Obelus is out,   
-13|     and say so on the welcome screen                       
+11|   Language                            The system's ▸       
+12|     What Obelus says on the screen. Names stay as they     
+13|     are written, and what is said to an agent stays in     
 14|────────────────────────────────────────────────────────────
 15| > Filter settings                                          
 -- style --
@@ -28,9 +28,9 @@ screen 60x16  editor 60x14  status 60x1
  8|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccc
  9|cccccaaaaaaaaaaacccccccccccccccccccccccccccccccccccccccccccc
 10|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-11|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-12|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccc
-13|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccccccccccccc
+11|ccccccccccccccccccccccccccccccccccccccccccccccccccccaccccccc
+12|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccc
+13|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccc
 14|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 15|dddaaaaaaaaaaaaaaadddddddddddddddddddddddddddddddddddddddddd
 -- legend --

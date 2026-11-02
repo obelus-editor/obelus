@@ -994,6 +994,12 @@ impl App {
                 key => obelus_bot::platform::named(key).map(|platform| platform.name.into()),
             },
             "keys_from" => obelus_config::key_layout(word).map(|layout| layout.name.into()),
+            // A language by its own name, which is how its reader looks for
+            // it -- and the system's in the language being spoken.
+            "language" => match word {
+                "auto" => Some(obelus_i18n::settings::language_auto().into()),
+                word => obelus_i18n::Language::named(word).map(|language| language.name().into()),
+            },
             // A share of the machine, with what it comes to on this one:
             // the word is the same on every machine the file is read on,
             // and the number is what the reader is actually choosing.
@@ -1478,6 +1484,7 @@ impl App {
         // another machine says -- and the settings page does not offer the
         // row at all. See `obelus_config::Drawn`.
         obelus_icons::use_glyphs(self.settled.config.icons || obelus_config::in_a_window());
+        obelus_i18n::speak(&self.settled.config.language);
         obelus_text::lay_tabs_at(self.settled.config.tab_width);
         // And the one setting the application cannot act on itself: how
         // big the text is, which means something only where Obelus draws
