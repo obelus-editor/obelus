@@ -127,7 +127,7 @@ fn what_the_encoding_cannot_write_is_not_saved() {
     assert!(app.current_buffer().expect("a buffer").is_dirty());
     assert!(
         app.note()
-            .is_some_and(|said| said.contains("GBK cannot write 😀")),
+            .is_some_and(|said| said.contains("GBK cannot encode 😀")),
         "the status row says {:?}",
         app.note()
     );

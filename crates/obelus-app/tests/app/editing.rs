@@ -1259,11 +1259,11 @@ mod saving {
 
         // Each way out says what it loses, because neither is the safe one.
         assert!(
-            support::text_block(&dump).contains("Loses what was written there"),
+            support::text_block(&dump).contains("What is on disk will be lost"),
             "the ways out do not say what they lose:\n{dump}"
         );
 
-        support::answer(&mut app, "Save mine over it");
+        support::answer(&mut app, "Overwrite");
         assert_eq!(
             std::fs::read_to_string(&path).expect("reading it"),
             "xmine\n",
@@ -1355,7 +1355,7 @@ mod saving {
         std::fs::remove_file(&path).expect("deleting it");
 
         dispatch::dispatch(&mut app, Command::FileSave);
-        support::answer(&mut app, "Close it and let it go");
+        support::answer(&mut app, "Close without saving");
 
         assert!(app.current_buffer().is_none(), "it kept the document");
         assert!(
@@ -1414,7 +1414,7 @@ mod saving {
         }));
 
         dispatch::dispatch(&mut app, Command::FileSave);
-        support::answer(&mut app, "Take what is on disk");
+        support::answer(&mut app, "Use the version on disk");
 
         let buffer = app.current_buffer().expect("a buffer");
         assert_eq!(
@@ -1442,7 +1442,7 @@ mod saving {
         }));
 
         dispatch::dispatch(&mut app, Command::FileSave);
-        support::answer(&mut app, "Take what is on disk");
+        support::answer(&mut app, "Use the version on disk");
         assert!(
             !app.current_buffer().expect("a buffer").is_dirty(),
             "what came off disk was called unwritten"
@@ -1486,9 +1486,7 @@ mod saving {
         // And it asks again next time, because nothing was settled.
         dispatch::dispatch(&mut app, Command::FileSave);
         assert!(
-            support::ways(&app)
-                .iter()
-                .any(|way| way == "Save mine over it"),
+            support::ways(&app).iter().any(|way| way == "Overwrite"),
             "the second save went through without asking"
         );
     }
@@ -1670,7 +1668,7 @@ mod saying {
             "it did not say which file leaving would lose:\n{dump}"
         );
 
-        support::answer(&mut app, "Leave without saving");
+        support::answer(&mut app, "Quit without saving");
         assert!(app.should_quit(), "answering did not leave");
     }
 
@@ -1865,7 +1863,7 @@ mod saying {
             "it named the files instead of counting them:\n{dump}"
         );
 
-        support::answer(&mut app, "Save everything and leave");
+        support::answer(&mut app, "Save all and quit");
 
         assert!(app.should_quit(), "it wrote everything and then stayed");
         assert_eq!(
@@ -1895,7 +1893,7 @@ mod saying {
         std::fs::remove_dir_all(&gone).expect("taking the directory away");
 
         dispatch::dispatch(&mut app, Command::Quit);
-        support::answer(&mut app, "Save everything and leave");
+        support::answer(&mut app, "Save all and quit");
 
         assert!(
             !app.should_quit(),
@@ -1903,7 +1901,7 @@ mod saying {
         );
         let dump = support::render(&mut app, 70, 12);
         assert!(
-            support::text_block(&dump).contains("sample.rs: not saved"),
+            support::text_block(&dump).contains("Could not save sample.rs"),
             "it did not say which file would not go:\n{dump}"
         );
     }
@@ -1923,7 +1921,7 @@ mod saying {
         assert!(
             support::ways(&app)
                 .iter()
-                .any(|way| way == "Leave without saving"),
+                .any(|way| way == "Quit without saving"),
             "the second attempt left without asking"
         );
     }
@@ -2134,7 +2132,7 @@ mod closing {
                 .unwrap_or_else(|| panic!("no row saying {what:?} in:\n{dump}"))
         };
         assert!(
-            row("is unsaved") < row("Save and close it"),
+            row("is unsaved") < row("Save and close"),
             "the question is drawn under the answers to it:\n{dump}"
         );
     }
@@ -2163,7 +2161,7 @@ mod closing {
         support::type_text(&mut app, "x");
 
         dispatch::dispatch(&mut app, Command::DocumentClose);
-        support::answer(&mut app, "Save and close it");
+        support::answer(&mut app, "Save and close");
 
         assert_eq!(
             std::fs::read_to_string(&path).expect("reading it"),
@@ -2182,7 +2180,7 @@ mod closing {
         support::type_text(&mut app, "x");
 
         dispatch::dispatch(&mut app, Command::DocumentClose);
-        support::answer(&mut app, "Close it without saving");
+        support::answer(&mut app, "Close without saving");
 
         assert!(app.current_buffer().is_none(), "it did not close");
         assert_eq!(
@@ -2209,7 +2207,7 @@ mod closing {
         std::fs::remove_dir_all(&gone).expect("taking the directory away");
 
         dispatch::dispatch(&mut app, Command::DocumentClose);
-        support::answer(&mut app, "Save and close it");
+        support::answer(&mut app, "Save and close");
 
         assert!(
             app.current_buffer().is_some(),
@@ -2322,7 +2320,7 @@ mod closing_the_others {
             "the question does not name the file closing would lose:\n{dump}"
         );
 
-        support::answer(&mut app, "Save everything and close the others");
+        support::answer(&mut app, "Save all and close others");
         assert_eq!(open(&app), vec![paths[1].clone()]);
         assert_eq!(
             std::fs::read_to_string(&paths[0]).expect("reading it"),
@@ -2339,7 +2337,7 @@ mod closing_the_others {
         support::type_text(&mut app, "x");
         switch_to(&mut app, "three.rs");
         dispatch::dispatch(&mut app, Command::DocumentCloseOthers);
-        support::answer(&mut app, "Close the others without saving");
+        support::answer(&mut app, "Close others without saving");
 
         assert_eq!(open(&app), vec![paths[2].clone()]);
         assert_eq!(
@@ -2380,7 +2378,7 @@ mod closing_the_others {
         std::fs::remove_dir_all(&gone).expect("taking the directory away");
 
         dispatch::dispatch(&mut app, Command::DocumentCloseOthers);
-        support::answer(&mut app, "Save everything and close the others");
+        support::answer(&mut app, "Save all and close others");
 
         assert_eq!(open(&app).len(), 3, "it closed on a save that failed");
     }

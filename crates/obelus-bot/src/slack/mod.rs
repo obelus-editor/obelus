@@ -36,7 +36,6 @@ pub static DESCRIPTION: Description = Description {
         // following a reader's settings to another machine; this keeps the
         // reader from putting them there.
         about: "One app per machine: paste it into Create New App → From a manifest",
-        what: "the manifest",
         text: manifest,
     },
     begin: "Send a message here to talk to an agent; it answers in the thread under it.",

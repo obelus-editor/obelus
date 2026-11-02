@@ -2789,7 +2789,7 @@ fn what_went_wrong_is_a_list_over_the_welcome_screen() {
     assert!(text.contains("config.toml:2"), "{dump}");
     // And what the list is, where a list says what it is -- with the key
     // that lets it go, since nothing on it can be typed or chosen.
-    assert!(text.contains("What went wrong starting up"), "{dump}");
+    assert!(text.contains("Problems starting up"), "{dump}");
     assert!(
         text.contains("Close"),
         "nothing says how to let it go:\n{dump}"

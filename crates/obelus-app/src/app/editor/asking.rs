@@ -10,6 +10,7 @@
 //! a kind; three of them written where each is asked would drift apart.
 
 use obelus_component::question::{Answer, Closing, Leaving, Question, Saving, Writing};
+use obelus_i18n::editing as said;
 
 use crate::app::*;
 
@@ -30,10 +31,10 @@ impl App {
     /// it: there is no other way back to what was in it.
     pub(in crate::app) fn ask_before_closing(&mut self, id: DocumentId) {
         self.stop_to_ask(
-            Question::new(format!("{} is unsaved", self.file_path(id)))
-                .way("Save and close it", Answer::Closing(id, Closing::Save))
+            Question::new(said::unsaved_file(self.file_path(id)))
+                .way(said::save_and_close(), Answer::Closing(id, Closing::Save))
                 .way(
-                    "Close it without saving",
+                    said::close_without_saving(),
                     Answer::Closing(id, Closing::Discard),
                 ),
         );
@@ -46,11 +47,11 @@ impl App {
         let what = self.what_would_be_lost(unsaved, self.terminals_running(), None);
         self.stop_to_ask(
             Question::new(what)
+                .way(said::save_all_and_quit(), Answer::Leaving(Leaving::SaveAll))
                 .way(
-                    "Save everything and leave",
-                    Answer::Leaving(Leaving::SaveAll),
-                )
-                .way("Leave without saving", Answer::Leaving(Leaving::Discard)),
+                    said::quit_without_saving(),
+                    Answer::Leaving(Leaving::Discard),
+                ),
         );
     }
 
@@ -63,11 +64,14 @@ impl App {
         self.stop_to_ask(
             Question::new(self.what_would_be_lost(unsaved, 0, None))
                 .way(
-                    "Save everything and switch",
+                    said::save_all_and_switch(),
                     Answer::Switching(Leaving::SaveAll),
                 )
-                .way("Switch without saving", Answer::Switching(Leaving::Discard))
-                .saying("Loses your changes"),
+                .way(
+                    said::switch_without_saving(),
+                    Answer::Switching(Leaving::Discard),
+                )
+                .saying(said::changes_will_be_lost()),
         );
     }
 
@@ -82,14 +86,14 @@ impl App {
         self.stop_to_ask(
             Question::new(what)
                 .way(
-                    "Save everything and close",
+                    said::save_all_and_close(),
                     Answer::ClosingTheProject(Leaving::SaveAll),
                 )
                 .way(
-                    "Close without saving",
+                    said::close_without_saving(),
                     Answer::ClosingTheProject(Leaving::Discard),
                 )
-                .saying("Loses your changes"),
+                .saying(said::changes_will_be_lost()),
         );
     }
 
@@ -111,14 +115,14 @@ impl App {
         self.stop_to_ask(
             Question::new(what)
                 .way(
-                    "Save everything and close the others",
+                    said::save_all_and_close_others(),
                     Answer::ClosingTheOthers(keep, Leaving::SaveAll),
                 )
                 .way(
-                    "Close the others without saving",
+                    said::close_others_without_saving(),
                     Answer::ClosingTheOthers(keep, Leaving::Discard),
                 )
-                .saying("Loses your changes"),
+                .saying(said::changes_will_be_lost()),
         );
     }
 
@@ -134,21 +138,21 @@ impl App {
         running: usize,
         except: Option<DocumentId>,
     ) -> String {
-        let what = match unsaved {
-            // Which one, when there is only one. A count is all a prompt
-            // can say about several, but about a single file it would be
-            // saying less than it knows -- and the reader is about to
-            // decide whether to write it.
-            1 => match self.first_unsaved_except(except) {
-                Some(id) => format!("{} is unsaved", self.file_path(id)),
-                None => "1 file is unsaved".to_string(),
-            },
-            many => format!("{many} files are unsaved"),
+        // Which one, when there is only one. A count is all a prompt can
+        // say about several, but about a single file it would be saying
+        // less than it knows -- and the reader is about to decide whether
+        // to write it.
+        let one = match unsaved {
+            1 => self
+                .first_unsaved_except(except)
+                .map(|id| self.file_path(id)),
+            _ => None,
         };
-        match running {
-            0 => what,
-            1 => format!("{what}, and a terminal is still running"),
-            many => format!("{what}, and {many} terminals are still running"),
+        match (one, running) {
+            (Some(path), 0) => said::unsaved_file(path),
+            (Some(path), running) => said::unsaved_file_and_terminals(path, running),
+            (None, 0) => said::unsaved_files(unsaved),
+            (None, running) => said::unsaved_files_and_terminals(unsaved, running),
         }
     }
 
@@ -160,13 +164,13 @@ impl App {
     /// "no".
     pub(in crate::app) fn ask_before_saving(&mut self, id: DocumentId) {
         self.stop_to_ask(
-            Question::new(format!("{} changed on disk", self.file_path(id)))
-                .way("Save mine over it", Answer::Saving(id, Saving::Mine))
-                .saying("Loses what was written there")
-                .way("Take what is on disk", Answer::Saving(id, Saving::Theirs))
+            Question::new(said::changed_on_disk(self.file_path(id)))
+                .way(said::overwrite(), Answer::Saving(id, Saving::Mine))
+                .saying(said::overwrite_about())
+                .way(said::use_the_disk(), Answer::Saving(id, Saving::Theirs))
                 // Not lost for good, which is the whole difference between
                 // this way out and the one above it.
-                .saying("Undo brings yours back"),
+                .saying(said::use_the_disk_about()),
         );
     }
 
@@ -177,13 +181,13 @@ impl App {
     /// instead, and nothing there to write over.
     pub(in crate::app) fn ask_before_writing_back(&mut self, id: DocumentId) {
         self.stop_to_ask(
-            Question::new(format!("{} was deleted", self.file_path(id)))
-                .way("Write it back", Answer::Writing(id, Writing::Back))
+            Question::new(said::deleted(self.file_path(id)))
+                .way(said::write_it_back(), Answer::Writing(id, Writing::Back))
                 .way(
-                    "Close it and let it go",
+                    said::close_without_saving(),
                     Answer::Writing(id, Writing::LetGo),
                 )
-                .saying("Loses your changes"),
+                .saying(said::changes_will_be_lost()),
         );
     }
 

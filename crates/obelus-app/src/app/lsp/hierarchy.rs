@@ -581,11 +581,11 @@ impl App {
         reply: Reply,
     ) {
         let Some(item) = obelus_lsp::hierarchy::prepared(&reply.result) else {
-            self.wrong("Nothing here to follow".to_string());
+            self.wrong(obelus_i18n::language_server::nothing_to_follow());
             return;
         };
         let Some(root) = obelus_lsp::hierarchy::root_of(&item) else {
-            self.wrong("Nothing here to follow".to_string());
+            self.wrong(obelus_i18n::language_server::nothing_to_follow());
             return;
         };
         // Whatever the tree being replaced still had out. Without this a
@@ -616,7 +616,7 @@ impl App {
     /// Puts the list up, with the rows a tree has.
     fn open_calls(&mut self, calls: &Calls) {
         let mut picker = Picker::new(self.rows_of(calls), PickerLayout::FullArea);
-        picker.before_typing("Filter calls");
+        picker.before_typing(obelus_i18n::language_server::filter_calls());
         picker.previews();
         // The children of a row belong to it: filtering that pulled one out
         // from under the row that calls it would leave a place on screen
@@ -625,7 +625,7 @@ impl App {
         // Scopes rather than groups: who calls this and what this calls
         // are two answers from two questions, not two halves of one list,
         // and an "all" tab over them would promise a tree nothing produces.
-        picker.with_scopes(&Direction::ALL.map(Direction::label));
+        picker.with_scopes(&Direction::ALL.map(tab_label));
         // Its rows hold what they call, so enter opens them and
         // `alt+enter` goes to one.
         picker.opens_rows();
@@ -729,7 +729,7 @@ impl App {
         let Ok(request) = client.request(direction.method(), &serde_json::json!({ "item": item }))
         else {
             if wanted {
-                self.wrong("The language server is not listening".to_string());
+                self.wrong(obelus_i18n::language_server::not_listening());
             }
             return;
         };
@@ -767,7 +767,7 @@ impl App {
         if nothing {
             self.wrong(match &reply.result {
                 Err(why) => why.clone(),
-                Ok(_) => direction.nothing().to_string(),
+                Ok(_) => nothing_that_way(direction).to_string(),
             });
         }
         self.after_an_answer();
@@ -863,7 +863,7 @@ impl App {
             // Asked already, and there was nothing. Said again rather than
             // shut, because shutting one would put the mark back and offer
             // the reader the same empty answer a second time.
-            (false, Some(false)) => self.wrong(direction.nothing().to_string()),
+            (false, Some(false)) => self.wrong(nothing_that_way(direction)),
             // Asked already, and kept: the dear part of this was paid when
             // nobody was waiting.
             (false, Some(true)) => {
@@ -1048,7 +1048,7 @@ impl App {
         self.lsp
             .calls
             .as_ref()
-            .map(|calls| calls.tree.direction.label())
+            .map(|calls| tab_label(calls.tree.direction))
     }
 
     /// The rows of the tree, as what they are called and how deep they sit.
@@ -1097,5 +1097,21 @@ fn opens_of(rung: &Rung) -> Option<bool> {
     match (rung.opened, rung.holds()) {
         (true, _) | (false, Some(true)) => Some(rung.opened),
         (false, _) => None,
+    }
+}
+
+/// What a direction's tab is called.
+fn tab_label(direction: Direction) -> &'static str {
+    match direction {
+        Direction::Callers => obelus_i18n::language_server::callers(),
+        Direction::Calls => obelus_i18n::language_server::calls(),
+    }
+}
+
+/// What to say about a name with nothing this way.
+fn nothing_that_way(direction: Direction) -> &'static str {
+    match direction {
+        Direction::Callers => obelus_i18n::language_server::nothing_calls_that(),
+        Direction::Calls => obelus_i18n::language_server::calls_nothing(),
     }
 }

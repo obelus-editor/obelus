@@ -90,6 +90,7 @@ use crossterm::event::{KeyCode, KeyModifiers};
 use obelus_text::coordinates::DisplayColumn;
 
 use super::composer::Composer;
+use crate::copied::Copied;
 
 /// How far under an answer's name what it means is drawn.
 ///
@@ -463,20 +464,20 @@ impl Card {
     /// What a copy takes from the card: what is held in the words, or all
     /// of them. Nothing on a card with nowhere to write.
     #[must_use]
-    pub fn copied(&self) -> Option<(String, &'static str)> {
+    pub fn copied(&self) -> Option<(String, Copied)> {
         let words = self.words.as_ref()?;
         Some(match words.composer.selected() {
-            Some(held) => (held, "selection"),
-            None => (words.composer.text(), "answer"),
+            Some(held) => (held, Copied::Selection),
+            None => (words.composer.text(), Copied::Answer),
         })
     }
 
     /// The same, and takes it out.
-    pub fn cut(&mut self, width: u16) -> Option<(String, &'static str)> {
+    pub fn cut(&mut self, width: u16) -> Option<(String, Copied)> {
         let words = self.words.as_mut()?;
         Some(match words.composer.cut(width.max(1)) {
-            Some(held) => (held, "selection"),
-            None => (words.composer.take(), "answer"),
+            Some(held) => (held, Copied::Selection),
+            None => (words.composer.take(), Copied::Answer),
         })
     }
 

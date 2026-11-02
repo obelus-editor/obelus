@@ -335,10 +335,10 @@ impl App {
     pub(in crate::app) fn symbol_actions(&self) -> Result<Vec<SymbolAction>, String> {
         let buffer = self
             .current_buffer()
-            .ok_or_else(|| "No file open".to_string())?;
+            .ok_or_else(|| obelus_i18n::editing::no_file_open().to_string())?;
         let language = buffer
             .language()
-            .ok_or_else(|| "Not a language Obelus knows".to_string())?;
+            .ok_or_else(|| obelus_i18n::editing::unknown_language().to_string())?;
 
         // On a name, before anything about servers. Every question in the
         // menu is about the thing under the cursor, and on a bracket or a
@@ -347,14 +347,16 @@ impl App {
         // act on -- move the cursor -- where the others are about the
         // machine.
         if !self.name_at(buffer) {
-            return Err("No symbol here".to_string());
+            return Err(obelus_i18n::language_server::no_symbol_here().to_string());
         }
 
         if let Some(why) = self.why_not_asking(language) {
             return Err(why);
         }
         let Some(capabilities) = self.servers.get(&language).and_then(Client::capabilities) else {
-            return Err(format!("{} is still starting", named(language)));
+            return Err(obelus_i18n::language_server::still_starting(named(
+                language,
+            )));
         };
         let actions: Vec<SymbolAction> = action::ALL
             .iter()
@@ -362,7 +364,7 @@ impl App {
             .filter(|action| action.supported(capabilities))
             .collect();
         if actions.is_empty() {
-            return Err("The language server answers none of these".to_string());
+            return Err(obelus_i18n::language_server::answers_none_of_these().to_string());
         }
         Ok(actions)
     }
@@ -1065,7 +1067,7 @@ impl App {
             }
             Err(error) => {
                 tracing::warn!(%error, "could not ask");
-                self.wrong("The language server is not listening".to_string());
+                self.wrong(obelus_i18n::language_server::not_listening());
             }
         }
     }
@@ -1171,13 +1173,13 @@ impl App {
             // a reader who would turn it on and find nothing to start.
             return Some(match obelus_lsp::command_for(language) {
                 Some(command) if !obelus_lsp::on_path(command) => {
-                    format!("{command} is not installed")
+                    obelus_i18n::language_server::not_installed(command)
                 }
                 Some(_) if !self.settled.config.language_servers => {
-                    "Language servers are off in the settings".to_string()
+                    obelus_i18n::language_server::servers_are_off().to_string()
                 }
-                Some(_) => format!("No server running for {}", language.name()),
-                None => format!("No language server for {}", language.name()),
+                Some(_) => obelus_i18n::language_server::no_server_running_for(language.name()),
+                None => obelus_i18n::language_server::no_server_for(language.name()),
             });
         };
         // Running and not ready, which is the first second or two of every
@@ -1186,7 +1188,7 @@ impl App {
         client
             .capabilities()
             .is_none()
-            .then(|| format!("{} is still starting", named(language)))
+            .then(|| obelus_i18n::language_server::still_starting(named(language)))
     }
 
     /// Whether a document is still the one a question was asked about.
@@ -1375,12 +1377,14 @@ impl App {
                     now = ?now,
                     "dropping an answer about a version that has been replaced"
                 );
-                self.wrong("The file changed while asking".to_string());
+                self.wrong(obelus_i18n::language_server::changed_while_asking());
             }
             Outcome::Failed(message) => self.wrong(message),
-            Outcome::NotYet => self.wrong("Still indexing".to_string()),
+            Outcome::NotYet => self.wrong(obelus_i18n::language_server::still_indexing()),
             Outcome::Nothing => {
-                self.wrong(format!("Nothing for {}", title_of(action)));
+                self.wrong(obelus_i18n::language_server::nothing_found(title_of(
+                    action,
+                )));
             }
             Outcome::Places(mut places) if places.len() == 1 => {
                 let place = places.remove(0);
@@ -1391,7 +1395,7 @@ impl App {
                 let items = place_rows(&places, &self.working_directory);
                 self.quiet();
                 let mut picker = Picker::new(items, PickerLayout::FullArea);
-                picker.before_typing("Filter places");
+                picker.before_typing(obelus_i18n::language_server::filter_places());
                 picker.previews();
                 self.show_list(picker);
             }
@@ -1407,7 +1411,7 @@ impl App {
     /// is offered whether or not there is one.
     pub fn restart_server(&mut self) {
         let Some(language) = self.current_buffer().and_then(Buffer::language) else {
-            self.wrong("No file to restart a server for".to_string());
+            self.wrong(obelus_i18n::language_server::no_file_to_restart());
             return;
         };
 
@@ -1440,10 +1444,10 @@ impl App {
             // it starts, which says it.
             Some(_) if self.servers.contains_key(&language) => {}
             Some(command) if !obelus_lsp::on_path(command) => {
-                self.wrong(format!("{command} is not installed"));
+                self.wrong(obelus_i18n::language_server::not_installed(command));
             }
-            Some(command) => self.wrong(format!("{command} would not start")),
-            None => self.wrong(format!("No language server for {}", language.name())),
+            Some(command) => self.wrong(obelus_i18n::language_server::would_not_start(command)),
+            None => self.wrong(obelus_i18n::language_server::no_server_for(language.name())),
         }
     }
 
@@ -1454,7 +1458,7 @@ impl App {
     /// file of that language would start it again.
     pub fn stop_server(&mut self) {
         let Some(language) = self.current_buffer().and_then(Buffer::language) else {
-            self.wrong("No file to stop a server for".to_string());
+            self.wrong(obelus_i18n::language_server::no_file_to_stop());
             return;
         };
         let was_running = self.stop(language);
@@ -1462,8 +1466,10 @@ impl App {
         match (obelus_lsp::command_for(language), was_running) {
             // Nothing said: the server's mark on the status row says it.
             (Some(_), true) => {}
-            (Some(command), false) => self.wrong(format!("{command} was not running")),
-            (None, _) => self.wrong(format!("No language server for {}", language.name())),
+            (Some(command), false) => {
+                self.wrong(obelus_i18n::language_server::was_not_running(command))
+            }
+            (None, _) => self.wrong(obelus_i18n::language_server::no_server_for(language.name())),
         }
     }
 
@@ -1483,12 +1489,12 @@ impl App {
     /// root.
     pub fn open_outline(&mut self) {
         let Some(buffer) = self.current_buffer() else {
-            self.wrong("No file to outline".to_string());
+            self.wrong(obelus_i18n::language_server::no_file_to_outline());
             return;
         };
         let path = buffer.path().to_path_buf();
         let Some(language) = buffer.syntax().map(SyntaxState::language) else {
-            self.wrong("Not a language Obelus knows".to_string());
+            self.wrong(obelus_i18n::editing::unknown_language());
             return;
         };
 
@@ -1508,8 +1514,8 @@ impl App {
                     rows: crate::app::COMPACT_ROWS,
                 },
             );
-            picker.before_typing("Filter symbols");
-            picker.when_empty("Asking the language server\u{2026}");
+            picker.before_typing(obelus_i18n::language_server::filter_symbols());
+            picker.when_empty(obelus_i18n::language_server::asking());
             picker.is_outline_of(path);
             picker.previews();
             self.show_list(picker);
@@ -1578,14 +1584,14 @@ impl App {
                 rows: crate::app::COMPACT_ROWS,
             },
         );
-        picker.before_typing("Filter symbols");
+        picker.before_typing(obelus_i18n::language_server::filter_symbols());
         picker.when_empty(if tags::has_tags(language) {
-            "This file defines nothing"
+            obelus_i18n::language_server::no_symbols_in_this_file()
         } else {
             // Not the same fact, and the difference is the reader's next
             // move: one means look elsewhere, the other means do not bother
             // pressing this key for this language.
-            "No outline for this language"
+            obelus_i18n::language_server::no_outline_for_this_language()
         });
         // On the symbol the cursor is in, or the nearest one above it, which
         // is the answer to "where am I" that an outline is usually opened to
@@ -1696,7 +1702,7 @@ impl App {
             .map(|symbol| symbol.name.clone());
         if let Some(picker) = self.picker.as_mut() {
             picker.replace(items);
-            picker.when_empty("This file defines nothing");
+            picker.when_empty(obelus_i18n::language_server::no_symbols_in_this_file());
             if let Some(here) = here {
                 picker.prefer(here);
             }
@@ -1771,7 +1777,7 @@ impl App {
     fn on_formatting(&mut self, id: DocumentId, version: i32, reply: Reply) {
         if !self.unmoved(id, version) {
             tracing::debug!("the file changed while it was being laid out");
-            self.wrong("The file changed while formatting".to_string());
+            self.wrong(obelus_i18n::language_server::changed_while_formatting());
         } else if let Some(edits) = action::edits_in(reply.result.ok()) {
             let encoding = self.file(id).and_then(Buffer::language).map_or_else(
                 || lsp_types::PositionEncodingKind::UTF16,
@@ -1891,7 +1897,7 @@ impl App {
             })
             .collect();
         picker.replace(items);
-        picker.while_empty("The server knows no such name");
+        picker.while_empty(obelus_i18n::language_server::no_symbol_matches());
     }
 }
 
@@ -2092,10 +2098,12 @@ impl App {
             // which is the difference this match was already about.
             match self.server_state() {
                 Some((_, obelus_lsp::ServerState::Ready)) => {
-                    self.say("Nothing wrong with this file".to_string());
+                    self.say(obelus_i18n::language_server::no_problems_in_this_file());
                 }
-                Some((command, _)) => self.wrong(format!("{command} is not answering")),
-                None => self.wrong("No language server for this file".to_string()),
+                Some((command, _)) => {
+                    self.wrong(obelus_i18n::language_server::not_responding(command))
+                }
+                None => self.wrong(obelus_i18n::language_server::no_server_for_this_file()),
             }
             return;
         }
@@ -2113,7 +2121,7 @@ impl App {
         };
         let names: Vec<&str> = radii.iter().map(|radius| radius.label()).collect();
         let mut picker = Picker::new(Vec::new(), PickerLayout::Compact { rows: 10 });
-        picker.before_typing("Filter problems");
+        picker.before_typing(obelus_i18n::language_server::filter_problems());
         picker.with_scopes(&names);
         picker.keeps_order(true);
         // A row in another file is shown in the room above the rows, which
@@ -2204,15 +2212,13 @@ impl App {
             // words for being empty, and a heading over them would be the
             // same news twice.
             (true, _) => String::new(),
-            (false, Wrong::File) => format!(
-                "{} in {}",
+            (false, Wrong::File) => obelus_i18n::language_server::problems_in_file(
+                named.first().map_or("", String::as_str),
                 counted(&severities),
-                named.first().map_or("", String::as_str)
             ),
-            (false, Wrong::Project) => match paths.len() {
-                1 => format!("{} in 1 file", counted(&severities)),
-                files => format!("{} in {files} files", counted(&severities)),
-            },
+            (false, Wrong::Project) => {
+                obelus_i18n::language_server::problems_in_files(paths.len(), counted(&severities))
+            }
         };
         let at = self.trouble_to_open_on(radius, &items);
         let Some(picker) = self.picker.as_mut() else {
@@ -2220,12 +2226,12 @@ impl App {
         };
         picker.replace(items);
         picker.while_empty(match radius {
-            Wrong::File => "Nothing wrong with this file",
+            Wrong::File => obelus_i18n::language_server::no_problems_in_this_file(),
             // Not "nothing is wrong with this project": no server was
             // asked, and none of them has to say anything about a file
             // nobody has opened. What is true is that nothing has been
             // said.
-            Wrong::Project => "No server has said anything about this project",
+            Wrong::Project => obelus_i18n::language_server::no_problems_reported(),
         });
         picker.about(&about);
         if let Some(at) = at {
@@ -2400,10 +2406,10 @@ pub(in crate::app) enum Wrong {
 
 impl Wrong {
     /// The tab's name.
-    const fn label(self) -> &'static str {
+    fn label(self) -> &'static str {
         match self {
-            Self::File => "File",
-            Self::Project => "Project",
+            Self::File => obelus_i18n::language_server::tab_file(),
+            Self::Project => obelus_i18n::language_server::tab_project(),
         }
     }
 }
@@ -2533,11 +2539,15 @@ fn counted(severities: &[obelus_lsp::trouble::Severity]) -> String {
     ] {
         let many = count(severity);
         if many > 0 {
-            let plural = if many == 1 { "" } else { "s" };
-            said.push(format!("{many} {}{plural}", severity.title()));
+            said.push(match severity {
+                Severity::Error => obelus_i18n::language_server::errors(many),
+                Severity::Warning => obelus_i18n::language_server::warnings(many),
+                Severity::Information => obelus_i18n::language_server::infos(many),
+                Severity::Hint => obelus_i18n::language_server::hints(many),
+            });
         }
     }
-    said.join(", ")
+    said.join(obelus_i18n::language_server::list_separator())
 }
 
 /// A question about a whole document that nobody asked for.
@@ -2851,7 +2861,8 @@ fn place_rows(places: &[obelus_lsp::action::Place], root: &Path) -> Vec<PickerIt
 /// Its own program's name where there is one, because that is the thing
 /// they would install, start or look in the log of.
 pub(in crate::app) fn named(language: LanguageId) -> &'static str {
-    obelus_lsp::command_for(language).unwrap_or("The language server")
+    obelus_lsp::command_for(language)
+        .unwrap_or_else(obelus_i18n::language_server::the_language_server)
 }
 
 /// The command that asks a question about the symbol under the cursor.

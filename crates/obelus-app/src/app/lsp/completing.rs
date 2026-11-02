@@ -49,7 +49,7 @@ impl App {
     /// finds nothing to offer says nothing at all.
     pub fn ask_completion(&mut self) {
         let Some(language) = self.current_buffer().and_then(Buffer::language) else {
-            self.wrong("No language server for this file".to_string());
+            self.wrong(obelus_i18n::language_server::no_server_for_this_file());
             return;
         };
         if let Some(why) = self.why_not_asking(language) {
@@ -62,10 +62,9 @@ impl App {
             .and_then(Client::capabilities)
             .is_some_and(complete::supported)
         {
-            self.wrong(format!(
-                "{} does not offer completions",
-                server_named(language)
-            ));
+            self.wrong(obelus_i18n::language_server::no_completions(server_named(
+                language,
+            )));
             return;
         }
         self.offer_completion();
@@ -87,7 +86,7 @@ impl App {
     /// nothing says why, and a character that finds no call says nothing.
     pub fn ask_signature_here(&mut self) {
         let Some(language) = self.current_buffer().and_then(Buffer::language) else {
-            self.wrong("No language server for this file".to_string());
+            self.wrong(obelus_i18n::language_server::no_server_for_this_file());
             return;
         };
         if let Some(why) = self.why_not_asking(language) {
@@ -100,10 +99,9 @@ impl App {
             .and_then(Client::capabilities)
             .is_some_and(obelus_lsp::signature::supported)
         {
-            self.wrong(format!(
-                "{} does not say what a call takes",
-                server_named(language)
-            ));
+            self.wrong(obelus_i18n::language_server::no_signatures(server_named(
+                language,
+            )));
             return;
         }
         self.ask_signature(obelus_lsp::signature::Asked::Invoked);

@@ -116,7 +116,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use obelus_row::{Ink, Span};
 
-use crate::{composer::Composer, window::Window};
+use crate::{composer::Composer, copied::Copied, window::Window};
 
 mod kept;
 mod keys;
@@ -1937,21 +1937,21 @@ impl Chat {
     /// with its line and the notes follow with their note: copying nothing
     /// is not something a key can usefully do.
     #[must_use]
-    pub fn copied(&self, width: u16) -> (String, &'static str) {
+    pub fn copied(&self, width: u16) -> (String, Copied) {
         if let Some(held) = self.held_text(width) {
-            return (held, "selection");
+            return (held, Copied::Selection);
         }
         match self.input.selected() {
-            Some(held) => (held, "selection"),
-            None => (self.input.text(), "message"),
+            Some(held) => (held, Copied::Selection),
+            None => (self.input.text(), Copied::Message),
         }
     }
 
     /// The same, and takes it out.
-    pub fn cut(&mut self, room: u16) -> (String, &'static str) {
+    pub fn cut(&mut self, room: u16) -> (String, Copied) {
         match self.input.cut(room.max(1)) {
-            Some(held) => (held, "selection"),
-            None => (self.input.take(), "message"),
+            Some(held) => (held, Copied::Selection),
+            None => (self.input.take(), Copied::Message),
         }
     }
 
@@ -3447,7 +3447,7 @@ mod tests {
         chat.handle_key(&shifted(KeyCode::Left), false, ROOM, &[], false);
         assert_eq!(
             chat.copied(ROOM.reading),
-            ("re".to_string(), "selection"),
+            ("re".to_string(), Copied::Selection),
             "shift and the left arrow did not hold what it passed over"
         );
 
@@ -3475,13 +3475,13 @@ mod tests {
         chat.handle_key(&shifted(KeyCode::Left), false, ROOM, &[], false);
         assert_eq!(
             chat.copied(ROOM.reading),
-            ("ef".to_string(), "selection"),
+            ("ef".to_string(), Copied::Selection),
             "shift and left did not hold what they passed over in the box"
         );
         chat.handle_key(&shifted(KeyCode::Right), false, ROOM, &[], false);
         assert_eq!(
             chat.copied(ROOM.reading),
-            ("f".to_string(), "selection"),
+            ("f".to_string(), Copied::Selection),
             "shift and right did not give back what was held"
         );
 
@@ -3528,7 +3528,7 @@ mod tests {
         chat.handle_key(&shifted(KeyCode::Home), false, ROOM, &[], false);
         assert_eq!(
             chat.copied(ROOM.reading),
-            ("a message I typed".to_string(), "selection"),
+            ("a message I typed".to_string(), Copied::Selection),
             "shift and home did not hold the line in the box"
         );
         assert!(
@@ -3543,7 +3543,7 @@ mod tests {
         chat.handle_key(&shifted(KeyCode::End), false, ROOM, &[], false);
         assert_eq!(
             chat.copied(ROOM.reading),
-            ("a message I typed".to_string(), "selection"),
+            ("a message I typed".to_string(), Copied::Selection),
             "shift and end did not hold the line in the box"
         );
         assert!(chat.at_the_end(), "shift and end moved the transcript");
@@ -3677,7 +3677,7 @@ mod tests {
         chat.handle_key(&shifted(KeyCode::Home), false, ROOM, &[], false);
         assert_eq!(
             chat.copied(ROOM.reading),
-            ("alpha b".to_string(), "selection"),
+            ("alpha b".to_string(), Copied::Selection),
             "shift and home did not hold what is before the cursor"
         );
 
@@ -3691,7 +3691,7 @@ mod tests {
         chat.handle_key(&shifted(KeyCode::Home), false, ROOM, &[], false);
         assert_eq!(
             chat.copied(ROOM.reading),
-            ("a quo".to_string(), "selection"),
+            ("a quo".to_string(), Copied::Selection),
             "shift and home did not hold what is before the cursor, in a quote"
         );
 
@@ -3724,7 +3724,10 @@ mod tests {
         chat.handle_key(&shifted(KeyCode::End), false, ROOM, &[], false);
         assert_eq!(
             chat.copied(ROOM.reading),
-            ("Two open the page and press it".to_string(), "selection"),
+            (
+                "Two open the page and press it".to_string(),
+                Copied::Selection
+            ),
             "the words after the soft break could not be held"
         );
     }

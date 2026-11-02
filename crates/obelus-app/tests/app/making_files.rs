@@ -231,7 +231,7 @@ fn a_file_already_there_is_refused() {
     dispatch::dispatch(&mut app, Command::FileNew);
     answer(&mut app, "src/hint.rs");
 
-    assert_eq!(app.note(), Some("src/hint.rs is already there"));
+    assert_eq!(app.note(), Some("src/hint.rs already exists"));
     assert_eq!(
         std::fs::read_to_string(scratch.join("src/hint.rs")).expect("still readable"),
         "fn hint() {}\n",
@@ -462,7 +462,7 @@ fn a_directory_in_the_way_is_said_the_same_way_either_way() {
         support::press(&mut app, KeyCode::Enter);
         assert_eq!(
             app.note(),
-            Some("src is already there"),
+            Some("src already exists"),
             "answering {typed:?}"
         );
     }
@@ -486,7 +486,7 @@ fn an_answer_that_strips_to_nothing_keeps_its_own_words() {
     }
     support::type_text(&mut app, ".");
     support::press(&mut app, KeyCode::Enter);
-    assert_eq!(app.note(), Some(". is already there"));
+    assert_eq!(app.note(), Some(". already exists"));
 }
 
 /// A file somewhere along the path is said as that, and said relatively.
@@ -536,7 +536,7 @@ fn what_is_said_about_a_path_is_bounded() {
     support::press(&mut app, KeyCode::Enter);
 
     let said = app.note().unwrap_or_default().to_string();
-    assert!(said.starts_with("Could not make "), "{said:?}");
+    assert!(said.starts_with("Could not create "), "{said:?}");
     assert!(
         said.chars().count() < 60,
         "a note too long for the row: {} characters",
@@ -545,7 +545,7 @@ fn what_is_said_about_a_path_is_bounded() {
     // And the row actually draws it, which is the whole of the point.
     let dump = support::render(&mut app, 76, 12);
     assert!(
-        support::text_block(&dump).contains("Could not make"),
+        support::text_block(&dump).contains("Could not create"),
         "the note was dropped for length:\n{dump}"
     );
 }
@@ -578,7 +578,7 @@ fn the_row_says_it_with_nothing_open() {
         .next_back()
         .map(|row| row[row.find('|').expect("a divider") + 1..].trim())
         .unwrap_or_default();
-    assert_eq!(row, "src is already there", "\n{dump}");
+    assert_eq!(row, "src already exists", "\n{dump}");
 }
 
 /// A path that leaves the project is refused.

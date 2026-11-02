@@ -37,6 +37,7 @@ use nucleo_matcher::{
 };
 
 use crate::{
+    copied::Copied,
     field::Field,
     window::{Move, Window, Wrap},
 };
@@ -364,13 +365,13 @@ impl Names {
 
     /// What a copy takes from the query: what is held, or all of it.
     #[must_use]
-    pub fn copy_query(&self) -> (String, &'static str) {
+    pub fn copy_query(&self) -> (String, Copied) {
         self.query.copied()
     }
 
     /// The same, and takes it out -- through the same door typing goes
     /// through, because what is left is a different list.
-    pub fn cut_query(&mut self) -> (String, &'static str) {
+    pub fn cut_query(&mut self) -> (String, Copied) {
         let cut = self.query.cut();
         self.retyped();
         cut

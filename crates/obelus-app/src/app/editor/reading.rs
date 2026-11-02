@@ -46,7 +46,7 @@ impl App {
             Outcome::Ignored => return false,
             Outcome::Consumed => {}
             Outcome::Copy(code) => {
-                self.copied(&code, "code");
+                self.copied(&code, obelus_component::copied::Copied::Code);
                 return true;
             }
         }

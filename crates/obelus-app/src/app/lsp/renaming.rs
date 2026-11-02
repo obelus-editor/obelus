@@ -21,15 +21,15 @@ impl App {
     /// usually edits rather than replaces.
     pub fn rename_symbol(&mut self) {
         let Some(buffer) = self.current_buffer() else {
-            self.wrong("No file open".to_string());
+            self.wrong(obelus_i18n::editing::no_file_open());
             return;
         };
         if !buffer.content().is_file() || buffer.mode() != obelus_buffer::Mode::Edit {
-            self.wrong("This is not a file to change".to_string());
+            self.wrong(obelus_i18n::language_server::not_a_file_to_change());
             return;
         }
         let Some(language) = buffer.language() else {
-            self.wrong("No language server for this file".to_string());
+            self.wrong(obelus_i18n::language_server::no_server_for_this_file());
             return;
         };
         if let Some(why) = self.why_not_asking(language) {
@@ -42,14 +42,16 @@ impl App {
             .and_then(Client::capabilities)
             .is_some_and(|capabilities| capabilities.rename_provider.is_some());
         if !renames {
-            self.wrong(format!("{} does not rename", server_named(language)));
+            self.wrong(obelus_i18n::language_server::no_renaming(server_named(
+                language,
+            )));
             return;
         }
         // The name the caret is in, which is what is being renamed: a
         // rename asked for on a comma is a question the server will refuse,
         // and the refusal arrives a round trip later.
         let Some(word) = self.word_at_cursor() else {
-            self.wrong("The cursor is not on a name".to_string());
+            self.wrong(obelus_i18n::language_server::not_on_a_name());
             return;
         };
         self.ask_on_the_status_row(obelus_component::prompt::Prompt::about(
@@ -108,11 +110,11 @@ impl App {
                         version,
                     },
                 );
-                self.say(format!("Renaming to {name}\u{2026}"));
+                self.say(obelus_i18n::language_server::renaming_to(name));
             }
             Err(error) => {
                 tracing::warn!(%error, "could not ask for a rename");
-                self.wrong("The language server is not listening".to_string());
+                self.wrong(obelus_i18n::language_server::not_listening());
             }
         }
     }
@@ -125,7 +127,7 @@ impl App {
     /// one whose rename lands two characters out has a mess to find.
     pub(in crate::app) fn on_rename(&mut self, id: DocumentId, version: i32, reply: Reply) {
         if !self.unmoved(id, version) {
-            self.wrong("The file changed while renaming".to_string());
+            self.wrong(obelus_i18n::language_server::changed_while_renaming());
             return;
         }
         let result = match reply.result {
@@ -137,7 +139,7 @@ impl App {
         };
         let wanted = edits::wanted_in(&result);
         if wanted.is_empty() && wanted.refused.is_empty() {
-            self.wrong("The server renamed nothing".to_string());
+            self.wrong(obelus_i18n::language_server::renamed_nothing());
             return;
         }
         let said = self.apply_wanted(&wanted);

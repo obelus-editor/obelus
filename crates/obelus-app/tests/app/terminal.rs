@@ -353,7 +353,7 @@ fn closing_the_others_asks_about_a_file_and_a_terminal_at_once() {
         support::said(&dump).contains("unwritten.rs is unsaved, and a terminal is still running"),
         "the question does not say both:\n{dump}"
     );
-    support::answer(&mut app, "Close the others without saving");
+    support::answer(&mut app, "Close others without saving");
     assert!(
         !app.offers(obelus_command::Command::DocumentCloseOthers),
         "the answer did not close the others"

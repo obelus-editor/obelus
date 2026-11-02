@@ -187,7 +187,7 @@ fn the_three_switches_change_what_the_search_finds() {
     support::type_text(&mut app, "(");
     let picker = app.picker().expect("the search");
     assert_eq!(picker.match_count(), 0);
-    assert_eq!(picker.nothing_to_show(), Some("That is not a pattern"));
+    assert_eq!(picker.nothing_to_show(), Some("Not a valid pattern"));
 }
 
 /// Which switches mean anything depends on the search: three of them read

@@ -431,11 +431,7 @@ fn something_unwritten_is_asked_about_before_going() {
     choose_in_place(&mut app, "feature");
     assert_eq!(
         support::ways(&app),
-        [
-            "Save everything and switch",
-            "Switch without saving",
-            "Cancel"
-        ],
+        ["Save all and switch", "Switch without saving", "Cancel"],
         "going with something unwritten did not ask"
     );
     support::answer(&mut app, "Cancel");
@@ -443,7 +439,7 @@ fn something_unwritten_is_asked_about_before_going() {
 
     dispatch::dispatch(&mut app, Command::WorktreeList);
     choose_in_place(&mut app, "feature");
-    support::answer(&mut app, "Save everything and switch");
+    support::answer(&mut app, "Save all and switch");
     assert_eq!(
         std::fs::read_to_string(&file).expect("the file"),
         "// fn main() {}\n",

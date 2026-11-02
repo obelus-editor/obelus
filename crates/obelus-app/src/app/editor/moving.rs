@@ -4,7 +4,7 @@
 //! arrives somewhere -- a symbol, a line, a bracket, a change -- and the
 //! rule that all of them record where they left.
 
-use obelus_component::spelling::Spells;
+use obelus_component::{copied::Copied, spelling::Spells};
 
 use crate::app::*;
 
@@ -19,7 +19,10 @@ enum Column {
 
 /// What the status row says while a picture pasted from a machine at the
 /// other end of a connection crosses.
-const BRINGING: &str = "Bringing the picture across";
+fn bringing() -> &'static str {
+    obelus_i18n::editing::bringing_the_picture()
+}
+
 impl App {
     /// Goes to a place a server named, recording where the reader was.
     ///
@@ -51,7 +54,9 @@ impl App {
             .current_buffer()
             .is_none_or(|buffer| buffer.path() != path)
         {
-            self.wrong(format!("Could not open {}", path.display()));
+            self.wrong(obelus_i18n::editing::could_not_open(
+                path.display().to_string(),
+            ));
             return;
         }
 
@@ -118,7 +123,7 @@ impl App {
         let Some(here) = self.here() else { return };
         match self.jumps.back(here) {
             Some(there) => self.go(there),
-            None => self.wrong("Nowhere further back".to_string()),
+            None => self.wrong(obelus_i18n::editing::nowhere_further_back()),
         }
     }
 
@@ -126,7 +131,7 @@ impl App {
     pub fn go_forward(&mut self) {
         match self.jumps.forward() {
             Some(there) => self.go(there),
-            None => self.wrong("Nowhere further forward".to_string()),
+            None => self.wrong(obelus_i18n::editing::nowhere_further_forward()),
         }
     }
 
@@ -163,11 +168,11 @@ impl App {
     /// get back to where you were reading.
     pub fn go_to_bracket(&mut self) {
         let Some(buffer) = self.current_buffer() else {
-            self.wrong("No file open".to_string());
+            self.wrong(obelus_i18n::editing::no_file_open());
             return;
         };
         let Some(state) = buffer.syntax() else {
-            self.wrong("Not a language Obelus knows".to_string());
+            self.wrong(obelus_i18n::editing::unknown_language());
             return;
         };
         let text = buffer.text();
@@ -178,7 +183,7 @@ impl App {
         let mut highlights = Highlights::default();
         highlights.refresh(state, text, whole.clone());
         let Some((open, close)) = brackets::pair_at(text, &highlights, at, whole) else {
-            self.wrong("No bracket here".to_string());
+            self.wrong(obelus_i18n::editing::no_bracket_here());
             return;
         };
 
@@ -204,7 +209,7 @@ impl App {
     /// answer, which is the shape searching a file will want too.
     pub fn open_line_prompt(&mut self) {
         if self.current_buffer().is_none() {
-            self.wrong("No file to go into".to_string());
+            self.wrong(obelus_i18n::editing::no_file_open());
             return;
         }
         self.ask_on_the_status_row(Prompt::new(PromptKind::Line));
@@ -309,7 +314,7 @@ impl App {
             return;
         }
         let Some(buffer) = self.current_buffer_mut() else {
-            self.wrong("No file open".to_string());
+            self.wrong(obelus_i18n::editing::no_file_open());
             return;
         };
         buffer.select_all();
@@ -328,11 +333,11 @@ impl App {
         // answer.
         self.settle_syntax();
         let Some(buffer) = self.current_buffer_mut() else {
-            self.wrong("No file open".to_string());
+            self.wrong(obelus_i18n::editing::no_file_open());
             return;
         };
         if !buffer.widen_selection() {
-            self.wrong("Nothing wider to select".to_string());
+            self.wrong(obelus_i18n::editing::nothing_wider_to_select());
         }
     }
 
@@ -398,14 +403,14 @@ impl App {
         // a caret to take in their place.
         if self.terminal().is_some() {
             if let Some(text) = self.take_what_is_held_in_the_terminal() {
-                self.copied(&text, "selection");
+                self.copied(&text, Copied::Selection);
             }
             return;
         }
         // What is held on a page, which is the one thing on it to copy.
         if self.discussion().is_some() {
             if let Some(text) = self.held_on_the_page() {
-                self.copied(&text, "selection");
+                self.copied(&text, Copied::Selection);
             }
             return;
         }
@@ -414,7 +419,7 @@ impl App {
         // be taken.
         if self.rendering().is_some() {
             if let Some(text) = self.held_in_the_reading() {
-                self.copied(&text, "selection");
+                self.copied(&text, Copied::Selection);
             }
             return;
         }
@@ -426,8 +431,8 @@ impl App {
         if let Some(card) = self.card() {
             let transcript = self.chat().and_then(|chat| chat.held_text(width));
             let copied = match (card.selected(), transcript) {
-                (Some(held), _) => Some((held, "selection")),
-                (None, Some(transcript)) => Some((transcript, "selection")),
+                (Some(held), _) => Some((held, Copied::Selection)),
+                (None, Some(transcript)) => Some((transcript, Copied::Selection)),
                 (None, None) => card.copied(),
             };
             if let Some((text, what)) = copied {
@@ -448,10 +453,10 @@ impl App {
         // key can usefully do, and selecting the line first to copy it is a
         // step every editor spares the reader.
         let (text, what) = match buffer.selected_text() {
-            Some(text) => (text, "selection"),
+            Some(text) => (text, Copied::Selection),
             None => (
                 buffer.text().line(buffer.cursor().line).to_string() + "\n",
-                "line",
+                Copied::Line,
             ),
         };
 
@@ -469,12 +474,12 @@ impl App {
     /// Shared with the notes, because a copy is a copy: the file and the box
     /// a note is written in say the same thing about it or a reader learns
     /// that one of them is lying.
-    pub(in crate::app) fn copied(&mut self, text: &str, what: &str) {
+    pub(in crate::app) fn copied(&mut self, text: &str, what: Copied) {
         match self.desk().copy(text) {
-            Ok(()) => self.say(format!("Copied {what}")),
+            Ok(()) => self.say(copied_words(what)),
             Err(error) => {
-                tracing::warn!(%error, what, "copying failed");
-                self.wrong(format!("Could not copy {what}"));
+                tracing::warn!(%error, ?what, "copying failed");
+                self.wrong(not_copied_words(what));
             }
         }
     }
@@ -485,12 +490,12 @@ impl App {
     /// different thing happened: the text has gone from where it was either
     /// way, and a reader told only that the copy failed would go looking
     /// for it where it no longer is.
-    pub(in crate::app) fn cut_away(&mut self, text: &str, what: &str) {
+    pub(in crate::app) fn cut_away(&mut self, text: &str, what: Copied) {
         match self.desk().copy(text) {
-            Ok(()) => self.say(format!("Cut {what}")),
+            Ok(()) => self.say(cut_words(what)),
             Err(error) => {
-                tracing::warn!(%error, what, "copying the cut failed");
-                self.wrong(format!("Cut {what}, but could not copy it"));
+                tracing::warn!(%error, ?what, "copying the cut failed");
+                self.wrong(cut_not_copied_words(what));
             }
         }
     }
@@ -584,7 +589,7 @@ impl App {
         // The whole line where nothing is selected, and the line break with
         // it: a cut line has to leave, not leave a blank behind.
         let (span, what) = match buffer.selection() {
-            Some(span) => (span, "selection"),
+            Some(span) => (span, Copied::Selection),
             None => {
                 let line = buffer.cursor().line;
                 let text = buffer.text();
@@ -599,7 +604,7 @@ impl App {
                         end_line,
                         end_column,
                     },
-                    "line",
+                    Copied::Line,
                 )
             }
         };
@@ -634,7 +639,7 @@ impl App {
                     return;
                 }
                 crate::app::desk::Picture::Coming => {
-                    self.say(BRINGING);
+                    self.say(bringing());
                     return;
                 }
                 crate::app::desk::Picture::Nothing => {}
@@ -652,12 +657,12 @@ impl App {
                 self.wrong(match self.box_takes_a_picture() {
                     // Only reachable once the agent has said so: while
                     // nobody has asked it, a picture is taken.
-                    true => "This agent does not take pictures".to_string(),
-                    false => "A picture goes in a message to an agent".to_string(),
+                    true => obelus_i18n::editing::takes_no_pictures(),
+                    false => obelus_i18n::editing::pictures_go_to_agents(),
                 });
                 return;
             }
-            self.wrong("Nothing to paste".to_string());
+            self.wrong(obelus_i18n::editing::nothing_to_paste());
             return;
         };
         // Not the word a selection was taken out for: that arrives as an
@@ -671,12 +676,12 @@ impl App {
     /// reader may have moved away from while it crossed.
     pub(in crate::app) fn pictured(&mut self, mime: String, bytes: Vec<u8>) {
         if !self.can_take_a_picture() {
-            self.wrong("A picture goes in a message to an agent".to_string());
+            self.wrong(obelus_i18n::editing::pictures_go_to_agents());
             return;
         }
         // Only what the paste said: anything said since is somebody
         // else's, and still true.
-        if self.note() == Some(BRINGING) {
+        if self.note() == Some(bringing()) {
             self.quiet();
         }
         self.attach_picture(mime, bytes);
@@ -1261,7 +1266,7 @@ impl App {
             .is_some_and(Buffer::undo);
         match went_back {
             true => self.change_document(index),
-            false => self.wrong("Nothing to undo".to_string()),
+            false => self.wrong(obelus_i18n::editing::nothing_to_undo()),
         }
     }
 
@@ -1278,7 +1283,7 @@ impl App {
             .is_some_and(Buffer::redo);
         match went_forward {
             true => self.change_document(index),
-            false => self.wrong("Nothing to redo".to_string()),
+            false => self.wrong(obelus_i18n::editing::nothing_to_redo()),
         }
     }
 
@@ -1368,7 +1373,7 @@ impl App {
             }
             PromptKind::Line => {
                 let Ok(line) = text.trim().parse::<usize>() else {
-                    self.wrong(format!("{text:?} is not a line number"));
+                    self.wrong(obelus_i18n::editing::not_a_line_number(format!("{text:?}")));
                     return;
                 };
                 let from = self.here();
@@ -1445,4 +1450,64 @@ pub(in crate::app) struct Spelt {
     /// The version the spelling left the file at, where it was written
     /// into one: what says nothing else has changed the file since.
     version: Option<i32>,
+}
+
+/// What the status row says a copy got the reader.
+///
+/// A sentence for each kind, rather than a noun put into one: the noun is
+/// one word in one language, and the sentence is the language's to build.
+fn copied_words(what: Copied) -> &'static str {
+    use obelus_i18n::editing as said;
+    match what {
+        Copied::Selection => said::copied_selection(),
+        Copied::Line => said::copied_line(),
+        Copied::Code => said::copied_code(),
+        Copied::Message => said::copied_message(),
+        Copied::Note => said::copied_note(),
+        Copied::Answer => said::copied_answer(),
+        Copied::Manifest => said::copied_manifest(),
+    }
+}
+
+/// What it says where the clipboard would not take it.
+fn not_copied_words(what: Copied) -> &'static str {
+    use obelus_i18n::editing as said;
+    match what {
+        Copied::Selection => said::not_copied_selection(),
+        Copied::Line => said::not_copied_line(),
+        Copied::Code => said::not_copied_code(),
+        Copied::Message => said::not_copied_message(),
+        Copied::Note => said::not_copied_note(),
+        Copied::Answer => said::not_copied_answer(),
+        Copied::Manifest => said::not_copied_manifest(),
+    }
+}
+
+/// What it says a cut got the reader.
+fn cut_words(what: Copied) -> &'static str {
+    use obelus_i18n::editing as said;
+    match what {
+        Copied::Selection => said::cut_selection(),
+        Copied::Line => said::cut_line(),
+        Copied::Code => said::cut_code(),
+        Copied::Message => said::cut_message(),
+        Copied::Note => said::cut_note(),
+        Copied::Answer => said::cut_answer(),
+        Copied::Manifest => said::cut_manifest(),
+    }
+}
+
+/// What it says where a cut took the text away and the clipboard would
+/// not take it.
+fn cut_not_copied_words(what: Copied) -> &'static str {
+    use obelus_i18n::editing as said;
+    match what {
+        Copied::Selection => said::cut_not_copied_selection(),
+        Copied::Line => said::cut_not_copied_line(),
+        Copied::Code => said::cut_not_copied_code(),
+        Copied::Message => said::cut_not_copied_message(),
+        Copied::Note => said::cut_not_copied_note(),
+        Copied::Answer => said::cut_not_copied_answer(),
+        Copied::Manifest => said::cut_not_copied_manifest(),
+    }
 }

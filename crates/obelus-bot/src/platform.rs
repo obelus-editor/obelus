@@ -98,8 +98,6 @@ pub enum Setup {
         name: &'static str,
         /// Where it goes, under the name.
         about: &'static str,
-        /// What a copy of it is called, mid-sentence: `Copied {what}`.
-        what: &'static str,
         /// The text itself.
         text: fn() -> String,
     },

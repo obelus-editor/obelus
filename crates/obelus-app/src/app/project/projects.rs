@@ -599,7 +599,6 @@ impl crate::app::App {
         if running > 0 {
             self.ask_before_stopping_them(
                 running,
-                "close the project",
                 obelus_component::question::Answer::ClosingTheProject(
                     obelus_component::question::Leaving::Discard,
                 ),

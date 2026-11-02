@@ -762,7 +762,9 @@ impl App {
                     return;
                 };
                 match &platform.setup {
-                    Setup::Copy { what, text, .. } => self.copied(&text(), what),
+                    Setup::Copy { text, .. } => {
+                        self.copied(&text(), obelus_component::copied::Copied::Manifest);
+                    }
                     Setup::Steps { url, .. } => {
                         if let Err(error) = self.desk().open(url) {
                             tracing::warn!(%error, url, "the steps would not open");

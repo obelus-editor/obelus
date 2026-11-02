@@ -1285,18 +1285,14 @@ fn closing_the_project_asks_about_what_is_unwritten_and_then_which_project() {
     obelus_app::app::dispatch::dispatch(&mut app, Command::ProjectClose);
     assert_eq!(
         support::ways(&app),
-        [
-            "Save everything and close",
-            "Close without saving",
-            "Cancel"
-        ],
+        ["Save all and close", "Close without saving", "Cancel"],
         "closing with something unwritten did not ask"
     );
     support::answer(&mut app, "Cancel");
     assert!(app.has_a_project(), "cancelling let go of the project");
 
     obelus_app::app::dispatch::dispatch(&mut app, Command::ProjectClose);
-    support::answer(&mut app, "Save everything and close");
+    support::answer(&mut app, "Save all and close");
     assert_eq!(
         std::fs::read_to_string(&file).expect("the file"),
         "// fn main() {}\n",

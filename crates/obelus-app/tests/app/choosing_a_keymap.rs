@@ -253,7 +253,7 @@ fn what_went_wrong_comes_first() {
     start(&mut app);
     assert_eq!(
         asked(&app).as_deref(),
-        Some("What went wrong starting up"),
+        Some("Problems starting up"),
         "the problems are not in front"
     );
     assert!(!settings(&scratch).exists(), "something was written");

@@ -361,7 +361,7 @@ impl App {
             .language()
             .and_then(|language| language.line_comment())
         else {
-            self.wrong("No line comment in this language".to_string());
+            self.wrong(obelus_i18n::editing::no_line_comment());
             return;
         };
         let change = obelus_buffer::changes::toggle_comment(buffer, token);

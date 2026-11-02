@@ -33,18 +33,18 @@ impl App {
     /// is on.
     pub fn ask_code_actions(&mut self) {
         let Some(id) = self.current else {
-            self.wrong("No file open".to_string());
+            self.wrong(obelus_i18n::editing::no_file_open());
             return;
         };
         let Some(buffer) = file_in(&self.documents, id) else {
             return;
         };
         if !buffer.content().is_file() || buffer.mode() != obelus_buffer::Mode::Edit {
-            self.wrong("This is not a file to change".to_string());
+            self.wrong(obelus_i18n::language_server::not_a_file_to_change());
             return;
         }
         let Some(language) = buffer.language() else {
-            self.wrong("No language server for this file".to_string());
+            self.wrong(obelus_i18n::language_server::no_server_for_this_file());
             return;
         };
         let Ok(uri) = obelus_lsp::client::uri_for(buffer.path()) else {
@@ -91,7 +91,9 @@ impl App {
             return;
         };
         if !client.capabilities().is_some_and(actions::supported) {
-            self.wrong(format!("{} does not offer actions", server_named(language)));
+            self.wrong(obelus_i18n::language_server::no_code_actions(server_named(
+                language,
+            )));
             return;
         }
         let params = serde_json::json!({
@@ -109,7 +111,7 @@ impl App {
                     version,
                 },
             );
-            self.say("Asking what can be done\u{2026}".to_string());
+            self.say(obelus_i18n::language_server::asking_for_actions());
         }
     }
 
@@ -122,12 +124,12 @@ impl App {
     /// notice.
     pub(in crate::app) fn on_code_actions(&mut self, id: DocumentId, version: i32, reply: Reply) {
         if !self.unmoved(id, version) {
-            self.wrong("The file changed while asking".to_string());
+            self.wrong(obelus_i18n::language_server::changed_while_asking());
             return;
         }
         let offered = actions::offered_in(&reply.result);
         if offered.is_empty() {
-            self.wrong("Nothing to do here".to_string());
+            self.wrong(obelus_i18n::language_server::no_actions_here());
             return;
         }
         // Everything the server offered is an offer it will not carry
@@ -139,7 +141,9 @@ impl App {
                 .iter()
                 .filter_map(|action| action.disabled.as_deref())
                 .collect();
-            self.wrong(format!("Nothing can be done here: {}", reasons.join("; ")));
+            self.wrong(obelus_i18n::language_server::no_actions_because(
+                reasons.join("; "),
+            ));
             return;
         }
         let items = offered
@@ -185,8 +189,8 @@ impl App {
         self.lsp.code_actions = offered;
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
         picker.keeps_order(true);
-        picker.about("What the language server offers to do here");
-        picker.before_typing("Filter what can be done");
+        picker.about(obelus_i18n::language_server::code_actions());
+        picker.before_typing(obelus_i18n::language_server::filter_code_actions());
         picker.opened_by(Command::CodeActions);
         self.quiet();
         self.show_list(picker);
@@ -225,7 +229,7 @@ impl App {
             return;
         };
         if !client.capabilities().is_some_and(actions::resolves) {
-            self.wrong("The server left this one unfinished".to_string());
+            self.wrong(obelus_i18n::language_server::left_unfinished());
             return;
         }
         if let Ok(request) = client.request("codeAction/resolve", &item) {
@@ -255,11 +259,11 @@ impl App {
         reply: Reply,
     ) {
         if !self.unmoved(id, version) {
-            self.wrong("The file changed while asking".to_string());
+            self.wrong(obelus_i18n::language_server::changed_while_asking());
             return;
         }
         let Ok(result) = reply.result else {
-            self.wrong("The server could not work that out".to_string());
+            self.wrong(obelus_i18n::language_server::could_not_resolve());
             return;
         };
         let Some(action) = self.lsp.code_actions.get_mut(at) else {
@@ -285,19 +289,21 @@ impl App {
         if let Some(command) = action.command() {
             said.push(self.run_server_command(&command));
         }
-        match said.is_empty() {
-            true => self.wrong(format!("{} did nothing", action.title)),
-            false => self.say(said.join("; ")),
+        match said.into_iter().reduce(obelus_i18n::app::and_then) {
+            None => self.wrong(obelus_i18n::language_server::did_nothing(
+                action.title.as_str(),
+            )),
+            Some(said) => self.say(said),
         }
     }
 
     /// Asks the server to run one of its own commands.
     fn run_server_command(&mut self, command: &lsp_types::Command) -> String {
         let Some(language) = self.current_buffer().and_then(Buffer::language) else {
-            return "No language server for this file".to_string();
+            return obelus_i18n::language_server::no_server_for_this_file().to_string();
         };
         let Some(client) = self.servers.get_mut(&language) else {
-            return "No language server for this file".to_string();
+            return obelus_i18n::language_server::no_server_for_this_file().to_string();
         };
         let params = serde_json::json!({
             "command": command.command,
@@ -309,8 +315,8 @@ impl App {
             // result is nothing it can act on. What it *sends back* is a
             // `workspace/applyEdit`, and that is where the change to the
             // files actually arrives -- made by `on_asked_edit`, not here.
-            Ok(_) => format!("Asked the server to {}", command.title),
-            Err(_) => "The language server is not listening".to_string(),
+            Ok(_) => obelus_i18n::language_server::asked_to_run(command.title.as_str()),
+            Err(_) => obelus_i18n::language_server::not_listening().to_string(),
         }
     }
 
@@ -381,7 +387,7 @@ impl App {
     pub(in crate::app) fn next_on_save(&mut self, index: usize, from: usize) {
         for kind in from..ON_SAVE.len() {
             if self.ask_on_save(index, kind) {
-                self.say("Tidying it up\u{2026}".to_string());
+                self.say(obelus_i18n::language_server::running_actions_on_save());
                 return;
             }
         }

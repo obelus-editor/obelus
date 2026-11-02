@@ -5679,7 +5679,7 @@ fn a_path_that_went_away_after_the_list_was_built_says_so() {
     app.open_for_test(&gone);
     assert_eq!(
         app.note(),
-        Some("gone.rs is not there any more"),
+        Some("gone.rs no longer exists"),
         "opening nothing said nothing"
     );
 

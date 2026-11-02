@@ -4704,6 +4704,7 @@ dependencies = [
  "globset",
  "libc",
  "lsp-types",
+ "obelus-i18n",
  "obelus-jobs",
  "obelus-program",
  "obelus-runtime",

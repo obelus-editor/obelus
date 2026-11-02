@@ -9,6 +9,7 @@ pub mod chat;
 pub mod chooser;
 pub mod completion;
 pub mod composer;
+pub mod copied;
 pub mod counts;
 pub mod discussion;
 pub mod field;

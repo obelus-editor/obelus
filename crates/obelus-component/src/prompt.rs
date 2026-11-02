@@ -12,7 +12,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::field::Field;
+use crate::{copied::Copied, field::Field};
 
 /// What a prompt is asking for.
 ///
@@ -308,12 +308,12 @@ impl Prompt {
 
     /// What a copy takes from the answer: what is held, or all of it.
     #[must_use]
-    pub fn copied(&self) -> (String, &'static str) {
+    pub fn copied(&self) -> (String, Copied) {
         self.text.copied()
     }
 
     /// The same, and takes it out.
-    pub fn cut(&mut self) -> (String, &'static str) {
+    pub fn cut(&mut self) -> (String, Copied) {
         self.text.cut()
     }
 

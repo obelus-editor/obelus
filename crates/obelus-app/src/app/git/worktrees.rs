@@ -350,8 +350,8 @@ impl App {
             // function, so the two cannot drift apart.
             Some(Document::Chat(talk)) => self
                 .conversation_name(talk, notes)
-                .unwrap_or_else(|| "A conversation".to_string()),
-            Some(Document::Notes(_)) => "Todo".to_string(),
+                .unwrap_or_else(|| obelus_i18n::editing::a_conversation().to_string()),
+            Some(Document::Notes(_)) => obelus_i18n::status::notes().to_string(),
             Some(Document::Terminal(terminal)) => terminal.name().to_string(),
             Some(Document::Discussion(page)) => page.name(),
             None => String::new(),
@@ -762,7 +762,6 @@ impl App {
             self.worktrees.going = Some(path);
             self.ask_before_stopping_them(
                 running,
-                "switch",
                 obelus_component::question::Answer::Switching(
                     obelus_component::question::Leaving::Discard,
                 ),

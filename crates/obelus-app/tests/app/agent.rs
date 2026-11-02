@@ -577,7 +577,7 @@ fn an_open_conversation_says_whose_it_is_by_the_agents_own_name() {
         .picker()
         .expect("the list of what is open")
         .matches()
-        .filter(|item| item.label == "A conversation")
+        .filter(|item| item.label == "Conversation")
         .map(|item| item.trailing.as_deref())
         .collect();
     assert_eq!(whose, [Some("Fake Agent")]);
@@ -611,7 +611,7 @@ fn an_open_conversation_is_called_what_its_agent_is_called_now() {
         app.picker()
             .expect("the list of what is open")
             .matches()
-            .filter(|item| item.label == "A conversation")
+            .filter(|item| item.label == "Conversation")
             .map(|item| item.trailing.clone())
             .collect()
     }
@@ -5905,7 +5905,7 @@ fn a_question_that_arrives_while_the_reader_writes_waits_behind_the_box() {
     // say the agent is waiting on them is not on the screen.
     let text = screen(&mut app);
     assert!(
-        text.contains("It has a question for when you stop typing"),
+        text.contains("A question is waiting for when you stop typing"),
         "nothing said a question was waiting:\n{text}"
     );
     // And it stays there while they go on, well past the time it waits
@@ -6157,7 +6157,7 @@ fn a_press_where_a_held_card_is_about_to_be_does_nothing() {
     // the card covers once it is in front.
     let y = rows(&dump)
         .iter()
-        .position(|row| row.contains("It has a question"))
+        .position(|row| row.contains("A question is waiting"))
         .unwrap_or_else(|| panic!("nothing says a question is held:\n{dump}"));
     app.handle(Event::Pointer {
         kind: obelus_app::event::Pointer::Pressed,
@@ -6419,7 +6419,7 @@ fn a_list_over_a_conversation_covers_the_box() {
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentList);
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     assert!(
-        rows(&dump).iter().any(|row| row.contains("A conversation")),
+        rows(&dump).iter().any(|row| row.contains("Conversation")),
         "the list of open documents did not open:\n{dump}"
     );
     assert!(
@@ -8126,7 +8126,7 @@ fn what_the_agent_means_to_do_is_one_row_that_opens() {
     // step under it. It is state, so it goes when it stops being true
     // rather than staying as a record of itself.
     use obelus_component::chat::Speaker;
-    let said = app.chat().expect("A conversation").rows(WIDTH);
+    let said = app.chat().expect("Conversation").rows(WIDTH);
     assert!(
         said.iter()
             .filter(|row| row.text().contains("write the test"))
@@ -9790,7 +9790,11 @@ fn the_pointer_takes_hold_of_what_was_said() {
     });
 
     let (text, what) = app.chat().expect("a conversation").copied(WIDTH - 5);
-    assert_eq!(what, "selection", "the copy did not take what was held");
+    assert_eq!(
+        what,
+        obelus_component::copied::Copied::Selection,
+        "the copy did not take what was held"
+    );
     assert_eq!(text, "heard", "the copy is not what was dragged across");
 }
 
@@ -9868,7 +9872,8 @@ fn a_drag_starts_on_a_blank_of_the_transcript() {
     // Down from the blank above the answer, across its first word.
     let (text, what) = drag(&mut app, (start, above), (start + 5, at));
     assert_eq!(
-        what, "selection",
+        what,
+        obelus_component::copied::Copied::Selection,
         "a press on the blank took hold of nothing"
     );
     assert_eq!(text, "heard", "the copy is not what was dragged across");
@@ -9876,7 +9881,8 @@ fn a_drag_starts_on_a_blank_of_the_transcript() {
     // Up from the empty screen under it, to the start of the answer.
     let (text, what) = drag(&mut app, (start, below), (start, at));
     assert_eq!(
-        what, "selection",
+        what,
+        obelus_component::copied::Copied::Selection,
         "a press under the transcript took hold of nothing"
     );
     assert_eq!(text, "heard you", "the copy is not what was dragged across");

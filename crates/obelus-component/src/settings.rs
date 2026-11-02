@@ -62,6 +62,7 @@ use obelus_keymap::{KeyChord, Keymap};
 use obelus_themes::Card as ThemeCard;
 
 use crate::{
+    copied::Copied,
     field::Field,
     window::{Move, Window, Wrap},
 };
@@ -1230,12 +1231,12 @@ impl Settings {
 
     /// What a copy takes from the query: what is held, or all of it.
     #[must_use]
-    pub fn copy_query(&self) -> (String, &'static str) {
+    pub fn copy_query(&self) -> (String, Copied) {
         self.query.copied()
     }
 
     /// The same, and takes it out.
-    pub fn cut_query(&mut self, offering: Option<&Offering>) -> (String, &'static str) {
+    pub fn cut_query(&mut self, offering: Option<&Offering>) -> (String, Copied) {
         let taken = self.query.cut();
         self.settle(offering);
         taken

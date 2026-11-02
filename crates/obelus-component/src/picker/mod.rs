@@ -73,6 +73,7 @@ use obelus_command::Command;
 
 use self::wrapped::{Above, Body, Columns};
 use crate::{
+    copied::Copied,
     field::Field,
     question::Question,
     window::{Move, Window, Wrap},
@@ -2279,12 +2280,12 @@ impl Picker {
 
     /// What a copy takes from the query: what is held, or all of it.
     #[must_use]
-    pub fn copy_query(&self) -> (String, &'static str) {
+    pub fn copy_query(&self) -> (String, Copied) {
         self.query.copied()
     }
 
     /// The same, and takes it out.
-    pub fn cut_query(&mut self) -> (String, &'static str) {
+    pub fn cut_query(&mut self) -> (String, Copied) {
         let taken = self.query.cut();
         self.refilter();
         taken

@@ -411,11 +411,10 @@ impl Client {
         }
 
         let result = match message.get("error") {
-            Some(error) => Err(error
-                .get("message")
-                .and_then(Value::as_str)
-                .unwrap_or("The server reported an error with no message")
-                .to_string()),
+            Some(error) => Err(error.get("message").and_then(Value::as_str).map_or_else(
+                || obelus_i18n::language_server::no_message().to_string(),
+                str::to_string,
+            )),
             None => Ok(message.get("result").cloned().unwrap_or(Value::Null)),
         };
         Some(Reply { id, result })

@@ -29,11 +29,8 @@ impl App {
     pub(in crate::app) fn apply_wanted(&mut self, wanted: &Wanted) -> String {
         if wanted.is_empty() {
             return match wanted.refused.is_empty() {
-                true => "Nothing to change".to_string(),
-                false => format!(
-                    "Not something Obelus will do: {}",
-                    wanted.refused.join(", ")
-                ),
+                true => obelus_i18n::language_server::nothing_to_change().to_string(),
+                false => obelus_i18n::language_server::will_not(refused(&wanted.refused)),
             };
         }
 
@@ -83,16 +80,19 @@ impl App {
             }
         }
 
-        let mut said = format!("Changed {changed} {}", files(changed));
-        if opened > 0 {
-            said.push_str(&format!(", {opened} of them opened"));
-        }
-        said.push_str(" -- nothing written yet");
+        let mut said = match opened {
+            0 => obelus_i18n::language_server::changed_files(changed),
+            opened => obelus_i18n::language_server::changed_and_opened(changed, opened),
+        };
         if failed > 0 {
-            said.push_str(&format!(", and {failed} could not be changed"));
+            said =
+                obelus_i18n::app::and_then(said, obelus_i18n::language_server::not_changed(failed));
         }
         if !wanted.refused.is_empty() {
-            said.push_str(&format!(" -- not {}", wanted.refused.join(", ")));
+            said = obelus_i18n::app::and_then(
+                said,
+                obelus_i18n::language_server::will_not(refused(&wanted.refused)),
+            );
         }
         said
     }
@@ -198,10 +198,17 @@ impl App {
     }
 }
 
-/// "file" or "files", for a sentence that counts them.
-fn files(many: usize) -> &'static str {
-    match many {
-        1 => "file",
-        _ => "files",
-    }
+/// What Obelus would not do, as a list in a sentence.
+fn refused(refused: &[obelus_lsp::edits::Refused]) -> String {
+    use obelus_lsp::edits::Refused;
+
+    refused
+        .iter()
+        .map(|refused| match refused {
+            Refused::Create => obelus_i18n::language_server::creating_a_file(),
+            Refused::Rename => obelus_i18n::language_server::moving_a_file(),
+            Refused::Delete => obelus_i18n::language_server::deleting_a_file(),
+        })
+        .collect::<Vec<_>>()
+        .join(obelus_i18n::language_server::list_separator())
 }

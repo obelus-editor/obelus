@@ -6,7 +6,7 @@
 //! rules, which are the part that is not the file's.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use obelus_component::field::Field;
+use obelus_component::{copied::Copied, field::Field};
 
 fn press(field: &mut Field, code: KeyCode) -> bool {
     field.handle_key(&KeyEvent::new(code, KeyModifiers::NONE))
@@ -126,19 +126,19 @@ fn a_copy_takes_what_is_held_or_the_whole_line() {
     type_in(&mut field, "one two");
     assert_eq!(
         field.copied(),
-        ("one two".to_string(), "line"),
+        ("one two".to_string(), Copied::Line),
         "copying nothing is not something a key can usefully do"
     );
 
     for _ in 0..3 {
         with(&mut field, KeyCode::Left, KeyModifiers::SHIFT);
     }
-    assert_eq!(field.copied(), ("two".to_string(), "selection"));
+    assert_eq!(field.copied(), ("two".to_string(), Copied::Selection));
 
     // And a cut takes it out on the way.
-    assert_eq!(field.cut(), ("two".to_string(), "selection"));
+    assert_eq!(field.cut(), ("two".to_string(), Copied::Selection));
     assert_eq!(field.said(), "one ");
-    assert_eq!(field.cut(), ("one ".to_string(), "line"));
+    assert_eq!(field.cut(), ("one ".to_string(), Copied::Line));
     assert_eq!(field.said(), "");
 }
 

@@ -181,7 +181,7 @@ impl App {
             Outcome::Ignored => false,
             Outcome::Consumed => true,
             Outcome::Copy(text) => {
-                self.copied(&text, "code");
+                self.copied(&text, obelus_component::copied::Copied::Code);
                 true
             }
             Outcome::Open(to) => {

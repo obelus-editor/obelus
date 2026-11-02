@@ -27,6 +27,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use obelus_editing::{Editing, Typing};
 use obelus_text::coordinates::{CharColumn, DisplayColumn, LineNumber};
 
+use crate::copied::Copied;
+
 /// Whether a character belongs in a line.
 ///
 /// A function rather than a flag, because the rules do not fall into
@@ -340,18 +342,18 @@ impl Field {
     /// Copying nothing is not something a key can usefully do, and holding
     /// the whole of a one-line answer first is a step worth sparing.
     #[must_use]
-    pub fn copied(&self) -> (String, &'static str) {
+    pub fn copied(&self) -> (String, Copied) {
         match self.selected() {
-            Some(held) => (held, "selection"),
-            None => (self.said(), "line"),
+            Some(held) => (held, Copied::Selection),
+            None => (self.said(), Copied::Line),
         }
     }
 
     /// The same, and takes it out.
-    pub fn cut(&mut self) -> (String, &'static str) {
+    pub fn cut(&mut self) -> (String, Copied) {
         match self.writing.cut(ROOM) {
-            Some(held) => (held, "selection"),
-            None => (self.take(), "line"),
+            Some(held) => (held, Copied::Selection),
+            None => (self.take(), Copied::Line),
         }
     }
 

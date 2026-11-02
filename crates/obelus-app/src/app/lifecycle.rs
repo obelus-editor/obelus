@@ -341,7 +341,7 @@ impl App {
                 // was until now.
                 tracing::warn!(%error, "Obelus is offering an agent nothing");
                 self.amiss
-                    .push("An agent asking Obelus for its tools reaches nothing".to_string());
+                    .push(obelus_i18n::app::no_tools_for_agents().to_string());
             }
         }
     }
@@ -472,10 +472,8 @@ impl App {
                 // Obelus reads is read again for the rest of the session,
                 // so a file changed in another window, a commit, and the
                 // settings all go unheard.
-                self.amiss.push(
-                    "Nothing is being watched, so changes made elsewhere will not arrive"
-                        .to_string(),
-                );
+                self.amiss
+                    .push(obelus_i18n::app::nothing_is_watched().to_string());
                 return;
             }
         };

@@ -747,11 +747,9 @@ impl App {
     /// another machine is a window on a project somebody can mistake for
     /// the one on their own, and the row is where that is answered.
     pub fn drawn_afar(&mut self) {
-        let name = gethostname::gethostname().to_string_lossy().into_owned();
-        self.afar = Some(match name.is_empty() {
-            true => "Another machine".to_string(),
-            false => name,
-        });
+        // Kept as the machine said it, empty or not: what stands in for
+        // no name is said when it is drawn, in whichever language that is.
+        self.afar = Some(gethostname::gethostname().to_string_lossy().into_owned());
     }
 
     /// Says the terminal this Obelus draws on is at the other end of a
@@ -784,7 +782,10 @@ impl App {
     /// The machine this Obelus runs on, where it is drawn on another.
     #[must_use]
     pub fn drawn_from(&self) -> Option<&str> {
-        self.afar.as_deref()
+        self.afar.as_deref().map(|name| match name.is_empty() {
+            true => obelus_i18n::app::another_machine(),
+            false => name,
+        })
     }
 
     /// Leaves, asking about what is unwritten and what is still running.
@@ -851,7 +852,6 @@ impl App {
             }
             self.ask_before_stopping_them(
                 running,
-                "leave",
                 obelus_component::question::Answer::Leaving(
                     obelus_component::question::Leaving::Discard,
                 ),
@@ -1319,7 +1319,7 @@ impl App {
         // reader's to be on and nothing is typed to narrow them.
         picker.only_read();
         picker.will_not_give_way();
-        picker.ask("What went wrong starting up");
+        picker.ask(obelus_i18n::app::problems_starting_up());
         self.show_list(picker);
         true
     }

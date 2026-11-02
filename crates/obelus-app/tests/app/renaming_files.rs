@@ -102,7 +102,7 @@ fn it_refuses_to_move_onto_something_that_is_there() {
     dispatch::dispatch(&mut app, Command::FileRename);
     answer(&mut app, "src/main.rs");
 
-    assert_eq!(app.note(), Some("src/main.rs is already there"));
+    assert_eq!(app.note(), Some("src/main.rs already exists"));
     assert!(scratch.join("src/hint.rs").exists(), "it moved anyway");
     assert_eq!(
         std::fs::read_to_string(scratch.join("src/main.rs")).expect("reading it"),

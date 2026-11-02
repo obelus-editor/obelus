@@ -232,7 +232,7 @@ fn a_note_alone_on_the_row_is_the_row() {
     dispatch::dispatch(&mut app, Command::FileNew);
     support::type_text(&mut app, "src");
     support::press(&mut app, crossterm::event::KeyCode::Enter);
-    assert_eq!(app.note(), Some("src is already there"));
+    assert_eq!(app.note(), Some("src already exists"));
     assert_eq!(ink(&mut app), wrong_ink(), "a refusal is not in the red");
 
     // And a report there is the row's own ink: there is no file's name

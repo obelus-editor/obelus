@@ -65,7 +65,7 @@ impl App {
                 self.record(from);
                 self.go_to_document(id);
             }
-            Err(why) => self.wrong(format!("The terminal would not start: {why}")),
+            Err(why) => self.wrong(obelus_i18n::app::could_not_start_the_terminal(why)),
         }
     }
 
@@ -363,22 +363,24 @@ impl App {
             // The words after the colon, because a command line is a name
             // and keeps its own spelling -- and a sentence may not start
             // with one.
-            Question::new(format!("Still running: {said}"))
-                .way("Stop it and close", Answer::Closing(id, Closing::Discard)),
+            Question::new(obelus_i18n::app::still_running(said)).way(
+                obelus_i18n::app::stop_and_close(),
+                Answer::Closing(id, Closing::Discard),
+            ),
         );
         true
     }
 
-    /// Asks before leaving, closing the project or closing the others, with
-    /// programs still running in terminals: `then` is the word for which,
-    /// `answer` what saying yes does, and `except` a terminal that stays.
+    /// Asks before leaving, closing the project, closing the others or
+    /// switching, with programs still running in terminals: `answer` is
+    /// what saying yes does, which is also which of them it is, and
+    /// `except` a terminal that stays.
     ///
     /// Which one, when there is only one -- the words it was started with
     /// are what the reader would recognise -- and a count otherwise.
     pub(super) fn ask_before_stopping_them(
         &mut self,
         running: usize,
-        then: &str,
         answer: Answer,
         except: Option<DocumentId>,
     ) {
@@ -386,15 +388,18 @@ impl App {
             .running_terminals_except(except)
             .next()
             .map(|terminal| terminal.said().to_string());
-        let (what, way) = match (running, only) {
-            (1, Some(said)) => (
-                format!("Still running: {said}"),
-                format!("Stop it and {then}"),
-            ),
-            (many, _) => (
-                format!("{many} terminals are still running"),
-                format!("Stop them and {then}"),
-            ),
+        let what = match (running, only) {
+            (1, Some(said)) => obelus_i18n::app::still_running(said),
+            (many, _) => obelus_i18n::app::terminals_still_running(many),
+        };
+        // A whole sentence for each, because what "stop it and" is followed
+        // by is the language's to put where it goes.
+        let way = match answer {
+            Answer::Leaving(_) => obelus_i18n::app::stop_and_quit(running),
+            Answer::Switching(_) => obelus_i18n::app::stop_and_switch(running),
+            Answer::ClosingTheProject(_) => obelus_i18n::app::stop_and_close_the_project(running),
+            Answer::ClosingTheOthers(..) => obelus_i18n::app::stop_and_close_others(running),
+            _ => obelus_i18n::app::stop_and_close().to_string(),
         };
         self.stop_to_ask(Question::new(what).way(way, answer));
     }
@@ -416,7 +421,7 @@ impl App {
             Err(why) => {
                 let whose = talking::Whose::One(conversation);
                 self.in_talk(whose, |chat| {
-                    chat.note(&format!("The sign-in would not start: {why}"));
+                    chat.note(&obelus_i18n::app::sign_in_would_not_start(why));
                 });
                 self.ask_to_sign_in(whose, None);
                 return;
@@ -458,7 +463,7 @@ impl App {
             if let Some(slot) = self.slot_of_terminal(signing.terminal) {
                 self.close(slot);
             }
-            self.in_talk(whose, |chat| chat.note("Signed in"));
+            self.in_talk(whose, |chat| chat.note(obelus_i18n::app::signed_in()));
             self.signed_in_everywhere();
             if let Some(talker) = self.agent.talker.as_ref() {
                 talker.signed_in();
@@ -469,12 +474,10 @@ impl App {
             return;
         }
         let how = match &ended.signal {
-            Some(signal) => format!("it was stopped by {signal}"),
-            None => format!("it exited with {}", ended.code),
+            Some(signal) => obelus_i18n::app::sign_in_stopped(signal.to_string()),
+            None => obelus_i18n::app::sign_in_exited(ended.code),
         };
-        self.in_talk(whose, |chat| {
-            chat.note(&format!("Signing in did not finish: {how}"));
-        });
+        self.in_talk(whose, |chat| chat.note(&how));
         self.ask_to_sign_in(whose, None);
     }
 
