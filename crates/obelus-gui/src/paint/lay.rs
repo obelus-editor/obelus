@@ -155,14 +155,27 @@ impl Painter {
                 _ => self.quads.len(),
             };
             match (at, over.is_a_box()) {
-                (0, false) => self.pane_under(over, &said, moving.turn, fonts),
-                _ => self.seen_under(over, lower, said.spun, moving.turn, fonts),
+                (0, false) => self.pane_under(page, over, &said, moving.turn, fonts),
+                _ => self.seen_under(
+                    over,
+                    lower,
+                    (page, said.spun, said.ruled),
+                    moving.turn,
+                    fonts,
+                ),
             }
             let under = start..self.quads.len();
             // After `under`, so on the screen and not only in the picture:
             // the glass starts at the line and leaves this half row bare.
             if let Some(y) = above_its_line(page, over, said.ruled, at) {
-                self.seen_under_rows(over, lower, said.spun, moving.turn, fonts, y..y + 1);
+                self.seen_under_rows(
+                    over,
+                    lower,
+                    (page, said.spun, said.ruled),
+                    moving.turn,
+                    fonts,
+                    y..y + 1,
+                );
             }
             let (glass, rect) = match over.is_a_box() {
                 true => self.box_glass(page, over, lower, fonts),
