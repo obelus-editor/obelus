@@ -2506,17 +2506,6 @@ fn draw_control(
                 style.fg(theme.gutter),
             );
         }
-        // What was typed, and no arrow: nothing opens, and the line it is
-        // typed on is the status row the reader is already looking at.
-        (Kind::Text, Value::Text(said)) => {
-            write(
-                cells,
-                x,
-                y,
-                &truncate_from_right(said, usize::from(width)),
-                style.fg(ink),
-            );
-        }
         (Kind::Choice(_) | Kind::Count(_), Value::Choice(word)) => {
             let after = write(
                 cells,

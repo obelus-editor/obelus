@@ -644,6 +644,7 @@ fn connection(
                 Answered::Open {
                     window: name,
                     again,
+                    machine,
                 },
             )) => {
                 tracing::info!(name, again, at = afar.address(), "let in");
@@ -652,7 +653,12 @@ fn connection(
                     .map_or(0, |since| {
                         i64::try_from(since.as_secs()).unwrap_or(i64::MAX)
                     });
-                obelus_app::app::servers::remember(&afar.at, &hex(&afar.key), now);
+                obelus_app::app::servers::remember(
+                    &afar.at,
+                    machine.as_deref(),
+                    &hex(&afar.key),
+                    now,
+                );
                 window = Some(name);
                 wait = Duration::from_millis(250);
                 stream

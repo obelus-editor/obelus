@@ -2980,6 +2980,245 @@ fn a_commit_opens_its_files_under_it() {
     );
 }
 
+/// The project's history opened over a commit's version of a file starts on
+/// that version: the commit opened, and the reader on the file under it --
+/// not at the top of a list, looking for where they came from.
+///
+/// Broken by taking `start_on_what_is_read` out of `open_history`: the
+/// second `f10` lands on the newest commit, shut, and this fails.
+#[test]
+fn the_project_history_starts_on_the_version_being_read() {
+    use crossterm::event::KeyCode;
+    use obelus_app::app::App;
+    use obelus_buffer::Buffer;
+
+    let repository = Repository::new("history-starts-on-it", "one\n");
+    std::fs::write(repository.directory().join("other.rs"), "elsewhere\n").expect("the other");
+    repository.write("one\ntwo\n");
+    repository.commit_all("touching two");
+    repository.write("one\ntwo\nthree\n");
+    repository.commit_all("touching three");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 70, 16);
+    support::press_function(&mut app, 10);
+    support::read_history(&mut app, &events);
+
+    let rows = |app: &App| -> Vec<String> {
+        app.picker()
+            .expect("the history")
+            .matches()
+            .map(|item| item.label.clone())
+            .collect()
+    };
+    // The older commit, and the second of its files.
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        rows(&app),
+        [
+            "touching three",
+            "touching two",
+            "file.rs",
+            "other.rs",
+            "committed"
+        ]
+    );
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.picker().is_none(), "choosing a file did not open it");
+
+    support::press_function(&mut app, 10);
+    support::read_history(&mut app, &events);
+    assert_eq!(
+        rows(&app),
+        [
+            "touching three",
+            "touching two",
+            "file.rs",
+            "other.rs",
+            "committed"
+        ],
+        "the commit being read was not opened"
+    );
+    let picker = app.picker().expect("the history");
+    assert_eq!(
+        picker.selected_item().map(|item| item.label.as_str()),
+        Some("other.rs"),
+        "the list did not start on the file being read"
+    );
+}
+
+/// The file's own history opened over a commit's version starts on that
+/// commit.
+///
+/// Broken by making `start_on_what_is_read` return before it sets `wanted`
+/// for any tab but the project's: the second `f9` lands on the newest
+/// commit, and this fails.
+#[test]
+fn a_files_history_starts_on_the_version_being_read() {
+    use crossterm::event::KeyCode;
+    use obelus_app::app::App;
+    use obelus_buffer::Buffer;
+
+    let repository = Repository::new("file-history-starts-on-it", "one\n");
+    repository.write("one\ntwo\n");
+    repository.commit_all("touching two");
+    repository.write("one\ntwo\nthree\n");
+    repository.commit_all("touching three");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 70, 16);
+    support::press_function(&mut app, 9);
+    support::read_history(&mut app, &events);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.picker().is_none(), "choosing a commit did not open it");
+
+    support::press_function(&mut app, 9);
+    support::read_history(&mut app, &events);
+    let picker = app.picker().expect("the history");
+    assert_eq!(
+        picker.selected_item().map(|item| item.label.as_str()),
+        Some("touching two"),
+        "the list did not start on the commit being read"
+    );
+}
+
+/// A version read from a ref is often of a commit that never touched the
+/// file, so there is no row of it under the commit: the list starts on the
+/// commit instead.
+///
+/// Broken by dropping the fall back to the commit's row in `show_history`:
+/// the list stays on the newest commit, and this fails.
+#[test]
+fn the_project_history_starts_on_a_commit_that_did_not_touch_the_file() {
+    use crossterm::event::KeyCode;
+    use obelus_app::app::App;
+    use obelus_buffer::Buffer;
+
+    let repository = Repository::new("history-starts-on-the-commit", "one\n");
+    std::fs::write(repository.directory().join("other.rs"), "elsewhere\n").expect("the other");
+    repository.commit_all("only the other");
+    repository.run(&["branch", "before"]);
+    repository.write("one\ntwo\n");
+    repository.commit_all("after");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 70, 16);
+    support::press_function(&mut app, 9);
+    support::read_history(&mut app, &events);
+    support::press(&mut app, KeyCode::Tab);
+    let before = app
+        .picker()
+        .expect("the refs")
+        .matches()
+        .position(|item| item.label == "before")
+        .expect("the branch");
+    for _ in 0..before {
+        support::press(&mut app, KeyCode::Down);
+    }
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.picker().is_none(), "choosing a ref did not open it");
+
+    support::press_function(&mut app, 10);
+    support::read_history(&mut app, &events);
+    let picker = app.picker().expect("the history");
+    let rows: Vec<&str> = picker.matches().map(|item| item.label.as_str()).collect();
+    assert_eq!(rows, ["after", "only the other", "other.rs", "committed"]);
+    assert_eq!(
+        picker.selected_item().map(|item| item.label.as_str()),
+        Some("only the other"),
+        "the list did not start on the commit being read"
+    );
+}
+
+/// A walk can take seconds to reach an old commit, and a reader who has
+/// started typing by then keeps the list they are typing into.
+///
+/// Broken by taking out the check of `left` in `show_history`: the
+/// selection jumps to the commit being read when it arrives, and this
+/// fails.
+#[test]
+fn the_history_does_not_jump_once_the_reader_has_moved() {
+    use crossterm::event::KeyCode;
+    use obelus_app::app::App;
+    use obelus_buffer::Buffer;
+
+    let repository = Repository::new("history-does-not-jump", "one\n");
+    repository.write("one\ntwo\n");
+    repository.commit_all("touching two");
+    repository.write("one\ntwo\nthree\n");
+    repository.commit_all("touching three");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 70, 16);
+    support::press_function(&mut app, 9);
+    support::read_history(&mut app, &events);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+
+    // Typed before a single commit has arrived.
+    support::press_function(&mut app, 9);
+    support::press(&mut app, KeyCode::Char('t'));
+    support::read_history(&mut app, &events);
+    let picker = app.picker().expect("the history");
+    assert_eq!(
+        picker.selected_item().map(|item| item.label.as_str()),
+        Some("touching three"),
+        "the list jumped out from under the reader"
+    );
+}
+
+/// The row a list was to start on belongs to the tab it was asked of: a ref
+/// that happens to name the same commit is not the reader's row.
+///
+/// Broken by not clearing `wanted` in `refresh_history`: the refs tab starts
+/// on the tag, and this fails.
+#[test]
+fn another_tab_does_not_start_where_the_first_was_to() {
+    use crossterm::event::KeyCode;
+    use obelus_app::app::App;
+    use obelus_buffer::Buffer;
+
+    let repository = Repository::new("history-tab-forgets", "one\n");
+    // Named to sort after `master`, so that a tie in age still leaves it
+    // below.
+    repository.run(&["tag", "zz-first"]);
+    repository.write("one\ntwo\n");
+    repository.commit_all("touching two");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 70, 16);
+    support::press_function(&mut app, 9);
+    support::read_history(&mut app, &events);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+
+    // To the refs before the file's own history has found the commit.
+    support::press_function(&mut app, 9);
+    support::press(&mut app, KeyCode::Tab);
+    let picker = app.picker().expect("the refs");
+    let rows: Vec<&str> = picker.matches().map(|item| item.label.as_str()).collect();
+    assert_eq!(rows, ["master", "zz-first"]);
+    assert_eq!(
+        picker.selected_item().map(|item| item.label.as_str()),
+        Some("master"),
+        "the refs started where the file's history was to"
+    );
+}
+
 /// Each file a commit opens into says how much the commit changed it, the
 /// way the changed files do: a commit's files are read for which of them to
 /// look at first. The first commit of a project has no tree before it, and

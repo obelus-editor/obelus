@@ -4990,43 +4990,53 @@ fn each_workflow_says_what_it_does_where_it_is_chosen() {
     }
 }
 
-/// What an agent calls itself is typed, on the status row, starting from
-/// what it is now -- and what is typed is what the row says and what the
-/// file keeps.
+/// A role is chosen from a list that says who the agent is in each, and
+/// the one chosen is what the row says and what the file keeps.
 ///
-/// Broken deliberately three ways: `Kind::Text` opening nothing, which
-/// leaves no prompt on the status row; the prompt's answer not reaching
-/// `change_setting`, which leaves the setting `Obelus`; and the control
-/// drawing nothing for a `Text`, which leaves `Ada` off the page.
+/// Broken deliberately three ways: the choices with no detail, which
+/// leaves `calls itself Obelus` and `few words` off the list; `called` not
+/// naming a role, which leaves `soldier` on the row where `Soldier and
+/// commander` should be; and the list at the ordinary height, which draws only
+/// the choices around the one in force and leaves `Soldier and commander` off
+/// it.
 #[test]
-fn what_an_agent_calls_itself_is_typed() {
+fn a_role_is_chosen_from_a_list_that_says_who_the_agent_is() {
     let _turn = crate::turn();
-    let scratch = temporary("speaks-as");
+    let scratch = temporary("roles");
     let file = settings_file(&scratch);
     let mut app = open(&file);
-    support::type_text(&mut app, "agent name");
+    support::type_text(&mut app, "role");
     support::press(&mut app, KeyCode::Enter);
-    let dump = support::render(&mut app, 100, 24);
-    assert!(
-        support::text_block(&dump).contains("Agent name: Obelus"),
-        "the line did not open on what it is now:\n{dump}"
-    );
-    for _ in "Obelus".chars() {
-        support::press(&mut app, KeyCode::Backspace);
+    assert!(app.picker().is_some(), "the roles did not open");
+    let dump = support::render(&mut app, 100, 40);
+    let text = support::text_block(&dump)
+        .lines()
+        .filter_map(|row| row.split_once('|').map(|(_, cells)| cells.trim()))
+        .collect::<Vec<_>>()
+        .join(" ");
+    // Words of the list's own rather than `Obelus`, which the row behind
+    // it says as well.
+    for said in [
+        "calls itself Obelus",
+        "Soldier and commander",
+        "the outcome first, in few words",
+        "Eunuch and emperor",
+    ] {
+        assert!(text.contains(said), "{said:?} is not on the list:\n{dump}");
     }
-    support::type_text(&mut app, "Ada");
+    support::type_text(&mut app, "soldier");
     support::press(&mut app, KeyCode::Enter);
-    assert_eq!(app.config().speaks_as, "Ada");
+    assert_eq!(app.config().role, "soldier");
     let written = std::fs::read_to_string(&file).expect("the file was written");
     assert_eq!(
-        obelus_config::from_toml(&written).speaks_as,
-        "Ada",
+        obelus_config::from_toml(&written).role,
+        "soldier",
         "the file does not say so: {written:?}"
     );
     let dump = support::render(&mut app, 100, 24);
     assert!(
-        support::text_block(&dump).contains("Ada"),
-        "the row does not say what was typed:\n{dump}"
+        support::text_block(&dump).contains("Soldier and commander"),
+        "the row does not say what was chosen:\n{dump}"
     );
 }
 

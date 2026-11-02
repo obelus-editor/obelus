@@ -399,33 +399,35 @@ fn the_status_row_s_rule_is_said_again_over_a_pane_on_its_row() {
 }
 
 /// The status row under the settings is the page's colour before the glass
-/// is laid over it, while a setting's words are being typed into that row
-/// as much as while the page's filter is.
+/// is laid over it, while the page asks for a line on that row -- the name
+/// of a variable for the agent's environment -- as much as while the
+/// page's filter is typed there.
 ///
 /// The row is written last, by whoever owns it, so a cell grid is the same
 /// either way: what differed was only what the glass was drawn from. It was
-/// filled only when the nearest thing took the row, and the line a setting
-/// is typed on does not take the row -- it is the row -- so the glass read
-/// cells nobody had written and drew a grey band with a dark edge under
-/// the box.
+/// filled only when the nearest thing took the row, and a line asked for
+/// there does not take the row -- it is the row -- so the glass read cells
+/// nobody had written and drew a grey band with a dark edge under the box.
 ///
 /// Broken deliberately by asking `layers.taking_the_status_row()` again
 /// before the fill in `obelus_ui::draw`: the row under the pane comes back
 /// unwritten.
 #[test]
-fn the_row_a_setting_is_typed_on_is_there_under_the_glass() {
+fn the_row_a_variable_is_named_on_is_there_under_the_glass() {
+    let scratch = std::env::temp_dir().join(format!("obelus-panes-typed-{}", std::process::id()));
+    std::fs::create_dir_all(&scratch).expect("the scratch directory");
+    let file = scratch.join("config.toml");
+    std::fs::write(&file, "agent = \"an-agent\"\n").expect("the settings");
     let mut app = App::new(vec![support::open_fixture("long.rs")]);
     app.statuses_for_test(std::collections::HashMap::new());
-    app.config_file_for_test(
-        std::env::temp_dir()
-            .join(format!("obelus-panes-typed-{}", std::process::id()))
-            .join("config.toml"),
-    );
+    app.agents_root_for_test(scratch.join("agents"));
+    app.config_file_for_test(file);
     support::lay_out(&mut app, 60, 24);
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConfigOpen);
-    support::type_text(&mut app, "speaks");
+    // The last row of the page is the one that adds a variable.
+    support::press_control_key(&mut app, crossterm::event::KeyCode::End);
     support::press(&mut app, crossterm::event::KeyCode::Enter);
-    the_status_row_is_under_the_glass(&mut app, "Agent name", Joined::Screen);
+    the_status_row_is_under_the_glass(&mut app, "New variable", Joined::Screen);
 }
 
 /// The welcome screen is under the settings opened from it: a dialog is

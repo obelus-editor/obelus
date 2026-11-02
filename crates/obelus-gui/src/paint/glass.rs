@@ -498,6 +498,7 @@ impl Painter {
     /// through the pane's rounded corners -- the one place the pane is not.
     pub(super) fn pane_under(
         &mut self,
+        page: &Page,
         behind: &Behind,
         said: &Said<'_>,
         turn: Option<f32>,
@@ -516,7 +517,11 @@ impl Painter {
         let corner = (cell.height * HELD_CORNER).min(cell.width / 2.0);
         for y in behind.area.top()..behind.area.bottom() {
             let ground = self.ground_colour();
-            let (grounds, lettered) = behind_row(behind, barred, spun, y);
+            let BehindRow {
+                grounds,
+                lettered,
+                lined,
+            } = behind_row(behind, page, (barred, spun, said.ruled), y);
             // Where a plate is, the square under it would stand outside its
             // corners -- the hole `backgrounds` leaves for the page's own.
             let mut holes: Vec<(u16, u16)> = plates
@@ -561,6 +566,11 @@ impl Painter {
                     corner,
                     [r, g, b, 1.0],
                 );
+            }
+            for (x, span) in lined {
+                if let Some(under) = behind.look(x, y) {
+                    self.rule_in(x, y, span, page, under.foreground, cell);
+                }
             }
             for x in lettered {
                 let Some(under) = behind.look(x, y) else {
@@ -834,14 +844,14 @@ impl Painter {
         &mut self,
         over: &Behind,
         lower: &[&Behind],
-        spun: &[Spun],
+        (page, spun, ruled): (&Page, &[Spun], &[Ruled]),
         turn: Option<f32>,
         fonts: &mut Fonts,
     ) {
         self.seen_under_rows(
             over,
             lower,
-            spun,
+            (page, spun, ruled),
             turn,
             fonts,
             over.area.top()..over.area.bottom(),
@@ -853,7 +863,7 @@ impl Painter {
         &mut self,
         over: &Behind,
         lower: &[&Behind],
-        spun: &[Spun],
+        (page, spun, ruled): (&Page, &[Spun], &[Ruled]),
         turn: Option<f32>,
         fonts: &mut Fonts,
         rows: std::ops::Range<u16>,
@@ -871,9 +881,13 @@ impl Painter {
                     let held = as_held(under.background, self.holding, ground);
                     self.ground_back([left, top, cell.width, cell.height], under.background, held);
                 }
-                // No bars: a picture this far up draws a bar's block as a
-                // letter, the way the page it was taken from did.
-                if lettered_behind(under, &[], spun, over.depth, x, y) {
+                // A rule's line as the page draws it, the way `pane_under`
+                // draws one -- see `Ruled::spans_behind`. No bars: a
+                // picture this far up draws a bar's block as a letter, the
+                // way the page it was taken from did.
+                if let Some(span) = Ruled::behind(ruled, page, over, x, y) {
+                    self.rule_in(x, y, span, page, under.foreground, cell);
+                } else if lettered_behind(under, &[], spun, over.depth, x, y) {
                     let ink = rgba(under.foreground, Ink::Foreground);
                     self.glyphs_at((left, top), under, ink, 0, fonts, Size::Cell);
                 }
@@ -1017,12 +1031,15 @@ pub(super) fn above_its_line(
 /// painted over the right half of the character before it. As runs the
 /// second column belongs to the character, so there is no rectangle there
 /// to do it with, and the letters come after every one of them anyway.
+///
+/// And a third, drawn after both: the cells that are a rule's line, which
+/// are not letters -- see `Ruled::spans_behind`.
 pub(super) fn behind_row(
     behind: &Behind,
-    barred: &[Barred],
-    spun: &[Spun],
+    page: &Page,
+    (barred, spun, ruled): (&[Barred], &[Spun], &[Ruled]),
     y: u16,
-) -> (Vec<(u16, u16, Color)>, Vec<u16>) {
+) -> BehindRow {
     let (from, to) = (behind.area.left(), behind.area.right());
     let grounds = runs_from(
         from,
@@ -1032,14 +1049,33 @@ pub(super) fn behind_row(
             })
         }),
     );
+    let lined: Vec<(u16, (f32, f32))> = (from..to)
+        .filter_map(|x| Some((x, Ruled::behind(ruled, page, behind, x, y)?)))
+        .collect();
     let lettered = (from..to)
         .filter(|&x| {
-            behind
-                .look(x, y)
-                .is_some_and(|under| lettered_behind(under, barred, spun, behind.depth, x, y))
+            !lined.iter().any(|&(at, _)| at == x)
+                && behind
+                    .look(x, y)
+                    .is_some_and(|under| lettered_behind(under, barred, spun, behind.depth, x, y))
         })
         .collect();
-    (grounds, lettered)
+    BehindRow {
+        grounds,
+        lettered,
+        lined,
+    }
+}
+
+/// One row of the picture a pane's glass reads -- see `behind_row`.
+#[derive(Debug)]
+pub(super) struct BehindRow {
+    /// Its grounds, as runs: from, to, and the colour.
+    pub(super) grounds: Vec<(u16, u16, Color)>,
+    /// Which of its columns carry a letter.
+    pub(super) lettered: Vec<u16>,
+    /// Which carry a rule's line, and how much of the cell it runs across.
+    pub(super) lined: Vec<(u16, (f32, f32))>,
 }
 
 /// Whether the picture of what a pane was opened over writes this cell.

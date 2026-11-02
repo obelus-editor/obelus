@@ -1223,6 +1223,7 @@ mod tests {
             link::Answered::Open {
                 window: "w1".to_string(),
                 again: false,
+                machine: Some("devbox".to_string()),
             },
             link::Answered::Refused("no".to_string()),
         ] {

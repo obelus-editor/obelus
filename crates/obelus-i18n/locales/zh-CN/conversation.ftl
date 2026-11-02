@@ -146,3 +146,19 @@ workflow-in-place = 就地修改
 workflow-in-place-about = agent 直接修改你正在阅读的检出目录，每处更改都出现在你眼前的文件里，可以像其他编辑一样撤销。它会在修改前后运行测试并说明运行了什么，等你试用，提出审查，然后询问是在这里提交、放到分支上开拉取请求，还是先不提交。在你同意之前，不会提交或推送任何内容。
 workflow-feature-branch = 功能分支
 workflow-feature-branch-about = agent 在 .worktree 下自己的工作树里的分支上工作，告诉你在哪里试用以及运行了什么，能启动的话会提出替你启动。你接受之后，它会询问是否审查，再询问是合并回去、开拉取请求还是以后再说。拉取请求在检查通过后合并：如果没有安装并登录 gh，就由你通过它给出的链接合并。之后，如果你所在的正是那个分支，它会询问是否把你的检出目录更新到最新。只有在你同意时才会删除工作树。
+
+## 角色，在 `role` 设置的列表里：每个角色叫什么、是什么样。
+## 告诉 agent 的话在角色自己的文件里，用英文。
+
+role-obelus = Obelus
+role-obelus-about = agent 是你所用编辑器的一部分，自称 Obelus。
+role-soldier = 士兵与指挥官
+role-soldier-about = agent 像士兵向指挥官汇报：先说结果，言简意赅，需要你定夺的事以请示的方式提出。
+role-butler = 管家与主人
+role-butler-about = agent 像管家侍奉主人：彬彬有礼，从容不迫，总能先一步想到你需要什么。
+role-first-officer = 副驾驶与机长
+role-first-officer-about = agent 像副驾驶配合机长：报告简短，说清查了什么、发现了什么，有疑虑就说出来。
+role-apprentice = 学徒与师傅
+role-apprentice-about = agent 像学徒跟师傅学艺：勤快，拿不准的地方直说，需要你拿主意时就来请教。
+role-eunuch = 奴才与皇上
+role-eunuch-about = agent 像古装剧里的太监伺候皇上：恭恭敬敬，但哪里不对照样直说。

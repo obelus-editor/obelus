@@ -72,9 +72,6 @@ use obelus_text::coordinates::Span;
 /// theme -- and the list of names Obelus will accept is already next door.
 pub const DEFAULT_THEME: &str = "dark";
 
-/// What an agent calls itself for a reader who has not said.
-pub const DEFAULT_SPEAKS_AS: &str = "Obelus";
-
 /// Everything the reader can decide.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Config {
@@ -279,14 +276,16 @@ pub struct Config {
     /// leaves each build to its own `-j` the way it was before there was
     /// one.
     pub build_jobs: String,
-    /// What an agent calls itself in a conversation.
+    /// Who the agent is to the reader in a conversation, by one of
+    /// [`ROLES`]: what it calls itself, what it calls them, and how it
+    /// speaks.
     ///
-    /// A name rather than "I", because the reader's own messages say "I"
-    /// on the same page, and a reader who cannot tell whose "I" a sentence
-    /// is cannot tell who did the thing it says was done. `Obelus` unless
-    /// the reader says otherwise: to them the agent is part of the editor
-    /// they are in.
-    pub speaks_as: String,
+    /// Whichever it is, the agent names itself rather than saying "I",
+    /// because the reader's own messages say "I" on the same page, and a
+    /// reader who cannot tell whose "I" a sentence is cannot tell who did
+    /// the thing it says was done. `obelus` unless the reader says
+    /// otherwise: to them the agent is part of the editor they are in.
+    pub role: String,
     /// Which agent Obelus talks to, by the registry's own name for it.
     ///
     /// One, or none. Two would mean every question having to say which
@@ -448,7 +447,7 @@ impl Default for Config {
             // the reader's while it runs: the disk and the memory a whole
             // machine's worth of compilers fills are what this is for.
             build_jobs: "half".to_string(),
-            speaks_as: DEFAULT_SPEAKS_AS.to_string(),
+            role: ROLES[0].to_string(),
             // None until the reader installs one: Obelus does not choose an
             // agent for anybody.
             agent: None,
@@ -487,8 +486,6 @@ pub enum Value {
     /// tried in, first to last. A set would lose the only thing the reader
     /// said.
     Names(Vec<String>),
-    /// Whatever the reader typed.
-    Text(String),
 }
 
 /// What sort of control a setting gets.
@@ -513,12 +510,6 @@ pub enum Kind {
     /// another. So the control offers what is here and takes what is
     /// typed.
     Names,
-    /// A line the reader types, asked for on the status row.
-    ///
-    /// No list at all: what may go in is anything a reader would call
-    /// something, and a list of the names Obelus thought of would be a
-    /// list of names that are not theirs.
-    Text,
 }
 
 /// How a number is turned: as far as it goes each way, and how far one
@@ -921,6 +912,20 @@ pub fn key_layout(word: &str) -> Option<&'static KeyLayout> {
 /// Logical CPUs, which is what a build counts when it sizes itself.
 pub const BUILD_JOBS: &[&str] = &["unlimited", "all", "half"];
 
+/// Who the agent can be to the reader, the default first.
+///
+/// What each one is called, what the list says about it and what the
+/// agent is told are a file in `obelus-app`, which a test there holds to
+/// this list -- the workflows' arrangement, for the workflows' reason.
+pub const ROLES: &[&str] = &[
+    "obelus",
+    "soldier",
+    "butler",
+    "first-officer",
+    "apprentice",
+    "eunuch",
+];
+
 /// Every setting Obelus has.
 pub const ALL: &[Setting] = &[
     Setting {
@@ -1130,13 +1135,13 @@ pub const ALL: &[Setting] = &[
         drawn: Drawn::Anywhere,
     },
     Setting {
-        key: "speaks_as",
+        key: "role",
         group: Group::Agent,
-        // A project's too: what an agent is called is no more than a word
-        // in its sentences, and a project that names its own is not
-        // starting or allowing anything.
-        reach: Reach::Anywhere,
-        kind: Kind::Text,
+        // The reader's alone: it is how they are spoken to, and a project
+        // that could set it would be a downloaded file deciding what
+        // everybody who opens it is called.
+        reach: Reach::ReaderOnly,
+        kind: Kind::Choice(ROLES),
         drawn: Drawn::Anywhere,
     },
     Setting {
@@ -1195,7 +1200,7 @@ impl Config {
             "workflow" => Some(Value::Choice(self.workflow.clone())),
             "keys_from" => Some(Value::Choice(self.keys_from.clone())),
             "build_jobs" => Some(Value::Choice(self.build_jobs.clone())),
-            "speaks_as" => Some(Value::Text(self.speaks_as.clone())),
+            "role" => Some(Value::Choice(self.role.clone())),
             "agent" => Some(Value::Choice(self.agent.clone().unwrap_or_default())),
             "chat" => Some(Value::Choice(self.chat.clone().unwrap_or_default())),
             _ => None,
@@ -1234,7 +1239,7 @@ impl Config {
             ("workflow", Value::Choice(word)) => self.workflow = word.clone(),
             ("keys_from", Value::Choice(word)) => self.keys_from = word.clone(),
             ("build_jobs", Value::Choice(word)) => self.build_jobs = word.clone(),
-            ("speaks_as", Value::Text(name)) => self.speaks_as = speaks_as(name),
+            ("role", Value::Choice(word)) => self.role = word.clone(),
             // An empty word is nobody, which is how a reader stops talking
             // to an agent without a second setting meaning "off".
             ("agent", Value::Choice(word)) => {
@@ -1921,10 +1926,15 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
             config.build_jobs = word.to_string();
         }
     }
-    if let Some(name) = table.get("speaks_as").and_then(toml::Value::as_str)
-        && allowed("speaks_as")
-    {
-        config.speaks_as = speaks_as(name);
+    if let Some(word) = table.get("role").and_then(toml::Value::as_str) {
+        // Checked here for the workflow's reason: a word nothing answers to
+        // read as obeyed would be an agent told to be nobody in particular.
+        if !ROLES.contains(&word) {
+            tracing::warn!(word, "no role by this name, so the line does nothing");
+            no_such_choice.push(("role", word.to_string()));
+        } else if allowed("role") {
+            config.role = word.to_string();
+        }
     }
     if let Some(word) = table.get("agent").and_then(toml::Value::as_str)
         && allowed("agent")
@@ -2323,9 +2333,9 @@ fn lay(existing: &str, config: &Config, every: bool) -> String {
         toml_edit::value(config.build_jobs.clone()),
     );
     put(
-        "speaks_as",
-        config.speaks_as != default.speaks_as,
-        toml_edit::value(config.speaks_as.clone()),
+        "role",
+        config.role != default.role,
+        toml_edit::value(config.role.clone()),
     );
     put(
         "agent",
@@ -2546,18 +2556,6 @@ pub fn resolved(path: &Path) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
-/// The name an agent is to call itself, from what somebody wrote.
-///
-/// A blank one is the default rather than nothing: an agent told to call
-/// itself "" is told nothing it can follow, and a reader who cleared the
-/// line has said they want no name of their own.
-fn speaks_as(name: &str) -> String {
-    match name.trim() {
-        "" => DEFAULT_SPEAKS_AS.to_string(),
-        name => name.to_string(),
-    }
-}
-
 /// Sets or removes one key in a project's own settings file.
 ///
 /// Edited rather than rewritten, like the reader's own ([`over`]). A
@@ -2583,7 +2581,7 @@ pub fn write_project(path: &Path, key: &str, value: Option<&Value>) -> std::io::
 
     match value {
         Some(Value::Switch(on)) => document[key] = toml_edit::value(*on),
-        Some(Value::Choice(word) | Value::Text(word)) => {
+        Some(Value::Choice(word)) => {
             document[key] = toml_edit::value(word.clone());
         }
         Some(Value::Count(count)) => {
@@ -3323,7 +3321,7 @@ mod tests {
             new_versions: false,
             workflow: "none".to_string(),
             build_jobs: "all".to_string(),
-            speaks_as: "Ada".to_string(),
+            role: "soldier".to_string(),
             agent: Some("claude-acp".to_string()),
             keys_from: "mnemonic".to_string(),
             // A key moved and a key taken away: both are decisions, and
@@ -3497,11 +3495,6 @@ mod tests {
                 (super::Kind::Names, Value::Names(names)) => assert!(
                     names.is_empty(),
                     "{} defaults to {names:?}, which is a guess about somebody's machine",
-                    setting.key
-                ),
-                (super::Kind::Text, Value::Text(text)) => assert!(
-                    !text.trim().is_empty(),
-                    "{} defaults to nothing, which says nothing",
                     setting.key
                 ),
                 (kind, value) => {

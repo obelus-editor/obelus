@@ -517,10 +517,10 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
     // Whenever anything covers the file, not when the nearest thing takes
     // the row: whatever covers it is a pane, and a pane may reach the row
     // whether or not the row is its own.
-    // A setting's words are typed on the status row, and that line *is* the
-    // row rather than taking it, so asking the nearest left the settings'
-    // glass over a hole for as long as the reader was typing -- the same
-    // band, under the box.
+    // A line the settings ask for -- a variable's name -- is typed on the
+    // status row, and that line *is* the row rather than taking it, so
+    // asking the nearest left the settings' glass over a hole for as long
+    // as the reader was typing -- the same band, under the box.
     if layers.covering() {
         fill(
             cells,

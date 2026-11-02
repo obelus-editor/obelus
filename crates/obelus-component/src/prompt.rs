@@ -46,9 +46,6 @@ pub enum PromptKind {
     /// get this wrong -- and the end says whether it was the one meant; the
     /// rest is the part a reader sharing their screen would not want shown.
     Told(&'static obelus_bot::platform::Field),
-    /// What one of Obelus's own settings is, where it is typed rather than
-    /// chosen: by the setting's key.
-    Setting(&'static str),
     /// What a variable the reader is adding to an agent's environment is
     /// called. Its value is the next question.
     ///
@@ -99,11 +96,6 @@ impl PromptKind {
             }
             Self::VariableName { again: false, .. } => obelus_i18n::prompt::new_variable(),
             Self::VariableName { again: true, .. } => obelus_i18n::prompt::not_a_digit(),
-            Self::Setting(key) => {
-                let name =
-                    obelus_config::Setting::named(key).map_or(*key, |setting| setting.name());
-                return obelus_i18n::prompt::asking_for(name).into();
-            }
             Self::Line => obelus_i18n::prompt::line(),
             Self::Server => obelus_i18n::prompt::server(),
             Self::ServerKey { .. } => obelus_i18n::prompt::server_key(),
@@ -147,10 +139,6 @@ impl PromptKind {
             // newline or a space along with it should not keep them. A
             // machine's name and a key are each one word too.
             Self::Told(_) | Self::Server | Self::ServerKey { .. } => !character.is_whitespace(),
-            // A name may have a blank in it -- a reader may well want the
-            // agent to be "the assistant" -- and only the key that answers
-            // is refused.
-            Self::Setting(_) => character != '\n' && character != '\r',
             // What a shell would take as a variable's name: letters, digits
             // and the underscore. A digit first is refused at the answer,
             // which is the one place that knows it is first.
@@ -174,9 +162,7 @@ impl PromptKind {
             Self::Told(_) | Self::Server | Self::ServerKey { .. } => {
                 |character| !character.is_whitespace()
             }
-            Self::Setting(_) | Self::Variable { .. } => {
-                |character| character != '\n' && character != '\r'
-            }
+            Self::Variable { .. } => |character| character != '\n' && character != '\r',
             Self::VariableName { .. } => {
                 |character| character.is_ascii_alphanumeric() || character == '_'
             }

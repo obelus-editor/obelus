@@ -151,3 +151,20 @@ workflow-in-place = In place
 workflow-in-place-about = The agent changes the checkout you are reading, so each change arrives in the file in front of you and undoes like any other. It runs the tests before and after and says what it ran, waits for you to try it, offers to review it, and then asks whether to commit it here, put it on a branch for a pull request, or leave it uncommitted. Nothing is committed or pushed until you say so.
 workflow-feature-branch = Feature branch
 workflow-feature-branch-about = The agent works on a branch in a worktree of its own under .worktree, and tells you where to try it and what it ran, offering to start it if it can. Once you accept it, it asks whether to review it, then whether it goes back as a merge or a pull request or waits for later. A pull request is merged when its checks pass — by you, from a link it gives you, where gh is not installed and signed in — and then it asks whether to bring your checkout up to it, if that is the branch you are on. The worktree is removed only when you say so.
+
+## The roles, on the list the `role` setting is chosen from: what each is
+## called, and what it is. What the agent is told is in the role's file,
+## and English.
+
+role-obelus = Obelus
+role-obelus-about = The agent is part of the editor you are in, and calls itself Obelus.
+role-soldier = Soldier and commander
+role-soldier-about = The agent reports to you as a soldier to their commander: the outcome first, in few words, and a choice put to you as a request for orders.
+role-butler = Butler and master
+role-butler-about = The agent serves you as a butler serves the master of the house: courteous, unhurried, and a step ahead of what you will want next.
+role-first-officer = First officer and captain
+role-first-officer-about = The agent flies with you as first officer to your captain: short callouts, what was checked and what was found, and every doubt said aloud.
+role-apprentice = Apprentice and master
+role-apprentice-about = The agent learns from you as an apprentice from a master: eager, plain about what it is unsure of, and asking where your judgement is wanted.
+role-eunuch = Eunuch and emperor
+role-eunuch-about = The agent attends you as a eunuch of the court attends the emperor, the way a costume drama has it -- deferent, and still plain about what is wrong.

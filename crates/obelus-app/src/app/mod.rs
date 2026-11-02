@@ -747,9 +747,10 @@ impl App {
     /// another machine is a window on a project somebody can mistake for
     /// the one on their own, and the row is where that is answered.
     pub fn drawn_afar(&mut self) {
-        // Kept as the machine said it, empty or not: what stands in for
-        // no name is said when it is drawn, in whichever language that is.
-        self.afar = Some(gethostname::gethostname().to_string_lossy().into_owned());
+        // Kept as the machine said it, or empty where it said nothing: what
+        // stands in for no name is said when it is drawn, in whichever
+        // language that is (`App::drawn_from`).
+        self.afar = Some(servers::this_machine().unwrap_or_default());
     }
 
     /// Says the terminal this Obelus draws on is at the other end of a

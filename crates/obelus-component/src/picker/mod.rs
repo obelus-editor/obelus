@@ -571,6 +571,9 @@ pub struct Scan {
     pub candidates: Vec<usize>,
     /// Which listing of the rows these positions are in.
     pub listings: u64,
+    /// Whether a row's detail is matched as well as its label
+    /// ([`Picker::matches_details`]).
+    pub details: bool,
 }
 
 /// What a [`Scan`] found.
@@ -600,7 +603,8 @@ pub fn scan(asked: &Scan) -> Scanned {
         let Some(item) = asked.items.get(index) else {
             continue;
         };
-        let text = Utf32Str::new(&item.label, &mut haystack);
+        let said = matched_text(item, asked.details);
+        let text = Utf32Str::new(&said, &mut haystack);
         if let Some(score) = pattern.score(text, &mut matcher) {
             matched.push((index, score));
         }
@@ -609,6 +613,19 @@ pub fn scan(asked: &Scan) -> Scanned {
         generation: asked.generation,
         listings: asked.listings,
         matched,
+    }
+}
+
+/// What a query is matched against: the label, or, in a list that matches
+/// details too, the label, a space and the detail as one text -- so a
+/// position past the label's end is one in the detail, counted from one
+/// past the space ([`Picker::matches_details`]).
+fn matched_text(item: &PickerItem, details: bool) -> std::borrow::Cow<'_, str> {
+    match (details, item.detail.as_deref()) {
+        (true, Some(detail)) if !detail.is_empty() => {
+            std::borrow::Cow::Owned(format!("{} {detail}", item.label))
+        }
+        _ => std::borrow::Cow::Borrowed(&item.label),
     }
 }
 
@@ -1016,6 +1033,12 @@ pub struct Picker {
     wraps: Option<Option<char>>,
     /// How many rows a wrapped row's detail may take.
     detail_rows: usize,
+    /// Whether a wrapped row's detail goes on the label's row where the two
+    /// fit there ([`Picker::details_beside`]).
+    details_beside: bool,
+    /// Whether the query is matched against a row's detail as well as its
+    /// label ([`Picker::matches_details`]).
+    details_matched: bool,
     /// Every row's words wrapped, at the width the list was last settled
     /// at.
     ///
@@ -1119,6 +1142,8 @@ impl Picker {
             layout,
             wraps: None,
             detail_rows: wrapped::MOST_DETAIL_ROWS,
+            details_beside: false,
+            details_matched: false,
             measured: None,
             shown: 0,
             matcher: Matcher::new(nucleo_matcher::Config::DEFAULT),
@@ -1400,6 +1425,37 @@ impl Picker {
         self.detail_rows = usize::MAX;
     }
 
+    /// Puts a wrapped row's detail on the label's row, after it, where the
+    /// two fit there -- for a list whose details are a word about a name
+    /// rather than a sentence under it.
+    pub fn details_beside(&mut self) {
+        self.details_beside = true;
+        // The rows were wrapped with their details under them.
+        self.measured = None;
+    }
+
+    /// Matches the query against each row's detail as well as its label,
+    /// for a list whose rows are known by either: a machine by the name it
+    /// gives itself and by the address the reader typed for it.
+    ///
+    /// The detail is matched as part of the label's text, after a space,
+    /// so the positions a match marks run on past the label's end into it
+    /// ([`Picker::indices_at`]).
+    pub fn matches_details(&mut self) {
+        if !self.details_matched {
+            self.details_matched = true;
+            self.refilter();
+        }
+    }
+
+    /// One row's words wrapped into `columns`, as this list lays them out.
+    fn laid_out(&self, item: &PickerItem, columns: wrapped::Columns) -> Body {
+        match self.details_beside {
+            true => Body::beside(item, columns, self.detail_rows),
+            false => Body::of(item, columns, self.detail_rows),
+        }
+    }
+
     /// Whether the rows of this list wrap.
     #[must_use]
     pub const fn is_wrapping(&self) -> bool {
@@ -1437,7 +1493,7 @@ impl Picker {
         std::borrow::Cow::Owned(
             self.items
                 .get(index)
-                .map(|item| Body::of(item, columns, self.detail_rows))
+                .map(|item| self.laid_out(item, columns))
                 .unwrap_or_default(),
         )
     }
@@ -1509,7 +1565,7 @@ impl Picker {
             bodies: self
                 .items
                 .iter()
-                .map(|item| Body::of(item, columns, self.detail_rows))
+                .map(|item| self.laid_out(item, columns))
                 .collect(),
         });
     }
@@ -2396,17 +2452,17 @@ impl Picker {
     /// into a fresh string for every one of them.
     fn marks_in(&mut self, index: usize, said: &str, indices: &mut Vec<u32>) {
         indices.clear();
-        let label = &self.items[index].label;
+        let label = matched_text(&self.items[index], self.details_matched);
         if self.searching {
             let how = self.looking.unwrap_or_default();
-            let Some(run) = obelus_search::Needle::new(said, how).found_in(label) else {
+            let Some(run) = obelus_search::Needle::new(said, how).found_in(&label) else {
                 return;
             };
             indices.extend(run.map(|at| u32::try_from(at).unwrap_or(u32::MAX)));
             return;
         }
         let pattern = Pattern::parse(said, CaseMatching::Smart, Normalization::Smart);
-        let haystack = Utf32Str::new(label, &mut self.haystack);
+        let haystack = Utf32Str::new(&label, &mut self.haystack);
         pattern.indices(haystack, &mut self.matcher, indices);
         indices.sort_unstable();
         indices.dedup();
@@ -2998,6 +3054,7 @@ impl Picker {
                     items: Arc::clone(&self.items),
                     candidates: scan,
                     listings: self.listings,
+                    details: self.details_matched,
                 });
                 // What is on screen stays on screen, which is why nothing
                 // above cleared it: the rows the reader is looking at are
@@ -3030,7 +3087,8 @@ impl Picker {
                     }
                     continue;
                 }
-                let haystack = Utf32Str::new(&item.label, &mut self.haystack);
+                let said = matched_text(item, self.details_matched);
+                let haystack = Utf32Str::new(&said, &mut self.haystack);
                 let score = pattern.score(haystack, &mut self.matcher);
                 parent = score.is_some();
                 if let Some(score) = score {
@@ -3559,6 +3617,26 @@ mod tests {
         picker.refresh_indices(10, 40);
         assert_eq!(picker.window().top(), 3, "two rows of two is past three");
         assert_eq!(picker.selected(), 0, "the wheel moved the selection");
+    }
+
+    /// A list told to put its details beside its labels after its rows were
+    /// laid out lays them out again, rather than keeping them under.
+    ///
+    /// Broken deliberately by leaving the measurement alone in
+    /// `details_beside`: the row stayed two tall until the width changed.
+    #[test]
+    fn details_put_beside_after_the_rows_were_laid_out_go_beside() {
+        let item = PickerItem {
+            detail: Some("1.2.3.4".to_string()),
+            ..named("devbox")
+        };
+        let mut picker = Picker::new(vec![item], PickerLayout::Compact { rows: 10 });
+        picker.wraps(None);
+        picker.refresh_indices(10, 40);
+        assert_eq!(picker.body(0, 40).rows(), 2);
+        picker.details_beside();
+        picker.refresh_indices(10, 40);
+        assert_eq!(picker.body(0, 40).rows(), 1);
     }
 
     /// One row, for the tests above.

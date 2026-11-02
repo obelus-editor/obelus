@@ -7199,21 +7199,21 @@ fn a_chosen_workflow_is_pointed_at_in_the_first_message() {
     );
 }
 
-/// The agent is told what to call itself, which is `Obelus` until the
-/// reader says otherwise: their own messages say "I" on the same page.
+/// The agent is told who it is to the reader, which is `Obelus` until the
+/// reader chooses a role: their own messages say "I" on the same page.
 ///
-/// Broken deliberately three ways: leaving `{name}` unfilled in `opening`,
+/// Broken deliberately three ways: leaving `{role}` unfilled in `opening`,
 /// which reads no `as=` at all; taking the paragraph out of `always.txt`,
-/// the same; and filling it with `DEFAULT_SPEAKS_AS` rather than the
-/// setting, which reads `as=Obelus` where the reader said Ada.
+/// the same; and filling it with the first role rather than the setting,
+/// which reads `as=Obelus` where the reader chose the soldier.
 #[test]
 fn the_agent_is_told_what_to_call_itself() {
-    for (name, said) in [(None, "as=Obelus"), (Some("Ada"), "as=Ada")] {
+    for (role, said) in [(None, "as=Obelus"), (Some("soldier"), "as=soldier")] {
         let (mut app, events) = talking();
-        if let Some(name) = name {
+        if let Some(role) = role {
             let mut config = app.config().clone();
-            config.speaks_as = name.to_string();
-            app.configure(config, vec!["speaks_as"]);
+            config.role = role.to_string();
+            app.configure(config, vec!["role"]);
         }
         pump(&mut app, &events, "the session", |app| {
             app.talking() == obelus_agent::Talking::Ready
@@ -7230,7 +7230,7 @@ fn the_agent_is_told_what_to_call_itself() {
         let text = screen(&mut app);
         assert!(
             text.contains(said),
-            "the agent was not told to call itself {name:?}:\n{text}"
+            "the agent was not told it is {role:?}:\n{text}"
         );
     }
 }

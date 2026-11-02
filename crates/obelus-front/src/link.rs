@@ -126,6 +126,9 @@ pub enum Answered {
         window: String,
         /// Whether this is a window that was already there.
         again: bool,
+        /// What the machine calls itself, which the window keeps beside the
+        /// address it knocked at -- or nothing, where it has no name.
+        machine: Option<String>,
     },
     /// Not, and why, in words for the reader.
     Refused(String),

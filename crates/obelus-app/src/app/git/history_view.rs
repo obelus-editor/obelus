@@ -104,12 +104,22 @@ pub(in crate::app) struct Showing {
     /// when it has moved, and *only* when -- git rewrites its index on
     /// every `git add`, and no commit changed.
     pub head: Option<gix::ObjectId>,
-    /// A commit to put the reader back on when it turns up.
+    /// A commit to put the reader back on when it turns up, and which of
+    /// its files when they were on one.
     ///
     /// A list re-read because `HEAD` moved is the same list with rows added
     /// on top of it, and a reader ten rows down was looking at a commit,
-    /// not at a row number. Cleared once it has been honoured.
-    pub wanted: Option<gix::ObjectId>,
+    /// not at a row number. And a list opened over a commit's version of a
+    /// file starts on that version: it is where the reader came from, and
+    /// a list that starts at the top makes them find it again to look at
+    /// the file beside it. Cleared once it has been honoured, and once the
+    /// reader has moved: a walk can take seconds to reach an old commit,
+    /// and a list that jumps out from under a reader already walking it
+    /// has taken the keys away from them.
+    pub wanted: Option<(gix::ObjectId, Option<PathBuf>)>,
+    /// The row and the query the list was left on, to tell whether the
+    /// reader has moved since.
+    pub left: Option<(usize, String)>,
     /// How many commits the walk filling this list has looked at, and `None`
     /// once it has finished.
     ///
@@ -163,11 +173,47 @@ impl App {
             opened: None,
             head: None,
             wanted: None,
+            left: None,
             reading: None,
             pushed: None,
             marking: true,
         };
         self.refresh_history();
+        self.start_on_what_is_read();
+    }
+
+    /// Puts the list on the commit the file being read is a version of, and
+    /// in the project's tab opens that commit on the file.
+    ///
+    /// Only a commit's version: the file on disk is in no commit, and a pull
+    /// request's last commit is often not in this history at all.
+    fn start_on_what_is_read(&mut self) {
+        let Some(buffer) = self.current_buffer() else {
+            return;
+        };
+        let obelus_buffer::Content::Commit { id } = *buffer.content() else {
+            return;
+        };
+        let path = buffer
+            .path()
+            .strip_prefix(&self.working_directory)
+            .ok()
+            .map(Path::to_path_buf);
+        let showing = self
+            .picker
+            .as_ref()
+            .and_then(|picker| self.history.radii.get(picker.tab()).copied());
+        let path = match showing {
+            Some(About::Project) => {
+                let files = obelus_git::history::files_in(&self.working_directory, id);
+                self.history.opened = Some((id, files));
+                path
+            }
+            // A row of the file's own history is already that file.
+            _ => None,
+        };
+        self.history.wanted = Some((id, path));
+        self.show_history();
     }
 
     /// Which radii can answer, in the order their tabs sit in.
@@ -238,8 +284,10 @@ impl App {
         self.history.commits = Vec::new();
         self.history.refs = Vec::new();
         self.history.of = only.clone();
-        // An opened commit belongs to the tab it was opened in.
+        // An opened commit belongs to the tab it was opened in, and so does
+        // the row the list was to start on.
         self.history.opened = None;
+        self.history.wanted = None;
         self.history.pushed = None;
         self.history.marking = true;
         self.history.head = obelus_git::history::head_of(&self.working_directory);
@@ -296,9 +344,9 @@ impl App {
             .picker
             .as_ref()
             .and_then(Picker::selected_item)
-            .and_then(|item| match item.value {
-                PickerValue::Commit(id) => Some(id),
-                PickerValue::CommitFile { id, .. } => Some(id),
+            .and_then(|item| match &item.value {
+                PickerValue::Commit(id) => Some((*id, None)),
+                PickerValue::CommitFile { id, path } => Some((*id, Some(path.clone()))),
                 _ => None,
             });
         // And which commit was opened, which the re-read has no reason to
@@ -529,7 +577,12 @@ impl App {
         // the only thing that tells that apart from a list that is finished
         // and empty.
         let filling = self.history.reading.map(obelus_i18n::git::commits_read);
-        let wanted = self.history.wanted;
+        if let (Some(picker), Some(left)) = (self.picker.as_ref(), self.history.left.as_ref())
+            && (picker.selected(), picker.query()) != *left
+        {
+            self.history.wanted = None;
+        }
+        let wanted = self.history.wanted.clone();
         let mut found = false;
         if let Some(picker) = self.picker.as_mut() {
             picker.relist(items);
@@ -538,15 +591,29 @@ impl App {
             // Once the commit the reader was on turns up, they are put back
             // on it. Before that the list is a list they have not seen yet,
             // and there is nothing to put them back on.
-            let row = wanted.and_then(|id| {
-                picker
-                    .matches()
-                    .position(|item| matches!(item.value, PickerValue::Commit(at) if at == id))
+            //
+            // On the file when it is one of the commit's, and on the commit
+            // when it is not: a version read from a ref is often of a commit
+            // that never touched the file. A commit's files are drawn in the
+            // same pass as its row, so the one is never waiting on the other.
+            let row = wanted.and_then(|(id, file)| {
+                let file_row = file.and_then(|file| {
+                    picker.matches().position(|item| {
+                        matches!(&item.value, PickerValue::CommitFile { id: at, path }
+                            if *at == id && *path == file)
+                    })
+                });
+                file_row.or_else(|| {
+                    picker
+                        .matches()
+                        .position(|item| matches!(item.value, PickerValue::Commit(at) if at == id))
+                })
             });
             if let Some(row) = row {
                 picker.select_row(row);
                 found = true;
             }
+            self.history.left = Some((picker.selected(), picker.query()));
         }
         if found {
             self.history.wanted = None;

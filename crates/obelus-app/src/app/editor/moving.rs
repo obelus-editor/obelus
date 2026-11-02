@@ -1367,10 +1367,6 @@ impl App {
             PromptKind::Variable { agent, name } => {
                 self.set_agent_variable(&agent, &name, Some(text));
             }
-            // One of Obelus's own that is typed, from the settings page.
-            PromptKind::Setting(key) => {
-                self.change_setting(key, &obelus_config::Value::Text(text.to_string()));
-            }
             PromptKind::Line => {
                 let Ok(line) = text.trim().parse::<usize>() else {
                     self.wrong(obelus_i18n::editing::not_a_line_number(format!("{text:?}")));
