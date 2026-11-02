@@ -484,6 +484,7 @@ mod tests {
                 about: None,
                 icon: None,
                 chosen: false,
+                said: None,
             })
             .collect();
         let mut card = Card::new(choices, false);
@@ -537,6 +538,7 @@ mod tests {
                 about: None,
                 icon: None,
                 chosen: false,
+                said: None,
             })
             .collect();
         let mut card = Card::new(choices, true);

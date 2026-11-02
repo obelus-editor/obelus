@@ -2894,7 +2894,7 @@ impl App {
                     .map(|card| {
                         chosen
                             .iter()
-                            .map(|id| card.name_of(id).unwrap_or(id).to_string())
+                            .map(|id| card.said_of(id).unwrap_or(id).to_string())
                             .chain(words.iter().cloned())
                             .collect::<Vec<String>>()
                             .join(", ")
@@ -3202,6 +3202,9 @@ impl App {
                     about: Some(obelus_i18n::page::opens_in_the_browser().to_string()),
                     icon: icons.then_some(obelus_icons::ui::AWAY),
                     chosen: false,
+                    said: Some(
+                        obelus_i18n::in_english(obelus_i18n::conversation::open_link).to_string(),
+                    ),
                 },
                 Choice {
                     id: "no".to_string(),
@@ -3209,6 +3212,9 @@ impl App {
                     about: None,
                     icon: icons.then_some(obelus_icons::ui::STAYING),
                     chosen: false,
+                    said: Some(
+                        obelus_i18n::in_english(obelus_i18n::conversation::not_now).to_string(),
+                    ),
                 },
             ],
             false,
@@ -3311,6 +3317,7 @@ impl App {
                     acp::How::Asked => obelus_icons::ui::AWAY,
                 }),
                 chosen: false,
+                said: None,
             })
             .collect();
         choices.push(Choice {
@@ -3319,6 +3326,7 @@ impl App {
             about: None,
             icon: icons.then_some(obelus_icons::ui::STAYING),
             chosen: false,
+            said: Some(obelus_i18n::in_english(obelus_i18n::conversation::not_now).to_string()),
         });
         let mut card = Card::new(choices, false);
         let sign_in = match &agent {
@@ -4918,6 +4926,7 @@ impl App {
                 about: None,
                 icon: obelus_icons::enabled().then(|| obelus_icons::for_permission(&choice.kind)),
                 chosen: false,
+                said: None,
             })
             .collect();
         let mut card = Card::new(choices, false);
@@ -5305,7 +5314,19 @@ fn card_of(field: &acp::Field) -> Card {
                     about: None,
                 },
             ];
-            let mut card = Card::new(choices_of(&sides, &[]), false);
+            // On and off are Obelus's words here, not the agent's, so a
+            // chat's thread is told them in its own language.
+            let mut choices = choices_of(&sides, &[]);
+            for choice in &mut choices {
+                choice.said = Some(
+                    obelus_i18n::in_english(match choice.id.as_str() {
+                        "on" => obelus_i18n::conversation::on,
+                        _ => obelus_i18n::conversation::off,
+                    })
+                    .to_string(),
+                );
+            }
+            let mut card = Card::new(choices, false);
             card.prefer(match on {
                 true => "on",
                 false => "off",
@@ -5333,6 +5354,7 @@ fn choices_of(values: &[acp::Value], chosen: &[String]) -> Vec<Choice> {
             about: value.about.clone(),
             icon: None,
             chosen: chosen.contains(&value.id),
+            said: None,
         })
         .collect()
 }

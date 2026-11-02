@@ -465,8 +465,11 @@ impl App {
         notes: &obelus_todo::Todo,
         state: Option<Turning>,
     ) -> Head {
-        let title = self
-            .conversation_name(talk, notes)
+        // In English, like everything else the thread says: until the
+        // agent names a conversation its name is Obelus's -- `Review #12:
+        // ...` -- and the people in the thread read whatever this reader
+        // chose for the screen.
+        let title = obelus_i18n::in_english(|| self.conversation_name(talk, notes))
             .unwrap_or_else(|| "A conversation".to_string());
         let mut place = self
             .working_directory

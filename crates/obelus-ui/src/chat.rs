@@ -2929,6 +2929,7 @@ mod tests {
                 about: None,
                 icon: None,
                 chosen: false,
+                said: None,
             }],
             false,
         );

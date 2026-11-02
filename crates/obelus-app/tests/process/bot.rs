@@ -799,6 +799,97 @@ fn pressed(asked: u64, chosen: &str) -> obelus_bot::Event {
 /// three ways: not mirrored, no thought in the thread; run into the words
 /// after it, the words did not stand on their own; sent calling the reader,
 /// the thought was not quiet.
+/// A thread is named in English whatever this screen speaks: the people in
+/// it read it, and until the agent names a conversation its name is
+/// Obelus's -- `Review #123: ...` -- which on this screen is in Chinese.
+///
+/// Broken deliberately by taking `in_english` out of `head_of`: the thread
+/// asked for was `审查 #123：...`.
+#[test]
+fn a_thread_is_named_in_english_whatever_the_screen_speaks() {
+    let _turn = turn();
+    obelus_bot::platform::connect_for_test(fake_connect);
+    *FAKED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    let scratch = support::Scratch::new("bot-english");
+    std::fs::write(
+        scratch.join("config.toml"),
+        "language = \"zh-CN\"\nchat = \"slack\"\n[chats.slack]\npeople = [{ id = \"U1\", name = \"Sunli\" }]\n",
+    )
+    .expect("the settings");
+    a_room_kept();
+    obelus_bot::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_bot::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    // What `gh` says: one pull request, which is what the review is of.
+    let answer = scratch.join("gh-answer.json");
+    std::fs::write(
+        &answer,
+        r#"[{"number":123,"title":"Keep the fold","author":{"login":"alice"},"headRefName":"keep-fold","baseRefName":"master","headRefOid":"abc123","isDraft":false,"reviewDecision":"","updatedAt":""}]"#,
+    )
+    .expect("the answer");
+
+    let mut app = App::new(Vec::new());
+    app.config_file_for_test(scratch.join("config.toml"));
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    let script = std::path::absolute("tests/fixtures/fake-gh.sh").expect("a directory");
+    app.gh_for_test(
+        std::path::PathBuf::from(support::sh()),
+        vec![script.display().to_string(), answer.display().to_string()],
+    );
+    let events = support::drive(&mut app);
+    app.agents_root_for_test(scratch.join("agents"));
+    support::lay_out(&mut app, 76, 24);
+    assert_eq!(
+        obelus_i18n::spoken(),
+        obelus_i18n::Language::SimplifiedChinese,
+        "the settings were not read, so this proves nothing"
+    );
+    dispatch::dispatch(&mut app, Command::BotConnect);
+    app.talk_to(
+        "fake",
+        std::path::Path::new(support::sh()),
+        &[
+            "tests/fixtures/fake-agent.sh".to_string(),
+            "prompts".to_string(),
+        ],
+    );
+
+    dispatch::dispatch(&mut app, Command::ShowPullRequests);
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while !app.picker().is_some_and(|picker| picker.row_count() == 1) {
+        assert!(std::time::Instant::now() < until, "the list never came");
+        if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(50)) {
+            app.handle(event);
+        }
+    }
+    support::press(&mut app, KeyCode::Enter);
+    support::press_alt(&mut app, 'a');
+    let shown = app.what_this_conversation_is_called().unwrap_or_default();
+    assert!(
+        shown.contains("\u{5ba1}\u{67e5}"),
+        "the review is not called anything Chinese on screen, so this proves nothing: {shown:?}"
+    );
+    app.open_a_session_for_test();
+
+    let said = said_until(&mut app, &events, "a thread to be asked for", |said| {
+        said.iter()
+            .any(|out| matches!(out, obelus_bot::model::Out::Open { .. }))
+    });
+    let title = said
+        .iter()
+        .find_map(|out| match out {
+            obelus_bot::model::Out::Open { head, .. } => Some(head.title.clone()),
+            _ => None,
+        })
+        .expect("a thread asked for");
+    obelus_i18n::speak("en");
+    assert_eq!(
+        title, "Review #123: Keep the fold",
+        "the thread is named in the screen's language"
+    );
+}
+
 #[test]
 fn a_conversation_and_its_thread_say_the_same_things() {
     let _turn = turn();

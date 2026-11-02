@@ -243,3 +243,18 @@ fn a_file_one_language_has_and_another_does_not_stops_the_build() {
     ]);
     assert_eq!(wrong, ["zh-CN/two.ftl: en has no such file"]);
 }
+
+/// What leaves for a chat is said in English while the screen speaks
+/// Chinese, and the screen goes on speaking Chinese after it.
+///
+/// Broken deliberately twice: by `in_english` not setting the thread's
+/// language (the words came out in Chinese), and by it not putting the
+/// one before back (the screen spoke English from then on).
+#[test]
+fn what_leaves_for_a_chat_is_said_in_english() {
+    let said = in_language(Language::SimplifiedChinese, || {
+        let away = in_english(settings::group_appearance);
+        (away, settings::group_appearance())
+    });
+    assert_eq!(said, ("Appearance", "外观"));
+}

@@ -158,10 +158,33 @@ pub fn speak(choice: &str) {
 /// The language being spoken.
 #[must_use]
 pub fn spoken() -> Language {
+    if let Some(language) = HERE.get() {
+        return language;
+    }
     Language::ALL
         .get(SPOKEN.load(Ordering::Relaxed))
         .copied()
         .unwrap_or_default()
+}
+
+thread_local! {
+    /// A language this thread is speaking for the moment, over the one the
+    /// settings chose -- see [`in_english`].
+    static HERE: std::cell::Cell<Option<Language>> = const { std::cell::Cell::new(None) };
+}
+
+/// What `said` says when it is said in English, whatever the reader reads.
+///
+/// For words that leave Obelus for somewhere else -- a thread on a chat
+/// platform, which the people in it read whatever this reader chose, and
+/// which a reader on another machine or in another language reads too.
+/// This thread only and this call only, so a frame being drawn on the same
+/// thread afterwards, or another thread meanwhile, speaks as it did.
+pub fn in_english<T>(said: impl FnOnce() -> T) -> T {
+    let before = HERE.replace(Some(Language::English));
+    let said = said();
+    HERE.set(before);
+    said
 }
 
 /// Something a message is given: a word or a number.

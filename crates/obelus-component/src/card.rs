@@ -123,6 +123,11 @@ pub struct Choice {
     pub icon: Option<char>,
     /// Whether it is one of the answers as things stand.
     pub chosen: bool,
+    /// What a chat platform's thread calls it, where that is not its name:
+    /// Obelus's own choices, whose names are in the reader's language and
+    /// whose thread is read in English. An agent's choices are its own words
+    /// in both places, and leave this empty.
+    pub said: Option<String>,
 }
 
 /// The half of a card the reader writes in.
@@ -639,6 +644,16 @@ impl Card {
             .map(|choice| choice.name.as_str())
     }
 
+    /// What a chat platform's thread calls a choice, by its id: what it was
+    /// given to say there, or its name where it was given nothing.
+    #[must_use]
+    pub fn said_of(&self, id: &str) -> Option<&str> {
+        self.choices
+            .iter()
+            .find(|choice| choice.id == id)
+            .map(|choice| choice.said.as_deref().unwrap_or(&choice.name))
+    }
+
     /// How many rows the card wants, given the width it has.
     #[must_use]
     pub fn rows(&self, width: u16) -> usize {
@@ -1059,8 +1074,25 @@ mod tests {
                 about: None,
                 icon: None,
                 chosen: false,
+                said: None,
             })
             .collect()
+    }
+
+    /// A chat is told a choice by what it was given to say there, and by
+    /// its name where it was given nothing.
+    ///
+    /// Broken deliberately by `said_of` answering the name always: the
+    /// chat was told the screen's word for a choice Obelus made.
+    #[test]
+    fn a_chat_is_told_a_choice_in_its_own_words() {
+        let mut choices = answers();
+        choices[0].name = "开".to_string();
+        choices[0].said = Some("On".to_string());
+        let card = Card::new(choices, false);
+        assert_eq!(card.said_of("one"), Some("On"));
+        assert_eq!(card.said_of("two"), Some("two"));
+        assert_eq!(card.said_of("nine"), None);
     }
 
     /// An answer given on a card drawn elsewhere is held to what this one
