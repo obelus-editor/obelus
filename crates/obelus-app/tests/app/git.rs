@@ -2980,6 +2980,78 @@ fn a_commit_opens_its_files_under_it() {
     );
 }
 
+/// The project's history opened over a commit's version of a file starts on
+/// that version: the commit opened, and the reader on the file under it --
+/// not at the top of a list, looking for where they came from.
+///
+/// Broken by taking `start_on_what_is_read` out of `open_history`: the
+/// second `f10` lands on the newest commit, shut, and this fails.
+#[test]
+fn the_project_history_starts_on_the_version_being_read() {
+    use crossterm::event::KeyCode;
+    use obelus_app::app::App;
+    use obelus_buffer::Buffer;
+
+    let repository = Repository::new("history-starts-on-it", "one\n");
+    std::fs::write(repository.directory().join("other.rs"), "elsewhere\n").expect("the other");
+    repository.write("one\ntwo\n");
+    repository.commit_all("touching two");
+    repository.write("one\ntwo\nthree\n");
+    repository.commit_all("touching three");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 70, 16);
+    support::press_function(&mut app, 10);
+    support::read_history(&mut app, &events);
+
+    let rows = |app: &App| -> Vec<String> {
+        app.picker()
+            .expect("the history")
+            .matches()
+            .map(|item| item.label.clone())
+            .collect()
+    };
+    // The older commit, and the second of its files.
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        rows(&app),
+        [
+            "touching three",
+            "touching two",
+            "file.rs",
+            "other.rs",
+            "committed"
+        ]
+    );
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.picker().is_none(), "choosing a file did not open it");
+
+    support::press_function(&mut app, 10);
+    support::read_history(&mut app, &events);
+    assert_eq!(
+        rows(&app),
+        [
+            "touching three",
+            "touching two",
+            "file.rs",
+            "other.rs",
+            "committed"
+        ],
+        "the commit being read was not opened"
+    );
+    let picker = app.picker().expect("the history");
+    assert_eq!(
+        picker.selected_item().map(|item| item.label.as_str()),
+        Some("other.rs"),
+        "the list did not start on the file being read"
+    );
+}
+
 /// Each file a commit opens into says how much the commit changed it, the
 /// way the changed files do: a commit's files are read for which of them to
 /// look at first. The first commit of a project has no tree before it, and

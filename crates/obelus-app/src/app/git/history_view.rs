@@ -104,12 +104,16 @@ pub(in crate::app) struct Showing {
     /// when it has moved, and *only* when -- git rewrites its index on
     /// every `git add`, and no commit changed.
     pub head: Option<gix::ObjectId>,
-    /// A commit to put the reader back on when it turns up.
+    /// A commit to put the reader back on when it turns up, and which of
+    /// its files when they were on one.
     ///
     /// A list re-read because `HEAD` moved is the same list with rows added
     /// on top of it, and a reader ten rows down was looking at a commit,
-    /// not at a row number. Cleared once it has been honoured.
-    pub wanted: Option<gix::ObjectId>,
+    /// not at a row number. And a list opened over a commit's version of a
+    /// file starts on that version: it is where the reader came from, and
+    /// a list that starts at the top makes them find it again to look at
+    /// the file beside it. Cleared once it has been honoured.
+    pub wanted: Option<(gix::ObjectId, Option<PathBuf>)>,
     /// How many commits the walk filling this list has looked at, and `None`
     /// once it has finished.
     ///
@@ -168,6 +172,41 @@ impl App {
             marking: true,
         };
         self.refresh_history();
+        self.start_on_what_is_read();
+    }
+
+    /// Puts the list on the commit the file being read is a version of, and
+    /// in the project's tab opens that commit on the file.
+    ///
+    /// Only a commit's version: the file on disk is in no commit, and a pull
+    /// request's last commit is often not in this history at all.
+    fn start_on_what_is_read(&mut self) {
+        let Some(buffer) = self.current_buffer() else {
+            return;
+        };
+        let obelus_buffer::Content::Commit { id } = *buffer.content() else {
+            return;
+        };
+        let path = buffer
+            .path()
+            .strip_prefix(&self.working_directory)
+            .ok()
+            .map(Path::to_path_buf);
+        let showing = self
+            .picker
+            .as_ref()
+            .and_then(|picker| self.history.radii.get(picker.tab()).copied());
+        let path = match showing {
+            Some(About::Project) => {
+                let files = obelus_git::history::files_in(&self.working_directory, id);
+                self.history.opened = Some((id, files));
+                path
+            }
+            // A row of the file's own history is already that file.
+            _ => None,
+        };
+        self.history.wanted = Some((id, path));
+        self.show_history();
     }
 
     /// Which radii can answer, in the order their tabs sit in.
@@ -296,9 +335,9 @@ impl App {
             .picker
             .as_ref()
             .and_then(Picker::selected_item)
-            .and_then(|item| match item.value {
-                PickerValue::Commit(id) => Some(id),
-                PickerValue::CommitFile { id, .. } => Some(id),
+            .and_then(|item| match &item.value {
+                PickerValue::Commit(id) => Some((*id, None)),
+                PickerValue::CommitFile { id, path } => Some((*id, Some(path.clone()))),
                 _ => None,
             });
         // And which commit was opened, which the re-read has no reason to
@@ -532,7 +571,7 @@ impl App {
             .history
             .reading
             .map(|walked| format!("{walked} commits read\u{2026}"));
-        let wanted = self.history.wanted;
+        let wanted = self.history.wanted.clone();
         let mut found = false;
         if let Some(picker) = self.picker.as_mut() {
             picker.relist(items);
@@ -541,10 +580,16 @@ impl App {
             // Once the commit the reader was on turns up, they are put back
             // on it. Before that the list is a list they have not seen yet,
             // and there is nothing to put them back on.
-            let row = wanted.and_then(|id| {
+            let row = wanted.and_then(|(id, file)| {
                 picker
                     .matches()
-                    .position(|item| matches!(item.value, PickerValue::Commit(at) if at == id))
+                    .position(|item| match (&item.value, &file) {
+                        (PickerValue::Commit(at), None) => *at == id,
+                        (PickerValue::CommitFile { id: at, path }, Some(file)) => {
+                            *at == id && path == file
+                        }
+                        _ => false,
+                    })
             });
             if let Some(row) = row {
                 picker.select_row(row);
