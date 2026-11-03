@@ -678,7 +678,7 @@ pub fn hints(
                     chord(KeyCode::Enter, KeyModifiers::ALT),
                     obelus_i18n::chat::new_line(),
                 )
-                .or(chord(KeyCode::Enter, KeyModifiers::SHIFT))
+                .also(chord(KeyCode::Enter, KeyModifiers::SHIFT))
                 .about(obelus_i18n::chat::new_line_about()),
                 Hint::new(bare(KeyCode::Esc), obelus_i18n::chat::stop())
                     .about(obelus_i18n::chat::stop_about())

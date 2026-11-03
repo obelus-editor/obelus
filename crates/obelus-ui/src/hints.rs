@@ -24,6 +24,15 @@ pub struct Hint {
     /// `alt+up` and `alt+down` are one act in two directions, and two rows
     /// saying "move it up" and "move it down" is the same sentence twice.
     pub and_also: Option<obelus_keymap::KeyChord>,
+    /// Another key for the very same act, not the other direction of it:
+    /// `alt+enter` beside `shift+enter`, because the second arrives only
+    /// from a terminal that speaks the keyboard protocol.
+    ///
+    /// Not [`Hint::and_also`], which the palette splits into a row each so
+    /// that a row says which way it goes. Two keys for one act split that
+    /// way were two rows saying the same words, so this is one row with both
+    /// keys at its end, and choosing it presses [`Hint::chord`].
+    pub also: Option<obelus_keymap::KeyChord>,
     /// What it does, in a word or two: the row's name in the palette.
     pub does: Option<&'static str>,
     /// Which way it is set, for a key whose whole job is a switch.
@@ -64,6 +73,7 @@ impl Hint {
         Self {
             chord,
             and_also: None,
+            also: None,
             does: Some(does),
             switched: None,
             about: None,
@@ -85,6 +95,19 @@ impl Hint {
     pub const fn or(mut self, chord: obelus_keymap::KeyChord) -> Self {
         self.and_also = Some(chord);
         self
+    }
+
+    /// The same act, on another key as well.
+    #[must_use]
+    pub const fn also(mut self, chord: obelus_keymap::KeyChord) -> Self {
+        self.also = Some(chord);
+        self
+    }
+
+    /// Whether pressing this key is pressing this hint.
+    #[must_use]
+    pub fn answers(&self, chord: obelus_keymap::KeyChord) -> bool {
+        self.chord == chord || self.and_also == Some(chord) || self.also == Some(chord)
     }
 
     /// Says whether it does anything at the moment.
@@ -118,7 +141,7 @@ impl Hint {
     /// How it is written: the key, or the pair of them.
     #[must_use]
     pub fn keys(self) -> String {
-        match self.and_also {
+        match self.and_also.or(self.also) {
             Some(also) => format!("{} {}", self.chord.label(), also.label()),
             None => self.chord.label(),
         }
