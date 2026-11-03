@@ -358,11 +358,10 @@ impl App {
             return;
         };
         let keys = self.keys_of(under);
-        let usable = |chord: KeyChord| {
+        let hint = |chord: KeyChord| {
             keys.iter()
                 .filter(|hint| hint.here)
-                .find(|hint| hint.chord == chord || hint.and_also == Some(chord))
-                .is_some_and(|hint| hint.usable)
+                .find(|hint| hint.answers(chord))
         };
         let palette = match self.palette.as_mut() {
             Some(palette) => Some(palette),
@@ -372,8 +371,10 @@ impl App {
             palette.remark(|value| match value {
                 PickerValue::Key(chord) => Remark::Now(obelus_component::picker::Said {
                     marker: None,
-                    enabled: usable(*chord),
-                    trailing: Some(chord.label()),
+                    enabled: hint(*chord).is_some_and(|hint| hint.usable),
+                    trailing: Some(
+                        hint(*chord).map_or_else(|| chord.label(), |hint| row_keys(hint, *chord)),
+                    ),
                 }),
                 _ => Remark::Keep,
             });
@@ -1080,15 +1081,19 @@ impl App {
 /// the foot drew them as one: a row is pressed, and a row for two keys is a
 /// row that cannot say which of them it would be.
 ///
+/// Two keys for one act and not two directions of it (`Other::Same`) are
+/// one row with both keys at its end: split, they were two rows saying the
+/// same words with nothing to tell them apart.
+///
 /// Only the keys the view has where the reader is: a key of another tab is
 /// not a row here at all, where one that does nothing on this row is dim.
 fn keys_as_rows(keys: &[obelus_ui::Hint]) -> Vec<PickerItem> {
     keys.iter()
         .filter(|hint| hint.here)
         .flat_map(|hint| {
-            let paired = hint.and_also.is_some();
+            let paired = hint.direction().is_some();
             std::iter::once(hint.chord)
-                .chain(hint.and_also)
+                .chain(hint.direction())
                 .map(move |chord| (hint, chord, paired))
         })
         .map(|(hint, chord, paired)| {
@@ -1107,7 +1112,7 @@ fn keys_as_rows(keys: &[obelus_ui::Hint]) -> Vec<PickerItem> {
                 version: None,
                 // What it does in a sentence, where a command's title is.
                 detail: hint.about.map(str::to_string),
-                trailing: Some(chord.label()),
+                trailing: Some(row_keys(hint, chord)),
                 changed: None,
                 value: PickerValue::Key(chord),
                 enabled: hint.usable,
@@ -1121,6 +1126,19 @@ fn keys_as_rows(keys: &[obelus_ui::Hint]) -> Vec<PickerItem> {
             }
         })
         .collect()
+}
+
+/// The keys at the end of a key's row: the one it presses, where a pair
+/// that goes two ways is a row each, and otherwise however the hint is
+/// written everywhere else (`Hint::keys`).
+///
+/// One answer, because the row is written twice -- when the palette opens,
+/// and again whenever what the view can do changes under it.
+fn row_keys(hint: &obelus_ui::Hint, chord: KeyChord) -> String {
+    match hint.direction() {
+        Some(_) => chord.label(),
+        None => hint.keys(),
+    }
 }
 
 /// Which way one key of a pair goes, as the row says it with the word for

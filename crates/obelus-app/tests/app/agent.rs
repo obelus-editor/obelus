@@ -19023,6 +19023,36 @@ fn the_palette_over_a_conversation_says_its_keys() {
             "{obvious:?} is in the palette, which says what is not obvious: {said:?}"
         );
     }
+
+    // The line break is one act on two keys, not two directions of one, so
+    // it is one row with both keys at its end -- split, it was two rows
+    // saying "New line" with nothing to tell them apart.
+    //
+    // Broken deliberately three times: by writing the hint with `or` again,
+    // which gives two rows; and by leaving `row_keys` out of the palette's
+    // remark, which leaves one row naming only `alt+enter` once a frame is
+    // drawn -- which is why the keys are read again after one. And by answering
+    // a blank for a terminal in `between_keys`, which runs the two together.
+    let lines: Vec<&support::Here> = here.iter().filter(|key| key.does == "New line").collect();
+    assert_eq!(lines.len(), 1, "the line break is not one row: {said:?}");
+    support::press_control(&mut app, 'p');
+    let _ = screen(&mut app);
+    let drawn: Vec<String> = app
+        .palette()
+        .or_else(|| app.picker())
+        .expect("the palette is open")
+        .matches()
+        .filter(|row| row.label == "New line")
+        .filter_map(|row| row.trailing.clone())
+        .collect();
+    support::press(&mut app, KeyCode::Esc);
+    // A dot between them, because a terminal draws no caps to part them
+    // and two keys a blank apart read as one chord.
+    assert_eq!(
+        drawn,
+        ["Alt+Enter \u{b7} Shift+Enter"],
+        "the line break's row does not say both its keys, parted: {drawn:?}"
+    );
 }
 
 /// While the list of pull requests has no rows yet, its preview shows

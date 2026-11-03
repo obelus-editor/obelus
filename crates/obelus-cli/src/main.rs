@@ -133,6 +133,8 @@ fn main() -> Result<ExitCode> {
     // only where it will.
     let ctrl_enter = ctrl_enter_arrives();
 
+    colours_whatever_the_environment_says();
+
     // `ratatui::try_init` enters the alternate screen, turns on raw mode, and
     // chains a panic hook that undoes both before the previous hook runs.
     // Without that chaining a panic leaves the terminal in raw mode and the
@@ -270,6 +272,20 @@ fn enable_keyboard() -> bool {
     true
 }
 
+/// Draws in the theme's colours whatever `NO_COLOR` says.
+///
+/// crossterm hears `NO_COLOR` and writes no colour at all where it is set,
+/// without a word -- and an editor in one colour has no current line, no
+/// selection and no change in the margin. The colours are the reader's own
+/// choice of theme, which says more about what they want here than a
+/// variable meant for programs that colour their output by default; helix
+/// overrides crossterm the same way, and vim never reads it. What Obelus
+/// runs for an agent is still given `NO_COLOR` (`obelus_agent::running`):
+/// that is about output nobody draws a theme over.
+fn colours_whatever_the_environment_says() {
+    crossterm::style::force_color_output(true);
+}
+
 /// Asks the terminal to wrap what it pastes.
 ///
 /// Without it a pasted function arrives as somebody typing very fast, and
@@ -324,6 +340,39 @@ fn give_back(mouse: bool, keyboard: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A colour is written where the environment says `NO_COLOR`.
+    ///
+    /// The switch crossterm keeps is turned off here the way `NO_COLOR` turns
+    /// it off, rather than by setting the variable, which every test in this
+    /// binary would then read.
+    ///
+    /// Broken deliberately by leaving `force_color_output` out of
+    /// `colours_whatever_the_environment_says`: the colour is written as a
+    /// reset and nothing else.
+    #[test]
+    fn a_colour_is_drawn_whatever_no_color_says() {
+        use crossterm::style::{Color, SetForegroundColor};
+
+        crossterm::style::force_color_output(false);
+        let red = || {
+            SetForegroundColor(Color::Rgb {
+                r: 204,
+                g: 36,
+                b: 29,
+            })
+            .to_string()
+        };
+        // A reset is all crossterm writes with the switch off, and the
+        // colour itself is missing.
+        assert!(
+            !red().contains("38;2"),
+            "crossterm did not hear the switch at all: {:?}",
+            red()
+        );
+        colours_whatever_the_environment_says();
+        assert_eq!(red(), "\u{1b}[38;2;204;36;29m");
+    }
 
     /// Where `ob --server` listens: every network on its own port unless
     /// told, a port alone on every network, and an address as given -- and
