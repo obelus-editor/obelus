@@ -1016,3 +1016,82 @@ fn no_plate_is_said_over_what_the_reader_holds() {
         "a plate over what is held:\n{dump}"
     );
 }
+
+/// A command's key at the end of its row in the palette wears a cap in a
+/// window, as every other key Obelus names in words does.
+///
+/// It was the gutter's ink and nothing else, so the palette -- the one
+/// list that is all keys -- was the one place a key was not drawn as one.
+///
+/// Deliberate break: take `capped_if_keys` out of `PickerView::row`, and no
+/// row of the palette says a cap.
+#[test]
+fn a_commands_key_in_the_palette_wears_a_cap() {
+    let _turn = turn();
+    obelus_config::drawn_in_a_window();
+    let heard = heard();
+    let path = std::path::Path::new("tests/fixtures/sample.rs");
+    let mut app = App::new(vec![obelus_buffer::Buffer::open(path).expect("opening it")]);
+    support::render(&mut app, 100, 30);
+    support::press_control(&mut app, 'p');
+    heard.keys.lock().expect("the keys").clear();
+    let dump = support::render(&mut app, 100, 30);
+
+    let palette = app
+        .palette()
+        .or_else(|| app.picker())
+        .expect("the palette is open");
+    let keys: Vec<String> = palette
+        .matches()
+        .filter(|row| matches!(row.value, obelus_component::picker::PickerValue::Command(_)))
+        .filter_map(|row| row.trailing.clone())
+        .collect();
+    let capped: Vec<String> = heard
+        .keys
+        .lock()
+        .expect("the keys")
+        .iter()
+        .map(|(keys, _)| keys.clone())
+        .collect();
+    assert!(
+        !keys.is_empty() && keys.iter().any(|key| capped.contains(key)),
+        "no command's key in the palette wears a cap: {capped:?}\n{dump}"
+    );
+}
+
+/// Two keys for one act at the end of a row are two caps in a window, each
+/// round its own key, with air between them -- not one cap round both, and
+/// not two touching.
+///
+/// Deliberate break: answer one blank for a window in `between_keys`, and
+/// the second cap starts on the first one's edge.
+#[test]
+fn two_keys_for_one_act_are_two_caps() {
+    let _turn = turn();
+    obelus_config::drawn_in_a_window();
+    let heard = heard();
+    heard.keys.lock().expect("the keys").clear();
+    let run = obelus_ui::keys_in_a_run(&["Alt+Enter".to_string(), "Shift+Enter".to_string()]);
+    assert!(
+        !run.contains('\u{b7}'),
+        "a window parts its caps with a dot: {run:?}"
+    );
+    obelus_ui::cap_the_keys_in(10, 3, &run, Color::Reset, &obelus_theme::builtin::DARK);
+
+    let caps = heard.keys.lock().expect("the keys").clone();
+    let said: Vec<&str> = caps.iter().map(|(keys, _)| keys.as_str()).collect();
+    assert_eq!(said, ["Alt+Enter", "Shift+Enter"], "{caps:?}");
+    let (first, second) = (caps[0].1, caps[1].1);
+    // Each round its own key, with the blank either side that is a cap's.
+    assert_eq!(first.x, 9, "{caps:?}");
+    assert_eq!(first.width, 11, "{caps:?}");
+    assert!(
+        second.x > first.right(),
+        "the two caps touch: {first:?} and {second:?}"
+    );
+    assert_eq!(
+        usize::from(second.x) + 1,
+        10 + run.find("Shift").expect("the second key"),
+        "the second cap is not round the second key: {caps:?}"
+    );
+}

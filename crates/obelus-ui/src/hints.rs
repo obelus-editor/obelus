@@ -315,6 +315,45 @@ pub(crate) fn cap_around(
     );
 }
 
+/// What goes between two keys for one act written as one run of text: the
+/// line break's `alt+enter` and `shift+enter`, at the end of its row in the
+/// palette.
+///
+/// In a window each key wears a cap and the caps are what part them, so the
+/// gap is blanks: three, one under each cap's edge and one between the two.
+/// A terminal draws no caps, and two keys a blank apart read as one chord of
+/// four words, so a dot says where one ends.
+#[must_use]
+pub fn between_keys() -> &'static str {
+    match obelus_config::in_a_window() {
+        true => "   ",
+        false => " \u{b7} ",
+    }
+}
+
+/// Keys for one act as one run of text, the way [`cap_the_keys_in`] reads
+/// them back.
+#[must_use]
+pub fn keys_in_a_run(keys: &[String]) -> String {
+    keys.join(between_keys())
+}
+
+/// Says a cap round each key of a run [`keys_in_a_run`] wrote at `x`,
+/// without touching a cell of it -- the keys page's caps, for a key that
+/// sits at the end of a row of a list.
+///
+/// On `ground`, the colour of the row, so the row the reader is on stays
+/// one block with its caps in it.
+pub fn cap_the_keys_in(x: u16, y: u16, run: &str, ground: Color, theme: &Theme) {
+    let mut along = usize::from(x);
+    for key in run.split(between_keys()) {
+        if let Ok(at) = u16::try_from(along) {
+            cap_around(at, y, key, text_width(key), ground, ground, theme.gutter);
+        }
+        along += text_width(key) + text_width(between_keys());
+    }
+}
+
 /// How far apart two items on that row sit.
 ///
 /// Three, against the one blank inside the cap and the one before a word:

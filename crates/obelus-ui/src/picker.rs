@@ -6,13 +6,18 @@
 //! other showing the list.
 
 use obelus_component::picker::{
-    Marking, Picker, PickerItem, PickerLayout,
+    Marking, Picker, PickerItem, PickerLayout, PickerValue,
     wrapped::{BAR_COLUMNS, BESIDE_GAP, Body, DETAIL_INDENT, WORDS_AT},
 };
 use obelus_git::FileStatus;
 use obelus_text::text_width;
 use obelus_theme::Theme;
-use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets::Widget};
+use ratatui::{
+    buffer::Buffer as CellBuffer,
+    layout::Rect,
+    style::{Color, Style},
+    widgets::Widget,
+};
 
 use crate::{
     Hint, Marked, Matched, drop_from_left, drop_from_right, editor::SCROLLBAR_WIDTH, fill,
@@ -894,6 +899,14 @@ impl PickerView<'_> {
                 && offset >= words.width
             {
                 at(cells, area, offset, area.y, trailing, dim, &Marked::plain());
+                capped_if_keys(
+                    item,
+                    area.x + offset,
+                    area.y,
+                    trailing,
+                    background,
+                    self.theme,
+                );
             }
         }
     }
@@ -1231,6 +1244,16 @@ impl PickerView<'_> {
                     );
                 } else {
                     at(cells, area, offset, y, trailing, dim, &Marked::plain());
+                    // Only whole: a run cut from the left has lost the start
+                    // of a key, and a cap round half a key says it is a key.
+                    capped_if_keys(
+                        item,
+                        area.x + offset,
+                        y,
+                        trailing,
+                        style.bg.unwrap_or(self.theme.background),
+                        self.theme,
+                    );
                 }
             }
         }
@@ -1264,6 +1287,18 @@ impl PickerView<'_> {
                 );
             }
         }
+    }
+}
+
+/// Says a cap round each key at the end of a row whose end is keys: a
+/// command's, and one of the keys of the view the palette is open over.
+///
+/// Asked of the row's value rather than of the words, because a row's end
+/// is a path or a line number as often as a key, and it is what the row
+/// *is* that says which.
+fn capped_if_keys(item: &PickerItem, x: u16, y: u16, trailing: &str, ground: Color, theme: &Theme) {
+    if matches!(item.value, PickerValue::Key(_) | PickerValue::Command(_)) {
+        crate::cap_the_keys_in(x, y, trailing, ground, theme);
     }
 }
 

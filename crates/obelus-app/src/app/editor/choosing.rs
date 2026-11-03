@@ -1135,7 +1135,7 @@ fn keys_as_rows(keys: &[obelus_ui::Hint]) -> Vec<PickerItem> {
 /// and again whenever what the view can do changes under it.
 fn row_keys(hint: &obelus_ui::Hint, chord: KeyChord) -> String {
     match hint.also {
-        Some(_) => hint.keys(),
+        Some(also) => obelus_ui::keys_in_a_run(&[hint.chord.label(), also.label()]),
         None => chord.label(),
     }
 }
