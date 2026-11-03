@@ -19028,11 +19028,11 @@ fn the_palette_over_a_conversation_says_its_keys() {
     // it is one row with both keys at its end -- split, it was two rows
     // saying "New line" with nothing to tell them apart.
     //
-    // Broken deliberately three times: by writing the hint with `or` again, which
-    // gives two rows; and by leaving `row_keys` out of the palette's remark,
-    // which leaves one row naming only `alt+enter` once a frame is drawn --
-    // which is why the keys are read again after one. And by answering a
-    // blank for a terminal in `between_keys`, which runs the two together.
+    // Broken deliberately three times: by writing the hint with `or` again,
+    // which gives two rows; and by leaving `row_keys` out of the palette's
+    // remark, which leaves one row naming only `alt+enter` once a frame is
+    // drawn -- which is why the keys are read again after one. And by answering
+    // a blank for a terminal in `between_keys`, which runs the two together.
     let lines: Vec<&support::Here> = here.iter().filter(|key| key.does == "New line").collect();
     assert_eq!(lines.len(), 1, "the line break is not one row: {said:?}");
     support::press_control(&mut app, 'p');
