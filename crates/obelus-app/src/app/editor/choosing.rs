@@ -1081,7 +1081,7 @@ impl App {
 /// the foot drew them as one: a row is pressed, and a row for two keys is a
 /// row that cannot say which of them it would be.
 ///
-/// Two keys for one act and not two directions of it (`Hint::also`) are
+/// Two keys for one act and not two directions of it (`Other::Same`) are
 /// one row with both keys at its end: split, they were two rows saying the
 /// same words with nothing to tell them apart.
 ///
@@ -1091,9 +1091,9 @@ fn keys_as_rows(keys: &[obelus_ui::Hint]) -> Vec<PickerItem> {
     keys.iter()
         .filter(|hint| hint.here)
         .flat_map(|hint| {
-            let paired = hint.and_also.is_some();
+            let paired = hint.direction().is_some();
             std::iter::once(hint.chord)
-                .chain(hint.and_also)
+                .chain(hint.direction())
                 .map(move |chord| (hint, chord, paired))
         })
         .map(|(hint, chord, paired)| {
@@ -1128,15 +1128,16 @@ fn keys_as_rows(keys: &[obelus_ui::Hint]) -> Vec<PickerItem> {
         .collect()
 }
 
-/// The keys at the end of a key's row: the one it presses, or both where
-/// the other is the same act on another key.
+/// The keys at the end of a key's row: the one it presses, where a pair
+/// that goes two ways is a row each, and otherwise however the hint is
+/// written everywhere else (`Hint::keys`).
 ///
 /// One answer, because the row is written twice -- when the palette opens,
 /// and again whenever what the view can do changes under it.
 fn row_keys(hint: &obelus_ui::Hint, chord: KeyChord) -> String {
-    match hint.also {
-        Some(also) => obelus_ui::keys_in_a_run(&[hint.chord.label(), also.label()]),
-        None => chord.label(),
+    match hint.direction() {
+        Some(_) => chord.label(),
+        None => hint.keys(),
     }
 }
 

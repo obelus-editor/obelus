@@ -19028,7 +19028,7 @@ fn the_palette_over_a_conversation_says_its_keys() {
     // it is one row with both keys at its end -- split, it was two rows
     // saying "New line" with nothing to tell them apart.
     //
-    // Broken deliberately twice: by writing the hint with `or` again, which
+    // Broken deliberately three times: by writing the hint with `or` again, which
     // gives two rows; and by leaving `row_keys` out of the palette's remark,
     // which leaves one row naming only `alt+enter` once a frame is drawn --
     // which is why the keys are read again after one. And by answering a

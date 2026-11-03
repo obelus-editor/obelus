@@ -20,19 +20,8 @@ pub struct Hint {
     /// The key, spelled by the key table so that a reader who rebound it
     /// sees what they bound.
     pub chord: obelus_keymap::KeyChord,
-    /// A second key that does the same thing, for a pair that shares a word:
-    /// `alt+up` and `alt+down` are one act in two directions, and two rows
-    /// saying "move it up" and "move it down" is the same sentence twice.
-    pub and_also: Option<obelus_keymap::KeyChord>,
-    /// Another key for the very same act, not the other direction of it:
-    /// `alt+enter` beside `shift+enter`, because the second arrives only
-    /// from a terminal that speaks the keyboard protocol.
-    ///
-    /// Not [`Hint::and_also`], which the palette splits into a row each so
-    /// that a row says which way it goes. Two keys for one act split that
-    /// way were two rows saying the same words, so this is one row with both
-    /// keys at its end, and choosing it presses [`Hint::chord`].
-    pub also: Option<obelus_keymap::KeyChord>,
+    /// A second key, where there is one, and what it is to the first.
+    pub other: Option<Other>,
     /// What it does, in a word or two: the row's name in the palette.
     pub does: Option<&'static str>,
     /// Which way it is set, for a key whose whole job is a switch.
@@ -72,8 +61,7 @@ impl Hint {
     pub const fn new(chord: obelus_keymap::KeyChord, does: &'static str) -> Self {
         Self {
             chord,
-            and_also: None,
-            also: None,
+            other: None,
             does: Some(does),
             switched: None,
             about: None,
@@ -93,21 +81,31 @@ impl Hint {
     /// The same act in the other direction, on a key of its own.
     #[must_use]
     pub const fn or(mut self, chord: obelus_keymap::KeyChord) -> Self {
-        self.and_also = Some(chord);
+        self.other = Some(Other::Direction(chord));
         self
     }
 
     /// The same act, on another key as well.
     #[must_use]
     pub const fn also(mut self, chord: obelus_keymap::KeyChord) -> Self {
-        self.also = Some(chord);
+        self.other = Some(Other::Same(chord));
         self
+    }
+
+    /// The key for the same act in the other direction, where there is one.
+    #[must_use]
+    pub const fn direction(self) -> Option<obelus_keymap::KeyChord> {
+        match self.other {
+            Some(Other::Direction(chord)) => Some(chord),
+            _ => None,
+        }
     }
 
     /// Whether pressing this key is pressing this hint.
     #[must_use]
     pub fn answers(&self, chord: obelus_keymap::KeyChord) -> bool {
-        self.chord == chord || self.and_also == Some(chord) || self.also == Some(chord)
+        self.chord == chord
+            || matches!(self.other, Some(Other::Direction(other) | Other::Same(other)) if other == chord)
     }
 
     /// Says whether it does anything at the moment.
@@ -139,13 +137,39 @@ impl Hint {
     }
 
     /// How it is written: the key, or the pair of them.
+    ///
+    /// The one answer, asked by the foot, the status row and the palette
+    /// alike. Two directions of one act are one cap, a blank apart, because
+    /// together they are one gesture (`alt+up alt+down`, move it); two keys
+    /// for the same act are a run of two (`keys_in_a_run`), because each is
+    /// the whole of the act on its own.
     #[must_use]
     pub fn keys(self) -> String {
-        match self.and_also.or(self.also) {
-            Some(also) => format!("{} {}", self.chord.label(), also.label()),
+        match self.other {
+            Some(Other::Direction(other)) => format!("{} {}", self.chord.label(), other.label()),
+            Some(Other::Same(other)) => keys_in_a_run(&[self.chord.label(), other.label()]),
             None => self.chord.label(),
         }
     }
+}
+
+/// What a hint's second key is to its first.
+///
+/// One field and not two, because a hint has at most one of them: a pair
+/// that went two ways *and* had a synonym would have no row to say it on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Other {
+    /// The same act in the other direction: `alt+up` and `alt+down` are one
+    /// act two ways, and two rows saying "move it up" and "move it down" is
+    /// the same sentence twice -- so the palette gives each its own row, with
+    /// the word for which way it goes.
+    Direction(obelus_keymap::KeyChord),
+    /// Another key for the very same act: `alt+enter` beside `shift+enter`,
+    /// because the second arrives only from a terminal that speaks the
+    /// keyboard protocol. Split, those were two rows saying the same words,
+    /// so the palette gives them one row with both keys at its end, and
+    /// choosing it presses [`Hint::chord`].
+    Same(obelus_keymap::KeyChord),
 }
 
 /// The keys a view says on its own row -- the row its query is typed
@@ -241,12 +265,34 @@ pub(crate) fn capped(cells: &mut CellBuffer, x: u16, y: u16, keys: &str, theme: 
 
 /// The same cap, with the key in this ink: the dim one, for a key a foot
 /// keeps where it does nothing.
+///
+/// A run of keys for one act (`keys_in_a_run`) is a cap each, parted the
+/// way the run parts them: one cap round both said they were one chord,
+/// which is the thing the parting is there to deny.
 fn capped_in(cells: &mut CellBuffer, x: u16, y: u16, keys: &str, ink: Color, theme: &Theme) -> u16 {
+    let mut after = x;
+    for (at, key) in keys.split(between_keys()).enumerate() {
+        if at > 0 {
+            after = write(
+                cells,
+                after,
+                y,
+                between_keys(),
+                Style::new().fg(theme.gutter).bg(theme.background),
+            );
+        }
+        after = one_cap(cells, after, y, key, ink, theme);
+    }
+    after
+}
+
+/// One key in one cap.
+fn one_cap(cells: &mut CellBuffer, x: u16, y: u16, key: &str, ink: Color, theme: &Theme) -> u16 {
     let after = write(
         cells,
         x,
         y,
-        &format!(" {keys} "),
+        &format!(" {key} "),
         Style::new().fg(ink).bg(theme.raised_background),
     );
     // And what those cells *are*, for a front end that can draw the shape
@@ -254,7 +300,7 @@ fn capped_in(cells: &mut CellBuffer, x: u16, y: u16, keys: &str, ink: Color, the
     // whole of the cap in a terminal and the ground of it in a window;
     // neither depends on this being heard.
     shapes::capped(
-        keys,
+        key,
         Rect {
             x,
             y,
@@ -366,7 +412,8 @@ const BETWEEN: u16 = 3;
 /// Asked by every row that measures a key before drawing it, which were
 /// each carrying their own idea of how much a cap adds.
 pub(crate) fn cap_width(keys: &str) -> usize {
-    text_width(keys) + 2
+    // Two blanks for each cap, and a run of keys is a cap each.
+    text_width(keys) + 2 * keys.split(between_keys()).count()
 }
 
 /// How much of the row one hint takes, the gap after it aside.
@@ -675,6 +722,45 @@ mod tests {
         (0..width)
             .map(|x| cells[(x, 1)].symbol().to_string())
             .collect()
+    }
+
+    /// Two keys for one act are two caps at a foot, with the dot between
+    /// them on the page and not on either cap -- the same parting the
+    /// palette writes, from the same `Hint::keys`.
+    ///
+    /// Broken deliberately twice: by writing `Other::Same` with one blank in
+    /// `Hint::keys`, which is one cap round both keys; and by writing a run
+    /// whole in `capped_in`, which puts the dot on the cap's ground.
+    #[test]
+    fn two_keys_for_one_act_are_two_caps_at_a_foot() {
+        let chord = obelus_keymap::KeyChord::new;
+        let hints = [
+            Hint::new(chord(KeyCode::Enter, KeyModifiers::ALT), "New line")
+                .also(chord(KeyCode::Enter, KeyModifiers::SHIFT)),
+        ];
+        let area = Rect::new(0, 0, 60, FOOT_ROWS);
+        let mut cells = CellBuffer::empty(area);
+        foot(&mut cells, area, &hints, &DARK);
+        let row: String = (0..60)
+            .map(|x| cells[(x, 1)].symbol().to_string())
+            .collect();
+        assert!(
+            row.contains(" Alt+Enter  \u{b7}  Shift+Enter  New line"),
+            "not two caps parted by a dot: {row:?}"
+        );
+        let dot = row.chars().position(|c| c == '\u{b7}').expect("the dot");
+        let at = |x: usize| cells[(u16::try_from(x).expect("on the row"), 1)].bg;
+        assert_eq!(at(dot), DARK.background, "the dot is on a cap: {row:?}");
+        assert_eq!(
+            at(dot - 2),
+            DARK.raised_background,
+            "the first cap: {row:?}"
+        );
+        assert_eq!(
+            at(dot + 2),
+            DARK.raised_background,
+            "the second cap: {row:?}"
+        );
     }
 
     /// A foot that ran out of room says so, rather than looking complete.
