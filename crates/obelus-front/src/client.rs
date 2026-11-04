@@ -217,27 +217,33 @@ fn connected(address: &str) -> std::io::Result<TcpStream> {
 ///
 /// Where an Obelus of this machine's would not start, to draw the page.
 pub fn first(afar: &Afar, nudge: &std::sync::mpsc::Sender<Event>) -> Result<Option<Next>> {
-    first_within(afar, nudge, AT_ONCE)
+    let address = afar.address();
+    first_within(afar, nudge, AT_ONCE, move || {
+        connected(&address)
+            .map(drop)
+            .map_err(|error| error.to_string())
+    })
 }
 
-/// [`first`], waiting `moment` for the first try.
+/// [`first`], waiting `moment` for the first try, which is `tried`.
+///
+/// The try is given rather than made here so that a test can have one that
+/// has said nothing yet. A real connection to a machine that is there can
+/// answer before even a moment of nothing has been waited, which made
+/// "still connecting" a race the test lost on a fast machine.
 fn first_within(
     afar: &Afar,
     nudge: &std::sync::mpsc::Sender<Event>,
     moment: Duration,
+    tried: impl FnOnce() -> Result<(), String> + Send + 'static,
 ) -> Result<Option<Next>> {
     let (said, heard) = std::sync::mpsc::channel();
-    let address = afar.address();
     // On a thread of its own, which goes on after the moment is up: what
     // it says then is nobody's, and the page asks again for itself.
     let started = std::thread::Builder::new()
         .name("obelus connecting".to_string())
         .spawn(move || {
-            let _ = said.send(
-                connected(&address)
-                    .map(drop)
-                    .map_err(|error| error.to_string()),
-            );
+            let _ = said.send(tried());
         });
     if let Err(error) = started {
         tracing::warn!(%error, "no thread to connect on, so the knock waits");
@@ -875,25 +881,48 @@ mod tests {
             _ => None,
         };
         let (nudge, _heard) = std::sync::mpsc::channel();
+        // The try `first` makes: a real connection.
+        let knocking = |afar: &Afar| {
+            let address = afar.address();
+            move || {
+                connected(&address)
+                    .map(drop)
+                    .map_err(|error| error.to_string())
+            }
+        };
 
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("loopback");
         let there = afar(listener.local_addr().expect("an address").to_string());
         assert!(
-            first_within(&there, &nudge, Duration::from_secs(10))
+            first_within(&there, &nudge, Duration::from_secs(10), knocking(&there))
                 .expect("asked")
                 .is_none(),
             "a page went up for a machine that is there"
         );
 
+        let gone = afar(nothing_there());
         let refused = page(
-            first_within(&afar(nothing_there()), &nudge, Duration::from_secs(10)).expect("asked"),
+            first_within(&gone, &nudge, Duration::from_secs(10), knocking(&gone)).expect("asked"),
         );
         assert!(
             matches!(refused, Some(Some(_))),
             "a machine that said no was not said to be gone: {refused:?}"
         );
 
-        let still = page(first_within(&there, &nudge, Duration::ZERO).expect("asked"));
+        // A try that has said nothing yet, and then says the machine took
+        // it -- seconds later, which is long past a moment of nothing and
+        // still an end, so that waiting the try out fails rather than hangs.
+        // A real connection here was a race: loopback can answer before the
+        // moment is up even when the moment is nothing, and on CI's arm
+        // machine it did.
+        let (_holding, held) = std::sync::mpsc::channel::<()>();
+        let still = page(
+            first_within(&there, &nudge, Duration::ZERO, move || {
+                let _ = held.recv_timeout(Duration::from_secs(5));
+                Ok(())
+            })
+            .expect("asked"),
+        );
         assert_eq!(still, Some(None), "the page did not say it was connecting");
     }
 
