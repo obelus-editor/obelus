@@ -464,9 +464,13 @@ fn the_panel_hangs_above_the_cursor_when_it_has_to() {
     );
 }
 
-/// The paging keys go to the half that typing cannot narrow.
+/// Control and the paging keys go to the documentation, as they go to a
+/// list's preview.
+///
+/// Deliberate break: dropping the control arm in `Completion::handle_key`
+/// leaves the key to the editor, and the documentation stays at its top.
 #[test]
-fn the_paging_keys_scroll_the_documentation() {
+fn control_and_the_paging_keys_scroll_the_documentation() {
     let (_scratch, mut app) = editing("complete-page", "fn main() {\n    pu\n}\n");
     support::press(&mut app, crossterm::event::KeyCode::Down);
     support::press(&mut app, crossterm::event::KeyCode::End);
@@ -482,7 +486,7 @@ fn the_paging_keys_scroll_the_documentation() {
         "the documentation does not start at the top: {first:?}"
     );
 
-    support::press(&mut app, crossterm::event::KeyCode::PageDown);
+    support::press_control_key(&mut app, crossterm::event::KeyCode::PageDown);
     let paged = documentation_top(&support::render(&mut app, 60, 16));
     assert_ne!(
         paged, first,
@@ -494,11 +498,52 @@ fn the_paging_keys_scroll_the_documentation() {
     );
 
     // And back.
-    support::press(&mut app, crossterm::event::KeyCode::PageUp);
+    support::press_control_key(&mut app, crossterm::event::KeyCode::PageUp);
     assert_eq!(
         documentation_top(&support::render(&mut app, 60, 16)),
         first,
         "paging back did not come back"
+    );
+}
+
+/// The bare paging keys page the candidates, even with documentation beside
+/// them: bare keys are the list's.
+///
+/// Deliberate break: sending the bare paging keys to the documentation again
+/// leaves the first candidate chosen.
+#[test]
+fn the_paging_keys_page_the_candidates() {
+    let (_scratch, mut app) = editing("complete-page-list", "fn main() {\n    pu\n}\n");
+    support::press(&mut app, crossterm::event::KeyCode::Down);
+    support::press(&mut app, crossterm::event::KeyCode::End);
+    let long: String = (1..=20).map(|n| format!("line number {n}\n\n")).collect();
+    let candidates: Vec<serde_json::Value> = (0..30)
+        .map(|n| {
+            json!({
+                "label": format!("push_{n:02}"),
+                "kind": 2,
+                "documentation": { "kind": "markdown", "value": long }
+            })
+        })
+        .collect();
+    app.complete_for_test(serde_json::Value::Array(candidates));
+    let dump = support::render(&mut app, 60, 40);
+    // There has to be documentation showing, or the keys page the list
+    // whichever way they are given out.
+    documentation_top(&dump);
+    let chosen = |app: &App| {
+        app.completion()
+            .and_then(|completion| completion.chosen())
+            .map(|candidate| candidate.label.clone())
+    };
+    assert_eq!(chosen(&app).as_deref(), Some("push_00"), "{dump}");
+
+    support::press(&mut app, crossterm::event::KeyCode::PageDown);
+    let paged = support::render(&mut app, 60, 40);
+    assert_ne!(
+        chosen(&app).as_deref(),
+        Some("push_00"),
+        "the paging key did not move the list:\n{paged}"
     );
 }
 

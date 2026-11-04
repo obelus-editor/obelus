@@ -750,14 +750,13 @@ impl App {
     /// Answered here rather than where keys are sorted, because what decides
     /// it is whether a preview is on screen -- and that is this module's own
     /// question. A list with nothing under it says no, and the key goes on
-    /// to the list, where the bare paging keys still page: a key that
-    /// stopped working in a terminal too short for a preview would be worse
-    /// than either arrangement.
+    /// to the list, which takes nothing with control: there is no preview
+    /// for it to move.
     pub(in crate::app) fn scroll_preview_by_key(&mut self, key: &KeyEvent) -> bool {
         // A pane of its own, and something in it. Not a preview drawn over
         // the code: there the list is the thing the reader is working
-        // through, and paging belongs to its rows -- which is where these
-        // keys went before there was anything to show above them.
+        // through, and the file above it is the one being read, which
+        // `look_at_the_selection` moves.
         if self.preview.is_none() || self.previews_over_the_code(self.editor_area) {
             return false;
         }
@@ -1418,18 +1417,18 @@ fn runs(columns: &[u32]) -> Vec<(usize, usize)> {
 /// How many rows a key scrolls the preview by, when a screenful of it is
 /// `page` rows.
 ///
-/// A list above and what it names below share four pairs of keys, and each
-/// pair is the other's with control: the arrows walk the list and with
-/// control scroll the preview a row, the paging keys page the preview and
-/// with control page the list. The bare paging keys are the preview's
-/// because a screenful at a time is what a *reading* is paged by: the list
-/// is ten rows walked one at a time, with its ends a keypress away. The
-/// same rule the file being read keeps, where control and an arrow moves
-/// the view and leaves the cursor (`keys::editor_scrolling`).
+/// A list above and what it names below share four pairs of keys, and
+/// control is what gives a pair to the preview: bare, the arrows walk the
+/// list and the paging keys page it; with control, the arrows scroll the
+/// preview a row and the paging keys a screenful. One rule rather than two
+/// -- the bare paging keys used to be the preview's, which made control mean
+/// the preview on the arrows and the list on the paging keys. The same rule
+/// the file being read keeps, where control and an arrow moves the view and
+/// leaves the cursor (`keys::editor_scrolling`).
 fn preview_scrolling(key: &KeyEvent, page: isize) -> Option<isize> {
     match (obelus_keymap::modifiers_of(key)?, key.code) {
-        (KeyModifiers::NONE, KeyCode::PageDown) => Some(page),
-        (KeyModifiers::NONE, KeyCode::PageUp) => Some(-page),
+        (KeyModifiers::CONTROL, KeyCode::PageDown) => Some(page),
+        (KeyModifiers::CONTROL, KeyCode::PageUp) => Some(-page),
         (KeyModifiers::CONTROL, KeyCode::Down) => Some(1),
         (KeyModifiers::CONTROL, KeyCode::Up) => Some(-1),
         _ => None,
