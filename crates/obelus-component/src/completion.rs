@@ -4,7 +4,8 @@
 //! everything else: every key a picker does not want, it keeps anyway --
 //! a list is what the reader is doing. Here the reader is typing into the
 //! document, and the list is a thing that appeared beside the cursor. So it
-//! takes six keys and lets every other one through, and the letters that
+//! takes six keys, and control with the paging keys for the documentation,
+//! and lets every other one through, and the letters that
 //! reach the document come back to it as a narrower query.
 //!
 //! The first candidate is selected the moment it opens, so `enter` takes
@@ -376,7 +377,8 @@ impl Completion {
             .min(rows.saturating_sub(usize::from(documentation)));
     }
 
-    /// Takes a key, if it is one of the six the panel owns.
+    /// Takes a key, if it is one of the six the panel owns or control with a
+    /// paging key.
     pub fn handle_key(&mut self, key: &KeyEvent) -> CompletionOutcome {
         let Some(modifiers) = obelus_keymap::modifiers_of(key) else {
             return CompletionOutcome::Ignored;

@@ -2432,8 +2432,8 @@ fn control_and_paging_scrolls_the_preview_and_not_the_list() {
     );
 }
 
-/// The bare paging keys page the list even with a preview under it, and
-/// leave the preview where it was: bare keys are the list's.
+/// The bare paging keys page the list even with a preview under it: bare
+/// keys are the list's.
 ///
 /// Deliberate break: putting the bare paging arms back in
 /// `preview_scrolling` takes the key for the preview before the list is
