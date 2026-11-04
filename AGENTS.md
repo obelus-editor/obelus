@@ -618,8 +618,8 @@ crates/
                       view is split by the errand, not by the shape of the
                       answer, and an answer on screen is an answer about a
                       moment (app/git/history_view); a preview is of a subject, not
-                      of a path, and the paging keys and control's arrows
-                      belong to whatever is being read
+                      of a path, and the bare keys are the list's and
+                      control gives them to whatever is being read
                       (app/editor/previewing); a project may carry
                       settings, and it is not the reader, and the reader's is
                       the layer it is laid over; anything read once at startup

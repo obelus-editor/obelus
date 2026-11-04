@@ -381,6 +381,22 @@ impl Completion {
         let Some(modifiers) = obelus_keymap::modifiers_of(key) else {
             return CompletionOutcome::Ignored;
         };
+        // Control and a paging key pages the documentation, the way it pages
+        // a list's preview: bare keys move the list, control gives them to
+        // what the list's row names. With no documentation showing there is
+        // nothing for it to move.
+        if modifiers == KeyModifiers::CONTROL
+            && matches!(key.code, KeyCode::PageDown | KeyCode::PageUp)
+            && self.room.1 > 0
+        {
+            let page = usize::from(self.room.1);
+            let rows = self.documentation_rows().len();
+            self.scrolled = match key.code == KeyCode::PageDown {
+                true => (self.scrolled + page).min(rows.saturating_sub(page)),
+                false => self.scrolled.saturating_sub(page),
+            };
+            return CompletionOutcome::Consumed;
+        }
         if modifiers != KeyModifiers::NONE {
             return CompletionOutcome::Ignored;
         }
@@ -395,26 +411,14 @@ impl Completion {
                 self.settle_focus();
                 CompletionOutcome::Consumed
             }
-            // The paging keys go to the half that cannot be narrowed by
-            // typing. With no documentation showing there is nothing else
-            // to give them, so they page the list.
+            // Clamped rather than wrapped, like every other list's paging.
             KeyCode::PageDown | KeyCode::PageUp => {
-                let down = key.code == KeyCode::PageDown;
-                if self.room.1 == 0 {
-                    let movement = match down {
-                        true => Move::PageDown,
-                        false => Move::PageUp,
-                    };
-                    self.window.apply(movement, self.room.0, Wrap::No);
-                    self.settle_focus();
-                    return CompletionOutcome::Consumed;
-                }
-                let page = usize::from(self.room.1);
-                let rows = self.documentation_rows().len();
-                self.scrolled = match down {
-                    true => (self.scrolled + page).min(rows.saturating_sub(page)),
-                    false => self.scrolled.saturating_sub(page),
+                let movement = match key.code == KeyCode::PageDown {
+                    true => Move::PageDown,
+                    false => Move::PageUp,
                 };
+                self.window.apply(movement, self.room.0, Wrap::No);
+                self.settle_focus();
                 CompletionOutcome::Consumed
             }
             // Enter takes what is selected, and only enter. The panel comes

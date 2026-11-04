@@ -2616,19 +2616,13 @@ impl Picker {
         let page = isize::try_from(page.max(1)).unwrap_or(isize::MAX);
         // A key carrying a modifier this branch does not name falls through,
         // the same rule the key table and the editor's motions follow.
-        // Without it `ctrl+pageup` pages the list, which is a different thing
-        // from what it should do.
+        // Without it `ctrl+meta+pagedown` pages the list, which is a
+        // different thing from what it should do.
         let Some(modifiers) = obelus_keymap::modifiers_of(key) else {
             return PickerOutcome::Ignored;
         };
         let control = modifiers == KeyModifiers::CONTROL;
         let bare = modifiers.is_empty();
-        // The paging keys are the two the list does not have to itself:
-        // bare, they belong to whatever the list is showing underneath --
-        // a preview is read a screenful at a time -- and the application
-        // takes them for it before the list is asked. So they page the
-        // list with control held, and bare only where nothing took them.
-        let paging = matches!(key.code, KeyCode::PageUp | KeyCode::PageDown);
 
         let outcome = match key.code {
             // A list that is only read is moved, not chosen in: the keys
@@ -2724,8 +2718,13 @@ impl Picker {
             // in it now, and bare home and end are where a caret goes in
             // every other text Obelus holds. The duplicate was what made
             // them free to give away.
-            code if (bare || (control && paging))
-                && !(bare && matches!(code, KeyCode::Home | KeyCode::End))
+            //
+            // Bare only. With control the arrows and the paging keys are
+            // whatever the list is showing underneath -- the application
+            // takes them for a preview before the list is asked -- and with
+            // no preview there is nothing for them to move.
+            code if bare
+                && !matches!(code, KeyCode::Home | KeyCode::End)
                 && let Some(movement) = Move::of(code) =>
             {
                 let wrap = match self.unfinished {

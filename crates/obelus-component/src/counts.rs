@@ -570,8 +570,6 @@ impl Counts {
     /// Handles a key. `height` is how many rows of list are on screen.
     pub fn handle_key(&mut self, key: &KeyEvent, height: u16) -> CountsOutcome {
         let bare = key.modifiers == KeyModifiers::NONE;
-        let control = key.modifiers == KeyModifiers::CONTROL;
-        let paging = matches!(key.code, KeyCode::PageUp | KeyCode::PageDown);
 
         match key.code {
             // Escape gives up on the nearest thing, which while the file
@@ -638,7 +636,9 @@ impl Counts {
             // The keys that move about a list, from the table every list
             // here reads. What is this view's own is only what a step means
             // in it, which is why the moving goes through `move_selection`.
-            code if bare || (control && paging) => match Move::of(code) {
+            // Bare only, as a picker's: control gives these keys to a
+            // preview, and this view has none.
+            code if bare => match Move::of(code) {
                 Some(Move::Up) => {
                     self.move_selection(-1, height, Wrap::Yes);
                     CountsOutcome::Consumed

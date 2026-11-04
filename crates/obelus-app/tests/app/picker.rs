@@ -2366,10 +2366,9 @@ fn a_list_with_tabs_still_walks_ten_rows() {
     assert_eq!(names(&scrolled), 10, "the list lost a row:\n{scrolled}");
 
     // And a page is those ten rows, not the region they are drawn in: a
-    // page of twelve would step past two rows the reader never saw. Under
-    // control, because bare it pages the preview under the list.
+    // page of twelve would step past two rows the reader never saw.
     support::press_control_key(&mut app, KeyCode::Home);
-    support::press_control_key(&mut app, KeyCode::PageDown);
+    press(&mut app, KeyCode::PageDown);
     assert_eq!(
         app.picker()
             .and_then(|picker| picker.selected_item())
@@ -2379,13 +2378,16 @@ fn a_list_with_tabs_still_walks_ten_rows() {
     );
 }
 
-/// The paging keys scroll the preview, not the list: a screenful is what the
-/// thing being *read* moves by, and the list above it is ten rows walked one
-/// at a time with its ends a keypress away. Reading a candidate and choosing
-/// between candidates are different jobs, and a list of references is read by
-/// doing both at once.
+/// Control and the paging keys scroll the preview, not the list: control is
+/// what gives a key to the thing being *read*, the same as with the arrows.
+/// Reading a candidate and choosing between candidates are different jobs,
+/// and a list of references is read by doing both at once.
+///
+/// Deliberate break: taking the control off the paging arms of
+/// `preview_scrolling` sends the key to the list, which takes nothing with
+/// control, and the preview stays at its top.
 #[test]
-fn paging_scrolls_the_preview_and_not_the_list() {
+fn control_and_paging_scrolls_the_preview_and_not_the_list() {
     let mut app = app();
     press_function(&mut app, 1);
     app.handle(Event::Search(obelus_search::Event::FilesFound {
@@ -2403,7 +2405,7 @@ fn paging_scrolls_the_preview_and_not_the_list() {
         "{at_rest}"
     );
 
-    press(&mut app, KeyCode::PageDown);
+    press_control_key(&mut app, KeyCode::PageDown);
     let scrolled = support::render(&mut app, 60, 22);
     let text = support::text_block(&scrolled);
     assert!(
@@ -2422,7 +2424,7 @@ fn paging_scrolls_the_preview_and_not_the_list() {
         "the scroll did not survive the next frame"
     );
 
-    press(&mut app, KeyCode::PageUp);
+    press_control_key(&mut app, KeyCode::PageUp);
     assert_eq!(
         support::text_block(&support::render(&mut app, 60, 22)),
         support::text_block(&at_rest),
@@ -2430,9 +2432,79 @@ fn paging_scrolls_the_preview_and_not_the_list() {
     );
 }
 
+/// The bare paging keys page the list even with a preview under it, and
+/// leave the preview where it was: bare keys are the list's.
+///
+/// Deliberate break: putting the bare paging arms back in
+/// `preview_scrolling` takes the key for the preview before the list is
+/// asked, and the selection stays on the first row.
+#[test]
+fn paging_pages_the_list_and_not_the_preview() {
+    use obelus_component::picker::{PickerItem, PickerLayout, PickerValue};
+
+    // Every row a place in one file, so every row has a preview to take the
+    // key if the preview were the one taking it.
+    let path =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/many_lines.rs");
+    let place = |line: u32| PickerItem {
+        prose: false,
+        marker: None,
+        icon: None,
+        label: format!("many_lines.rs:{}", line + 1),
+        version: None,
+        detail: None,
+        trailing: None,
+        changed: None,
+        value: PickerValue::Place {
+            path: path.clone(),
+            line,
+            character: 10,
+            end_line: line,
+            end_character: 17,
+        },
+        enabled: true,
+        colours: None,
+        status: None,
+        depth: 0,
+        opens: None,
+        kind: None,
+        tab: None,
+        section: None,
+    };
+
+    let mut app = app();
+    app.open_picker_for_test((1..30).map(place).collect(), PickerLayout::FullArea);
+    let chosen = |app: &App| {
+        app.picker()
+            .and_then(|picker| picker.selected_item())
+            .map(|item| item.label.clone())
+    };
+    let at_rest = support::render(&mut app, 60, 22);
+    assert!(
+        support::text_block(&at_rest).contains("LINE_01"),
+        "not a preview of the first row:\n{at_rest}"
+    );
+
+    press(&mut app, KeyCode::PageDown);
+    let paged = support::render(&mut app, 60, 22);
+    assert_ne!(
+        chosen(&app).as_deref(),
+        Some("many_lines.rs:2"),
+        "the list did not page:\n{paged}"
+    );
+
+    press(&mut app, KeyCode::PageUp);
+    support::render(&mut app, 60, 22);
+    assert_eq!(
+        chosen(&app).as_deref(),
+        Some("many_lines.rs:2"),
+        "paging back did not come back"
+    );
+}
+
 /// Control and an arrow scroll the preview a row and leave the list where it
 /// is: the arrows are the list's and control gives them to what it names,
-/// the way control gives the paging keys to the list.
+/// the way control gives the paging keys to it.
 ///
 /// Deliberate break: taking the control arms out of `preview_scrolling`
 /// sends the key to the list, which takes nothing with control and an arrow,
@@ -2546,7 +2618,7 @@ fn the_preview_stops_at_the_top_of_the_file() {
 
     let at_rest = support::text_block(&support::render(&mut app, 60, 22)).to_string();
     for _ in 0..5 {
-        press(&mut app, KeyCode::PageUp);
+        press_control_key(&mut app, KeyCode::PageUp);
     }
     assert_eq!(
         support::text_block(&support::render(&mut app, 60, 22)),
@@ -2554,7 +2626,7 @@ fn the_preview_stops_at_the_top_of_the_file() {
         "the top of the file is not where it stopped"
     );
 
-    press(&mut app, KeyCode::PageDown);
+    press_control_key(&mut app, KeyCode::PageDown);
     let after = support::render(&mut app, 60, 22);
     assert!(
         !support::text_block(&after).contains("LINE_01"),
@@ -2602,7 +2674,7 @@ fn moving_the_selection_forgets_the_scrolling() {
     app.open_picker_for_test(vec![place(1), place(2)], PickerLayout::FullArea);
 
     assert!(support::text_block(&support::render(&mut app, 60, 22)).contains("LINE_01"));
-    press(&mut app, KeyCode::PageDown);
+    press_control_key(&mut app, KeyCode::PageDown);
     assert!(!support::text_block(&support::render(&mut app, 60, 22)).contains("LINE_01"));
 
     press(&mut app, KeyCode::Down);
@@ -2726,7 +2798,7 @@ fn a_place_in_the_middle_of_a_file_is_previewed_in_the_middle() {
     // Up from the middle of a file: the only case that pins the direction
     // down. Reaching the top of the file leaves the offset at zero, and an
     // offset of zero is the same view whichever way the rows were counted.
-    press(&mut app, KeyCode::PageUp);
+    press_control_key(&mut app, KeyCode::PageUp);
     let up = support::render(&mut app, 60, 34);
     let rows: Vec<&str> = support::text_block(&up)
         .lines()
