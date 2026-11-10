@@ -48,6 +48,10 @@ offer-ignored-about = 显示项目忽略的文件
 offer-hidden-about = 显示隐藏文件
 rename = 重命名
 rename-about = 重命名或移动这一行的文件或文件夹
+copy-path = 复制路径
+copy-path-about = 复制这一行相对于项目的路径
+copy-full-path = 复制完整路径
+copy-full-path-about = 复制这一行的完整路径
 
 ## 列表本身。
 

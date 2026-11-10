@@ -108,7 +108,7 @@ impl App {
     }
 
     /// What the file list is on, if it is on anything with a path.
-    fn selected_path(&self) -> Option<PathBuf> {
+    pub(in crate::app) fn selected_path(&self) -> Option<PathBuf> {
         let item = self.picker.as_ref()?.selected_item()?;
         Some(self.working_directory.join(documents::path_of_row(item)?))
     }

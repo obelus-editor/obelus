@@ -541,6 +541,26 @@ impl App {
         if key.code == KeyCode::Char('n') {
             return self.rename_selected();
         }
+        // And two more about the row: where it is, said the way the list
+        // says it and the way the machine does. Only on a file list -- a
+        // search has its own `alt+c`, and is asked after this.
+        if matches!(key.code, KeyCode::Char('c' | 'a'))
+            && self.picker.as_ref().is_some_and(Picker::is_listing)
+        {
+            if let Some(path) = self.selected_path() {
+                match key.code {
+                    KeyCode::Char('c') => {
+                        let shown = relative(&path, &self.working_directory);
+                        self.copied(&shown, obelus_component::copied::Copied::Path);
+                    }
+                    _ => self.copied(
+                        &path.display().to_string(),
+                        obelus_component::copied::Copied::FullPath,
+                    ),
+                }
+            }
+            return true;
+        }
         // Two switches about which files the list offers, and they keep
         // two different things out: what the project said to ignore, and
         // what a system keeps out of sight. The dot is what a file
@@ -2243,15 +2263,8 @@ pub(in crate::app) fn reload(buffer: &mut Buffer) -> bool {
     }
 }
 
-/// The path a row of a file list stands for, relative to the tree's root.
-///
-/// `None` for a row that is not a place on disk. Both shapes of the list
-/// put the same value in a row -- the flat listing's label is the whole
-/// path and the tree's is only the last part of it -- so this is what tells
-/// two rows apart when their labels cannot.
+/// The path a row of a file list stands for, relative to the tree's root
+/// (`PickerValue::place`).
 pub(in crate::app) fn path_of_row(item: &PickerItem) -> Option<&Path> {
-    match &item.value {
-        PickerValue::File(path) | PickerValue::Directory(path) => Some(path),
-        _ => None,
-    }
+    item.value.place()
 }

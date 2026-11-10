@@ -770,7 +770,16 @@ fn the_file_list_says_what_its_own_key_does() {
         .into_iter()
         .map(|key| key.does)
         .collect();
-    assert_eq!(here, ["Ignored files", "Hidden files", "Rename"]);
+    assert_eq!(
+        here,
+        [
+            "Ignored files",
+            "Hidden files",
+            "Rename",
+            "Copy path",
+            "Copy full path"
+        ]
+    );
 }
 
 /// And no tab of its own in a palette over nothing: the file has no keys

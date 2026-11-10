@@ -2055,6 +2055,28 @@ impl StatusView<'_> {
             self.phase,
             self.palette.as_deref(),
         );
+        // What Obelus has just said about a key pressed in the list -- a
+        // path copied, a switch a project pinned -- over what the row says
+        // after the box, and not over the box: the reader is still typing
+        // into it, and the caret is there. Otherwise the list owns the row
+        // and the note was never drawn, so a copy that failed said nothing.
+        if let Some(note) = self.middle {
+            let from = taken_by_typing(picker.question(), &picker.query(), picker.invitation())
+                .saturating_sub(1);
+            let Ok(from) = u16::try_from(from) else {
+                return;
+            };
+            let Some(width) = area.width.checked_sub(from).filter(|width| *width > 2) else {
+                return;
+            };
+            let rest = Rect {
+                x: area.x + from,
+                width,
+                ..area
+            };
+            fill(cells, rest, style);
+            said_alone(cells, rest, note, self.note_is_wrong, style, self.theme);
+        }
     }
 }
 

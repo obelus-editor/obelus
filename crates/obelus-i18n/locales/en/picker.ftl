@@ -48,6 +48,10 @@ offer-ignored-about = Show files the project ignores
 offer-hidden-about = Show hidden files
 rename = Rename
 rename-about = Rename or move the file or folder on this row
+copy-path = Copy path
+copy-path-about = Copy where this row is, relative to the project
+copy-full-path = Copy full path
+copy-full-path-about = Copy this row's whole path
 
 ## The list itself.
 

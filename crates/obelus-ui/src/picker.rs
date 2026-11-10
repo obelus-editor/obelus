@@ -239,6 +239,9 @@ pub fn keys(picker: &Picker) -> Vec<Hint> {
     }
     let offering = picker.offers_ignored();
     let showing = picker.offers_hidden();
+    let on_a_path = picker
+        .selected_item()
+        .is_some_and(|item| item.value.place().is_some());
     vec![
         Hint::new(alt('i'), obelus_i18n::picker::ignored_files())
             .about(obelus_i18n::picker::offer_ignored_about())
@@ -257,6 +260,18 @@ pub fn keys(picker: &Picker) -> Vec<Hint> {
         Hint::new(alt('n'), obelus_i18n::picker::rename())
             .about(obelus_i18n::picker::rename_about())
             .only_where(offering.is_some()),
+        // About the row as well, and on the changed tab too: a file git
+        // has an answer about is still somewhere a reader may want to
+        // paste. Dim where the reader is on nothing, rather than gone,
+        // because the list is still a list of files.
+        Hint::new(alt('c'), obelus_i18n::picker::copy_path())
+            .about(obelus_i18n::picker::copy_path_about())
+            .when(on_a_path)
+            .only_where(picker.is_listing()),
+        Hint::new(alt('a'), obelus_i18n::picker::copy_full_path())
+            .about(obelus_i18n::picker::copy_full_path_about())
+            .when(on_a_path)
+            .only_where(picker.is_listing()),
     ]
 }
 
