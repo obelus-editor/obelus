@@ -51,7 +51,7 @@ rename-about = Rename or move the file or folder on this row
 copy-path = Copy path
 copy-path-about = Copy where this row is, relative to the project
 copy-full-path = Copy full path
-copy-full-path-about = Copy where this row is, from the root
+copy-full-path-about = Copy this row's whole path
 
 ## The list itself.
 

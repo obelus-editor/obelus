@@ -279,6 +279,26 @@ pub enum PickerValue {
     Nothing,
 }
 
+impl PickerValue {
+    /// The place on disk a row of a file list stands for, relative to the
+    /// tree's root.
+    ///
+    /// `None` for a row that is not one. Both shapes of the list put the
+    /// same value in a row -- the flat listing's label is the whole path
+    /// and the tree's is only the last part of it -- so this is what tells
+    /// two rows apart when their labels cannot. And the one answer to
+    /// whether a key about the row's place has anything to act on: the
+    /// list's foot asks it to dim the key, and the application asks it to
+    /// do what the key says.
+    #[must_use]
+    pub fn place(&self) -> Option<&std::path::Path> {
+        match self {
+            Self::File(path) | Self::Directory(path) => Some(path),
+            _ => None,
+        }
+    }
+}
+
 /// Which files a file list is showing.
 ///
 /// Two, because "which file do I want" and "what have I been working on"

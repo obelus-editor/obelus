@@ -241,7 +241,7 @@ pub fn keys(picker: &Picker) -> Vec<Hint> {
     let showing = picker.offers_hidden();
     let on_a_path = picker
         .selected_item()
-        .is_some_and(|item| matches!(item.value, PickerValue::File(_) | PickerValue::Directory(_)));
+        .is_some_and(|item| item.value.place().is_some());
     vec![
         Hint::new(alt('i'), obelus_i18n::picker::ignored_files())
             .about(obelus_i18n::picker::offer_ignored_about())

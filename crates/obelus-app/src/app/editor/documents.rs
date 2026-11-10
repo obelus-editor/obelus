@@ -2263,15 +2263,8 @@ pub(in crate::app) fn reload(buffer: &mut Buffer) -> bool {
     }
 }
 
-/// The path a row of a file list stands for, relative to the tree's root.
-///
-/// `None` for a row that is not a place on disk. Both shapes of the list
-/// put the same value in a row -- the flat listing's label is the whole
-/// path and the tree's is only the last part of it -- so this is what tells
-/// two rows apart when their labels cannot.
+/// The path a row of a file list stands for, relative to the tree's root
+/// (`PickerValue::place`).
 pub(in crate::app) fn path_of_row(item: &PickerItem) -> Option<&Path> {
-    match &item.value {
-        PickerValue::File(path) | PickerValue::Directory(path) => Some(path),
-        _ => None,
-    }
+    item.value.place()
 }
