@@ -145,7 +145,10 @@ fn places() -> Vec<Place> {
             name: "a project's path",
             open: |scratch| {
                 let mut app = asking(scratch);
+                // The opening row, which is the last but one: the row
+                // that connects is under it.
                 support::press_control_key(&mut app, KeyCode::End);
+                support::press(&mut app, KeyCode::Up);
                 support::press(&mut app, KeyCode::Enter);
                 app
             },

@@ -45,10 +45,12 @@ fn asking() -> App {
 
 /// Goes to the row that opens a project not in the list, and opens it.
 ///
-/// `ctrl+end`, because that row is the last: under the projects, which
-/// the reader starts on. Bare `end` is the filter's caret's.
+/// `ctrl+end` and up, because that row is the last but one: under the
+/// projects, which the reader starts on, and over the row that connects.
+/// Bare `end` is the filter's caret's.
 fn open_another(app: &mut App) {
     support::press_control_key(app, KeyCode::End);
+    press(app, KeyCode::Up);
     press(app, KeyCode::Enter);
 }
 
@@ -1497,4 +1499,122 @@ fn a_double_click_on_a_project_while_naming_a_path_does_nothing() {
     let choosing = app.choosing().expect("still asking");
     assert!(choosing.naming, "the press left the path box");
     assert_eq!(choosing.typed, before, "the press changed the box:\n{dump}");
+}
+
+/// The last row goes to another machine: enter on it opens the list
+/// `connect-to-server` opens, over the page, and escape gives the page
+/// back.
+///
+/// A window started from a desktop menu opens on this page, which binds
+/// no command and has no palette, so the row is the one way to another
+/// machine from it.
+///
+/// Broken deliberately by making the `Outcome::Connect` arm in
+/// `App::the_chooser_answered` do nothing but answer `true`: enter on the
+/// row leaves the page as it was, with no list over it.
+#[test]
+fn the_last_row_offers_the_machines() {
+    let _turn = crate::turn();
+    let mut app = asking();
+    support::press_control_key(&mut app, KeyCode::End);
+    let dump = support::render(&mut app, 60, 20);
+    assert!(
+        support::text_block(&dump).contains("Connect to remote"),
+        "the row is not drawn:
+{dump}"
+    );
+
+    press(&mut app, KeyCode::Enter);
+
+    let first = app
+        .picker()
+        .and_then(Picker::selected_item)
+        .map(|item| item.value.clone());
+    assert!(
+        matches!(
+            first,
+            Some(obelus_component::picker::PickerValue::NewServer)
+        ),
+        "enter did not open the machines: {first:?}"
+    );
+    assert!(
+        app.choosing().is_some(),
+        "the page went from under the list"
+    );
+
+    press(&mut app, KeyCode::Esc);
+    assert!(app.picker().is_none(), "escape did not give up on the list");
+    assert!(app.choosing().is_some(), "escape left the page");
+}
+
+/// An Obelus already drawn on another machine does not offer the row:
+/// `connect-to-server` is refused there, and the key that leaves is the
+/// way home. So the last row is the one that opens a project.
+///
+/// Broken deliberately by answering `true` from
+/// `App::connects_from_here`: the row is drawn, and `ctrl+end` lands on it.
+#[test]
+fn a_window_on_another_machine_offers_no_machines() {
+    let _turn = crate::turn();
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.drawn_afar();
+    app.ask_about_these_projects_for_test(vec![known("/tmp/obelus/alpha", Some(2_000))]);
+    let dump = support::render(&mut app, 60, 20);
+    assert!(
+        !support::text_block(&dump).contains("Connect to remote"),
+        "the row is drawn on another machine:
+{dump}"
+    );
+
+    support::press_control_key(&mut app, KeyCode::End);
+    press(&mut app, KeyCode::Enter);
+
+    assert!(
+        app.choosing().expect("still asking").naming,
+        "the last row is not the one that opens a project"
+    );
+}
+
+/// A press stands on the row that connects, and a second opens the
+/// machines -- the row the drawing put it on, from the same layout.
+///
+/// Broken deliberately by taking the `connecting` check out of
+/// `projects::row_at`: the press lands on no row and the reader stays on
+/// the first project.
+#[test]
+fn a_press_on_the_row_that_connects_stands_on_it() {
+    let _turn = crate::turn();
+    let mut app = asking();
+    let dump = support::render(&mut app, 60, 20);
+    let y: u16 = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains("Connect to remote"))
+        .and_then(|row| row.split_once('|'))
+        .and_then(|(at, _)| at.trim().parse().ok())
+        .unwrap_or_else(|| {
+            panic!(
+                "the row is not on screen:
+{dump}"
+            )
+        });
+    let press = |app: &mut App| {
+        app.handle(obelus_app::event::Event::Pointer {
+            kind: obelus_app::event::Pointer::Pressed,
+            x: 6,
+            y,
+        });
+    };
+
+    press(&mut app);
+    assert_eq!(
+        app.choosing().expect("still asking").at,
+        3,
+        "the press did not stand on the row"
+    );
+    press(&mut app);
+    assert!(
+        app.picker().is_some(),
+        "the second press did not open the machines"
+    );
 }

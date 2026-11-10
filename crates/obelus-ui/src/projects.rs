@@ -47,6 +47,10 @@ use crate::{Hint, Screen, fill, write};
 /// with nothing remembered the row is the whole of the page, and there is
 /// nothing for it to be another of -- and the page's own title already
 /// says what it opens.
+///
+/// The row under that one, `projects::connect`, goes to another machine,
+/// and is the command's own words with the same ellipsis: what it opens is
+/// the list of machines.
 /// The least space between a path and the time beside it.
 ///
 /// Two columns, so that the end of one and the start of the other are
@@ -67,13 +71,14 @@ const WHEN_GAP: u16 = 2;
 #[must_use]
 pub fn hints(choosing: &crate::Choosing, keymap: &Keymap) -> Vec<Hint> {
     let bare = |code| KeyChord::new(code, KeyModifiers::NONE);
-    let on_the_opening_row = choosing.at >= choosing.known.len();
+    let under = choosing.at.checked_sub(choosing.known.len());
     let mut hints = match choosing.naming {
         false => vec![Hint::new(
             bare(KeyCode::Enter),
-            match on_the_opening_row {
-                true => obelus_i18n::projects::type_it(),
-                false => obelus_i18n::projects::open(),
+            match under {
+                None => obelus_i18n::projects::open(),
+                Some(0) => obelus_i18n::projects::type_it(),
+                Some(_) => obelus_i18n::projects::choose_a_machine(),
             },
         )],
         // What enter does to a path is what the row at the foot is already
@@ -119,6 +124,9 @@ struct Laid {
     list: Rect,
     /// The row that opens a project not in the list.
     opening: Rect,
+    /// The row that goes to another machine, under that one -- empty
+    /// where it is not offered.
+    connecting: Rect,
 }
 
 /// How the page is laid out in `area`.
@@ -146,9 +154,10 @@ fn laid(area: Rect, choosing: &crate::Choosing, hints: &[Hint]) -> Laid {
         false => 0,
     };
     let gap = u16::from(listed > 0);
-    // The projects get what the opening row and the blank over it leave,
-    // and the filter is what reaches the ones below the fold.
-    let shown = listed.min(room.saturating_sub(gap + 1));
+    let fixed = 1 + u16::from(choosing.connects);
+    // The projects get what the rows under them and the blank over those
+    // leave, and the filter is what reaches the ones below the fold.
+    let shown = listed.min(room.saturating_sub(gap + fixed));
     let list = Rect {
         y: below,
         height: shown,
@@ -160,13 +169,19 @@ fn laid(area: Rect, choosing: &crate::Choosing, hints: &[Hint]) -> Laid {
     };
     let opening = Rect {
         width: list.width,
-        ..row((below + shown + gap).min(page.bottom().saturating_sub(1)))
+        ..row((below + shown + gap).min(page.bottom().saturating_sub(fixed)))
+    };
+    let connecting = Rect {
+        width: list.width,
+        height: u16::from(choosing.connects),
+        ..row(opening.y.saturating_add(1))
     };
     Laid {
         title: row(page.y),
         rule: row(page.y.saturating_add(1)),
         list,
         opening,
+        connecting,
     }
 }
 
@@ -203,8 +218,8 @@ pub fn list_height(area: Rect, choosing: &crate::Choosing, keymap: &Keymap) -> u
     laid(area, choosing, &hints(choosing, keymap)).list.height
 }
 
-/// Which row a point on screen is on: the projects from nought, and the
-/// row that opens another after the last of them.
+/// Which row a point on screen is on: the projects from nought, then the
+/// row that opens another and the row that connects.
 ///
 /// From the same layout the drawing goes by, because a press that landed
 /// on a different row than the one it looks like it landed on is worse
@@ -221,6 +236,9 @@ pub fn row_at(
     let point = ratatui::layout::Position { x, y };
     if laid.opening.contains(point) {
         return Some(choosing.known.len());
+    }
+    if laid.connecting.contains(point) {
+        return Some(choosing.known.len() + 1);
     }
     if !headed(choosing) || !laid.list.contains(point) {
         return None;
@@ -285,7 +303,7 @@ impl Widget for ProjectsView<'_> {
         if headed(choosing) {
             self.rows(cells, choosing, laid.list);
         }
-        let on = choosing.at >= choosing.known.len();
+        let on = choosing.at == choosing.known.len();
         let style = self.row_style(cells, laid.opening, on);
         let said = match headed(choosing) {
             true => obelus_i18n::projects::open_another(),
@@ -298,6 +316,17 @@ impl Widget for ProjectsView<'_> {
             said,
             style.fg(self.theme.foreground),
         );
+        if choosing.connects {
+            let on = choosing.at == choosing.known.len() + 1;
+            let style = self.row_style(cells, laid.connecting, on);
+            write(
+                cells,
+                laid.connecting.x + 2,
+                laid.connecting.y,
+                obelus_i18n::projects::connect(),
+                style.fg(self.theme.foreground),
+            );
+        }
         crate::foot(cells, area, &hints, self.theme);
     }
 }

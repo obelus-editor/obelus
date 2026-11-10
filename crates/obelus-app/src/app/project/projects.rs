@@ -446,7 +446,17 @@ impl crate::app::App {
                 last: project.last,
             })
             .collect();
-        self.which_project.chooser = Some(obelus_component::chooser::Chooser::new(known));
+        self.which_project.chooser = Some(obelus_component::chooser::Chooser::new(
+            known,
+            self.connects_from_here(),
+        ));
+    }
+
+    /// Whether the page that asks offers the row that goes to another
+    /// machine: the question `Requires::ThisMachine` asks of
+    /// `connect-to-server`, which is what that row opens.
+    fn connects_from_here(&self) -> bool {
+        !self.is_drawn_afar()
     }
 
     /// Offers the projects opened before, all but this one, to go to.
@@ -641,7 +651,10 @@ impl crate::app::App {
         &mut self,
         known: Vec<obelus_component::chooser::Known>,
     ) {
-        self.which_project.chooser = Some(obelus_component::chooser::Chooser::new(known));
+        self.which_project.chooser = Some(obelus_component::chooser::Chooser::new(
+            known,
+            self.connects_from_here(),
+        ));
     }
 
     /// A key, while the reader is being asked which project.
@@ -719,6 +732,13 @@ impl crate::app::App {
             }
             obelus_component::chooser::Outcome::Chose(path) => {
                 self.settle_on(&path);
+                return true;
+            }
+            // The list `connect-to-server` opens, over the page: escape
+            // gives up on it and the page is there again, and going to a
+            // machine lets go of this Obelus with nothing open to ask about.
+            obelus_component::chooser::Outcome::Connect => {
+                self.open_servers();
                 return true;
             }
             // Nothing said where it was not written. A list that would not
@@ -1163,6 +1183,7 @@ impl crate::app::App {
             spelled: chooser.typing().spelled(),
             naming: chooser.is_naming(),
             forgets: chooser.forgets(),
+            connects: chooser.connects(),
             there: self.which_project.named_is_there,
             project: self.which_project.named_is_a_project,
             offering: self.which_project.naming_list.is_some(),

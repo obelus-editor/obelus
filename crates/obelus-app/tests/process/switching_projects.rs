@@ -427,8 +427,9 @@ fn row_of(dump: &str, words: &str) -> Option<u16> {
 fn a_page_too_short_for_its_projects_scrolls_to_the_last_of_them() {
     let _turn = crate::turn();
     let (mut app, _) = page_of(6, 6, 16);
-    // From the first project, up is the row that opens another, and up
-    // again the last project.
+    // From the first project, up is the row that connects, up again the
+    // row that opens another, and up a third time the last project.
+    press(&mut app, KeyCode::Up);
     press(&mut app, KeyCode::Up);
     press(&mut app, KeyCode::Up);
     assert_eq!(app.choosing().expect("still asking").at, 11);
