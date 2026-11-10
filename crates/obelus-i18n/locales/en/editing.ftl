@@ -8,6 +8,8 @@ copied-note = Copied note
 copied-answer = Copied answer
 # Slack's app manifest, from the chat settings.
 copied-manifest = Copied the manifest
+copied-path = Copied path
+copied-full-path = Copied full path
 not-copied-selection = Could not copy selection
 not-copied-line = Could not copy line
 not-copied-code = Could not copy code
@@ -15,6 +17,8 @@ not-copied-message = Could not copy message
 not-copied-note = Could not copy note
 not-copied-answer = Could not copy answer
 not-copied-manifest = Could not copy the manifest
+not-copied-path = Could not copy path
+not-copied-full-path = Could not copy full path
 cut-selection = Cut selection
 cut-line = Cut line
 cut-code = Cut code
@@ -22,6 +26,8 @@ cut-message = Cut message
 cut-note = Cut note
 cut-answer = Cut answer
 cut-manifest = Cut the manifest
+cut-path = Cut path
+cut-full-path = Cut full path
 # The text has gone from where it was, and the clipboard would not take it.
 cut-not-copied-selection = Cut selection, but could not copy it
 cut-not-copied-line = Cut line, but could not copy it
@@ -30,6 +36,8 @@ cut-not-copied-message = Cut message, but could not copy it
 cut-not-copied-note = Cut note, but could not copy it
 cut-not-copied-answer = Cut answer, but could not copy it
 cut-not-copied-manifest = Cut the manifest, but could not copy it
+cut-not-copied-path = Cut path, but could not copy it
+cut-not-copied-full-path = Cut full path, but could not copy it
 
 ## Pasting.
 

@@ -8,6 +8,8 @@ copied-note = 已复制笔记
 copied-answer = 已复制回答
 # 聊天设置里 Slack 的应用清单。
 copied-manifest = 已复制应用清单
+copied-path = 已复制路径
+copied-full-path = 已复制完整路径
 not-copied-selection = 无法复制所选内容
 not-copied-line = 无法复制当前行
 not-copied-code = 无法复制代码
@@ -15,6 +17,8 @@ not-copied-message = 无法复制消息
 not-copied-note = 无法复制笔记
 not-copied-answer = 无法复制回答
 not-copied-manifest = 无法复制应用清单
+not-copied-path = 无法复制路径
+not-copied-full-path = 无法复制完整路径
 cut-selection = 已剪切所选内容
 cut-line = 已剪切当前行
 cut-code = 已剪切代码
@@ -22,6 +26,8 @@ cut-message = 已剪切消息
 cut-note = 已剪切笔记
 cut-answer = 已剪切回答
 cut-manifest = 已剪切应用清单
+cut-path = 已剪切路径
+cut-full-path = 已剪切完整路径
 # 文字已经从原处拿走，但剪贴板没有接收。
 cut-not-copied-selection = 已剪切所选内容，但未能放入剪贴板
 cut-not-copied-line = 已剪切当前行，但未能放入剪贴板
@@ -30,6 +36,8 @@ cut-not-copied-message = 已剪切消息，但未能放入剪贴板
 cut-not-copied-note = 已剪切笔记，但未能放入剪贴板
 cut-not-copied-answer = 已剪切回答，但未能放入剪贴板
 cut-not-copied-manifest = 已剪切应用清单，但未能放入剪贴板
+cut-not-copied-path = 已剪切路径，但未能放入剪贴板
+cut-not-copied-full-path = 已剪切完整路径，但未能放入剪贴板
 
 ## 粘贴。
 

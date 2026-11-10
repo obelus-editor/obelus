@@ -28,6 +28,7 @@ mod changing;
 mod choosing_a_keymap;
 mod colour;
 mod complete;
+mod copying_paths;
 mod counts;
 mod dialogs;
 mod editing;

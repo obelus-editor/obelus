@@ -1462,6 +1462,8 @@ fn copied_words(what: Copied) -> &'static str {
         Copied::Note => said::copied_note(),
         Copied::Answer => said::copied_answer(),
         Copied::Manifest => said::copied_manifest(),
+        Copied::Path => said::copied_path(),
+        Copied::FullPath => said::copied_full_path(),
     }
 }
 
@@ -1476,6 +1478,8 @@ fn not_copied_words(what: Copied) -> &'static str {
         Copied::Note => said::not_copied_note(),
         Copied::Answer => said::not_copied_answer(),
         Copied::Manifest => said::not_copied_manifest(),
+        Copied::Path => said::not_copied_path(),
+        Copied::FullPath => said::not_copied_full_path(),
     }
 }
 
@@ -1490,6 +1494,8 @@ fn cut_words(what: Copied) -> &'static str {
         Copied::Note => said::cut_note(),
         Copied::Answer => said::cut_answer(),
         Copied::Manifest => said::cut_manifest(),
+        Copied::Path => said::cut_path(),
+        Copied::FullPath => said::cut_full_path(),
     }
 }
 
@@ -1505,5 +1511,7 @@ fn cut_not_copied_words(what: Copied) -> &'static str {
         Copied::Note => said::cut_not_copied_note(),
         Copied::Answer => said::cut_not_copied_answer(),
         Copied::Manifest => said::cut_not_copied_manifest(),
+        Copied::Path => said::cut_not_copied_path(),
+        Copied::FullPath => said::cut_not_copied_full_path(),
     }
 }

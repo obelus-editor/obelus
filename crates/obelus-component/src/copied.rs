@@ -23,4 +23,8 @@ pub enum Copied {
     Answer,
     /// What a chat platform makes its app from (Slack's manifest).
     Manifest,
+    /// Where a file list's row is, against the project.
+    Path,
+    /// Where a file list's row is, from the root of the machine.
+    FullPath,
 }
