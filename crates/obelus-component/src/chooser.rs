@@ -269,6 +269,13 @@ impl Chooser {
         self.connects
     }
 
+    /// Offers that row, or takes it away -- and a reader standing on it
+    /// when it goes is on the opening row above it.
+    pub fn offers_connecting(&mut self, connects: bool) {
+        self.connects = connects;
+        self.at = self.at.min(self.count() - 1);
+    }
+
     /// Which row the reader is on: the projects from nought, then the
     /// opening row, then the connecting one.
     #[must_use]
@@ -286,10 +293,10 @@ impl Chooser {
     /// it, for a list `room` rows tall whose projects take `heights` --
     /// one each, and the heading over the first of a run of days.
     ///
-    /// Over the projects only: the row that opens another is held under
-    /// them rather than scrolled with them, so while the reader is on it
-    /// the window keeps the last of the projects -- which is the row the
-    /// arrow above it goes to.
+    /// Over the projects only: the rows that open another and connect are
+    /// held under them rather than scrolled with them, so while the reader
+    /// is on either the window keeps the last of the projects -- which is
+    /// the row the arrow above them goes to.
     pub fn settle(&mut self, heights: &[u16], room: u16) {
         self.window.set_count(heights.len());
         // Only where it moved, because this is once a frame: see
@@ -347,7 +354,7 @@ impl Chooser {
     }
 
     /// Whether the reader is looking at the rows, and on a project rather
-    /// than on the row that opens one.
+    /// than on one of the two rows under them.
     fn on_a_project(&self) -> bool {
         matches!(self.doing, Doing::Choosing) && self.at < self.rows().len()
     }

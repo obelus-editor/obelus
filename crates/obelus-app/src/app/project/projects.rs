@@ -453,10 +453,25 @@ impl crate::app::App {
     }
 
     /// Whether the page that asks offers the row that goes to another
-    /// machine: the question `Requires::ThisMachine` asks of
-    /// `connect-to-server`, which is what that row opens.
+    /// machine: whether `connect-to-server` is offered, which is what that
+    /// row opens -- the one judgement, asked rather than written again.
     fn connects_from_here(&self) -> bool {
-        !self.is_drawn_afar()
+        self.offers(Command::ServerConnect)
+    }
+
+    /// Asks again whether the page offers that row, where what decides it
+    /// has moved under a page already up.
+    ///
+    /// Which it does once: an Obelus serving a window is started, and so
+    /// asks which project, before it is told the window is on another
+    /// machine (`App::drawn_afar`). Kept from when the page was made, the
+    /// remote's own page offered the reader's machines and ended the
+    /// window when one was chosen.
+    pub(in crate::app) fn settle_what_the_page_offers(&mut self) {
+        let connects = self.connects_from_here();
+        if let Some(chooser) = &mut self.which_project.chooser {
+            chooser.offers_connecting(connects);
+        }
     }
 
     /// Offers the projects opened before, all but this one, to go to.

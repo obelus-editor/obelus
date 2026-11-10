@@ -13,10 +13,11 @@
 //! it is along the top under a rule, and the keys it answers to along the
 //! foot over another. A reader who has learned one of those pages has
 //! learned where to look on this one. The rows are the projects, newest
-//! first, with the row that opens one not in the list under them -- held
-//! there while the projects scroll, because a list of twenty that pushed
-//! the way to a twenty-first off the screen would be a page whose one
-//! sure answer was out of sight.
+//! first, with the row that opens one not in the list under them, and
+//! the row that goes to another machine under that -- held there while the
+//! projects scroll, because a list of twenty that pushed the way to a
+//! twenty-first off the screen would be a page whose one sure answer was
+//! out of sight.
 //!
 //! What went wrong on the way up is not drawn here. It is a list put up
 //! over this page when Obelus starts, the way it is put up over the welcome
@@ -167,13 +168,17 @@ fn laid(area: Rect, choosing: &crate::Choosing, hints: &[Hint]) -> Laid {
         width: page.width.saturating_sub(1),
         ..page
     };
+    // Never above the rule, on a page too short for both rows under it:
+    // the one that connects is the one that goes, off the foot.
     let opening = Rect {
         width: list.width,
-        ..row((below + shown + gap).min(page.bottom().saturating_sub(fixed)))
+        ..row((below + shown + gap)
+            .min(page.bottom().saturating_sub(fixed))
+            .max(below))
     };
     let connecting = Rect {
         width: list.width,
-        height: u16::from(choosing.connects),
+        height: u16::from(choosing.connects && opening.y.saturating_add(1) < page.bottom()),
         ..row(opening.y.saturating_add(1))
     };
     Laid {
@@ -316,7 +321,7 @@ impl Widget for ProjectsView<'_> {
             said,
             style.fg(self.theme.foreground),
         );
-        if choosing.connects {
+        if laid.connecting.height > 0 {
             let on = choosing.at == choosing.known.len() + 1;
             let style = self.row_style(cells, laid.connecting, on);
             write(

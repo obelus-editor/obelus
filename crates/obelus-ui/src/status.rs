@@ -190,8 +190,12 @@ impl Widget for StatusView<'_> {
         // question on the status row can.
         // Before anything about a file, because there is none and cannot
         // be one: until this is answered there is no project for a file
-        // to be in.
-        if let Some(choosing) = &self.choosing {
+        // to be in. Except a question put over the page -- where to
+        // connect, and the key -- which is nearer, and has the keys and the
+        // caret: drawn under the page's filter, it was typed blind.
+        if self.nearest != Some(Layer::Prompt)
+            && let Some(choosing) = &self.choosing
+        {
             self.render_choosing(choosing, area, cells, style);
             return;
         }

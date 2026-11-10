@@ -1551,15 +1551,26 @@ fn the_last_row_offers_the_machines() {
 /// `connect-to-server` is refused there, and the key that leaves is the
 /// way home. So the last row is the one that opens a project.
 ///
-/// Broken deliberately by answering `true` from
-/// `App::connects_from_here`: the row is drawn, and `ctrl+end` lands on it.
+/// In the order `ob --serve-one` has it: the page is up before the window
+/// is said to be on another machine, because starting is what asks which
+/// project -- and the reader is on the row when it goes.
+///
+/// Broken deliberately by taking `settle_what_the_page_offers` out of
+/// `App::drawn_afar`: the row the page was made with stays, and
+/// `ctrl+end` lands on it.
 #[test]
 fn a_window_on_another_machine_offers_no_machines() {
     let _turn = crate::turn();
     let mut app = App::new(Vec::new());
     app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
-    app.drawn_afar();
     app.ask_about_these_projects_for_test(vec![known("/tmp/obelus/alpha", Some(2_000))]);
+    support::press_control_key(&mut app, KeyCode::End);
+    app.drawn_afar();
+    assert_eq!(
+        app.choosing().expect("still asking").at,
+        1,
+        "the reader is left on a row that has gone"
+    );
     let dump = support::render(&mut app, 60, 20);
     assert!(
         !support::text_block(&dump).contains("Connect to remote"),
@@ -1617,4 +1628,82 @@ fn a_press_on_the_row_that_connects_stands_on_it() {
         app.picker().is_some(),
         "the second press did not open the machines"
     );
+}
+
+/// The whole way from the page to another machine: the new connection's
+/// row asks where, then for the key, and both questions are drawn on the
+/// status row as they are typed -- then this Obelus is going there.
+///
+/// The questions were answered and never drawn: the status row drew the
+/// page's filter whenever the page was up, so nothing had put a question
+/// over it before and the address was typed blind.
+///
+/// Broken deliberately by taking `self.nearest != Some(Layer::Prompt)` out
+/// of `StatusView::render`: the address is not on screen.
+#[test]
+fn connecting_from_the_page_asks_where_and_for_the_key_on_the_row() {
+    let _turn = crate::turn();
+    let mut app = asking();
+    support::press_control_key(&mut app, KeyCode::End);
+    press(&mut app, KeyCode::Enter);
+    // The new connection, which is the first row of the machines.
+    press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "nowhere.invalid:9000");
+    let dump = support::render(&mut app, 60, 20);
+    assert!(
+        support::text_block(&dump).contains("nowhere.invalid:9000"),
+        "the address is not drawn as it is typed:\n{dump}"
+    );
+
+    press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "00ff");
+    let dump = support::render(&mut app, 60, 20);
+    assert!(
+        support::text_block(&dump).contains("00ff"),
+        "the key is not drawn as it is typed:\n{dump}"
+    );
+
+    press(&mut app, KeyCode::Enter);
+    assert!(
+        matches!(
+            app.goes_to(),
+            Some(obelus_app::app::Going::To { at, key, .. })
+                if at == "nowhere.invalid:9000" && key == "00ff"
+        ),
+        "this Obelus is not going to the machine: {:?}",
+        app.goes_to()
+    );
+}
+
+/// On a page too short for both rows under the projects, neither is drawn
+/// over the rule under the title: the row that connects is the one that
+/// goes, off the foot.
+///
+/// Broken deliberately by taking `.max(below)` off the opening row in
+/// `projects::laid`: at the shortest heights it climbs onto the rule.
+#[test]
+fn a_short_page_keeps_its_rule() {
+    let _turn = crate::turn();
+    for height in 4..=12 {
+        let mut app = asking();
+        let dump = support::render(&mut app, 60, height);
+        let row_of = |words: &str| -> Option<u16> {
+            support::text_block(&dump)
+                .lines()
+                .find(|row| row.contains(words))
+                .and_then(|row| row.split_once('|'))
+                .and_then(|(at, _)| at.trim().parse().ok())
+        };
+        let Some(title) = row_of("Open a project") else {
+            continue;
+        };
+        for words in ["Open another", "Connect to remote"] {
+            if let Some(at) = row_of(words) {
+                assert!(
+                    at > title + 1,
+                    "{words} is drawn over the rule at {height} rows:\n{dump}"
+                );
+            }
+        }
+    }
 }

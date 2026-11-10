@@ -751,6 +751,7 @@ impl App {
         // stands in for no name is said when it is drawn, in whichever
         // language that is (`App::drawn_from`).
         self.afar = Some(servers::this_machine().unwrap_or_default());
+        self.settle_what_the_page_offers();
     }
 
     /// Says the terminal this Obelus draws on is at the other end of a
@@ -772,6 +773,7 @@ impl App {
     /// to its mark, on that machine alone.
     pub fn drawn_afar_as_for_test(&mut self, name: &str) {
         self.afar = Some(name.to_string());
+        self.settle_what_the_page_offers();
     }
 
     /// Whether this Obelus is drawn at the other end of a connection.
