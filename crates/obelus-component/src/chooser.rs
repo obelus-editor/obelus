@@ -23,6 +23,14 @@
 //! once, the way the conversations' list has it, and every start from a
 //! launcher cost a key to get past it.
 //!
+//! **And under it, the row that goes to another machine** -- where this
+//! Obelus is the reader's own, which is where `connect-to-server` is
+//! offered too. A window started from a desktop menu opens on this page,
+//! and the page has no palette over it and binds no command: without the
+//! row, the one way to an Obelus on another machine was to open a project
+//! here first, only to leave it. Not on an Obelus already drawn on another
+//! machine, where the key that leaves is the way home.
+//!
 //! **Two boxes, never two meanings.** The filter is about the rows
 //! underneath it -- projects this reader has chosen here -- and the path box
 //! is about the filesystem. They are two states of the one row at the foot
@@ -101,6 +109,9 @@ pub enum Outcome {
     Ignored,
     /// The reader has settled on this project.
     Chose(PathBuf),
+    /// The reader would go to another machine instead, and the machines
+    /// are the application's to offer.
+    Connect,
     /// The reader took this project off the list, and it is gone from the
     /// rows already. The file it was written in is the application's.
     Forgot(PathBuf),
@@ -150,22 +161,26 @@ pub struct Chooser {
     /// would be a screen with no way off it.
     filter: Field,
     /// Which row the reader is on: the projects the filter leaves from
-    /// nought, and the opening row after the last of them.
+    /// nought, then the opening row, then the row that connects.
     at: usize,
+    /// Whether the row that goes to another machine is offered.
+    connects: bool,
     window: Window,
     doing: Doing,
 }
 
 impl Chooser {
-    /// One asking about these projects.
+    /// One asking about these projects -- and offering the row that goes
+    /// to another machine, where `connects` says so.
     #[must_use]
-    pub fn new(known: Vec<Known>) -> Self {
+    pub fn new(known: Vec<Known>, connects: bool) -> Self {
         let mut window = Window::new();
-        window.set_count(known.len() + 1);
+        window.set_count(known.len() + 1 + usize::from(connects));
         Self {
             known,
             filter: Field::new(),
             at: 0,
+            connects,
             window,
             doing: Doing::Choosing,
         }
@@ -241,14 +256,28 @@ impl Chooser {
             .collect()
     }
 
-    /// How many rows there are, the opening one included.
+    /// How many rows there are, the opening one and the connecting one
+    /// included.
     #[must_use]
     pub fn count(&self) -> usize {
-        self.rows().len() + 1
+        self.rows().len() + 1 + usize::from(self.connects)
     }
 
-    /// Which row the reader is on: the projects from nought, and then the
-    /// opening row.
+    /// Whether the row that goes to another machine is offered.
+    #[must_use]
+    pub const fn connects(&self) -> bool {
+        self.connects
+    }
+
+    /// Offers that row, or takes it away -- and a reader standing on it
+    /// when it goes is on the opening row above it.
+    pub fn offers_connecting(&mut self, connects: bool) {
+        self.connects = connects;
+        self.at = self.at.min(self.count() - 1);
+    }
+
+    /// Which row the reader is on: the projects from nought, then the
+    /// opening row, then the connecting one.
     #[must_use]
     pub const fn at(&self) -> usize {
         self.at
@@ -264,10 +293,10 @@ impl Chooser {
     /// it, for a list `room` rows tall whose projects take `heights` --
     /// one each, and the heading over the first of a run of days.
     ///
-    /// Over the projects only: the row that opens another is held under
-    /// them rather than scrolled with them, so while the reader is on it
-    /// the window keeps the last of the projects -- which is the row the
-    /// arrow above it goes to.
+    /// Over the projects only: the rows that open another and connect are
+    /// held under them rather than scrolled with them, so while the reader
+    /// is on either the window keeps the last of the projects -- which is
+    /// the row the arrow above them goes to.
     pub fn settle(&mut self, heights: &[u16], room: u16) {
         self.window.set_count(heights.len());
         // Only where it moved, because this is once a frame: see
@@ -279,15 +308,15 @@ impl Chooser {
         self.window.settle_by_height(heights, room);
     }
 
-    /// Puts the reader on one of the rows: the projects from nought, and
-    /// the opening row after them.
+    /// Puts the reader on one of the rows: the projects from nought, then
+    /// the opening row and the connecting one.
     ///
     /// For a pointer, and only while the reader is looking at the rows: a
     /// path being named is the box's, and a press on a project above it is
     /// not an answer to it.
     pub fn select_row(&mut self, at: usize) {
         if matches!(self.doing, Doing::Choosing) {
-            self.at = at.min(self.rows().len());
+            self.at = at.min(self.count() - 1);
         }
     }
 
@@ -302,7 +331,12 @@ impl Chooser {
     /// Asked rather than compared against nought or a count wherever it
     /// matters: which index that row has moved once already.
     fn on_the_opening_row(&self) -> bool {
-        self.at >= self.rows().len()
+        self.at == self.rows().len()
+    }
+
+    /// Whether the reader is on the row that goes to another machine.
+    fn on_the_connecting_row(&self) -> bool {
+        self.connects && self.at == self.rows().len() + 1
     }
 
     /// Whether the key the foot calls delete, pressed now, would forget
@@ -320,9 +354,9 @@ impl Chooser {
     }
 
     /// Whether the reader is looking at the rows, and on a project rather
-    /// than on the row that opens one.
+    /// than on one of the two rows under them.
     fn on_a_project(&self) -> bool {
-        matches!(self.doing, Doing::Choosing) && !self.on_the_opening_row()
+        matches!(self.doing, Doing::Choosing) && self.at < self.rows().len()
     }
 
     /// Takes a key, and says what the application has to do about it.
@@ -349,6 +383,7 @@ impl Chooser {
         match key.code {
             // The one row that is always there, and the only way to a
             // project this reader has not opened before.
+            KeyCode::Enter if self.on_the_connecting_row() => Outcome::Connect,
             KeyCode::Enter if self.on_the_opening_row() => {
                 self.doing = Doing::Naming(Box::new(Naming {
                     // Empty, and deliberately not what the filter holds:
@@ -539,8 +574,14 @@ impl Chooser {
     /// The list on disk forgets it too, which is the application's to
     /// write: this crate draws and walks, and does not know the file.
     pub fn forget(&mut self, path: &Path) {
+        // Which of the two rows under the projects the reader is on, if
+        // either, so that a project going from above leaves them on it.
+        let under = self.at.checked_sub(self.rows().len());
         self.known.retain(|known| known.path != path);
-        self.at = self.at.min(self.known.len());
+        self.at = match under {
+            Some(under) => self.rows().len() + under,
+            None => self.at.min(self.known.len()),
+        };
     }
 
     /// Which part of the box the list is narrowing by.

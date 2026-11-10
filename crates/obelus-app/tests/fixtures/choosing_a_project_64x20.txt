@@ -8,7 +8,7 @@ screen 64x20  editor 64x18  status 64x1
  5|  indeed  /tmp/obelus/work/something/rather/deeply/nested       
  6|                                                                
  7|  Open another…                                                 
- 8|                                                                
+ 8|  Connect to remote…                                            
  9|                                                                
 10|                                                                
 11|                                                                

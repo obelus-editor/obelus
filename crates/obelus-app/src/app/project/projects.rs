@@ -446,7 +446,32 @@ impl crate::app::App {
                 last: project.last,
             })
             .collect();
-        self.which_project.chooser = Some(obelus_component::chooser::Chooser::new(known));
+        self.which_project.chooser = Some(obelus_component::chooser::Chooser::new(
+            known,
+            self.connects_from_here(),
+        ));
+    }
+
+    /// Whether the page that asks offers the row that goes to another
+    /// machine: whether `connect-to-server` is offered, which is what that
+    /// row opens -- the one judgement, asked rather than written again.
+    fn connects_from_here(&self) -> bool {
+        self.offers(Command::ServerConnect)
+    }
+
+    /// Asks again whether the page offers that row, where what decides it
+    /// has moved under a page already up.
+    ///
+    /// Which it does once: an Obelus serving a window is started, and so
+    /// asks which project, before it is told the window is on another
+    /// machine (`App::drawn_afar`). Kept from when the page was made, the
+    /// remote's own page offered the reader's machines and ended the
+    /// window when one was chosen.
+    pub(in crate::app) fn settle_what_the_page_offers(&mut self) {
+        let connects = self.connects_from_here();
+        if let Some(chooser) = &mut self.which_project.chooser {
+            chooser.offers_connecting(connects);
+        }
     }
 
     /// Offers the projects opened before, all but this one, to go to.
@@ -641,7 +666,10 @@ impl crate::app::App {
         &mut self,
         known: Vec<obelus_component::chooser::Known>,
     ) {
-        self.which_project.chooser = Some(obelus_component::chooser::Chooser::new(known));
+        self.which_project.chooser = Some(obelus_component::chooser::Chooser::new(
+            known,
+            self.connects_from_here(),
+        ));
     }
 
     /// A key, while the reader is being asked which project.
@@ -719,6 +747,13 @@ impl crate::app::App {
             }
             obelus_component::chooser::Outcome::Chose(path) => {
                 self.settle_on(&path);
+                return true;
+            }
+            // The list `connect-to-server` opens, over the page: escape
+            // gives up on it and the page is there again, and going to a
+            // machine lets go of this Obelus with nothing open to ask about.
+            obelus_component::chooser::Outcome::Connect => {
+                self.open_servers();
                 return true;
             }
             // Nothing said where it was not written. A list that would not
@@ -1163,6 +1198,7 @@ impl crate::app::App {
             spelled: chooser.typing().spelled(),
             naming: chooser.is_naming(),
             forgets: chooser.forgets(),
+            connects: chooser.connects(),
             there: self.which_project.named_is_there,
             project: self.which_project.named_is_a_project,
             offering: self.which_project.naming_list.is_some(),

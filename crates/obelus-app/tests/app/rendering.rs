@@ -3128,7 +3128,8 @@ fn a_long_list_of_projects_scrolls_and_the_opening_row_stays() {
     );
 }
 
-/// A page key moves by the rows the page has, which is six here.
+/// A page key moves by the rows the page has, which is five here: the
+/// opening row and the one that connects are held under them.
 ///
 /// Deliberate break: `chooser_rows` answering the ten it used to be
 /// hard-wired to, and the reader lands four rows past the page.
@@ -3141,7 +3142,7 @@ fn a_page_of_projects_is_what_the_page_holds() {
     press(&mut app, KeyCode::PageDown);
     assert_eq!(
         obelus_ui::Screen::choosing(&app).expect("asking").at,
-        6,
+        5,
         "a page is not the page"
     );
 }
@@ -3150,7 +3151,7 @@ fn a_page_of_projects_is_what_the_page_holds() {
 /// leave a page that escape cannot leave.
 ///
 /// Deliberate break: `hints` saying `Open` whichever row it is (the second
-/// assertion), and leaving the quit key off (the first).
+/// and third assertions), and leaving the quit key off (the first).
 #[test]
 fn the_foot_says_what_enter_does_here_and_how_to_leave() {
     let mut app = App::new(Vec::new());
@@ -3163,6 +3164,14 @@ fn the_foot_says_what_enter_does_here_and_how_to_leave() {
     );
 
     support::press_control_key(&mut app, KeyCode::End);
+    let dump = support::render(&mut app, 64, 14);
+    assert!(
+        support::text_block(&dump).contains("Choose a machine"),
+        "the foot does not say what enter does on the row that connects:
+{dump}"
+    );
+
+    press(&mut app, KeyCode::Up);
     let dump = support::render(&mut app, 64, 14);
     assert!(
         support::text_block(&dump).contains("Type a path"),
@@ -3384,8 +3393,10 @@ fn naming_a_path_offers_what_could_finish_it() {
         shown: "/tmp/obelus/alpha".to_string(),
         last: None,
     }]);
-    // The opening row, which is under the projects.
+    // The opening row, which is under the projects and over the row that
+    // connects.
     support::press_control_key(&mut app, crossterm::event::KeyCode::End);
+    support::press(&mut app, crossterm::event::KeyCode::Up);
     support::press(&mut app, crossterm::event::KeyCode::Enter);
     for character in format!("{}/", scratch.path().display()).chars() {
         support::press(&mut app, crossterm::event::KeyCode::Char(character));

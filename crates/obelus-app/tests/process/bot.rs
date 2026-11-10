@@ -3314,8 +3314,10 @@ fn the_chat_comes_back_once_a_closed_project_is_chosen_again() {
 
     dispatch::dispatch(&mut app, Command::ProjectClose);
     assert!(!app.has_a_project(), "the project was not closed");
-    // The row that opens a project not in the list, which is the last.
+    // The row that opens a project not in the list, which is the last
+    // but one: the row that connects is under it.
     support::press_control_key(&mut app, KeyCode::End);
+    support::press(&mut app, KeyCode::Up);
     support::press(&mut app, KeyCode::Enter);
     support::type_text(&mut app, &project.display().to_string());
     support::press(&mut app, KeyCode::Esc);

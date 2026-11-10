@@ -45,10 +45,12 @@ fn asking() -> App {
 
 /// Goes to the row that opens a project not in the list, and opens it.
 ///
-/// `ctrl+end`, because that row is the last: under the projects, which
-/// the reader starts on. Bare `end` is the filter's caret's.
+/// `ctrl+end` and up, because that row is the last but one: under the
+/// projects, which the reader starts on, and over the row that connects.
+/// Bare `end` is the filter's caret's.
 fn open_another(app: &mut App) {
     support::press_control_key(app, KeyCode::End);
+    press(app, KeyCode::Up);
     press(app, KeyCode::Enter);
 }
 
@@ -1497,4 +1499,211 @@ fn a_double_click_on_a_project_while_naming_a_path_does_nothing() {
     let choosing = app.choosing().expect("still asking");
     assert!(choosing.naming, "the press left the path box");
     assert_eq!(choosing.typed, before, "the press changed the box:\n{dump}");
+}
+
+/// The last row goes to another machine: enter on it opens the list
+/// `connect-to-server` opens, over the page, and escape gives the page
+/// back.
+///
+/// A window started from a desktop menu opens on this page, which binds
+/// no command and has no palette, so the row is the one way to another
+/// machine from it.
+///
+/// Broken deliberately by making the `Outcome::Connect` arm in
+/// `App::the_chooser_answered` do nothing but answer `true`: enter on the
+/// row leaves the page as it was, with no list over it.
+#[test]
+fn the_last_row_offers_the_machines() {
+    let _turn = crate::turn();
+    let mut app = asking();
+    support::press_control_key(&mut app, KeyCode::End);
+    let dump = support::render(&mut app, 60, 20);
+    assert!(
+        support::text_block(&dump).contains("Connect to remote"),
+        "the row is not drawn:
+{dump}"
+    );
+
+    press(&mut app, KeyCode::Enter);
+
+    let first = app
+        .picker()
+        .and_then(Picker::selected_item)
+        .map(|item| item.value.clone());
+    assert!(
+        matches!(
+            first,
+            Some(obelus_component::picker::PickerValue::NewServer)
+        ),
+        "enter did not open the machines: {first:?}"
+    );
+    assert!(
+        app.choosing().is_some(),
+        "the page went from under the list"
+    );
+
+    press(&mut app, KeyCode::Esc);
+    assert!(app.picker().is_none(), "escape did not give up on the list");
+    assert!(app.choosing().is_some(), "escape left the page");
+}
+
+/// An Obelus already drawn on another machine does not offer the row:
+/// `connect-to-server` is refused there, and the key that leaves is the
+/// way home. So the last row is the one that opens a project.
+///
+/// In the order `ob --serve-one` has it: the page is up before the window
+/// is said to be on another machine, because starting is what asks which
+/// project -- and the reader is on the row when it goes.
+///
+/// Broken deliberately by taking `settle_what_the_page_offers` out of
+/// `App::drawn_afar`: the row the page was made with stays, and
+/// `ctrl+end` lands on it.
+#[test]
+fn a_window_on_another_machine_offers_no_machines() {
+    let _turn = crate::turn();
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.ask_about_these_projects_for_test(vec![known("/tmp/obelus/alpha", Some(2_000))]);
+    support::press_control_key(&mut app, KeyCode::End);
+    app.drawn_afar();
+    assert_eq!(
+        app.choosing().expect("still asking").at,
+        1,
+        "the reader is left on a row that has gone"
+    );
+    let dump = support::render(&mut app, 60, 20);
+    assert!(
+        !support::text_block(&dump).contains("Connect to remote"),
+        "the row is drawn on another machine:
+{dump}"
+    );
+
+    support::press_control_key(&mut app, KeyCode::End);
+    press(&mut app, KeyCode::Enter);
+
+    assert!(
+        app.choosing().expect("still asking").naming,
+        "the last row is not the one that opens a project"
+    );
+}
+
+/// A press stands on the row that connects, and a second opens the
+/// machines -- the row the drawing put it on, from the same layout.
+///
+/// Broken deliberately by taking the `connecting` check out of
+/// `projects::row_at`: the press lands on no row and the reader stays on
+/// the first project.
+#[test]
+fn a_press_on_the_row_that_connects_stands_on_it() {
+    let _turn = crate::turn();
+    let mut app = asking();
+    let dump = support::render(&mut app, 60, 20);
+    let y: u16 = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains("Connect to remote"))
+        .and_then(|row| row.split_once('|'))
+        .and_then(|(at, _)| at.trim().parse().ok())
+        .unwrap_or_else(|| {
+            panic!(
+                "the row is not on screen:
+{dump}"
+            )
+        });
+    let press = |app: &mut App| {
+        app.handle(obelus_app::event::Event::Pointer {
+            kind: obelus_app::event::Pointer::Pressed,
+            x: 6,
+            y,
+        });
+    };
+
+    press(&mut app);
+    assert_eq!(
+        app.choosing().expect("still asking").at,
+        3,
+        "the press did not stand on the row"
+    );
+    press(&mut app);
+    assert!(
+        app.picker().is_some(),
+        "the second press did not open the machines"
+    );
+}
+
+/// The whole way from the page to another machine: the new connection's
+/// row asks where, then for the key, and both questions are drawn on the
+/// status row as they are typed -- then this Obelus is going there.
+///
+/// The questions were answered and never drawn: the status row drew the
+/// page's filter whenever the page was up, so nothing had put a question
+/// over it before and the address was typed blind.
+///
+/// Broken deliberately by taking `self.nearest != Some(Layer::Prompt)` out
+/// of `StatusView::render`: the address is not on screen.
+#[test]
+fn connecting_from_the_page_asks_where_and_for_the_key_on_the_row() {
+    let _turn = crate::turn();
+    let mut app = asking();
+    support::press_control_key(&mut app, KeyCode::End);
+    press(&mut app, KeyCode::Enter);
+    // The new connection, which is the first row of the machines.
+    press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "nowhere.invalid:9000");
+    let dump = support::render(&mut app, 60, 20);
+    assert!(
+        support::text_block(&dump).contains("nowhere.invalid:9000"),
+        "the address is not drawn as it is typed:\n{dump}"
+    );
+
+    press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "00ff");
+    let dump = support::render(&mut app, 60, 20);
+    assert!(
+        support::text_block(&dump).contains("00ff"),
+        "the key is not drawn as it is typed:\n{dump}"
+    );
+
+    press(&mut app, KeyCode::Enter);
+    assert!(
+        matches!(
+            app.goes_to(),
+            Some(obelus_app::app::Going::To { at, key, .. })
+                if at == "nowhere.invalid:9000" && key == "00ff"
+        ),
+        "this Obelus is not going to the machine: {:?}",
+        app.goes_to()
+    );
+}
+
+/// On a page too short for both rows under the projects, neither is drawn
+/// over the rule under the title: the row that connects is the one that
+/// goes, off the foot.
+///
+/// Broken deliberately by taking `.max(below)` off the opening row in
+/// `projects::laid`: at the shortest heights it climbs onto the rule.
+#[test]
+fn a_short_page_keeps_its_rule() {
+    let _turn = crate::turn();
+    for height in 4..=12 {
+        let mut app = asking();
+        let dump = support::render(&mut app, 60, height);
+        let row_of = |words: &str| -> Option<u16> {
+            support::text_block(&dump)
+                .lines()
+                .find(|row| row.contains(words))
+                .and_then(|row| row.split_once('|'))
+                .and_then(|(at, _)| at.trim().parse().ok())
+        };
+        let Some(title) = row_of("Open a project") else {
+            continue;
+        };
+        for words in ["Open another", "Connect to remote"] {
+            if let Some(at) = row_of(words) {
+                assert!(
+                    at > title + 1,
+                    "{words} is drawn over the rule at {height} rows:\n{dump}"
+                );
+            }
+        }
+    }
 }

@@ -1300,8 +1300,10 @@ fn choosing_a_closed_project_again_opens_what_was_open() {
 
     dispatch::dispatch(&mut app, Command::ProjectClose);
     assert!(app.reading_nothing());
-    // The row that opens a project not in the list, which is the last.
+    // The row that opens a project not in the list, which is the last
+    // but one: the row that connects is under it.
     press_control_key(&mut app, KeyCode::End);
+    press(&mut app, KeyCode::Up);
     press(&mut app, KeyCode::Enter);
     support::type_text(&mut app, &main.display().to_string());
     press(&mut app, KeyCode::Esc);

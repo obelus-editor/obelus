@@ -20,8 +20,8 @@ pub struct Choosing {
     /// the row under them that opens one that is not in the list: that row
     /// is the view's own and is always there.
     pub known: Vec<Opened>,
-    /// Which row the reader is on: the projects from nought, and the
-    /// opening row after the last of them.
+    /// Which row the reader is on: the projects from nought, then the
+    /// opening row, then the row that goes to another machine.
     pub at: usize,
     /// Which of the projects is on the first row, where the window over
     /// them is -- the one every list keeps, which moves only when the
@@ -45,6 +45,9 @@ pub struct Choosing {
     /// the chooser's own answer: the foot offers the key exactly where the
     /// key does it.
     pub forgets: bool,
+    /// Whether the row that goes to another machine is under the opening
+    /// row, which is the chooser's to say.
+    pub connects: bool,
     /// Whether what is in that box is there at all.
     ///
     /// What the ink on the row says, so that a reader sees enter will
