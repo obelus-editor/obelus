@@ -719,13 +719,13 @@ fn a_shell_at_its_prompt_goes_without_asking() {
 /// without asking -- busy is a moment, not something a shell becomes.
 ///
 /// Broken deliberately by answering `is_busy` from the program having
-/// ended alone: the stopped `sleep` leaves the shell asked about.
+/// ended alone: the finished `sleep` leaves the shell asked about.
 #[test]
 fn a_shell_back_at_its_prompt_goes_without_asking() {
-    let (mut app, events) = a_busy_shell();
-    // The interrupt, as the reader would stop it, with the line after it
-    // waiting for the prompt it comes back to.
-    press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL);
+    let (mut app, events) = a_shell();
+    support::busy_the_terminal_for(&mut app, &events, 2);
+    // Typed while it runs, and answered once the shell is back at its
+    // prompt.
     support::type_text(&mut app, "echo back-$((5 + 5))");
     press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
     pump(&mut app, &events, "the shell back at its prompt", |app| {

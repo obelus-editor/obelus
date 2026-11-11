@@ -273,13 +273,14 @@ fn going_from_a_shell_at_its_prompt_asks_nothing() {
     let (here, there) = (project(&scratch, "here"), project(&scratch, "there"));
     keep(&[(&here, now()), (&there, now())]);
     let mut app = on(&here);
-    let _events = support::drive(&mut app);
+    let events = support::drive(&mut app);
     app.shell_for_test(PathBuf::from(match cfg!(windows) {
         true => "cmd.exe",
         false => "/bin/sh",
     }));
     dispatch::dispatch(&mut app, Command::TerminalOpen);
     assert!(app.terminal().is_some(), "no terminal opened");
+    support::shell_at_its_prompt(&mut app, &events);
 
     dispatch::dispatch(&mut app, Command::ProjectList);
     press(&mut app, KeyCode::Enter);

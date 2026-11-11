@@ -10,7 +10,7 @@ use obelus_app::{app::App, event::Event};
 
 use crate::support;
 
-/// The reader's shell, open and being read.
+/// The reader's shell, open, being read and at its prompt.
 fn a_shell() -> (App, std::sync::mpsc::Receiver<Event>) {
     let mut app = App::new(Vec::new());
     let events = support::drive(&mut app);
@@ -21,6 +21,7 @@ fn a_shell() -> (App, std::sync::mpsc::Receiver<Event>) {
     }));
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TerminalOpen);
     assert!(app.terminal().is_some(), "no terminal opened");
+    support::shell_at_its_prompt(&mut app, &events);
     (app, events)
 }
 
