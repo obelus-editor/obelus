@@ -371,7 +371,9 @@ fn until_busy_is(terminal: &mut Terminal, heard: &mpsc::Receiver<Heard>, wanted:
 /// Broken deliberately by answering `anything_beneath` with "no" always:
 /// the shell running `ping` is never busy. And with "yes"
 /// always: the shell at its prompt is. And on a Unix by comparing the
-/// foreground with nothing, which is the same "yes".
+/// foreground with nothing, which is the same "yes". And on Windows by
+/// taking a child started after the shell for an orphan older than it:
+/// `ping` is never busy.
 #[test]
 fn a_shell_is_busy_only_while_it_runs_something() {
     let (mut terminal, heard) = interactive_shell(20);
