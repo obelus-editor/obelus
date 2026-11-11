@@ -282,7 +282,7 @@ impl App {
     /// Whether closing this terminal stops something the reader would miss:
     /// a program still running, but a shell only while it is running
     /// something itself (`Terminal::is_busy`).
-    fn would_stop_something(&self, terminal: &Terminal) -> bool {
+    pub(in crate::app) fn would_stop_something(&self, terminal: &Terminal) -> bool {
         match self.terminal.shells.contains(&terminal.id()) {
             true => terminal.is_busy(),
             false => terminal.ended().is_none(),

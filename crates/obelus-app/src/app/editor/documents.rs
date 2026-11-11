@@ -1146,10 +1146,13 @@ impl App {
         first: impl FnOnce(&mut Self),
     ) -> bool {
         let unwritten = self.file(id).is_some_and(Buffer::is_dirty);
+        // The same judgement the question itself makes: two answers to
+        // whether closing stops something left a shell at its prompt
+        // neither asked about nor closed.
         let running = self
             .document(id)
             .and_then(Document::terminal)
-            .is_some_and(|terminal| terminal.ended().is_none());
+            .is_some_and(|terminal| self.would_stop_something(terminal));
         if !unwritten && !running {
             return false;
         }
