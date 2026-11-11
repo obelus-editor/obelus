@@ -190,7 +190,11 @@ fn afar_drawn(
         let left = obelus_front::client::run(
             afar,
             &found.front,
-            &Arriving(told.clone()),
+            obelus_front::client::Drawn {
+                here: &Arriving(told.clone()),
+                // A terminal owns no window, and has no other to go to.
+                elsewhere: &(),
+            },
             &measured,
             found.events,
             found.nudge,

@@ -19,6 +19,12 @@
 //! pieces -- so a key pressed meanwhile goes between them, and the screen
 //! goes on being heard while they cross.
 //!
+//! **The other windows are this machine's.** A window there opens another
+//! and brings one forward the way a window here does, and the windows it
+//! means are drawn here: so what Obelus there asks for is done here
+//! ([`Elsewhere`]), and the permission a window comes forward on is asked
+//! for here and sent back for the knock there.
+//!
 //! **A connection that goes is knocked on again.** With the window's name,
 //! which takes up the Obelus that was there -- still running, with
 //! whatever it was doing -- and is told the whole screen again. Nothing
@@ -276,6 +282,67 @@ fn first_within(
     }
 }
 
+/// What a window drawing the Obelus at the other end does about the
+/// reader's other windows, which are on this machine and not that one.
+///
+/// A terminal does nothing about any of it: it owns no window, and the
+/// Obelus at the other end is never told it can (`Front`).
+pub trait Elsewhere: Sync {
+    /// Starts another window, drawing an Obelus at `at` opened on `path`
+    /// there.
+    ///
+    /// With no key: this window got in, so the key is kept beside the
+    /// machine (`obelus_app::app::servers`), and the new window reads it
+    /// from there rather than from anything a process it starts inherits.
+    fn open(&self, at: &str, path: &str);
+
+    /// Asks for the permission to bring another window forward, and gives
+    /// it where it is wanted.
+    fn bring(&self, permitting: Permitting);
+
+    /// Comes forward, for another window whose reader asked to be brought
+    /// here.
+    fn come_forward(&self, token: Option<String>);
+}
+
+impl Elsewhere for () {
+    fn open(&self, _at: &str, _path: &str) {}
+
+    fn bring(&self, permitting: Permitting) {
+        permitting.give(None);
+    }
+
+    fn come_forward(&self, _token: Option<String>) {}
+}
+
+/// The front end, as the connection hands it what arrives: where the
+/// screen is shown, and what it does about the reader's other windows.
+#[derive(Clone, Copy)]
+pub struct Drawn<'a> {
+    /// Where what arrives is shown.
+    pub here: &'a dyn Showing,
+    /// What is done about the other windows.
+    pub elsewhere: &'a dyn Elsewhere,
+}
+
+/// The question the Obelus at the other end asked for the permission to
+/// bring another window forward, waiting on what the compositor gives.
+///
+/// Answered up the connection, behind the keys -- the compositor answers
+/// on the window's loop, which has no connection of its own to say it on.
+#[derive(Clone, Debug)]
+pub struct Permitting {
+    number: u64,
+    to: Sender<Carry>,
+}
+
+impl Permitting {
+    /// Says it was given, with what the compositor gave for it.
+    pub fn give(self, token: Option<String>) {
+        let _ = self.to.send(Carry::Brought(self.number, token));
+    }
+}
+
 /// Knocks on the server, and says what it answered and the connection.
 fn knock(
     afar: &Afar,
@@ -369,7 +436,7 @@ pub enum Left {
 pub fn run(
     afar: &Afar,
     front: &Front,
-    here: &dyn Showing,
+    drawn: Drawn<'_>,
     measured: &Measured,
     done: &Receiver<Event>,
     nudge: &std::sync::mpsc::Sender<Event>,
@@ -397,7 +464,7 @@ pub fn run(
                 let left = connection(
                     afar,
                     front,
-                    here,
+                    drawn,
                     measured,
                     writing,
                     leaving,
@@ -543,6 +610,10 @@ enum Carry {
     Dropped(std::path::PathBuf),
     /// The picture on the clipboard, to the question of that number.
     Picture(u64),
+    /// The permission to bring another window forward, to the question of
+    /// that number. A few bytes, sent this way because what gives it is
+    /// the window's loop.
+    Brought(u64, Option<String>),
 }
 
 /// Reads and sends what is asked for, one after another, each a [`PIECE`]
@@ -594,6 +665,7 @@ fn carry(asked: &Receiver<Carry>, writing: &Mutex<Option<TcpStream>>) {
                     Vec::new(),
                 ),
             },
+            Carry::Brought(number, token) => (Up::Brought { number, token }, Vec::new()),
         };
         if !said_up(writing, &said) {
             continue;
@@ -630,7 +702,7 @@ fn said_up(writing: &Mutex<Option<TcpStream>>, up: &Up) -> bool {
 fn connection(
     afar: &Afar,
     front: &Front,
-    here: &dyn Showing,
+    drawn: Drawn<'_>,
     measured: &Measured,
     writing: &Mutex<Option<TcpStream>>,
     leaving: &AtomicBool,
@@ -702,7 +774,7 @@ fn connection(
         if let (Ok(mut writing), Ok(clone)) = (writing.lock(), stream.try_clone()) {
             *writing = Some(clone);
         }
-        let heard = hear(&mut stream, here, writing, to_carry);
+        let heard = hear(&mut stream, afar, drawn, writing, to_carry);
         if let Ok(mut writing) = writing.lock() {
             *writing = None;
         }
@@ -719,7 +791,8 @@ fn connection(
 /// that only went.
 fn hear(
     stream: &mut TcpStream,
-    here: &dyn Showing,
+    afar: &Afar,
+    Drawn { here, elsewhere }: Drawn<'_>,
     writing: &Mutex<Option<TcpStream>>,
     to_carry: &Sender<Carry>,
 ) -> Option<Left> {
@@ -810,6 +883,14 @@ fn hear(
                     tracing::warn!(%error, url, "opening a link for the server");
                 }
             }
+            // On the same machine as this window: the reader asked for
+            // another window, not another server.
+            Ok(Some(Down::Window(path))) => elsewhere.open(&afar.at, &path),
+            Ok(Some(Down::Bring(number))) => elsewhere.bring(Permitting {
+                number,
+                to: to_carry.clone(),
+            }),
+            Ok(Some(Down::ComeForward(token))) => elsewhere.come_forward(token),
             Ok(Some(Down::Finished)) => return Some(Left::Finished),
             Ok(Some(Down::Home)) => return Some(Left::Home),
             Ok(None) => return None,
@@ -841,6 +922,97 @@ mod tests {
         fn wake(&self) {
             self.woken.fetch_add(1, Ordering::Relaxed);
         }
+    }
+
+    /// A server for `hear`, which is asked nothing of it but where it is.
+    fn nowhere() -> Afar {
+        Afar {
+            at: "devbox".to_string(),
+            key: vec![0xab, 0xcd],
+            path: None,
+            build: "the test",
+            window: None,
+        }
+    }
+
+    /// What a window asked about its other windows, written down.
+    #[derive(Default)]
+    struct Went {
+        opened: Mutex<Vec<(String, String)>>,
+        came: Mutex<Vec<Option<String>>>,
+    }
+
+    impl Elsewhere for Went {
+        fn open(&self, at: &str, path: &str) {
+            self.opened
+                .lock()
+                .expect("the list")
+                .push((at.to_string(), path.to_string()));
+        }
+
+        fn bring(&self, permitting: Permitting) {
+            permitting.give(Some("a token".to_string()));
+        }
+
+        fn come_forward(&self, token: Option<String>) {
+            self.came.lock().expect("the list").push(token);
+        }
+    }
+
+    /// What the server asks about the reader's other windows is done here:
+    /// another window on the same machine, on the path it was asked for,
+    /// the permission to bring one forward sent back up under the number
+    /// it was asked under, and this one coming forward with what it was
+    /// given.
+    ///
+    /// Broken deliberately by opening the other window on what this one was
+    /// opened on (`afar.path` for the path in `hear`'s `Down::Window` arm):
+    /// the new window was not on the tree the reader chose.
+    #[test]
+    fn the_other_windows_are_this_machine_s() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("loopback");
+        let at = listener.local_addr().expect("an address");
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("the window");
+            for down in [
+                Down::Window("/srv/feature".to_string()),
+                Down::Bring(4),
+                Down::ComeForward(Some("theirs".to_string())),
+                Down::Finished,
+            ] {
+                obelus_wire::write(&mut stream, &down).expect("said");
+            }
+        });
+        let mut stream = TcpStream::connect(at).expect("connected");
+        let writing = Mutex::new(Some(stream.try_clone().expect("both halves")));
+        let went = Went::default();
+        let (to_carry, carrying) = std::sync::mpsc::channel();
+        assert_eq!(
+            hear(
+                &mut stream,
+                &nowhere(),
+                Drawn {
+                    here: &Kept::default(),
+                    elsewhere: &went,
+                },
+                &writing,
+                &to_carry
+            ),
+            Some(Left::Finished)
+        );
+        server.join().expect("the server");
+        assert_eq!(
+            went.opened.lock().expect("the list").clone(),
+            [("devbox".to_string(), "/srv/feature".to_string())]
+        );
+        assert!(matches!(
+            carrying.try_recv(),
+            Ok(Carry::Brought(4, Some(token))) if token == "a token"
+        ));
+        assert_eq!(
+            went.came.lock().expect("the list").clone(),
+            [Some("theirs".to_string())]
+        );
     }
 
     /// A port nothing listens on, found by listening on one and letting it
@@ -946,8 +1118,16 @@ mod tests {
             &Front::Window {
                 screen: [1, 1],
                 command_is_control: false,
+                can_bring: false,
+                seat: obelus_app::app::Seat {
+                    id: "seat".to_string(),
+                    machine: None,
+                },
             },
-            &Kept::default(),
+            Drawn {
+                here: &Kept::default(),
+                elsewhere: &(),
+            },
             &Measured::default(),
             &done,
             &nudge,
@@ -1103,7 +1283,16 @@ mod tests {
         let here = Counted::default();
         let (to_carry, _carrying) = std::sync::mpsc::channel();
         assert_eq!(
-            hear(&mut stream, &here, &writing, &to_carry),
+            hear(
+                &mut stream,
+                &nowhere(),
+                Drawn {
+                    here: &here,
+                    elsewhere: &(),
+                },
+                &writing,
+                &to_carry
+            ),
             Some(Left::Finished)
         );
         server.join().expect("the server");
@@ -1249,7 +1438,16 @@ mod tests {
         let here = Kept::default();
         let (to_carry, _carrying) = std::sync::mpsc::channel();
         assert_eq!(
-            hear(&mut stream, &here, &writing, &to_carry),
+            hear(
+                &mut stream,
+                &nowhere(),
+                Drawn {
+                    here: &here,
+                    elsewhere: &(),
+                },
+                &writing,
+                &to_carry
+            ),
             Some(Left::Finished)
         );
         server.join().expect("the server");
@@ -1304,7 +1502,16 @@ mod tests {
         let here = Kept::default();
         let (to_carry, _carrying) = std::sync::mpsc::channel();
         assert_eq!(
-            hear(&mut stream, &here, &writing, &to_carry),
+            hear(
+                &mut stream,
+                &nowhere(),
+                Drawn {
+                    here: &here,
+                    elsewhere: &(),
+                },
+                &writing,
+                &to_carry
+            ),
             Some(Left::Finished),
             "the end was not heard as one"
         );

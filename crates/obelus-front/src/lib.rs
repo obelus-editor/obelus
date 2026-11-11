@@ -1211,6 +1211,11 @@ mod tests {
                 front: link::Front::Window {
                     screen: [2560, 1440],
                     command_is_control: false,
+                    can_bring: true,
+                    seat: obelus_app::app::Seat {
+                        id: "seat".to_string(),
+                        machine: Some("laptop".to_string()),
+                    },
                 },
                 size: [120, 40, 1440, 960],
                 path: None,
@@ -1275,6 +1280,9 @@ mod tests {
             link::Down::Picture(2),
             link::Down::HoldsAPicture(3),
             link::Down::Open("u".to_string()),
+            link::Down::Window("/p".to_string()),
+            link::Down::Bring(4),
+            link::Down::ComeForward(Some("t".to_string())),
             link::Down::Finished,
             link::Down::Home,
         ] {
@@ -1310,6 +1318,10 @@ mod tests {
             link::Up::Piece {
                 carrying: 2,
                 bytes: vec![1, 2],
+            },
+            link::Up::Brought {
+                number: 4,
+                token: Some("t".to_string()),
             },
         ] {
             bytes.extend(obelus_wire::framed(&up).expect("framed"));

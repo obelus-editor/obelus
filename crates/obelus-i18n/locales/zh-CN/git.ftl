@@ -28,6 +28,9 @@ no-worktrees = 没有工作树
 filter-worktrees = 筛选工作树
 # git 记录着、但目录已不存在的工作树。
 missing = 已丢失
+# 工作树上开在另一台机器上的窗口，在这里唤不到前台。
+on-machine = 在 { $machine } 上
+on-another-machine = 在另一台机器上
 
 ## 拉取请求和议题。
 

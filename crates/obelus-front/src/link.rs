@@ -68,6 +68,12 @@ pub enum Front {
         /// about the reader's machine and not this one -- see
         /// `obelus_keymap::draw_control_as_command`.
         command_is_control: bool,
+        /// Whether it can bring another window forward -- see
+        /// `obelus_app::app::Windows::can_bring`.
+        can_bring: bool,
+        /// The machine it is drawn on, which is the one its other windows
+        /// are drawn on too.
+        seat: obelus_app::app::Seat,
     },
     /// A terminal: `ob`.
     Terminal {
@@ -177,6 +183,16 @@ pub enum Down {
     HoldsAPicture(u64),
     /// A link, to open where the reader is.
     Open(String),
+    /// Another window, at the reader's machine, drawing an Obelus here on
+    /// this path -- as it is named on this machine.
+    Window(String),
+    /// Ask for the permission to bring another window forward, under this
+    /// number: the window the reader is in is the one that may, and only
+    /// against the key they just pressed.
+    Bring(u64),
+    /// Come forward, for another window whose reader asked to be brought
+    /// here, with what that window was given to come forward with.
+    ComeForward(Option<String>),
     /// Obelus has ended: the reader left, and the window goes with it.
     Finished,
     /// Obelus has ended because the reader asked to come back to their own
@@ -228,6 +244,15 @@ pub enum Up {
         number: u64,
         /// Whether.
         picture: bool,
+    },
+    /// The permission to bring another window forward, to the question of
+    /// that number: what the compositor gave for it, or nothing where it
+    /// gives nothing -- and it was given all the same.
+    Brought {
+        /// The number.
+        number: u64,
+        /// What the other window comes forward with.
+        token: Option<String>,
     },
 }
 
@@ -473,6 +498,9 @@ mod tests {
             Down::Copy("words".to_string()),
             Down::Paste(3),
             Down::Open("https://example.com".to_string()),
+            Down::Window("~/work/obelus".to_string()),
+            Down::Bring(4),
+            Down::ComeForward(Some("token".to_string())),
             Down::Finished,
         ] {
             let frame = obelus_wire::framed(&down).expect("framed");

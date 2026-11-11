@@ -22,6 +22,11 @@
 //!
 //! Each of those waits, so a request goes out and is answered later on the
 //! window's loop: the application is never kept waiting for a compositor.
+//!
+//! **A window drawing an Obelus on another machine asks the same of this
+//! one** ([`Afar`]): another window is an `obg` started here, connected
+//! there, and the permission to bring one forward is asked for here and
+//! sent back for the knock, which is made there.
 
 #[cfg(target_os = "macos")]
 pub(crate) mod again;
@@ -77,6 +82,43 @@ impl obelus_app::app::Windows for Elsewhere {
     fn can_bring(&self) -> bool {
         self.can_bring
     }
+
+    fn seat(&self) -> obelus_app::app::Seat {
+        obelus_app::app::Seat::here()
+    }
+}
+
+/// What the Obelus at the other end of a connection is told it can ask of
+/// the window drawing it: the same, carried out here.
+#[derive(Debug)]
+pub(crate) struct Afar {
+    proxy: EventLoopProxy<Waking>,
+}
+
+impl Afar {
+    /// Answers for the window behind `proxy`.
+    pub(crate) const fn new(proxy: EventLoopProxy<Waking>) -> Self {
+        Self { proxy }
+    }
+}
+
+impl obelus_front::client::Elsewhere for Afar {
+    fn open(&self, at: &str, path: &str) {
+        let _ = self.proxy.send_event(Waking::Going(Going::Connect {
+            at: at.to_string(),
+            path: path.to_string(),
+        }));
+    }
+
+    fn bring(&self, permitting: obelus_front::client::Permitting) {
+        let _ = self
+            .proxy
+            .send_event(Waking::Going(Going::Permit(permitting)));
+    }
+
+    fn come_forward(&self, token: Option<String>) {
+        let _ = self.proxy.send_event(Waking::ComeForward(token));
+    }
 }
 
 /// Somewhere the reader asked to go, waiting on the permission to.
@@ -86,6 +128,16 @@ pub(crate) enum Going {
     Open(PathBuf),
     /// The Obelus behind this door, already open.
     Bring(Door),
+    /// A new window drawing an Obelus at `at`, opened on `path` there.
+    Connect {
+        /// The machine.
+        at: String,
+        /// What to open there, as it is named there.
+        path: String,
+    },
+    /// The permission for the Obelus at the other end to bring another
+    /// window forward: it knocks, there.
+    Permit(obelus_front::client::Permitting),
 }
 
 /// What this window has that the others are brought forward with.
@@ -156,8 +208,8 @@ impl Here {
     #[cfg(target_os = "linux")]
     pub(crate) const fn wants_a_token(&self, going: &Going) -> bool {
         match going {
-            Going::Open(_) => self.wayland.is_some() || self.x11,
-            Going::Bring(_) => self.wayland.is_some(),
+            Going::Open(_) | Going::Connect { .. } => self.wayland.is_some() || self.x11,
+            Going::Bring(_) | Going::Permit(_) => self.wayland.is_some(),
         }
     }
 
@@ -262,6 +314,11 @@ pub(crate) fn go(going: Going, token: Option<String>) {
             let_it_come_forward();
             obelus_app::app::knock(&door, token.as_deref());
         }
+        Going::Connect { at, path } => connect(&at, &path, token.as_deref()),
+        Going::Permit(permitting) => {
+            let_it_come_forward();
+            permitting.give(token);
+        }
     }
 }
 
@@ -269,6 +326,37 @@ pub(crate) fn go(going: Going, token: Option<String>) {
 ///
 /// Or on none, which is a start the way the desktop starts one: in the home
 /// directory, asking which project -- see `again`.
+fn open(tree: Option<&Path>, token: Option<&str>) {
+    start(token, |command| match tree {
+        Some(tree) => {
+            command.arg(tree).current_dir(tree);
+        }
+        None => {
+            if let Some(home) = std::env::home_dir() {
+                command.current_dir(home);
+            }
+        }
+    });
+}
+
+/// Starts another window drawing the Obelus at `at`, opened on `path` --
+/// which is a path on that machine, and nowhere to start in on this one.
+///
+/// With no key: the new window reads the one kept for the machine, which
+/// this window kept when it got in -- and a key handed down in the
+/// environment would go on down to everything the new window starts. The
+/// path after `--`, because it is the other machine's to say, and one that
+/// began with a dash would be read as an option.
+fn connect(at: &str, path: &str, token: Option<&str>) {
+    start(token, |command| {
+        command.arg("--connect").arg(at).arg("--").arg(path);
+        if let Some(home) = std::env::home_dir() {
+            command.current_dir(home);
+        }
+    });
+}
+
+/// Starts this program again, told what it is to be by `told`.
 ///
 /// The same binary as this one, which is what "a window" means here: `obg`
 /// starts `obg`. With the token in both of the variables a toolkit reads it
@@ -278,7 +366,7 @@ pub(crate) fn go(going: Going, token: Option<String>) {
 /// On the runtime, whose process handling reaps a child that is let go of:
 /// the new window is the reader's from here, and nothing in this one waits
 /// for it to close.
-fn open(tree: Option<&Path>, token: Option<&str>) {
+fn start(token: Option<&str>, told: impl FnOnce(&mut tokio::process::Command)) {
     let program = match std::env::current_exe() {
         Ok(program) => program,
         Err(error) => {
@@ -288,16 +376,7 @@ fn open(tree: Option<&Path>, token: Option<&str>) {
     };
     let _inside = obelus_runtime::handle().enter();
     let mut command = tokio::process::Command::new(&program);
-    match tree {
-        Some(tree) => {
-            command.arg(tree).current_dir(tree);
-        }
-        None => {
-            if let Some(home) = std::env::home_dir() {
-                command.current_dir(home);
-            }
-        }
-    }
+    told(&mut command);
     command
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
@@ -321,8 +400,7 @@ fn open(tree: Option<&Path>, token: Option<&str>) {
     command.process_group(0);
     match command.spawn() {
         Ok(_) => tracing::info!(
-            // Left out where there is none, as the desktop starts one.
-            tree = tree.map(|tree| tracing::field::display(tree.display())),
+            arguments = ?command.as_std().get_args().collect::<Vec<_>>(),
             "started another window"
         ),
         Err(error) => {
