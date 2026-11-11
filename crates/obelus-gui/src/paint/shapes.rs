@@ -56,6 +56,46 @@ fn tab_shadow([left, top, width, tall]: [f32; 4], corner: f32) -> Quad {
     }
 }
 
+/// The tab being read, in the page as it is under the bar: the ground, the
+/// piece of the picture there and the veil over them, the way `ground_back`
+/// puts the page back -- each in the tab's shape, whose curves at the foot
+/// bend out into the bar.
+///
+/// Not the veil alone, though that is what the page is laid as: under the
+/// tab is not the bare picture but the picture, the window's own veil and
+/// the bar's shade, and the veil over those lets the picture through twice
+/// and darkened -- over a light picture the tab was a shade darker than
+/// the page it is a piece of.
+///
+/// A picture that stops part of the way across the tab, contained or
+/// centred, has its piece's shape worked out from the piece rather than
+/// the plate.
+fn tab_plate(
+    rect: [f32; 4],
+    corner: f32,
+    white: [f32; 4],
+    ground: [f32; 4],
+    picture: Option<(crate::wallpaper::Laid, [f32; 4])>,
+) -> Vec<Quad> {
+    let shaped = |rect: [f32; 4], uv: [f32; 4], flags: u32, colour: [f32; 4]| Quad {
+        rect,
+        uv,
+        colour,
+        flags: flags | HELD_PLATE | (JOINS_THE_PAGE << HELD_TURNS),
+        radius: corner,
+        layer: 0,
+        lower: 0.0,
+    };
+    let mut quads = vec![shaped(rect, white, 0, ground)];
+    if let Some((picture, veil)) = picture {
+        if let Some(piece) = picture.piece(rect) {
+            quads.push(shaped(piece.rect, piece.uv, WALLPAPER, [1.0; 4]));
+        }
+        quads.push(shaped(rect, white, 0, veil));
+    }
+    quads
+}
+
 impl Painter {
     /// The tabs along the top, on any bar the page runs up under -- see
     /// `title::tabs` -- as part of the page: first, under everything, so
@@ -233,12 +273,6 @@ impl Painter {
         // here in the middle of the tab rather than of the bar.
         let baseline = (top + tall / 2.0 + room.words * 0.39).round();
         let corner = room.corner();
-        // What the page looks like where nothing is drawn on it: its colour,
-        // or its colour laid over the picture under it.
-        let page = match self.laid {
-            Some(_) => self.veil(),
-            None => self.ground_colour(),
-        };
         // The tab carried is drawn after all the rest, shape and name, so
         // that it is over them as it passes: drawn with them, the names
         // it passed over were written across it.
@@ -296,17 +330,15 @@ impl Painter {
             painter
                 .quads
                 .push(tab_shadow([left, top, laid.width, tall], corner));
-            painter.quads.push(Quad {
-                // A corner's width past the tab on either side, which is
-                // where the curves that bend outwards are drawn.
-                rect: [left - corner, top, laid.width + 2.0 * corner, tall],
-                uv: painter.atlas.white,
-                colour: page,
-                flags: HELD_PLATE | (JOINS_THE_PAGE << HELD_TURNS),
-                radius: corner,
-                layer: 0,
-                lower: 0.0,
-            });
+            // A corner's width past the tab on either side, which is where
+            // the curves that bend outwards are drawn.
+            let rect = [left - corner, top, laid.width + 2.0 * corner, tall];
+            let picture = painter.laid.map(|picture| (picture, painter.veil()));
+            let ground = painter.ground_colour();
+            let white = painter.atlas.white;
+            painter
+                .quads
+                .extend(tab_plate(rect, corner, white, ground, picture));
         };
         let name = |painter: &mut Self, fonts: &mut Fonts, tab: &crate::title::Shown| {
             let left = tab.laid.left - margin[0];
@@ -1360,6 +1392,53 @@ mod tests {
             quad.flags,
             SHADOW | HELD_PLATE,
             "cast from the rectangle rather than the tab's shape"
+        );
+    }
+
+    /// Over a picture, the tab being read is the ground, the piece of the
+    /// picture under it and the veil, each in the tab's shape -- the page
+    /// as it is below the bar, which is what the tab is a piece of. Without
+    /// one, the ground and nothing over it.
+    ///
+    /// Deliberate break: the plate in the veil alone, as it was -- laid
+    /// over the bar's shade and the window's own veil, so over a light
+    /// picture the tab stood a shade darker than the page under it -- and
+    /// it fails the first assertion. Leaving the plate's flag off the
+    /// picture's piece fails the shape.
+    #[test]
+    fn the_tab_being_read_is_the_page_under_the_bar() {
+        let (rect, corner) = ([92.0, 8.0, 176.0, 30.0], 8.0);
+        let (white, ground, veil) = ([0.0; 4], [0.1, 0.1, 0.1, 1.0], [0.1, 0.1, 0.1, 0.93]);
+        let picture = crate::wallpaper::Laid {
+            rect: [0.0, -40.0, 1000.0, 800.0],
+            uv: [0.0, 0.0, 1.0, 1.0],
+        };
+        let quads = tab_plate(rect, corner, white, ground, Some((picture, veil)));
+        let colours: Vec<_> = quads.iter().map(|quad| quad.colour).collect();
+        assert_eq!(
+            colours,
+            vec![ground, [1.0; 4], veil],
+            "ground, picture, veil"
+        );
+        let shape = HELD_PLATE | (JOINS_THE_PAGE << HELD_TURNS);
+        assert!(
+            quads.iter().all(|quad| quad.flags & shape == shape),
+            "every layer in the tab's shape: {:?}",
+            quads.iter().map(|quad| quad.flags).collect::<Vec<_>>()
+        );
+        assert_eq!(quads[1].flags & WALLPAPER, WALLPAPER, "the picture");
+        assert_eq!(quads[1].rect, rect, "the whole tab's piece of it");
+        assert_eq!(
+            quads[1].uv,
+            [0.092, 0.06, 0.268, 0.0975],
+            "where the tab is in the picture"
+        );
+
+        let plain = tab_plate(rect, corner, white, ground, None);
+        assert_eq!(
+            plain.iter().map(|quad| quad.colour).collect::<Vec<_>>(),
+            vec![ground],
+            "with no picture, the page's own colour"
         );
     }
 }

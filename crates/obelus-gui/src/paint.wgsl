@@ -65,7 +65,8 @@ struct Quad {
     // what is behind a pane, blurred one way. 2048: a letter of the
     // welcome screen's mark, which the light runs across. 4096: a run the
     // reader has hold of, or a tab, with corners that turn three ways --
-    // and beside 8388608, a tab's shadow. 2097152: a
+    // and beside 8388608, a tab's shadow, and beside 1073741824, the
+    // picture in a tab's shape. 2097152: a
     // triangle filling the quad, which is the arrow on the seam a
     // deletion left. 4194304: the mark on one of the bar's buttons.
     // 8388608: the soft edge outside a pane or a box.
@@ -365,6 +366,13 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
     // rounded shape -- the hollow of a switch that is not set.
     if ((in.flags & 1073741824u) != 0u) {
         let texel = textureSample(wallpaper, wallpaper_sampler, in.uv);
+        // And in a tab's shape, where it is the page put back under the
+        // tab being read -- see `held` below.
+        if ((in.flags & 4096u) != 0u) {
+            let room = in.half_size - vec2<f32>(in.radius, 0.0);
+            let distance = held(in.middle, room, in.radius, (in.flags >> 13u) & 255u);
+            return vec4<f32>(texel.rgb, texel.a * clamp(0.5 - distance, 0.0, 1.0));
+        }
         if ((in.flags & 4u) == 0u) {
             return texel;
         }
