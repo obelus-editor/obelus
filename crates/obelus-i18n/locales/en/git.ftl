@@ -32,6 +32,10 @@ no-worktrees = No worktrees
 filter-worktrees = Filter worktrees
 # A worktree git knows of whose directory is not there.
 missing = Missing
+# Beside a window on a worktree that is drawn at another machine, and so
+# cannot be brought forward here.
+on-machine = On { $machine }
+on-another-machine = On another machine
 
 ## Pull requests and issues.
 

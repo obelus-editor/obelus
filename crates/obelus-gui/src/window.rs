@@ -1247,6 +1247,8 @@ impl ApplicationHandler<Waking> for Showing {
         let front = obelus_front::link::Front::Window {
             screen,
             command_is_control: crate::keys::COMMAND_IS_CONTROL,
+            can_bring,
+            seat: obelus_app::app::Seat::here(),
         };
         let (proxy, outcome) = (self.proxy.clone(), Arc::clone(&self.outcome));
         let measured = Arc::clone(&self.measured);
@@ -2613,7 +2615,10 @@ fn drawing(drawing: Drawing<'_>) -> Result<()> {
                 let left = obelus_front::client::run(
                     &afar,
                     front,
-                    &**here,
+                    obelus_front::client::Drawn {
+                        here: &**here,
+                        elsewhere: &crate::elsewhere::Afar::new(proxy.clone()),
+                    },
                     measured,
                     done,
                     doing,

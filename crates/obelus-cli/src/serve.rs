@@ -508,6 +508,9 @@ enum Answer {
     Holds(bool),
     /// The picture on the clipboard is longer than anything waits for.
     TooLarge,
+    /// The permission to bring another window forward, with what the
+    /// compositor gave for it.
+    Brought(Option<String>),
 }
 
 /// What is done with an answer once it comes -- or with nothing, where the
@@ -667,6 +670,63 @@ impl app::desk::Desk for Afar {
     }
 }
 
+/// The reader's other windows, which are drawn at their machine: what a
+/// window there asks of a window here is done there, and a knock for one
+/// of them made here with the permission it sent.
+#[derive(Debug)]
+struct Elsewhere {
+    afar: Arc<Afar>,
+    /// Whether the window can bring another forward at all, as it said.
+    can_bring: bool,
+    /// The reader's machine, as it said.
+    seat: app::Seat,
+}
+
+impl app::Windows for Elsewhere {
+    fn open(&self, tree: &std::path::Path) {
+        if self
+            .afar
+            .out
+            .say(Down::Window(tree.display().to_string()))
+            .is_ok()
+        {
+            self.afar.out.flush();
+        }
+    }
+
+    // The permission is asked for there and the knock is made here: the
+    // door is on this machine's loopback, where the window that is knocked
+    // for is listening. Asked for and not waited on -- the compositor may
+    // take a moment, and the loop is not kept for it.
+    fn bring(&self, door: &app::Door) {
+        let door = door.clone();
+        let asked = self.afar.asked(
+            Down::Bring,
+            Box::new(move |answer| match answer {
+                Some(Answer::Brought(token)) => app::knock(&door, token.as_deref()),
+                _ => tracing::info!("the reader's machine gave nothing to bring a window with"),
+            }),
+        );
+        if asked.is_some() {
+            self.afar.out.flush();
+        }
+    }
+
+    fn come_forward(&self, token: Option<String>) {
+        if self.afar.out.say(Down::ComeForward(token)).is_ok() {
+            self.afar.out.flush();
+        }
+    }
+
+    fn can_bring(&self) -> bool {
+        self.can_bring
+    }
+
+    fn seat(&self) -> app::Seat {
+        self.seat.clone()
+    }
+}
+
 /// What is arriving.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Carrying {
@@ -748,6 +808,18 @@ pub(crate) fn one() -> Result<ExitCode> {
         events: sender.clone(),
     });
     app.desked_by(Arc::clone(&afar) as Arc<dyn app::desk::Desk>);
+    // Before `start`, which is where a window says which tree it is on --
+    // and a window's other windows are the reader's machine's.
+    if let Front::Window {
+        can_bring, seat, ..
+    } = front
+    {
+        app.windowed_by(Arc::new(Elsewhere {
+            afar: Arc::clone(&afar),
+            can_bring,
+            seat,
+        }));
+    }
     app.drawn_afar();
 
     let mut heard = Heard {
@@ -858,6 +930,10 @@ impl Heard {
             }
             Up::Holds { number, picture } => {
                 self.afar.answered(number, Answer::Holds(picture));
+                Ok(None)
+            }
+            Up::Brought { number, token } => {
+                self.afar.answered(number, Answer::Brought(token));
                 Ok(None)
             }
             Up::Pictured {
@@ -1643,6 +1719,101 @@ mod tests {
                 .any(|why| why == "Not all of log.txt came across, so it was not kept"),
             "the file was never said to have gone: {said:?}"
         );
+    }
+
+    /// A window there asks the reader's machine for its other windows:
+    /// another one goes down as the path to open, and one brought forward
+    /// is the permission asked for there and the knock made here once it
+    /// is given, with what was given.
+    ///
+    /// Broken deliberately twice. By knocking without waiting for the
+    /// permission (`app::knock` called in `Elsewhere::bring` itself, with no
+    /// token): the knock came before anything was given. And by leaving the
+    /// answer unheard (the `Up::Brought` arm of `Heard::answered` doing
+    /// nothing): nobody was knocked for.
+    #[test]
+    fn the_other_windows_are_the_reader_s_machine_s() {
+        use std::io::Read as _;
+
+        use obelus_app::app::Windows as _;
+
+        let written = Written::default();
+        let out = Arc::new(Out::new());
+        Out::write_to(&out, Box::new(written.clone()));
+        let (events, _heard) = std::sync::mpsc::channel();
+        let afar = Arc::new(Afar {
+            out: Arc::clone(&out),
+            asked: AtomicU64::new(0),
+            waiting: Mutex::new(HashMap::new()),
+            events: events.clone(),
+        });
+        let elsewhere = Elsewhere {
+            afar: Arc::clone(&afar),
+            can_bring: true,
+            seat: app::Seat {
+                id: "laptop".to_string(),
+                machine: None,
+            },
+        };
+        let tree = std::path::Path::new("/srv/feature");
+        elsewhere.open(tree);
+        let listening = std::net::TcpListener::bind("127.0.0.1:0").expect("a door");
+        listening.set_nonblocking(true).expect("not waited on");
+        let door = app::Door {
+            address: listening.local_addr().expect("where"),
+            key: "the key".to_string(),
+        };
+        elsewhere.bring(&door);
+        out.drained(Duration::from_secs(10));
+
+        let messages = written.messages();
+        assert!(
+            messages.contains(&Down::Window(tree.display().to_string())),
+            "no window was asked for: {messages:?}"
+        );
+        let number = messages
+            .iter()
+            .find_map(|down| match down {
+                Down::Bring(number) => Some(*number),
+                _ => None,
+            })
+            .expect("the permission was not asked for");
+        // Long enough for a knock that did not wait to have arrived.
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(
+            listening.accept().is_err(),
+            "knocked before the permission was given"
+        );
+
+        let mut hearing = Heard {
+            events,
+            size: Arc::new(Measured::default()),
+            out: Arc::clone(&out),
+            afar: Arc::clone(&afar),
+            arriving: Arriving::default(),
+        };
+        hearing
+            .heard(ToChild::Up(Up::Brought {
+                number,
+                token: Some("a token".to_string()),
+            }))
+            .expect("heard");
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        let mut knocked = loop {
+            match listening.accept() {
+                Ok((knocked, _)) => break knocked,
+                Err(_) => {
+                    assert!(std::time::Instant::now() < deadline, "nobody knocked");
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+            }
+        };
+        knocked.set_nonblocking(false).expect("waited on");
+        let mut said = String::new();
+        knocked
+            .read_to_string(&mut said)
+            .expect("what the knock said");
+        assert_eq!(said, "the key a token\n");
     }
 
     /// A question asked while a window goes is asked of no window: it is

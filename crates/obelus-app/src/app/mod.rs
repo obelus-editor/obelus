@@ -109,7 +109,7 @@ use ratatui::{
     style::Color,
 };
 use semantics::{Asked, Question, named as server_named};
-pub use worktrees::{Door, Windows, knock};
+pub use worktrees::{Door, Seat, Windows, knock};
 
 use crate::{
     event::{Event, Ticker},

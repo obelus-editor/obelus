@@ -16,7 +16,7 @@ use std::{
 
 use crossterm::event::KeyCode;
 use obelus_app::{
-    app::{App, Door, Windows, dispatch},
+    app::{App, Door, Seat, Windows, dispatch},
     event::Event,
 };
 use obelus_command::Command;
@@ -31,6 +31,8 @@ struct Asked {
     brought: Mutex<Vec<Door>>,
     came: Mutex<Vec<Option<String>>>,
     cannot_bring: bool,
+    /// The machine it is drawn on, where it is not this one.
+    seat: Option<Seat>,
 }
 
 impl Windows for Asked {
@@ -51,6 +53,10 @@ impl Windows for Asked {
 
     fn can_bring(&self) -> bool {
         !self.cannot_bring
+    }
+
+    fn seat(&self) -> Seat {
+        self.seat.clone().unwrap_or_else(Seat::here)
     }
 }
 
@@ -826,6 +832,75 @@ fn a_window_on_a_tree_is_brought_forward() {
     choose(&mut third, "feature");
     assert_eq!(unable.opened.lock().expect("the list").len(), 1);
     assert!(unable.brought.lock().expect("the list").is_empty());
+}
+
+/// A window drawn at another machine -- on a server, the server's own or
+/// another reader's that connected to it -- is listed, says which machine,
+/// and cannot be chosen: coming forward there is nothing on this screen.
+/// One whose machine gave no name says only that it is another.
+///
+/// Broken deliberately twice: the machine left out of the claim (the
+/// lines after the reading not written in `present`), which read as this
+/// machine's -- no word, and a row to choose that brought forward
+/// somebody else's window; and the row left to be chosen whatever machine
+/// it is on (`elsewhere` not asked in its `enabled`).
+#[test]
+fn a_window_at_another_machine_says_where_and_cannot_be_chosen() {
+    let scratch = Scratch::new("worktrees-elsewhere");
+    let (main, feature, spare) = repository(&scratch);
+    let here = Arc::new(Asked::default());
+    let laptop = Arc::new(Asked {
+        seat: Some(Seat {
+            id: "laptop".to_string(),
+            machine: Some("laptop".to_string()),
+        }),
+        ..Asked::default()
+    });
+    let nameless = Arc::new(Asked {
+        seat: Some(Seat {
+            id: "nameless".to_string(),
+            machine: None,
+        }),
+        ..Asked::default()
+    });
+    let (mut app, _events) = window_on(&main, &here);
+    let (mut there, _there_events) = window_on(&feature, &laptop);
+    there.open_for_test(&feature.join("file.rs"));
+    support::lay_out(&mut there, 80, 24);
+    let (_nobody, _nobody_events) = window_on(&spare, &nameless);
+
+    dispatch::dispatch(&mut app, Command::WorktreeList);
+    let listed = rows(&app);
+    let row = |label: &str| {
+        listed
+            .iter()
+            .find(|row| row.0 == label)
+            .cloned()
+            .unwrap_or_else(|| panic!("no row says {label}: {listed:?}"))
+    };
+    let (_, _, said, _, enabled) = row("file.rs");
+    assert_eq!(said.as_deref(), Some("On laptop"));
+    assert!(!enabled, "a window at another machine can be chosen");
+    // This window has nothing open either, and says nothing at its end.
+    let nameless_row = listed
+        .iter()
+        .find(|row| row.0 == "Nothing open" && row.2.is_some())
+        .unwrap_or_else(|| panic!("no row for the nameless machine: {listed:?}"));
+    assert_eq!(nameless_row.2.as_deref(), Some("On another machine"));
+    assert!(!nameless_row.4, "a window at another machine can be chosen");
+    assert!(
+        row("feature").3,
+        "a tree another machine's window is on is not marked"
+    );
+
+    // And from there, this machine's windows are the ones elsewhere.
+    dispatch::dispatch(&mut there, Command::WorktreeList);
+    let elsewhere: Vec<bool> = rows(&there)
+        .into_iter()
+        .filter(|row| row.2.is_some())
+        .map(|row| row.4)
+        .collect();
+    assert_eq!(elsewhere, [false, false], "the other machines' windows");
 }
 
 /// A tree deleted behind git's back is listed, says so, and goes nowhere --

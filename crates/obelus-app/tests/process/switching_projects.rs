@@ -40,6 +40,10 @@ impl Windows for Asked {
     fn can_bring(&self) -> bool {
         true
     }
+
+    fn seat(&self) -> obelus_app::app::Seat {
+        obelus_app::app::Seat::here()
+    }
 }
 
 /// Seconds since the epoch, now.

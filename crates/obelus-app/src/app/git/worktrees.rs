@@ -59,6 +59,15 @@
 //! compositor that only marks the window as wanting attention has been
 //! told by the reader that this is what it does, and a note on the status
 //! row would be Obelus disagreeing with their settings.
+//!
+//! **A window on another machine is a window all the same.** Drawn by
+//! `obg --connect`, it opens another window the way one here does -- a new
+//! `obg` at the reader's machine, connected to the same one -- and brings
+//! forward the others drawn at the reader's machine, with the permission
+//! asked for there and the knock made here. Which windows those are is the
+//! claim's to say ([`Seat`]): a tree on a server may have windows drawn at
+//! the server and at other readers' machines on it, which are listed, say
+//! where they are, and cannot be chosen.
 
 use std::{
     fs::File,
@@ -107,6 +116,67 @@ pub trait Windows: std::fmt::Debug + Send + Sync {
     /// nothing at the other end, so the rows of the other windows are drawn
     /// and cannot be chosen.
     fn can_bring(&self) -> bool;
+
+    /// Where this window is drawn: the reader's machine, which is this one
+    /// for a window of its own and the one at the far end of a connection
+    /// for a window there.
+    fn seat(&self) -> Seat;
+}
+
+/// The machine a window is drawn on, which is where the reader of it sits.
+///
+/// Said in every window's claim, because a window can be brought forward
+/// only onto the screen the reader is looking at: a window on the same
+/// tree drawn at another machine -- the server's own, or another reader's
+/// that connected to it -- is somebody's, and coming forward there is
+/// nothing on this screen.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Seat {
+    /// Made up once by each machine and kept: what tells two machines apart
+    /// where their names may not.
+    pub id: String,
+    /// What the machine calls itself, for the reader -- or nothing, where
+    /// it has no name to give.
+    pub machine: Option<String>,
+}
+
+impl Seat {
+    /// This machine.
+    ///
+    /// Made up the first time it is asked and kept in this machine's state,
+    /// so that a window started tomorrow is on the same machine as one
+    /// started today. Where there is nowhere to keep it, one for this
+    /// process alone: a window that cannot be told apart from its machine's
+    /// others is one that brings none of them forward, which is no worse
+    /// than before there were seats at all.
+    #[must_use]
+    pub fn here() -> Self {
+        static HERE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+        let id = HERE.get_or_init(|| {
+            let Some(path) = obelus_logging::state_directory().map(|state| state.join("seat"))
+            else {
+                return obelus_claim::a_key();
+            };
+            if let Ok(kept) = std::fs::read_to_string(&path)
+                && !kept.trim().is_empty()
+            {
+                return kept.trim().to_string();
+            }
+            let made = obelus_claim::a_key();
+            let written = path
+                .parent()
+                .map_or(Ok(()), std::fs::create_dir_all)
+                .and_then(|()| std::fs::write(&path, format!("{made}\n")));
+            if let Err(error) = written {
+                tracing::warn!(%error, path = %path.display(), "this machine's seat is not kept");
+            }
+            made
+        });
+        Self {
+            id: id.clone(),
+            machine: crate::app::servers::this_machine(),
+        }
+    }
 }
 
 /// Where another Obelus can be reached, to ask its window to come forward.
@@ -158,6 +228,9 @@ struct Seen {
     door: Option<Door>,
     /// What it is reading, the way the list of open documents names it.
     reading: String,
+    /// The machine it is drawn on -- this one, for a claim written before
+    /// a claim said so, which only a window of this machine's ever was.
+    seat: Seat,
 }
 
 /// What a row of the worktrees stands for: a tree, or one Obelus on it.
@@ -290,11 +363,17 @@ impl App {
         let tree = self.this_tree();
         self.worktrees.present = None;
         let reading = self.what_this_window_is_reading();
+        let seat = self
+            .worktrees
+            .windows
+            .as_ref()
+            .map(|windows| windows.seat());
         self.worktrees.present = present(
             &self.working_directory,
             &tree,
             self.worktrees.door.as_ref(),
             &reading,
+            seat.as_ref(),
         );
     }
 
@@ -599,6 +678,11 @@ impl App {
             .windows
             .as_ref()
             .is_some_and(|windows| windows.can_bring());
+        let seat = self
+            .worktrees
+            .windows
+            .as_ref()
+            .map(|windows| windows.seat());
         let mut rows = Vec::new();
         let mut items = Vec::new();
         for (at, listed) in self.worktrees.listed.iter().enumerate() {
@@ -646,6 +730,14 @@ impl App {
             }));
             for (which, seen) in listed.seen.iter().enumerate() {
                 let mine = Some(&seen.claim) == own.as_ref();
+                // A window drawn at another machine, which coming forward
+                // would put in front of somebody else -- said, because it
+                // looks like every other window and is the one that cannot
+                // be gone to. Only in a window: a terminal brings nothing
+                // forward, and every row of one is dim for that already.
+                let elsewhere = seat
+                    .as_ref()
+                    .filter(|seat| seen.door.is_some() && seen.seat.id != seat.id);
                 rows.push(Row::Window(at, which));
                 items.push(worktree_row(Shown {
                     at: rows.len() - 1,
@@ -662,8 +754,11 @@ impl App {
                     },
                     detail: None,
                     marker: mine.then(crate::app::conversations::here),
-                    trailing: None,
-                    enabled: mine || (brings && seen.door.is_some()),
+                    trailing: elsewhere.map(|_| match seen.seat.machine.as_deref() {
+                        Some(machine) => obelus_i18n::git::on_machine(machine),
+                        None => obelus_i18n::git::on_another_machine().to_string(),
+                    }),
+                    enabled: mine || (brings && seen.door.is_some() && elsewhere.is_none()),
                     enter: match mine {
                         true => WorktreeEnter::Stay,
                         false => WorktreeEnter::Bring,
@@ -820,10 +915,13 @@ impl App {
         else {
             return;
         };
+        // Nor one drawn at another machine, whose row cannot be chosen:
+        // asked again for the same reason.
+        let seat = windows.seat();
         let door = claim.and_then(|claim| {
             windows_on(&self.working_directory)
                 .into_iter()
-                .find(|seen| seen.claim == claim)
+                .find(|seen| seen.claim == claim && seen.seat.id == seat.id)
                 .and_then(|seen| seen.door)
         });
         match door {
@@ -987,6 +1085,10 @@ struct Present {
     head: String,
     /// What it last said it was reading.
     reading: String,
+    /// The lines after it, which do not change either: the machine it is
+    /// drawn on. After the reading rather than in the head, because an
+    /// Obelus before them reads the fourth line as the reading.
+    tail: String,
 }
 
 impl Present {
@@ -999,7 +1101,7 @@ impl Present {
     fn say(&mut self, reading: String) {
         use std::io::Seek as _;
 
-        let said = format!("{}{reading}\n", self.head);
+        let said = format!("{}{reading}\n{}", self.head, self.tail);
         let written = (&self.file)
             .seek(std::io::SeekFrom::Start(0))
             .and_then(|_| (&self.file).write_all(said.as_bytes()))
@@ -1036,7 +1138,13 @@ impl Drop for Present {
 /// that nobody holds is a window that died without tidying up, and whoever
 /// finds one may take it away ([`windows_on`]). A name nobody reuses would
 /// otherwise be a file per window that was ever killed, kept for ever.
-fn present(root: &Path, tree: &Path, door: Option<&Door>, reading: &str) -> Option<Present> {
+fn present(
+    root: &Path,
+    tree: &Path,
+    door: Option<&Door>,
+    reading: &str,
+    seat: Option<&Seat>,
+) -> Option<Present> {
     static COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let directory = directory(root)?;
     std::fs::create_dir_all(&directory).ok()?;
@@ -1066,7 +1174,16 @@ fn present(root: &Path, tree: &Path, door: Option<&Door>, reading: &str) -> Opti
         Some(door) => format!("{}\n{}\n{}\n", tree.display(), door.address, door.key),
         None => format!("{}\n\n\n", tree.display()),
     };
-    let said = format!("{head}{reading}\n");
+    // And the machine it is drawn on, where it is a window: a terminal's
+    // has no door, and so nothing to bring forward wherever it is.
+    let tail = seat.map_or_else(String::new, |seat| {
+        format!(
+            "{}\n{}\n",
+            seat.id,
+            seat.machine.as_deref().unwrap_or_default()
+        )
+    });
+    let said = format!("{head}{reading}\n{tail}");
     if let Err(error) = (&file).write_all(said.as_bytes()) {
         tracing::warn!(%error, path = %making.display(), "a window does not say where it is");
     }
@@ -1080,6 +1197,7 @@ fn present(root: &Path, tree: &Path, door: Option<&Door>, reading: &str) -> Opti
         file,
         head,
         reading: reading.to_string(),
+        tail,
     })
 }
 
@@ -1124,11 +1242,23 @@ fn windows_on(root: &Path) -> Vec<Seen> {
                     key: key.to_string(),
                 });
             let reading = lines.next().unwrap_or_default().to_string();
+            // Nothing after the reading is a claim from before they were
+            // said, or a terminal's: this machine's, either way.
+            let seat = match (lines.next(), lines.next()) {
+                (Some(id), machine) if !id.is_empty() => Seat {
+                    id: id.to_string(),
+                    machine: machine
+                        .filter(|machine| !machine.is_empty())
+                        .map(str::to_string),
+                },
+                _ => Seat::here(),
+            };
             Some(Seen {
                 claim: entry.path(),
                 tree,
                 door,
                 reading,
+                seat,
             })
         })
         .collect()
