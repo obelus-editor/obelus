@@ -323,13 +323,32 @@ impl Laid {
         if right <= left || bottom <= top || width <= 0.0 || height <= 0.0 {
             return None;
         }
+        let rect = [left, top, right - left, bottom - top];
+        Some(Self {
+            rect,
+            uv: self.past_its_edges(rect),
+        })
+    }
+
+    /// The part of the picture across `rect`, carried on past its edges
+    /// where `rect` goes further than it does: a tiling's next copy, and
+    /// for any other fit a `uv` outside nought to one, which is not the
+    /// picture.
+    ///
+    /// For a shape that has to be drawn whole whether or not the picture
+    /// reaches all of it, which a piece of the picture is the wrong shape
+    /// for -- see `paint::shapes::tab_plate`.
+    pub(crate) fn past_its_edges(&self, rect: [f32; 4]) -> [f32; 4] {
+        let [x, y, width, height] = self.rect;
         let [u0, v0, u1, v1] = self.uv;
         let across = |at: f32| u0 + (at - x) / width * (u1 - u0);
         let down = |at: f32| v0 + (at - y) / height * (v1 - v0);
-        Some(Self {
-            rect: [left, top, right - left, bottom - top],
-            uv: [across(left), down(top), across(right), down(bottom)],
-        })
+        [
+            across(rect[0]),
+            down(rect[1]),
+            across(rect[0] + rect[2]),
+            down(rect[1] + rect[3]),
+        ]
     }
 }
 
