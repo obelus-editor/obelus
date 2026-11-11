@@ -949,8 +949,12 @@ pub(crate) fn shell_at_its_prompt(
     app: &mut App,
     events: &std::sync::mpsc::Receiver<obelus_app::event::Event>,
 ) {
-    // The answer on a line of its own, which the line typed is not: cmd
-    // shows what was typed after its prompt, and so does a shell's echo.
+    // The answer by where its line ends and by what it lacks: cmd shows
+    // what was typed after its prompt, and the typed line ends in the
+    // answer there too, so it is the line without `echo` in it. Not by the
+    // whole line, because typed before the shell is up the line is echoed
+    // before the prompt is drawn, and the prompt lands at the start of the
+    // answer: `$ ready-42`, which is how this waited for ever on Linux.
     type_line(
         app,
         match cfg!(windows) {
@@ -964,7 +968,7 @@ pub(crate) fn shell_at_its_prompt(
                 .screen()
                 .contents()
                 .lines()
-                .any(|line| line.trim() == "ready-42")
+                .any(|line| line.trim_end().ends_with("ready-42") && !line.contains("echo"))
         })
     });
 }

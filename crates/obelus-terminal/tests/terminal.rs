@@ -310,9 +310,12 @@ fn interactive_shell(id: u64) -> (Terminal, mpsc::Receiver<Heard>) {
         },
     );
     until_the_screen_says(&mut terminal, &heard, |screen| {
-        // The answer and not the line typed, which says it too on Windows:
-        // a line of its own.
-        screen.lines().any(|line| line.trim() == "ready-42")
+        // The answer and not the line typed, which ends in it too on
+        // Windows -- and by where its line ends, because a prompt drawn
+        // late lands at the start of it (`$ ready-42`).
+        screen
+            .lines()
+            .any(|line| line.trim_end().ends_with("ready-42") && !line.contains("echo"))
     });
     (terminal, heard)
 }
