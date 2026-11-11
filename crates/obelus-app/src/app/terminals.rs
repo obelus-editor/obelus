@@ -359,19 +359,12 @@ impl App {
             .map(DocumentId::new)
     }
 
-    /// Closes a terminal, asking first where that would stop something.
+    /// Asks before closing a terminal where that would stop `said`, which
+    /// the caller has already judged it would (`asks_before_closing`).
     ///
     /// Asked for the reason an unsaved file is: what goes with it cannot be
     /// had back -- a shell's history, a build half done.
-    pub(super) fn ask_before_stopping(&mut self, id: DocumentId) -> bool {
-        let Some(said) = self
-            .document(id)
-            .and_then(Document::terminal)
-            .filter(|terminal| self.would_stop_something(terminal))
-            .map(|terminal| terminal.said().to_string())
-        else {
-            return false;
-        };
+    pub(super) fn ask_before_stopping(&mut self, id: DocumentId, said: String) {
         self.stop_to_ask(
             // The words after the colon, because a command line is a name
             // and keeps its own spelling -- and a sentence may not start
@@ -381,7 +374,6 @@ impl App {
                 Answer::Closing(id, Closing::Discard),
             ),
         );
-        true
     }
 
     /// Asks before leaving, closing the project, closing the others or

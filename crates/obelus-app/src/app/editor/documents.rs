@@ -1146,22 +1146,22 @@ impl App {
         first: impl FnOnce(&mut Self),
     ) -> bool {
         let unwritten = self.file(id).is_some_and(Buffer::is_dirty);
-        // The same judgement the question itself makes: two answers to
-        // whether closing stops something left a shell at its prompt
-        // neither asked about nor closed.
+        // Judged once, here, and the question handed what was found: two
+        // answers to whether closing stops something left a shell at its
+        // prompt neither asked about nor closed -- and asking again in the
+        // question would leave the same gap for a command ending between.
         let running = self
             .document(id)
             .and_then(Document::terminal)
-            .is_some_and(|terminal| self.would_stop_something(terminal));
-        if !unwritten && !running {
+            .filter(|terminal| self.would_stop_something(terminal))
+            .map(|terminal| terminal.said().to_string());
+        if !unwritten && running.is_none() {
             return false;
         }
         first(self);
-        match unwritten {
-            true => self.ask_before_closing(id),
-            false => {
-                self.ask_before_stopping(id);
-            }
+        match (unwritten, running) {
+            (false, Some(said)) => self.ask_before_stopping(id, said),
+            _ => self.ask_before_closing(id),
         }
         true
     }
