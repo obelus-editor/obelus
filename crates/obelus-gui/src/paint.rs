@@ -683,13 +683,17 @@ struct Quad {
     layer: u32,
     /// How much further down than where it stands a glass reads what is
     /// behind it, in pixels -- see `Painter::glass_kept_still`. And for a
-    /// light round a hold, where the run on its own row ends.
+    /// light round a hold, where the run on its own row ends; and for the
+    /// picture in a tab's shape, more than nothing where the picture stops
+    /// part of the way across the tab.
     lower: f32,
 }
 
 /// A rectangle with no picture: its colour is the whole of it.
 const SOLID: u32 = 1;
 /// The picture under the page, read where `uv` says -- see `wallpaper`.
+/// Beside `HELD_PLATE`, in the shape of the tab being read, the page put
+/// back under it (`shapes::tab_plate`).
 const WALLPAPER: u32 = 1_073_741_824;
 /// Drawn only in the rows from `radius` down to `lower`, in the grid's
 /// pixels: the rows of a band its slide has scrolled past, which nothing
@@ -756,7 +760,8 @@ const TURNING: u32 = 16_777_216;
 /// A run the reader has hold of, whose four corners each turn one of
 /// three ways -- see `held` in the shader, and `Turn` -- and a tab on the
 /// bar, which is drawn as one. Beside `SHADOW`, the shadow of a tab, cast
-/// from that shape rather than from a rectangle (`standing` in the shader).
+/// from that shape rather than from a rectangle (`standing` in the shader),
+/// and beside `WALLPAPER`, the picture in that shape.
 const HELD_PLATE: u32 = 4096;
 
 /// The soft edge outside a pane or a box. Past the turns for the same

@@ -66,10 +66,6 @@ fn tab_shadow([left, top, width, tall]: [f32; 4], corner: f32) -> Quad {
 /// the bar's shade, and the veil over those lets the picture through twice
 /// and darkened -- over a light picture the tab was a shade darker than
 /// the page it is a piece of.
-///
-/// A picture that stops part of the way across the tab, contained or
-/// centred, has its piece's shape worked out from the piece rather than
-/// the plate.
 fn tab_plate(
     rect: [f32; 4],
     corner: f32,
@@ -89,7 +85,17 @@ fn tab_plate(
     let mut quads = vec![shaped(rect, white, 0, ground)];
     if let Some((picture, veil)) = picture {
         if let Some(piece) = picture.piece(rect) {
-            quads.push(shaped(piece.rect, piece.uv, WALLPAPER, [1.0; 4]));
+            // The whole plate, with the picture carried on past its edges,
+            // and where it stops part of the way across -- contained or
+            // centred -- the shader leaves out what is past them. The piece
+            // alone is the wrong shape: its corners cut where the
+            // picture's edge is, inside the tab.
+            let mut whole = shaped(rect, picture.past_its_edges(rect), WALLPAPER, [1.0; 4]);
+            whole.lower = match piece.rect == rect {
+                true => 0.0,
+                false => 1.0,
+            };
+            quads.push(whole);
         }
         quads.push(shaped(rect, white, 0, veil));
     }
@@ -1404,7 +1410,14 @@ mod tests {
     /// over the bar's shade and the window's own veil, so over a light
     /// picture the tab stood a shade darker than the page under it -- and
     /// it fails the first assertion. Leaving the plate's flag off the
-    /// picture's piece fails the shape.
+    /// picture's piece fails the shape, and drawing a picture that stops
+    /// part of the way across the tab as its piece alone -- whose corners
+    /// cut where the picture's edge is, inside the tab -- fails the last.
+    ///
+    /// What the shader makes of these is guarded only by
+    /// `the_shader_is_one_a_device_would_take`, which says the shader is
+    /// one a device would take and nothing about the shape: drop the plate
+    /// from the picture's branch there and this still passes.
     #[test]
     fn the_tab_being_read_is_the_page_under_the_bar() {
         let (rect, corner) = ([92.0, 8.0, 176.0, 30.0], 8.0);
@@ -1433,6 +1446,21 @@ mod tests {
             [0.092, 0.06, 0.268, 0.0975],
             "where the tab is in the picture"
         );
+
+        assert!(
+            quads[1].lower <= 0.0,
+            "a picture across the whole tab is cut by nothing"
+        );
+
+        // A contained picture whose left edge is inside the tab.
+        let contained = crate::wallpaper::Laid {
+            rect: [180.0, -40.0, 400.0, 800.0],
+            uv: [0.0, 0.0, 1.0, 1.0],
+        };
+        let quads = tab_plate(rect, corner, white, ground, Some((contained, veil)));
+        assert_eq!(quads[1].rect, rect, "the tab's shape, and not the piece's");
+        assert_eq!(quads[1].uv[0], -0.22, "carried on past the picture's edge");
+        assert!(quads[1].lower > 0.0, "and cut where it stops");
 
         let plain = tab_plate(rect, corner, white, ground, None);
         assert_eq!(

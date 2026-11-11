@@ -87,7 +87,9 @@ struct Quad {
     // How much further down than where it stands a glass reads what is
     // behind it, in pixels: a list catching up is taken from further up
     // the frame, and its glass with it -- see `glass_kept_still`. And for a
-    // light, where the run it is round ends.
+    // light, where the run it is round ends; and for the picture in a
+    // tab's shape, more than nothing where the picture stops part of the
+    // way across the tab.
     @location(6) lower: f32,
 };
 
@@ -367,8 +369,14 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
     if ((in.flags & 1073741824u) != 0u) {
         let texel = textureSample(wallpaper, wallpaper_sampler, in.uv);
         // And in a tab's shape, where it is the page put back under the
-        // tab being read -- see `held` below.
+        // tab being read -- the shape `held` works out, as the plate's own
+        // is. Not past the picture's edges where `lower` says it stops
+        // part of the way across the tab: past them is the ground, and the
+        // sampler would have carried the picture on round.
         if ((in.flags & 4096u) != 0u) {
+            if (in.lower > 0.0 && (any(in.uv < vec2<f32>(0.0)) || any(in.uv > vec2<f32>(1.0)))) {
+                discard;
+            }
             let room = in.half_size - vec2<f32>(in.radius, 0.0);
             let distance = held(in.middle, room, in.radius, (in.flags >> 13u) & 255u);
             return vec4<f32>(texel.rgb, texel.a * clamp(0.5 - distance, 0.0, 1.0));
