@@ -219,8 +219,9 @@ fn enter_in_a_terminal_goes_there_and_remembers_it() {
 /// Going asks first about a program still running in a terminal, which
 /// would go with the project -- the question closing the project asks.
 ///
-/// A shell that has only just started is running, which is all this needs:
-/// what it has printed is `terminal.rs`'s, which is Unix's alone.
+/// A shell running something, which is all this needs: what it has printed
+/// is `terminal.rs`'s, which is Unix's alone. And running something, because
+/// a shell at its prompt goes without a word.
 ///
 /// Broken deliberately by leaving the count of running terminals out of
 /// `App::go_to_tree`: the window goes at the first enter, and the shell
@@ -232,13 +233,14 @@ fn going_asks_about_a_running_terminal_first() {
     let (here, there) = (project(&scratch, "here"), project(&scratch, "there"));
     keep(&[(&here, now()), (&there, now())]);
     let mut app = on(&here);
-    let _events = support::drive(&mut app);
+    let events = support::drive(&mut app);
     app.shell_for_test(PathBuf::from(match cfg!(windows) {
         true => "cmd.exe",
         false => "/bin/sh",
     }));
     dispatch::dispatch(&mut app, Command::TerminalOpen);
     assert!(app.terminal().is_some(), "no terminal opened");
+    support::busy_the_terminal(&mut app, &events);
 
     dispatch::dispatch(&mut app, Command::ProjectList);
     press(&mut app, KeyCode::Enter);
@@ -254,6 +256,37 @@ fn going_asks_about_a_running_terminal_first() {
         app.working_directory(),
         there,
         "the answer did not go there"
+    );
+}
+
+/// Going from a shell at its prompt asks nothing: what goes with it is a
+/// prompt. Here and not only in `terminal.rs`, because this one runs on
+/// Windows, where whether a shell is busy is asked another way.
+///
+/// Broken deliberately by counting every shell whose program has not ended
+/// in `App::would_stop_something`, as it did: the window stays where it
+/// was, asking to stop the shell.
+#[test]
+fn going_from_a_shell_at_its_prompt_asks_nothing() {
+    let _turn = crate::turn();
+    let scratch = Scratch::new("switching-idle");
+    let (here, there) = (project(&scratch, "here"), project(&scratch, "there"));
+    keep(&[(&here, now()), (&there, now())]);
+    let mut app = on(&here);
+    let _events = support::drive(&mut app);
+    app.shell_for_test(PathBuf::from(match cfg!(windows) {
+        true => "cmd.exe",
+        false => "/bin/sh",
+    }));
+    dispatch::dispatch(&mut app, Command::TerminalOpen);
+    assert!(app.terminal().is_some(), "no terminal opened");
+
+    dispatch::dispatch(&mut app, Command::ProjectList);
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        app.working_directory(),
+        there,
+        "asked about a shell at its prompt"
     );
 }
 

@@ -97,6 +97,14 @@ fn a_shell() -> (App, Receiver<Event>) {
     (app, events)
 }
 
+/// The reader's shell, in the middle of something: what is asked before a
+/// terminal goes is asked about a shell that is, and not one at its prompt.
+fn a_busy_shell() -> (App, Receiver<Event>) {
+    let (mut app, events) = a_shell();
+    support::busy_the_terminal(&mut app, &events);
+    (app, events)
+}
+
 /// The reader's shell is started knowing where the machine's pool of build
 /// jobs is: a build typed in a terminal inside Obelus is one Obelus started.
 ///
@@ -236,7 +244,9 @@ fn command_in_a_terminal_is_not_the_programs() {
         on_the_terminal(app).contains("sane-8")
     });
 
-    // And what the terminal keeps is kept whichever key it came on.
+    // And what the terminal keeps is kept whichever key it came on -- asked
+    // about with the shell busy, because at its prompt nothing is asked.
+    support::busy_the_terminal(&mut app, &events);
     app.handle(Event::Command(KeyEvent::new(
         KeyCode::Char('q'),
         KeyModifiers::CONTROL,
@@ -258,7 +268,7 @@ fn command_in_a_terminal_is_not_the_programs() {
 /// out the question in `request_quit` (Obelus leaves at the first press).
 #[test]
 fn ctrl_q_leaves_from_inside_a_terminal_and_asks_first() {
-    let (mut app, _events) = a_shell();
+    let (mut app, _events) = a_busy_shell();
     press(&mut app, KeyCode::Char('q'), KeyModifiers::CONTROL);
     assert!(!app.should_quit(), "left without asking");
     assert!(
@@ -278,7 +288,7 @@ fn ctrl_q_leaves_from_inside_a_terminal_and_asks_first() {
 /// `App::close_the_project`: the project closes at the first press.
 #[test]
 fn closing_the_project_asks_about_a_running_terminal_first() {
-    let (mut app, _events) = a_shell();
+    let (mut app, _events) = a_busy_shell();
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ProjectClose);
     assert!(app.has_a_project(), "closed without asking");
     assert_eq!(
@@ -298,7 +308,7 @@ fn closing_the_project_asks_about_a_running_terminal_first() {
 /// press.
 #[test]
 fn closing_the_others_asks_about_a_running_terminal_first() {
-    let (mut app, events) = a_shell();
+    let (mut app, events) = a_busy_shell();
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TerminalOpen);
     support::type_text(&mut app, "echo second-$((40 + 3))");
     press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
@@ -335,7 +345,7 @@ fn closing_the_others_asks_about_a_running_terminal_first() {
 /// not the shell that would stop with it.
 #[test]
 fn closing_the_others_asks_about_a_file_and_a_terminal_at_once() {
-    let (mut app, _events) = a_shell();
+    let (mut app, _events) = a_busy_shell();
     let scratch = support::Scratch::new("terminal-close-others");
     // So the question names the file by its name, and fits its row.
     app.working_directory_for_test(scratch.path().to_path_buf());
@@ -651,7 +661,7 @@ fn a_colour_named_by_number_is_the_themes() {
 /// nothing is asked.
 #[test]
 fn closing_a_running_terminal_asks_first() {
-    let (mut app, _events) = a_shell();
+    let (mut app, _events) = a_busy_shell();
     close_the_terminal(&mut app);
     assert!(app.terminal().is_some(), "closed without asking");
     // Saying which, after the words rather than in front of them: a
@@ -673,13 +683,59 @@ fn closing_a_running_terminal_asks_first() {
 /// program with it.
 #[test]
 fn a_tab_s_cross_asks_about_a_running_terminal_first() {
-    let (mut app, _events) = a_shell();
+    let (mut app, _events) = a_busy_shell();
     // The one document open, in the first slot there is.
     app.handle(Event::Shut(obelus_buffer::DocumentId::new(0)));
     assert!(app.terminal().is_some(), "closed without asking");
     assert_eq!(support::ways(&app), ["Stop it and close", "Cancel"]);
     support::answer(&mut app, "Stop it and close");
     assert!(app.terminal().is_none(), "still open after the answer");
+}
+
+/// A shell at its prompt is closed, and left, without a word: what goes with
+/// it is a prompt, and a question every time is a question nobody reads.
+///
+/// Broken deliberately by counting every shell whose program has not ended
+/// in `App::would_stop_something`, as it did: closing asks "Still running"
+/// and leaving asks to stop it.
+#[test]
+fn a_shell_at_its_prompt_goes_without_asking() {
+    let (mut app, _events) = a_shell();
+    close_the_terminal(&mut app);
+    assert!(
+        app.terminal().is_none(),
+        "asked about a shell at its prompt"
+    );
+
+    let (mut app, _events) = a_shell();
+    press(&mut app, KeyCode::Char('q'), KeyModifiers::CONTROL);
+    assert!(
+        app.should_quit(),
+        "asked before leaving a shell at its prompt"
+    );
+}
+
+/// A shell that has finished what it ran is at its prompt again, and goes
+/// without asking -- busy is a moment, not something a shell becomes.
+///
+/// Broken deliberately by answering `is_busy` from the program having
+/// ended alone: the stopped `sleep` leaves the shell asked about.
+#[test]
+fn a_shell_back_at_its_prompt_goes_without_asking() {
+    let (mut app, events) = a_busy_shell();
+    // The interrupt, as the reader would stop it, with the line after it
+    // waiting for the prompt it comes back to.
+    press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL);
+    support::type_text(&mut app, "echo back-$((5 + 5))");
+    press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    pump(&mut app, &events, "the shell back at its prompt", |app| {
+        on_the_terminal(app).contains("back-10")
+    });
+    close_the_terminal(&mut app);
+    assert!(
+        app.terminal().is_none(),
+        "asked about a shell at its prompt"
+    );
 }
 
 /// A program that has ended leaves its terminal to be read, and the keys go
@@ -844,6 +900,26 @@ fn a_sign_in_that_is_a_program_is_answered_in_a_terminal() {
     pump(&mut app, &events, "the answer", |app| {
         said_in_transcript(app, "glad you are in")
     });
+}
+
+/// A sign-in is asked about for as long as it runs, waiting on the reader
+/// or not: it is not a shell at its prompt but the work itself, and closing
+/// it is the sign-in given up.
+///
+/// Broken deliberately by judging every terminal as a shell in
+/// `App::would_stop_something`: the sign-in, waiting for its code with
+/// nothing under it, closes at the first press.
+#[test]
+fn a_sign_in_waiting_on_the_reader_is_asked_about() {
+    let marker = marker("asked-about");
+    let (mut app, events) = asked_to_sign_in(&marker);
+    choose(&mut app, "Type a code");
+    pump(&mut app, &events, "the sign-in to ask for a code", |app| {
+        on_the_terminal(app).contains("Code:")
+    });
+    close_the_terminal(&mut app);
+    assert!(app.terminal().is_some(), "closed without asking");
+    assert_eq!(support::ways(&app), ["Stop it and close", "Cancel"]);
 }
 
 /// The program that signs an agent in is given what the reader added to
@@ -1151,6 +1227,7 @@ fn leaving_says_what_is_running_beside_what_is_unwritten() {
     pump(&mut app, &events, "the shell", |app| {
         on_the_terminal(app).contains("up-9")
     });
+    support::busy_the_terminal(&mut app, &events);
     press(&mut app, KeyCode::Char('q'), KeyModifiers::CONTROL);
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     assert!(

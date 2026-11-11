@@ -904,6 +904,46 @@ pub(crate) fn drive(app: &mut App) -> std::sync::mpsc::Receiver<obelus_app::even
     events
 }
 
+/// Has the shell being read run something that lasts, and waits until the
+/// terminal says it is busy with it.
+///
+/// A shell at its prompt is not, so a test of what is asked before a
+/// terminal goes has to give it something to be in the middle of. Watched
+/// rather than heard: nothing a program writes says a process started,
+/// which is why the terminal asks the system.
+#[allow(dead_code)]
+pub(crate) fn busy_the_terminal(
+    app: &mut App,
+    events: &std::sync::mpsc::Receiver<obelus_app::event::Event>,
+) {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    type_text(
+        app,
+        match cfg!(windows) {
+            true => "ping -n 600 127.0.0.1 >nul",
+            false => "sleep 600",
+        },
+    );
+    app.handle(obelus_app::event::Event::Key(KeyEvent::new(
+        KeyCode::Enter,
+        KeyModifiers::NONE,
+    )));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    while !app
+        .terminal()
+        .is_some_and(obelus_terminal::Terminal::is_busy)
+    {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the shell never got busy"
+        );
+        if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(50)) {
+            app.handle(event);
+        }
+    }
+}
+
 /// Runs the history walk the app has started through to its last batch.
 ///
 /// A history arrives in batches while the reader reads, which is the point
