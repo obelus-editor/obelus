@@ -61,6 +61,7 @@ mod search;
 mod selecting;
 mod serving;
 mod sessions;
+mod shells;
 mod switching;
 mod syntax;
 mod tabs;

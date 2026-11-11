@@ -904,6 +904,107 @@ pub(crate) fn drive(app: &mut App) -> std::sync::mpsc::Receiver<obelus_app::even
     events
 }
 
+/// Has the shell being read run something that lasts, and waits until the
+/// terminal says it is busy with it.
+///
+/// A shell at its prompt is not, so a test of what is asked before a
+/// terminal goes has to give it something to be in the middle of. Watched
+/// rather than heard: nothing a program writes says a process started,
+/// which is why the terminal asks the system.
+#[allow(dead_code)]
+pub(crate) fn busy_the_terminal(
+    app: &mut App,
+    events: &std::sync::mpsc::Receiver<obelus_app::event::Event>,
+) {
+    busy_the_terminal_for(app, events, 600);
+}
+
+/// The same, with something that ends by itself after `seconds`: an
+/// interrupt is not always the program's to hear, and a test run under
+/// something that ignores it hands that on to everything it starts.
+#[allow(dead_code)]
+pub(crate) fn busy_the_terminal_for(
+    app: &mut App,
+    events: &std::sync::mpsc::Receiver<obelus_app::event::Event>,
+    seconds: u32,
+) {
+    let line = match cfg!(windows) {
+        // A ping a second, and the first is at once.
+        true => format!("ping -n {} 127.0.0.1 >nul", seconds + 1),
+        false => format!("sleep {seconds}"),
+    };
+    type_line(app, &line);
+    wait_on(app, events, "the shell to get busy", |app| {
+        app.terminal()
+            .is_some_and(obelus_terminal::Terminal::is_busy)
+    });
+}
+
+/// Waits until the shell being read has answered a line typed at it, so
+/// that it is at its prompt: a shell just started may still be running
+/// what it runs at startup -- cmd's `AutoRun`, a profile -- and is busy
+/// with it.
+#[allow(dead_code)]
+pub(crate) fn shell_at_its_prompt(
+    app: &mut App,
+    events: &std::sync::mpsc::Receiver<obelus_app::event::Event>,
+) {
+    // The answer by where its line ends and by what it lacks: cmd shows
+    // what was typed after its prompt, and the typed line ends in the
+    // answer there too, so it is the line without `echo` in it. Not by the
+    // whole line, because typed before the shell is up the line is echoed
+    // before the prompt is drawn, and the prompt lands at the start of the
+    // answer: `$ ready-42`, which is how this waited for ever on Linux.
+    type_line(
+        app,
+        match cfg!(windows) {
+            true => "set /a 40+2 >nul & echo ready-42",
+            false => "echo ready-$((40 + 2))",
+        },
+    );
+    wait_on(app, events, "the shell's answer", |app| {
+        app.terminal().is_some_and(|terminal| {
+            terminal
+                .screen()
+                .contents()
+                .lines()
+                .any(|line| line.trim_end().ends_with("ready-42") && !line.contains("echo"))
+        })
+    });
+}
+
+/// Types a line, and the key that ends it.
+fn type_line(app: &mut App, line: &str) {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    type_text(app, line);
+    app.handle(obelus_app::event::Event::Key(KeyEvent::new(
+        KeyCode::Enter,
+        KeyModifiers::NONE,
+    )));
+}
+
+/// Handles what arrives until `until` holds -- looked at between events
+/// and not only on one, because whether a shell is busy moves with nothing
+/// arriving to say so.
+fn wait_on(
+    app: &mut App,
+    events: &std::sync::mpsc::Receiver<obelus_app::event::Event>,
+    what: &str,
+    until: impl Fn(&App) -> bool,
+) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    while !until(app) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "gave up waiting for {what}"
+        );
+        if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(50)) {
+            app.handle(event);
+        }
+    }
+}
+
 /// Runs the history walk the app has started through to its last batch.
 ///
 /// A history arrives in batches while the reader reads, which is the point

@@ -498,6 +498,9 @@ windows-sys = { version = "0.61.2", features = [
     # one, and what it starts is given none -- see `obelus-gui`'s `main.rs`
     # and `obelus-program`.
     "Win32_System_Console",
+    # And which processes a terminal's shell has started, which is whether
+    # closing it would stop anything: see `obelus-terminal`'s `beneath.rs`.
+    "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_Threading",
     "Win32_UI_WindowsAndMessaging",
     # And the clipboard, which on Windows is a system service rather than a

@@ -281,3 +281,169 @@ fn what_is_held_taller_than_the_screen_is_copied_whole() {
     let wanted: Vec<String> = (10..=22).map(|line| format!("row {line}")).collect();
     assert_eq!(copied, wanted.join("\n"));
 }
+
+/// An interactive shell on a terminal of its own, which has printed
+/// `ready-42`.
+fn interactive_shell(id: u64) -> (Terminal, mpsc::Receiver<Heard>) {
+    let (events, heard) = mpsc::channel::<Heard>();
+    let shell = match cfg!(windows) {
+        true => Program::Command {
+            program: "cmd.exe".into(),
+            arguments: Vec::new(),
+            env: Vec::new(),
+        },
+        // Interactive by being told so, which is what turns on the job
+        // control that hands a command the foreground.
+        false => Program::Command {
+            program: "/bin/sh".into(),
+            arguments: vec!["-i".to_string()],
+            env: Vec::new(),
+        },
+    };
+    let mut terminal =
+        Terminal::start(id, &shell, &std::env::temp_dir(), (24, 80), events).expect("a terminal");
+    type_line(
+        &mut terminal,
+        match cfg!(windows) {
+            true => "set /a 40+2 >nul & echo ready-42",
+            false => "echo ready-$((40 + 2))",
+        },
+    );
+    until_the_screen_says(&mut terminal, &heard, |screen| {
+        // The answer and not the line typed, which ends in it too on
+        // Windows -- and by where its line ends, because a prompt drawn
+        // late lands at the start of it (`$ ready-42`).
+        screen
+            .lines()
+            .any(|line| line.trim_end().ends_with("ready-42") && !line.contains("echo"))
+    });
+    (terminal, heard)
+}
+
+fn type_line(terminal: &mut Terminal, line: &str) {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    for c in line.chars() {
+        terminal.key(&KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+    }
+    terminal.key(&KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+}
+
+/// Feeds a terminal what its program writes until the screen says what
+/// `until` wants.
+fn until_the_screen_says(
+    terminal: &mut Terminal,
+    heard: &mpsc::Receiver<Heard>,
+    until: impl Fn(&str) -> bool,
+) {
+    while !until(&terminal.screen().contents()) {
+        match heard
+            .recv_timeout(Duration::from_secs(20))
+            .expect("the program to say something")
+        {
+            Heard::Wrote { bytes, .. } => terminal.wrote(&bytes),
+            Heard::Ended { ended, .. } => panic!("the shell ended: {ended:?}"),
+        }
+    }
+}
+
+/// Waits until the terminal's answer to whether it is busy is `wanted`,
+/// feeding it what the program writes meanwhile: the system's answer
+/// moves without anything being written to say so.
+fn until_busy_is(terminal: &mut Terminal, heard: &mpsc::Receiver<Heard>, wanted: bool) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while terminal.is_busy() != wanted {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "never became {}",
+            match wanted {
+                true => "busy",
+                false => "idle",
+            }
+        );
+        if let Ok(Heard::Wrote { bytes, .. }) = heard.recv_timeout(Duration::from_millis(50)) {
+            terminal.wrote(&bytes);
+        }
+    }
+}
+
+/// A shell at its prompt is not busy, one running a command is, and one
+/// that is back at its prompt is not again -- asked of the system, where
+/// the shell says nothing of it itself.
+///
+/// Broken deliberately by answering `anything_beneath` with "no" always:
+/// the shell running `ping` is never busy. And with "yes"
+/// always: the shell at its prompt is. And on a Unix by comparing the
+/// foreground with nothing, which is the same "yes". And on Windows by
+/// taking a child started after the shell for an orphan older than it:
+/// `ping` is never busy.
+#[test]
+fn a_shell_is_busy_only_while_it_runs_something() {
+    let (mut terminal, heard) = interactive_shell(20);
+    assert!(!terminal.is_busy(), "a shell at its prompt is busy");
+
+    // A few seconds' worth, ending by itself: an interrupt is not always
+    // the program's to hear, and a test run under something that ignores
+    // it hands that on to everything it starts.
+    type_line(
+        &mut terminal,
+        match cfg!(windows) {
+            true => "ping -n 4 127.0.0.1 >nul",
+            false => "sleep 3",
+        },
+    );
+    until_busy_is(&mut terminal, &heard, true);
+    until_busy_is(&mut terminal, &heard, false);
+}
+
+/// A shell that marks its prompt and has never marked a command starting
+/// is asked of the system, and once it has, the marks are believed over
+/// what the system says: a command marked as over is not busy with
+/// something running under the shell.
+///
+/// Broken deliberately by believing `A` and `B` before any `C`, as it did:
+/// the shell running `ping` (or `sleep`) is never busy. By answering "busy"
+/// where either the marks or the system say so: the `D` written while it
+/// runs is still busy. And by taking the end mark `D` for a command
+/// starting: the same.
+#[test]
+fn the_marks_are_believed_once_a_command_has_been_marked() {
+    let (mut terminal, heard) = interactive_shell(21);
+    terminal.wrote(b"\x1b]133;A\x07$ \x1b]133;B\x07");
+    assert!(!terminal.is_busy(), "a shell at its prompt is busy");
+    // Long enough to still be running when the marks below are written.
+    type_line(
+        &mut terminal,
+        match cfg!(windows) {
+            true => "ping -n 8 127.0.0.1 >nul",
+            false => "sleep 7",
+        },
+    );
+    until_busy_is(&mut terminal, &heard, true);
+    terminal.wrote(b"\x1b]133;C\x07");
+    assert!(
+        terminal.is_busy(),
+        "a command said to be running is not busy"
+    );
+    terminal.wrote(b"\x1b]133;D;0\x1b\\");
+    assert!(
+        !terminal.is_busy(),
+        "a command said to be over is busy because something is running"
+    );
+}
+
+/// A command marked as running is busy with nothing under the shell.
+///
+/// Broken deliberately by leaving `unhandled_osc` out of the parser's
+/// callbacks: the shell, marked as running a command, is asked of the
+/// system and found idle.
+#[test]
+fn a_command_marked_as_running_is_busy_with_nothing_beneath() {
+    let (mut terminal, _heard) = interactive_shell(22);
+    assert!(!terminal.is_busy(), "a shell at its prompt is busy");
+    terminal.wrote(b"\x1b]133;A\x07$ \x1b]133;B\x07\x1b]133;C\x07");
+    assert!(
+        terminal.is_busy(),
+        "a command said to be running is not busy"
+    );
+}

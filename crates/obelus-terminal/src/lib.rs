@@ -26,6 +26,7 @@
 //! that asks and hears nothing waits for an answer; everything else it
 //! writes is drawn and nothing more is made of it.
 
+mod beneath;
 mod keys;
 mod mouse;
 
@@ -126,6 +127,9 @@ pub struct Terminal {
     master: Box<dyn MasterPty + Send>,
     /// For stopping it.
     killer: Box<dyn ChildKiller + Send + Sync>,
+    /// Its process, for asking whether it has started anything: nothing
+    /// where the system would not say, which counts as having.
+    pid: Option<u32>,
     /// The program in the words it was started with.
     said: String,
     /// How it ended, once it has.
@@ -197,6 +201,7 @@ impl Terminal {
         // quiet.
         drop(pair.slave);
         let killer = child.clone_killer();
+        let pid = child.process_id();
         let mut reader = pair
             .master
             .try_clone_reader()
@@ -263,6 +268,7 @@ impl Terminal {
             keys,
             master: pair.master,
             killer,
+            pid,
             said,
             ended: None,
             pushed: 0,
@@ -300,6 +306,32 @@ impl Terminal {
     #[must_use]
     pub const fn ended(&self) -> Option<&Ended> {
         self.ended.as_ref()
+    }
+
+    /// Whether it is in the middle of something, which is what closing it
+    /// would stop.
+    ///
+    /// A shell waiting at its prompt is not: what goes with it is a prompt,
+    /// and asking about that is asking every time. So the shell is believed
+    /// where it says -- the marks shell integration writes around a prompt
+    /// and a command, OSC 133 -- once it has said a command started, and
+    /// until then the system is asked what is running under it (`beneath`).
+    /// Asked when it matters rather than kept up to date, because nothing tells
+    /// anybody a process started.
+    ///
+    /// Only a shell's answer: a program that is the work itself -- an
+    /// agent's sign-in -- is busy for as long as it runs, and that is the
+    /// caller's to know.
+    #[must_use]
+    pub fn is_busy(&self) -> bool {
+        if self.ended.is_some() {
+            return false;
+        }
+        if let Some(at_prompt) = self.parser.callbacks().at_prompt {
+            return !at_prompt;
+        }
+        self.pid
+            .is_none_or(|pid| beneath::anything_beneath(pid, self.master.as_ref()))
     }
 
     /// What it has drawn.
@@ -763,12 +795,38 @@ struct Answers {
     owed: Vec<u8>,
     /// The window title it set.
     title: Option<String>,
+    /// Whether the shell last said it was at its prompt, or running what
+    /// was typed there -- nothing until it has said a command started.
+    ///
+    /// Not until then, because marking only the prompt is common and says
+    /// nothing about what runs between two of them: cmd has no hook before
+    /// a command, so the prompt Windows Terminal documents for it writes
+    /// `A`, `B` and `D` and never `C`, and a shell believed on that would
+    /// be at its prompt through every build it ran.
+    at_prompt: Option<bool>,
 }
 
 impl vt100::Callbacks for Answers {
     fn set_window_title(&mut self, _: &mut vt100::Screen, title: &[u8]) {
         let title = String::from_utf8_lossy(title).trim().to_string();
         self.title = (!title.is_empty()).then_some(title);
+    }
+
+    /// Shell integration's marks: `A` a prompt starts, `B` the command
+    /// typed at it starts, `C` it runs, `D` it has ended. Only `C` is a
+    /// shell busy -- the prompt and the line being typed are the shell
+    /// waiting, and a command that has ended is back at it -- and the
+    /// others count only once a `C` has said the shell marks both.
+    fn unhandled_osc(&mut self, _: &mut vt100::Screen, params: &[&[u8]]) {
+        if let [b"133", mark, ..] = params {
+            match mark.first() {
+                Some(b'A' | b'B' | b'D') if self.at_prompt.is_some() => {
+                    self.at_prompt = Some(true);
+                }
+                Some(b'C') => self.at_prompt = Some(false),
+                _ => {}
+            }
+        }
     }
 
     fn unhandled_csi(

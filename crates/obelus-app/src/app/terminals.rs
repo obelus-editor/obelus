@@ -62,6 +62,9 @@ impl App {
         };
         match self.start_terminal(&program) {
             Ok(id) => {
+                if let Some(terminal) = self.document(id).and_then(Document::terminal) {
+                    self.terminal.shells.insert(terminal.id());
+                }
                 self.record(from);
                 self.go_to_document(id);
             }
@@ -252,8 +255,7 @@ impl App {
         held
     }
 
-    /// How many terminals have a program still running, which is what
-    /// leaving would stop.
+    /// How many terminals have something running that leaving would stop.
     pub(super) fn terminals_running(&self) -> usize {
         self.terminals_running_except(None)
     }
@@ -263,7 +265,8 @@ impl App {
         self.running_terminals_except(except).count()
     }
 
-    /// Every terminal whose program has not ended, but the one in `except`.
+    /// Every terminal closing would stop something in, but the one in
+    /// `except`.
     fn running_terminals_except(
         &self,
         except: Option<DocumentId>,
@@ -273,7 +276,17 @@ impl App {
             .enumerate()
             .filter(move |(index, _)| Some(DocumentId::new(*index)) != except)
             .filter_map(|(_, document)| document.as_ref()?.terminal())
-            .filter(|terminal| terminal.ended().is_none())
+            .filter(|terminal| self.would_stop_something(terminal))
+    }
+
+    /// Whether closing this terminal stops something the reader would miss:
+    /// a program still running, but a shell only while it is running
+    /// something itself (`Terminal::is_busy`).
+    pub(in crate::app) fn would_stop_something(&self, terminal: &Terminal) -> bool {
+        match self.terminal.shells.contains(&terminal.id()) {
+            true => terminal.is_busy(),
+            false => terminal.ended().is_none(),
+        }
     }
 
     /// Words pasted into the terminal being read, which go to its program.
@@ -346,19 +359,12 @@ impl App {
             .map(DocumentId::new)
     }
 
-    /// Closes a terminal, asking first where its program is still running.
+    /// Asks before closing a terminal where that would stop `said`, which
+    /// the caller has already judged it would (`asks_before_closing`).
     ///
     /// Asked for the reason an unsaved file is: what goes with it cannot be
     /// had back -- a shell's history, a build half done.
-    pub(super) fn ask_before_stopping(&mut self, id: DocumentId) -> bool {
-        let Some(said) = self
-            .document(id)
-            .and_then(Document::terminal)
-            .filter(|terminal| terminal.ended().is_none())
-            .map(|terminal| terminal.said().to_string())
-        else {
-            return false;
-        };
+    pub(super) fn ask_before_stopping(&mut self, id: DocumentId, said: String) {
         self.stop_to_ask(
             // The words after the colon, because a command line is a name
             // and keeps its own spelling -- and a sentence may not start
@@ -368,7 +374,6 @@ impl App {
                 Answer::Closing(id, Closing::Discard),
             ),
         );
-        true
     }
 
     /// Asks before leaving, closing the project, closing the others or
@@ -525,4 +530,9 @@ pub(in crate::app) struct Terminals {
     /// reader's own is whatever their environment says, and a test about
     /// keys is not a test about their prompt.
     pub(in crate::app) shell: Option<PathBuf>,
+    /// The terminals `open-terminal` started, which are the reader's shell
+    /// rather than a program that is the work itself: a shell at its prompt
+    /// is not in the middle of anything. Never emptied, because a number is
+    /// never handed out twice.
+    pub(in crate::app) shells: std::collections::HashSet<obelus_terminal::Id>,
 }
