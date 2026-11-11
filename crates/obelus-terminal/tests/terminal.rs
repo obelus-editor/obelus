@@ -391,24 +391,30 @@ fn a_shell_is_busy_only_while_it_runs_something() {
     until_busy_is(&mut terminal, &heard, false);
 }
 
-/// Where the shell says where it is -- the marks of shell integration --
-/// that is believed over what the system says: a command that has started
-/// is busy with nothing under the shell, and one back at its prompt is not
-/// with something there.
+/// A shell that marks its prompt and has never marked a command starting
+/// is asked of the system, and once it has, the marks are believed over
+/// what the system says: a command marked as over is not busy with
+/// something running under the shell.
 ///
-/// Broken deliberately by leaving `unhandled_osc` out of the parser's
-/// callbacks: the shell at its prompt, marked as running a command, is
-/// asked of the system and found idle. And by taking the end mark `D` for a
-/// command starting: the last assertion finds it busy.
+/// Broken deliberately by believing `A` and `B` before any `C`, as it did:
+/// the shell running `ping` (or `sleep`) is never busy. By answering "busy"
+/// where either the marks or the system say so: the `D` written while it
+/// runs is still busy. And by taking the end mark `D` for a command
+/// starting: the same.
 #[test]
-fn what_the_shell_says_is_believed_over_the_system() {
-    let (mut terminal, _heard) = interactive_shell(21);
-    assert!(!terminal.is_busy(), "a shell at its prompt is busy");
-    // The marks written here as if the shell wrote them, which is where the
-    // parser takes them from; the shell itself is at its prompt throughout,
-    // so every answer below is the marks' and not the system's.
+fn the_marks_are_believed_once_a_command_has_been_marked() {
+    let (mut terminal, heard) = interactive_shell(21);
     terminal.wrote(b"\x1b]133;A\x07$ \x1b]133;B\x07");
-    assert!(!terminal.is_busy(), "at the prompt");
+    assert!(!terminal.is_busy(), "a shell at its prompt is busy");
+    // Long enough to still be running when the marks below are written.
+    type_line(
+        &mut terminal,
+        match cfg!(windows) {
+            true => "ping -n 8 127.0.0.1 >nul",
+            false => "sleep 7",
+        },
+    );
+    until_busy_is(&mut terminal, &heard, true);
     terminal.wrote(b"\x1b]133;C\x07");
     assert!(
         terminal.is_busy(),
@@ -417,6 +423,22 @@ fn what_the_shell_says_is_believed_over_the_system() {
     terminal.wrote(b"\x1b]133;D;0\x1b\\");
     assert!(
         !terminal.is_busy(),
-        "a command said to be over is still busy"
+        "a command said to be over is busy because something is running"
+    );
+}
+
+/// A command marked as running is busy with nothing under the shell.
+///
+/// Broken deliberately by leaving `unhandled_osc` out of the parser's
+/// callbacks: the shell, marked as running a command, is asked of the
+/// system and found idle.
+#[test]
+fn a_command_marked_as_running_is_busy_with_nothing_beneath() {
+    let (mut terminal, _heard) = interactive_shell(22);
+    assert!(!terminal.is_busy(), "a shell at its prompt is busy");
+    terminal.wrote(b"\x1b]133;A\x07$ \x1b]133;B\x07\x1b]133;C\x07");
+    assert!(
+        terminal.is_busy(),
+        "a command said to be running is not busy"
     );
 }

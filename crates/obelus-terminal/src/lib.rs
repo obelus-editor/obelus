@@ -314,10 +314,10 @@ impl Terminal {
     /// A shell waiting at its prompt is not: what goes with it is a prompt,
     /// and asking about that is asking every time. So the shell is believed
     /// where it says -- the marks shell integration writes around a prompt
-    /// and a command, OSC 133 -- and where it has never said, the system is
-    /// asked what is running under it (`beneath`). Asked when it matters
-    /// rather than kept up to date, because nothing tells anybody a process
-    /// started.
+    /// and a command, OSC 133 -- once it has said a command started, and
+    /// until then the system is asked what is running under it (`beneath`).
+    /// Asked when it matters rather than kept up to date, because nothing tells
+    /// anybody a process started.
     ///
     /// Only a shell's answer: a program that is the work itself -- an
     /// agent's sign-in -- is busy for as long as it runs, and that is the
@@ -796,8 +796,13 @@ struct Answers {
     /// The window title it set.
     title: Option<String>,
     /// Whether the shell last said it was at its prompt, or running what
-    /// was typed there -- nothing until it has said either, which is a
-    /// shell without the integration that says so.
+    /// was typed there -- nothing until it has said a command started.
+    ///
+    /// Not until then, because marking only the prompt is common and says
+    /// nothing about what runs between two of them: cmd has no hook before
+    /// a command, so the prompt Windows Terminal documents for it writes
+    /// `A`, `B` and `D` and never `C`, and a shell believed on that would
+    /// be at its prompt through every build it ran.
     at_prompt: Option<bool>,
 }
 
@@ -810,11 +815,14 @@ impl vt100::Callbacks for Answers {
     /// Shell integration's marks: `A` a prompt starts, `B` the command
     /// typed at it starts, `C` it runs, `D` it has ended. Only `C` is a
     /// shell busy -- the prompt and the line being typed are the shell
-    /// waiting, and a command that has ended is back at it.
+    /// waiting, and a command that has ended is back at it -- and the
+    /// others count only once a `C` has said the shell marks both.
     fn unhandled_osc(&mut self, _: &mut vt100::Screen, params: &[&[u8]]) {
         if let [b"133", mark, ..] = params {
             match mark.first() {
-                Some(b'A' | b'B' | b'D') => self.at_prompt = Some(true),
+                Some(b'A' | b'B' | b'D') if self.at_prompt.is_some() => {
+                    self.at_prompt = Some(true);
+                }
                 Some(b'C') => self.at_prompt = Some(false),
                 _ => {}
             }
