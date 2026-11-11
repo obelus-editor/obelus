@@ -903,6 +903,52 @@ fn a_window_at_another_machine_says_where_and_cannot_be_chosen() {
     assert_eq!(elsewhere, [false, false], "the other machines' windows");
 }
 
+/// A claim an Obelus wrote before claims said which machine a window is
+/// drawn on is a window of this machine's, as every window then was: it
+/// says nothing at its end, and can be brought forward.
+///
+/// The file is written here by hand and held the way a window holds its
+/// own, which is the one way to have a claim with a door and no machine.
+/// Broken deliberately by reading such a claim as nobody's machine (an
+/// empty `Seat` for `Seat::here()` where `windows_on` finds no lines after
+/// the reading): the row said it was on another machine, and could not be
+/// chosen.
+#[test]
+fn a_window_from_before_machines_is_this_machine_s() {
+    let scratch = Scratch::new("worktrees-before-machines");
+    let (main, feature, _) = repository(&scratch);
+    let directory = obelus_logging::state_directory()
+        .expect("a state directory")
+        .join("windows")
+        .join(obelus_git::project(&main).expect("a project"));
+    std::fs::create_dir_all(&directory).expect("the directory");
+    let claim = directory.join("2-cafebabe-0");
+    std::fs::write(
+        &claim,
+        format!(
+            "{}\n127.0.0.1:9\nold\nold.rs\n",
+            resolved(&feature).display()
+        ),
+    )
+    .expect("what an older Obelus writes");
+    let held = std::fs::File::options()
+        .write(true)
+        .open(&claim)
+        .expect("the claim");
+    assert!(obelus_claim::wait_to_hold(&held), "the claim is not held");
+
+    let asked = Arc::new(Asked::default());
+    let (mut app, _events) = window_on(&main, &asked);
+    dispatch::dispatch(&mut app, Command::WorktreeList);
+    let row = rows(&app)
+        .into_iter()
+        .find(|row| row.0 == "old.rs")
+        .unwrap_or_else(|| panic!("the older window is not listed: {:?}", rows(&app)));
+    assert_eq!(row.2, None, "the older window is said to be elsewhere");
+    assert!(row.4, "the older window cannot be chosen");
+    drop(held);
+}
+
 /// A tree deleted behind git's back is listed, says so, and goes nowhere --
 /// including where a window was on it: that window has stopped saying so.
 ///

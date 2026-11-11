@@ -288,9 +288,13 @@ fn first_within(
 /// A terminal does nothing about any of it: it owns no window, and the
 /// Obelus at the other end is never told it can (`Front`).
 pub trait Elsewhere: Sync {
-    /// Starts another window, drawing an Obelus at `at` -- knocked on with
-    /// `key`, the letters it printed -- opened on `path` there.
-    fn open(&self, at: &str, key: &str, path: &str);
+    /// Starts another window, drawing an Obelus at `at` opened on `path`
+    /// there.
+    ///
+    /// With no key: this window got in, so the key is kept beside the
+    /// machine (`obelus_app::app::servers`), and the new window reads it
+    /// from there rather than from anything a process it starts inherits.
+    fn open(&self, at: &str, path: &str);
 
     /// Asks for the permission to bring another window forward, and gives
     /// it where it is wanted.
@@ -302,7 +306,7 @@ pub trait Elsewhere: Sync {
 }
 
 impl Elsewhere for () {
-    fn open(&self, _at: &str, _key: &str, _path: &str) {}
+    fn open(&self, _at: &str, _path: &str) {}
 
     fn bring(&self, permitting: Permitting) {
         permitting.give(None);
@@ -879,9 +883,9 @@ fn hear(
                     tracing::warn!(%error, url, "opening a link for the server");
                 }
             }
-            // On the same machine as this window, with the same key: the
-            // reader asked for another window, not another server.
-            Ok(Some(Down::Window(path))) => elsewhere.open(&afar.at, &afar.letters(), &path),
+            // On the same machine as this window: the reader asked for
+            // another window, not another server.
+            Ok(Some(Down::Window(path))) => elsewhere.open(&afar.at, &path),
             Ok(Some(Down::Bring(number))) => elsewhere.bring(Permitting {
                 number,
                 to: to_carry.clone(),
@@ -934,17 +938,16 @@ mod tests {
     /// What a window asked about its other windows, written down.
     #[derive(Default)]
     struct Went {
-        opened: Mutex<Vec<(String, String, String)>>,
+        opened: Mutex<Vec<(String, String)>>,
         came: Mutex<Vec<Option<String>>>,
     }
 
     impl Elsewhere for Went {
-        fn open(&self, at: &str, key: &str, path: &str) {
-            self.opened.lock().expect("the list").push((
-                at.to_string(),
-                key.to_string(),
-                path.to_string(),
-            ));
+        fn open(&self, at: &str, path: &str) {
+            self.opened
+                .lock()
+                .expect("the list")
+                .push((at.to_string(), path.to_string()));
         }
 
         fn bring(&self, permitting: Permitting) {
@@ -957,13 +960,14 @@ mod tests {
     }
 
     /// What the server asks about the reader's other windows is done here:
-    /// another window on the same machine with the same key, the permission
-    /// to bring one forward sent back up under the number it was asked
-    /// under, and this one coming forward with what it was given.
+    /// another window on the same machine, on the path it was asked for,
+    /// the permission to bring one forward sent back up under the number
+    /// it was asked under, and this one coming forward with what it was
+    /// given.
     ///
-    /// Broken deliberately by opening the other window with nothing to get
-    /// in with (`""` for the key in `hear`'s `Down::Window` arm): the new
-    /// window would have asked the reader for a key they gave already.
+    /// Broken deliberately by opening the other window on what this one was
+    /// opened on (`afar.path` for the path in `hear`'s `Down::Window` arm):
+    /// the new window was not on the tree the reader chose.
     #[test]
     fn the_other_windows_are_this_machine_s() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("loopback");
@@ -999,11 +1003,7 @@ mod tests {
         server.join().expect("the server");
         assert_eq!(
             went.opened.lock().expect("the list").clone(),
-            [(
-                "devbox".to_string(),
-                "abcd".to_string(),
-                "/srv/feature".to_string()
-            )]
+            [("devbox".to_string(), "/srv/feature".to_string())]
         );
         assert!(matches!(
             carrying.try_recv(),

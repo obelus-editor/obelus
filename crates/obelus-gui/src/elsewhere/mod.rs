@@ -103,10 +103,9 @@ impl Afar {
 }
 
 impl obelus_front::client::Elsewhere for Afar {
-    fn open(&self, at: &str, key: &str, path: &str) {
+    fn open(&self, at: &str, path: &str) {
         let _ = self.proxy.send_event(Waking::Going(Going::Connect {
             at: at.to_string(),
-            key: key.to_string(),
             path: path.to_string(),
         }));
     }
@@ -133,8 +132,6 @@ pub(crate) enum Going {
     Connect {
         /// The machine.
         at: String,
-        /// The letters it printed.
-        key: String,
         /// What to open there, as it is named there.
         path: String,
     },
@@ -317,7 +314,7 @@ pub(crate) fn go(going: Going, token: Option<String>) {
             let_it_come_forward();
             obelus_app::app::knock(&door, token.as_deref());
         }
-        Going::Connect { at, key, path } => connect(&at, &key, &path, token.as_deref()),
+        Going::Connect { at, path } => connect(&at, &path, token.as_deref()),
         Going::Permit(permitting) => {
             let_it_come_forward();
             permitting.give(token);
@@ -345,15 +342,14 @@ fn open(tree: Option<&Path>, token: Option<&str>) {
 /// Starts another window drawing the Obelus at `at`, opened on `path` --
 /// which is a path on that machine, and nowhere to start in on this one.
 ///
-/// With the key in the environment rather than among the arguments, where
-/// anybody on this machine who lists its processes would read it.
-fn connect(at: &str, key: &str, path: &str, token: Option<&str>) {
+/// With no key: the new window reads the one kept for the machine, which
+/// this window kept when it got in -- and a key handed down in the
+/// environment would go on down to everything the new window starts. The
+/// path after `--`, because it is the other machine's to say, and one that
+/// began with a dash would be read as an option.
+fn connect(at: &str, path: &str, token: Option<&str>) {
     start(token, |command| {
-        command
-            .arg("--connect")
-            .arg(at)
-            .arg(path)
-            .env("OBELUS_KEY", key);
+        command.arg("--connect").arg(at).arg("--").arg(path);
         if let Some(home) = std::env::home_dir() {
             command.current_dir(home);
         }

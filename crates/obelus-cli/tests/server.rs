@@ -113,6 +113,21 @@ impl Window {
     /// Knocks with `key`, asking for `path` -- or for the window `again`
     /// names -- and says how it was answered.
     fn knock(server: &Server, key: &[u8], path: &str, again: Option<&str>) -> (Self, Answered) {
+        let terminal = Front::Terminal {
+            pictures: None,
+            keyboard: false,
+        };
+        Self::knock_as(server, key, path, again, terminal)
+    }
+
+    /// The same, as `front`.
+    fn knock_as(
+        server: &Server,
+        key: &[u8],
+        path: &str,
+        again: Option<&str>,
+        front: Front,
+    ) -> (Self, Answered) {
         let mut stream = TcpStream::connect(&server.at).expect("connected");
         stream.set_read_timeout(Some(PATIENCE)).expect("a timeout");
         obelus_wire::write(&mut stream, &obelus_wire::Hello::here("the test")).expect("hello");
@@ -126,10 +141,7 @@ impl Window {
             &mut stream,
             &Knock {
                 signed: obelus_front::link::sign(key, &challenge),
-                front: Front::Terminal {
-                    pictures: None,
-                    keyboard: false,
-                },
+                front,
                 size: [80, 24, 0, 0],
                 path: Some(path.to_string()),
                 window: again.map(str::to_string),
@@ -281,6 +293,117 @@ fn a_window_is_drawn_comes_back_and_leaves() {
     // says so, rather than the connection just going.
     window.say(Input::Closed);
     assert_eq!(window.end(), Down::Finished);
+}
+
+/// Runs git in `directory`, with an identity of its own.
+fn git(directory: &std::path::Path, arguments: &[&str]) {
+    let outcome = Command::new("git")
+        .arg("-C")
+        .arg(directory)
+        .args(arguments)
+        .env("GIT_AUTHOR_NAME", "obelus")
+        .env("GIT_AUTHOR_EMAIL", "obelus@example.invalid")
+        .env("GIT_COMMITTER_NAME", "obelus")
+        .env("GIT_COMMITTER_EMAIL", "obelus@example.invalid")
+        .output()
+        .expect("running git");
+    assert!(
+        outcome.status.success(),
+        "git {arguments:?} failed: {}",
+        String::from_utf8_lossy(&outcome.stderr)
+    );
+}
+
+/// A window let in is a window to the Obelus there: enter on a tree in its
+/// list of worktrees asks the reader's machine for another window on that
+/// tree, rather than doing what a terminal does and putting this one there.
+///
+/// Broken deliberately by telling the Obelus nothing about the window
+/// (`windowed_by` left out of `serve::one`): enter put the window on the
+/// tree, and no other window was asked for.
+#[test]
+fn a_window_there_asks_for_another_here() {
+    let server = a_server("another-window");
+    let files = Scratch::new("another-window-repository");
+    let main = files.0.join("main");
+    std::fs::create_dir_all(&main).expect("the main checkout");
+    git(&main, &["init", "--quiet", "--initial-branch=master"]);
+    std::fs::write(main.join("file.rs"), "fn main() {}\n").expect("a file");
+    git(&main, &["add", "file.rs"]);
+    git(&main, &["commit", "--quiet", "-m", "committed"]);
+    let feature = files.0.join("feature");
+    git(
+        &main,
+        &[
+            "worktree",
+            "add",
+            "--quiet",
+            "-b",
+            "feature",
+            feature.to_str().expect("a path"),
+        ],
+    );
+
+    let window = Front::Window {
+        screen: [1920, 1080],
+        command_is_control: false,
+        can_bring: true,
+        seat: obelus_app::app::Seat {
+            id: "laptop".to_string(),
+            machine: Some("laptop".to_string()),
+        },
+    };
+    // A file, because the list of what is open is offered only where
+    // something is.
+    let path = main.join("file.rs").display().to_string();
+    let (mut window, answered) = Window::knock_as(&server, &server.key, &path, None, window);
+    assert!(
+        matches!(answered, Answered::Open { .. }),
+        "not let in: {answered:?}"
+    );
+    assert!(
+        window.until("the file", |window| window.text().contains("fn main")),
+        "Obelus ended before it drew the file"
+    );
+    let key = |code| {
+        Input::Key(crossterm::event::KeyEvent::new(
+            code,
+            crossterm::event::KeyModifiers::NONE,
+        ))
+    };
+    // The worktrees, by name from the palette, which open on this window's
+    // row; the next tree down; and enter.
+    window.say(Input::Key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    )));
+    window.type_text("switch-worktree");
+    for code in [
+        crossterm::event::KeyCode::Enter,
+        crossterm::event::KeyCode::Down,
+        crossterm::event::KeyCode::Enter,
+    ] {
+        window.say(key(code));
+    }
+
+    let deadline = Instant::now() + PATIENCE;
+    let asked = loop {
+        assert!(Instant::now() < deadline, "no other window was asked for");
+        match obelus_wire::read::<_, Down>(&mut window.stream) {
+            Ok(Some(Down::Window(asked))) => break asked,
+            Ok(Some(Down::Finished | Down::Home) | None) => {
+                panic!("Obelus ended without asking for another window")
+            }
+            Ok(Some(_)) => {}
+            Err(error) => panic!("the connection broke waiting for a window: {error}"),
+        }
+    };
+    assert_eq!(
+        std::path::Path::new(&asked)
+            .canonicalize()
+            .expect("a tree that is there"),
+        feature.canonicalize().expect("the other checkout"),
+    );
 }
 
 /// A knock signed with any other key is refused, and nothing is drawn.

@@ -145,32 +145,20 @@ impl Seat {
     ///
     /// Made up the first time it is asked and kept in this machine's state,
     /// so that a window started tomorrow is on the same machine as one
-    /// started today. Where there is nowhere to keep it, one for this
-    /// process alone: a window that cannot be told apart from its machine's
-    /// others is one that brings none of them forward, which is no worse
-    /// than before there were seats at all.
+    /// started today ([`kept_in`]). Where there is nowhere to keep it, one
+    /// made of the machine's name: a seat of this process's alone would put
+    /// every other window of this machine's somewhere else, and none of
+    /// them could be brought forward.
     #[must_use]
     pub fn here() -> Self {
         static HERE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
         let id = HERE.get_or_init(|| {
-            let Some(path) = obelus_logging::state_directory().map(|state| state.join("seat"))
-            else {
-                return obelus_claim::a_key();
-            };
-            if let Ok(kept) = std::fs::read_to_string(&path)
-                && !kept.trim().is_empty()
-            {
-                return kept.trim().to_string();
-            }
-            let made = obelus_claim::a_key();
-            let written = path
-                .parent()
-                .map_or(Ok(()), std::fs::create_dir_all)
-                .and_then(|()| std::fs::write(&path, format!("{made}\n")));
-            if let Err(error) = written {
-                tracing::warn!(%error, path = %path.display(), "this machine's seat is not kept");
-            }
-            made
+            obelus_logging::state_directory()
+                .and_then(|state| kept_in(&state.join("seat")))
+                .unwrap_or_else(|| {
+                    let name = crate::app::servers::this_machine().unwrap_or_default();
+                    format!("named {name}")
+                })
         });
         Self {
             id: id.clone(),
@@ -190,6 +178,50 @@ pub struct Door {
     /// is written in is the reader's own: whoever can read it is somebody
     /// the reader's window may come forward for.
     pub key: String,
+}
+
+/// The seat kept at `path`, made and kept there where there is none yet --
+/// or nothing, where it cannot be kept.
+///
+/// Made whole under a name of its own and then linked to `path`, which a
+/// link that is there already refuses: two windows started at once on a
+/// machine that has none yet each make one, and the one linked second reads
+/// the first's rather than keeping its own. Written over in place, the one
+/// that read between the other's making the file and writing it made a
+/// third, and every window of that machine was not all on one.
+fn kept_in(path: &Path) -> Option<String> {
+    let read = || {
+        std::fs::read_to_string(path)
+            .ok()
+            .map(|kept| kept.trim().to_string())
+            .filter(|kept| !kept.is_empty())
+    };
+    if let Some(kept) = read() {
+        return Some(kept);
+    }
+    std::fs::create_dir_all(path.parent()?).ok()?;
+    let made = obelus_claim::a_key();
+    let making = path.with_file_name(format!(".seat-{made}"));
+    if let Err(error) = std::fs::write(
+        &making,
+        format!(
+            "{made}
+"
+        ),
+    ) {
+        tracing::warn!(%error, path = %making.display(), "this machine's seat is not kept");
+        return None;
+    }
+    let linked = std::fs::hard_link(&making, path);
+    let _ = std::fs::remove_file(&making);
+    match linked {
+        Ok(()) => Some(made),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => read(),
+        Err(error) => {
+            tracing::warn!(%error, path = %path.display(), "this machine's seat is not kept");
+            None
+        }
+    }
 }
 
 /// The tabs of the list of open documents, in the order they sit in.
@@ -1353,5 +1385,49 @@ mod tests {
         assert_eq!(named_from(&root.join("repo")), None);
         let deeper = root.join("nowhere-obelus-made").join("repo");
         assert_eq!(named_from(&deeper), Some(root.join("nowhere-obelus-made")));
+    }
+
+    /// Windows started at once on a machine with no seat yet are all on the
+    /// one seat, and a seat kept is the one read.
+    ///
+    /// Broken deliberately by keeping each one's own over whatever is there
+    /// (`std::fs::rename` for the `hard_link` in `kept_in`): the windows
+    /// came out on several seats, and each was somewhere else to the others.
+    #[test]
+    fn windows_started_at_once_are_on_one_seat() {
+        let directory = std::env::temp_dir().join(format!(
+            "obelus-seat-{}-{}",
+            std::process::id(),
+            obelus_claim::a_key()
+        ));
+        let path = directory.join("seat");
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+        let seats: Vec<Option<String>> = (0..8)
+            .map(|_| {
+                let (path, barrier) = (path.clone(), std::sync::Arc::clone(&barrier));
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    kept_in(&path)
+                })
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|started| started.join().expect("a seat"))
+            .collect();
+        let first = seats[0].clone().expect("no seat was kept");
+        assert!(
+            seats
+                .iter()
+                .all(|seat| seat.as_deref() == Some(first.as_str())),
+            "on several seats: {seats:?}"
+        );
+        assert_eq!(kept_in(&path).as_deref(), Some(first.as_str()));
+        let left: Vec<_> = std::fs::read_dir(&directory)
+            .expect("the directory")
+            .flatten()
+            .map(|entry| entry.file_name())
+            .collect();
+        assert_eq!(left, ["seat"], "what was made on the way was left");
+        let _ = std::fs::remove_dir_all(&directory);
     }
 }
