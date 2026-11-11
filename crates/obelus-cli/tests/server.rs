@@ -328,8 +328,11 @@ fn a_window_there_asks_for_another_here() {
     let main = files.0.join("main");
     std::fs::create_dir_all(&main).expect("the main checkout");
     git(&main, &["init", "--quiet", "--initial-branch=master"]);
-    std::fs::write(main.join("file.rs"), "fn main() {}\n").expect("a file");
-    git(&main, &["add", "file.rs"]);
+    // Words rather than code, which no language server is started for in
+    // the repository: on Windows a directory something is still working in
+    // is one the scratch cannot take away.
+    std::fs::write(main.join("notes.txt"), "the notes\n").expect("a file");
+    git(&main, &["add", "notes.txt"]);
     git(&main, &["commit", "--quiet", "-m", "committed"]);
     let feature = files.0.join("feature");
     git(
@@ -355,14 +358,14 @@ fn a_window_there_asks_for_another_here() {
     };
     // A file, because the list of what is open is offered only where
     // something is.
-    let path = main.join("file.rs").display().to_string();
+    let path = main.join("notes.txt").display().to_string();
     let (mut window, answered) = Window::knock_as(&server, &server.key, &path, None, window);
     assert!(
         matches!(answered, Answered::Open { .. }),
         "not let in: {answered:?}"
     );
     assert!(
-        window.until("the file", |window| window.text().contains("fn main")),
+        window.until("the file", |window| window.text().contains("the notes")),
         "Obelus ended before it drew the file"
     );
     let key = |code| {
