@@ -79,6 +79,13 @@ pub struct Config {
     pub theme: String,
     /// Whether to draw Nerd Font glyphs.
     pub icons: bool,
+    /// How many colours a terminal is drawn in, by one of [`COLOURS`]:
+    /// `auto` for what the terminal says it can draw.
+    ///
+    /// A word the reader needs only where the terminal says wrong -- a
+    /// `COLORTERM` that did not cross an `ssh`, say -- and the reader's,
+    /// because it is about the terminal they are sitting at.
+    pub colours: String,
     /// Which language Obelus speaks: `auto` for the system's, or a
     /// language's tag -- one of [`obelus_i18n::CHOICES`].
     ///
@@ -384,6 +391,7 @@ impl Default for Config {
             // Without the font, the fallbacks read correctly; with it, one
             // switch turns the glyphs on.
             icons: false,
+            colours: "auto".to_string(),
             // The system's, because the language a reader reads is the one
             // thing about them their machine already knows.
             language: "auto".to_string(),
@@ -907,6 +915,10 @@ pub const KEY_LAYOUT_CHOICES: &[KeyLayout] = &[
 pub fn key_layout(word: &str) -> Option<&'static KeyLayout> {
     KEY_LAYOUT_CHOICES.iter().find(|layout| layout.word == word)
 }
+/// How many colours a terminal is drawn in: what it says it can draw, RGB,
+/// or the 256-colour palette -- the words `obelus_theme::depth` reads.
+pub const COLOURS: &[&str] = &["auto", "truecolor", "256"];
+
 /// How many build jobs at once, as a share of the machine.
 ///
 /// Logical CPUs, which is what a build counts when it sizes itself.
@@ -947,6 +959,16 @@ pub const ALL: &[Setting] = &[
         // to decide: they are drawn. The switch is a terminal's, which
         // draws with whatever font the reader installed -- a guess Obelus
         // cannot make for them.
+        drawn: Drawn::InATerminal,
+    },
+    Setting {
+        key: "colours",
+        group: Group::Appearance,
+        // The reader's: it is about the terminal they are sitting at, which
+        // a project somebody else wrote knows nothing of.
+        reach: Reach::ReaderOnly,
+        kind: Kind::Choice(COLOURS),
+        // A window draws its own pixels, and every one of them in RGB.
         drawn: Drawn::InATerminal,
     },
     Setting {
@@ -1175,6 +1197,7 @@ impl Config {
         match key {
             "theme" => Some(Value::Choice(self.theme.clone())),
             "icons" => Some(Value::Switch(self.icons)),
+            "colours" => Some(Value::Choice(self.colours.clone())),
             "language" => Some(Value::Choice(self.language.clone())),
             "blame_margin" => Some(Value::Switch(self.blame_margin)),
             "wrap" => Some(Value::Switch(self.wrap)),
@@ -1212,6 +1235,7 @@ impl Config {
         match (key, value) {
             ("theme", Value::Choice(word)) => self.theme = word.clone(),
             ("icons", Value::Switch(on)) => self.icons = *on,
+            ("colours", Value::Choice(word)) => self.colours = word.clone(),
             ("language", Value::Choice(word)) => self.language = word.clone(),
             ("blame_margin", Value::Switch(on)) => self.blame_margin = *on,
             ("wrap", Value::Switch(on)) => self.wrap = *on,
@@ -1912,6 +1936,20 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
         }
         config.language = word.to_string();
     }
+    if let Some(word) = table.get("colours").and_then(toml::Value::as_str) {
+        // Checked here for the workflow's reason: a word nothing answers to
+        // read as obeyed would be a reader who asked for 256 colours left
+        // looking at a terminal drawing none of them.
+        if !COLOURS.contains(&word) {
+            tracing::warn!(
+                word,
+                "no number of colours by this name, so the line does nothing"
+            );
+            no_such_choice.push(("colours", word.to_string()));
+        } else if allowed("colours") {
+            config.colours = word.to_string();
+        }
+    }
     if let Some(word) = table.get("build_jobs").and_then(toml::Value::as_str) {
         // Checked here for the workflow's reason: a word nothing answers to
         // read as obeyed would be a reader who asked for half the machine
@@ -2326,6 +2364,11 @@ fn lay(existing: &str, config: &Config, every: bool) -> String {
         "keys_from",
         config.keys_from != default.keys_from,
         toml_edit::value(config.keys_from.clone()),
+    );
+    put(
+        "colours",
+        config.colours != default.colours,
+        toml_edit::value(config.colours.clone()),
     );
     put(
         "build_jobs",
@@ -3297,6 +3340,7 @@ mod tests {
         let config = Config {
             theme: "light".to_string(),
             icons: false,
+            colours: "256".to_string(),
             language: "zh-CN".to_string(),
             blame_margin: false,
             wrap: true,

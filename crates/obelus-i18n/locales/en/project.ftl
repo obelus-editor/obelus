@@ -38,6 +38,10 @@ key-not-allowed = No command can be on `{ $key }`: { $why }
 agents-own-value = Whatever the agent starts a conversation with
 # Beside the value a list of them is on now.
 current = Current
+# How many colors a terminal is drawn in.
+colours-auto = Automatic
+colours-truecolor = 24-bit
+colours-256 = 256 colors
 jobs-unlimited = Unlimited
 jobs-all = { $cpus ->
     [one] All 1 CPU

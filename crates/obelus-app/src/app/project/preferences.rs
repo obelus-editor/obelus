@@ -990,6 +990,12 @@ impl App {
                 key => obelus_bot::platform::named(key).map(|platform| platform.name.into()),
             },
             "keys_from" => obelus_config::key_layout(word).map(|layout| layout.name.into()),
+            "colours" => match word {
+                "auto" => Some(obelus_i18n::project::colours_auto().into()),
+                "truecolor" => Some(obelus_i18n::project::colours_truecolor().into()),
+                "256" => Some(obelus_i18n::project::colours_256().into()),
+                _ => None,
+            },
             // A language by its own name, which is how its reader looks for
             // it -- and the system's in the language being spoken.
             "language" => match word {
@@ -1488,6 +1494,11 @@ impl App {
         // another machine says -- and the settings page does not offer the
         // row at all. See `obelus_config::Drawn`.
         obelus_icons::use_glyphs(self.settled.config.icons || obelus_config::in_a_window());
+        // What hands a frame to this terminal reads it. A terminal drawing
+        // an Obelus on another machine is told it below, as a window is
+        // told its size.
+        let depth = obelus_theme::depth::Depth::named(&self.settled.config.colours);
+        obelus_theme::depth::ask(depth);
         obelus_i18n::speak(&self.settled.config.language);
         obelus_text::lay_tabs_at(self.settled.config.tab_width);
         // And the one setting the application cannot act on itself: how
@@ -1499,6 +1510,7 @@ impl App {
             drawing.animates(self.settled.config.animation);
             drawing.bar_tabs(self.settled.config.bar_tabs);
             drawing.picture_strength(self.settled.config.picture_strength);
+            drawing.colours(depth);
         }
         // The table the reader's own bindings leave. Built rather than
         // patched: what is in the file is a list of changes over the

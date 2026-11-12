@@ -1788,6 +1788,15 @@ pub trait Drawing: std::fmt::Debug + Send + Sync {
     /// reads and decodes the file.
     fn picture_strength(&self, _share: usize) {}
 
+    /// How many colours a terminal is drawn in, or `None` for whatever it
+    /// says it can draw.
+    ///
+    /// A setting, said the way the size is and at the same moments, and
+    /// the other way round from the size: nothing to a window, which draws
+    /// every pixel in RGB, and a terminal's -- whose answer to `None` is
+    /// its own, because the terminal is at the far end from the settings.
+    fn colours(&self, _depth: Option<obelus_theme::depth::Depth>) {}
+
     /// What colour the caret is drawn in.
     ///
     /// Said the way the page's ground is and at the same two moments,

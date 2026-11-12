@@ -1,9 +1,9 @@
 //! The themes compiled into the binary.
 //!
-//! `COLORTERM=truecolor` is the assumption, so these are RGB rather than the
-//! sixteen named colours: syntax highlighting needs more distinct slots than
-//! sixteen, and a reader that inherits the terminal's palette cannot promise
-//! the same file looks the same twice.
+//! RGB rather than the sixteen named colours: syntax highlighting needs more
+//! distinct slots than sixteen, and a reader that inherits the terminal's
+//! palette cannot promise the same file looks the same twice. A terminal that
+//! cannot draw RGB is drawn the nearest of its 256 instead (`depth`).
 
 use ratatui::style::Color;
 

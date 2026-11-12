@@ -142,6 +142,13 @@ pub enum Update<P = Option<Hanging>> {
     /// The same journey again, and apart from the picture: a share is not
     /// a picture to read and decode again.
     PictureStrength(usize),
+    /// How many colours a terminal draws in, or that it is to say -- see
+    /// `Drawing::colours`.
+    ///
+    /// The same journey again, and the other way round: a terminal's, which
+    /// is the one front end with a palette to come down to, and nothing to
+    /// a window.
+    Colours(Option<obelus_theme::depth::Depth>),
     /// What the page is drawn on, for the margin round the grid.
     ///
     /// The same journey once more. A terminal never asks: there the cells
@@ -392,6 +399,7 @@ impl<P> Update<P> {
             | Self::Animates(_)
             | Self::BarTabs(_)
             | Self::PictureStrength(_)
+            | Self::Colours(_)
             | Self::Ground(_)
             | Self::Holding { .. }
             | Self::Picture(_)
@@ -424,6 +432,7 @@ impl<P> Update<P> {
             Self::Animates(said) => Update::Animates(said),
             Self::BarTabs(said) => Update::BarTabs(said),
             Self::PictureStrength(said) => Update::PictureStrength(said),
+            Self::Colours(said) => Update::Colours(said),
             Self::Ground(said) => Update::Ground(said),
             Self::Holding { held, row } => Update::Holding { held, row },
             Self::Tabs(said) => Update::Tabs(said),
@@ -736,6 +745,12 @@ impl obelus_app::app::Drawing for Telling {
         }
     }
 
+    fn colours(&self, depth: Option<obelus_theme::depth::Depth>) {
+        if self.showing.show(Update::Colours(depth)).is_ok() {
+            self.showing.wake();
+        }
+    }
+
     fn hang(&self, wallpaper: Option<&obelus_theme::Wallpaper>) {
         let Ok(mut newest) = self.newest.lock() else {
             return;
@@ -1019,6 +1034,7 @@ mod tests {
             Update::Animates(true),
             Update::BarTabs(false),
             Update::PictureStrength(60),
+            Update::Colours(Some(obelus_theme::depth::Depth::Palette)),
             Update::Ground(Color::Rgb(9, 8, 7)),
             Update::Holding {
                 held: Color::Blue,

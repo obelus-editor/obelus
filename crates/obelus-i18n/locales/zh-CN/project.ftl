@@ -35,6 +35,9 @@ key-not-allowed = `{ $key }` 不能绑定命令：{ $why }
 agents-own-value = agent 开始对话时自己的默认值
 # 列表中当前所用的值旁边。
 current = 当前
+colours-auto = 自动
+colours-truecolor = 24 位真彩色
+colours-256 = 256 色
 jobs-unlimited = 不限
 jobs-all = 全部 { $cpus } 个 CPU
 jobs-half = 一半：{ $cpus } 个 CPU 中的 { $jobs } 个

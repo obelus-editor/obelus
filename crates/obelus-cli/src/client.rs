@@ -26,6 +26,11 @@ use obelus_front::{
 };
 use ratatui::{buffer::Buffer, layout::Rect};
 
+/// The terminal, drawing at the depth it said or the reader asked for.
+pub(crate) type Screen = ratatui::Terminal<
+    crate::colours::Coloured<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
+>;
+
 /// What a terminal draws: Obelus on this machine, or one on another.
 pub(crate) enum Start {
     /// This process's own.
@@ -63,7 +68,7 @@ pub(crate) struct Terminal<'a> {
 /// not let the terminal in.
 pub(crate) fn drawing(
     start: Start,
-    terminal: &mut ratatui::DefaultTerminal,
+    terminal: &mut Screen,
     mut found: Terminal<'_>,
     kept: &mut Option<Box<App>>,
 ) -> Result<()> {
@@ -169,11 +174,7 @@ impl Showing for Arriving {
 
 /// Draws the Obelus at `afar` until there is no more connection, and says
 /// why.
-fn afar_drawn(
-    afar: &Afar,
-    terminal: &mut ratatui::DefaultTerminal,
-    found: &Terminal<'_>,
-) -> Result<Left> {
+fn afar_drawn(afar: &Afar, terminal: &mut Screen, found: &Terminal<'_>) -> Result<Left> {
     let size = terminal.size()?;
     let measured = Measured::default();
     measured.resized(size.width, size.height, 0, 0);
@@ -245,6 +246,10 @@ where
                 }
                 Update::Cleared => screen.reset(),
                 Update::Caret(at) => caret = at,
+                // The settings of the Obelus over there, which are the
+                // reader's; whether this terminal can draw what they
+                // leave to it is still this terminal's to say.
+                Update::Colours(depth) => obelus_theme::depth::ask(depth),
                 Update::Frame => {
                     terminal.draw(|frame| {
                         let into = frame.buffer_mut();
@@ -326,5 +331,33 @@ mod tests {
             terminal.get_cursor_position().expect("a caret"),
             ratatui::layout::Position::new(2, 1)
         );
+    }
+
+    /// What the settings over there say about the colours is what this
+    /// terminal draws at.
+    ///
+    /// Broken deliberately by leaving the arm out, so the update fell to
+    /// the window's: nothing was asked.
+    #[test]
+    fn the_colours_said_over_there_are_drawn_here() {
+        use obelus_theme::depth::{self, Depth};
+
+        let _turn = crate::colours::tests::TURN
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(1, 1)).expect("a terminal");
+        let measured = Measured::default();
+        measured.resized(1, 1, 0, 0);
+        let (told, telling) = std::sync::mpsc::channel();
+        told.send(Told::Update(Box::new(Update::Colours(Some(
+            Depth::Palette,
+        )))))
+        .expect("told");
+        told.send(Told::Ended).expect("told");
+        draw(&mut terminal, &measured, &telling).expect("drawn");
+        let asked = depth::asked();
+        depth::ask(None);
+        assert_eq!(asked, Some(Depth::Palette));
     }
 }

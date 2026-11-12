@@ -355,6 +355,9 @@ impl App {
         drawing.animates(self.settled.config.animation);
         drawing.bar_tabs(self.settled.config.bar_tabs);
         drawing.picture_strength(self.settled.config.picture_strength);
+        drawing.colours(obelus_theme::depth::Depth::named(
+            &self.settled.config.colours,
+        ));
         // Told even when nothing is open: a window handed over may still
         // show the tabs another Obelus told it -- the one on the machine it
         // was drawing before it came home -- and `tell_the_tabs` only says

@@ -12,6 +12,7 @@ use clap::Parser;
 use obelus_app::{event, startup};
 
 mod client;
+mod colours;
 mod serve;
 mod server;
 
@@ -118,9 +119,11 @@ fn main() -> Result<ExitCode> {
     // drawing Obelus, which a log read a week later has no other way to
     // learn, and which is the first thing to suspect when a key or a colour
     // did not do what it should.
+    let found = colours::of_this_terminal();
     tracing::info!(
         term = ?std::env::var("TERM").ok(),
         colours = ?std::env::var("COLORTERM").ok(),
+        ?found,
         "drawn on a terminal"
     );
 
@@ -135,11 +138,7 @@ fn main() -> Result<ExitCode> {
 
     colours_whatever_the_environment_says();
 
-    // `ratatui::try_init` enters the alternate screen, turns on raw mode, and
-    // chains a panic hook that undoes both before the previous hook runs.
-    // Without that chaining a panic leaves the terminal in raw mode and the
-    // backtrace unreadable.
-    let mut terminal = ratatui::try_init()?;
+    let mut terminal = taken_over(found)?;
     // Mouse reporting, for the wheel.
     //
     // Without it a terminal in the alternate screen translates the wheel
@@ -270,6 +269,27 @@ fn enable_keyboard() -> bool {
         previous(panic);
     }));
     true
+}
+
+/// The terminal, in the alternate screen and raw mode, drawing at `found`
+/// unless the reader says otherwise (`colours`).
+///
+/// What `ratatui::try_init` does, with a backend of Obelus's own: the
+/// panic hook first, which puts both back before the previous hook runs.
+/// Without it a panic leaves the terminal in raw mode and the backtrace
+/// unreadable.
+fn taken_over(found: obelus_theme::depth::Depth) -> std::io::Result<client::Screen> {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic| {
+        ratatui::restore();
+        previous(panic);
+    }));
+    crossterm::terminal::enable_raw_mode()?;
+    crossterm::execute!(std::io::stdout(), crossterm::terminal::EnterAlternateScreen)?;
+    ratatui::Terminal::new(colours::Coloured::new(
+        ratatui::backend::CrosstermBackend::new(std::io::stdout()),
+        found,
+    ))
 }
 
 /// Draws in the theme's colours whatever `NO_COLOR` says.

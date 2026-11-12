@@ -241,6 +241,7 @@ unicode-width = "0.2"
 
 anyhow = "1"
 tracing = "0.1"
+terminfo = "0.9"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # The clipboard's OSC 52, which is a terminal escape with the selection

@@ -4440,6 +4440,7 @@ dependencies = [
  "obelus-wire",
  "ratatui",
  "ratatui-image",
+ "terminfo",
  "tokio",
  "tracing",
 ]

@@ -10,10 +10,10 @@ screen 60x16  editor 60x14  status 60x1
  7|     Your terminal's font has to be a Nerd Font, or each    
  8|     icon is a box                                          
  9|                                                            
-10|   Language                            System default ▸     
-11|                                                            
-12|   Check for updates                   ☑                    
-13|     Once a day. A new version is mentioned on the          
+10|   Terminal colors                     Automatic ▸          
+11|     Change it if the colors are wrong                      
+12|                                                            
+13|   Language                            System default ▸     
 14|────────────────────────────────────────────────────────────
 15| > Filter settings                                          
 -- style --
@@ -27,10 +27,10 @@ screen 60x16  editor 60x14  status 60x1
  7|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccc
  8|cccccaaaaaaaaaaaaacccccccccccccccccccccccccccccccccccccccccc
  9|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-10|ccccccccccccccccccccccccccccccccccccccccccccccccccccccaccccc
-11|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+10|cccccccccccccccccccccccccccccccccccccccccccccccccacccccccccc
+11|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccccccccccccccccccc
 12|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-13|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccccccc
+13|ccccccccccccccccccccccccccccccccccccccccccccccccccccccaccccc
 14|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 15|dddaaaaaaaaaaaaaaadddddddddddddddddddddddddddddddddddddddddd
 -- legend --
