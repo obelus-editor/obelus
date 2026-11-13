@@ -1494,9 +1494,9 @@ impl App {
         // another machine says -- and the settings page does not offer the
         // row at all. See `obelus_config::Drawn`.
         obelus_icons::use_glyphs(self.settled.config.icons || obelus_config::in_a_window());
-        // What hands a frame to this terminal reads it. A terminal drawing
-        // an Obelus on another machine is told it below, as a window is
-        // told its size.
+        // What hands a frame to the terminal this process runs in reads it.
+        // A terminal at the other end of a connection is told it below,
+        // the way a window is told its size.
         let depth = obelus_theme::depth::Depth::named(&self.settled.config.colours);
         obelus_theme::depth::ask(depth);
         obelus_i18n::speak(&self.settled.config.language);

@@ -145,9 +145,9 @@ pub enum Update<P = Option<Hanging>> {
     /// How many colours a terminal draws in, or that it is to say -- see
     /// `Drawing::colours`.
     ///
-    /// The same journey again, and the other way round: a terminal's, which
-    /// is the one front end with a palette to come down to, and nothing to
-    /// a window.
+    /// The same journey again, the other way round: only a terminal is
+    /// told it ([`TellingATerminal`]), the one front end with a palette to
+    /// come down to.
     Colours(Option<obelus_theme::depth::Depth>),
     /// What the page is drawn on, for the margin round the grid.
     ///
@@ -617,6 +617,60 @@ impl obelus_ui::image::Marks for Marking {
     }
 }
 
+/// How a terminal at the other end is told the one thing the application
+/// says to a terminal: how many colours to draw in.
+///
+/// Not [`Telling`], every other word of which is a window's -- the faces,
+/// the size, the caret's shape at every frame, the picture under the page,
+/// whose bytes a terminal would be sent only to throw them away -- and this
+/// word is nothing to a window, which draws every pixel in RGB.
+pub struct TellingATerminal {
+    showing: Arc<dyn Showing>,
+}
+
+impl TellingATerminal {
+    /// What tells the terminal through `showing`.
+    #[must_use]
+    pub fn new(showing: Arc<dyn Showing>) -> Self {
+        Self { showing }
+    }
+}
+
+impl std::fmt::Debug for TellingATerminal {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("TellingATerminal")
+    }
+}
+
+impl obelus_app::app::Drawing for TellingATerminal {
+    fn colours(&self, depth: Option<obelus_theme::depth::Depth>) {
+        // A terminal that has gone is a send that fails, and the
+        // application finds that out for itself on its next frame.
+        if self.showing.show(Update::Colours(depth)).is_ok() {
+            self.showing.wake();
+        }
+    }
+
+    // The rest is a window's.
+    fn text_size(&self, _: usize) {}
+
+    fn caret_is(&self, _: Caret, _: Option<Layer>, _: bool) {}
+
+    fn animates(&self, _: bool) {}
+
+    fn bar_tabs(&self, _: bool) {}
+
+    fn use_fonts(&self, _: &[String]) {}
+
+    fn drawn_on(&self, _: Color) {}
+
+    fn holding(&self, _: Color, _: Color) {}
+
+    fn hang(&self, _: Option<&obelus_theme::Wallpaper>) {}
+
+    fn caret_in(&self, _: Color) {}
+}
+
 /// How the window is told the things only the application knows.
 ///
 /// The other direction on the same wire: how big the text should be, and
@@ -741,12 +795,6 @@ impl obelus_app::app::Drawing for Telling {
 
     fn picture_strength(&self, share: usize) {
         if self.showing.show(Update::PictureStrength(share)).is_ok() {
-            self.showing.wake();
-        }
-    }
-
-    fn colours(&self, depth: Option<obelus_theme::depth::Depth>) {
-        if self.showing.show(Update::Colours(depth)).is_ok() {
             self.showing.wake();
         }
     }

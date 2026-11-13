@@ -742,6 +742,30 @@ enum Carrying {
     },
 }
 
+/// Tells `app` what it is drawn on at the other end, and how to tell it
+/// what only the application knows.
+fn drawn_on(app: &mut obelus_app::app::App, front: &Front, showing: &Arc<dyn Showing>) {
+    match front {
+        Front::Window { .. } => {
+            app.drawn_by(Arc::new(obelus_front::Telling::new(Arc::clone(showing))));
+            let marking = obelus_front::Marking::new(Arc::clone(showing));
+            obelus_ui::shapes::drawn_by(Arc::new(marking.clone()));
+            app.use_images(obelus_ui::image::Images::drawn_by(Arc::new(marking)));
+        }
+        Front::Terminal { pictures, keyboard } => {
+            // Told how many colours to draw in, because the settings that
+            // say so are here and the terminal is there.
+            app.drawn_by(Arc::new(obelus_front::TellingATerminal::new(Arc::clone(
+                showing,
+            ))));
+            if let Some((pictures, cell)) = *pictures {
+                app.use_images(obelus_ui::image::Images::told(protocol(pictures), cell));
+            }
+            app.ctrl_enter_arrives(*keyboard);
+        }
+    }
+}
+
 /// Runs one Obelus for the window `ob --server` is carrying the connection
 /// of, until the reader leaves it or it is stopped.
 ///
@@ -786,20 +810,7 @@ pub(crate) fn one() -> Result<ExitCode> {
     let showing: Arc<dyn Showing> = out.clone();
     let measured = Arc::new(Measured::default());
     measured.resized(size[0], size[1], u32::from(size[2]), u32::from(size[3]));
-    match front {
-        Front::Window { .. } => {
-            app.drawn_by(Arc::new(obelus_front::Telling::new(Arc::clone(&showing))));
-            let marking = obelus_front::Marking::new(Arc::clone(&showing));
-            obelus_ui::shapes::drawn_by(Arc::new(marking.clone()));
-            app.use_images(obelus_ui::image::Images::drawn_by(Arc::new(marking)));
-        }
-        Front::Terminal { pictures, keyboard } => {
-            if let Some((pictures, cell)) = pictures {
-                app.use_images(obelus_ui::image::Images::told(protocol(pictures), cell));
-            }
-            app.ctrl_enter_arrives(keyboard);
-        }
-    }
+    drawn_on(&mut app, &front, &showing);
     let (sender, events) = obelus_app::event::channel();
     let afar = Arc::new(Afar {
         out: Arc::clone(&out),
@@ -1122,6 +1133,61 @@ fn kept(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// What a test's front end was told, in order.
+    #[derive(Default)]
+    struct Shown(Mutex<Vec<Update>>);
+
+    impl Showing for Shown {
+        fn show(&self, update: Update) -> Result<(), Closed> {
+            self.0.lock().expect("what was shown").push(update);
+            Ok(())
+        }
+
+        fn wake(&self) {}
+    }
+
+    /// A terminal at the other end is told how many colours to draw in when
+    /// it arrives and again when the settings change -- and told nothing
+    /// else, for the rest is a window's.
+    ///
+    /// Broken deliberately by giving the terminal no `Drawing`, which is
+    /// how it was first written: nothing was told, so the settings over
+    /// here never reached the terminal there.
+    #[test]
+    fn a_terminal_at_the_other_end_is_told_the_colours() {
+        use obelus_theme::depth::{self, Depth};
+
+        let _turn = crate::colours::tests::TURN
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let coloured = |word: &str| obelus_config::Config {
+            colours: word.to_string(),
+            ..obelus_config::Config::default()
+        };
+        let mut app = obelus_app::app::App::new(Vec::new());
+        app.configure(coloured("256"), Vec::new());
+        let shown = Arc::new(Shown::default());
+        let showing: Arc<dyn Showing> = shown.clone();
+        drawn_on(
+            &mut app,
+            &Front::Terminal {
+                pictures: None,
+                keyboard: false,
+            },
+            &showing,
+        );
+        app.configure(coloured("auto"), Vec::new());
+        depth::ask(None);
+        let told = shown.0.lock().expect("what was shown").clone();
+        assert_eq!(told.first(), Some(&Update::Colours(Some(Depth::Palette))));
+        assert_eq!(told.last(), Some(&Update::Colours(None)));
+        assert!(
+            told.iter()
+                .all(|update| matches!(update, Update::Colours(_))),
+            "a terminal was told a window's words: {told:?}"
+        );
+    }
 
     /// Where a test's `Out` writes, kept to be read back.
     #[derive(Clone, Default)]
