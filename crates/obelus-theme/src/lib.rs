@@ -6,6 +6,7 @@
 //! nobody.
 
 pub mod builtin;
+pub mod depth;
 pub mod wallpaper;
 pub mod written;
 

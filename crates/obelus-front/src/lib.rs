@@ -142,6 +142,13 @@ pub enum Update<P = Option<Hanging>> {
     /// The same journey again, and apart from the picture: a share is not
     /// a picture to read and decode again.
     PictureStrength(usize),
+    /// How many colours a terminal draws in, or that it is to say -- see
+    /// `Drawing::colours`.
+    ///
+    /// The same journey again, the other way round: only a terminal is
+    /// told it ([`TellingATerminal`]), the one front end with a palette to
+    /// come down to.
+    Colours(Option<obelus_theme::depth::Depth>),
     /// What the page is drawn on, for the margin round the grid.
     ///
     /// The same journey once more. A terminal never asks: there the cells
@@ -392,6 +399,7 @@ impl<P> Update<P> {
             | Self::Animates(_)
             | Self::BarTabs(_)
             | Self::PictureStrength(_)
+            | Self::Colours(_)
             | Self::Ground(_)
             | Self::Holding { .. }
             | Self::Picture(_)
@@ -424,6 +432,7 @@ impl<P> Update<P> {
             Self::Animates(said) => Update::Animates(said),
             Self::BarTabs(said) => Update::BarTabs(said),
             Self::PictureStrength(said) => Update::PictureStrength(said),
+            Self::Colours(said) => Update::Colours(said),
             Self::Ground(said) => Update::Ground(said),
             Self::Holding { held, row } => Update::Holding { held, row },
             Self::Tabs(said) => Update::Tabs(said),
@@ -606,6 +615,60 @@ impl obelus_ui::image::Marks for Marking {
             y,
         });
     }
+}
+
+/// How a terminal at the other end is told the one thing the application
+/// says to a terminal: how many colours to draw in.
+///
+/// Not [`Telling`], every other word of which is a window's -- the faces,
+/// the size, the caret's shape at every frame, the picture under the page,
+/// whose bytes a terminal would be sent only to throw them away -- and this
+/// word is nothing to a window, which draws every pixel in RGB.
+pub struct TellingATerminal {
+    showing: Arc<dyn Showing>,
+}
+
+impl TellingATerminal {
+    /// What tells the terminal through `showing`.
+    #[must_use]
+    pub fn new(showing: Arc<dyn Showing>) -> Self {
+        Self { showing }
+    }
+}
+
+impl std::fmt::Debug for TellingATerminal {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("TellingATerminal")
+    }
+}
+
+impl obelus_app::app::Drawing for TellingATerminal {
+    fn colours(&self, depth: Option<obelus_theme::depth::Depth>) {
+        // A terminal that has gone is a send that fails, and the
+        // application finds that out for itself on its next frame.
+        if self.showing.show(Update::Colours(depth)).is_ok() {
+            self.showing.wake();
+        }
+    }
+
+    // The rest is a window's.
+    fn text_size(&self, _: usize) {}
+
+    fn caret_is(&self, _: Caret, _: Option<Layer>, _: bool) {}
+
+    fn animates(&self, _: bool) {}
+
+    fn bar_tabs(&self, _: bool) {}
+
+    fn use_fonts(&self, _: &[String]) {}
+
+    fn drawn_on(&self, _: Color) {}
+
+    fn holding(&self, _: Color, _: Color) {}
+
+    fn hang(&self, _: Option<&obelus_theme::Wallpaper>) {}
+
+    fn caret_in(&self, _: Color) {}
 }
 
 /// How the window is told the things only the application knows.
@@ -1019,6 +1082,7 @@ mod tests {
             Update::Animates(true),
             Update::BarTabs(false),
             Update::PictureStrength(60),
+            Update::Colours(Some(obelus_theme::depth::Depth::Palette)),
             Update::Ground(Color::Rgb(9, 8, 7)),
             Update::Holding {
                 held: Color::Blue,

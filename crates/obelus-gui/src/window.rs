@@ -1373,6 +1373,8 @@ impl ApplicationHandler<Waking> for Showing {
                             self.page.drawn_on(ground);
                         }
                         Update::Holding { held, row } => self.holding = (held, row),
+                        // A terminal's: a window draws every pixel in RGB.
+                        Update::Colours(_) => {}
                         Update::Tabs(tabs) => self.strip.told(tabs),
                         // Kept now, while the page is the one the reader was
                         // shown: the frame in the new colours is behind this

@@ -343,18 +343,22 @@ impl App {
     /// Says what is drawing Obelus, so that it can be told the settings it
     /// is the only one that can act on.
     ///
-    /// A terminal says nothing and is told nothing: its font, its size and
-    /// its colours are the terminal's own, and a reader who wants larger
-    /// text there asks the terminal for it. A window has no such owner --
-    /// it draws its own pixels -- so the size of the text is a setting
-    /// like any other, and this is how the change reaches the thing that
-    /// would have to redraw.
+    /// A terminal's font and size are the terminal's own, and a reader who
+    /// wants larger text there asks the terminal for it. A window has no
+    /// such owner -- it draws its own pixels -- so the size of the text is
+    /// a setting like any other, and this is how the change reaches the
+    /// thing that would have to redraw. A terminal on another machine is
+    /// told one thing, how many colours to draw in; the one this Obelus
+    /// runs in reads that from the settings itself, and has no drawing.
     pub fn drawn_by(&mut self, drawing: std::sync::Arc<dyn crate::app::Drawing>) {
         drawing.text_size(self.settled.config.font_size);
         drawing.use_fonts(&self.settled.config.fonts);
         drawing.animates(self.settled.config.animation);
         drawing.bar_tabs(self.settled.config.bar_tabs);
         drawing.picture_strength(self.settled.config.picture_strength);
+        drawing.colours(obelus_theme::depth::Depth::named(
+            &self.settled.config.colours,
+        ));
         // Told even when nothing is open: a window handed over may still
         // show the tabs another Obelus told it -- the one on the machine it
         // was drawing before it came home -- and `tell_the_tabs` only says

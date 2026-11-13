@@ -1,7 +1,7 @@
 [package]
 name = "obelus-cli"
-# Its own, the way `obelus-gui`'s is: the workspace says what Obelus is,
-# and this is the half of it that lives in a terminal.
+# The half of Obelus that lives in a terminal, as `obelus-gui`'s says the
+# half in a window.
 description = "A code editor in a terminal, with the agent built in."
 version.workspace = true
 edition.workspace = true
@@ -30,6 +30,9 @@ obelus-private.workspace = true
 obelus-runtime.workspace = true
 tokio.workspace = true
 obelus-ui.workspace = true
+# What a terminal can draw, and a colour brought down to it -- see
+# `colours`.
+obelus-theme.workspace = true
 obelus-wire.workspace = true
 getrandom.workspace = true
 anyhow.workspace = true
@@ -40,6 +43,8 @@ ratatui.workspace = true
 # How a terminal at the other end draws a picture, as ratatui names it.
 ratatui-image.workspace = true
 tracing.workspace = true
+# Whether a terminal that does not say it in `COLORTERM` draws RGB.
+terminfo.workspace = true
 
 # Who this process is, which names the directory a file dropped on a window
 # at the other end is kept in -- see `serve::dropped_in`.
@@ -48,8 +53,6 @@ libc.workspace = true
 
 [dev-dependencies]
 crossterm.workspace = true
-# For a picture of the theme, in the tests of how one crosses.
-obelus-theme.workspace = true
 obelus-front.workspace = true
 obelus-private.workspace = true
 obelus-wire.workspace = true

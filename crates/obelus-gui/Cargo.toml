@@ -1,7 +1,7 @@
 [package]
 name = "obelus-gui"
-# Its own, not the workspace's: that one says "terminal", and this is the
-# binary for readers who are not in one.
+# The binary for readers who are not in a terminal, as `obelus-cli`'s says
+# the half that is.
 description = "A code editor in a window, with the agent built in."
 version.workspace = true
 edition.workspace = true

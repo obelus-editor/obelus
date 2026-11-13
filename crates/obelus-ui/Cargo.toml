@@ -22,7 +22,6 @@ obelus-i18n.workspace = true
 obelus-icons.workspace = true
 obelus-keymap.workspace = true
 obelus-lsp.workspace = true
-obelus-reading.workspace = true
 obelus-row.workspace = true
 obelus-search.workspace = true
 obelus-syntax.workspace = true

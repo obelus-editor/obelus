@@ -300,6 +300,7 @@
           <tr><td><code>theme</code></td><td><code>"dark"</code></td><td>Obelus 用哪套颜色画</td></tr>
           <tr><td><code>keys_from</code></td><td><code>"obelus"</code></td><td>你的按键从哪套出发：<code>obelus</code>、<code>mnemonic</code>、<code>vscode</code> 或 <code>textmate</code>，见<a href="#layouts">四套按键方案</a></td></tr>
           <tr><td><code>icons</code></td><td><code>false</code></td><td><em>只对终端版。</em>显不显示 Nerd Font 图标——没装补丁字体的话会显示成方框。窗口版自带图标，不看这一项</td></tr>
+          <tr><td><code>colours</code></td><td><code>"auto"</code></td><td><em>只对终端版。</em><code>ob</code> 用多少种颜色画：<code>"auto"</code>、<code>"truecolor"</code> 或 <code>"256"</code>。<code>"auto"</code> 在 <code>COLORTERM</code> 是 <code>truecolor</code> 或 <code>24bit</code>、或者终端的 terminfo 条目里有 <code>RGB</code> 或 <code>Tc</code> 时用 24 位真彩色，否则用 256 色里最接近的颜色——macOS 26 之前的系统终端就需要这样。ssh 不转发 <code>COLORTERM</code>，所以通过 ssh 运行的 <code>ob</code> 默认是 256 色：终端画得了更多颜色的话，设这一项或者设 <code>COLORTERM</code> 即可。用 <code>ob --connect</code> 时，<code>"auto"</code> 由你面前的终端来回答。只归你：项目不能设</td></tr>
           <tr><td><code>wrap</code></td><td><code>false</code></td><td>太长的行要不要折到下一行显示。默认关，一行就是一行</td></tr>
           <tr><td><code>blame_margin</code></td><td><code>true</code></td><td>边栏上显示每一行最后是谁改的</td></tr>
           <tr><td><code>tab_width</code></td><td><code>4</code></td><td>一个 tab 画多宽，从 <code>1</code> 到 <code>16</code></td></tr>

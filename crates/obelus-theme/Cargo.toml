@@ -13,7 +13,6 @@ workspace = true
 serde.workspace = true
 obelus-i18n.workspace = true
 obelus-text.workspace = true
-anyhow.workspace = true
 # Reading a wallpaper, here so that the window drawing one and the check a
 # theme is put through before it is published read it the same way.
 image.workspace = true

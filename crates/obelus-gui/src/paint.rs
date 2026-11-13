@@ -1891,8 +1891,8 @@ mod tests {
                     }),
                     "level {level} reads its own picture or one over it: {plan:?}"
                 );
-                for under in 0..level {
-                    let glass = placed.levels[under].glass;
+                for (under, below) in placed.levels.iter().enumerate().take(level) {
+                    let glass = below.glass;
                     assert!(
                         plan.contains(&(glass..glass + 1, Reads::Level(under))),
                         "level {level} does not see level {under}'s glass: {plan:?}"

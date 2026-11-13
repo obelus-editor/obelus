@@ -1363,6 +1363,10 @@ impl Page {
                 tracing::warn!(share, "a setting reached the page");
                 false
             }
+            Update::Colours(depth) => {
+                tracing::warn!(?depth, "a setting reached the page");
+                false
+            }
             // Nor are these: they are what a run of cells *is* and what
             // was under one, and the window takes both out of the queue
             // with the marks.

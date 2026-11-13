@@ -23,7 +23,6 @@ obelus-icons.workspace = true
 obelus-keymap.workspace = true
 obelus-lsp.workspace = true
 obelus-markdown.workspace = true
-obelus-reading.workspace = true
 obelus-row.workspace = true
 obelus-search.workspace = true
 obelus-text.workspace = true

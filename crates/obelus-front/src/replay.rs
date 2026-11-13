@@ -72,6 +72,7 @@ impl Screen {
             | Update::Animates(_)
             | Update::BarTabs(_)
             | Update::PictureStrength(_)
+            | Update::Colours(_)
             | Update::Ground(_)
             | Update::Holding { .. }
             | Update::Picture(_)
@@ -142,7 +143,8 @@ const fn about(update: &Update) -> u8 {
         Update::CaretInk(_) => 7,
         Update::Picture(_) => 8,
         Update::Tabs(_) => 9,
-        _ => 10,
+        Update::Colours(_) => 10,
+        _ => 11,
     }
 }
 
