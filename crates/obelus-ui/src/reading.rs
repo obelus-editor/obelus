@@ -1,6 +1,6 @@
 //! A reading, drawn.
 //!
-//! The rows come from [`obelus_reading`] already laid out and already
+//! The rows come from `obelus_reading` already laid out and already
 //! carrying what each run *is*; this puts the theme's colours on them and
 //! writes the cells. One drawer for every reading, because by the time a
 //! reading is rows it is the same thing as any other: runs of text with a

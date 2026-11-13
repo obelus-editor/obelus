@@ -4489,7 +4489,6 @@ dependencies = [
  "obelus-keymap",
  "obelus-lsp",
  "obelus-markdown",
- "obelus-reading",
  "obelus-row",
  "obelus-search",
  "obelus-text",
@@ -4880,7 +4879,6 @@ dependencies = [
 name = "obelus-theme"
 version = "0.19.2"
 dependencies = [
- "anyhow",
  "image",
  "obelus-i18n",
  "obelus-text",
@@ -4939,7 +4937,6 @@ dependencies = [
  "obelus-icons",
  "obelus-keymap",
  "obelus-lsp",
- "obelus-reading",
  "obelus-row",
  "obelus-search",
  "obelus-syntax",

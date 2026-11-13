@@ -1,7 +1,7 @@
 [package]
 name = "obelus-cli"
-# Its own, the way `obelus-gui`'s is: the workspace says what Obelus is,
-# and this is the half of it that lives in a terminal.
+# The half of Obelus that lives in a terminal, as `obelus-gui`'s says the
+# half in a window.
 description = "A code editor in a terminal, with the agent built in."
 version.workspace = true
 edition.workspace = true

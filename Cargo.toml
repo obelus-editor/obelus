@@ -12,16 +12,10 @@ default-members = ["crates/obelus-gui"]
 version = "0.19.2"
 edition = "2024"
 license = "Apache-2.0"
-# What this project is. Inherited by nothing: every crate says what it is,
-# in its own line, and the two binaries say which half of Obelus they are.
-# So this is the manifest's own answer to the question the README and the
-# repository's About answer, and it is kept in the same words as those.
-#
-# It said "terminal" while there was only one front end. `obg` arrived and
-# the sentence stayed, so the one crate that did inherit it -- `obelus-cli`
-# -- was right by accident, and the project was described as the half of
-# itself that was there first.
-description = "A code editor that fits how I work, with the agent built in, in a window of its own or in a terminal."
+# No description: every crate says what it is in its own line, and the two
+# binaries say which half of Obelus they are. One here was inherited by
+# nothing, which Cargo says, and what the project is is said by the README
+# and the repository's About.
 
 # The lints the whole of Obelus is written under. Crate attributes do not
 # travel, so `#![deny(..)]` in one crate root would silently stop applying to
@@ -40,7 +34,6 @@ obelus-app = { path = "crates/obelus-app" }
 obelus-bot = { path = "crates/obelus-bot" }
 obelus-buffer = { path = "crates/obelus-buffer" }
 obelus-claim = { path = "crates/obelus-claim" }
-obelus-cli = { path = "crates/obelus-cli" }
 obelus-clipboard = { path = "crates/obelus-clipboard" }
 obelus-command = { path = "crates/obelus-command" }
 obelus-component = { path = "crates/obelus-component" }
