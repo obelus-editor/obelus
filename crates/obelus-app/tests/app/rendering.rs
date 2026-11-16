@@ -1316,6 +1316,65 @@ fn control_and_an_arrow_scroll_the_file_and_leave_the_cursor() {
     assert_eq!(line(&app), 1, "the cursor moved on the way back");
 }
 
+/// A view the caret pushed is counted on the frame that shows it moved.
+///
+/// How far the view has travelled is what a window slides the file by, and
+/// it was added up before the caret was brought back on screen: the first
+/// press off the last row scrolled with no slide, the second slid for the
+/// first, and an arrow the other way -- which moves no view at all -- slid
+/// for the second, out of a page that was a frame old.
+///
+/// Deliberate break: `note_where_the_view_has_got_to` asked at the top of
+/// `App::prepare`, where it was. The frame the view moved on then says it
+/// has travelled nothing.
+#[test]
+fn a_view_the_caret_pushed_is_counted_on_the_frame_it_moved() {
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    let top = |app: &App| app.current_buffer().expect("a buffer").viewport().top.get();
+    // Ten rows of file, so nine presses put the caret on the last of them.
+    support::lay_out(&mut app, 40, 12);
+    for _ in 0..9 {
+        press(&mut app, KeyCode::Down);
+    }
+    support::lay_out(&mut app, 40, 12);
+    assert_eq!(top(&app), 0, "not where this test starts");
+    let start = app.travelled();
+
+    press(&mut app, KeyCode::Down);
+    support::lay_out(&mut app, 40, 12);
+    assert_eq!(top(&app), 1, "the view did not follow the caret");
+    assert_eq!(
+        app.travelled() - start,
+        1,
+        "the frame the view moved on did not say so"
+    );
+
+    // Back up a row, which moves the caret and no view.
+    press(&mut app, KeyCode::Up);
+    support::lay_out(&mut app, 40, 12);
+    assert_eq!(top(&app), 1, "the view moved under an arrow that had room");
+    assert_eq!(
+        app.travelled() - start,
+        1,
+        "a view that stood still travelled"
+    );
+
+    // And off the first row, the same the other way.
+    for _ in 0..8 {
+        press(&mut app, KeyCode::Up);
+    }
+    support::lay_out(&mut app, 40, 12);
+    assert_eq!(app.travelled() - start, 1, "not on the first row yet");
+    press(&mut app, KeyCode::Up);
+    support::lay_out(&mut app, 40, 12);
+    assert_eq!(top(&app), 0, "the view did not follow the caret up");
+    assert_eq!(
+        app.travelled() - start,
+        0,
+        "the frame the view moved back on did not say so"
+    );
+}
+
 /// The thumb reaches the bottom of the track when the last line is on
 /// screen. That is the one position a reader checks it against: a bar that
 /// stops short says there is more below when there is not.
