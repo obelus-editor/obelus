@@ -99,7 +99,6 @@ impl App {
         // where what was kept is not current.
         self.settle_the_page();
         self.ask_about_the_page();
-        self.note_where_the_view_has_got_to();
         // What the views showing are drawn from, and what Obelus has to be
         // told about it. First, because everything below this reads one of
         // those kept answers -- the notes' marks are worked out a dozen
@@ -364,6 +363,14 @@ impl App {
         self.follow_the_page();
         self.look_within_at_the_selection();
         self.mark_the_match();
+        // After everything above that moves the view, and the caret being
+        // brought back on screen is one of them: this is what a window
+        // slides the file by, and the frame about to be drawn is the one
+        // the view moved on. Asked at the top, a view the caret pushed was
+        // counted a frame late -- the first press off the last row scrolled
+        // with no slide, and the arrow back, which moves no view, slid for
+        // the press before it out of a page that was a frame old.
+        self.note_where_the_view_has_got_to();
 
         let painted = obelus_ui::editor_canvas(self.screen_area).height;
         let Self {
