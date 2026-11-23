@@ -9,7 +9,7 @@ members = ["crates/*"]
 default-members = ["crates/obelus-gui"]
 
 [workspace.package]
-version = "0.19.2"
+version = "0.20.0"
 edition = "2024"
 license = "Apache-2.0"
 # No description: every crate says what it is in its own line, and the two
