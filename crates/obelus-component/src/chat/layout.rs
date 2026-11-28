@@ -103,6 +103,160 @@ fn laid_out(text: &str, width: u16, markdown: bool, turned: Option<&[usize]>) ->
         .collect()
 }
 
+/// What rows laid out now at `width` are laid out against: the one answer
+/// both the conversation's rows and each thing said's are kept by, so the
+/// two cannot be kept by different questions.
+///
+/// The width, and three things the whole process shares that the same
+/// words are laid out differently under. Which characters the window
+/// draws as pictures, because a heart laid out one cell wide is drawn two
+/// runs into the word after it. The language, because a run's heading and
+/// a plan's step are Obelus's words. And how wide a tab is, which the
+/// wrapping measures a tab by: missing from here, a conversation open
+/// while the reader changed the setting kept what it had said wrapped at
+/// the old width for as long as nothing in it moved.
+fn laid_against(width: u16) -> LaidAt {
+    (
+        width,
+        obelus_text::pictures_version(),
+        obelus_i18n::spoken(),
+        obelus_text::tab_width(),
+    )
+}
+
+/// One thing said, laid out, and what it was laid out from -- see
+/// `Chat::pieces`.
+#[derive(Debug)]
+pub(super) struct Piece {
+    /// What the whole conversation was being laid out against.
+    against: LaidAt,
+    /// How deep it was: under a run's heading, or not.
+    depth: u8,
+    /// The thing said, as it was -- less its pictures: see
+    /// [`Said::as_laid_out`].
+    pub(super) said: Said,
+    /// Which of the conversation's rows, as they were last laid out, it
+    /// took.
+    ///
+    /// A place in those rows rather than a copy of its own: the rows are
+    /// kept once, and kept when they go stale -- see [`LaidOut::fresh`].
+    pub(super) rows: std::ops::Range<usize>,
+}
+
+/// The conversation's rows as they were last laid out, and what against.
+#[derive(Debug)]
+pub(super) struct LaidOut {
+    /// What they were laid out against -- see `laid_against`.
+    at: LaidAt,
+    /// The rows.
+    pub(super) rows: Vec<Row>,
+    /// Whether nothing has changed since they were laid out.
+    ///
+    /// Kept when they are not, rather than dropped, because the rows of
+    /// everything said that has not moved are still in them -- which is
+    /// where [`Piece::rows`] says to find them, and the reason no thing
+    /// said keeps a copy of its own.
+    pub(super) fresh: bool,
+}
+
+/// Rows being laid out: the ones laid out before, which of the things
+/// said have been laid out this time, and the rows so far.
+struct Laying<'a> {
+    /// The rows as they were last laid out.
+    before: &'a [Row],
+    /// Which things said have been laid out this time, by where they are.
+    seen: Vec<bool>,
+    /// The rows so far.
+    rows: Vec<Row>,
+}
+
+impl Said {
+    /// What of this a [`Piece`] keeps: all of it but the pictures.
+    ///
+    /// The pictures because a picture is megabytes and nothing laid out
+    /// reads them -- what a reader's message says is its `text`, the
+    /// spelling of its parts. Copied into every piece and compared byte for
+    /// byte on every chunk of an answer, a screenshot pasted into a message
+    /// was the cost the box had already been rid of once (`Composer`'s
+    /// `attached`).
+    ///
+    /// Every field named, here and in [`Said::lays_out_as`], so that one
+    /// added to [`Said`] does not compile until somebody has said whether
+    /// the rows are drawn from it.
+    fn as_laid_out(&self) -> Self {
+        let Self {
+            speaker,
+            text,
+            tag,
+            state,
+            kind,
+            parts: _,
+            places,
+            change,
+            ran,
+            words,
+            opened,
+            run_opened,
+            details_turned,
+            unsent,
+            afar,
+        } = self;
+        Self {
+            speaker: *speaker,
+            text: text.clone(),
+            tag: tag.clone(),
+            state: state.clone(),
+            kind: kind.clone(),
+            parts: Vec::new(),
+            places: places.clone(),
+            change: change.clone(),
+            ran: ran.clone(),
+            words: words.clone(),
+            opened: *opened,
+            run_opened: *run_opened,
+            details_turned: details_turned.clone(),
+            unsent: *unsent,
+            afar: *afar,
+        }
+    }
+
+    /// Whether this would be laid out into the rows `kept` was: every
+    /// field but the pictures, for the reason [`Said::as_laid_out`] gives.
+    fn lays_out_as(&self, kept: &Self) -> bool {
+        let Self {
+            speaker,
+            text,
+            tag,
+            state,
+            kind,
+            parts: _,
+            places,
+            change,
+            ran,
+            words,
+            opened,
+            run_opened,
+            details_turned,
+            unsent,
+            afar,
+        } = self;
+        *speaker == kept.speaker
+            && *text == kept.text
+            && *tag == kept.tag
+            && *state == kept.state
+            && *kind == kept.kind
+            && *places == kept.places
+            && *change == kept.change
+            && *ran == kept.ran
+            && *words == kept.words
+            && *opened == kept.opened
+            && *run_opened == kept.run_opened
+            && *details_turned == kept.details_turned
+            && *unsent == kept.unsent
+            && *afar == kept.afar
+    }
+}
+
 /// A row of a thing said, laid out: its runs, the block of code it is part
 /// of, the links on it, and the `<details>` it is the heading of.
 type Laid = (
@@ -209,40 +363,47 @@ impl Chat {
 
     /// The rows, laid out or remembered from the last time they were.
     fn laid_out(&self, width: u16) -> Vec<Row> {
-        // And against which characters are pictures, which is a question
-        // about the window's fonts and changes when the reader's do: a
-        // heart laid out one cell wide and drawn two runs into the word
-        // after it. And against the language, because a run's heading and
-        // a plan's step are Obelus's words, and the reader can change which
-        // language those are in while the conversation is open.
-        let at = (
-            width,
-            obelus_text::pictures_version(),
-            obelus_i18n::spoken(),
-        );
+        // Against more than the width: see `laid_against`.
+        let at = laid_against(width);
         if let Some(rows) = self
             .laid
             .borrow()
             .as_ref()
-            .filter(|(laid, _)| *laid == at)
-            .map(|(_, rows)| rows.clone())
+            .filter(|laid| laid.fresh && laid.at == at)
+            .map(|laid| laid.rows.clone())
         {
             return rows;
         }
-        let rows = self.lay_out(width);
-        *self.laid.borrow_mut() = Some((at, rows.clone()));
+        // What was laid out before, stale or at another width, is where
+        // each thing said that has not moved finds its rows.
+        let before = self.laid.borrow_mut().take();
+        let rows = self.lay_out(width, before.as_ref().map_or(&[], |laid| &laid.rows));
+        *self.laid.borrow_mut() = Some(LaidOut {
+            at,
+            rows: rows.clone(),
+            fresh: true,
+        });
         rows
     }
 
-    /// Every row of the conversation, at a width.
-    fn lay_out(&self, width: u16) -> Vec<Row> {
-        let mut rows = Vec::new();
+    /// Every row of the conversation, at a width, taking from `before` the
+    /// rows of each thing said that has not moved since it was laid out.
+    fn lay_out(&self, width: u16, before: &[Row]) -> Vec<Row> {
+        // A thing said that is no longer there has nothing to be kept for,
+        // and one kept at an index something else now holds is compared
+        // with that and found to differ.
+        self.pieces.borrow_mut().truncate(self.said.len());
+        let mut laying = Laying {
+            before,
+            seen: vec![false; self.said.len()],
+            rows: Vec::new(),
+        };
         let mut at = 0;
         let mut first = true;
         while at < self.said.len() {
             let run = self.run_from(at);
             if !first {
-                rows.push(self.blank(at));
+                laying.rows.push(self.blank(at));
             }
             first = false;
             match run.len() >= LEAST_TO_FOLD {
@@ -250,15 +411,26 @@ impl Chat {
                 // tool calls in a turn is a log, and a reader looking for
                 // what the agent *did* should not have to scroll past the
                 // machine to find it.
-                true => rows.extend(self.run_rows(run.clone(), width)),
+                true => self.run_rows(run.clone(), width, &mut laying),
                 false => {
                     for index in run.clone() {
-                        rows.extend(self.said_rows(index, 0, width));
+                        self.kept_rows(index, 0, width, &mut laying);
                     }
                 }
             }
             at = run.end;
         }
+        // Where each thing said was taken from is a place in `before`, and
+        // one not laid out this time -- a call inside a run that is shut --
+        // would be left naming a place in rows that are about to go. Laid
+        // out afresh the next time it is shown, which is a key the reader
+        // pressed.
+        for (piece, seen) in self.pieces.borrow_mut().iter_mut().zip(&laying.seen) {
+            if !seen {
+                *piece = None;
+            }
+        }
+        let mut rows = laying.rows;
         // And what is happening now, under the last of it: the foot of the
         // transcript is where the next thing will appear, which is where a
         // reader is already looking.
@@ -361,9 +533,9 @@ impl Chat {
     }
 
     /// A run of tool calls: its heading, and its members when it is open.
-    fn run_rows(&self, run: std::ops::Range<usize>, width: u16) -> Vec<Row> {
+    fn run_rows(&self, run: std::ops::Range<usize>, width: u16, laying: &mut Laying<'_>) {
         let Some(said) = self.said.get(run.start) else {
-            return Vec::new();
+            return;
         };
         let members: Vec<&Said> = self.said[run.clone()].iter().collect();
         let count = run.len();
@@ -385,7 +557,7 @@ impl Chat {
                 (_, state) => Some(state),
             });
         let open = self.is_run_open(run.start);
-        let mut rows = vec![Row {
+        laying.rows.push(Row {
             speaker: Speaker::Tool,
             spans: plain(what),
             from: None,
@@ -405,13 +577,63 @@ impl Chat {
             changed: None,
             code: None,
             depth: 0,
-        }];
+        });
         if open {
             for index in run {
-                rows.extend(self.said_rows(index, 1, width));
+                self.kept_rows(index, 1, width, laying);
             }
         }
-        rows
+    }
+
+    /// One thing said, as the rows it takes: as it was laid out last time,
+    /// where nothing it was laid out from has moved.
+    ///
+    /// Everything [`Chat::said_rows`] reads is in what this compares: the
+    /// thing said, where it is -- which is the slot it is kept in, and is
+    /// written into its rows -- how deep, and what the whole conversation's
+    /// rows are laid out against.
+    fn kept_rows(&self, at: usize, depth: u8, width: u16, laying: &mut Laying<'_>) {
+        let Some(said) = self.said.get(at) else {
+            return;
+        };
+        if let Some(seen) = laying.seen.get_mut(at) {
+            *seen = true;
+        }
+        let against = laid_against(width);
+        let start = laying.rows.len();
+        let kept = self
+            .pieces
+            .borrow()
+            .get(at)
+            .and_then(Option::as_ref)
+            .filter(|piece| {
+                piece.against == against && piece.depth == depth && said.lays_out_as(&piece.said)
+            })
+            .and_then(|piece| laying.before.get(piece.rows.clone()))
+            .map(|rows| laying.rows.extend_from_slice(rows))
+            .is_some();
+        if !kept {
+            laying.rows.extend(self.said_rows(at, depth, width));
+        }
+        let rows = start..laying.rows.len();
+        let mut pieces = self.pieces.borrow_mut();
+        if pieces.len() <= at {
+            pieces.resize_with(at + 1, || None);
+        }
+        match pieces[at].as_mut() {
+            // Only where they now are: what it was laid out from is what
+            // was just compared, and copying it again is the cost that
+            // leaving out the pictures was for.
+            Some(piece) if kept => piece.rows = rows,
+            _ => {
+                pieces[at] = Some(Piece {
+                    against,
+                    depth,
+                    said: said.as_laid_out(),
+                    rows,
+                });
+            }
+        }
     }
 
     /// One thing said, as the rows it takes.
