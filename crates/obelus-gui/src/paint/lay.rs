@@ -8,7 +8,7 @@ use super::{
     *,
 };
 use crate::{
-    grid::{Capped, Marked, Page, Said, Spun, Ticked},
+    grid::{Capped, Marked, Page, Said, Ticked},
     motion::Moving,
 };
 
@@ -155,27 +155,14 @@ impl Painter {
                 _ => self.quads.len(),
             };
             match (at, over.is_a_box()) {
-                (0, false) => self.pane_under(page, over, &said, moving.turn, fonts),
-                _ => self.seen_under(
-                    over,
-                    lower,
-                    (page, said.spun, said.ruled),
-                    moving.turn,
-                    fonts,
-                ),
+                (0, false) => self.pane_under(page, over, &said, fonts),
+                _ => self.seen_under(over, lower, (page, said.ruled), fonts),
             }
             let under = start..self.quads.len();
             // After `under`, so on the screen and not only in the picture:
             // the glass starts at the line and leaves this half row bare.
             if let Some(y) = above_its_line(page, over, said.ruled, at) {
-                self.seen_under_rows(
-                    over,
-                    lower,
-                    (page, said.spun, said.ruled),
-                    moving.turn,
-                    fonts,
-                    y..y + 1,
-                );
+                self.seen_under_rows(over, lower, (page, said.ruled), fonts, y..y + 1);
             }
             let (glass, rect) = match over.is_a_box() {
                 true => self.box_glass(page, over, lower, fonts),
@@ -221,15 +208,8 @@ impl Painter {
             .filter(|mark| mark.still_said(page))
             .cloned()
             .collect();
-        let spun: Vec<Spun> = said
-            .spun
-            .iter()
-            .copied()
-            .filter(|mark| mark.round(page).is_some())
-            .collect();
         let said = Said {
             ticked: &ticked,
-            spun: &spun,
             marked: &marked,
             ..said
         };
@@ -290,9 +270,6 @@ impl Painter {
         // Over the letters: a switch replaces the glyph standing in for
         // it, rather than sitting beside one.
         self.ticks(page, said.ticked, panes, &framed, &capped, cell);
-        // And so does the mark that turns: what a terminal turns a frame a
-        // tick, a window turns at whatever rate it draws.
-        self.turns(page, said.spun, moving.turn, cell);
         // And so does a bar, for the same reason: what a terminal has for
         // a mark is a run of full blocks, and a window has a shape.
         self.bars(page, said.barred, cell);

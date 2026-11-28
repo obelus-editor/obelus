@@ -86,7 +86,6 @@ impl Screen {
             | Update::Barred { .. }
             | Update::Stroked { .. }
             | Update::Ticked { .. }
-            | Update::Spun { .. }
             | Update::Ruled { .. }
             | Update::Parted { .. }
             | Update::Paired { .. }
@@ -190,8 +189,9 @@ mod tests {
                 cell: cell("y"),
             },
             Update::TextSize(15),
-            Update::Spun {
+            Update::Ticked {
                 area: Rect::new(1, 1, 1, 1),
+                on: true,
             },
             Update::Frame,
             Update::Sheened {
@@ -216,7 +216,7 @@ mod tests {
         assert!(
             again
                 .iter()
-                .any(|update| matches!(update, Update::Spun { .. }))
+                .any(|update| matches!(update, Update::Ticked { .. }))
         );
         assert!(
             !again

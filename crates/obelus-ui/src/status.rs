@@ -580,7 +580,6 @@ impl<'a> Surroundings<'a> {
         for (word, ink) in &said {
             if let Ok(offset) = u16::try_from(at) {
                 write(cells, area.x + offset, area.y, word, style.fg(*ink));
-                crate::turning_at(area.x + offset, area.y, word);
             }
             at += text_width(word) + usize::from(LABEL_GAP);
         }
@@ -769,7 +768,6 @@ pub fn still_working(
         &crate::spinning(phase).to_string(),
         Style::new().fg(theme.gutter).bg(theme.background),
     );
-    crate::shapes::spun(area.x + offset, area.y);
 }
 
 /// The row a list is typed into: what was typed, what is held, and

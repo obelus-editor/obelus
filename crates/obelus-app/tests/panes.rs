@@ -71,8 +71,6 @@ impl obelus_ui::shapes::Shapes for Heard {
 
     fn ticked(&self, _area: Rect, _on: bool) {}
 
-    fn spun(&self, _area: Rect) {}
-
     fn ruled(&self, area: Rect) {
         self.told(Told::Rule(area));
     }

@@ -1391,7 +1391,6 @@ impl ChatView<'_> {
                         crate::spinning(self.phase),
                         style.fg(self.theme.gutter_current),
                     );
-                    crate::shapes::spun(at, y);
                 } else if obelus_icons::enabled() {
                     put(cells, at, y, glyph, style);
                 } else {

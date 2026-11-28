@@ -55,12 +55,13 @@ impl App {
         // rest: without a tick it stops, and a selection that stops at the
         // edge of the screen is a selection of what fits on it.
         //
-        // The rest are all a mark that turns, which a window turns itself
-        // on its own clock -- the same reason the sheen is not ticked
-        // there. Except where the reader turned animation off: then the
-        // window turns it a frame a tick, the frame this clock writes.
-        let window_turns = obelus_config::in_a_window() && self.settled.config.animation;
-        sheen || self.pointing.dragging.is_some() || (!window_turns && self.turning(working))
+        // The rest are all a mark that turns, in a window as in a terminal:
+        // the braille is written into the cells a frame a tick, and the
+        // window draws the letter it is given. A window once turned an arc
+        // of its own there at the screen's rate, and every step of it
+        // repainted the whole window, glass and all, sixty times a second
+        // for one cell -- against the twelve and a half this clock asks.
+        sheen || self.pointing.dragging.is_some() || self.turning(working)
     }
 
     /// Whether a mark that turns is on the screen -- see `wants_animating`.
