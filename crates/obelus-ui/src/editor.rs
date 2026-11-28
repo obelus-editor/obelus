@@ -413,7 +413,6 @@ pub fn say_what_is_coming(
     // the words stay where they are when it stops.
     if waiting {
         put(cells, area.x, area.y, crate::spinning(phase), dim);
-        crate::shapes::spun(area.x, area.y);
     }
     let x = area.x.saturating_add(2);
     let room = usize::from(area.right().saturating_sub(x));

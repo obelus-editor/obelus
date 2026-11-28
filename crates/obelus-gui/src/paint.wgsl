@@ -70,16 +70,14 @@ struct Quad {
     // triangle filling the quad, which is the arrow on the seam a
     // deletion left. 4194304: the mark on one of the bar's buttons.
     // 8388608: the soft edge outside a pane or a box.
-    // 16777216: the mark that turns while something is
-    // happening. 536870912: the light round a run the reader has hold of.
+    // 536870912: the light round a run the reader has hold of.
     // 1073741824: the picture under the page. 2147483648, beside any of
     // the others: drawn only in the rows from `radius` to `lower`.
     @location(3) flags: u32,
     // How far those corners are taken off, in pixels -- and for the
     // quads that carry no corners, the one number each of them needs
     // instead: how far a sliding pane has still to come, which way a
-    // wedge points, how far round a turning mark's head is, and where the
-    // run a light is round begins.
+    // wedge points, and where the run a light is round begins.
     @location(4) radius: f32,
     // Which layer of the atlas its picture is on: the letters', or the
     // pictures' where it has colours of its own.
@@ -330,15 +328,6 @@ const ENDS: vec2<f32> = vec2<f32>(0.76, 0.31);
 // line is: a mark with cut ends reads as two strokes rather than one.
 const NIB: f32 = 0.085;
 
-// The mark that turns: a ring the pen goes round, in the quad's own units
-// from nought to one, and how much of the ring is ink behind the head.
-// Three quarters, fading to nothing at the tail, so what the eye follows is
-// the head and there is no second end for it to catch on.
-const RING_AT: f32 = 0.38;
-const RING_NIB: f32 = 0.09;
-const RING_TAIL: f32 = 0.75;
-const WHOLE_TURN: f32 = 6.2831855;
-
 // A pixel of a picture drawn on nothing, as a colour and how much of it
 // there is, faded by `fade` -- see the pieces of the frame below.
 fn whole(texel: vec4<f32>, fade: f32) -> vec4<f32> {
@@ -389,22 +378,6 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
             + min(max(corner.x, corner.y), 0.0) - in.radius;
         let covered = clamp(0.5 - distance, 0.0, 1.0);
         return vec4<f32>(texel.rgb, texel.a * covered);
-    }
-    // The mark that turns, its head `radius` of a turn round from the top
-    // and going clockwise, which is the way the braille it stands in for
-    // goes.
-    if ((in.flags & 16777216u) != 0u) {
-        let at = in.middle / (in.half_size * 2.0);
-        let ring = abs(length(at) - RING_AT);
-        // Back into pixels for the softening, the same as the switch.
-        let covered = clamp((RING_NIB - ring) * in.half_size.x * 2.0, 0.0, 1.0);
-        // How far behind the head this point is, as a part of a turn:
-        // clockwise from the top on a screen whose second axis points
-        // down is `atan2(x, -y)`.
-        let angle = fract(atan2(at.x, -at.y) / WHOLE_TURN);
-        let behind = fract(in.radius - angle + 1.0);
-        let tail = clamp(1.0 - behind / RING_TAIL, 0.0, 1.0);
-        return vec4<f32>(in.colour.rgb, in.colour.a * covered * tail);
     }
     // The arrow on the seam a deletion left: a triangle filling the quad,
     // its point in the middle of one short side. `radius` says which side,

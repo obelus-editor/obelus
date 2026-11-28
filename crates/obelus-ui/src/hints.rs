@@ -656,7 +656,6 @@ pub fn nothing_yet(cells: &mut CellBuffer, area: Rect, reason: &str, phase: u32,
         &spinning(phase).to_string(),
         Style::new().fg(theme.gutter).bg(theme.background),
     );
-    shapes::spun(area.x + 1, area.y);
     // The words are `nothing`'s, two columns along: the mark and the one
     // blank after it, as after every glyph.
     let after = Rect {

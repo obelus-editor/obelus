@@ -212,10 +212,6 @@ impl Widget for GoneView<'_> {
             let width = u16::try_from(obelus_text::text_width(line)).unwrap_or(u16::MAX);
             let x = page.x + page.width.saturating_sub(width) / 2;
             write(cells, x, y, line, Style::new().fg(*ink));
-            // The mark the line begins with, which a window turns itself.
-            if matches!(self.gone, Gone::Machine { why: None, .. }) && offset == 0 {
-                crate::shapes::spun(x, y);
-            }
         }
         crate::foot(cells, area, &hints, self.theme);
     }

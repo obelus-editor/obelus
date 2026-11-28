@@ -7,7 +7,7 @@ use obelus_ui::shapes::{About, Side};
 use ratatui::style::Modifier;
 
 use super::*;
-use crate::grid::{Barred, Capped, Look, Page, Parted, Ruled, Spun, Stroked, Ticked};
+use crate::grid::{Barred, Capped, Look, Page, Parted, Ruled, Stroked, Ticked};
 
 /// How a tab being read turns its four corners, in the order `held` in
 /// the shader reads them: its own round corner at the top left and the top
@@ -1045,46 +1045,6 @@ impl Painter {
                 }
             }
         }
-    }
-
-    /// The marks that turn, each an arc going round in the ink of its own
-    /// cell.
-    ///
-    /// Where the window has a clock running, every one is as far round as
-    /// that says, so two of them on a screen turn together the way the
-    /// braille does. Where it has not, each is as far round as the frame in
-    /// its cell -- which still turns, a step a tick, on the application's.
-    pub(super) fn turns(&mut self, page: &Page, spun: &[Spun], turn: Option<f32>, cell: CellSize) {
-        for mark in spun {
-            self.turn(mark, page.look(mark.area.x, mark.area.y), turn, cell);
-        }
-    }
-
-    /// One of them, from what its cell holds -- on the page, or in the
-    /// picture of what a pane was put over.
-    pub(super) fn turn(&mut self, mark: &Spun, look: Look<'_>, turn: Option<f32>, cell: CellSize) {
-        let Some(round) = turn.or_else(|| obelus_ui::how_far_round(look.text)) else {
-            return;
-        };
-        let side = (cell.width.min(cell.height) * RING).round().max(3.0);
-        let left = f32::from(mark.area.x) * cell.width;
-        let top = f32::from(mark.area.y) * cell.height;
-        // Where a switch's box sits, and for its reason: the middle of
-        // the writing is a shade above the middle of the cell.
-        self.quads.push(Quad {
-            rect: [
-                left + (cell.width - side) / 2.0,
-                (top + (cell.height - side) / 2.0 - cell.height * ABOVE).round(),
-                side,
-                side,
-            ],
-            uv: self.atlas.white,
-            colour: rgba(look.foreground, Ink::Foreground),
-            flags: TURNING,
-            radius: round,
-            layer: 0,
-            lower: 0.0,
-        });
     }
 
     /// The caps the keys at the foot of a view are drawn in.

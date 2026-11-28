@@ -36,8 +36,6 @@ impl obelus_ui::shapes::Shapes for Heard {
 
     fn ticked(&self, _area: Rect, _on: bool) {}
 
-    fn spun(&self, _area: Rect) {}
-
     fn ruled(&self, _area: Rect) {}
 
     fn capped(&self, keys: &str, area: Rect, _cap: Color, _page: Color, _edge: Color) {
@@ -366,20 +364,21 @@ fn the_welcome_screen_says_where_its_address_is() {
     );
 }
 
-/// An agent at work does not run the application's clock where a window
-/// is drawing its mark, and does again where the reader turned animation
-/// off.
+/// An agent at work runs the application's clock where a window is
+/// drawing, as it does in a terminal, and whether the reader turned
+/// animation off has nothing to do with it.
 ///
-/// The window turns the mark itself, on its own clock; what this clock
-/// moves is the braille in the cell, which the window does not draw -- so
-/// it was twelve pages a second for as long as an agent worked, pushed at
-/// a front end that threw them away. With animation off the window turns
-/// the mark a frame a tick, and the tick is this clock's.
+/// The window draws the braille it is given, so the frame this clock
+/// writes into the cell is the only turn the mark has: a window that drew
+/// an arc of its own once took the tick away here, and with the arc gone
+/// that is a mark standing still while an agent works.
 ///
-/// Deliberate break: drop `window_turns` from `wants_animating` and the
-/// first assertion goes; leave out its `config.animation` and the second.
+/// Deliberate break: put back `!(in_a_window() && config.animation) &&` in
+/// front of `self.turning(working)` in `wants_animating`, and the first
+/// assertion goes; gate it on `!in_a_window()` alone and the second goes
+/// as well.
 #[test]
-fn a_window_turns_an_agents_mark_on_its_own_clock() {
+fn an_agents_mark_turns_on_the_application_s_clock_in_a_window_too() {
     use crossterm::event::KeyCode;
 
     let _turn = turn();
@@ -424,8 +423,8 @@ fn a_window_turns_an_agents_mark_on_its_own_clock() {
 
     support::render(&mut app, width, height);
     assert!(
-        !app.is_waking(),
-        "the window turns the mark and the application is ticking for it too"
+        app.is_waking(),
+        "the mark is the braille in its cell, and nothing is turning it"
     );
 
     let still = obelus_config::Config {
@@ -436,7 +435,7 @@ fn a_window_turns_an_agents_mark_on_its_own_clock() {
     support::render(&mut app, width, height);
     assert!(
         app.is_waking(),
-        "with animation off the mark turns on this clock, and it has stopped"
+        "with animation off the mark still says an agent is at work, and it has stopped"
     );
 }
 

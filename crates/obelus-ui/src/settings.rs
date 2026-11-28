@@ -1945,7 +1945,6 @@ impl SettingsView<'_> {
             usize::from(area.width).saturating_sub(text_width(&state) + usize::from(INDENT)),
         ) {
             write(cells, area.x + offset, area.y, &state, plain.fg(colour));
-            crate::turning_at(area.x + offset, area.y, &state);
         }
 
         // Under the name rather than under the glyph: the glyph is a mark
@@ -2237,7 +2236,6 @@ impl SettingsView<'_> {
                 write(cells, x, area.y, words, plain.fg(*colour));
                 x = x.saturating_add(u16::try_from(text_width(words)).unwrap_or(u16::MAX));
             }
-            crate::turning_at(area.x + offset, area.y, &state);
         }
 
         let mut y = area.y + 1;

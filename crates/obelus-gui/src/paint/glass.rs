@@ -4,7 +4,7 @@
 use obelus_font::{Fonts, Size};
 
 use super::{ground::runs_from, setup::halved, *};
-use crate::grid::{Barred, Look, Page, Rolled, Ruled, Said, Spun};
+use crate::grid::{Barred, Look, Page, Rolled, Ruled, Said};
 
 impl Painter {
     /// The bands drawn behind where their lists have got to.
@@ -501,10 +501,9 @@ impl Painter {
         page: &Page,
         behind: &Behind,
         said: &Said<'_>,
-        turn: Option<f32>,
         fonts: &mut Fonts,
     ) {
-        let (barred, capped, spun) = (said.barred, said.capped, said.spun);
+        let (barred, capped) = (said.barred, said.capped);
         let cell = fonts.cell();
         // The plates the page had under the pane -- the cursor's pair, what
         // a search found -- which are what a window draws those cells'
@@ -521,7 +520,7 @@ impl Painter {
                 grounds,
                 lettered,
                 lined,
-            } = behind_row(behind, page, (barred, spun, said.ruled), y);
+            } = behind_row(behind, page, (barred, said.ruled), y);
             // Where a plate is, the square under it would stand outside its
             // corners -- the hole `backgrounds` leaves for the page's own.
             let mut holes: Vec<(u16, u16)> = plates
@@ -593,12 +592,6 @@ impl Painter {
         // their own ground always, since nothing is behind the picture.
         for cap in capped.iter().filter(|cap| cap.still_behind(behind)) {
             self.cap(cap, |x, y| behind.look(x, y), true, None, fonts);
-        }
-        // And the marks that turn, for the same reason.
-        for mark in spun {
-            if let Some(look) = mark.behind(behind) {
-                self.turn(mark, look, turn, cell);
-            }
         }
     }
 
@@ -844,15 +837,13 @@ impl Painter {
         &mut self,
         over: &Behind,
         lower: &[&Behind],
-        (page, spun, ruled): (&Page, &[Spun], &[Ruled]),
-        turn: Option<f32>,
+        (page, ruled): (&Page, &[Ruled]),
         fonts: &mut Fonts,
     ) {
         self.seen_under_rows(
             over,
             lower,
-            (page, spun, ruled),
-            turn,
+            (page, ruled),
             fonts,
             over.area.top()..over.area.bottom(),
         );
@@ -863,8 +854,7 @@ impl Painter {
         &mut self,
         over: &Behind,
         lower: &[&Behind],
-        (page, spun, ruled): (&Page, &[Spun], &[Ruled]),
-        turn: Option<f32>,
+        (page, ruled): (&Page, &[Ruled]),
         fonts: &mut Fonts,
         rows: std::ops::Range<u16>,
     ) {
@@ -887,15 +877,10 @@ impl Painter {
                 // way the page it was taken from did.
                 if let Some(span) = Ruled::behind(ruled, page, over, x, y) {
                     self.rule_in(x, y, span, page, under.foreground, cell);
-                } else if lettered_behind(under, &[], spun, over.depth, x, y) {
+                } else if lettered_behind(under, &[], over.depth, x, y) {
                     let ink = rgba(under.foreground, Ink::Foreground);
                     self.glyphs_at((left, top), under, ink, 0, fonts, Size::Cell);
                 }
-            }
-        }
-        for mark in spun.iter().filter(|mark| rows.contains(&mark.area.y)) {
-            if let Some(look) = mark.behind(over) {
-                self.turn(mark, look, turn, cell);
             }
         }
     }
@@ -1037,7 +1022,7 @@ pub(super) fn above_its_line(
 pub(super) fn behind_row(
     behind: &Behind,
     page: &Page,
-    (barred, spun, ruled): (&[Barred], &[Spun], &[Ruled]),
+    (barred, ruled): (&[Barred], &[Ruled]),
     y: u16,
 ) -> BehindRow {
     let (from, to) = (behind.area.left(), behind.area.right());
@@ -1057,7 +1042,7 @@ pub(super) fn behind_row(
             !lined.iter().any(|&(at, _)| at == x)
                 && behind
                     .look(x, y)
-                    .is_some_and(|under| lettered_behind(under, barred, spun, behind.depth, x, y))
+                    .is_some_and(|under| lettered_behind(under, barred, behind.depth, x, y))
         })
         .collect();
     BehindRow {
@@ -1095,13 +1080,9 @@ pub(super) struct BehindRow {
 /// the margin round it -- a dark cell's-width line along the top of the
 /// window, wherever a list was opened over a file long enough to have a
 /// bar.
-///
-/// And the mark that turns is drawn as an arc over the picture, the way it
-/// is over the page, so its braille is not written under it.
 pub(super) fn lettered_behind(
     under: Look<'_>,
     barred: &[Barred],
-    spun: &[Spun],
     depth: usize,
     x: u16,
     y: u16,
@@ -1113,16 +1094,6 @@ pub(super) fn lettered_behind(
                 && (area.left()..area.right()).contains(&x)
                 && (area.top()..area.bottom()).contains(&y)
         })
-        && !turns_at(under, spun, depth, x, y)
-}
-
-/// Whether this cell of a picture is a mark that turns: said to be one
-/// before the pane, and still holding a frame of it -- see `Spun::behind`.
-fn turns_at(under: Look<'_>, spun: &[Spun], depth: usize, x: u16, y: u16) -> bool {
-    obelus_ui::how_far_round(under.text).is_some()
-        && spun
-            .iter()
-            .any(|mark| mark.depth <= depth && mark.area.x == x && mark.area.y == y)
 }
 
 /// How far a bar's mark is drawn from where the frame put it, while the

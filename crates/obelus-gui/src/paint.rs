@@ -439,12 +439,7 @@ impl Placed {
 /// The panes and boxes that are drawn, furthest first: a box only while
 /// its frame is still there to hold it -- see `Behind::framed` -- and no
 /// pane a later pane is over the whole of.
-///
-/// One answer for the painting and for the window, which asks it whether
-/// a mark behind the glass is still on screen to turn (`turning`): asked
-/// of the whole stack there, a mark only a hidden picture held kept the
-/// window drawing at its full rate with nothing on screen moving.
-pub(crate) fn drawn<'a>(stack: &'a [Behind], page: &crate::grid::Page) -> Vec<&'a Behind> {
+fn drawn<'a>(stack: &'a [Behind], page: &crate::grid::Page) -> Vec<&'a Behind> {
     uncovered(
         stack
             .iter()
@@ -751,12 +746,6 @@ const HELD_NEAR: u32 = 25;
 /// sheen on it.
 const SHEENED: u32 = 2048;
 
-/// The mark that turns, as an arc whose tail fades into nothing -- see
-/// `paint.wgsl`. How far round its head is rides in the quad's `radius`,
-/// which a ring has no corners to need. Past the turns, for the wedge's
-/// reason.
-const TURNING: u32 = 16_777_216;
-
 /// A run the reader has hold of, whose four corners each turn one of
 /// three ways -- see `held` in the shader, and `Turn` -- and a tab on the
 /// bar, which is drawn as one. Beside `SHADOW`, the shadow of a tab, cast
@@ -921,13 +910,6 @@ const BOX_CORNER: f32 = 0.30;
 const BOX_EDGE: f32 = 0.11;
 /// How far above the cell's middle it sits, as a part of the cell.
 const ABOVE: f32 = 0.05;
-
-/// How much of a cell the ring the turning mark goes round takes, across.
-///
-/// Less than a switch's box: the braille it stands in for is a few dots in
-/// the middle of its cell, and a ring as wide as the cell reads as a
-/// button rather than as a mark beside a word.
-const RING: f32 = 0.9;
 
 /// How wide a bar's mark is drawn, as a part of the cell it sits in.
 ///
@@ -1946,7 +1928,7 @@ mod tests {
         text::{clipped, drawn_as_a_shape, pieces, snapped},
         *,
     };
-    use crate::grid::{Barred, Capped, Page, Ruled, Said, Spun, Stroked, Update};
+    use crate::grid::{Barred, Capped, Page, Ruled, Said, Stroked, Update};
 
     /// The dashes under a word are one run across it: two cells drawn one
     /// after the other put their dashes where one run as wide as both
@@ -2110,13 +2092,12 @@ mod tests {
     /// A light, and which rows it has a run to measure to, are read as
     /// nothing the shader asks about before it gets to them.
     ///
-    /// Deliberate break: put `HELD_NEAR` at 24, and a light with a run
-    /// above it is drawn as the mark that turns.
+    /// Deliberate break: put `HELD_NEAR` at 23, and a light with a run
+    /// above it is drawn as a pane's shadow.
     #[test]
     fn a_light_s_flags_are_no_other_flag() {
         let light = LIGHT | 7 << HELD_NEAR;
         for other in [
-            TURNING,
             WEDGE,
             CHECKED,
             FRAME,
@@ -2634,51 +2615,6 @@ mod tests {
         assert!(!seen_through(&[], 2, 1, ground), "no pane at all");
     }
 
-    /// The mark that turns is drawn as an arc and not as braille as well,
-    /// and only while its cell still holds a frame of the turn.
-    ///
-    /// Deliberate break: take the `spun` clause out of `drawn_as_a_shape`,
-    /// and the braille is drawn under the arc. Or have `Spun::round` answer
-    /// for any cell, and the arc goes on turning over whatever a list put
-    /// there.
-    #[test]
-    fn the_mark_that_turns_is_not_drawn_as_letters_as_well() {
-        let page = page("ab\u{2819}c");
-        let one = |x: u16| Spun {
-            area: ratatui::layout::Rect {
-                x,
-                y: 0,
-                width: 1,
-                height: 1,
-            },
-            depth: 0,
-        };
-        let spun = [one(2)];
-        let said = Said {
-            marked: &[],
-            capped: &[],
-            ticked: &[],
-            spun: &spun,
-            barred: &[],
-            ruled: &[],
-            spelled: &[],
-            sheened: None,
-            parted: &[],
-            stroked: &[],
-            paired: &[],
-            fading: &[],
-            found: &[],
-            plated_behind: (&[], &[]),
-            stack: &[],
-            bands: &[],
-        };
-        assert!(drawn_as_a_shape(&page, &said, &[], &[], 2, 0), "its cell");
-        assert!(!drawn_as_a_shape(&page, &said, &[], &[], 1, 0), "beside it");
-        assert!(!drawn_as_a_shape(&page, &said, &[], &[], 3, 0), "nor after");
-        assert_eq!(one(2).round(&page), Some(0.1), "the second frame");
-        assert_eq!(one(1).round(&page), None, "a letter is not the mark");
-    }
-
     /// A bar's cells are the window's to draw, so the letters leave them
     /// alone -- and only while the cells are still the bar's.
     ///
@@ -2720,7 +2656,6 @@ mod tests {
             marked: &[],
             capped: &[],
             ticked: &[],
-            spun: &[],
             barred: &barred,
             ruled: &[],
             spelled: &[],
@@ -2806,15 +2741,15 @@ mod tests {
             }]
         };
         assert!(
-            !lettered_behind(page.look(0, 0), &barred(0), &[], 0, 0, 0),
+            !lettered_behind(page.look(0, 0), &barred(0), 0, 0, 0),
             "the block the bar is drawn with"
         );
         assert!(
-            lettered_behind(page.look(1, 0), &barred(0), &[], 0, 1, 0),
+            lettered_behind(page.look(1, 0), &barred(0), 0, 1, 0),
             "and the file's own letter beside it, which nothing else draws"
         );
         assert!(
-            !lettered_behind(page.look(2, 0), &barred(0), &[], 0, 2, 0),
+            !lettered_behind(page.look(2, 0), &barred(0), 0, 2, 0),
             "nor a cell with nothing in it"
         );
         // A bar said on the pane, whose column the picture under it has
@@ -2823,7 +2758,7 @@ mod tests {
         // Deliberate break: drop `showing.depth <= depth`. The file's
         // letter under the list's bar is left out of the picture.
         assert!(
-            lettered_behind(page.look(0, 0), &barred(1), &[], 0, 0, 0),
+            lettered_behind(page.look(0, 0), &barred(1), 0, 0, 0),
             "under a bar said over the picture"
         );
     }
@@ -2846,64 +2781,13 @@ mod tests {
         }];
         let BehindRow {
             lettered, lined, ..
-        } = behind_row(&behind, &page(""), (&[], &[], &ruled), 0);
+        } = behind_row(&behind, &page(""), (&[], &ruled), 0);
         assert_eq!(
             lined,
             vec![(1, (0.0, 1.0)), (2, (0.0, 1.0))],
             "the rule's cells"
         );
         assert_eq!(lettered, vec![0, 3], "and nothing else's letters");
-    }
-
-    /// And the mark that turns, which the picture behind a list draws as
-    /// the arc the page does -- a transcript seen through the glass of a
-    /// file picker had its spinner back in braille. What is asked here is
-    /// which cells are left to the arc; the arc itself is drawn by the
-    /// loops at the end of `pane_under` and `seen_under`, which need a
-    /// `Painter` and are not.
-    ///
-    /// Deliberate break: drop the `turns_at` clause from `lettered_behind`,
-    /// and the braille is written into the picture under the arc; or have
-    /// `Spun::behind` answer for any cell, and a letter the list's own mark
-    /// happens to sit over is taken for one.
-    #[test]
-    fn a_mark_that_turns_is_left_out_of_the_letters_behind_a_pane() {
-        let behind = behind("ab\u{2819}\u{2819}");
-        let one = |x: u16| Spun {
-            area: ratatui::layout::Rect {
-                x,
-                y: 0,
-                width: 1,
-                height: 1,
-            },
-            depth: 0,
-        };
-        let spun = [one(1), one(2)];
-        let lettered = behind_row(&behind, &page(""), (&[], &spun, &[]), 0).lettered;
-        assert_eq!(
-            lettered,
-            vec![0, 1, 3],
-            "the mark said to be there is left to the arc, and nothing else is"
-        );
-        assert!(one(2).behind(&behind).is_some(), "its cell is the arc's");
-        assert!(
-            one(1).behind(&behind).is_none(),
-            "a letter is not the mark, whatever was said about its cell"
-        );
-        assert!(one(20).behind(&behind).is_none(), "nor a cell it never had");
-        // Nor one said on the pane, which is not in the picture under it.
-        //
-        // Deliberate break: drop the depth from `Spun::behind`.
-        let on_the_pane = Spun { depth: 1, ..one(2) };
-        assert!(
-            on_the_pane.behind(&behind).is_none(),
-            "a mark said after it"
-        );
-        // And its cell is the picture's letter, then: there is no arc there.
-        //
-        // Deliberate break: drop the depth from `turns_at`.
-        let lettered = behind_row(&behind, &page(""), (&[], &[on_the_pane], &[]), 0).lettered;
-        assert_eq!(lettered, vec![0, 1, 2, 3], "the picture's own braille");
     }
 
     /// A glyph is cut back to the grid, and its picture with it.
@@ -3130,7 +3014,6 @@ mod tests {
             marked: &[],
             capped: &[],
             ticked: &[],
-            spun: &[],
             barred: &[],
             ruled: &[],
             spelled: &[],
@@ -3284,7 +3167,7 @@ mod tests {
         let behind = behind("\u{4e2d}\u{6587}");
         let BehindRow {
             grounds, lettered, ..
-        } = behind_row(&behind, &page(""), (&[], &[], &[]), 0);
+        } = behind_row(&behind, &page(""), (&[], &[]), 0);
 
         // Both characters under one run of their own colour: nothing of
         // the reset cells is left to be drawn over a glyph.

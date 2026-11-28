@@ -152,7 +152,6 @@ pub fn draw(
         // the row keeps two blanks there for it.
         if row.waiting {
             put(cells, area.x, y, crate::spinning(phase), dim);
-            crate::shapes::spun(area.x, y);
         }
         // Whether what a heading folds is open, after its words, the way a
         // heading in the transcript says it.

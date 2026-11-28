@@ -283,11 +283,6 @@ pub enum Update<P = Option<Hanging>> {
         /// Whether it is set.
         on: bool,
     },
-    /// A cell that is the mark that turns while something is happening.
-    Spun {
-        /// Which cell it is.
-        area: Rect,
-    },
     /// A row that is a line between two things.
     Ruled {
         /// Which cells it is.
@@ -380,7 +375,6 @@ impl<P> Update<P> {
             | Self::Barred { .. }
             | Self::Stroked { .. }
             | Self::Ticked { .. }
-            | Self::Spun { .. }
             | Self::Ruled { .. }
             | Self::Parted { .. }
             | Self::Paired { .. }
@@ -475,7 +469,6 @@ impl<P> Update<P> {
             Self::Barred { bar } => Update::Barred { bar },
             Self::Stroked { stroke } => Update::Stroked { stroke },
             Self::Ticked { area, on } => Update::Ticked { area, on },
-            Self::Spun { area } => Update::Spun { area },
             Self::Ruled { area } => Update::Ruled { area },
             Self::Parted { area } => Update::Parted { area },
             Self::Paired { area, pair } => Update::Paired { area, pair },
@@ -525,10 +518,6 @@ impl Marking {
 impl obelus_ui::shapes::Shapes for Marking {
     fn ticked(&self, area: Rect, on: bool) {
         let _ = self.showing.show(Update::Ticked { area, on });
-    }
-
-    fn spun(&self, area: Rect) {
-        let _ = self.showing.show(Update::Spun { area });
     }
 
     fn scrolled(&self, area: Rect, top: i64, bar: Option<Bar>) {
@@ -1144,7 +1133,6 @@ mod tests {
                 },
             },
             Update::Ticked { area, on: true },
-            Update::Spun { area },
             Update::Ruled { area },
             Update::Parted { area },
             Update::Paired {

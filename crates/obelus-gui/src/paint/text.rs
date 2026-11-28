@@ -322,7 +322,6 @@ pub(super) fn drawn_as_a_shape(
         || framed.iter().any(|card| card.ring_holds(page, column, row))
         || capped.iter().any(|cap| within(cap.area))
         || said.ticked.iter().any(|tick| within(tick.area))
-        || said.spun.iter().any(|mark| within(mark.area))
         // Asked of the cell and not of the column, the same as a rule's:
         // a panel drawn over a scrollbar leaves cells in that column that
         // are the panel's, and the letters there are its own.
