@@ -175,7 +175,7 @@ pub struct Doing {
 }
 
 /// One thing that was said.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct Said {
     /// Who said it.
     pub speaker: Speaker,
@@ -2738,6 +2738,47 @@ mod tests {
         assert!(
             !says(&chat),
             "the first thing changed and kept the rows it had"
+        );
+    }
+
+    /// What is kept of a message with a picture in it is not the picture,
+    /// and the message is still laid out once.
+    ///
+    /// A picture is megabytes, and nothing laid out reads it: copied into
+    /// what is kept and compared on every chunk of an answer, a screenshot
+    /// was paid for again with each one.
+    ///
+    /// Broken deliberately by keeping the parts in `Said::as_laid_out`,
+    /// which fails the first claim; and by comparing them in
+    /// `Said::lays_out_as`, which never finds the message the same as what
+    /// was kept of it and fails the second.
+    #[test]
+    fn what_is_kept_of_a_message_is_not_its_pictures() {
+        let mut chat = Chat::new();
+        // Said rather than waiting: words waiting stay last, so the answer
+        // would go in front of them and move them a place.
+        chat.asked(&[
+            Part::Words("look at ".to_string()),
+            Part::Picture(crate::composer::Attached {
+                mime: "image/png".to_string(),
+                bytes: vec![0; 1024],
+            }),
+        ]);
+        let _ = chat.rows(ROOM.reading);
+        let planted = "never laid out from anything";
+        {
+            let mut pieces = chat.pieces.borrow_mut();
+            let piece = pieces[0].as_mut().expect("the message laid out");
+            assert!(piece.said.parts.is_empty(), "the picture was kept");
+            piece.rows[0].spans = vec![Span::new(planted.to_string(), Ink::Plain)];
+        }
+
+        chat.chunk(Speaker::Agent, "an answer");
+        assert!(
+            chat.rows(ROOM.reading)
+                .iter()
+                .any(|row| row.text() == planted),
+            "the message with a picture was laid out again"
         );
     }
 

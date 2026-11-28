@@ -111,10 +111,98 @@ pub(super) struct Piece {
     against: LaidAt,
     /// How deep it was: under a run's heading, or not.
     depth: u8,
-    /// The thing said, as it was.
-    said: Said,
+    /// The thing said, as it was -- less its pictures: see
+    /// [`Said::as_laid_out`].
+    pub(super) said: Said,
     /// The rows it took.
     pub(super) rows: Vec<Row>,
+}
+
+impl Said {
+    /// What of this a [`Piece`] keeps: all of it but the pictures.
+    ///
+    /// The pictures because a picture is megabytes and nothing laid out
+    /// reads them -- what a reader's message says is its `text`, the
+    /// spelling of its parts. Copied into every piece and compared byte for
+    /// byte on every chunk of an answer, a screenshot pasted into a message
+    /// was the cost the box had already been rid of once (`Composer`'s
+    /// `attached`).
+    ///
+    /// Every field named, here and in [`Said::lays_out_as`], so that one
+    /// added to [`Said`] does not compile until somebody has said whether
+    /// the rows are drawn from it.
+    fn as_laid_out(&self) -> Self {
+        let Self {
+            speaker,
+            text,
+            tag,
+            state,
+            kind,
+            parts: _,
+            places,
+            change,
+            ran,
+            words,
+            opened,
+            run_opened,
+            details_turned,
+            unsent,
+            afar,
+        } = self;
+        Self {
+            speaker: *speaker,
+            text: text.clone(),
+            tag: tag.clone(),
+            state: state.clone(),
+            kind: kind.clone(),
+            parts: Vec::new(),
+            places: places.clone(),
+            change: change.clone(),
+            ran: ran.clone(),
+            words: words.clone(),
+            opened: *opened,
+            run_opened: *run_opened,
+            details_turned: details_turned.clone(),
+            unsent: *unsent,
+            afar: *afar,
+        }
+    }
+
+    /// Whether this would be laid out into the rows `kept` was: every
+    /// field but the pictures, for the reason [`Said::as_laid_out`] gives.
+    fn lays_out_as(&self, kept: &Self) -> bool {
+        let Self {
+            speaker,
+            text,
+            tag,
+            state,
+            kind,
+            parts: _,
+            places,
+            change,
+            ran,
+            words,
+            opened,
+            run_opened,
+            details_turned,
+            unsent,
+            afar,
+        } = self;
+        *speaker == kept.speaker
+            && *text == kept.text
+            && *tag == kept.tag
+            && *state == kept.state
+            && *kind == kept.kind
+            && *places == kept.places
+            && *change == kept.change
+            && *ran == kept.ran
+            && *words == kept.words
+            && *opened == kept.opened
+            && *run_opened == kept.run_opened
+            && *details_turned == kept.details_turned
+            && *unsent == kept.unsent
+            && *afar == kept.afar
+    }
 }
 
 /// A row of a thing said, laid out: its runs, the block of code it is part
@@ -451,7 +539,7 @@ impl Chat {
         if let Some(Some(piece)) = self.pieces.borrow().get(at)
             && piece.against == against
             && piece.depth == depth
-            && piece.said == *said
+            && said.lays_out_as(&piece.said)
         {
             return piece.rows.clone();
         }
@@ -463,7 +551,7 @@ impl Chat {
         pieces[at] = Some(Piece {
             against,
             depth,
-            said: said.clone(),
+            said: said.as_laid_out(),
             rows: rows.clone(),
         });
         rows
