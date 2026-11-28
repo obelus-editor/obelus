@@ -444,6 +444,16 @@ fn changed_rows(call: &obelus_agent::acp::Call) -> Vec<obelus_git::change::Line>
     })
 }
 
+/// Puts `now` in `field` where it says something else, and says whether it
+/// did -- which is whether the row drawn from it has to be laid out again.
+fn replaced<T: PartialEq + Clone>(field: &mut T, now: &T) -> bool {
+    let moved = field != now;
+    if moved {
+        field.clone_from(now);
+    }
+    moved
+}
+
 /// How many tool calls of one kind in a row it takes before they are folded
 /// under a heading.
 ///
@@ -1537,8 +1547,14 @@ impl Chat {
     }
 
     /// Takes news of a tool call: a new one, or the same one further along.
+    ///
+    /// Forgets the rows only where the call's row changed, for the reason
+    /// [`Chat::background_says`] gives: an agent says a call is still going
+    /// as often as it likes -- Claude's beats while a command runs carry how
+    /// long it has been running and nothing a row draws -- and each one laid
+    /// the whole conversation out again, which on a long one kept the loop
+    /// busy for as long as the mark beside the call was turning.
     pub fn tool(&mut self, call: &obelus_agent::acp::Call, status: &str) {
-        self.forget_the_layout();
         let existing = self
             .said
             .iter_mut()
@@ -1573,18 +1589,19 @@ impl Chat {
         // A later update carries only what changed, so what arrives empty
         // means "the one you already have" -- for the title, the kind, the
         // places it named, the change it is making and where it has got to.
+        let mut moved = false;
         if !call.title.is_empty() {
-            said.text = call.title.clone();
+            moved |= replaced(&mut said.text, &call.title);
         }
         if !call.kind.is_empty() {
-            said.kind = call.kind.clone();
+            moved |= replaced(&mut said.kind, &call.kind);
         }
         let places = places_of(call);
         if !places.is_empty() {
-            said.places = places;
+            moved |= replaced(&mut said.places, &places);
         }
         if call.change.is_some() {
-            said.change = changed_rows(call);
+            moved |= replaced(&mut said.change, &changed_rows(call));
         }
         // Replaced, the way the change above it is, because that is what
         // the protocol says a later `content` means: *replace the content
@@ -1593,16 +1610,20 @@ impl Chat {
         // became of the asking, and that is the agent's account of that
         // call rather than something for Obelus to overrule.
         if !call.said.is_empty() {
-            said.words = call.said.clone();
+            moved |= replaced(&mut said.words, &call.said);
         }
         if !status.is_empty() {
             // Said once, by the update that carried the marker; the ones
             // after it repeat `completed` without it, and are not news.
             let kept = said.state.as_deref() == Some(obelus_agent::acp::BACKGROUNDED)
                 && status == "completed";
-            if !kept {
+            if !kept && said.state.as_deref() != Some(status) {
                 said.state = Some(status.to_string());
+                moved = true;
             }
+        }
+        if moved {
+            self.forget_the_layout();
         }
     }
 
@@ -2606,6 +2627,55 @@ mod tests {
             held(&chat),
             "ending work nothing was waiting on threw the rows away"
         );
+    }
+
+    /// News of a call that leaves its row saying what it said keeps the
+    /// rows; news that changes the row does not.
+    ///
+    /// Claude says a running command is still running every few moments,
+    /// in an update that carries only how long it has been at it -- which
+    /// arrives here as a call with nothing in it. Each one laid the whole
+    /// conversation out again, and on a long conversation that was the
+    /// loop kept busy for as long as the command ran.
+    ///
+    /// Broken deliberately by putting `forget_the_layout()` back at the top
+    /// of `tool`, which fails the first three claims; by dropping the call
+    /// from the `moved` branch, which fails the rest; and by leaving the
+    /// state out of `moved`, which fails the one about the call finishing.
+    #[test]
+    fn news_of_a_call_that_moves_no_row_does_not_lay_the_conversation_out_again() {
+        let mut chat = Chat::new();
+        chat.tool(
+            &saying("c1", "Run the tests", &["nothing yet"]),
+            "in_progress",
+        );
+        let held = |chat: &Chat| chat.laid.borrow().is_some();
+        let beat = call("c1", "", "", Vec::new());
+
+        let _ = chat.rows(ROOM.reading);
+        chat.tool(&beat, "");
+        assert!(held(&chat), "a beat with nothing in it threw the rows away");
+        chat.tool(&beat, "in_progress");
+        assert!(held(&chat), "the same state again threw the rows away");
+        chat.tool(
+            &saying("c1", "Run the tests", &["nothing yet"]),
+            "in_progress",
+        );
+        assert!(held(&chat), "the same words again threw the rows away");
+
+        chat.tool(&saying("c1", "Run the tests", &["1 passed"]), "in_progress");
+        assert!(!held(&chat), "new words and the rows stayed as they were");
+
+        let _ = chat.rows(ROOM.reading);
+        chat.tool(&beat, "completed");
+        assert!(
+            !held(&chat),
+            "the call finished and the rows stayed as they were"
+        );
+
+        let _ = chat.rows(ROOM.reading);
+        chat.tool(&call("c1", "Ran the tests", "", Vec::new()), "");
+        assert!(!held(&chat), "a new title and the rows stayed as they were");
     }
 
     /// A closed call shows its title, and no more of it than it is allowed.
