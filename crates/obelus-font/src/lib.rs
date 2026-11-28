@@ -1240,7 +1240,9 @@ mod tests {
     }
 
     /// A character in a face only CoreText can draw is drawn, by CoreText:
-    /// `中` in `PingFang SC`, which is the face macOS draws Chinese in.
+    /// `中` in whichever such face has it -- `PingFang SC`, where macOS has
+    /// only the copy of it CoreText keeps for itself. Put in the face by
+    /// hand: see `in_a_face_only_coretext_draws`.
     ///
     /// On a machine with no such face there is nothing to draw and it says
     /// so.
@@ -1251,22 +1253,56 @@ mod tests {
     #[test]
     fn a_face_only_coretext_can_draw_is_drawn_by_coretext() {
         let mut fonts = Fonts::new(32.0);
-        if fonts.by_coretext.is_empty() {
-            eprintln!("no face only CoreText draws on this machine; nothing to check");
+        let Some(key) = in_a_face_only_coretext_draws(&mut fonts, '\u{4e2d}', false, false) else {
             return;
-        }
-        let key = fonts.glyphs("\u{4e2d}", false, false, Size::Cell)[0].key;
-        assert!(
-            fonts.by_coretext.contains_key(&key.font_id),
-            "{:?} drew it",
-            fonts
-                .system
-                .db()
-                .face(key.font_id)
-                .map(|face| face.families.clone())
-        );
+        };
         let picture = fonts.picture(key).expect("it has pixels");
         assert!(picture.data.iter().any(|coverage| *coverage > 0));
+    }
+
+    /// A character laid out in a line, bold or italic as asked, and then
+    /// put in a face only CoreText can draw that has it -- or nothing, and
+    /// a word saying so, on a machine with no such face.
+    ///
+    /// Laid out first because the line is what says the size, the weight
+    /// and the slant, which are what drawing it is asked about. Put in the
+    /// face by hand afterwards because which face a line falls back to is
+    /// the machine's: one that has had PingFang downloaded as well -- into
+    /// `/System/Library/AssetsV2`, which an application asking for it does
+    /// -- has a copy swash can draw at the weight a line asks for, and the
+    /// line is rightly drawn in that. Asked of the layout alone, these
+    /// failed or checked nothing on exactly that machine while nothing was
+    /// wrong.
+    fn in_a_face_only_coretext_draws(
+        fonts: &mut Fonts,
+        character: char,
+        bold: bool,
+        italic: bool,
+    ) -> Option<CacheKey> {
+        let mut faces: Vec<(bool, String, fontdb::ID)> = fonts
+            .by_coretext
+            .iter()
+            .map(|(id, names)| (names.plain == names.bold, names.plain.clone(), *id))
+            .collect();
+        // One with weights first -- `PingFang SC` rather than a bitmap face
+        // of one weight, which has nothing to say about a weight -- and by
+        // name, so a machine asks the same face every time.
+        faces.sort();
+        let found = faces.into_iter().find_map(|(_, _, id)| {
+            let font = fonts.system.get_font(id, Weight::NORMAL)?;
+            let glyph = font.as_swash().charmap().map(character);
+            (glyph != 0).then_some((id, glyph))
+        });
+        let Some((id, glyph)) = found else {
+            eprintln!(
+                "no face only CoreText draws has {character} on this machine; nothing to check"
+            );
+            return None;
+        };
+        let mut key = fonts.glyphs(&character.to_string(), bold, italic, Size::Cell)[0].key;
+        key.font_id = id;
+        key.glyph_id = glyph;
+        Some(key)
     }
 
     /// And the right way up, and on the line: `上` has its long stroke at
@@ -1279,11 +1315,9 @@ mod tests {
     #[test]
     fn what_coretext_draws_is_the_right_way_up_and_on_the_line() {
         let mut fonts = Fonts::new(32.0);
-        let key = fonts.glyphs("\u{4e0a}", false, false, Size::Cell)[0].key;
-        if !fonts.by_coretext.contains_key(&key.font_id) {
-            eprintln!("this machine does not draw it with CoreText; nothing to check");
+        let Some(key) = in_a_face_only_coretext_draws(&mut fonts, '\u{4e0a}', false, false) else {
             return;
-        }
+        };
         let picture = fonts.picture(key).expect("it has pixels").clone();
         let width = picture.placement.width as usize;
         let rows = picture.placement.height as usize;
@@ -1321,15 +1355,17 @@ mod tests {
     /// does `picture` asking for the plain one whatever the key's weight.
     #[test]
     fn a_face_coretext_draws_is_drawn_at_the_weight_the_text_is() {
-        const HAN: &str = "\u{4e2d}";
         let mut fonts = Fonts::new(32.0);
-        let plain = fonts.glyphs(HAN, false, false, Size::Cell)[0].key;
-        let bold = fonts.glyphs(HAN, true, false, Size::Cell)[0].key;
-        if !fonts.by_coretext.contains_key(&plain.font_id) {
-            eprintln!("this machine does not draw it with CoreText; nothing to check");
+        let (Some(plain), Some(bold)) = (
+            in_a_face_only_coretext_draws(&mut fonts, '\u{4e2d}', false, false),
+            in_a_face_only_coretext_draws(&mut fonts, '\u{4e2d}', true, false),
+        ) else {
+            return;
+        };
+        if fonts.by_coretext[&plain.font_id].plain == fonts.by_coretext[&plain.font_id].bold {
+            eprintln!("the face only CoreText draws here is drawn at one weight; nothing to check");
             return;
         }
-        assert!(fonts.by_coretext.contains_key(&bold.font_id));
         let own = fonts
             .system
             .db()
@@ -1360,13 +1396,10 @@ mod tests {
     /// flags draws it upright, its top and its bottom in one column.
     #[test]
     fn what_coretext_draws_in_an_italic_line_leans() {
-        const HAN: &str = "\u{4e2d}";
         let mut fonts = Fonts::new(32.0);
-        let key = fonts.glyphs(HAN, false, true, Size::Cell)[0].key;
-        if !fonts.by_coretext.contains_key(&key.font_id) {
-            eprintln!("this machine does not draw it with CoreText; nothing to check");
+        let Some(key) = in_a_face_only_coretext_draws(&mut fonts, '\u{4e2d}', false, true) else {
             return;
-        }
+        };
         assert!(key.flags.contains(cosmic_text::CacheKeyFlags::FAKE_ITALIC));
         let picture = fonts.picture(key).expect("it has pixels").clone();
         let width = picture.placement.width as usize;
