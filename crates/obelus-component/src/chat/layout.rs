@@ -103,6 +103,27 @@ fn laid_out(text: &str, width: u16, markdown: bool, turned: Option<&[usize]>) ->
         .collect()
 }
 
+/// What rows laid out now at `width` are laid out against: the one answer
+/// both the conversation's rows and each thing said's are kept by, so the
+/// two cannot be kept by different questions.
+///
+/// The width, and three things the whole process shares that the same
+/// words are laid out differently under. Which characters the window
+/// draws as pictures, because a heart laid out one cell wide is drawn two
+/// runs into the word after it. The language, because a run's heading and
+/// a plan's step are Obelus's words. And how wide a tab is, which the
+/// wrapping measures a tab by: missing from here, a conversation open
+/// while the reader changed the setting kept what it had said wrapped at
+/// the old width for as long as nothing in it moved.
+fn laid_against(width: u16) -> LaidAt {
+    (
+        width,
+        obelus_text::pictures_version(),
+        obelus_i18n::spoken(),
+        obelus_text::tab_width(),
+    )
+}
+
 /// One thing said, laid out, and what it was laid out from -- see
 /// `Chat::pieces`.
 #[derive(Debug)]
@@ -311,17 +332,8 @@ impl Chat {
 
     /// The rows, laid out or remembered from the last time they were.
     fn laid_out(&self, width: u16) -> Vec<Row> {
-        // And against which characters are pictures, which is a question
-        // about the window's fonts and changes when the reader's do: a
-        // heart laid out one cell wide and drawn two runs into the word
-        // after it. And against the language, because a run's heading and
-        // a plan's step are Obelus's words, and the reader can change which
-        // language those are in while the conversation is open.
-        let at = (
-            width,
-            obelus_text::pictures_version(),
-            obelus_i18n::spoken(),
-        );
+        // Against more than the width: see `laid_against`.
+        let at = laid_against(width);
         if let Some(rows) = self
             .laid
             .borrow()
@@ -531,11 +543,7 @@ impl Chat {
         let Some(said) = self.said.get(at) else {
             return Vec::new();
         };
-        let against = (
-            width,
-            obelus_text::pictures_version(),
-            obelus_i18n::spoken(),
-        );
+        let against = laid_against(width);
         if let Some(Some(piece)) = self.pieces.borrow().get(at)
             && piece.against == against
             && piece.depth == depth

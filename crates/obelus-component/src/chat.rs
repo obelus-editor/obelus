@@ -727,9 +727,9 @@ pub type Spot = crate::page::Spot<(usize, Source)>;
 pub use crate::page::Place;
 
 /// What a conversation's rows were laid out against: a width, a version
-/// of `obelus_text`'s table of pictures, and the language Obelus's own words
-/// in them were said in.
-type LaidAt = (u16, u64, obelus_i18n::Language);
+/// of `obelus_text`'s table of pictures, the language Obelus's own words
+/// in them were said in, and how wide a tab is -- see `laid_against`.
+type LaidAt = (u16, u64, obelus_i18n::Language, usize);
 
 /// A conversation.
 ///

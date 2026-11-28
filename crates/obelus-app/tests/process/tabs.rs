@@ -83,3 +83,32 @@ fn a_width_of_nothing_is_not_taken() {
     assert!(obelus_text::tab_width() >= 1);
     obelus_text::lay_tabs_at(obelus_text::TAB_WIDTH);
 }
+
+/// And a conversation already open is laid out again at the new width,
+/// though nothing in it has moved.
+///
+/// The wrapping measures a tab by the setting, and the rows were kept by
+/// the width of the screen, the pictures and the language alone -- so a
+/// conversation open while the reader changed it went on wrapped at the old
+/// width until something in it changed, and with each thing said kept on
+/// its own, the things that did not change went on so for good.
+///
+/// Broken deliberately by leaving the tab out of `laid_against`.
+#[test]
+fn a_conversation_open_while_the_width_changes_is_laid_out_at_the_new_one() {
+    let _turn = crate::turn();
+    let mut chat = obelus_component::chat::Chat::new();
+    // Seven cells at a tab of two, twenty-five at a tab of eight: one row
+    // in twelve columns, and then three.
+    chat.note("a\tb\tc\td");
+
+    obelus_text::lay_tabs_at(2);
+    let narrow = chat.rows(12).len();
+    obelus_text::lay_tabs_at(8);
+    let wide = chat.rows(12).len();
+    obelus_text::lay_tabs_at(obelus_text::TAB_WIDTH);
+    assert!(
+        wide > narrow,
+        "the tabs went wider and the rows stayed as they were: {narrow} then {wide}"
+    );
+}
