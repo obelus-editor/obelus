@@ -759,11 +759,13 @@ pub struct Chat {
     /// selection across a morning's conversation does not lay it out again
     /// on every report the terminal sends.
     ///
-    /// Dropped by anything that changes what there is to lay out. A stale
-    /// one is a screen that has stopped saying what happened, so the rule
-    /// is to drop it wherever there is a doubt: laying out again costs
-    /// milliseconds and being wrong costs the reader their conversation.
-    laid: std::cell::RefCell<Option<(LaidAt, Vec<Row>)>>,
+    /// Marked stale by anything that changes what there is to lay out. A
+    /// stale one handed out is a screen that has stopped saying what
+    /// happened, so the rule is to mark it wherever there is a doubt:
+    /// laying out again costs a little and being wrong costs the reader
+    /// their conversation. Kept while stale, because the next laying out
+    /// takes from it the rows of everything that has not moved (`pieces`).
+    laid: std::cell::RefCell<Option<crate::chat::layout::LaidOut>>,
     /// Each thing said, laid out on its own, by where it is in [`Chat::said`].
     ///
     /// What makes dropping the rows above cheap. Laying the conversation
@@ -773,7 +775,8 @@ pub struct Chat {
     /// again for each chunk of an answer, and an agent typing into a long
     /// conversation held the loop for as long as it typed. Each is kept
     /// with what it was laid out from, and asked again only where that is
-    /// no longer what is there.
+    /// no longer what is there -- and its rows are where they are in
+    /// `laid`, so the rows of a conversation are kept once.
     ///
     /// Compared rather than dropped, which is the point: what a thing said
     /// looks like is whatever its fields say, and a second rule that every
@@ -1836,9 +1839,14 @@ impl Chat {
     /// every one of them is where the promise really lives.
     fn forget_the_layout(&mut self) {
         self.changes += 1;
-        if let Some((_, rows)) = self.laid.get_mut().take() {
-            self.remember_where_the_cursor_waits(&rows);
+        let Some(mut laid) = self.laid.get_mut().take() else {
+            return;
+        };
+        if laid.fresh {
+            self.remember_where_the_cursor_waits(&laid.rows);
+            laid.fresh = false;
         }
+        *self.laid.get_mut() = Some(laid);
     }
 
     /// Puts the keys on one of the settings on the status row.
@@ -2104,7 +2112,13 @@ impl Chat {
         let Some(waiting) = self.waiting_at else {
             return;
         };
-        let Some((_, rows)) = self.laid.get_mut().as_ref() else {
+        let Some(rows) = self
+            .laid
+            .get_mut()
+            .as_ref()
+            .filter(|laid| laid.fresh)
+            .map(|laid| &laid.rows)
+        else {
             return;
         };
         self.waiting_at = None;
@@ -2539,7 +2553,7 @@ mod tests {
         );
         chat.said[1].ran = Some("r1".to_string());
 
-        let held = |chat: &Chat| chat.laid.borrow().is_some();
+        let held = |chat: &Chat| chat.laid.borrow().as_ref().is_some_and(|laid| laid.fresh);
 
         chat.doing(Some("Thinking\u{2026}"));
         let _ = chat.rows(ROOM.reading);
@@ -2625,7 +2639,7 @@ mod tests {
         let mut started = saying("c1", "npm run dev", &[]);
         started.backgrounded = true;
         chat.tool(&started, "completed");
-        let held = |chat: &Chat| chat.laid.borrow().is_some();
+        let held = |chat: &Chat| chat.laid.borrow().as_ref().is_some_and(|laid| laid.fresh);
 
         let _ = chat.rows(ROOM.reading);
         chat.background_says("c1", obelus_agent::acp::BACKGROUNDED);
@@ -2668,7 +2682,7 @@ mod tests {
             &saying("c1", "Run the tests", &["nothing yet"]),
             "in_progress",
         );
-        let held = |chat: &Chat| chat.laid.borrow().is_some();
+        let held = |chat: &Chat| chat.laid.borrow().as_ref().is_some_and(|laid| laid.fresh);
         let beat = call("c1", "", "", Vec::new());
 
         let _ = chat.rows(ROOM.reading);
@@ -2697,6 +2711,23 @@ mod tests {
         assert!(!held(&chat), "a new title and the rows stayed as they were");
     }
 
+    /// Writes over the rows the first thing said took, where they are
+    /// kept, with words nothing could have laid them out into -- so rows
+    /// that say them were taken from what was kept.
+    fn plant(chat: &Chat, words: &str) {
+        let start = chat.pieces.borrow()[0]
+            .as_ref()
+            .expect("the first thing said laid out")
+            .rows
+            .start;
+        chat.laid
+            .borrow_mut()
+            .as_mut()
+            .expect("the rows laid out")
+            .rows[start]
+            .spans = vec![Span::new(words.to_string(), Ink::Plain)];
+    }
+
     /// What one thing said changing lays out that one thing, and keeps the
     /// rows of everything else.
     ///
@@ -2718,9 +2749,7 @@ mod tests {
         chat.chunk(Speaker::Agent, "an answer");
         let _ = chat.rows(ROOM.reading);
         let planted = "never laid out from anything";
-        if let Some(Some(piece)) = chat.pieces.borrow_mut().get_mut(0) {
-            piece.rows[0].spans = vec![Span::new(planted.to_string(), Ink::Plain)];
-        }
+        plant(&chat, planted);
         let says = |chat: &Chat| {
             chat.rows(ROOM.reading)
                 .iter()
@@ -2766,12 +2795,13 @@ mod tests {
         ]);
         let _ = chat.rows(ROOM.reading);
         let planted = "never laid out from anything";
-        {
-            let mut pieces = chat.pieces.borrow_mut();
-            let piece = pieces[0].as_mut().expect("the message laid out");
-            assert!(piece.said.parts.is_empty(), "the picture was kept");
-            piece.rows[0].spans = vec![Span::new(planted.to_string(), Ink::Plain)];
-        }
+        assert!(
+            chat.pieces.borrow()[0]
+                .as_ref()
+                .is_some_and(|piece| piece.said.parts.is_empty()),
+            "the picture was kept"
+        );
+        plant(&chat, planted);
 
         chat.chunk(Speaker::Agent, "an answer");
         assert!(
@@ -2793,11 +2823,14 @@ mod tests {
     /// and after each the two are compared.
     ///
     /// Broken deliberately by leaving the depth out of what `kept_rows`
-    /// compares, which fails at the run opening; by leaving the width out,
-    /// which fails at the narrower width; and by not cutting the kept
-    /// pieces back in `lay_out`, which fails nothing here -- a piece at an
-    /// index something else now holds is compared with that, and that is
-    /// what the words being taken back checks.
+    /// compares, which fails at the run breaking up; by leaving the width out,
+    /// which fails at the narrower width; by not forgetting the pieces
+    /// `lay_out` did not lay out, which fails at the run opening again; by
+    /// not moving a piece that was taken from what was kept to where it
+    /// now is, which fails as soon as anything before it grows; and by not
+    /// cutting the kept pieces back in `lay_out`, which fails nothing here
+    /// -- a piece at an index something else now holds is compared with
+    /// that, and that is what the words being taken back checks.
     #[test]
     fn what_was_kept_is_what_laying_out_afresh_gives() {
         let mut chat = Chat::new();
@@ -2805,18 +2838,18 @@ mod tests {
         // is checking, and a comparison that threw it away would check
         // every step against nothing kept at all.
         let afresh = |chat: &Chat, width: u16| {
-            let kept = chat.pieces.take();
-            *chat.laid.borrow_mut() = None;
+            let pieces = chat.pieces.take();
+            let laid = chat.laid.take();
             let rows = chat.rows(width);
-            *chat.pieces.borrow_mut() = kept;
-            *chat.laid.borrow_mut() = None;
+            *chat.pieces.borrow_mut() = pieces;
+            *chat.laid.borrow_mut() = laid;
             rows
         };
         // The words first, which say what went wrong in a way a reader can
         // follow, and then everything else a row carries -- its depth, its
         // fold, which thing said it is from.
         let agrees = |chat: &mut Chat, width: u16, step: &str| {
-            *chat.laid.borrow_mut() = None;
+            chat.forget_the_layout();
             let kept = chat.rows(width);
             let fresh = afresh(chat, width);
             let words = |rows: &[Row]| rows.iter().map(Row::text).collect::<Vec<_>>();
@@ -2855,6 +2888,26 @@ mod tests {
 
         chat.chunk(Speaker::Agent, "\n\nAnd **now** the change.");
         agrees(&mut chat, ROOM.reading, "the answer growing");
+
+        // A run shut, the rows moving while its calls are not laid out,
+        // and the run opened again: where its calls were taken from last
+        // is a place in rows that have gone since.
+        chat.fold(Folds::Run(1));
+        agrees(&mut chat, ROOM.reading, "the run shutting");
+        chat.chunk(Speaker::Agent, " Then the tests.");
+        agrees(
+            &mut chat,
+            ROOM.reading,
+            "the answer growing under a shut run",
+        );
+        chat.fold(Folds::Run(1));
+        agrees(&mut chat, ROOM.reading, "the run opening again");
+
+        // And a call in the open run turning out to be another kind, which
+        // breaks the run up: the calls around it are laid out where they
+        // stand again, one less deep, and none of them has changed.
+        chat.tool(&call("c2", "", "execute", Vec::new()), "");
+        agrees(&mut chat, ROOM.reading, "the run breaking up");
 
         chat.will_say(&[Part::Words("first words".to_string())]);
         chat.will_say(&[Part::Words("second words".to_string())]);
