@@ -175,7 +175,7 @@ pub struct Doing {
 }
 
 /// One thing that was said.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Said {
     /// Who said it.
     pub speaker: Speaker,
@@ -764,6 +764,24 @@ pub struct Chat {
     /// is to drop it wherever there is a doubt: laying out again costs
     /// milliseconds and being wrong costs the reader their conversation.
     laid: std::cell::RefCell<Option<(LaidAt, Vec<Row>)>>,
+    /// Each thing said, laid out on its own, by where it is in [`Chat::said`].
+    ///
+    /// What makes dropping the rows above cheap. Laying the conversation
+    /// out is laying out every word ever said in it, and what drops the
+    /// rows is almost always one thing said changing -- the answer growing
+    /// by a few words, a call moving on -- so the whole morning was read
+    /// again for each chunk of an answer, and an agent typing into a long
+    /// conversation held the loop for as long as it typed. Each is kept
+    /// with what it was laid out from, and asked again only where that is
+    /// no longer what is there.
+    ///
+    /// Compared rather than dropped, which is the point: what a thing said
+    /// looks like is whatever its fields say, and a second rule that every
+    /// change to one must also remember to drop its rows is the rule the
+    /// whole-conversation cache already needs a test walking every door to
+    /// keep. Comparing a thing said with its copy is reading its bytes once;
+    /// laying it out is reading its markdown.
+    pieces: std::cell::RefCell<Vec<Option<crate::chat::layout::Piece>>>,
     /// How many times what there is to lay out has changed, for whoever
     /// keeps a place in the rows -- a search of the conversation -- and has
     /// to know without laying them out whether that place still means
@@ -903,6 +921,7 @@ impl Chat {
         Self {
             said: Vec::new(),
             laid: std::cell::RefCell::new(None),
+            pieces: std::cell::RefCell::new(Vec::new()),
             changes: 0,
             doing: None,
             can_send_now: false,
@@ -2676,6 +2695,138 @@ mod tests {
         let _ = chat.rows(ROOM.reading);
         chat.tool(&call("c1", "Ran the tests", "", Vec::new()), "");
         assert!(!held(&chat), "a new title and the rows stayed as they were");
+    }
+
+    /// What one thing said changing lays out that one thing, and keeps the
+    /// rows of everything else.
+    ///
+    /// The cost the pieces are for: every chunk of an answer drops the
+    /// conversation's rows, and before them each chunk was the whole
+    /// conversation read again -- so an agent typing into a long one held
+    /// the loop for as long as it typed. What is asserted is the mechanism
+    /// rather than a time: the first thing said is given rows it could
+    /// never have been laid out into, and those are what come back while
+    /// only the second changes.
+    ///
+    /// Broken deliberately by laying out again in `kept_rows` whatever was
+    /// kept, which fails the first claim; and by leaving the thing said out
+    /// of what it compares, which fails the second.
+    #[test]
+    fn one_thing_said_changing_lays_out_only_that_thing() {
+        let mut chat = Chat::new();
+        chat.note("the first thing");
+        chat.chunk(Speaker::Agent, "an answer");
+        let _ = chat.rows(ROOM.reading);
+        let planted = "never laid out from anything";
+        if let Some(Some(piece)) = chat.pieces.borrow_mut().get_mut(0) {
+            piece.rows[0].spans = vec![Span::new(planted.to_string(), Ink::Plain)];
+        }
+        let says = |chat: &Chat| {
+            chat.rows(ROOM.reading)
+                .iter()
+                .any(|row| row.text() == planted)
+        };
+
+        chat.chunk(Speaker::Agent, " that goes on");
+        assert!(
+            says(&chat),
+            "the answer growing laid the first thing out again"
+        );
+
+        chat.said[0].text = "the first thing, said again".to_string();
+        chat.forget_the_layout();
+        assert!(
+            !says(&chat),
+            "the first thing changed and kept the rows it had"
+        );
+    }
+
+    /// The rows put together from what was kept are the rows laying the
+    /// whole conversation out afresh gives, through every kind of change.
+    ///
+    /// The danger of keeping anything is that what it was kept against is
+    /// not all it depends on. Each step here changes something the rows are
+    /// made from -- an answer growing, a call moving on, a fold, a run of
+    /// calls opening, which lays its members out one deeper, words taken
+    /// back, which moves everything after them up a place, and the width --
+    /// and after each the two are compared.
+    ///
+    /// Broken deliberately by leaving the depth out of what `kept_rows`
+    /// compares, which fails at the run opening; by leaving the width out,
+    /// which fails at the narrower width; and by not cutting the kept
+    /// pieces back in `lay_out`, which fails nothing here -- a piece at an
+    /// index something else now holds is compared with that, and that is
+    /// what the words being taken back checks.
+    #[test]
+    fn what_was_kept_is_what_laying_out_afresh_gives() {
+        let mut chat = Chat::new();
+        // Put back afterwards: what is kept from one step is what the next
+        // is checking, and a comparison that threw it away would check
+        // every step against nothing kept at all.
+        let afresh = |chat: &Chat, width: u16| {
+            let kept = chat.pieces.take();
+            *chat.laid.borrow_mut() = None;
+            let rows = chat.rows(width);
+            *chat.pieces.borrow_mut() = kept;
+            *chat.laid.borrow_mut() = None;
+            rows
+        };
+        // The words first, which say what went wrong in a way a reader can
+        // follow, and then everything else a row carries -- its depth, its
+        // fold, which thing said it is from.
+        let agrees = |chat: &mut Chat, width: u16, step: &str| {
+            *chat.laid.borrow_mut() = None;
+            let kept = chat.rows(width);
+            let fresh = afresh(chat, width);
+            let words = |rows: &[Row]| rows.iter().map(Row::text).collect::<Vec<_>>();
+            assert_eq!(words(&kept), words(&fresh), "after {step}");
+            assert_eq!(
+                format!("{kept:?}"),
+                format!("{fresh:?}"),
+                "after {step}, beyond the words"
+            );
+        };
+
+        chat.chunk(Speaker::Agent, "Reading the code first.");
+        // Two first, which are not a run and so are laid out where they
+        // stand: what the run opening asks is whether the rows they had
+        // there are taken for rows one deeper.
+        for id in ["c1", "c2"] {
+            chat.tool(&saying(id, "Read a.rs", &["fn main() {}"]), "in_progress");
+        }
+        agrees(&mut chat, ROOM.reading, "two calls");
+        for id in ["c3", "c4"] {
+            chat.tool(&saying(id, "Read a.rs", &["fn main() {}"]), "in_progress");
+        }
+        agrees(&mut chat, ROOM.reading, "the calls making a run");
+
+        // One of the two that came later: one of the first two finishing
+        // would change it, and lay it out again for that reason rather
+        // than for its depth.
+        chat.tool(&call("c4", "", "", Vec::new()), "completed");
+        agrees(&mut chat, ROOM.reading, "a call finishing");
+
+        chat.fold(Folds::Run(1));
+        agrees(&mut chat, ROOM.reading, "the run opening");
+
+        chat.fold(Folds::Said(2));
+        agrees(&mut chat, ROOM.reading, "a call in it folding");
+
+        chat.chunk(Speaker::Agent, "\n\nAnd **now** the change.");
+        agrees(&mut chat, ROOM.reading, "the answer growing");
+
+        chat.will_say(&[Part::Words("first words".to_string())]);
+        chat.will_say(&[Part::Words("second words".to_string())]);
+        agrees(&mut chat, ROOM.reading, "words waiting");
+        let waiting = chat
+            .said
+            .iter()
+            .position(|said| said.unsent)
+            .expect("words waiting");
+        let _ = chat.take_back(waiting);
+        agrees(&mut chat, ROOM.reading, "words taken back");
+
+        agrees(&mut chat, ROOM.reading / 2, "a narrower width");
     }
 
     /// A closed call shows its title, and no more of it than it is allowed.

@@ -103,6 +103,20 @@ fn laid_out(text: &str, width: u16, markdown: bool, turned: Option<&[usize]>) ->
         .collect()
 }
 
+/// One thing said, laid out, and what it was laid out from -- see
+/// `Chat::pieces`.
+#[derive(Debug)]
+pub(super) struct Piece {
+    /// What the whole conversation was being laid out against.
+    against: LaidAt,
+    /// How deep it was: under a run's heading, or not.
+    depth: u8,
+    /// The thing said, as it was.
+    said: Said,
+    /// The rows it took.
+    pub(super) rows: Vec<Row>,
+}
+
 /// A row of a thing said, laid out: its runs, the block of code it is part
 /// of, the links on it, and the `<details>` it is the heading of.
 type Laid = (
@@ -236,6 +250,10 @@ impl Chat {
 
     /// Every row of the conversation, at a width.
     fn lay_out(&self, width: u16) -> Vec<Row> {
+        // A thing said that is no longer there has nothing to be kept for,
+        // and one kept at an index something else now holds is compared
+        // with that and found to differ.
+        self.pieces.borrow_mut().truncate(self.said.len());
         let mut rows = Vec::new();
         let mut at = 0;
         let mut first = true;
@@ -253,7 +271,7 @@ impl Chat {
                 true => rows.extend(self.run_rows(run.clone(), width)),
                 false => {
                     for index in run.clone() {
-                        rows.extend(self.said_rows(index, 0, width));
+                        rows.extend(self.kept_rows(index, 0, width));
                     }
                 }
             }
@@ -408,9 +426,46 @@ impl Chat {
         }];
         if open {
             for index in run {
-                rows.extend(self.said_rows(index, 1, width));
+                rows.extend(self.kept_rows(index, 1, width));
             }
         }
+        rows
+    }
+
+    /// One thing said, as the rows it takes: as it was laid out last time,
+    /// where nothing it was laid out from has moved.
+    ///
+    /// Everything [`Chat::said_rows`] reads is in what this compares: the
+    /// thing said, where it is -- which is the slot it is kept in, and is
+    /// written into its rows -- how deep, and what the whole conversation's
+    /// rows are laid out against.
+    fn kept_rows(&self, at: usize, depth: u8, width: u16) -> Vec<Row> {
+        let Some(said) = self.said.get(at) else {
+            return Vec::new();
+        };
+        let against = (
+            width,
+            obelus_text::pictures_version(),
+            obelus_i18n::spoken(),
+        );
+        if let Some(Some(piece)) = self.pieces.borrow().get(at)
+            && piece.against == against
+            && piece.depth == depth
+            && piece.said == *said
+        {
+            return piece.rows.clone();
+        }
+        let rows = self.said_rows(at, depth, width);
+        let mut pieces = self.pieces.borrow_mut();
+        if pieces.len() <= at {
+            pieces.resize_with(at + 1, || None);
+        }
+        pieces[at] = Some(Piece {
+            against,
+            depth,
+            said: said.clone(),
+            rows: rows.clone(),
+        });
         rows
     }
 
