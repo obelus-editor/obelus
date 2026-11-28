@@ -1240,7 +1240,18 @@ mod tests {
     }
 
     /// A character in a face only CoreText can draw is drawn, by CoreText:
-    /// `中` in `PingFang SC`, which is the face macOS draws Chinese in.
+    /// `中` in whichever such face has it -- `PingFang SC`, where macOS has
+    /// only the copy of it CoreText keeps for itself.
+    ///
+    /// The glyph is asked of that face by hand rather than by laying the
+    /// character out, because which face a line falls back to is the
+    /// machine's: one that has had PingFang downloaded as well -- into
+    /// `/System/Library/AssetsV2`, which an application asking for it does
+    /// -- has a copy swash can draw at the weight a line asks for, and the
+    /// line is rightly drawn in that. What this is about is what happens
+    /// once a glyph is in a face only CoreText can draw, wherever it came
+    /// from. Asked of the layout, it failed on exactly that machine while
+    /// nothing was wrong.
     ///
     /// On a machine with no such face there is nothing to draw and it says
     /// so.
@@ -1251,20 +1262,25 @@ mod tests {
     #[test]
     fn a_face_only_coretext_can_draw_is_drawn_by_coretext() {
         let mut fonts = Fonts::new(32.0);
-        if fonts.by_coretext.is_empty() {
-            eprintln!("no face only CoreText draws on this machine; nothing to check");
+        let mut faces: Vec<(String, fontdb::ID)> = fonts
+            .by_coretext
+            .iter()
+            .map(|(id, names)| (names.plain.clone(), *id))
+            .collect();
+        // By name, so a machine asks the same face every time.
+        faces.sort();
+        let found = faces.into_iter().find_map(|(_, id)| {
+            let font = fonts.system.get_font(id, Weight::NORMAL)?;
+            let glyph = font.as_swash().charmap().map('\u{4e2d}');
+            (glyph != 0).then_some((id, glyph))
+        });
+        let Some((id, glyph)) = found else {
+            eprintln!("no face only CoreText draws has \u{4e2d} on this machine; nothing to check");
             return;
-        }
-        let key = fonts.glyphs("\u{4e2d}", false, false, Size::Cell)[0].key;
-        assert!(
-            fonts.by_coretext.contains_key(&key.font_id),
-            "{:?} drew it",
-            fonts
-                .system
-                .db()
-                .face(key.font_id)
-                .map(|face| face.families.clone())
-        );
+        };
+        let mut key = fonts.glyphs("\u{4e2d}", false, false, Size::Cell)[0].key;
+        key.font_id = id;
+        key.glyph_id = glyph;
         let picture = fonts.picture(key).expect("it has pixels");
         assert!(picture.data.iter().any(|coverage| *coverage > 0));
     }
